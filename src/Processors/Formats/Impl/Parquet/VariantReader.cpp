@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/VariantReader.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Parquet/VariantUtils.h>
 
 #include <Columns/ColumnDecimal.h>
@@ -202,14 +203,14 @@ size_t typedOutputCacheKey(const Reader::VariantSourceInfo & source_info)
 }
 
 template <typename T>
-void filterVectorInPlace(std::vector<T> & values, const IColumnFilter & filter, size_t result_size_hint)
+void filterVectorInPlace(VectorWithMemoryTracking<T> & values, const IColumnFilter & filter, size_t result_size_hint)
 {
     if (values.empty())
         return;
 
     chassert(values.size() == filter.size());
 
-    std::vector<T> filtered;
+    VectorWithMemoryTracking<T> filtered;
     filtered.reserve(result_size_hint);
     for (size_t row = 0; row < filter.size(); ++row)
     {
@@ -271,7 +272,7 @@ void rebuildMetadataByRow(MetadataState & state, const FormatSettings & format_s
 /// result: equal cardinality does not mean the rows map to themselves. Returns an empty vector when
 /// the levels do not line up, in which case the caller reports malformed data rather than indexing
 /// the wrong row's dictionary.
-std::vector<const VariantMetadata *> buildNestedMetadataByRow(
+VectorWithMemoryTracking<const VariantMetadata *> buildNestedMetadataByRow(
     const Reader & reader,
     const Reader::RowSubgroup & row_subgroup,
     const Reader::VariantSourceInfo & source_info,
@@ -281,7 +282,7 @@ std::vector<const VariantMetadata *> buildNestedMetadataByRow(
     const auto & metadata_levels = reader.primitive_columns.at(source_info.metadata_primitive_idx).levels;
     const size_t metadata_rep = metadata_levels.empty() ? 0 : metadata_levels.back().rep;
 
-    std::vector<size_t> owner_row(metadata_state.metadata_by_row.size());
+    VectorWithMemoryTracking<size_t> owner_row(metadata_state.metadata_by_row.size());
     std::iota(owner_row.begin(), owner_row.end(), 0);
 
     for (const auto & level : row_subgroup.nested_array_offsets)
@@ -294,7 +295,7 @@ std::vector<const VariantMetadata *> buildNestedMetadataByRow(
         if (offsets.size() != owner_row.size())
             return {};
 
-        std::vector<size_t> element_owner_row(offsets.empty() ? 0 : offsets.back());
+        VectorWithMemoryTracking<size_t> element_owner_row(offsets.empty() ? 0 : offsets.back());
         size_t element = 0;
         for (size_t row = 0; row < offsets.size(); ++row)
             for (; element < offsets[row]; ++element)
@@ -306,7 +307,7 @@ std::vector<const VariantMetadata *> buildNestedMetadataByRow(
     if (owner_row.size() != num_rows)
         return {};
 
-    std::vector<const VariantMetadata *> result(num_rows);
+    VectorWithMemoryTracking<const VariantMetadata *> result(num_rows);
     for (size_t row = 0; row < num_rows; ++row)
         result[row] = metadata_state.metadata_by_row[owner_row[row]];
 
@@ -319,7 +320,7 @@ std::vector<const VariantMetadata *> buildNestedMetadataByRow(
 /// it is identical for every nested row; otherwise `SourceState::nested_metadata_by_row` carries
 /// the parent-row mapping built above.
 const VariantMetadata * getRowMetadata(
-    const MetadataState & state, const std::vector<const VariantMetadata *> & nested_metadata_by_row, size_t row)
+    const MetadataState & state, const VectorWithMemoryTracking<const VariantMetadata *> & nested_metadata_by_row, size_t row)
 {
     if (state.metadata_is_shared_across_rows)
         return state.shared_metadata_storage ? &*state.shared_metadata_storage : nullptr;
@@ -418,7 +419,7 @@ struct PreparedRowValue
 
 PreparedRowValue prepareRowValue(
     const SourceState & state,
-    const std::vector<ConvertedTypedValue> * typed_value_rows,
+    const VectorWithMemoryTracking<ConvertedTypedValue> * typed_value_rows,
     size_t row,
     const FormatSettings & format_settings)
 {
@@ -456,7 +457,7 @@ PreparedRowValue prepareRowValue(
     return prepared;
 }
 
-std::vector<ConvertedTypedValue> & getOrPrepareTypedValueRows(
+VectorWithMemoryTracking<ConvertedTypedValue> & getOrPrepareTypedValueRows(
     SourceState & state,
     Reader & reader,
     Reader::RowSubgroup & row_subgroup,
@@ -467,7 +468,7 @@ std::vector<ConvertedTypedValue> & getOrPrepareTypedValueRows(
     const auto * typed_value_output_info = getTypedValueOutputInfo(reader, source_info);
     if (!typed_value_output_info)
     {
-        static std::vector<ConvertedTypedValue> empty;
+        static VectorWithMemoryTracking<ConvertedTypedValue> empty;
         return empty;
     }
 
@@ -483,7 +484,7 @@ std::vector<ConvertedTypedValue> & getOrPrepareTypedValueRows(
     if (typed_value_column)
     {
         const VariantMetadata * const * metadata_by_row = state.metadata_state->metadata_by_row.data();
-        std::vector<const VariantMetadata *> replicated_metadata;
+        VectorWithMemoryTracking<const VariantMetadata *> replicated_metadata;
         /// Nested `typed_value` rows are elements of a repeated level, so they do not line up 1:1
         /// with `metadata_by_row` (which is sized per top-level row). When the dictionary is shared,
         /// every element reuses the same one; otherwise each element takes the dictionary of the
@@ -974,7 +975,7 @@ static bool isDirectExactOutputCandidate(const Reader::OutputColumnInfo & output
         && source_info.typed_value_output_idx == UINT64_MAX;
 }
 
-static std::vector<DirectExactOutputCandidate> collectDirectExactOutputCandidates(
+static VectorWithMemoryTracking<DirectExactOutputCandidate> collectDirectExactOutputCandidates(
     Reader & reader,
     Reader::RowSubgroup & row_subgroup,
     const Reader::OutputColumnInfo & output_info)
@@ -986,7 +987,7 @@ static std::vector<DirectExactOutputCandidate> collectDirectExactOutputCandidate
     if (shared_state_idx >= reader.variant_output_indices_by_state_slot.size())
         return {};
 
-    std::vector<DirectExactOutputCandidate> candidates;
+    VectorWithMemoryTracking<DirectExactOutputCandidate> candidates;
     for (size_t output_idx : reader.variant_output_indices_by_state_slot[shared_state_idx])
     {
         if (output_idx >= reader.output_columns.size() || output_idx >= row_subgroup.formed_output_columns.size())
@@ -1041,7 +1042,7 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
 
     /// A nested `VARIANT` reusing an enclosing row's dictionary needs the parent-row mapping; bail
     /// out to the general path (which reports malformed data) when it cannot be built.
-    std::vector<const VariantMetadata *> nested_metadata_by_row;
+    VectorWithMemoryTracking<const VariantMetadata *> nested_metadata_by_row;
     if (!metadata_state.metadata_is_shared_across_rows
         && (source_info.rows_deeper_than_metadata || num_rows != metadata_state.metadata_by_row.size()))
     {
@@ -1053,15 +1054,15 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
     const size_t requested_output_idx = static_cast<size_t>(&output_info - reader.output_columns.data());
 
     const VariantMetadata * shared_metadata = metadata_state.shared_metadata_storage ? &*metadata_state.shared_metadata_storage : nullptr;
-    std::vector<UInt64> shared_root_field_ids;
-    std::vector<std::optional<std::string_view>> shared_root_field_slices;
+    VectorWithMemoryTracking<UInt64> shared_root_field_ids;
+    VectorWithMemoryTracking<std::optional<std::string_view>> shared_root_field_slices;
     struct NestedRootSliceBatchGroup
     {
         size_t root_field_slice_idx = UINT64_MAX;
-        std::vector<UInt64> field_ids;
-        std::vector<std::optional<std::string_view>> field_slices;
+        VectorWithMemoryTracking<UInt64> field_ids;
+        VectorWithMemoryTracking<std::optional<std::string_view>> field_slices;
     };
-    std::vector<NestedRootSliceBatchGroup> nested_root_slice_batch_groups;
+    VectorWithMemoryTracking<NestedRootSliceBatchGroup> nested_root_slice_batch_groups;
     if (shared_metadata)
     {
         auto get_or_add_shared_root_field_idx = [&](UInt64 field_id)
@@ -1352,7 +1353,7 @@ MutableColumnPtr formOutputColumn(
     if (auto result = tryFormAllNullResidualScalarTypedValue(state, reader, row_subgroup, output_info, source_info, num_rows))
         return result;
     const auto & typed_value_rows = getOrPrepareTypedValueRows(state, reader, row_subgroup, output_info, source_info, num_rows);
-    const std::vector<ConvertedTypedValue> * typed_value_rows_ptr = typed_value_rows.empty() ? nullptr : &typed_value_rows;
+    const VectorWithMemoryTracking<ConvertedTypedValue> * typed_value_rows_ptr = typed_value_rows.empty() ? nullptr : &typed_value_rows;
 
     MutableColumnPtr result = output_info.output_type->createColumn();
     auto serialization = output_info.output_type->getDefaultSerialization();

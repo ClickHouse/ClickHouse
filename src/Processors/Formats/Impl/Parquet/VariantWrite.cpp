@@ -1,4 +1,8 @@
 #include <Processors/Formats/Impl/Parquet/VariantWrite.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Processors/Formats/Impl/Parquet/UUIDUtils.h>
 #include <Processors/Formats/Impl/Parquet/VariantUtils.h>
@@ -72,7 +76,7 @@ namespace
 struct VariantEncodingContext
 {
     String metadata;
-    std::unordered_map<String, UInt32> dictionary;
+    UnorderedMapWithMemoryTracking<String, UInt32> dictionary;
 };
 
 
@@ -188,7 +192,7 @@ Field deserializeVariantObjectSharedDataValue(const ColumnString * shared_data_v
 
 void collectVariantObjectKeysFromField(
     const Field & field,
-    std::unordered_set<String> & unique_keys,
+    UnorderedSetWithMemoryTracking<String> & unique_keys,
     const FormatSettings & format_settings,
     size_t depth)
 {
@@ -242,11 +246,11 @@ void collectVariantObjectKeysFromField(
     }
 }
 
-using VariantFlatPathKeysCache = std::unordered_map<String, std::vector<String>>;
+using VariantFlatPathKeysCache = UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<String>>;
 
 void collectVariantObjectKeysFromFlatPath(
     std::string_view path,
-    std::unordered_set<String> & unique_keys,
+    UnorderedSetWithMemoryTracking<String> & unique_keys,
     VariantFlatPathKeysCache * cache = nullptr)
 {
     if (cache)
@@ -309,7 +313,7 @@ bool variantSharedDataValueMayContainObjectKeys(std::string_view value_data)
 void collectVariantObjectKeysForWrite(
     const ColumnObject & object_column,
     const DataTypeObject & object_type,
-    std::unordered_set<String> & unique_keys,
+    UnorderedSetWithMemoryTracking<String> & unique_keys,
     const FormatSettings & format_settings)
 {
     VariantFlatPathKeysCache flat_path_keys_cache;
@@ -368,9 +372,9 @@ DataTypePtr removeNullableForVariantWrite(const DataTypePtr & type)
     return type;
 }
 
-std::vector<String> splitVariantObjectPath(std::string_view path)
+VectorWithMemoryTracking<String> splitVariantObjectPath(std::string_view path)
 {
-    std::vector<String> segments;
+    VectorWithMemoryTracking<String> segments;
     while (!path.empty())
     {
         auto [head, tail] = Nested::splitName(path);
@@ -383,7 +387,7 @@ std::vector<String> splitVariantObjectPath(std::string_view path)
 
 /// Path components of an object leaf. Unlike a prefix, a leaf path always names a key, so the empty
 /// path is the empty key `""` at the root rather than the root itself.
-std::vector<String> splitVariantObjectLeafPath(std::string_view path)
+VectorWithMemoryTracking<String> splitVariantObjectLeafPath(std::string_view path)
 {
     if (path.empty())
         return {String()};
@@ -419,9 +423,9 @@ std::optional<String> encodeVariantColumnarObjectResidualForRow(
     const ColumnObject & object_column,
     const DataTypeObject & object_data_type,
     size_t row,
-    const std::vector<String> & prefix,
-    const std::unordered_set<String> & excluded_fields,
-    const std::unordered_map<String, UInt32> & dictionary,
+    const VectorWithMemoryTracking<String> & prefix,
+    const UnorderedSetWithMemoryTracking<String> & excluded_fields,
+    const UnorderedMapWithMemoryTracking<String, UInt32> & dictionary,
     const FormatSettings & format_settings);
 
 void finishVariantObjectEncodingHeader(
@@ -467,7 +471,7 @@ void finishVariantObjectEncodingHeader(
 
 template <typename Child, typename WriteChild>
 void writeVariantObjectHeaderAndChildren(
-    const std::vector<Child> & children,
+    const VectorWithMemoryTracking<Child> & children,
     UInt8 field_id_size,
     UInt8 field_offset_size,
     bool is_large,
@@ -504,9 +508,9 @@ void writeVariantObjectHeaderAndChildren(
         write_child(child);
 }
 
-std::unordered_set<String> getVariantTupleFieldNames(const DataTypeTuple & tuple_type)
+UnorderedSetWithMemoryTracking<String> getVariantTupleFieldNames(const DataTypeTuple & tuple_type)
 {
-    std::unordered_set<String> field_names;
+    UnorderedSetWithMemoryTracking<String> field_names;
     field_names.reserve(tuple_type.getElements().size());
     for (size_t i = 0; i < tuple_type.getElements().size(); ++i)
         field_names.emplace(tuple_type.getNameByPosition(i + 1));
@@ -517,8 +521,8 @@ std::unordered_set<String> getVariantTupleFieldNames(const DataTypeTuple & tuple
 MutableColumnPtr buildVariantResidualValueColumnForObject(
     const ColumnObject & object_column,
     const DataTypePtr & object_type,
-    const std::vector<String> & prefix,
-    const std::unordered_set<String> & excluded_fields,
+    const VectorWithMemoryTracking<String> & prefix,
+    const UnorderedSetWithMemoryTracking<String> & excluded_fields,
     const FormatSettings & format_settings,
     const VariantEncodingContext & context)
 {
@@ -567,7 +571,7 @@ ColumnPtr buildVariantObjectWrapperColumnFast(
     const ColumnObject & object_column,
     const DataTypePtr & object_type,
     const DataTypePtr & wrapper_type,
-    const std::vector<String> & prefix,
+    const VectorWithMemoryTracking<String> & prefix,
     std::string_view path,
     const FormatSettings & format_settings,
     const VariantEncodingContext & context)
@@ -616,13 +620,13 @@ ColumnPtr buildVariantObjectTypedValueColumnFast(
     {
         Columns columns;
         columns.reserve(tuple_type->getElements().size());
-        std::vector<String> prefix = splitVariantObjectPath(path);
+        VectorWithMemoryTracking<String> prefix = splitVariantObjectPath(path);
 
         for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
         {
             const String & field_name = tuple_type->getNameByPosition(i + 1);
             String child_path = appendVariantJSONPath(path, field_name);
-            std::vector<String> child_prefix = prefix;
+            VectorWithMemoryTracking<String> child_prefix = prefix;
             child_prefix.emplace_back(field_name);
             columns.emplace_back(buildVariantObjectWrapperColumnFast(
                 object_column,
@@ -771,7 +775,7 @@ bool variantObjectFastPathMatchesTypedValue(
     return source_type && source_type->equals(*nested_type);
 }
 
-VariantEncodingContext buildVariantEncodingContext(const std::unordered_set<String> & unique_keys);
+VariantEncodingContext buildVariantEncodingContext(const UnorderedSetWithMemoryTracking<String> & unique_keys);
 
 std::optional<PreparedVariantColumns> tryPrepareObjectVariantColumnsFast(
     const IColumn & full_column,
@@ -793,7 +797,7 @@ std::optional<PreparedVariantColumns> tryPrepareObjectVariantColumnsFast(
     if (!variantObjectFastPathMatchesTypedValue(*object_type, shredded_type, std::string_view{}))
         return std::nullopt;
 
-    std::unordered_set<String> unique_keys;
+    UnorderedSetWithMemoryTracking<String> unique_keys;
     collectVariantObjectKeysForWrite(*object_column, *object_type, unique_keys, format_settings);
     VariantEncodingContext shared_context = buildVariantEncodingContext(unique_keys);
 
@@ -1127,7 +1131,7 @@ bool isParquetVariantWrapperFieldName(std::string_view name)
 void collectShreddedPathCandidates(
     const VariantWriteAnalysisNode & node,
     std::string_view current_path,
-    std::vector<std::pair<size_t, String>> & out)
+    VectorWithMemoryTracking<std::pair<size_t, String>> & out)
 {
     VariantAnalyzeChoice choice = chooseVariantAnalyzeCandidate(node);
     if (choice.is_ambiguous)
@@ -1155,15 +1159,15 @@ void collectShreddedPathCandidates(
     }
 }
 
-std::unordered_set<String> selectShreddedPathsForObject(
+UnorderedSetWithMemoryTracking<String> selectShreddedPathsForObject(
     const VariantWriteAnalysisNode & analysis,
     const DataTypeObject & object_type)
 {
-    std::unordered_set<String> selected_paths;
+    UnorderedSetWithMemoryTracking<String> selected_paths;
     for (const auto & [path, _] : object_type.getTypedPaths())
         selected_paths.emplace(path);
 
-    std::vector<std::pair<size_t, String>> candidates;
+    VectorWithMemoryTracking<std::pair<size_t, String>> candidates;
     collectShreddedPathCandidates(analysis, std::string_view{}, candidates);
 
     std::sort(candidates.begin(), candidates.end(), [](const auto & left, const auto & right)
@@ -1189,7 +1193,7 @@ std::unordered_set<String> selectShreddedPathsForObject(
 
 DataTypePtr constructShreddedType(
     const VariantWriteAnalysisNode & node,
-    const std::unordered_set<String> * selected_paths = nullptr,
+    const UnorderedSetWithMemoryTracking<String> * selected_paths = nullptr,
     std::string_view current_path = {},
     bool array_needs_full_coverage = false)
 {
@@ -1968,14 +1972,14 @@ struct VariantSharedBlobCacheKeyHash
 
 struct VariantColumnarTransientArena
 {
-    std::deque<ColumnPtr> owned_columns;
-    std::unordered_map<VariantSharedBlobCacheKey, std::pair<const IColumn *, DataTypePtr>, VariantSharedBlobCacheKeyHash> shared_variant_cache;
-    std::unordered_map<const IColumn *, ColumnPtr> full_sparse_columns;
+    DequeWithMemoryTracking<ColumnPtr> owned_columns;
+    UnorderedMapWithMemoryTracking<VariantSharedBlobCacheKey, std::pair<const IColumn *, DataTypePtr>, VariantSharedBlobCacheKeyHash> shared_variant_cache;
+    UnorderedMapWithMemoryTracking<const IColumn *, ColumnPtr> full_sparse_columns;
 };
 
 struct VariantColumnarCursorContext
 {
-    const std::unordered_map<String, UInt32> & dictionary;
+    const UnorderedMapWithMemoryTracking<String, UInt32> & dictionary;
     const FormatSettings & format_settings;
     VariantColumnarTransientArena * arena = nullptr;
 };
@@ -2051,7 +2055,7 @@ std::pair<const IColumn *, DataTypePtr> materializeVariantSharedBlob(
 /// leaves are materialized into the arena so they look like an ordinary typed leaf here.
 struct VariantColumnarObjectLeaf
 {
-    std::vector<String> segments;
+    VectorWithMemoryTracking<String> segments;
     const IColumn * column = nullptr;
     DataTypePtr type;
     size_t row = 0;
@@ -2071,7 +2075,7 @@ void collectVariantColumnarObjectLeaves(
     const DataTypeObject & object_data_type,
     size_t row,
     const VariantColumnarCursorContext & context,
-    std::vector<VariantColumnarObjectLeaf> & out)
+    VectorWithMemoryTracking<VariantColumnarObjectLeaf> & out)
 {
     out.clear();
     static const DataTypePtr dynamic_type = std::make_shared<DataTypeDynamic>();
@@ -2133,7 +2137,7 @@ struct VariantColumnarObjectColumnChild
     size_t child_size = 0;
     const VariantColumnarObjectLeaf * leaf = nullptr;
     bool is_object = false;
-    std::vector<VariantColumnarObjectColumnChild> children;
+    VectorWithMemoryTracking<VariantColumnarObjectColumnChild> children;
     UInt8 field_id_size = 0;
     UInt8 field_offset_size = 0;
     bool is_large = false;
@@ -2144,17 +2148,17 @@ struct VariantColumnarObjectColumnChild
 /// `excluded_top_keys`, when set and at `depth == 0`, skips those top-level keys (used to carve the
 /// shredded fields out of the residual object).
 size_t measureVariantColumnarObjectColumnLevel(
-    const std::vector<VariantColumnarObjectLeaf> & leaves,
+    const VectorWithMemoryTracking<VariantColumnarObjectLeaf> & leaves,
     size_t begin,
     size_t end,
     size_t depth,
     size_t object_depth,
     const VariantColumnarCursorContext & context,
-    std::vector<VariantColumnarObjectColumnChild> & out_children,
+    VectorWithMemoryTracking<VariantColumnarObjectColumnChild> & out_children,
     UInt8 & out_field_id_size,
     UInt8 & out_field_offset_size,
     bool & out_is_large,
-    const std::unordered_set<String> * excluded_top_keys = nullptr)
+    const UnorderedSetWithMemoryTracking<String> * excluded_top_keys = nullptr)
 {
     out_children.clear();
     UInt32 highest_field_id = 0;
@@ -2240,7 +2244,7 @@ size_t measureVariantColumnarObjectColumnLevel(
 
 /// Writes one reconstructed object level previously measured by `measureVariantColumnarObjectColumnLevel`.
 void writeVariantColumnarObjectColumnLevel(
-    const std::vector<VariantColumnarObjectColumnChild> & children,
+    const VectorWithMemoryTracking<VariantColumnarObjectColumnChild> & children,
     UInt8 field_id_size,
     UInt8 field_offset_size,
     bool is_large,
@@ -2262,7 +2266,7 @@ void writeVariantColumnarObjectColumnLevel(
 
 /// Sorts the collected leaves of a `ColumnObject` row by segments so equal first-segments are contiguous
 /// at every depth, matching the lexicographic object emission order.
-void sortVariantColumnarObjectLeaves(std::vector<VariantColumnarObjectLeaf> & leaves)
+void sortVariantColumnarObjectLeaves(VectorWithMemoryTracking<VariantColumnarObjectLeaf> & leaves)
 {
     std::sort(leaves.begin(), leaves.end(), [](const auto & lhs, const auto & rhs)
     {
@@ -2271,7 +2275,7 @@ void sortVariantColumnarObjectLeaves(std::vector<VariantColumnarObjectLeaf> & le
 }
 
 /// Computes the encoded size of an array (header plus offset table) given its children sizes.
-bool measureVariantColumnarArraySize(const std::vector<size_t> & child_sizes, size_t & out_size)
+bool measureVariantColumnarArraySize(const VectorWithMemoryTracking<size_t> & child_sizes, size_t & out_size)
 {
     size_t total_children_size = 0;
     for (size_t child_size : child_sizes)
@@ -2305,7 +2309,7 @@ bool measureVariantColumnarArraySize(const std::vector<size_t> & child_sizes, si
 }
 
 /// Writes the array header and offset table (not the children).
-void writeVariantColumnarArrayHeader(const std::vector<size_t> & child_sizes, char *& out)
+void writeVariantColumnarArrayHeader(const VectorWithMemoryTracking<size_t> & child_sizes, char *& out)
 {
     size_t total_children_size = 0;
     for (size_t child_size : child_sizes)
@@ -2510,7 +2514,7 @@ bool resolveVariantColumnarSource(
 /// encoded size and header widths. Returns false on decline (any child the cursor cannot handle).
 template <typename EmitChildren>
 bool collectVariantColumnarObjectChildren(
-    std::vector<VariantColumnarObjectChild> & children,
+    VectorWithMemoryTracking<VariantColumnarObjectChild> & children,
     size_t & out_total_size,
     UInt8 & out_field_id_size,
     UInt8 & out_field_offset_size,
@@ -2573,7 +2577,7 @@ template <typename EmitChildren>
 void writeVariantColumnarObject(char *& out, const VariantColumnarCursorContext & context, size_t depth, EmitChildren && emit_children)
 {
     checkVariantWriteDepth(context.format_settings, depth);
-    std::vector<VariantColumnarObjectChild> children;
+    VectorWithMemoryTracking<VariantColumnarObjectChild> children;
     size_t total_size = 0;
     UInt8 field_id_size = 0;
     UInt8 field_offset_size = 0;
@@ -2635,7 +2639,7 @@ bool emitVariantColumnarMapChildren(
     if (!keys_string)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `Map(String, T)` can be written as `Parquet` `VARIANT`");
 
-    std::unordered_set<std::string_view> seen_keys;
+    UnorderedSetWithMemoryTracking<std::string_view> seen_keys;
     seen_keys.reserve(end - begin);
     for (size_t i = begin; i != end; ++i)
     {
@@ -2686,10 +2690,10 @@ bool measureVariantColumnarValue(
         if (!object_column)
             return false;
 
-        std::vector<VariantColumnarObjectLeaf> leaves;
+        VectorWithMemoryTracking<VariantColumnarObjectLeaf> leaves;
         collectVariantColumnarObjectLeaves(*object_column, *object_data_type, resolved_row, context, leaves);
         sortVariantColumnarObjectLeaves(leaves);
-        std::vector<VariantColumnarObjectColumnChild> children;
+        VectorWithMemoryTracking<VariantColumnarObjectColumnChild> children;
         UInt8 fid = 0;
         UInt8 fos = 0;
         bool large = false;
@@ -2705,7 +2709,7 @@ bool measureVariantColumnarValue(
 
         if (tuple_type->hasExplicitNames())
         {
-            std::vector<VariantColumnarObjectChild> children;
+            VectorWithMemoryTracking<VariantColumnarObjectChild> children;
             UInt8 field_id_size = 0;
             UInt8 field_offset_size = 0;
             bool is_large = false;
@@ -2718,7 +2722,7 @@ bool measureVariantColumnarValue(
 
         /// Unnamed tuple -> array of its elements.
         size_t element_count = tuple_type->getElements().size();
-        std::vector<size_t> child_sizes(element_count);
+        VectorWithMemoryTracking<size_t> child_sizes(element_count);
         for (size_t i = 0; i < element_count; ++i)
         {
             if (!measureVariantColumnarValue(
@@ -2738,7 +2742,7 @@ bool measureVariantColumnarValue(
         const auto & offsets = array_column->getOffsets();
         size_t begin = resolved_row == 0 ? 0 : offsets[resolved_row - 1];
         size_t end = offsets[resolved_row];
-        std::vector<size_t> child_sizes(end - begin);
+        VectorWithMemoryTracking<size_t> child_sizes(end - begin);
         for (size_t i = begin; i != end; ++i)
         {
             if (!measureVariantColumnarValue(
@@ -2755,7 +2759,7 @@ bool measureVariantColumnarValue(
         if (!map_column)
             return false;
 
-        std::vector<VariantColumnarObjectChild> children;
+        VectorWithMemoryTracking<VariantColumnarObjectChild> children;
         UInt8 field_id_size = 0;
         UInt8 field_offset_size = 0;
         bool is_large = false;
@@ -2809,10 +2813,10 @@ void writeVariantColumnarValue(
     if (const auto * object_data_type = typeid_cast<const DataTypeObject *>(normalized_type.get()))
     {
         const auto * object_column = assert_cast<const ColumnObject *>(resolved_column);
-        std::vector<VariantColumnarObjectLeaf> leaves;
+        VectorWithMemoryTracking<VariantColumnarObjectLeaf> leaves;
         collectVariantColumnarObjectLeaves(*object_column, *object_data_type, resolved_row, context, leaves);
         sortVariantColumnarObjectLeaves(leaves);
-        std::vector<VariantColumnarObjectColumnChild> children;
+        VectorWithMemoryTracking<VariantColumnarObjectColumnChild> children;
         UInt8 fid = 0;
         UInt8 fos = 0;
         bool large = false;
@@ -2834,7 +2838,7 @@ void writeVariantColumnarValue(
         }
 
         size_t element_count = tuple_type->getElements().size();
-        std::vector<size_t> child_sizes(element_count);
+        VectorWithMemoryTracking<size_t> child_sizes(element_count);
         for (size_t i = 0; i < element_count; ++i)
         {
             bool ok = measureVariantColumnarValue(
@@ -2857,7 +2861,7 @@ void writeVariantColumnarValue(
         const auto & offsets = array_column->getOffsets();
         size_t begin = resolved_row == 0 ? 0 : offsets[resolved_row - 1];
         size_t end = offsets[resolved_row];
-        std::vector<size_t> child_sizes(end - begin);
+        VectorWithMemoryTracking<size_t> child_sizes(end - begin);
         for (size_t i = begin; i != end; ++i)
         {
             bool ok = measureVariantColumnarValue(
@@ -2949,7 +2953,7 @@ Field buildVariantShreddedWrapperFieldColumnar(
 /// on the leaf source: a single-leaf field uses its `(column, type, row)`; a multi-leaf field is a plain
 /// JSON sub-object that no shredded sub-tree covers, so it spills entirely to the wrapper residual.
 Field buildVariantShreddedObjectChildFromLeaves(
-    const std::vector<VariantColumnarObjectLeaf> & leaves,
+    const VectorWithMemoryTracking<VariantColumnarObjectLeaf> & leaves,
     size_t begin,
     size_t end,
     const DataTypePtr & wrapper_type,
@@ -2980,7 +2984,7 @@ bool collectVariantShreddedSourceLeaves(
     const DataTypePtr & resolved_normalized,
     size_t resolved_row,
     const VariantColumnarCursorContext & context,
-    std::vector<VariantColumnarObjectLeaf> & out)
+    VectorWithMemoryTracking<VariantColumnarObjectLeaf> & out)
 {
     out.clear();
     if (const auto * object_data_type = typeid_cast<const DataTypeObject *>(resolved_normalized.get()))
@@ -3018,7 +3022,7 @@ bool collectVariantShreddedSourceLeaves(
         if (!keys_string)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `Map(String, T)` can be written as `Parquet` `VARIANT`");
         const auto & values_column = nested_data.getColumnPtr(1);
-        std::unordered_set<std::string_view> seen;
+        UnorderedSetWithMemoryTracking<std::string_view> seen;
         for (size_t i = begin; i != end; ++i)
         {
             std::string_view key_view = keys_string->getDataAt(i);
@@ -3040,12 +3044,12 @@ bool collectVariantShreddedSourceLeaves(
 /// Encodes an object residual `value` from the sorted leaves, excluding the shredded top-level keys.
 /// Returns `std::nullopt` when nothing remains (the object is fully shredded or empty).
 std::optional<String> encodeVariantShreddedResidualObjectFromLeaves(
-    const std::vector<VariantColumnarObjectLeaf> & sorted_leaves,
-    const std::unordered_set<String> & shredded_field_names,
+    const VectorWithMemoryTracking<VariantColumnarObjectLeaf> & sorted_leaves,
+    const UnorderedSetWithMemoryTracking<String> & shredded_field_names,
     const VariantColumnarCursorContext & context,
     size_t depth)
 {
-    std::vector<VariantColumnarObjectColumnChild> children;
+    VectorWithMemoryTracking<VariantColumnarObjectColumnChild> children;
     UInt8 fid = 0;
     UInt8 fos = 0;
     bool large = false;
@@ -3065,21 +3069,21 @@ std::optional<String> encodeVariantColumnarObjectResidualForRow(
     const ColumnObject & object_column,
     const DataTypeObject & object_data_type,
     size_t row,
-    const std::vector<String> & prefix,
-    const std::unordered_set<String> & excluded_fields,
-    const std::unordered_map<String, UInt32> & dictionary,
+    const VectorWithMemoryTracking<String> & prefix,
+    const UnorderedSetWithMemoryTracking<String> & excluded_fields,
+    const UnorderedMapWithMemoryTracking<String, UInt32> & dictionary,
     const FormatSettings & format_settings)
 {
     VariantColumnarTransientArena arena;
     const VariantColumnarCursorContext context{.dictionary = dictionary, .format_settings = format_settings, .arena = &arena};
 
-    std::vector<VariantColumnarObjectLeaf> leaves;
+    VectorWithMemoryTracking<VariantColumnarObjectLeaf> leaves;
     collectVariantColumnarObjectLeaves(object_column, object_data_type, row, context, leaves);
 
     /// Keep only leaves under `prefix`, stripping the matched prefix segments so the residual is
     /// encoded relative to the sub-object. Empty residual segments (the path is exactly the prefix)
     /// cannot occur in a valid `ColumnObject` row.
-    std::vector<VariantColumnarObjectLeaf> residual_leaves;
+    VectorWithMemoryTracking<VariantColumnarObjectLeaf> residual_leaves;
     residual_leaves.reserve(leaves.size());
     for (auto & leaf : leaves)
     {
@@ -3110,7 +3114,7 @@ std::optional<String> encodeVariantColumnarObjectResidualForRow(
 }
 
 Field buildVariantShreddedObjectChildFromLeaves(
-    const std::vector<VariantColumnarObjectLeaf> & leaves,
+    const VectorWithMemoryTracking<VariantColumnarObjectLeaf> & leaves,
     size_t begin,
     size_t end,
     const DataTypePtr & wrapper_type,
@@ -3135,7 +3139,7 @@ Field buildVariantShreddedObjectChildFromLeaves(
     if (const auto * nullable = typeid_cast<const DataTypeNullable *>(typed_nested.get()))
         typed_nested = nullable->getNestedType();
 
-    std::vector<VariantColumnarObjectLeaf> sub_leaves;
+    VectorWithMemoryTracking<VariantColumnarObjectLeaf> sub_leaves;
     sub_leaves.reserve(end - begin);
     for (size_t i = begin; i != end; ++i)
     {
@@ -3148,7 +3152,7 @@ Field buildVariantShreddedObjectChildFromLeaves(
 
     if (const auto * sub_tuple_type = typeid_cast<const DataTypeTuple *>(unwrapVariantTypeHint(typed_nested).get()))
     {
-        std::unordered_set<String> sub_shredded_names;
+        UnorderedSetWithMemoryTracking<String> sub_shredded_names;
         Tuple typed_fields(sub_tuple_type->getElements().size());
         for (size_t i = 0; i < sub_tuple_type->getElements().size(); ++i)
         {
@@ -3213,7 +3217,7 @@ void encodeVariantShreddedTypedValueColumnar(
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_shredded.get()))
     {
-        std::vector<VariantColumnarObjectLeaf> leaves;
+        VectorWithMemoryTracking<VariantColumnarObjectLeaf> leaves;
         if (is_null
             || !collectVariantShreddedSourceLeaves(*resolved_column, resolved_normalized, resolved_row, context, leaves))
         {
@@ -3223,7 +3227,7 @@ void encodeVariantShreddedTypedValueColumnar(
         }
 
         sortVariantColumnarObjectLeaves(leaves);
-        std::unordered_set<String> shredded_field_names;
+        UnorderedSetWithMemoryTracking<String> shredded_field_names;
         Tuple object_fields(tuple_type->getElements().size());
         for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
         {
@@ -3350,9 +3354,9 @@ bool tryEncodeVariantColumnarValue(
     return true;
 }
 
-VariantEncodingContext buildVariantEncodingContext(const std::unordered_set<String> & unique_keys)
+VariantEncodingContext buildVariantEncodingContext(const UnorderedSetWithMemoryTracking<String> & unique_keys)
 {
-    std::vector<String> keys;
+    VectorWithMemoryTracking<String> keys;
     keys.reserve(unique_keys.size());
     for (const auto & key : unique_keys)
         keys.emplace_back(key);
@@ -3418,7 +3422,7 @@ std::optional<PreparedVariantColumns> tryPrepareScalarShreddedVariantColumns(
 
     const size_t num_rows = full_column.size();
 
-    static const std::unordered_map<String, UInt32> empty_dictionary;
+    static const UnorderedMapWithMemoryTracking<String, UInt32> empty_dictionary;
     VariantColumnarTransientArena arena;
     const VariantColumnarCursorContext columnar_context{.dictionary = empty_dictionary, .format_settings = format_settings, .arena = &arena};
 
@@ -3507,7 +3511,7 @@ void analyzeVariantColumnarValue(
     const VariantColumnarCursorContext & context,
     size_t depth,
     VariantWriteAnalysisNode * node,
-    std::unordered_set<String> * keys);
+    UnorderedSetWithMemoryTracking<String> * keys);
 
 /// Bumps the array statistics on `node` and recurses each element into the (single) array-child node.
 void analyzeVariantColumnarArray(
@@ -3519,7 +3523,7 @@ void analyzeVariantColumnarArray(
     const VariantColumnarCursorContext & context,
     size_t depth,
     VariantWriteAnalysisNode * node,
-    std::unordered_set<String> * keys)
+    UnorderedSetWithMemoryTracking<String> * keys)
 {
     checkVariantWriteDepth(context.format_settings, depth);
 
@@ -3545,7 +3549,7 @@ void analyzeVariantColumnarObjectChild(
     const VariantColumnarCursorContext & context,
     size_t depth,
     VariantWriteAnalysisNode * node,
-    std::unordered_set<String> * keys)
+    UnorderedSetWithMemoryTracking<String> * keys)
 {
     if (keys)
         keys->emplace(key);
@@ -3561,7 +3565,7 @@ void analyzeVariantColumnarValue(
     const VariantColumnarCursorContext & context,
     size_t depth,
     VariantWriteAnalysisNode * node,
-    std::unordered_set<String> * keys)
+    UnorderedSetWithMemoryTracking<String> * keys)
 {
     checkVariantWriteDepth(context.format_settings, depth);
 
@@ -3587,7 +3591,7 @@ void analyzeVariantColumnarValue(
     if (const auto * object_data_type = typeid_cast<const DataTypeObject *>(normalized_type.get()))
     {
         const auto & object_column = assert_cast<const ColumnObject &>(*resolved_column);
-        std::vector<VariantColumnarObjectLeaf> leaves;
+        VectorWithMemoryTracking<VariantColumnarObjectLeaf> leaves;
         collectVariantColumnarObjectLeaves(object_column, *object_data_type, resolved_row, context, leaves);
         sortVariantColumnarObjectLeaves(leaves);
 
@@ -3597,8 +3601,8 @@ void analyzeVariantColumnarValue(
             ++node->object_count;
         }
         /// Walk the reconstructed object tree, recursing each top-level key span.
-        std::function<void(const std::vector<VariantColumnarObjectLeaf> &, size_t, size_t, size_t, VariantWriteAnalysisNode *)> walk;
-        walk = [&](const std::vector<VariantColumnarObjectLeaf> & lvs, size_t b, size_t e, size_t object_level, VariantWriteAnalysisNode * obj_node)
+        std::function<void(const VectorWithMemoryTracking<VariantColumnarObjectLeaf> &, size_t, size_t, size_t, VariantWriteAnalysisNode *)> walk;
+        walk = [&](const VectorWithMemoryTracking<VariantColumnarObjectLeaf> & lvs, size_t b, size_t e, size_t object_level, VariantWriteAnalysisNode * obj_node)
         {
             for (size_t pos = b; pos < e;)
             {
@@ -3750,11 +3754,11 @@ PreparedVariantColumns prepareVariantColumnsForWrite(
 
     /// Collect the object-key union (for the metadata dictionary) and, when inferring, the shredding
     /// statistics — both directly from the columns, with no per-row `Field` tree.
-    std::unordered_set<String> unique_keys;
+    UnorderedSetWithMemoryTracking<String> unique_keys;
     VariantWriteAnalysisNode analysis;
     {
         VariantColumnarTransientArena analyze_arena;
-        static const std::unordered_map<String, UInt32> empty_dictionary;
+        static const UnorderedMapWithMemoryTracking<String, UInt32> empty_dictionary;
         const VariantColumnarCursorContext analyze_context{.dictionary = empty_dictionary, .format_settings = format_settings, .arena = &analyze_arena};
         for (size_t row = 0; row < num_rows; ++row)
             analyzeVariantColumnarValue(
@@ -3881,7 +3885,7 @@ void analyzeVariantColumnForWrite(
 
     ColumnPtr full_column_ptr = column.convertToFullColumnIfLowCardinality();
     VariantColumnarTransientArena arena;
-    static const std::unordered_map<String, UInt32> empty_dictionary;
+    static const UnorderedMapWithMemoryTracking<String, UInt32> empty_dictionary;
     const VariantColumnarCursorContext context{.dictionary = empty_dictionary, .format_settings = format_settings, .arena = &arena};
     const size_t num_rows = full_column_ptr->size();
     for (size_t row = 0; row < num_rows; ++row)

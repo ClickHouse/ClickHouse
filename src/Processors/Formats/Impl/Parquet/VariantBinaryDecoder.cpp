@@ -1,4 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/VariantBinaryDecoder.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Parquet/UUIDUtils.h>
 
 #include <Columns/ColumnArray.h>
@@ -326,7 +329,7 @@ std::optional<UInt64> tryFindMetadataFieldId(const VariantMetadata & metadata, s
     return static_cast<UInt64>(it - metadata.strings.begin());
 }
 
-void checkUniqueObjectFieldId(std::unordered_set<UInt64> & seen_field_ids, UInt64 field_id)
+void checkUniqueObjectFieldId(UnorderedSetWithMemoryTracking<UInt64> & seen_field_ids, UInt64 field_id)
 {
     if (!seen_field_ids.insert(field_id).second)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: duplicate object field id {}", field_id);
@@ -531,7 +534,7 @@ VariantValue makeExactScalarValue(ScalarExactValue exact_value)
     return value;
 }
 
-VariantValue makeArrayValue(std::vector<VariantValue> elements, DataTypePtr exact_type = {})
+VariantValue makeArrayValue(VectorWithMemoryTracking<VariantValue> elements, DataTypePtr exact_type = {})
 {
     VariantValue value;
     value.kind = VariantValue::Kind::Array;
@@ -540,7 +543,7 @@ VariantValue makeArrayValue(std::vector<VariantValue> elements, DataTypePtr exac
     return value;
 }
 
-VariantValue makeObjectValue(std::map<String, VariantValue> fields, DataTypePtr exact_type = {})
+VariantValue makeObjectValue(MapWithMemoryTracking<String, VariantValue> fields, DataTypePtr exact_type = {})
 {
     VariantValue value;
     value.kind = VariantValue::Kind::Object;
@@ -727,7 +730,7 @@ const DataTypePtr & getParquetVariantJSONObjectType()
     return type;
 }
 
-DataTypePtr tryBuildExactArrayType(const std::vector<DecodedVariantValue> & elements)
+DataTypePtr tryBuildExactArrayType(const VectorWithMemoryTracking<DecodedVariantValue> & elements)
 {
     DataTypePtr element_type;
     bool has_nulls = false;
@@ -768,7 +771,7 @@ DataTypePtr tryBuildExactArrayType(const std::vector<DecodedVariantValue> & elem
     return std::make_shared<DataTypeArray>(element_type);
 }
 
-DataTypePtr tryBuildExactArrayType(const std::vector<VariantValue> & elements)
+DataTypePtr tryBuildExactArrayType(const VectorWithMemoryTracking<VariantValue> & elements)
 {
     DataTypePtr element_type;
     bool has_nulls = false;
@@ -982,8 +985,8 @@ DecodedVariantValue decodeValueImpl(const VariantMetadata & metadata, const UInt
             if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child offset");
 
-            std::map<String, VariantValue> object;
-            std::unordered_set<UInt64> seen_field_ids;
+            MapWithMemoryTracking<String, VariantValue> object;
+            UnorderedSetWithMemoryTracking<UInt64> seen_field_ids;
             seen_field_ids.reserve(static_cast<size_t>(num_elements));
             for (UInt64 i = 0; i < num_elements; ++i)
             {
@@ -1025,9 +1028,9 @@ DecodedVariantValue decodeValueImpl(const VariantMetadata & metadata, const UInt
             if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid array child offset");
 
-            std::vector<VariantValue> array;
+            VectorWithMemoryTracking<VariantValue> array;
             array.reserve(static_cast<size_t>(num_elements));
-            std::vector<DecodedVariantValue> elements;
+            VectorWithMemoryTracking<DecodedVariantValue> elements;
             elements.reserve(static_cast<size_t>(num_elements));
             for (UInt64 i = 0; i < num_elements; ++i)
             {
@@ -1095,7 +1098,7 @@ std::optional<VariantValue> extractSubcolumnValueImpl(const VariantValue & value
 
     if (value.isArray())
     {
-        std::vector<VariantValue> projected_elements;
+        VectorWithMemoryTracking<VariantValue> projected_elements;
         projected_elements.reserve(value.array_elements.size());
         for (const auto & element : value.array_elements)
         {
@@ -1110,7 +1113,7 @@ std::optional<VariantValue> extractSubcolumnValueImpl(const VariantValue & value
     return std::nullopt;
 }
 
-bool tryInsertFlatJSONPathImpl(std::map<String, VariantValue> & object, std::string_view path, VariantValue value, const FormatSettings & format_settings, size_t depth)
+bool tryInsertFlatJSONPathImpl(MapWithMemoryTracking<String, VariantValue> & object, std::string_view path, VariantValue value, const FormatSettings & format_settings, size_t depth)
 {
     checkVariantReadDepth(format_settings, depth);
 
@@ -1136,7 +1139,7 @@ std::optional<VariantValue> tryNestVariantJSONPaths(VariantValue value, const Fo
 
     if (value.isObject())
     {
-        std::map<String, VariantValue> nested_object;
+        MapWithMemoryTracking<String, VariantValue> nested_object;
         auto object = std::move(value.object_fields);
         for (auto & [path, child] : object)
         {
@@ -1378,7 +1381,7 @@ bool tryInsertObjectLikeValueIntoTypedColumn(
 std::optional<std::pair<ColumnVariant::Discriminator, ColumnPtr>> tryCastToUnsignedVariantArm(
     const DataTypeVariant & variant_type, const DataTypePtr & source_type, const ColumnPtr & source_column)
 {
-    std::vector<String> candidates;
+    VectorWithMemoryTracking<String> candidates;
     switch (source_type->getTypeId())
     {
         case TypeIndex::Int16:
@@ -1738,7 +1741,7 @@ VariantMetadata decodeMetadata(std::string_view metadata_blob, const FormatSetti
     if (previous_offset != static_cast<UInt64>(end - strings_data))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid `metadata` payload size");
 
-    std::unordered_set<String> unique_strings;
+    UnorderedSetWithMemoryTracking<String> unique_strings;
     unique_strings.reserve(metadata.strings.size());
     for (const auto & string : metadata.strings)
     {
@@ -1923,7 +1926,7 @@ static bool tryDecodeValueByPathGeneric(
             if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid array child offset");
 
-            std::vector<VariantValue> projected_elements;
+            VectorWithMemoryTracking<VariantValue> projected_elements;
             projected_elements.reserve(static_cast<size_t>(num_elements));
             for (UInt64 i = 0; i < num_elements; ++i)
             {
@@ -1992,7 +1995,7 @@ static bool tryDecodeValueByPathGeneric(
     const UInt8 * exact_begin = nullptr;
     const UInt8 * exact_end = nullptr;
 
-    std::unordered_set<UInt64> seen_field_ids;
+    UnorderedSetWithMemoryTracking<UInt64> seen_field_ids;
     seen_field_ids.reserve(static_cast<size_t>(num_elements));
     for (UInt64 i = 0; i < num_elements; ++i)
     {
@@ -2080,8 +2083,8 @@ ScalarExactPathStatus tryDecodeScalarLeaf(
 void collectObjectFieldSlicesByResolvedIds(
     const VariantMetadata & metadata,
     std::string_view value_blob,
-    const std::vector<UInt64> & field_ids,
-    std::vector<std::optional<std::string_view>> & result_slices,
+    const VectorWithMemoryTracking<UInt64> & field_ids,
+    VectorWithMemoryTracking<std::optional<std::string_view>> & result_slices,
     const FormatSettings & format_settings,
     size_t depth)
 {
@@ -2134,7 +2137,7 @@ void collectObjectFieldSlicesByResolvedIds(
     if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child offset");
 
-    std::unordered_set<UInt64> seen_field_ids;
+    UnorderedSetWithMemoryTracking<UInt64> seen_field_ids;
     seen_field_ids.reserve(static_cast<size_t>(num_elements));
     for (UInt64 i = 0; i < num_elements; ++i)
     {

@@ -123,7 +123,7 @@ UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
     return hash.get64();
 }
 
-void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
+void ColumnMapper::setStorageColumnEncoding(ColumnNameToFieldId && storage_encoding_)
 {
     chassert(storage_encoding.empty());
     storage_encoding = std::move(storage_encoding_);
@@ -132,11 +132,11 @@ void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> &&
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
-std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
-    const std::unordered_map<Int64, String> & format_encoding) const
+std::pair<ColumnNameMap, ColumnNameMap> ColumnMapper::makeMapping(
+    const FieldIdToColumnName & format_encoding) const
 {
-    std::unordered_map<String, String> clickhouse_to_parquet_names;
-    std::unordered_map<String, String> parquet_names_to_clickhouse;
+    ColumnNameMap clickhouse_to_parquet_names;
+    ColumnNameMap parquet_names_to_clickhouse;
     for (const auto & [column_name, field_id] : storage_encoding)
     {
         if (auto it = format_encoding.find(field_id); it != format_encoding.end())

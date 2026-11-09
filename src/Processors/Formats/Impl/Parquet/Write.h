@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Formats/ColumnNameMaps.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
@@ -9,7 +11,8 @@
 #include <generated/parquet_types.h>
 #include <Common/PODArray.h>
 
-#include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -169,23 +172,23 @@ struct ColumnChunkWriteState
 struct RowGroupWithIndexes
 {
     parq::RowGroup row_group;
-    std::vector<ColumnChunkIndexes> column_indexes;
+    VectorWithMemoryTracking<ColumnChunkIndexes> column_indexes;
 };
 
 struct FileWriteState
 {
-    std::vector<RowGroupWithIndexes> completed_row_groups;
+    VectorWithMemoryTracking<RowGroupWithIndexes> completed_row_groups;
     RowGroupWithIndexes current_row_group;
     size_t row_groups_with_flushed_bloom_filter = 0;
     size_t unflushed_bloom_filter_bytes = 0;
     size_t offset = 0;
 };
 
-using SchemaElements = std::vector<parq::SchemaElement>;
-using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
-using VariantWriteTypeHints = std::unordered_map<std::string, DataTypePtr>;
-using VariantWriteAnalysisMap = std::unordered_map<std::string, VariantWriteAnalysisEntry>;
-using VariantWrapperPaths = std::unordered_set<String>;
+using SchemaElements = std::vector<parq::SchemaElement>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into thrift `parq::FileMetaData::schema`
+using ColumnChunkWriteStates = VectorWithMemoryTracking<ColumnChunkWriteState>;
+using VariantWriteTypeHints = UnorderedMapWithMemoryTracking<std::string, DataTypePtr>;
+using VariantWriteAnalysisMap = UnorderedMapWithMemoryTracking<std::string, VariantWriteAnalysisEntry>;
+using VariantWrapperPaths = UnorderedSetWithMemoryTracking<String>;
 
 DataTypePtr getDeclaredVariantShreddedTypeForParquetWrite(const DataTypePtr & type);
 bool variantWriteRequiresFileLevelAnalysis(const DataTypePtr & type, bool output_json_as_variant);
@@ -226,7 +229,7 @@ SchemaElements convertSchema(
     const Block & sample,
     const WriteOptions & options,
     const FormatSettings & format_settings,
-    const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    const std::optional<ColumnNameToFieldId> & column_field_ids,
     VariantWrapperPaths * out_variant_wrapper_paths = nullptr,
     const IcebergOptionality & iceberg_optionality = {});
 
@@ -236,7 +239,7 @@ SchemaElements convertSchema(
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
     ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr,
-    const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt,
+    const std::optional<ColumnNameToFieldId> & column_field_ids = std::nullopt,
     const VariantWriteTypeHints * variant_type_hints = nullptr,
     VariantWriteTypeHints * out_variant_type_hints = nullptr,
     VariantWrapperPaths * out_variant_wrapper_paths = nullptr,

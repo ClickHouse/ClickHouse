@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 #include <DataTypes/IDataType.h>
@@ -44,7 +47,7 @@ inline void checkVariantReadDepth(const FormatSettings & format_settings, size_t
 
 struct VariantMetadata
 {
-    std::vector<std::string_view> strings;
+    VectorWithMemoryTracking<std::string_view> strings;
     bool strings_sorted = false;
 };
 
@@ -54,7 +57,7 @@ struct VariantMetadataCache
 {
     const VariantMetadata & get(std::string_view metadata_blob, const FormatSettings & format_settings);
 
-    std::unordered_map<String, VariantMetadata> cache;
+    UnorderedMapWithMemoryTracking<String, VariantMetadata> cache;
 };
 
 struct ParsedVariantPathStep
@@ -65,7 +68,7 @@ struct ParsedVariantPathStep
 
 struct ParsedVariantPath
 {
-    std::vector<ParsedVariantPathStep> steps;
+    VectorWithMemoryTracking<ParsedVariantPathStep> steps;
 
     bool empty() const
     {
@@ -82,7 +85,7 @@ struct ResolvedVariantPathStep
 struct ResolvedVariantPath
 {
     ParsedVariantPath parsed_path;
-    std::vector<ResolvedVariantPathStep> steps;
+    VectorWithMemoryTracking<ResolvedVariantPathStep> steps;
 };
 
 struct ScalarExactValue
@@ -138,9 +141,9 @@ struct VariantValue
     std::optional<std::string_view> exact_string_view;
     ScalarExactValue::PrimitiveKind exact_primitive_kind = ScalarExactValue::PrimitiveKind::None;
     UInt64 exact_primitive_bits = 0;
-    std::vector<VariantValue> array_elements;
-    std::map<String, VariantValue> object_fields;
-    std::vector<std::pair<String, VariantValue>> tuple_elements;
+    VectorWithMemoryTracking<VariantValue> array_elements;
+    MapWithMemoryTracking<String, VariantValue> object_fields;
+    VectorWithMemoryTracking<std::pair<String, VariantValue>> tuple_elements;
 
     bool isNull() const { return kind == Kind::Null; }
     bool isExactValue() const { return kind == Kind::ExactValue; }
@@ -174,10 +177,10 @@ struct MetadataState
     bool metadata_is_shared_across_rows = true;
 
     ColumnPtr metadata_column_holder;
-    std::vector<std::optional<std::string_view>> metadata_values;
+    VectorWithMemoryTracking<std::optional<std::string_view>> metadata_values;
     std::optional<VariantMetadata> shared_metadata_storage;
     VariantMetadataCache metadata_cache;
-    std::vector<const VariantMetadata *> metadata_by_row;
+    VectorWithMemoryTracking<const VariantMetadata *> metadata_by_row;
 };
 
 struct ConvertedTypedValue
@@ -192,21 +195,21 @@ struct SourceState
     struct PerTypedOutputState
     {
         std::array<bool, 2> typed_value_rows_prepared {false, false};
-        std::array<std::vector<ConvertedTypedValue>, 2> typed_value_rows_by_preserve;
+        std::array<VectorWithMemoryTracking<ConvertedTypedValue>, 2> typed_value_rows_by_preserve;
     };
 
     std::shared_ptr<MetadataState> metadata_state;
     bool value_column_is_all_null = true;
     ColumnPtr value_column_holder;
-    std::vector<std::optional<std::string_view>> value_values;
+    VectorWithMemoryTracking<std::optional<std::string_view>> value_values;
 
     /// Only for a nested `VARIANT` whose rows are elements of an enclosing repeated group and
     /// therefore do not line up 1:1 with `MetadataState::metadata_by_row`: the `metadata`
     /// dictionary of the top-level row that owns each of this source's rows. Empty when the rows
     /// map 1:1, or when the dictionary is shared across all rows (then it is resolved directly).
-    std::vector<const VariantMetadata *> nested_metadata_by_row;
+    VectorWithMemoryTracking<const VariantMetadata *> nested_metadata_by_row;
 
-    std::unordered_map<size_t, PerTypedOutputState> per_typed_output_state;
+    UnorderedMapWithMemoryTracking<size_t, PerTypedOutputState> per_typed_output_state;
 };
 
 DecodedVariantValue decodeValue(const VariantMetadata & metadata, std::string_view value_blob, const FormatSettings & format_settings);
@@ -237,8 +240,8 @@ ScalarExactPathStatus tryDecodeScalarLeaf(
 void collectObjectFieldSlicesByResolvedIds(
     const VariantMetadata & metadata,
     std::string_view value_blob,
-    const std::vector<UInt64> & field_ids,
-    std::vector<std::optional<std::string_view>> & result_slices,
+    const VectorWithMemoryTracking<UInt64> & field_ids,
+    VectorWithMemoryTracking<std::optional<std::string_view>> & result_slices,
     const FormatSettings & format_settings,
     size_t depth = 1);
 std::optional<VariantValue> extractSubcolumnValue(const VariantValue & value, const ParsedVariantPath & path, const FormatSettings & format_settings, size_t depth = 1);
@@ -254,7 +257,7 @@ VariantValue mergeResidualValueWithTypedValue(
     const ConvertedTypedValue & typed_value,
     const FormatSettings & format_settings);
 
-std::vector<ConvertedTypedValue> convertTypedColumnRange(
+VectorWithMemoryTracking<ConvertedTypedValue> convertTypedColumnRange(
     const IColumn & column,
     const DataTypePtr & type,
     const VariantMetadata * const * metadata_by_row,

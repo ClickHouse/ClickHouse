@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/VariantReader.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Parquet/VariantUtils.h>
 
 #include <Columns/ColumnArray.h>
@@ -52,7 +54,7 @@ VariantValue makeExactValue(ColumnPtr exact_column, DataTypePtr exact_type, size
     return value;
 }
 
-VariantValue makeArrayValue(std::vector<VariantValue> elements, DataTypePtr exact_type)
+VariantValue makeArrayValue(VectorWithMemoryTracking<VariantValue> elements, DataTypePtr exact_type)
 {
     VariantValue value;
     value.kind = VariantValue::Kind::Array;
@@ -61,7 +63,7 @@ VariantValue makeArrayValue(std::vector<VariantValue> elements, DataTypePtr exac
     return value;
 }
 
-VariantValue makeObjectValue(std::map<String, VariantValue> fields, DataTypePtr exact_type = {})
+VariantValue makeObjectValue(MapWithMemoryTracking<String, VariantValue> fields, DataTypePtr exact_type = {})
 {
     VariantValue value;
     value.kind = VariantValue::Kind::Object;
@@ -70,7 +72,7 @@ VariantValue makeObjectValue(std::map<String, VariantValue> fields, DataTypePtr 
     return value;
 }
 
-VariantValue makeTupleValue(std::vector<std::pair<String, VariantValue>> elements, DataTypePtr exact_type)
+VariantValue makeTupleValue(VectorWithMemoryTracking<std::pair<String, VariantValue>> elements, DataTypePtr exact_type)
 {
     VariantValue value;
     value.kind = VariantValue::Kind::Tuple;
@@ -79,7 +81,7 @@ VariantValue makeTupleValue(std::vector<std::pair<String, VariantValue>> element
     return value;
 }
 
-DataTypePtr tryBuildExactArrayType(const std::vector<VariantValue> & elements)
+DataTypePtr tryBuildExactArrayType(const VectorWithMemoryTracking<VariantValue> & elements)
 {
     DataTypePtr element_type;
     bool has_nulls = false;
@@ -271,7 +273,7 @@ ConvertedTypedValue finalizeConvertedContainer(
     return finalizeConvertedValue(std::move(result), field_name, metadata, metadata_is_shared_across_rows, preserve_empty_containers_in_shared_metadata);
 }
 
-std::vector<ConvertedTypedValue> convertDynamicColumnRange(
+VectorWithMemoryTracking<ConvertedTypedValue> convertDynamicColumnRange(
     const ColumnDynamic & dynamic_column,
     const VariantMetadata * const * metadata_by_row,
     size_t num_rows,
@@ -284,7 +286,7 @@ std::vector<ConvertedTypedValue> convertDynamicColumnRange(
     const auto & variant_column = dynamic_column.getVariantColumn();
     const auto shared_variant_discriminator = dynamic_column.getSharedVariantDiscriminator();
 
-    std::vector<ConvertedTypedValue> result(num_rows);
+    VectorWithMemoryTracking<ConvertedTypedValue> result(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
     {
         if (!metadata_by_row[i])
@@ -333,12 +335,12 @@ std::vector<ConvertedTypedValue> convertDynamicColumnRange(
     return result;
 }
 
-std::map<String, VariantValue> toObjectMap(const VariantValue & value)
+MapWithMemoryTracking<String, VariantValue> toObjectMap(const VariantValue & value)
 {
     if (value.isObject())
         return value.object_fields;
 
-    std::map<String, VariantValue> result;
+    MapWithMemoryTracking<String, VariantValue> result;
     for (const auto & [name, child] : value.tuple_elements)
         result.emplace(name, child);
     return result;
@@ -371,7 +373,7 @@ ConvertedTypedValue combineConvertedValues(
     return finalizeConvertedValue(std::move(result), field_name, metadata, metadata_is_shared_across_rows, preserve_empty_containers_in_shared_metadata);
 }
 
-std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
+VectorWithMemoryTracking<ConvertedTypedValue> convertTypedColumnRangeImpl(
     const IColumn & column,
     const DataTypePtr & type,
     const VariantMetadata * const * metadata_by_row,
@@ -383,7 +385,7 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
     std::optional<std::string_view> field_name,
     size_t depth);
 
-std::vector<ConvertedTypedValue> convertRowwiseAsExactValue(
+VectorWithMemoryTracking<ConvertedTypedValue> convertRowwiseAsExactValue(
     const IColumn & column,
     const DataTypePtr & type,
     const VariantMetadata * const * metadata_by_row,
@@ -394,7 +396,7 @@ std::vector<ConvertedTypedValue> convertRowwiseAsExactValue(
     bool preserve_empty_containers_in_shared_metadata,
     std::optional<std::string_view> field_name)
 {
-    std::vector<ConvertedTypedValue> result(num_rows);
+    VectorWithMemoryTracking<ConvertedTypedValue> result(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
     {
         if (!metadata_by_row[i])
@@ -415,7 +417,7 @@ std::vector<ConvertedTypedValue> convertRowwiseAsExactValue(
     return result;
 }
 
-std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
+VectorWithMemoryTracking<ConvertedTypedValue> convertTypedColumnRangeImpl(
     const IColumn & column,
     const DataTypePtr & type,
     const VariantMetadata * const * metadata_by_row,
@@ -443,7 +445,7 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
     }
 
     if (!has_any_metadata)
-        return std::vector<ConvertedTypedValue>(num_rows);
+        return VectorWithMemoryTracking<ConvertedTypedValue>(num_rows);
 
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
     {
@@ -463,7 +465,7 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
             field_name,
             depth);
 
-        std::vector<ConvertedTypedValue> result(num_rows);
+        VectorWithMemoryTracking<ConvertedTypedValue> result(num_rows);
         for (size_t i = 0; i < num_rows; ++i)
         {
             if (!nullable_column->isNullAt(row_offset + i))
@@ -513,7 +515,7 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
         if (!tuple_column)
             return convertRowwiseAsExactValue(column, type, metadata_by_row, num_rows, row_offset, format_settings, metadata_is_shared_across_rows, preserve_empty_containers_in_shared_metadata, field_name);
 
-        std::vector<ConvertedTypedValue> typed_results;
+        VectorWithMemoryTracking<ConvertedTypedValue> typed_results;
         if (wrapper->typed_value_pos.has_value())
         {
             typed_results = convertTypedColumnRangeImpl(
@@ -530,7 +532,7 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
         }
 
         const auto & value_column = tuple_column->getColumn(wrapper->value_pos);
-        std::vector<ConvertedTypedValue> result(num_rows);
+        VectorWithMemoryTracking<ConvertedTypedValue> result(num_rows);
         for (size_t i = 0; i < num_rows; ++i)
         {
             if (!metadata_by_row[i])
@@ -567,8 +569,8 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
         if (!tuple_column || !tuple_type->hasExplicitNames())
             return convertRowwiseAsExactValue(column, type, metadata_by_row, num_rows, row_offset, format_settings, metadata_is_shared_across_rows, preserve_empty_containers_in_shared_metadata, field_name);
 
-        std::vector<std::vector<std::pair<String, VariantValue>>> tuple_rows(num_rows);
-        std::vector<bool> has_values(num_rows, false);
+        VectorWithMemoryTracking<VectorWithMemoryTracking<std::pair<String, VariantValue>>> tuple_rows(num_rows);
+        VectorWithMemoryTracking<bool> has_values(num_rows, false);
         for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
         {
             const auto & child_name = tuple_type->getNameByPosition(i + 1);
@@ -594,7 +596,7 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
             }
         }
 
-        std::vector<ConvertedTypedValue> result(num_rows);
+        VectorWithMemoryTracking<ConvertedTypedValue> result(num_rows);
         for (size_t row = 0; row < num_rows; ++row)
         {
             if (!metadata_by_row[row])
@@ -628,7 +630,7 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
         size_t begin = row_offset == 0 ? 0 : offsets[row_offset - 1];
         size_t end = offsets[row_offset + num_rows - 1];
 
-        std::vector<const VariantMetadata *> child_metadata;
+        VectorWithMemoryTracking<const VariantMetadata *> child_metadata;
         child_metadata.reserve(end - begin);
         for (size_t row = 0; row < num_rows; ++row)
         {
@@ -649,7 +651,7 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
             std::nullopt,
             depth + 1);
 
-        std::vector<ConvertedTypedValue> result(num_rows);
+        VectorWithMemoryTracking<ConvertedTypedValue> result(num_rows);
         for (size_t row = 0; row < num_rows; ++row)
         {
             if (!metadata_by_row[row])
@@ -658,7 +660,7 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
             size_t element_begin = row == 0 ? begin : offsets[row_offset + row - 1];
             size_t element_end = offsets[row_offset + row];
 
-            std::vector<VariantValue> values;
+            VectorWithMemoryTracking<VariantValue> values;
             values.reserve(element_end - element_begin);
             for (size_t pos = element_begin; pos < element_end; ++pos)
             {
@@ -762,7 +764,7 @@ VariantValue mergeValues(VariantValue base, const VariantValue & patch, const Fo
     return merge_impl(merge_impl, std::move(base), patch, 1);
 }
 
-std::vector<ConvertedTypedValue> convertTypedColumnRange(
+VectorWithMemoryTracking<ConvertedTypedValue> convertTypedColumnRange(
     const IColumn & column,
     const DataTypePtr & type,
     const VariantMetadata * const * metadata_by_row,

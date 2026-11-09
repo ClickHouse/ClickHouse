@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 
@@ -16,8 +17,8 @@ struct VariantWriteAnalysisNode
     size_t object_count = 0;
     size_t array_count = 0;
 
-    std::map<String, std::pair<size_t, DataTypePtr>, std::less<>> scalar_types;
-    std::map<String, VariantWriteAnalysisNode, std::less<>> object_fields;
+    MapWithMemoryTracking<String, std::pair<size_t, DataTypePtr>, std::less<>> scalar_types;
+    MapWithMemoryTracking<String, VariantWriteAnalysisNode, std::less<>> object_fields;
     std::unique_ptr<VariantWriteAnalysisNode> array_child;
 };
 

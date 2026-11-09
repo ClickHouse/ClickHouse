@@ -2,9 +2,11 @@
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/VariantUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <memory>
-#include <unordered_set>
 
 namespace DB
 {
@@ -32,18 +34,18 @@ struct SchemaConverter
     const ReadOptions & options;
     const Block * sample_block;
     const ColumnMapper * column_mapper = nullptr;
-    std::vector<String> external_columns;
+    VectorWithMemoryTracking<String> external_columns;
 
-    std::vector<PrimitiveColumnInfo> primitive_columns;
-    std::vector<ParsedObjectSourceInfo> parsed_object_sources;
-    std::vector<VariantSourceInfo> variant_sources;
-    std::vector<OutputColumnInfo> output_columns;
+    VectorWithMemoryTracking<PrimitiveColumnInfo> primitive_columns;
+    VectorWithMemoryTracking<ParsedObjectSourceInfo> parsed_object_sources;
+    VectorWithMemoryTracking<VariantSourceInfo> variant_sources;
+    VectorWithMemoryTracking<OutputColumnInfo> output_columns;
     size_t variant_source_state_slots = 0;
     size_t variant_metadata_state_slots = 0;
 
     size_t schema_idx = 1;
     size_t primitive_column_idx = 0;
-    std::vector<LevelInfo> levels;
+    VectorWithMemoryTracking<LevelInfo> levels;
     /// Actual recursion depth of processSubtree. Tracked unconditionally because the def-level
     /// counter only advances for OPTIONAL/REPEATED nodes, so REQUIRED-group nesting would bypass it.
     size_t recursion_depth = 0;
@@ -54,13 +56,13 @@ struct SchemaConverter
     size_t nullable_tuple_group_depth = 0;
 
     /// The key is the parquet column name, without ColumnMapper.
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    std::unordered_map<String, String> clickhouse_variant_type_hints;
-    std::unordered_set<String> clickhouse_variant_wrapper_paths;
+    UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
+    UnorderedMapWithMemoryTracking<String, String> clickhouse_variant_type_hints;
+    UnorderedSetWithMemoryTracking<String> clickhouse_variant_wrapper_paths;
     bool has_clickhouse_variant_wrapper_paths_metadata = false;
     /// Dot-joined paths of all elements of the file schema (lowercase if matching is case-insensitive).
     /// Filled only when reading, if some requested column has a dot in its name.
-    std::unordered_set<String> schema_element_paths;
+    UnorderedSetWithMemoryTracking<String> schema_element_paths;
 
     /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
     /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
@@ -68,7 +70,7 @@ struct SchemaConverter
     /// SchemaConverter to re-parse and rethrow. Pass std::nullopt to let SchemaConverter
     /// parse according to its own settings.
     SchemaConverter(const FileFooter &, const ReadOptions &, const Block *,
-                    std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
+                    std::optional<UnorderedMapWithMemoryTracking<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
 
     void prepareForReading();
     NamesAndTypesList inferSchema();
@@ -97,7 +99,7 @@ private:
         bool skip_requested_lookup = false;
         size_t metadata_column_idx = UINT64_MAX;
         size_t metadata_schema_idx = UINT64_MAX;
-        std::vector<LevelInfo> metadata_levels;
+        VectorWithMemoryTracking<LevelInfo> metadata_levels;
         std::shared_ptr<std::optional<size_t>> shared_metadata_primitive;
     };
 
@@ -177,7 +179,7 @@ private:
 
     void checkHasColumns();
     bool hasRequestedDescendantColumn(const String & prefix) const;
-    std::vector<std::pair<size_t, String>> collectRequestedSubcolumns(const String & prefix) const;
+    VectorWithMemoryTracking<std::pair<size_t, String>> collectRequestedSubcolumns(const String & prefix) const;
     void checkSchemaReadDepth(size_t depth) const;
     size_t schemaIdxAfterSubtree(size_t idx, size_t depth) const;
     size_t collectSchemaElementPaths(size_t idx, const String & prefix, size_t depth);
@@ -196,7 +198,7 @@ private:
         const parq::SchemaElement & element,
         size_t parquet_column_idx,
         size_t parquet_schema_idx,
-        const std::vector<LevelInfo> & parent_levels,
+        const VectorWithMemoryTracking<LevelInfo> & parent_levels,
         const String & name,
         bool output_nullable,
         bool preserve_unexpanded_nullable = false);

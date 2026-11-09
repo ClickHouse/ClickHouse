@@ -3,6 +3,9 @@
 
 #if USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Formats/FormatSettings.h>
@@ -13,6 +16,9 @@
 namespace DB
 {
 
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
+
 class ParquetBlockOutputFormat final : public IOutputFormat
 {
 public:
@@ -21,8 +27,8 @@ public:
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
-    std::unordered_map<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
-    std::vector<UInt64> getRowGroupOffsets() const override { return row_group_offsets; }
+    UnorderedMapWithMemoryTracking<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
+    VectorWithMemoryTracking<UInt64> getRowGroupOffsets() const override { return row_group_offsets; }
 
 private:
     struct MemoryToken
@@ -72,7 +78,7 @@ private:
     struct RowGroupState
     {
         size_t tasks_in_flight = 0;
-        std::vector<std::vector<ColumnChunk>> column_chunks;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnChunk>> column_chunks;
         size_t num_rows = 0;
     };
 
@@ -107,8 +113,9 @@ private:
     void writeRowGroupInParallel(Chunks chunks);
     void initializeSchemaForCustomEncoder(const Columns & columns);
 
-    void threadFunction();
+    void threadFunction(ThreadGroupPtr & thread_group);
     void startMoreThreadsIfNeeded(const std::unique_lock<std::mutex> & lock);
+    void stopThreads();
 
     /// Called in single-threaded fashion. Writes to the file.
     void reapCompletedRowGroups(std::unique_lock<std::mutex> & lock);
@@ -127,29 +134,31 @@ private:
     Parquet::VariantWriteTypeHints variant_type_hints;
     Parquet::VariantWriteAnalysisMap variant_write_analysis;
     Parquet::VariantWrapperPaths variant_wrapper_paths;
-    std::vector<Parquet::ColumnChunkWriteStates> prepared_first_row_group_columns;
-    std::optional<std::unordered_map<String, Int64>> column_field_ids;
+    VectorWithMemoryTracking<Parquet::ColumnChunkWriteStates> prepared_first_row_group_columns;
+    std::optional<ColumnNameToFieldId> column_field_ids;
     Parquet::FileWriteState file_state;
-    std::unordered_map<String, size_t> column_sizes_on_disk;
-    std::vector<UInt64> row_group_offsets;
+    UnorderedMapWithMemoryTracking<String, size_t> column_sizes_on_disk;
+    VectorWithMemoryTracking<UInt64> row_group_offsets;
     size_t base_offset = 0; // initial out.count(), just for assert
     bool needs_file_level_variant_analysis = false;
     bool replaying_buffered_input = false;
     std::optional<TemporaryBlockStreamHolder> buffered_input;
 
     std::mutex mutex;
-    std::condition_variable condvar; // wakes up consume()
-    std::unique_ptr<ThreadPool> pool;
+    std::condition_variable condvar; // wakes up consume() and stopThreads()
+    /// Shared by all Parquet writers of the process (`getParquetEncoderThreadPool`).
+    ThreadPool * pool = nullptr;
 
     std::atomic_bool is_stopped{false};
     std::exception_ptr background_exception = nullptr;
 
     /// Invariant: if there's at least one task then there's at least one thread.
+    /// Counts the jobs scheduled on `pool` until they exit, queued ones included.
     size_t threads_running = 0;
     std::atomic<size_t> bytes_in_flight{0};
 
-    std::deque<Task> task_queue;
-    std::deque<RowGroupState> row_groups;
+    DequeWithMemoryTracking<Task> task_queue;
+    DequeWithMemoryTracking<RowGroupState> row_groups;
     FormatFilterInfoPtr format_filter_info;
 };
 
