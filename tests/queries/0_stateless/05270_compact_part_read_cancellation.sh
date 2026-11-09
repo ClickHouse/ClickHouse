@@ -99,8 +99,11 @@ WHERE current_database = currentDatabase() AND query_id = '$cache_query_id'
 
 query_id="compact_read_cancel_${CLICKHOUSE_DATABASE}_$$"
 kill_err="${CLICKHOUSE_TMP}/05270_kill_err.txt"
+# merge_tree_min_read_task_size = 100000: on a remote disk the read pool cuts the part into tasks of
+# about 2 MiB, each delivering its rows, so only a task covering every mark keeps read_rows at 0.
 ${CLICKHOUSE_CLIENT} --query_id "$query_id" \
     --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
+    --merge_tree_min_read_task_size 100000 \
     -q "$read_query" >/dev/null 2>"$kill_err" &
 select_pid=$!
 
@@ -225,6 +228,7 @@ WHERE explain ILIKE '%Name: idx_s%'"
 # merge_tree_generic_exclusion_search_max_steps = 1: no mark can be dropped, and an unlimited
 # search checks every mark against every predicate, which costs many times the read itself. Each
 # retry below repeats the analysis, so on a slow build it outlasts the handshake's polling.
+# merge_tree_min_read_task_size = 100000: as in the compact kill arm.
 # Cancelled by KILL rather than by a deadline, for the reason given above the compact timeout arm:
 # on a loaded runner the work before the read can outlast a fixed limit, so a deadline can expire
 # before the read starts.
@@ -246,7 +250,7 @@ for text_settle in 0 0.25 0.5 1 2 4; do
     ${CLICKHOUSE_CLIENT} --query_id "$text_query_id" \
         --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
         --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 \
-        --merge_tree_generic_exclusion_search_max_steps 1 \
+        --merge_tree_generic_exclusion_search_max_steps 1 --merge_tree_min_read_task_size 100000 \
         -q "$text_query" >/dev/null 2>"$text_err" &
     text_pid=$!
 
