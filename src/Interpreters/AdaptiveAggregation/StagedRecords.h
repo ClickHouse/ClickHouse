@@ -35,10 +35,14 @@ namespace DB
 /// numeric key used as an argument shares its key bytes instead of occupying another field.
 struct AdaptiveArgumentLayout
 {
-    /// The producers stage the normalized argument values (`LowCardinality` removed, constant, sparse and replicated
-    /// columns read as full ones), so the layout follows the types without `LowCardinality`.
-    static std::unique_ptr<const AdaptiveArgumentLayout>
-    build(const Block & header, const ColumnNumbers & keys_positions, const ColumnNumbersList & aggregates_positions);
+    /// The producers stage the normalized argument values (`LowCardinality` removed, constant, sparse and
+    /// replicated columns read as full ones), so the layout follows the types without `LowCardinality`.
+    /// `with_multiplicity` tells that a record may stand for several rows (see `multiplicity_offset`).
+    static std::unique_ptr<const AdaptiveArgumentLayout> build(
+        const Block & header,
+        const ColumnNumbers & keys_positions,
+        const ColumnNumbersList & aggregates_positions,
+        bool with_multiplicity);
 
     struct FixedField
     {
@@ -54,8 +58,25 @@ struct AdaptiveArgumentLayout
         DataTypePtr type;
     };
 
+    /// Where a record with its fixed-size arguments at `fixed_arguments` keeps the number of rows it stands
+    /// for, as a `UInt32`, and the reading and writing of that number. The caller guarantees that the records
+    /// carry a multiplicity.
+    char * multiplicityPosition(char * fixed_arguments) const { return fixed_arguments + *multiplicity_offset; }
+    UInt32 multiplicityOf(const char * fixed_arguments) const
+    {
+        return unalignedLoad<UInt32>(fixed_arguments + *multiplicity_offset);
+    }
+    void setMultiplicity(char * fixed_arguments, UInt32 rows) const
+    {
+        unalignedStore<UInt32>(multiplicityPosition(fixed_arguments), rows);
+    }
+
     std::vector<FixedField> fixed_fields;
     std::vector<Field> variable_fields;
+    /// When a record may stand for several rows, as the record of a row selection with a `count` among the
+    /// selecting aggregates (see `AdaptiveRowSelection`): where it keeps that number, as a `UInt32` after the
+    /// fixed-size arguments.
+    std::optional<size_t> multiplicity_offset;
     /// Whether every variable-size argument is staged as a `String` (see `isStagedString`), which the records of a
     /// fixed-width key stage without a header (see `StagedStringArgumentRecord`).
     bool variable_fields_are_strings = false;
@@ -170,10 +191,10 @@ inline bool isStagedString(const AdaptiveArgumentLayout::Field & field)
 /// arguments, `key_offset` and `fixed_arguments_offset`. The key formats are empty types, and the argument formats
 /// carry the size of the query's fixed-size argument area.
 
-/// Count and key-only records: {[UInt64 hash,] [UInt32 count,] [UInt32 size,] key}. The count is
-/// a contribution within one block, which a UInt32 holds. A key whose width varies is staged with
-/// the hash and its UInt32 size; a fixed-width key has the compile-time width, so its records
-/// have a fixed stride, and carries no hash.
+/// Count and key-only records: {[UInt64 hash,] [UInt32 count,] [UInt32 size,] key}. The count is the rows of
+/// one producer that combined into the record (see `AdaptivePartitionTails`), which stop at the UInt32
+/// maximum. A key whose width varies is staged with the hash and its UInt32 size; a fixed-width key has the
+/// compile-time width, so its records have a fixed stride, and carries no hash.
 template <typename Key, bool with_count_>
 struct StagedKeyRecord
 {
@@ -211,6 +232,8 @@ struct StagedKeyRecord
             return table.hash(unalignedLoad<Key>(record + key_offset));
     }
 
+    /// Where a count record keeps its count, as a `UInt32`, and the count.
+    static char * countPosition(char * record) { return record + count_offset; }
     static UInt32 count(const char * record) { return unalignedLoad<UInt32>(record + count_offset); }
 
 private:

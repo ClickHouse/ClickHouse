@@ -10,8 +10,11 @@
 namespace DB
 {
 
-std::unique_ptr<const AdaptiveArgumentLayout>
-AdaptiveArgumentLayout::build(const Block & header, const ColumnNumbers & keys_positions, const ColumnNumbersList & aggregates_positions)
+std::unique_ptr<const AdaptiveArgumentLayout> AdaptiveArgumentLayout::build(
+    const Block & header,
+    const ColumnNumbers & keys_positions,
+    const ColumnNumbersList & aggregates_positions,
+    bool with_multiplicity)
 {
     auto layout = std::make_unique<AdaptiveArgumentLayout>();
     std::vector<UInt8> staged;
@@ -48,6 +51,11 @@ AdaptiveArgumentLayout::build(const Block & header, const ColumnNumbers & keys_p
                 layout->variable_fields.push_back({.position = position, .type = std::move(type)});
         }
     layout->variable_fields_are_strings = std::ranges::all_of(layout->variable_fields, isStagedString);
+    if (with_multiplicity)
+    {
+        layout->multiplicity_offset = layout->fixed_bytes;
+        layout->fixed_bytes += sizeof(UInt32);
+    }
     return layout;
 }
 
