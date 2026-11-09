@@ -18,7 +18,7 @@ AdaptiveTopKPruning::ProducerBins AdaptiveTopKPruning::finalizeProducerCounts(Ad
     return producer;
 }
 
-bool AdaptiveTopKPruning::prepare(size_t expected_producers)
+void AdaptiveTopKPruning::orderBuckets()
 {
     if (producer_bins.size() + merge_counted_tables.size() != expected_producers)
         return false;

@@ -297,7 +297,7 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     /// The bins of a producer that froze take the rows of its own table as well, whatever its phase now. A producer
     /// that never froze has no bins and hands its table over instead, which the adaptive merge counts. An aggregation in
     /// which no producer froze takes the adaptive merge only where the pruning pays for it (see
-    /// `prepareAdaptiveTopKPruning`); the ordinary merge does not prune.
+    /// `mergePrunesByTopK`); the ordinary merge does not prune.
     AdaptiveTopKCountBins * count_bins = adaptive.count_bins.isAllocated() ? &adaptive.count_bins : nullptr;
 
     /// A producer that never froze measures the largest count of each bucket of its table, by which the pruning merges
@@ -372,10 +372,39 @@ void Aggregator::prepareAdaptiveTopKPruning(
     if (!pruning)
         return;
 
-    const bool pays_without_freeze = adaptiveTopKPrunesWithoutFreeze() && shared.unindexed_tables == 0
-        && shared.table_cells >= std::max(adaptive_merge_unit_records, pruning->getLimit() * ADAPTIVE_AGGREGATION_NUM_BUCKETS);
-    if (external_merge || collects_statistics || !(shared.engaged() || pays_without_freeze) || !pruning->prepare(producers))
+    if (mergePrunesByTopK(shared, *pruning, producers, external_merge, collects_statistics))
+        pruning->orderBuckets();
+    else
         pruning.reset();
+}
+
+bool Aggregator::mergePrunesByTopK(
+    const AdaptiveAggregationSession & shared,
+    const AdaptiveTopKPruning & pruning,
+    size_t producers,
+    bool external_merge,
+    bool collects_statistics) const
+{
+    /// An external merge reads back rows that nothing counted, and a merge that collects the runtime dataflow
+    /// statistics needs every group converted.
+    if (external_merge || collects_statistics)
+        return false;
+
+    /// The bounds need the rows of every producer, in its count bins or in its table. A producer without the
+    /// adaptive context, another aggregator of a mixed projection pipeline, handed over neither.
+    if (!pruning.countsEveryProducer(producers))
+        return false;
+
+    /// Only the bucket merge prunes, and it runs anyway once some producer froze.
+    if (shared.engaged())
+        return true;
+
+    /// Without a freeze, the bucket merge has to pay for itself. It does where it skips the merge of heavy
+    /// states (see `adaptiveTopKPrunesWithoutFreeze`), where it can read every table through its cell index,
+    /// which the string table lacks, and where the top keeps a small part of the groups: the tables hold at
+    /// least as many cells per bucket as the top keeps groups, and a merge unit's worth in all.
+    const size_t min_table_cells = std::max(adaptive_merge_unit_records, pruning.getLimit() * ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+    return adaptiveTopKPrunesWithoutFreeze() && shared.unindexed_tables == 0 && shared.table_cells >= min_table_cells;
 }
 
 UInt32 AdaptiveAggregationSession::bucketToMerge(UInt32 claim) const

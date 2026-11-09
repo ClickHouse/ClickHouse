@@ -69,7 +69,7 @@ private:
 /// staged nothing, so its table is its whole contribution: it hands the table over without bins, with the largest count
 /// of each bucket where the pruning can run without a freeze, and the merge of each bucket adds the table's groups in
 /// the bucket to the bucket's bounds. An aggregation in which no producer froze takes the adaptive merge for the pruning
-/// too when the pruning pays for its buckets (see `Aggregator::prepareAdaptiveTopKPruning`), and the merge reads the
+/// too when the pruning pays for its buckets (see `Aggregator::mergePrunesByTopK`), and the merge reads the
 /// tables through their cell indexes. Summed over the producers, a bin bounds the count of every group in it from
 /// above: a row adds one to a group's count at most, and merging adds the counts of the merged groups for `count`, or at
 /// most adds them for the distinct count of `uniqExact`, as a union has no more elements than its parts together. The
@@ -136,11 +136,15 @@ public:
         return std::ranges::find(merge_counted_tables, &table) != merge_counted_tables.end();
     }
 
-    /// Called after the finish barrier, before the merge starts. Checks that `expected_producers` handed their bins or
-    /// their tables over, which the bounds rely on, and orders the buckets for the merge by the bounds of the bins and the
-    /// largest counts that the tables brought. A table without them is not in this order, which only lets the threshold
-    /// rise later. Returns false if some producer handed over neither: the pruning cannot be used then.
-    bool prepare(size_t expected_producers);
+    /// Whether all `producers` handed their bins or their tables over, which the bounds rely on: if some
+    /// producer handed over neither, the pruning cannot be used. Called after the finish barrier, before the
+    /// merge starts.
+    bool countsEveryProducer(size_t producers) const { return producer_bins.size() + merge_counted_tables.size() == producers; }
+
+    /// Orders the buckets for the merge by their bounds, `count_bound_per_bucket`. A table without the
+    /// largest counts of its buckets is not in this order, which only lets the threshold rise later. Called
+    /// once, after the finish barrier and before the merge starts.
+    void orderBuckets();
 
     /// The bucket that the merge claim `claim` takes: the buckets with the largest bounds come first.
     UInt32 bucketToMerge(UInt32 claim) const { return bucket_order[claim]; }
