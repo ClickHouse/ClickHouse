@@ -40,8 +40,15 @@ class FuzzerLogParser:
     SANITIZER_OOM_RE = re.compile(
         r"out-of-memory|out of memory|failed to allocate|allocation-size-too-big"
     )
-    # A `<Fatal>` record of a server log: its thread and query ids, its logger and its message.
-    FATAL_RECORD_RE = re.compile(r"\[ *(\d+) *\] \{([^}]*)\} <Fatal> ([^:]*): ?(.*)")
+    # A `<Fatal>` or `<Error>` record of a server log: its thread and query ids, its level,
+    # its logger and its message.
+    FAILURE_RECORD_RE = re.compile(
+        r"\[ *(\d+) *\] \{([^}]*)\} <(Fatal|Error)> ([^:]*): ?(.*)"
+    )
+    # A logical exception the server survived is logged at `<Error>` with this in its message.
+    LOGICAL_ERROR_MARKER = "Logical error:"
+    # Where the exception message ends: the error code in parentheses follows it.
+    EXCEPTION_MESSAGE_END_RE = re.compile(r"\. \([A-Z_]+\)")
     # The thread and the query a crash report is about (`SignalListener::onFault`).
     FAULTING_QUERY_RE = re.compile(
         r"\(from thread (\d+)\) (?:\(no query\)|\(query_id: ([^)]*)\))"
@@ -868,31 +875,52 @@ class FuzzerLogParser:
         )
 
     @staticmethod
-    def count_fatal_failures(log) -> int:
-        """The failures that the `<Fatal>` records of one server log hold: one per crash report,
-        and one per run of other records of a thread and query, such as an oracle mismatch. The
-        records of the thread that writes a crash report belong to it, and so do those of the
-        query and thread it is about, such as the message of the logical exception that aborted."""
+    def count_server_log_failures(log) -> int:
+        """The failures that the records of one server log hold. At `<Fatal>`: one per crash
+        report, and one per run of other records of a thread and query, such as an oracle
+        mismatch. At `<Error>`: one per distinct message of a logical exception the server
+        survived, which is logged again on every retry. The records of the thread that writes a
+        crash report belong to it, and so do those of the query and thread it is about, such as
+        the message of the logical exception that aborted."""
         records = []
+        logical_errors = []
         report_threads = set()
         faulting_queries = set()
         crashes = 0
-        # Only the `<Fatal>` lines are read: the log itself can be gigabytes.
-        fatal_lines = subprocess.run(
-            ["rg", "--text", "--search-zip", "--fixed-strings", "<Fatal>", str(log)],
+        # Only the candidate lines are read: the log itself can be gigabytes.
+        candidate_lines = subprocess.run(
+            [
+                "rg",
+                "--text",
+                "--search-zip",
+                "--fixed-strings",
+                "-e",
+                "<Fatal>",
+                "-e",
+                FuzzerLogParser.LOGICAL_ERROR_MARKER,
+                str(log),
+            ],
             capture_output=True,
             text=True,
             errors="replace",
             check=False,
         )
-        if fatal_lines.returncode > 1:
-            raise RuntimeError(f"Cannot read {log}: {fatal_lines.stderr}")
-        for line in fatal_lines.stdout.splitlines():
-            m = FuzzerLogParser.FATAL_RECORD_RE.search(line)
+        if candidate_lines.returncode > 1:
+            raise RuntimeError(f"Cannot read {log}: {candidate_lines.stderr}")
+        for line in candidate_lines.stdout.splitlines():
+            m = FuzzerLogParser.FAILURE_RECORD_RE.search(line)
             if not m:
                 continue
-            thread, query, logger, message = m.groups()
-            if FuzzerLogParser.CRASH_REPORT_START in message:
+            thread, query, level, logger, message = m.groups()
+            if level == "Error":
+                # Only the record's own message: the query it quotes may contain any text.
+                for marker in FuzzerLogParser.QUERY_TEXT_MARKERS:
+                    message = message.split(marker, 1)[0]
+                _, found, text = message.partition(FuzzerLogParser.LOGICAL_ERROR_MARKER)
+                if found:
+                    text = FuzzerLogParser.EXCEPTION_MESSAGE_END_RE.split(text, 1)[0]
+                    logical_errors.append((thread, query, re.sub(r"\d+", "N", text.strip())))
+            elif FuzzerLogParser.CRASH_REPORT_START in message:
                 crashes += 1
                 report_threads.add(thread)
             elif fault := FuzzerLogParser.FAULTING_QUERY_RE.search(message):
@@ -908,18 +936,23 @@ class FuzzerLogParser:
             if record[0] not in report_threads and record not in faulting_queries:
                 standalone += record != previous
             previous = record
-        return crashes + standalone
+        survived = {
+            text
+            for thread, query, text in logical_errors
+            if thread not in report_threads and (thread, query) not in faulting_queries
+        }
+        return crashes + standalone + len(survived)
 
     @staticmethod
     def count_failure_reports(err_logs, stderr_log) -> int:
         """The failures that the logs of one process hold over all its restarts: those of the
-        `<Fatal>` records in each of its `err_logs`, and one per sanitizer report in `stderr_log`.
-        A sanitizer report never comes with a crash report: the sanitizer resets the signal
+        `<Fatal>` and logical-exception `<Error>` records in each of its `err_logs`, and one per
+        sanitizer report in `stderr_log`. A sanitizer report never comes with a crash report: the sanitizer resets the signal
         handlers before it aborts (`sanitizerDeathCallback`), so the two count different failures."""
         total = 0
         for path in err_logs:
             if path and Path(path).is_file():
-                total += FuzzerLogParser.count_fatal_failures(path)
+                total += FuzzerLogParser.count_server_log_failures(path)
         if stderr_log and Path(stderr_log).is_file():
             total += FuzzerLogParser.count_sanitizer_reports(stderr_log)
         return total

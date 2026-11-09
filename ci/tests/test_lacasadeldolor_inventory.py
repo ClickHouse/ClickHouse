@@ -62,3 +62,26 @@ def test_complete_deadly_signal_keeper_report_is_counted_once(tmp_path):
 
     assert [n for n, _ in failures] == [failures[0][0]]
     assert _known_issue_passes(failures)
+
+
+def test_survived_logical_error_next_to_known_server_report_blocks_pass(tmp_path):
+    # `dolor.py` fails the run on a logical exception at `<Error>`, but the parser names the ASan
+    # report, so the inventory must count the exception for no issue of that report to pass it.
+    logical_error = (
+        "2026.11.09 10:00:01.000000 [ 2001 ] {q7} <Error> executeQuery: Code: 190. DB::Exception: "
+        "Logical error: Sizes of nested columns are inconsistent: 3 and 4. "
+        "(SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT) (version 26.11.1.1) (in query: SELECT 1)\n"
+    )
+    for name in ("server.log", "server.err.log"):
+        (tmp_path / name).write_text(_READY + logical_error, encoding="utf-8")
+    (tmp_path / "stderr.log").write_text(_asan("ServerKnown", 12), encoding="utf-8")
+    (tmp_path / "fuzzerout.sql").write_text("SELECT 1;\n", encoding="utf-8")
+    named = dolor._parse_logs(tmp_path / "server.log", tmp_path / "stderr.log", tmp_path / "fuzzerout.sql")
+    failures = dolor._all_failures(
+        [named], None, tmp_path, tmp_path / "stderr.log", tmp_path / "fuzzerout.sql"
+    )
+    failures = [(r.name, r.info) for r in failures]
+
+    assert failures[0][0].startswith("AddressSanitizer")
+    assert "the server logged 2 reports, 1 named" in failures[-1][1]
+    assert not _known_issue_passes(failures)

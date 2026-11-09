@@ -143,6 +143,25 @@ def test_oracle_mismatch_next_to_known_sanitizer_report_blocks_pass(tmp_path, mo
     assert not _known_issue_passes(failures)
 
 
+
+_SURVIVED_LOGICAL_ERROR = (
+    "2026.11.09 10:00:00.000000 [ 2001 ] {q7} <Error> executeQuery: Code: 190. DB::Exception: "
+    "Logical error: Sizes of nested columns are inconsistent: 3 and 4. "
+    "(SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT) (version 26.11.1.1) (in query: SELECT 1)\n"
+)
+
+
+def test_survived_logical_error_next_to_known_sanitizer_report_blocks_pass(tmp_path, monkeypatch):
+    # A logical exception that does not abort is logged at `<Error>`, and the parser names the
+    # ASan report, so no issue of the ASan report may pass the run over the exception.
+    failures = _triaged_failures(
+        tmp_path, monkeypatch, _asan("ClientKnown", 11), _SURVIVED_LOGICAL_ERROR
+    )
+
+    assert failures[0][0].startswith("AddressSanitizer")
+    assert "logged 2 reports, 1 named" in failures[-1][1]
+    assert not _known_issue_passes(failures)
+
 _DEADLY_SIGNAL = "AddressSanitizer:DEADLYSIGNAL\n"
 
 

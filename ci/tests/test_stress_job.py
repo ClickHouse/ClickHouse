@@ -256,10 +256,10 @@ def test_oracle_mismatch_alone_adds_no_inventory_failure(tmp_path):
 def _fatal_failures(tmp_path, text):
     log = tmp_path / "server.err.log"
     log.write_text(text, encoding="utf-8")
-    return FuzzerLogParser.count_fatal_failures(log)
+    return FuzzerLogParser.count_server_log_failures(log)
 
 
-def test_count_fatal_failures(tmp_path):
+def test_count_server_log_failures(tmp_path):
     watchdog = (
         "2026.09.04 00:45:00.000000 [ 7 ] {} <Fatal> Application: Child process was "
         "terminated by signal 6.\n"
@@ -272,6 +272,45 @@ def test_count_fatal_failures(tmp_path):
     # Two oracle mismatches of different queries of one thread.
     assert _fatal_failures(tmp_path, _ORACLE_MISMATCH_LOG + other_query) == 2
     assert _fatal_failures(tmp_path, watchdog) == 0
+
+
+def _survived_logical_error(sizes, thread=2001, query="q7"):
+    # A logical exception that does not abort: the server logs it at `<Error>` and goes on.
+    return (
+        f"2026.09.04 00:44:50.000000 [ {thread} ] {{{query}}} <Error> executeQuery: Code: 190. "
+        "DB::Exception: Logical error: Sizes of nested columns are inconsistent: "
+        f"{sizes}. (SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT) (version 26.11.1.1) "
+        "(in query: SELECT 1), Stack trace (when copying this message, always include the lines below):\n"
+    )
+
+
+def test_count_survived_logical_errors(tmp_path):
+    # A retry logs the same exception again, with other values: one failure.
+    retried = _survived_logical_error("3 and 4") + _survived_logical_error("5 and 6", 2002, "")
+    assert _fatal_failures(tmp_path, retried) == 1
+    other = retried.replace("Sizes of nested columns", "Columns sizes")
+    assert _fatal_failures(tmp_path, retried + other) == 2
+    # Only the record's own message counts, not the query it quotes.
+    quoted = (
+        "2026.09.04 00:44:50.000000 [ 2001 ] {q7} <Error> executeQuery: Code: 62. "
+        "DB::Exception: Syntax error. (SYNTAX_ERROR) (in query: SELECT 'Logical error: x')\n"
+    )
+    assert _fatal_failures(tmp_path, quoted) == 0
+    # The exception of the query that then crashed belongs to its crash report.
+    same_query = _survived_logical_error("3 and 4", 1068, "q")
+    assert _fatal_failures(tmp_path, same_query + _logical_error_log("A")) == 1
+    assert _fatal_failures(tmp_path, _survived_logical_error("3 and 4") + _logical_error_log("A")) == 2
+
+
+def test_survived_logical_error_next_to_sanitizer_report_blocks_known_issue_pass(tmp_path):
+    # The ASan report wins the classification, and an independent logical exception the server
+    # survived must keep the run red: no issue of the ASan report covers it.
+    pairs = [_pair(tmp_path, "main", _UNKNOWN_LOG + _survived_logical_error("3 and 4"), _ASAN_STDERR)]
+    omitted = []
+    results = select_replica_failures(pairs, omitted)
+
+    assert [n for n, _, _ in results][0].startswith("AddressSanitizer")
+    assert "main logged 2 reports, 1 named" in _inventory(omitted)[0][1]
 
 
 _DEADLY_SIGNAL = "AddressSanitizer:DEADLYSIGNAL\n"
