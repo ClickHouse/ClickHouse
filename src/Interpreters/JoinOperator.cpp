@@ -461,8 +461,8 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
-    /// `QueryPlanSerializationSettings` is a strict named schema, so the name goes on the wire only towards a peer
-    /// that knows it. An older peer has no block nested loop join at all: it behaves as with the setting disabled.
+    /// Before version 21 a reader of `QueryPlanSerializationSettings` threw on an unknown name, so the name goes on
+    /// the wire only towards a peer that knows it. An older peer has no block nested loop join at all: it behaves as with the setting disabled.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN)
         settings[QueryPlanSerializationSetting::allow_block_nested_loop_join] = allow_block_nested_loop_join;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -515,8 +515,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
     settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join] = enable_software_prefetch_in_join;
-    /// `QueryPlanSerializationSettings` is a strict named schema, so this name may go on the wire only
-    /// towards a peer whose version knows it. Dropping it is not enough to make a downgraded plan safe:
+    /// Before version 21 a reader of `QueryPlanSerializationSettings` threw on an unknown name, so this name may
+    /// go on the wire only towards a peer whose version knows it. Dropping it is not enough to make a downgraded plan safe:
     /// a peer below that version keeps the old contract for the settings it does know, so a plan that
     /// depends on the unified spill trigger has to be refused rather than executed with the old meaning.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS)

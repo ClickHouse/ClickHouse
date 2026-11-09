@@ -1,0 +1,61 @@
+-- HAVING: groups 70 and 90, totals 160 because the dropped group is excluded
+2	70
+3	90
+
+0	160
+2	70
+3	90
+
+0	160
+2	70
+3	90
+
+0	160
+-- no HAVING, so the step carries no ActionsDAG: three groups, totals 210
+1	50
+2	70
+3	90
+
+0	210
+1	50
+2	70
+3	90
+
+0	210
+1	50
+2	70
+3	90
+
+0	210
+-- totals_mode = before_having: the same two groups, but totals 210
+2	70
+3	90
+
+0	210
+2	70
+3	90
+
+0	210
+2	70
+3	90
+
+0	210
+-- WITH ROLLUP WITH TOTALS: the step is not final
+0	210
+1	50
+2	70
+3	90
+
+0	210
+0	210
+1	50
+2	70
+3	90
+
+0	210
+0	210
+1	50
+2	70
+3	90
+
+0	210

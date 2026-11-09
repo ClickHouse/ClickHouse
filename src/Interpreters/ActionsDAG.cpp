@@ -1704,6 +1704,13 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(
     remove_filter_column = true;
 }
 
+ColumnConstPtr ActionsDAG::tryFoldPredicateThroughMaterialize(const Node * node)
+{
+    FoldCache fold_cache;
+    auto folded = tryFoldPredicate(node, fold_cache);
+    return folded ? folded->column : nullptr;
+}
+
 void ActionsDAG::deduplicateSubtrees()
 {
     auto ec = buildStructuralEquivalenceClasses(*this);
