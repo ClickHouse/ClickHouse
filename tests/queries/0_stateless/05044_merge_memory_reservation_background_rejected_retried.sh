@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# The scenario observes background retries across fixed windows of about 30 seconds in total, which is
+# above the time budget of the fast test.
 # Regression test for the background admission path of the merge memory reservation
 # (StorageMergeTree::selectPartsToMerge): while one ordinary background merge holds its reservation,
 # a second ordinary background merge whose estimate does not fit under
