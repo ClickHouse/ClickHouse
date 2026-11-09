@@ -71,6 +71,27 @@
     });
   }
 
+  // The shared ClickStack tree contains managed and OSS documentation, so
+  // Mintlify's tree ownership alone cannot identify the active product link.
+  function syncClickStackActiveItem() {
+    var prefix = BASE + (currentLocale() ? '/' + currentLocale() : '');
+    var path = window.location.pathname.slice(prefix.length).replace(/\/$/, '');
+    if (path !== '/clickstack' && path.indexOf('/clickstack/') !== 0) return;
+
+    var managed = path === '/clickstack/observability' || path.indexOf('/clickstack/observability/') === 0;
+    document.querySelectorAll('a.nav-dropdown-item, a.mobile-nav-tabs-item').forEach(function (a) {
+      var href = new URL(a.href, window.location.origin).pathname.replace(/\/$/, '');
+      var isManaged = href === prefix + '/clickstack/observability';
+      var isOSS = href === prefix + '/clickstack';
+      if (!isManaged && !isOSS) return;
+      if (managed === isManaged) {
+        if (a.getAttribute('aria-current') !== 'location') a.setAttribute('aria-current', 'location');
+      } else {
+        a.removeAttribute('aria-current');
+      }
+    });
+  }
+
   // ── Mobile section header styling ─────────────────────────────────────────
   var SECTION_HEADERS = ['ClickHouse', 'Deployments', 'Applications', 'Open source'];
 
@@ -243,6 +264,7 @@
     setupHomepageNavbar();
     patchTabButtons();
     styleDropdownHeaders();
+    syncClickStackActiveItem();
     markNavbarReady();
 
     // Debounce the observer so rapid React re-renders don't thrash the main
@@ -258,6 +280,7 @@
         updateLogoTheme();
         patchTabButtons();
         styleDropdownHeaders();
+        syncClickStackActiveItem();
         markNavbarReady();
       });
     });
@@ -266,6 +289,7 @@
     window.addEventListener('resize', patchTabButtons);
     window.addEventListener('mintlify:navigate', function () {
       renderedPath = window.location.pathname;
+      syncClickStackActiveItem();
       applyHomepageClass();
       setupHomepageNavbar();
       markNavbarReady();
