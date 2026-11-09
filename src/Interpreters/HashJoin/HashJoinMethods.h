@@ -4,13 +4,11 @@
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/HashJoin/JoinFeatures.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
-#include <Interpreters/HashJoin/KnownRowsHolder.h>
 #include <Interpreters//HashJoin/JoinUsedFlags.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 #include <base/types.h>
-#include <span>
 
 namespace DB
 {
@@ -36,52 +34,6 @@ public:
         bool is_join_get = false);
 
 private:
-    using Tables = std::span<const std::unique_ptr<HashJoinTable>>;
-
-    template <typename AddedColumns>
-    static size_t switchJoinRightColumns(
-        Tables tables,
-        AddedColumns & added_columns,
-        const ScatteredBlock::Selector & selector,
-        HashJoin::Type type,
-        JoinStuff::JoinUsedFlags & used_flags);
-
-    template <HashJoin::Type TYPE, typename AddedColumns>
-    static size_t joinRightColumnsSwitchNullability(
-        Tables tables,
-        AddedColumns & added_columns,
-        const ScatteredBlock::Selector & selector,
-        JoinStuff::JoinUsedFlags & used_flags);
-
-    template <HashJoin::Type TYPE, bool need_filter, typename AddedColumns>
-    static size_t joinRightColumnsSwitchMultipleDisjuncts(
-        Tables tables,
-        AddedColumns & added_columns,
-        const ScatteredBlock::Selector & selector,
-        JoinStuff::JoinUsedFlags & used_flags);
-
-    /// Joins right table columns which indexes are present in right_indexes using specified map.
-    /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
-    /// `fast_path` compiles out the per-row null-map and join-mask checks for the common case of
-    /// non-nullable keys and no ON-section condition (the checks are done at runtime otherwise).
-    /// With `flag_per_row`, `tables` holds one table per ON disjunct and the used flags are per right row. Without it, there is one table.
-    template <HashJoin::Type TYPE, bool need_filter, bool fast_path, bool flag_per_row, typename AddedColumns>
-    static size_t joinRightColumns(
-        std::conditional_t<flag_per_row, Tables, const HashJoinTable &> tables,
-        AddedColumns & added_columns,
-        JoinStuff::JoinUsedFlags & used_flags,
-        const ScatteredBlock::Selector::Range & selector);
-
-    /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
-    template <HashJoin::Type TYPE, typename AddedColumns>
-    static size_t joinRightColumnsWithAdditionalFilter(
-        Tables tables,
-        AddedColumns & added_columns,
-        JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
-        const ScatteredBlock::Selector & selector,
-        bool need_filter [[maybe_unused]],
-        bool flag_per_row [[maybe_unused]]);
-
     /// Cut first num_rows rows from block in place and returns block with remaining rows
     static Block sliceBlock(Block & block, size_t num_rows);
 

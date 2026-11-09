@@ -115,7 +115,7 @@ private:
 /// `AggregateFunction` state is an empty state that silently contributes nothing where the
 /// original plan counts rows - so push-left forbids `isRightOrFull` kinds and push-right
 /// forbids `isLeftOrFull` (`Full`, `Cross`, `Comma` and `Paste` never qualify).
-/// Per strictness (multiplicities verified against `processMatch` in `HashJoinMethodsImpl.h`):
+/// Per strictness (multiplicities verified against `JoinProbe::MatchRules` in `JoinRightColumnsImpl.h`):
 /// - `All`: a pushed row is emitted once per matching other-side row (or once default-extended
 ///   for an outer kind) - a function of its join-condition columns only, which are all partial
 ///   group keys, so groups are duplicated uniformly and the merge above restores the result.
