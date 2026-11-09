@@ -403,6 +403,9 @@ bool convertLogicalJoinToPhysical(
     const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+/// Tells each join below an aggregation or a window function the keys that step would like its input partitioned by,
+/// see `JoinStepLogical::getPartitionKeysAbove`.
+void markJoinPartitionKeysAbove(QueryPlan::Node & root);
 
 /// Convert an OUTER join whose null-extended rows cannot survive above it, when the proof comes from
 /// arbitrarily higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).

@@ -245,6 +245,12 @@ struct QueryGraph
         UInt64 compared_with = 0;
     };
     std::vector<DistributionColumn> distribution_columns;
+    /// Input columns that the step above the graph would like its input partitioned by, see
+    /// `JoinStepLogical::getPartitionKeysAbove`. A plan of all relations partitioned by one of them saves that step an
+    /// exchange, so DPsub keeps such plans.
+    std::vector<JoinActionRef> partition_columns_above;
+    /// The step above aggregates before it exchanges its input.
+    bool partition_above_aggregates = false;
     /// The bytes a broadcast may replicate to every node, see `distributed_plan_max_bytes_to_broadcast`; 0 for no limit.
     UInt64 max_bytes_to_broadcast = 0;
 

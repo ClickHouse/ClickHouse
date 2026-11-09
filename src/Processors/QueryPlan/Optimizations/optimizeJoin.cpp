@@ -18,8 +18,10 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/JoinGraphStep.h>
@@ -320,6 +322,8 @@ struct QueryGraphBuilder
 
     /// See `QueryGraph::probe_keys_within_preserved_side`.
     bool probe_keys_within_preserved_side = false;
+    /// See `JoinStepLogical::getPartitionKeysAbove`.
+    JoinStepLogical::PartitionKeysAbove partition_keys_above;
 
     /// Outer joined relation should be joined after all other relations involved in its join expressions.
     /// It is joined with specified join kind.
@@ -2033,6 +2037,22 @@ std::vector<QueryGraph::DistributionColumn> distributionColumns(
     return columns;
 }
 
+/// The input columns of the graph that the output columns `keys` pass through unchanged.
+std::vector<JoinActionRef> partitionColumnsAbove(
+    const Names & keys, const ActionsDAG & global_actions_dag, const JoinExpressionActions & global_expression_actions)
+{
+    std::vector<JoinActionRef> columns;
+    for (const auto & key : keys)
+    {
+        const auto * node = global_actions_dag.tryFindInOutputs(key);
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        if (node && node->type == ActionsDAG::ActionType::INPUT)
+            columns.emplace_back(node, global_expression_actions);
+    }
+    return columns;
+}
+
 bool JoinOrderPlanBuilder::selectSetSplits(
     QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, size_t splits_per_set,
     size_t max_set_joins, String & reason)
@@ -2706,6 +2726,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 query_graph.max_bytes_to_broadcast = optimization_settings.distributed_plan_max_bytes_to_broadcast;
                 query_graph.distribution_columns = distributionColumns(
                     query_graph, *global_actions_dag, global_expression_actions, query_graph_builder.inputs);
+                query_graph.partition_columns_above = partitionColumnsAbove(
+                    query_graph_builder.partition_keys_above.keys, *global_actions_dag, global_expression_actions);
+                query_graph.partition_above_aggregates = query_graph_builder.partition_keys_above.aggregation;
             }
         }
     }
@@ -2936,6 +2959,87 @@ static bool joinGraphHasOverlappingColumnNames(
     return false;
 }
 
+namespace
+{
+
+/// The keys a step would like its input partitioned by, as Cascades can use them: the single keys of an aggregation that
+/// may run as a shuffle aggregation, or the one partition key of a window function.
+std::optional<JoinStepLogical::PartitionKeysAbove> partitionKeysOf(const IQueryPlanStep & step)
+{
+    if (const auto * aggregating = typeid_cast<const AggregatingStep *>(&step))
+    {
+        const auto & params = aggregating->getParams();
+        if (params.keys.empty() || aggregating->isGroupingSets() || params.overflow_row || params.max_rows_to_group_by != 0)
+            return std::nullopt;
+        return JoinStepLogical::PartitionKeysAbove{.keys = params.keys, .aggregation = true};
+    }
+    if (const auto * window = typeid_cast<const WindowStep *>(&step))
+    {
+        const auto & partition_by = window->getWindowDescription().partition_by;
+        if (partition_by.size() != 1)
+            return std::nullopt;
+        return JoinStepLogical::PartitionKeysAbove{.keys = {partition_by.front().column_name}, .aggregation = false};
+    }
+    return std::nullopt;
+}
+
+/// The name a column has below an expression or a filter step, if the step passes it through unchanged.
+std::optional<String> inputNameOf(const IQueryPlanStep & step, const String & name)
+{
+    const ActionsDAG * dag = nullptr;
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
+        dag = &expression->getExpression();
+    else if (const auto * filter = typeid_cast<const FilterStep *>(&step))
+        dag = &filter->getExpression();
+    const auto * node = dag ? dag->tryFindInOutputs(name) : nullptr;
+    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    if (!node || node->type != ActionsDAG::ActionType::INPUT)
+        return std::nullopt;
+    return node->result_name;
+}
+
+}
+
+void markJoinPartitionKeysAbove(QueryPlan::Node & root)
+{
+    std::vector<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        auto keys = partitionKeysOf(*node->step);
+        if (!keys || node->children.size() != 1)
+            continue;
+
+        /// Follow the keys down through the steps that pass them through to a join.
+        auto * below = node->children.front();
+        auto names = keys->keys;
+        while (!names.empty() && below->children.size() == 1
+            && (typeid_cast<const ExpressionStep *>(below->step.get()) || typeid_cast<const FilterStep *>(below->step.get())
+                || typeid_cast<const SortingStep *>(below->step.get())))
+        {
+            /// A sort, such as the one a window function needs, passes its columns through by name.
+            if (typeid_cast<const SortingStep *>(below->step.get()))
+            {
+                below = below->children.front();
+                continue;
+            }
+            Names input_names;
+            for (const auto & name : names)
+                if (auto input_name = inputNameOf(*below->step, name))
+                    input_names.push_back(*input_name);
+            names = std::move(input_names);
+            below = below->children.front();
+        }
+        if (auto * join_step = typeid_cast<JoinStepLogical *>(below->step.get()); join_step && !names.empty())
+            join_step->setPartitionKeysAbove({.keys = std::move(names), .aggregation = keys->aggregation});
+    }
+}
+
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -3013,6 +3117,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
     /// A swap-only semi or anti join keeps its graph to itself, so the property holds for the graph.
     query_graph_builder.probe_keys_within_preserved_side = query_graph_size_limit == 2 && join_step->probeKeysWithinPreservedSide();
+    query_graph_builder.partition_keys_above = join_step->getPartitionKeysAbove();
     query_graph_builder.context->allow_semi_anti_flattening = reorder_semi_anti;
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);

@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Core/Joins.h>
+#include <Core/Names.h>
 #include <Interpreters/JoinExpressionActions.h>
 
 namespace DB
@@ -263,6 +264,18 @@ public:
     std::string_view getTableStatsHint() const { return table_stats_hint; }
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
+    /// The output columns of the join that a step above it would like its input to be partitioned by: each `GROUP BY`
+    /// key of an aggregation, or the one `PARTITION BY` key of a window function. Set by `markJoinPartitionKeysAbove`
+    /// for join reordering with `query_plan_join_order_distribution`.
+    struct PartitionKeysAbove
+    {
+        Names keys;
+        /// The step above aggregates its input before it exchanges it, so it moves at most one row per group and node.
+        bool aggregation = false;
+    };
+    const PartitionKeysAbove & getPartitionKeysAbove() const { return partition_keys_above; }
+    void setPartitionKeysAbove(PartitionKeysAbove keys) { partition_keys_above = std::move(keys); }
+
     /// The non-preserved side was built from the preserved side's key values (a decorrelated
     /// subquery joined with the distinct correlation keys), so every key it has is a preserved key.
     bool probeKeysWithinPreservedSide() const { return probe_keys_within_preserved_side; }
@@ -394,6 +407,7 @@ protected:
 
     /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
     String table_stats_hint;
+    PartitionKeysAbove partition_keys_above;
     bool probe_keys_within_preserved_side = false;
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;

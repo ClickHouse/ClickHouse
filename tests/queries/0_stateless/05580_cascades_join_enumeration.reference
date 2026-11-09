@@ -13,6 +13,10 @@ best_splits budget	1860	50180
 distribution	1860	50180
 frontier	1860	50180
 frontier cycle	211	2497
+window by a column	436105	1860
+window by a join key	369030	1860
+group by a column	1860
+one node	436105	1860
 frontier without distribution	1860	50180
 one node	1860	50180
 -- transitive chain, transitive predicates on and off
@@ -65,6 +69,7 @@ join_enum_cycle	1	1	0
 join_enum_cycle_frontier	1	1	0
 join_enum_cycle_rule	1	1	1
 join_enum_float	0	0	0
+join_enum_group_column	1	1	0
 join_enum_limit	0	0	0
 join_enum_null_safe	1	1	0
 join_enum_predicates	1	1	0
@@ -73,6 +78,8 @@ join_enum_transitive_off	1	1	0
 join_enum_transitive_on	1	1	0
 join_enum_two_members	0	0	0
 join_enum_two_table_operand	0	0	0
+join_enum_window_column	1	1	0
+join_enum_window_key	0	0	0
 -- the rule adds the joins that the import of all splits gets
 join_enum_chain	2	1
 join_enum_cycle	2	1

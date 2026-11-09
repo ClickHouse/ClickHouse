@@ -427,6 +427,9 @@ void optimizeTreeSecondPass(
             || optimization_settings.cascades_join_enumeration != QueryPlanOptimizationSettings::JoinEnumeration::Off
             || optimization_settings.join_order_distribution);
 
+    if (optimization_settings.build_join_order_alternatives && optimization_settings.join_order_distribution)
+        markJoinPartitionKeysAbove(root);
+
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
     /// When Cascades distributes the plan, the filters are placed after it, on the join order it chooses.
     const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext()

@@ -214,7 +214,34 @@ private:
     /// Whether a later join may still use a result partitioned by the equivalence class.
     bool isInterestingPartition(Int32 partition_class, UInt32 relations) const
     {
-        return (dpsub_data.class_relations[partition_class] & ~relations) && dpsub_data.class_single_type[partition_class];
+        const UInt32 class_relations = dpsub_data.class_relations[partition_class];
+        const bool used_above = ((dpsub_data.above_classes >> partition_class) & 1) && (class_relations & relations);
+        return ((class_relations & ~relations) || used_above) && dpsub_data.class_single_type[partition_class];
+    }
+    /// The classes of `QueryGraph::partition_columns_above` with a column in the relations.
+    UInt64 aboveClassesIn(UInt32 relations) const
+    {
+        UInt64 classes = 0;
+        for (UInt64 remaining = dpsub_data.above_classes; remaining; remaining &= remaining - 1)
+        {
+            const auto c = std::countr_zero(remaining);
+            if (dpsub_data.class_relations[c] & relations)
+                classes |= static_cast<UInt64>(1) << c;
+        }
+        return classes;
+    }
+    /// The exchange the step above the graph needs over a plan of all relations: none when the plan is partitioned by a
+    /// column it would like, else a shuffle of the rows it sends, at most one per group and node after an aggregation.
+    double aboveExchangeCost(Int8 state, double rows, double bytes) const
+    {
+        if (!dpsub_data.above_classes || (state >= 0 && ((dpsub_data.above_classes >> state) & 1)))
+            return 0;
+        const auto join_cost = distributedJoinCost();
+        double sent_rows = rows;
+        if (query_graph.partition_above_aggregates && dpsub_data.above_groups > 0)
+            sent_rows = std::min(rows, static_cast<double>(dpsub_data.above_groups) * join_cost.nodes);
+        const auto key = static_cast<Int8>(std::countr_zero(dpsub_data.above_classes));
+        return join_cost.toPartitioned(state, key, sent_rows, bytes);
     }
     /// Whether a set keeps its cheapest plan in a state besides its cheapest plan overall.
     bool isInterestingState(Int8 state, UInt32 relations) const
@@ -389,6 +416,10 @@ private:
         /// Only with `QueryGraph::distribution_node_count`, instead of `interesting_orders`. Needs the classes to fit into a
         /// 64-bit mask.
         bool distribution = false;
+        /// The classes of `QueryGraph::partition_columns_above`, and the most distinct values of one of them: the step
+        /// above has at least that many groups.
+        UInt64 above_classes = 0;
+        UInt64 above_groups = 0;
         std::vector<char> class_single_type;   /// per class: one type up to `Nullable` and `LowCardinality`
         std::vector<std::vector<Int32>> rel_prefix_classes; /// per relation: the classes it can be read in order of, in order
         std::vector<Int32> edge_class;          /// per edge: the class of an equality of two columns, or -1
@@ -578,6 +609,45 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             }
         }
         dpsub_data.rel_to_classes[*rel].push_back(it->second);
+    }
+
+    /// The columns the step above the graph would like its input partitioned by: their class, or a class of their own,
+    /// which no join compares, so that a plan can be partitioned by them.
+    dpsub_data.above_classes = 0;
+    dpsub_data.above_groups = 0;
+    if (query_graph.distribution_node_count > 1)
+    {
+        for (const auto & column : query_graph.partition_columns_above)
+        {
+            const auto relation = column.getSourceRelations().getSingleBit();
+            if (!relation || *relation >= num_relations)
+                continue;
+            UInt32 index = 0;
+            if (auto class_ptr = query_graph.column_equivalences.getClass(column))
+            {
+                auto it = class_index.find(class_ptr.get());
+                if (it == class_index.end())
+                    continue;
+                index = it->second;
+            }
+            else
+            {
+                index = static_cast<UInt32>(dpsub_data.equiv_classes.size());
+                const auto & sources = column.getSourceRelations();
+                dpsub_data.equiv_classes.push_back({{
+                    .relation_bit = static_cast<UInt32>(1) << *relation,
+                    .column_id = keyColumnId(column.getColumnName()),
+                    .distinct_values = getColumnStats(query_graph, dp_table, sources, column.getColumnName()),
+                    .domain = getColumnDomain(query_graph, dp_table, sources, column.getColumnName())}});
+                dpsub_data.class_relations.push_back(static_cast<UInt32>(1) << *relation);
+                dpsub_data.class_members.push_back({column});
+            }
+            if (index >= std::numeric_limits<UInt64>::digits)
+                continue;
+            dpsub_data.above_classes |= static_cast<UInt64>(1) << index;
+            for (const auto & member : dpsub_data.equiv_classes[index])
+                dpsub_data.above_groups = std::max(dpsub_data.above_groups, member.distinct_values.from_statistics);
+        }
     }
     dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
     dpsub_data.equiv_generation = 0;

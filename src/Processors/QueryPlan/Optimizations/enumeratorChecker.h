@@ -279,6 +279,8 @@ double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
     const double right_bytes = optimizer.rowBytes(right_mask);
     constexpr Int8 replicated = Optimizer::replicated_state;
     constexpr Int8 single_node = Optimizer::single_node_state;
+    const bool all_relations = result_subset == (static_cast<UInt>(1) << num_relations) - 1;
+    const double all_relations_bytes = all_relations ? optimizer.rowBytes(static_cast<UInt32>(result_subset)) : 0;
 
     /// The plans of a side: its cheapest plan and its plans in the other states.
     auto side_plans = [&](UInt subset)
@@ -324,6 +326,9 @@ double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
 
             auto offer = [&](double cost, Int8 state)
             {
+                /// A plan of all relations also pays for the exchange the step above the graph needs.
+                if (all_relations)
+                    cost += optimizer.aboveExchangeCost(state, joined_rows, all_relations_bytes);
                 if (!std::isfinite(cost))
                     return;
                 plan.cost = inputs_cost + cost;
@@ -351,6 +356,25 @@ double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
                 offer(join_cost.toPartitioned(right_state, -1, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
                         + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
                     right_state == single_node ? -1 : right_state);
+
+            /// Broadcast with the partitioned side shuffled first by a column the step above the graph would like, as the keyed
+            /// broadcast of Cascades does: the result stays partitioned by it.
+            for (UInt64 classes = optimizer.aboveClassesIn(left_mask); classes && replicate_right; classes &= classes - 1)
+            {
+                const auto key = static_cast<Int8>(std::countr_zero(classes));
+                if (key != left_state)
+                    offer(join_cost.toPartitioned(left_state, key, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                            + join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, nodes, 1),
+                        key);
+            }
+            for (UInt64 classes = optimizer.aboveClassesIn(right_mask); classes && replicate_left; classes &= classes - 1)
+            {
+                const auto key = static_cast<Int8>(std::countr_zero(classes));
+                if (key != right_state)
+                    offer(join_cost.toPartitioned(right_state, key, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
+                            + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
+                        key);
+            }
 
             /// Shuffle: both sides partitioned by a key.
             for (UInt64 classes = key_classes; classes; classes &= classes - 1)

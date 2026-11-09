@@ -73,6 +73,19 @@ SELECT 'frontier', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b
     SETTINGS cascades_join_enumeration = 'frontier', query_plan_join_order_distribution = 1, log_comment = 'join_enum_chain_frontier';
 SELECT 'frontier cycle', count(), sum(c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id AND a.k = b.k JOIN t_enum_c c ON b.k = c.k JOIN t_enum_d d ON c.id = d.id AND d.k = a.x
     SETTINGS cascades_join_enumeration = 'frontier', query_plan_join_order_distribution = 1, enable_join_transitive_predicates = 1, log_comment = 'join_enum_cycle_frontier';
+-- A window above the graph would like its input partitioned by `a.x`, which no join compares, or by the join key `a.id`.
+SELECT 'window by a column', sum(r), count() FROM (SELECT row_number() OVER (PARTITION BY a.x ORDER BY b.v, c.w, a.y) AS r
+    FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id)
+    SETTINGS cascades_join_enumeration = 'frontier', query_plan_join_order_distribution = 1, log_comment = 'join_enum_window_column';
+SELECT 'window by a join key', sum(r), count() FROM (SELECT row_number() OVER (PARTITION BY a.id ORDER BY b.v, c.w, a.y) AS r
+    FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id)
+    SETTINGS query_plan_join_order_distribution = 1, log_comment = 'join_enum_window_key';
+SELECT 'group by a column', sum(n) FROM (SELECT a.x, count() AS n
+    FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id GROUP BY a.x)
+    SETTINGS cascades_join_enumeration = 'frontier', query_plan_join_order_distribution = 1, log_comment = 'join_enum_group_column';
+SELECT 'one node', sum(r), count() FROM (SELECT row_number() OVER (PARTITION BY a.x ORDER BY b.v, c.w, a.y) AS r
+    FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id)
+    SETTINGS make_distributed_plan = 0;
 -- Without the distribution search there are no kept plans to import: the graph gets its join orders.
 SELECT 'frontier without distribution', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS cascades_join_enumeration = 'frontier', log_comment = 'join_enum_chain_frontier_off';
