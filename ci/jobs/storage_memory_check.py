@@ -440,8 +440,6 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
         ),
     )
     setup_results.append(tests)
-    # The label is not a digest input, so a later commit with the same digest
-    # must not reuse a success that only the label allowed.
     Result.create_from(
         results=setup_results,
         stopwatch=stopwatch,
