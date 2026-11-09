@@ -29,6 +29,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -1877,22 +1878,32 @@ void AlterCommands::apply(
 
     const bool columns_changed = metadata_copy.columns != metadata.columns;
 
+    /// Keys must be what CREATE and a reload resolve in the global context (parts persist their types),
+    /// so a session setting must not decide them here either.
+    ContextPtr key_context = context->getGlobalContext();
+    if (context->isAnalyzingBackgroundExpressions())
+    {
+        auto background_key_context = Context::createCopy(key_context);
+        background_key_context->setAnalyzingBackgroundExpressions(true);
+        key_context = background_key_context;
+    }
+
     /// Changes in columns may lead to changes in keys expression.
-    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
         metadata_copy.primary_key = KeyDescription::getPrimaryKeyFromAST(
-            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, context);
+            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, key_context);
     }
     else
     {
-        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
-        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
 
     /// Derived inputs and types can change even when the partition key output structure does not.
     if (metadata_copy.minmax_count_projection && columns_changed)
@@ -1901,12 +1912,12 @@ void AlterCommands::apply(
         auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
         FunctionNameNormalizer::visit(partition_key.get());
         metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
+            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, key_context));
     }
 
     // /// And in sample key expression
     if (metadata_copy.sampling_key.definition_ast != nullptr)
-        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
 
     /// Changes in columns may lead to changes in secondary indices
     const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
@@ -2250,6 +2261,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     /// to its target using the target metadata and never evaluates its own column defaults, so a default
     /// over a virtual column is inert there and is left out of this set.
     NameSet insert_time_default_columns;
+    /// New `DEFAULT` and `MATERIALIZED` expressions of a `MergeTree` table, also computed in the background for existing parts.
+    ASTPtr background_default_expr_list = make_intrusive<ASTExpressionList>();
     bool defaults_evaluated_at_insert_time = true;
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
@@ -2624,6 +2637,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// Collect default expressions for MODIFY and ADD commands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
         {
+            /// A column TTL resets the column to its existing default in merges.
+            if (command.ttl && !command.default_expression && all_columns.has(column_name))
+            {
+                const auto & default_desc = all_columns.get(column_name).default_desc;
+                if (default_desc.expression
+                    && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
+                    background_default_expr_list->children.emplace_back(
+                        setAlias(default_desc.expression->clone(), column_name + "_tmp_ttl_default"));
+            }
+
             if (command.default_expression)
             {
                 DataTypePtr data_type_ptr;
@@ -2649,6 +2672,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (defaults_evaluated_at_insert_time
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized))
                     insert_time_default_columns.insert(final_column_name);
+
+                if (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized)
+                    background_default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
@@ -2681,6 +2707,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context, insert_time_default_columns);
+
+    /// A replica replaying the `ALTER` of a Replicated database does not repeat the check.
+    auto txn = context->getZooKeeperMetadataTransaction();
+    if (!background_default_expr_list->children.empty() && castStorage<MergeTreeData>(table, DeferredTable::Load)
+        && (!txn || txn->isInitialQuery()))
+    {
+        auto background_context = Context::createCopy(context);
+        background_context->setAnalyzingBackgroundExpressions(true);
+        validateColumnsDefaultsAndGetSampleBlock(background_default_expr_list, all_columns.getAll(), background_context, {});
+    }
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const
