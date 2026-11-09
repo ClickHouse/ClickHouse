@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- Deliberately too small to hold even one manifest: used by
+         test_metadata_cache.py to verify the size bound is enforced and that
+         SYSTEM RELOAD CONFIG resizing takes effect without restart. -->
+    <paimon_metadata_files_cache_size>8192</paimon_metadata_files_cache_size>
+</clickhouse>

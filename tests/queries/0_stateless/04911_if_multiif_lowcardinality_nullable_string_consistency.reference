@@ -1,0 +1,26 @@
+Explicit Nullable(String) constant branches count as strings
+LowCardinality(Nullable(String))	a
+LowCardinality(Nullable(String))	b
+LowCardinality(Nullable(String))	a
+LowCardinality(Nullable(String))	b
+LowCardinality(Nullable(String))	\N
+LowCardinality(Nullable(String))	b
+LowCardinality(Nullable(String))	a
+LowCardinality(Nullable(String))	b
+LowCardinality(Nullable(String))	\N
+LowCardinality(Nullable(String))	a
+LowCardinality(Nullable(String))	b
+Only-NULL branches keep Nullable(Nothing)
+Nullable(Nothing)
+Nullable(Nothing)
+Explicit LowCardinality branches do not leak into Variant
+Variant(Array(UInt64), String, UInt64)	[0]
+Variant(Array(UInt64), String, UInt64)	1
+Variant(Array(UInt64), String, UInt64)	x
+Variant(String, UInt64)	0
+Variant(String, UInt64)	x
+Constant LowCardinality(String) branches produce the same type in if and multiIf
+LowCardinality(String)	LowCardinality(String)
+With the optimization disabled, non-constant LowCardinality branches follow the pre-existing contract
+String	String
+Nullable(String)	Nullable(String)
