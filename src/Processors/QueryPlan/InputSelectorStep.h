@@ -13,6 +13,7 @@ public:
     InputSelectorStep(SharedHeader signal_header, SharedHeader data_header);
 
     String getName() const override { return "InputSelector"; }
+    QueryPlanStepPtr clone() const override;
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
     void describePipeline(FormatSettings & settings) const override;
     bool hasCorrelatedExpressions() const override { return false; }

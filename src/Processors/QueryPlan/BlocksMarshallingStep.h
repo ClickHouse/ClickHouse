@@ -20,6 +20,7 @@ public:
     explicit BlocksMarshallingStep(const SharedHeader & input_header_);
 
     String getName() const override { return "BlocksMarshalling"; }
+    QueryPlanStepPtr clone() const override;
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 

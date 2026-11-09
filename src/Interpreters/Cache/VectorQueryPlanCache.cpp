@@ -32,6 +32,9 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
+#include <Common/assert_cast.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageSnapshot.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/CurrentMetrics.h>
@@ -63,6 +66,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString vector_query_plan_cache_tag;
+    extern const SettingsBool query_plan_cache_data_version_check;
 }
 
 namespace
@@ -97,10 +101,47 @@ bool containsTextIndexRead(QueryPlan & plan)
     return false;
 }
 
+void collectDataVersionsFromNode(
+    const QueryPlan::Node * node,
+    bool & versionable,
+    std::vector<TableDataVersion> & versions)
+{
+    /// A non-versionable source makes the whole plan non-versionable, so stop instead of walking
+    /// and copying versions from the remaining subtree.
+    if (!node || !versionable)
+        return;
+
+    if (const auto * step = node->step.get())
+    {
+        if (dynamic_cast<const ISourceStep *>(step))
+        {
+            if (const auto * read_from_merge_tree = dynamic_cast<const ReadFromMergeTree *>(step))
+            {
+                const DataVersion version = read_from_merge_tree->getDataVersion();
+                if (version == DataVersion{})
+                {
+                    versionable = false;
+                    return;
+                }
+                versions.push_back({read_from_merge_tree->getStorageID().uuid, version});
+            }
+            else
+            {
+                versionable = false;
+                return;
+            }
+        }
+    }
+
+    for (const auto * child : node->children)
+        collectDataVersionsFromNode(child, versionable, versions);
+}
+
 bool isVectorQueryPlanCacheRelatedSetting(const String & setting_name)
 {
     // Any setting that controls the plan cache itself should not affect the cache key.
-    return (setting_name.find("vector_query_plan_cache") != String::npos) && setting_name != "vector_query_plan_cache_tag";
+    return ((setting_name.find("vector_query_plan_cache") != String::npos) && setting_name != "vector_query_plan_cache_tag")
+        || setting_name == "query_plan_cache_data_version_check";
 }
 
 std::vector<std::pair<String, String>> getRelevantSettings(const Settings & settings)
@@ -179,7 +220,8 @@ void collectMutationTargets(
     const ASTPtr & ast,
     ContextPtr context,
     std::vector<String> & table_names,
-    std::vector<String> & database_names)
+    std::vector<String> & database_names,
+    bool & dml)
 {
     // VectorQueryPlanCache is only populated for SELECTs, but writes to tables or table
     // metadata may invalidate those cached SELECTs. This helper recognizes the main
@@ -193,9 +235,14 @@ void collectMutationTargets(
             addResolvedTableForInvalidation(table_names, seen_tables, context, StorageID(optimize_query->getDatabase(), optimize_query->getTable()));
     }
 
+    /// DML targets are always collected: when data version checking is enabled a DML drops only
+    /// the entries without recorded versions, while a DDL (and a DML with the check disabled) drops
+    /// every affected entry. `dml` lets the caller pick that policy; it cannot replace the
+    /// collection because the affected table names are needed in both cases.
     if (const auto * update_query = ast->as<ASTUpdateQuery>())
     {
         addResolvedTableForInvalidation(table_names, seen_tables, context, *update_query);
+        dml = true;
         return;
     }
 
@@ -205,12 +252,14 @@ void collectMutationTargets(
             addNameIfNotEmpty(table_names, seen_tables, getCanonicalTableName(insert_query->table_id));
         else if (!insert_query->getTable().empty())
             addResolvedTableForInvalidation(table_names, seen_tables, context, StorageID(insert_query->getDatabase(), insert_query->getTable()));
+        dml = true;
         return;
     }
 
     if (const auto * delete_query = ast->as<ASTDeleteQuery>())
     {
         addResolvedTableForInvalidation(table_names, seen_tables, context, *delete_query);
+        dml = true;
         return;
     }
 
@@ -436,7 +485,8 @@ VectorQueryPlanCache::Writer::Writer(
     const VectorQueryPlanCache::Key & key_,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
-    std::chrono::milliseconds min_plan_build_time_)
+    std::chrono::milliseconds min_plan_build_time_,
+    bool data_version_check_)
     : owner(owner_)
     , cache(cache_)
     , key(key_)
@@ -444,6 +494,7 @@ VectorQueryPlanCache::Writer::Writer(
     , max_entry_size_in_rows(max_entry_size_in_rows_)
     , query_start_time(std::chrono::system_clock::now())
     , min_plan_build_time(min_plan_build_time_)
+    , data_version_check(data_version_check_)
 {
     // If a non-stale entry already exists, avoid overwriting it with a new writer.
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
@@ -461,6 +512,7 @@ VectorQueryPlanCache::Writer::Writer(const Writer & other)
     , max_entry_size_in_rows(other.max_entry_size_in_rows)
     , query_start_time(other.query_start_time)
     , min_plan_build_time(other.min_plan_build_time)
+    , data_version_check(other.data_version_check)
     , query_plan(other.query_plan)  // Copy the shared_ptr directly, which is thread-safe
     , skip_insert(other.skip_insert.load())
     , was_finalized(other.was_finalized.load())
@@ -470,27 +522,53 @@ VectorQueryPlanCache::Writer::Writer(const Writer & other)
     // No need to lock other.mutex as shared_ptr copy is atomic
 }
 
-void VectorQueryPlanCache::Writer::setPlan(QueryPlan & plan)
+bool VectorQueryPlanCache::Writer::setPlan(QueryPlan & plan)
 {
     std::lock_guard lock(mutex);
     if (skip_insert)
-        return;
+        return false;
 
     if (containsTextIndexRead(plan))
     {
         LOG_TRACE(logger, "Skipped plan clone for query {} because it reads from a table with a text index", doubleQuoteString(key.query_string));
-        return;
+        return false;
     }
 
     /// Store a cloned plan to avoid mutation during pipeline build.
     try
     {
+        /// Only when data version checking is enabled are versions recorded. When every source is
+        /// versionable the entry is validated against them; otherwise it is stored without versions
+        /// and the reader reuses it without a check. Disabled keeps the legacy behavior.
+        bool versionable = data_version_check;
+        std::vector<TableDataVersion> table_data_versions;
+        if (versionable)
+        {
+            collectDataVersionsFromNode(plan.getRootNode(), versionable, table_data_versions);
+            /// The collected versions are unused once a non-versionable source was found.
+            if (!versionable)
+                table_data_versions.clear();
+        }
+
         query_plan->plan_cache = std::make_shared<QueryPlan>(plan.clone());
+        query_plan->table_data_versions = std::move(table_data_versions);
+        query_plan->data_versions_recorded = versionable;
+        return true;
     }
     catch (const Exception & e)
     {
         LOG_TRACE(logger, "Skipped plan clone for query {}: {}", doubleQuoteString(key.query_string), e.message());
+        return false;
     }
+}
+
+void VectorQueryPlanCache::Writer::setPlanIsOptimized(bool is_optimized)
+{
+    std::lock_guard lock(mutex);
+    if (skip_insert || !query_plan)
+        return;
+
+    query_plan->plan_is_optimized = is_optimized;
 }
 
 void VectorQueryPlanCache::Writer::setAst(const ASTPtr & ast)
@@ -613,6 +691,11 @@ void VectorQueryPlanCache::Writer::finalizeWrite()
             {
                 query_plan_snapshot->plan_cache = existing->plan_cache;
                 query_plan_snapshot->plan_size = existing->plan_size;
+                query_plan_snapshot->plan_is_optimized = existing->plan_is_optimized;
+                /// Keep the data versions that belong to the reused plan, otherwise the merged
+                /// entry would carry a plan without the versions it was built against.
+                query_plan_snapshot->table_data_versions = existing->table_data_versions;
+                query_plan_snapshot->data_versions_recorded = existing->data_versions_recorded;
             }
             if (!query_plan_snapshot->ast && existing->ast)
             {
@@ -627,6 +710,14 @@ void VectorQueryPlanCache::Writer::finalizeWrite()
                 query_plan_snapshot->table_names = existing->table_names;
             if (query_plan_snapshot->query_access_info_cache.empty() && !existing->query_access_info_cache.empty())
                 query_plan_snapshot->query_access_info_cache = existing->query_access_info_cache;
+        }
+
+        if (!query_plan_snapshot->plan_cache && !query_plan_snapshot->ast)
+        {
+            /// Nothing reusable (e.g. a QueryPlan was rejected by data version validation in
+            /// `vector_only_cache_query_plan` mode where the AST is not stored).
+            LOG_TRACE(logger, "Skipped insert because the entry has neither QueryPlan nor AST, query: {}", doubleQuoteString(key.query_string));
+            return;
         }
 
         // Charge plan+AST size and enforce per-entry cap.
@@ -690,6 +781,9 @@ VectorQueryPlanCache::Reader::Reader(Cache & cache_, const Cache::Key & key, con
     ast_literal_positions = entry_mapped_ref->ast_literal_positions;
     plan_constant_bindings = entry_mapped_ref->plan_constant_bindings;
     query_access_info = entry_mapped_ref->query_access_info_cache;
+    table_data_versions = entry_mapped_ref->table_data_versions;
+    data_versions_recorded = entry_mapped_ref->data_versions_recorded;
+    plan_is_optimized = entry_mapped_ref->plan_is_optimized;
     // Store sizes for deferred statistics counting
     plan_size = entry_mapped_ref->plan_size;
     ast_size = entry_mapped_ref->ast_size;
@@ -772,6 +866,39 @@ String VectorQueryPlanCache::Reader::getQueryAccessInfo()
     return query_access_info;
 }
 
+bool VectorQueryPlanCache::Reader::isDataVersionValid(const Settings & settings, const ContextPtr & context) const
+{
+    if (!settings[Setting::query_plan_cache_data_version_check])
+        return true;
+
+    /// Entries stored without versions (sources that cannot be versioned) are reused without a
+    /// check; only versioned entries can be compared.
+    if (!data_versions_recorded)
+        return true;
+
+    for (const auto & cached_table : table_data_versions)
+    {
+        StoragePtr storage = DatabaseCatalog::instance().tryGetByUUID(cached_table.table_uuid).second;
+        if (!storage)
+            return false;
+
+        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
+        if (!merge_tree)
+            return false;
+
+        auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        auto snapshot = merge_tree->getStorageSnapshot(metadata, context);
+        if (!snapshot || !snapshot->data)
+            return false;
+
+        const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*snapshot->data);
+        if (!(snapshot_data.data_version == cached_table.version))
+            return false;
+    }
+
+    return true;
+}
+
 VectorQueryPlanCache::VectorQueryPlanCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
     : cache(std::make_unique<Cache>(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
         CurrentMetrics::VectorQueryPlanCacheBytes,
@@ -800,13 +927,14 @@ VectorQueryPlanCache::Writer VectorQueryPlanCache::createWriter(
     const Key & key,
     std::chrono::milliseconds min_plan_build_time,
     size_t max_query_plan_cache_size_in_bytes_quota,
-    size_t max_query_cache_entries_quota)
+    size_t max_query_cache_entries_quota,
+    bool data_version_check)
 {
     if (key.user_id.has_value())
         cache->setQuotaForUser(*key.user_id, max_query_plan_cache_size_in_bytes_quota, max_query_cache_entries_quota);
 
     std::lock_guard lock(mutex);
-    return Writer(*this, *cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_plan_build_time);
+    return Writer(*this, *cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_plan_build_time, data_version_check);
 }
 
 void VectorQueryPlanCache::clear(const std::optional<String> & tag)
@@ -825,6 +953,14 @@ void VectorQueryPlanCache::clear(const std::optional<String> & tag)
     table_to_keys.clear();
     if (tag)
         rebuildTableMappings();
+}
+
+void VectorQueryPlanCache::remove(const Key & key)
+{
+    cache->remove(key);
+
+    std::lock_guard lock(mutex);
+    rebuildTableMappings();
 }
 
 void VectorQueryPlanCache::clearByTables(const std::vector<String> & table_names)
@@ -854,6 +990,40 @@ void VectorQueryPlanCache::clearByTables(const std::vector<String> & table_names
     auto predicate = [&keys_to_remove](const Key & key, const Cache::MappedPtr &)
     {
         return keys_to_remove.contains(key);
+    };
+    cache->remove(predicate);
+
+    std::lock_guard lock(mutex);
+    rebuildTableMappings();
+}
+
+void VectorQueryPlanCache::clearUnversionedByTables(const std::vector<String> & table_names)
+{
+    if (table_names.empty())
+        return;
+
+    std::unordered_set<Key, KeyHasher> keys_to_remove;
+    keys_to_remove.reserve(table_names.size());
+    {
+        std::lock_guard lock(mutex);
+        for (const auto & table_name : table_names)
+        {
+            auto it = table_to_keys.find(table_name);
+            if (it == table_to_keys.end())
+                continue;
+
+            keys_to_remove.insert(it->second.begin(), it->second.end());
+        }
+    }
+
+    if (keys_to_remove.empty())
+        return;
+
+    auto predicate = [&keys_to_remove](const Key & key, const Cache::MappedPtr & entry)
+    {
+        /// Entries with recorded versions can detect the change themselves, so only the ones
+        /// stored without versions need to be removed here.
+        return keys_to_remove.contains(key) && (!entry || !entry->data_versions_recorded);
     };
     cache->remove(predicate);
 
@@ -908,10 +1078,21 @@ void VectorQueryPlanCache::invalidateByQuery(const ASTPtr & ast, ContextPtr cont
     // owns the policy for deciding which cached SELECTs must be invalidated.
     std::vector<String> invalidated_tables;
     std::vector<String> invalidated_databases;
-    collectMutationTargets(ast, context, invalidated_tables, invalidated_databases);
+    bool dml = false;
+    collectMutationTargets(ast, context, invalidated_tables, invalidated_databases, dml);
+
+    const bool data_version_check = context->getSettingsRef()[Setting::query_plan_cache_data_version_check];
 
     if (!invalidated_tables.empty())
-        clearByTables(invalidated_tables);
+    {
+        /// DDL drops every entry of the touched tables. With data version checking enabled a DML
+        /// drops only the entries without recorded versions: versioned plans detect the change
+        /// themselves and are refreshed or rebuilt on the next hit.
+        if (dml && data_version_check)
+            clearUnversionedByTables(invalidated_tables);
+        else
+            clearByTables(invalidated_tables);
+    }
     if (!invalidated_databases.empty())
         clearByDatabases(invalidated_databases);
 }
@@ -991,6 +1172,90 @@ bool VectorQueryPlanCache::containsSubquery(const ASTPtr & ast)
     bool has_subquery = false;
     visitASTForSubquery(ast, has_subquery);
     return has_subquery;
+}
+
+bool VectorQueryPlanCache::planHasMergeTreeRead(const QueryPlan & plan)
+{
+    const QueryPlan::Node * root = plan.getRootNode();
+    if (!root)
+        return false;
+
+    std::vector<const QueryPlan::Node *> stack{root};
+    std::unordered_set<const QueryPlan::Node *> visited;
+
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        if (!node || !visited.insert(node).second)
+            continue;
+
+        if (typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+            return true;
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
+bool VectorQueryPlanCache::planHasVectorSearchRewrite(const QueryPlan & plan)
+{
+    const QueryPlan::Node * root = plan.getRootNode();
+    if (!root)
+        return false;
+
+    std::vector<const QueryPlan::Node *> stack{root};
+    std::unordered_set<const QueryPlan::Node *> visited;
+
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        if (!node || !visited.insert(node).second)
+            continue;
+
+        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get());
+            read && read->getVectorSearchParameters() && read->isVectorColumnReplaced())
+            return true;
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
+bool VectorQueryPlanCache::refreshDataSnapshots(QueryPlan & plan, const ContextPtr & context)
+{
+    QueryPlan::Node * root = plan.getRootNode();
+    if (!root)
+        return false;
+
+    std::vector<QueryPlan::Node *> stack{root};
+    std::unordered_set<QueryPlan::Node *> visited;
+    size_t refreshed_reads = 0;
+
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        if (!node || !visited.insert(node).second)
+            continue;
+
+        if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        {
+            if (!read->refreshDataSnapshot(context))
+                return false;
+            ++refreshed_reads;
+        }
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return refreshed_reads > 0;
 }
 
 void VectorQueryPlanCache::rebuildTableMappings()

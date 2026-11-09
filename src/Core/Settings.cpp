@@ -7318,6 +7318,14 @@ Possible values:
         {"26.10", 60, 60, "Introduced vector query plan cache. After this time in seconds entries in the vector query plan cache become stale."}) \
     DECLARE(String, vector_query_plan_cache_tag, "", R"("A string which acts as a label for vector query plan cache entries.)", 0, \
         {"26.10", "", "", "New setting for labeling vector query plan cache settings."}) \
+    DECLARE(Bool, query_plan_cache_data_version_check, true, R"(
+Controls whether a cached query plan is validated against the current table data version.
+This setting applies to every cached query plan, not only vector queries.
+
+- `1` (default) - Validate cached plans against the table data version; on a change, refresh the plan's data snapshot while keeping its structure, and replan when the refresh is not possible. Entries stored without data versions are reused without a check.
+- `0` - Disabled: reuse cached plans without a data version check (the legacy behavior).
+)", 0, \
+        {"26.10", false, true, "New setting to avoid stale query plans after data changes; previously cached plans were reused without a data version check."}) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \

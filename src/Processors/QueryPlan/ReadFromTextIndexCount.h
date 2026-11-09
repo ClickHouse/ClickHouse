@@ -32,6 +32,7 @@ public:
         size_t num_streams_);
 
     String getName() const override { return "ReadFromTextIndexCount"; }
+    QueryPlanStepPtr clone() const override;
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
 private:

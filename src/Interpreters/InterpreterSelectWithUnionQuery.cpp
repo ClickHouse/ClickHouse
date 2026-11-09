@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsUInt64 vector_query_plan_cache_max_size_in_bytes;
     extern const SettingsUInt64 vector_query_plan_cache_max_entries;
     extern const SettingsMilliseconds query_cache_min_query_duration;
+    extern const SettingsBool query_plan_cache_data_version_check;
 }
 
 namespace ErrorCodes
@@ -371,8 +372,33 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     // test_watch.restart();
     const auto & settings = context->getSettingsRef();
     const bool can_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
-    if (can_vector_query_plan_cache && !is_internal && is_select
-        && !VectorQueryPlanCache::containsSubquery(query_ptr))
+    const bool cache_eligible = can_vector_query_plan_cache && !is_internal && is_select
+        && !VectorQueryPlanCache::containsSubquery(query_ptr);
+
+    /// Some plan optimizations consume the constants needed to bind the plan to a normalized query
+    /// text: the vector-search rewrite replaces `distance(vec, <literal>)` with the `_distance`
+    /// input, so the reference-vector literal no longer exists in the optimized plan. Keep a
+    /// pre-optimization copy for such plans and bind them from it.
+    std::optional<QueryPlan> pre_optimization_plan;
+    if (cache_eligible && VectorQueryPlanCache::planHasMergeTreeRead(query_plan))
+    {
+        try
+        {
+            pre_optimization_plan.emplace(query_plan.clone());
+        }
+        catch (const Exception & e)
+        {
+            LOG_DEBUG(logger, "Cannot keep a pre-optimization plan copy: {}", e.message());
+        }
+    }
+
+    QueryPlanOptimizationSettings optimization_settings(context);
+    BuildQueryPipelineSettings build_pipeline_settings(context);
+    query_plan.optimize(optimization_settings);
+
+    /// Cache the plan after optimization, so a cache hit does not have to choose data-dependent
+    /// shapes (e.g. a join build side) again, and mode B only refreshes the read steps' data.
+    if (cache_eligible)
     {
         auto vector_query_plan_cache = context->getVectorQueryPlanCache();
         if (vector_query_plan_cache && query_ptr)
@@ -383,7 +409,6 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
             auto expires_at = created_at + std::chrono::seconds(settings[Setting::vector_query_plan_cache_ttl].totalSeconds());
             String vector_query_string;
             VectorQueryParameters parameterizer;
-            std::vector<VectorQueryPlanCache::PlanConstantBinding> plan_constant_bindings;
             VectorQueryParameters::NormalizedQueryResult query_result;
             if (vector_only_cache_query_plan)
             {
@@ -418,7 +443,8 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
                     key,
                     std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
                     settings[Setting::vector_query_plan_cache_max_size_in_bytes],
-                    settings[Setting::vector_query_plan_cache_max_entries]);
+                    settings[Setting::vector_query_plan_cache_max_entries],
+                    settings[Setting::query_plan_cache_data_version_check]);
                 vector_query_plan_cache_writer.setTableNames(VectorQueryPlanCache::collectTableNames(query_ptr, context));
 
                 if (!vector_only_cache_query_plan)
@@ -439,23 +465,28 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
                 }
                 vector_query_plan_cache_writer.setAstLiteralPositions(query_result.ast_literal_position_list);
 
-                plan_constant_bindings = parameterizer.CollectQueryPlanConstants(
-                    query_plan, query_result, vector_query_plan_cache_only_vector);
-                if (!plan_constant_bindings.empty())
+                /// Store one of the candidate plans and collect the constants that bind it to the
+                /// normalized query. `setPlan` runs before the expensive scan, so a plan that
+                /// cannot be cloned (e.g. lazy materialization) is skipped without a full pass.
+                auto cached_plan = parameterizer.prepareCachedPlan(
+                    vector_query_plan_cache_writer,
+                    query_plan,
+                    pre_optimization_plan ? &*pre_optimization_plan : nullptr,
+                    query_result,
+                    vector_query_plan_cache_only_vector);
+
+                if (cached_plan)
                 {
                     vector_query_plan_cache_writer.setQueryAccessInfo(context->serializeQueryAccessInfo());
-                    vector_query_plan_cache_writer.setPlanConstantBindings(std::move(plan_constant_bindings));
-                    vector_query_plan_cache_writer.setPlan(query_plan);
-                    LOG_DEBUG(logger, "setPlan");
+                    vector_query_plan_cache_writer.setPlanConstantBindings(std::move(cached_plan->bindings));
+                    vector_query_plan_cache_writer.setPlanIsOptimized(cached_plan->optimized);
                     setVectorQueryPlanCacheWriter(std::make_shared<VectorQueryPlanCache::Writer>(std::move(vector_query_plan_cache_writer)));
-                    // LOG_ERROR(logger, "setPlan:{}us", test_watch.elapsedMicroseconds());
-                    // test_watch.restart();
                 }
             }
         }
     }
 
-    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false);
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     setQuota(res.pipeline);

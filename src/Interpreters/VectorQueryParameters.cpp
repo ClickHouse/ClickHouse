@@ -14,12 +14,14 @@
 #include <Parsers/Lexer.h>
 
 #include <Common/Exception.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/StringUtils.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/FieldToDataType.h>
@@ -34,6 +36,7 @@
 #include <Columns/ColumnString.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
 #include <Poco/String.h>
@@ -831,16 +834,18 @@ String getFieldName(String input_name)
 
 
 /// Check whether a plan step's scope string matches the expected step type.
-/// step_type 1/4 → "ExpressionStep", step_type 2 → "FilterStep".
+/// step_type 1/4 → "ExpressionStep" (4 also matches a vector-search read step),
+/// step_type 2 → "FilterStep" (also matches a PREWHERE pushed into the read step).
 bool scopeMatchesStepType(Int32 step_type, const String & scope)
 {
     switch (step_type)
     {
         case 1:
-        case 4:
             return scope == "ExpressionStep";
+        case 4:
+            return scope == "ExpressionStep" || scope == "VectorSearch";
         case 2:
-            return scope == "FilterStep";
+            return scope == "FilterStep" || scope == "Prewhere";
         default:
             return false;
     }
@@ -860,39 +865,37 @@ bool candidateMatchesAstLiteral(
     const VectorQueryParameters::NormalizedQueryResult & parameters)
 {
     if (!scopeMatchesStepType(position.step_type, candidate.binding.dag_scope))
-    {
         return false;
-    }
-    if (!position.identifier_name.empty() && candidate.identifier_names != position.identifier_name)
-    {
+    if (!position.identifier_name.empty() && position.identifier_name != " "
+        && candidate.identifier_names != position.identifier_name)
         return false;
-    }
     if (!candidate.function_names.empty())
     {
-        size_t number = candidate.function_names.size();
-        String function_names_str;
-        for (const auto & fname : candidate.function_names)
+        /// The candidate chain may align with either end of the AST chain: the plan can drop
+        /// outer wrappers (e.g. a `CAST` applied by the projection) or inner ones (folded before
+        /// the constant reaches the plan). Accept a prefix or a suffix match, and still compare
+        /// element-wise to avoid building a joined string for every candidate/literal pair.
+        const size_t candidate_function_count = candidate.function_names.size();
+        if (candidate_function_count > position.function_list.size())
+            return false;
+
+        auto matches_at = [&](size_t offset)
         {
-            if (!function_names_str.empty())
-                function_names_str += "-";
-            function_names_str += fname;
-        }
-        String function_names;
-        for (const auto & function_name : position.function_list)
-        {
-            if (!function_names.empty())
-                function_names += "-";
-            function_names += function_name;
-        }
-        if (function_names_str != function_names)
-        {
-            if (number >= position.function_list.size())
-                return false;
-            for (size_t i = number; i > 0; i--)
+            for (size_t i = 0; i < candidate_function_count; ++i)
             {
-                if (position.function_list[i - 1] != candidate.function_names[i - 1])
+                if (position.function_list[offset + i] != candidate.function_names[i])
                     return false;
             }
+            return true;
+        };
+
+        /// For equal lengths the prefix and the suffix are the same range, so only one check is needed.
+        if (!matches_at(0))
+        {
+            if (candidate_function_count == position.function_list.size())
+                return false;
+            if (!matches_at(position.function_list.size() - candidate_function_count))
+                return false;
         }
     }
     if (ast_index < parameters.parsed_params.size())
@@ -1074,6 +1077,12 @@ void findActionsDAGAndCollectConstants(
                         break;
 
                     const Field value = column_const->getField();
+
+                    /// Runtime join filters inject internal `_rf_*` constants that do not come from
+                    /// the query text; they must not participate in literal binding.
+                    if (startsWith(node->result_name, "_rf_")
+                        || (value.getType() == Field::Types::String && startsWith(value.safeGet<String>(), "_rf_")))
+                        break;
                     int column_const_number = 0;
                     int input_number = 0;
                     size_t function_size = function_names.size();
@@ -1131,7 +1140,7 @@ void findActionsDAGAndCollectConstants(
                 break;
         }
     };
-    if (dag_scope == "ExpressionStep" || dag_scope == "FilterStep")
+    if (dag_scope == "ExpressionStep" || dag_scope == "FilterStep" || dag_scope == "Prewhere")
     {
         for (const auto * node : dag.getOutputs())
         {
@@ -2175,6 +2184,76 @@ bool VectorQueryParameters::replaceConstantsInQueryPlan(
             if (!apply_bindings_to_dag(dag, plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index, plan_constant_binding.target_type))
                 return false;
         }
+        else if (auto * totals_having_step = typeid_cast<TotalsHavingStep *>(node->step.get()))
+        {
+            if (plan_constant_binding.dag_scope != "FilterStep")
+                continue;
+            ActionsDAG * dag = totals_having_step->getActions();
+            if (!dag)
+                return false;
+            if (!apply_bindings_to_dag(*dag, plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index, plan_constant_binding.target_type))
+                return false;
+        }
+        else if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        {
+            const String & scope = plan_constant_binding.dag_scope;
+            if (scope == "Prewhere")
+            {
+                auto prewhere_info = read_from_merge_tree->getPrewhereInfo();
+                if (!prewhere_info)
+                    return false;
+
+                /// The clone shares the prewhere object with the cache entry, so patch a copy.
+                auto new_prewhere_info = std::make_shared<PrewhereInfo>(prewhere_info->clone());
+                if (!apply_bindings_to_dag(
+                        new_prewhere_info->prewhere_actions,
+                        plan_constant_binding.dag_node_index,
+                        plan_constant_binding.parameter_index,
+                        plan_constant_binding.target_type))
+                    return false;
+                read_from_merge_tree->updatePrewhereInfo(new_prewhere_info);
+            }
+            else if (scope == "VectorSearch")
+            {
+                auto vector_search_parameters = read_from_merge_tree->getVectorSearchParameters();
+                if (!vector_search_parameters || !plan_constant_binding.target_type)
+                    return false;
+                if (plan_constant_binding.parameter_index >= parameters.parsed_params.size())
+                    return false;
+
+                Field raw_value = parameters.parsed_params[plan_constant_binding.parameter_index];
+                Field converted = raw_value;
+                if (raw_value.getType() == Field::Types::String && isArray(plan_constant_binding.target_type))
+                {
+                    Field from_text;
+                    if (!stringToNumericArrayField(raw_value.safeGet<String>(), plan_constant_binding.target_type, from_text))
+                        return false;
+                    converted = std::move(from_text);
+                }
+                else
+                {
+                    converted = convertFieldToType(
+                        raw_value, *plan_constant_binding.target_type,
+                        nullptr, {}, false, /*convert_inexact_floats=*/true);
+                }
+
+                if (converted.getType() != Field::Types::Array)
+                    return false;
+
+                VectorWithMemoryTracking<Float64> reference_vector;
+                const auto & array = converted.safeGet<Array>();
+                reference_vector.reserve(array.size());
+                for (const auto & element : array)
+                    reference_vector.push_back(applyVisitor(FieldVisitorConvertToNumber<Float64>(), element));
+
+                vector_search_parameters->reference_vector = std::move(reference_vector);
+                read_from_merge_tree->setVectorSearchParameters(std::move(vector_search_parameters));
+            }
+            else
+            {
+                continue;
+            }
+        }
     }
     return true;
 }
@@ -2537,7 +2616,10 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                 pos.target_type = reinterpret_target_type ? reinterpret_target_type : target_type;
                 pos.function_list = function_list;
                 pos.ast_path_name = ast_path_name;
-                pos.identifier_name = getFieldName(pos.identifier_name);
+                /// `" "` is the sentinel for "this literal has no sibling identifier": it only
+                /// marks the position as cacheable. Matching must see no identifier, and
+                /// `getFieldName(" ")` would keep the sentinel because it has no dot.
+                pos.identifier_name = pos.identifier_name == " " ? String{} : getFieldName(pos.identifier_name);
                 // LOG_DEBUG(logger, "collectASTLiteralPositions: added position, identifier_name={}, field_type={}, step_type={}, function_list_size={}, target_type={}",
                 //     pos.identifier_name, pos.field_type, pos.step_type, pos.function_list.size(),
                 //     pos.target_type ? dataTypePtrToString(pos.target_type) : "null");
@@ -3119,7 +3201,8 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                     pos.target_type = reinterpret_target_type ? reinterpret_target_type : target_type;
                     pos.function_list = function_list;
                     pos.ast_path_name = ast_path_name;
-                    pos.identifier_name = getFieldName(pos.identifier_name);
+                    /// See `collectASTLiteralPositions`: `" "` means "no identifier".
+                    pos.identifier_name = pos.identifier_name == " " ? String{} : getFieldName(pos.identifier_name);
                     positions.push_back(pos);
                     // LOG_ERROR(logger, "normalizedAST: added position index={}, identifier_name={}, target_type={}, reinterpret_target_type={}, step_type={}, field_type={}, function_list={}",
                     //     positions.size() - 1,
@@ -3530,13 +3613,19 @@ bool VectorQueryParameters::parseNormalizedParamsWithPlan(
 /// literal metadata collected earlier for the same query.
 ///
 /// The algorithm:
-///   1. Walk the plan tree, collecting PlanConstantCandidate from each ExpressionStep
-///      and FilterStep's ActionsDAG (via findActionsDAGAndCollectConstants).
-///   2. For each AST literal position, find exactly one matching candidate using
-///      candidateMatchesAstLiteral() (matching on scope, identifier, function chain, value).
-///   3. If any AST literal has zero or multiple matches, the entire result is invalidated
-///      (returns empty bindings) to prevent incorrect plan reuse.
-///   4. The final bindings list is reversed to match the AST traversal order.
+///   1. Walk the plan tree, collecting PlanConstantCandidate from each ExpressionStep,
+///      FilterStep, PREWHERE of a ReadFromMergeTree, and vector-search read (via
+///      findActionsDAGAndCollectConstants).
+///   2. Walk each ActionsDAG object only once, even when several plan steps expose it, so the
+///      same slot is not collected twice and no post-pass deduplication is needed.
+///   3. Iterate the plan slots once and match every slot against all AST literals using
+///      candidateMatchesAstLiteral() (scope, identifier, function chain, value). A slot must match
+///      exactly one literal. One literal may match several slots when an optimization copied the
+///      same condition into more than one DAG (e.g. PREWHERE and the ExpressionStep consuming it);
+///      all those slots get the same parameter index.
+///   4. If any slot has zero matches or matches several literals, or any AST literal has no slot,
+///      the entire result is invalidated (returns empty bindings) to prevent incorrect plan reuse.
+///   5. Bindings carry the AST literal index, so their order is irrelevant to the restore path.
 ///
 /// Returns an empty vector on any mismatch (logged at DEBUG level).
 std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::CollectQueryPlanConstants(
@@ -3556,6 +3645,15 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
     visited.reserve(64);
     std::vector<PlanConstantCandidate> candidates;
     candidates.reserve(parameters.ast_literal_position_list.size());
+    /// A DAG can be exposed by more than one plan step (for example a shared `PrewhereInfo`).
+    /// Walk it once: every step sees the same object, so replacing its constants once suffices.
+    std::unordered_set<const ActionsDAG *> collected_dags;
+    auto collect_dag = [&](ActionsDAG & dag, const NodePath & path, const String & scope, Int32 step_type)
+    {
+        if (!collected_dags.insert(&dag).second)
+            return;
+        findActionsDAGAndCollectConstants(dag, path, scope, step_type, candidates, only_vector);
+    };
     while (!stack.empty())
     {
         auto [node, path] = stack.back();
@@ -3564,20 +3662,54 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
             continue;
 
         if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
-            findActionsDAGAndCollectConstants(
-                expression_step->getExpression(),
-                path,
-                "ExpressionStep",
-                1,
-                candidates, only_vector);
+            collect_dag(expression_step->getExpression(), path, "ExpressionStep", 1);
 
         if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
-            findActionsDAGAndCollectConstants(
-                filter_step->getExpression(),
-                path,
-                "FilterStep",
-                2,
-                candidates, only_vector);
+            collect_dag(filter_step->getExpression(), path, "FilterStep", 2);
+
+        /// HAVING is not a separate `FilterStep`: it lives in the `TotalsHavingStep`'s actions DAG.
+        /// Its literals carry the Filter AST step type, so they are collected under the same scope.
+        if (auto * totals_having_step = typeid_cast<TotalsHavingStep *>(node->step.get()))
+        {
+            if (auto * actions = totals_having_step->getActions())
+                collect_dag(*actions, path, "FilterStep", 2);
+        }
+
+        /// Optimizations may move query constants out of the expression/filter steps: a WHERE
+        /// constant is pushed into the read step's PREWHERE, and the vector-search rewrite consumes
+        /// the reference-vector literal into `VectorSearchParameters`. Both must be bindable when the
+        /// plan is cached after optimization.
+        if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        {
+            if (auto prewhere_info = read_from_merge_tree->getPrewhereInfo())
+                collect_dag(prewhere_info->prewhere_actions, path, "Prewhere", 2);
+
+            /// Only the `_distance` rewrite consumes the reference-vector literal. In rescoring
+            /// mode the literal stays in the expression step and is bound there.
+            if (auto vector_search_parameters = read_from_merge_tree->getVectorSearchParameters();
+                vector_search_parameters && read_from_merge_tree->isVectorColumnReplaced())
+            {
+                Array reference_vector_values;
+                reference_vector_values.reserve(vector_search_parameters->reference_vector.size());
+                for (const auto value : vector_search_parameters->reference_vector)
+                    reference_vector_values.push_back(Field(value));
+
+                PlanConstantCandidate candidate;
+                candidate.binding.plan_node_path = path;
+                candidate.binding.parameter_index = 0;
+                candidate.binding.dag_scope = "VectorSearch";
+                candidate.binding.dag_node_index = 0;
+                candidate.binding.value_text = applyVisitor(FieldVisitorToString(), Field(reference_vector_values));
+                candidate.binding.field_type = static_cast<Int32>(Field::Types::Array);
+                candidate.binding.target_type
+                    = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
+                candidate.value = Field(reference_vector_values);
+                candidate.step_type = 4;
+                candidate.function_names = {Poco::toLower(vector_search_parameters->distance_function)};
+                candidate.identifier_names = getFieldName(vector_search_parameters->column);
+                candidates.push_back(std::move(candidate));
+            }
+        }
 
         for (size_t i = 0; i < node->children.size(); ++i)
         {
@@ -3587,24 +3719,79 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
         }
     }
 
-    std::vector<bool> candidate_used(candidates.size(), false);
-    bindings.reserve(parameters.ast_literal_position_list.size());
+    /// Each plan slot must match exactly one AST literal. Iterate the slots once: a slot with no
+    /// matching literal cannot be restored on a cache hit, and a slot matching several literals is
+    /// ambiguous because we cannot tell which runtime value belongs to it.
+    std::vector<uint8_t> literal_matched(parameters.ast_literal_position_list.size(), 0);
+    size_t matched_literals = 0;
+    bindings.reserve(candidates.size());
 
-    for (size_t ast_index = 0; ast_index < parameters.ast_literal_position_list.size(); ++ast_index)
+    std::vector<size_t> matched_ast_indexes;
+    matched_ast_indexes.reserve(parameters.ast_literal_position_list.size());
+
+    for (size_t candidate_index = 0; candidate_index < candidates.size(); ++candidate_index)
     {
-        const auto & ast_position = parameters.ast_literal_position_list[ast_index];
-        std::vector<size_t> matched_candidate_indexes;
-
-        for (size_t candidate_index = 0; candidate_index < candidates.size(); ++candidate_index)
+        const auto & candidate = candidates[candidate_index];
+        matched_ast_indexes.clear();
+        for (size_t ast_index = 0; ast_index < parameters.ast_literal_position_list.size(); ++ast_index)
         {
-            if (candidate_used[candidate_index])
+            if (candidateMatchesAstLiteral(
+                    candidate, ast_index, parameters.ast_literal_position_list[ast_index], parameters))
+                matched_ast_indexes.push_back(ast_index);
+        }
+
+        if (matched_ast_indexes.empty())
+        {
+            LOG_DEBUG(
+                logger,
+                "CollectQueryPlanConstants failed: QueryPlan constant scope={} dag_node_index={} value={} has no matching AST literal position",
+                candidate.binding.dag_scope,
+                candidate.binding.dag_node_index,
+                candidate.binding.value_text);
+            bindings.clear();
+            return bindings;
+        }
+
+        if (matched_ast_indexes.size() > 1)
+        {
+            LOG_DEBUG(
+                logger,
+                "CollectQueryPlanConstants failed: QueryPlan constant scope={} dag_node_index={} value={} matches AST literals {} and {}",
+                candidate.binding.dag_scope,
+                candidate.binding.dag_node_index,
+                candidate.binding.value_text,
+                matched_ast_indexes.front(),
+                matched_ast_indexes.back());
+            bindings.clear();
+            return bindings;
+        }
+
+        /// One AST literal may legitimately own several slots: an optimization can leave copies of
+        /// the same condition in different DAGs (for example PREWHERE and the ExpressionStep that
+        /// consumes its result). All of them get the same parameter index and are updated with the
+        /// same runtime value; binding only one would leave the others with the old literal.
+        const size_t ast_index = matched_ast_indexes.front();
+        if (!literal_matched[ast_index])
+        {
+            literal_matched[ast_index] = 1;
+            ++matched_literals;
+        }
+
+        auto binding = candidate.binding;
+        binding.parameter_index = static_cast<UInt32>(ast_index);
+        bindings.push_back(std::move(binding));
+    }
+
+    /// Every AST literal needs at least one slot; otherwise its runtime value cannot be applied.
+    /// Build the diagnostic only on the failure path.
+    if (matched_literals < literal_matched.size())
+    {
+        for (size_t ast_index = 0; ast_index < literal_matched.size(); ++ast_index)
+        {
+            if (literal_matched[ast_index])
                 continue;
 
-            if (candidateMatchesAstLiteral(candidates[candidate_index], ast_index, ast_position, parameters))
-                matched_candidate_indexes.push_back(candidate_index);
-        }
-        if (matched_candidate_indexes.empty())
-        {
+            const auto & ast_position = parameters.ast_literal_position_list[ast_index];
             String function_chain;
             for (size_t function_index = 0; function_index < ast_position.function_list.size(); ++function_index)
             {
@@ -3613,70 +3800,81 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
                 function_chain += ast_position.function_list[function_index];
             }
 
+            String candidates_text;
+            for (const auto & candidate : candidates)
+            {
+                if (!candidates_text.empty())
+                    candidates_text += "; ";
+                candidates_text += candidate.binding.dag_scope
+                    + " identifier=" + candidate.identifier_names
+                    + " functions=";
+                for (size_t i = 0; i < candidate.function_names.size(); ++i)
+                {
+                    if (i)
+                        candidates_text += "-";
+                    candidates_text += candidate.function_names[i];
+                }
+                candidates_text += " value=" + candidate.binding.value_text;
+            }
+
             LOG_DEBUG(
                 logger,
-                "CollectQueryPlanConstants failed: no QueryPlan constant matches AST literal index={} step_type={} identifier_name={} ast_path_name={} parsed_param={} function_list={}",
+                "CollectQueryPlanConstants failed: no QueryPlan constant matches AST literal index={} step_type={} identifier_name={} ast_path_name={} parsed_param={} function_list={} candidates=[{}]",
                 ast_index,
                 ast_position.step_type,
                 ast_position.identifier_name,
                 ast_position.ast_path_name,
                 ast_index < parameters.parsed_params.size() ? applyVisitor(FieldVisitorToString(), parameters.parsed_params[ast_index]) : String{},
-                function_chain);
-            bindings.clear();
-            return bindings;
+                function_chain,
+                candidates_text);
+            break;
         }
-
-        if (matched_candidate_indexes.size() > 1)
-        {
-            std::vector<String> candidate_scopes;
-            candidate_scopes.reserve(matched_candidate_indexes.size());
-            for (const auto candidate_index : matched_candidate_indexes)
-                candidate_scopes.push_back(candidates[candidate_index].binding.dag_scope + "#" + toString(candidates[candidate_index].binding.dag_node_index));
-
-            String scopes_text;
-            for (size_t scope_index = 0; scope_index < candidate_scopes.size(); ++scope_index)
-            {
-                if (scope_index)
-                    scopes_text += ", ";
-                scopes_text += candidate_scopes[scope_index];
-            }
-
-            LOG_DEBUG(
-                logger,
-                "CollectQueryPlanConstants failed: AST literal index={} step_type={} identifier_name={} ast_path_name={} matched multiple QueryPlan constants: {}",
-                ast_index,
-                ast_position.step_type,
-                ast_position.identifier_name,
-                ast_position.ast_path_name,
-                scopes_text);
-            bindings.clear();
-            return bindings;
-        }
-
-        const size_t matched_candidate_index = matched_candidate_indexes.front();
-        candidate_used[matched_candidate_index] = true;
-        auto binding = candidates[matched_candidate_index].binding;
-        binding.parameter_index = static_cast<UInt32>(ast_index);
-        bindings.push_back(std::move(binding));
-    }
-
-    for (size_t candidate_index = 0; candidate_index < candidates.size(); ++candidate_index)
-    {
-        if (candidate_used[candidate_index])
-            continue;
-
-        LOG_DEBUG(
-            logger,
-            "CollectQueryPlanConstants failed: QueryPlan constant scope={} dag_node_index={} value={} has no matching AST literal position",
-            candidates[candidate_index].binding.dag_scope,
-            candidates[candidate_index].binding.dag_node_index,
-            candidates[candidate_index].binding.value_text);
         bindings.clear();
         return bindings;
     }
 
-    std::reverse(bindings.begin(), bindings.end());
     return bindings;
+}
+
+std::optional<VectorQueryParameters::CachedPlanSelection> VectorQueryParameters::prepareCachedPlan(
+    VectorQueryPlanCache::Writer & writer,
+    QueryPlan & optimized_plan,
+    QueryPlan * pre_optimization_plan,
+    const NormalizedQueryResult & parameters,
+    bool only_vector)
+{
+    std::vector<CachedPlanSelection> candidates;
+    if (!pre_optimization_plan)
+    {
+        candidates.push_back(CachedPlanSelection{&optimized_plan, true, {}});
+    }
+    else if (VectorQueryPlanCache::planHasVectorSearchRewrite(optimized_plan))
+    {
+        /// The `_distance` rewrite consumed the reference-vector literal, so no AST literal can
+        /// match in the optimized plan.
+        candidates.push_back(CachedPlanSelection{pre_optimization_plan, false, {}});
+    }
+    else
+    {
+        candidates.push_back(CachedPlanSelection{&optimized_plan, true, {}});
+        candidates.push_back(CachedPlanSelection{pre_optimization_plan, false, {}});
+    }
+
+    for (auto & candidate : candidates)
+    {
+        /// Store the clone before scanning: discovering an uncloneable plan is much cheaper than
+        /// a full ActionsDAG scan. The writer is not published unless bindings are found.
+        if (!writer.setPlan(*candidate.plan))
+            continue;
+
+        candidate.bindings = CollectQueryPlanConstants(*candidate.plan, parameters, only_vector);
+        if (candidate.bindings.empty())
+            continue;
+
+        return std::move(candidate);
+    }
+
+    return std::nullopt;
 }
 
 }

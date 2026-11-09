@@ -1,0 +1,63 @@
+=== I.1 INSERT: cache ON, run BEFORE the mutation (fills the cache) ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== I.2 INSERT: entry survived the mutation (entries) ===	1
+=== I.3 INSERT: cache ON, run AFTER the mutation -> stale result ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== I.4 INSERT: entries after the cached run ===	1
+=== I.5 INSERT: cache OFF, SAME query AFTER the mutation -> current result ===
+10	0
+1000	0
+9	1.7321
+11	1.7321
+8	3.4641
+=== I.6 INSERT: cache hits, misses, result cache hits ===	1	1	0
+=== D.1 DELETE: cache ON, run BEFORE the mutation (fills the cache) ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== D.2 DELETE: entry survived the mutation (entries) ===	1
+=== D.3 DELETE: cache ON, run AFTER the mutation -> stale result ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== D.4 DELETE: entries after the cached run ===	1
+=== D.5 DELETE: cache OFF, SAME query AFTER the mutation -> current result ===
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+7	5.1962
+=== D.6 DELETE: cache hits, misses, result cache hits ===	1	1	0
+=== U.1 UPDATE: cache ON, run BEFORE the mutation (fills the cache) ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== U.2 UPDATE: entry survived the mutation (entries) ===	1
+=== U.3 UPDATE: cache ON, run AFTER the mutation -> stale result ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== U.4 UPDATE: entries after the cached run ===	1
+=== U.5 UPDATE: cache OFF, SAME query AFTER the mutation -> current result ===
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+7	5.1962
+=== U.6 UPDATE: cache hits, misses, result cache hits ===	1	1	0

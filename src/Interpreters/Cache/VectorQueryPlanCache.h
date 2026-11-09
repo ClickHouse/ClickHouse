@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Core/Block.h>
 #include <Core/Types.h>
+#include <Storages/MergeTree/DataVersion.h>
 #include <base/UUID.h>
 
 #include <optional>
@@ -129,12 +130,19 @@ public:
     {
         std::shared_ptr<QueryPlan> plan_cache;  /// Cloned query plan stored for reuse.
         size_t plan_size = 0;                    /// Estimated plan size to charge cache usage.
+        /// True when `plan_cache` was captured after QueryPlan optimization. Its data-dependent
+        /// choices (e.g. a join build side) are frozen and must not be re-derived on a hit.
+        bool plan_is_optimized = false;
         ASTPtr ast;                              /// Cloned AST snapshot stored for reuse.
         size_t ast_size = 0;                     /// Serialized AST size estimate for cache accounting.
         std::vector<ASTLiteralPosition> ast_literal_positions; /// Ordered ASTLiteral node positions for fast replacement.
         std::vector<PlanConstantBinding> plan_constant_bindings; /// QueryPlan constant-node positions for fast replacement.
         std::vector<String> table_names;         /// Canonical `db.table` names referenced by this cached SELECT entry.
         String query_access_info_cache;
+        std::vector<TableDataVersion> table_data_versions; /// Data versions captured from every MergeTree read step.
+        /// False when the plan contains a data source whose state cannot be versioned, or when
+        /// versioning is disabled. `Auto` reuses such entries without a version check.
+        bool data_versions_recorded = false;
     };
 
 private:
@@ -163,7 +171,11 @@ public:
 
         /// Store a cloned QueryPlan snapshot into the entry currently being built.
         /// The writer owns the clone so the caller can keep mutating its original plan.
-        void setPlan(QueryPlan & plan);
+        /// Returns false when the plan was not stored: a text-index read, a source without a
+        /// data version in a versioning mode, or a step that cannot be cloned.
+        bool setPlan(QueryPlan & plan);
+        /// Mark whether the stored plan was captured after QueryPlan optimization.
+        void setPlanIsOptimized(bool is_optimized);
         /// Store a cloned AST snapshot so AST-cache hits can skip SQL parsing.
         void setAst(const ASTPtr & ast);
         /// Store the ordered AST literal map used during AST constant restoration.
@@ -188,6 +200,10 @@ public:
         const size_t max_entry_size_in_rows;
         const std::chrono::time_point<std::chrono::system_clock> query_start_time;
         const std::chrono::milliseconds min_plan_build_time;
+        /// Whether entries are validated against table data versions. When enabled, versions are
+        /// recorded if all sources are versionable; otherwise the plan is stored without versions
+        /// and the reader reuses it without a check.
+        const bool data_version_check;
         Cache::MappedPtr query_plan TSA_GUARDED_BY(mutex) = std::make_shared<VectorQueryPlanCache::Entry>(); /// Entry under construction.
         std::atomic<bool> skip_insert = false; /// Future guard for admission short-circuiting.
         std::atomic<bool> was_finalized = false; /// Prevents publishing the same writer twice. Atomic for thread-safe copy.
@@ -198,7 +214,8 @@ public:
             Cache & cache_,
             const Key & key_,
             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
-            std::chrono::milliseconds min_plan_build_time_);
+            std::chrono::milliseconds min_plan_build_time_,
+            bool data_version_check_);
 
         friend class VectorQueryPlanCache;
     };
@@ -214,6 +231,8 @@ public:
         /// Return a cloned QueryPlan snapshot. The caller receives ownership of the clone
         /// and can safely patch constants without mutating the cache entry itself.
         QueryPlanPtr getPlan();
+        /// Whether the entry's plan was stored after optimization, so it can be executed as is.
+        bool isCachedPlanOptimized() const { return plan_is_optimized; }
         /// Return a cloned cached AST snapshot for this key.
         ASTPtr getAst();
         /// Return the AST literal map associated with the cache entry.
@@ -221,6 +240,11 @@ public:
         /// Return the QueryPlan constant map associated with the cache entry.
         const std::vector<PlanConstantBinding> & getPlanConstantBindings() const;
         String getQueryAccessInfo();
+
+        /// Validate the cached plan against the current data versions of all referenced tables.
+        /// Returns true when the plan may be reused. Always true when the check is disabled and
+        /// for entries stored without versions.
+        bool isDataVersionValid(const Settings & settings, const ContextPtr & context) const;
 
     private:
         /// The reader snapshots the shared entry under VectorQueryPlanCache::mutex and then
@@ -235,6 +259,9 @@ public:
         Cache::MappedPtr entry_mapped;   /// Underlying cache entry for AnalysisResult reuse.
         size_t plan_size = 0;            /// Size of the plan for deferred statistics counting.
         size_t ast_size = 0;              /// Size of the AST for deferred statistics counting.
+        std::vector<TableDataVersion> table_data_versions;
+        bool data_versions_recorded = false;
+        bool plan_is_optimized = false;
         LoggerPtr logger = getLogger("VectorQueryPlanCacheReader");
         String query_access_info;
         friend class VectorQueryPlanCache;
@@ -250,12 +277,19 @@ public:
         const Key & key,
         std::chrono::milliseconds min_plan_build_time,
         size_t max_query_plan_cache_size_in_bytes_quota,
-        size_t max_query_cache_entries_quota);
+        size_t max_query_cache_entries_quota,
+        bool data_version_check);
 
     void clear(const std::optional<String> & tag);
+    /// Drop one entry. Used when a cached plan is rejected by data version validation
+    /// so the following replan can publish a fresh entry.
+    void remove(const Key & key);
     /// Remove every entry whose cached SELECT depends on one of the provided tables.
     /// Table names must be canonical `db.table` strings.
     void clearByTables(const std::vector<String> & table_names);
+    /// Same as `clearByTables`, but only for entries stored without data versions. `Auto` uses it
+    /// for DML: versioned entries detect the change themselves, so they must survive to be refreshed.
+    void clearUnversionedByTables(const std::vector<String> & table_names);
     /// Remove every entry that depends on any table inside one of the provided databases.
     /// This is used for broad DDL such as DROP/RENAME/ALTER DATABASE or TRUNCATE ALL TABLES.
     void clearByDatabases(const std::vector<String> & database_names);
@@ -271,6 +305,21 @@ public:
     /// subqueries may reorder constants during optimization, so cache writes for
     /// those statements are skipped.
     static bool containsSubquery(const ASTPtr & ast);
+
+    /// True when the plan reads at least one MergeTree table. Such plans need a pre-optimization
+    /// copy because the optimizer may consume the literals used to bind the plan to a normalized
+    /// query text (the vector-search rewrite does this with the reference-vector literal).
+    static bool planHasMergeTreeRead(const QueryPlan & plan);
+
+    /// True when an optimizer pass consumed a bindable literal: the vector-search `_distance`
+    /// rewrite removes the reference-vector literal from the optimized plan, so no AST literal
+    /// can match it and collecting bindings on that plan would be a wasted full pass.
+    static bool planHasVectorSearchRewrite(const QueryPlan & plan);
+
+    /// `Auto` restore: keep the structure of a cached plan and refresh only the data-related state
+    /// of every MergeTree read step. Returns false as soon as one read step cannot be refreshed
+    /// safely (or the plan has no refreshable read step), so the caller can rebuild the plan.
+    static bool refreshDataSnapshots(QueryPlan & plan, const ContextPtr & context);
 
 private:
     /// Reverse lookup from canonical `db.table` name to every cache key whose entry

@@ -7,6 +7,7 @@
 #include <Common/SettingsChanges.h>
 
 #include <string_view>
+#include <optional>
 #include <vector>
 #include <string>
 
@@ -230,6 +231,27 @@ public:
     std::vector<VectorQueryPlanCache::PlanConstantBinding> CollectQueryPlanConstants(
         QueryPlan & query_plan,
         const NormalizedQueryResult & parameters, bool only_vector = false);
+
+    /// One plan chosen for caching together with the constant bindings collected from it.
+    struct CachedPlanSelection
+    {
+        QueryPlan * plan = nullptr;
+        bool optimized = false;
+        std::vector<VectorQueryPlanCache::PlanConstantBinding> bindings;
+    };
+
+    /// Store one of the candidate plans into `writer` and collect its constant bindings.
+    ///
+    /// The optimized plan is tried first; when the vector-search rewrite consumed the bindable
+    /// reference-vector literal, only the pre-optimization copy is tried. For every candidate
+    /// `setPlan` runs before `CollectQueryPlanConstants`: the scan walks every ActionsDAG and
+    /// costs much more than a clone, so a plan that cannot be stored is skipped cheaply.
+    std::optional<CachedPlanSelection> prepareCachedPlan(
+        VectorQueryPlanCache::Writer & writer,
+        QueryPlan & optimized_plan,
+        QueryPlan * pre_optimization_plan,
+        const NormalizedQueryResult & parameters,
+        bool only_vector = false);
 
 };
 

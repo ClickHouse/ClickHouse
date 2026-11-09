@@ -33,6 +33,9 @@ DROP DATABASE IF EXISTS vector_plan_cache_other_db;
 SET use_query_cache = 0;
 SET vector_query_plan_cache = 1;
 SET vector_only_cache_query_plan = 1;
+-- With data version checking disabled, a DML drops every entry of the written table instead of
+-- leaving versioned entries to the check, which is what this test asserts.
+SET query_plan_cache_data_version_check = 0;
 SET enable_vector_performance_test = 1;
 
 -- Run-scoped start time: assertions only count queries logged after it.

@@ -68,6 +68,11 @@ BlocksMarshallingStep::BlocksMarshallingStep(const SharedHeader & input_header_)
 {
 }
 
+QueryPlanStepPtr BlocksMarshallingStep::clone() const
+{
+    return std::make_unique<BlocksMarshallingStep>(*this);
+}
+
 void BlocksMarshallingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     // The getNumStreams() == 1 is special, because it may indicate that pipeline ended with a sorting or aggregation, i.e. we should preserve chunks order.

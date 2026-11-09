@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -302,6 +303,8 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
+    extern const SettingsBool query_plan_cache_data_version_check;
+    extern const SettingsBool vector_query_plan_cache;
     extern const SettingsUInt64 max_table_size_to_drop;
     extern const SettingsUInt64 max_temporary_table_size_bytes_compressed;
     extern const SettingsUInt64 max_temporary_table_size_bytes_uncompressed;
@@ -15462,6 +15465,84 @@ StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_con
     return cache->emplace(this, metadata).first->second;
 }
 
+namespace
+{
+
+UInt64 hashPartsGeneration(const DataPartsVector & parts)
+{
+    SipHash hash;
+    hash.update(parts.size());
+    for (const auto & part : parts)
+        hash.update(part->name);
+    return hash.get64();
+}
+
+template <typename Map>
+UInt64 hashVersionMap(const Map & map)
+{
+    /// Hash each entry separately and sum the results to stay independent of unordered_map iteration order.
+    UInt64 result = 0;
+    for (const auto & [key, value] : map)
+    {
+        SipHash hash;
+        hash.update(key);
+        hash.update(static_cast<Int64>(value));
+        result += hash.get64();
+    }
+    return result;
+}
+
+UInt64 hashMutationState(const MergeTreeData::IMutationsSnapshot & snapshot, const DeleteBitmapSnapshotPtr & uk_read_snapshot)
+{
+    const auto * mutations = dynamic_cast<const MergeTreeData::MutationsSnapshotBase *>(&snapshot);
+    if (!mutations)
+        return 0;
+
+    SipHash hash;
+    const auto & params = mutations->params;
+    hash.update(params.metadata_version);
+    hash.update(params.min_part_metadata_version);
+    hash.update(params.min_patch_metadata_version);
+    hash.update(params.need_data_mutations);
+    hash.update(params.need_alter_mutations);
+    hash.update(params.need_patch_parts);
+    hash.update(params.has_lightweight_delete_parts);
+    hash.update(params.min_part_data_versions ? hashVersionMap(*params.min_part_data_versions) : 0);
+    hash.update(params.max_mutation_versions ? hashVersionMap(*params.max_mutation_versions) : 0);
+
+    /// Patch parts do not belong to `parts`, but they affect read results after lightweight updates.
+    UInt64 patch_parts_hash = 0;
+    for (const auto & [partition_id, patches] : mutations->patches_by_partition)
+    {
+        SipHash patches_hash;
+        patches_hash.update(partition_id);
+        patches_hash.update(patches.size());
+        for (const auto & patch : patches)
+            patches_hash.update(patch->name);
+        patch_parts_hash += patches_hash.get64();
+    }
+    hash.update(patch_parts_hash);
+
+    hash.update(mutations->counters.num_data);
+    hash.update(mutations->counters.num_alter);
+    hash.update(mutations->counters.num_metadata);
+
+    if (uk_read_snapshot)
+    {
+        hash.update(uk_read_snapshot->snapshotCSN());
+        hash.update(uk_read_snapshot->readerTID().getHash());
+    }
+    else
+    {
+        hash.update(static_cast<UInt64>(0));
+        hash.update(static_cast<UInt64>(0));
+    }
+
+    return hash.get64();
+}
+
+}
+
 StorageSnapshotPtr
 MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {
@@ -15506,6 +15587,19 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
     };
 
     snapshot_data->mutations_snapshot = getMutationsSnapshot(params);
+
+    /// Computed only when the plan cache can actually use them; otherwise hashing every part on
+    /// every snapshot would be pure overhead.
+    if (query_context->getSettingsRef()[Setting::query_plan_cache_data_version_check]
+        && query_context->getSettingsRef()[Setting::vector_query_plan_cache])
+    {
+        snapshot_data->data_version.parts_generation = hashPartsGeneration(*query_parts);
+        snapshot_data->data_version.mutation_version
+            = hashMutationState(*snapshot_data->mutations_snapshot, snapshot_data->uk_read_snapshot);
+        snapshot_data->data_version.metadata_version
+            = static_cast<UInt64>(metadata_snapshot->getMetadataVersion());
+    }
+
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
