@@ -63,7 +63,7 @@ void LocalDirectorySyncGuard::sync()
         }
     });
 
-    ProfileEvents::increment(ProfileEvents::DirectorySync);
+    ProfileEvents::incrementNonAllocating(ProfileEvents::DirectorySync);
     Stopwatch watch;
 
 #if defined(OS_DARWIN)
@@ -77,6 +77,6 @@ void LocalDirectorySyncGuard::sync()
     if (-1 == ::close(std::exchange(sync_fd, -1)))
         ErrnoException::throwWithErrno(ErrorCodes::CANNOT_CLOSE_FILE, errno, "Cannot close directory");
 
-    ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::incrementNonAllocating(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
 }
 }

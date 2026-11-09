@@ -73,7 +73,7 @@ IAsynchronousReader::Result SynchronousReader::execute(Request request)
 
         if (-1 == res && errno != EINTR)
         {
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+            ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
             throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd);
         }
 

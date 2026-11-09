@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 
@@ -20,11 +21,11 @@ namespace ErrorCodes
 extern const int FS_METADATA_ERROR;
 }
 
-std::optional<String> MetadataOperationsHolder::rollback(size_t until_pos) noexcept
+std::optional<String> MetadataOperationsHolder::rollback(size_t until_pos, ProfileEvents::Counters & counters) noexcept
 {
     LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
-    ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacks);
+    counters.incrementNonAllocating(ProfileEvents::MetadataTransactionRollbacks);
 
     for (int64_t i = until_pos; i >= 0; --i)
     {
@@ -34,7 +35,7 @@ std::optional<String> MetadataOperationsHolder::rollback(size_t until_pos) noexc
         }
         catch (...)
         {
-            ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacksFailed);
+            counters.incrementNonAllocating(ProfileEvents::MetadataTransactionRollbacksFailed);
 
             state = MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK;
 
@@ -82,6 +83,13 @@ void MetadataOperationsHolder::commit()
             toString(state),
             toString(MetadataStorageTransactionState::PREPARING));
 
+    auto & counters = CurrentThread::getProfileEvents();
+    if (!operations.empty())
+    {
+        counters.preallocate(ProfileEvents::MetadataTransactionRollbacks);
+        counters.preallocate(ProfileEvents::MetadataTransactionRollbacksFailed);
+    }
+
     for (size_t i = 0; i < operations.size(); ++i)
     {
         try
@@ -93,7 +101,7 @@ void MetadataOperationsHolder::commit()
             state = MetadataStorageTransactionState::FAILED;
 
             String details = fmt::format("While committing metadata operation #{}", i);
-            const auto rollback_failure = rollback(i);
+            const auto rollback_failure = rollback(i, counters);
             if (rollback_failure)
                 details += ": " + *rollback_failure;
 

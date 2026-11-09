@@ -120,8 +120,8 @@ public:
                 scheduling.state->fair.vruntime_correction.fetch_add(service_delta, std::memory_order_relaxed);
             }
             ResourceRequest::finish();
-            ProfileEvents::increment(metrics->requests);
-            ProfileEvents::increment(metrics->cost, real_cost_);
+            ProfileEvents::incrementNonAllocating(metrics->requests);
+            ProfileEvents::incrementNonAllocating(metrics->cost, real_cost_);
         }
 
         // If the request was failed by the scheduler, reset it to `Finished` for reuse and report it.
@@ -191,6 +191,9 @@ public:
             link.reset(); // Ignore zero-cost requests
         else if (link)
         {
+            ProfileEvents::preallocate(metrics->requests);
+            ProfileEvents::preallocate(metrics->cost);
+            ProfileEvents::preallocate(metrics->wait_microseconds);
             try
             {
                 request.enqueue(cost, link);

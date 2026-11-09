@@ -73,6 +73,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     /// looks at the page cache.
     if (!request.direct_io && preadNoWaitUnavailableReason().empty())
     {
+        auto & counters = CurrentThread::getProfileEvents();
+        counters.preallocate(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds);
+        counters.preallocate(ProfileEvents::DiskReadElapsedMicroseconds);
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
         /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it.
@@ -81,8 +84,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         SCOPE_EXIT({
             watch.stop();
 
-            ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
-            ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+            counters.incrementNonAllocating(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
+            counters.incrementNonAllocating(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
         });
 
         std::promise<Result> promise;
@@ -127,7 +130,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                     continue;
                 }
 
-                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
                 promise.set_exception(
                     std::make_exception_ptr(ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
                 return future;
@@ -156,12 +159,16 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     return schedule([request, fd]() -> Result
     {
+        /// The submitting thread's reservation does not cover this worker's counters.
+        auto & counters = CurrentThread::getProfileEvents();
+        counters.preallocate(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds);
+        counters.preallocate(ProfileEvents::DiskReadElapsedMicroseconds);
         Stopwatch watch(CLOCK_MONOTONIC);
         SCOPE_EXIT({
             watch.stop();
 
-            ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
-            ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+            counters.incrementNonAllocating(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
+            counters.incrementNonAllocating(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
         });
 
         size_t bytes_read = 0;
@@ -180,7 +187,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
             if (-1 == res && errno != EINTR)
             {
-                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
                 throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd);
             }
 
