@@ -16,6 +16,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
@@ -51,10 +52,16 @@ void writeMessageToFile(
     const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
+/// True for the exception thrown when the commit's outcome cannot be established. A caller must not delete
+/// its staged files on it: they may belong to the snapshot the table now points at.
+bool isCommitStateUnknown(const DB::Exception & e);
+
 /// Whether a conditional write failed because another writer created or changed the object first.
 bool isConditionalWriteConflict(const DB::Exception & e);
 
-/// Writes the metadata file with If-None-Match; false means the write was not confirmed or the path already exists.
+/// Writes the metadata file with If-None-Match. Returns false only when the commit is known not to have taken
+/// effect (the path already exists or another writer's content is stored there); an outcome that cannot be
+/// established throws `UNKNOWN_STATUS_OF_TRANSACTION`.
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -72,7 +79,9 @@ bool tryWriteVersionHintFile(
     bool create,
     bool assert_version_exactly);
 
-/// Existing callers keep the opportunistic hint update, including updates of an already-existing hint.
+/// Writes the metadata file as `writeMetadataFile` does, then opportunistically advances the version hint,
+/// including an already-existing hint. Will try to write the hint multiple times, but will not report failure
+/// to write it.
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,

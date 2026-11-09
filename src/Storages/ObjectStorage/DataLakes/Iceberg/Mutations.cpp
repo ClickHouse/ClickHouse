@@ -592,6 +592,12 @@ static bool writeMetadataFiles(
             }
         }
     }
+    catch (const Exception & e)
+    {
+        if (!Iceberg::isCommitStateUnknown(e))
+            cleanup();
+        throw;
+    }
     catch (...)
     {
         cleanup();

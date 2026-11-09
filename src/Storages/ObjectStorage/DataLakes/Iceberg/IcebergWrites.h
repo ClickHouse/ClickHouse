@@ -222,6 +222,8 @@ private:
     Int64 snapshot_id = 0;
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
+    /// The commit's outcome is unknown, so the current snapshot may reference the written files.
+    bool commit_state_unknown = false;
 
     /// The manifests are written once and reused on commit retries.
     Strings manifest_entries_in_storage;
