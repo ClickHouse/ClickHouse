@@ -249,15 +249,14 @@ enum class PredicatePropagationStage : uint8_t
 /// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution.
 /// With `index_analysis_enabled` off (`use_primary_key = 0`) no key column prunes, so `Pruning` copies nothing.
 /// `added_filters` collects the filters this pass adds, so that a later stage does not take one for a source filter.
-/// `late_copy_reads` collects the reads that get a `Shrinking` copy: it is not in their `filter_actions_dag`, which keys
-/// the query condition cache, so the filter above such a read must not write to the cache under that key
+/// A read that gets a `Shrinking` copy does not let `updateQueryConditionCache` tag the filter above it: the copy is
+/// not in its `filter_actions_dag`, which keys the query condition cache
 size_t tryPropagatePredicateAcrossEquiJoin(
     QueryPlan::Node * parent_node,
     QueryPlan::Nodes & nodes,
     PredicatePropagationStage stage,
     bool index_analysis_enabled,
     std::unordered_set<const QueryPlan::Node *> & added_filters,
-    std::unordered_set<const IQueryPlanStep *> & late_copy_reads,
     const Optimization::ExtraSettings & settings);
 
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering

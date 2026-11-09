@@ -303,12 +303,11 @@ void optimizeTreeSecondPass(
     const bool propagate_predicates
         = optimization_settings.propagate_predicate_across_join && optimization_settings.query_plan_optimize_primary_key;
     std::unordered_set<const QueryPlan::Node *> propagated_filters;
-    std::unordered_set<const IQueryPlanStep *> late_copy_reads;
     bool predicates_were_propagated = false;
     auto propagate_predicates_across_join = [&](QueryPlan::Node & node, PredicatePropagationStage stage)
     {
         predicates_were_propagated |= tryPropagatePredicateAcrossEquiJoin(
-            &node, nodes, stage, optimization_settings.index_analysis_enabled, propagated_filters, late_copy_reads, extra_settings) > 0;
+            &node, nodes, stage, optimization_settings.index_analysis_enabled, propagated_filters, extra_settings) > 0;
     };
     if (propagate_predicates)
     {
@@ -953,8 +952,7 @@ void optimizeTreeSecondPass(
         }
     }
 
-    /// The merges above rebuild `FilterStep`s and drop the QCC key, so re-walk to set it again. Not above a read
-    /// with a late copy: the key would not have the copy, which the filter above the read now applies
+    /// The merges above rebuild `FilterStep`s and drop the QCC key, so re-walk to set it again
     if (optimization_settings.use_query_condition_cache
         && (join_runtime_filters_were_added || predicates_were_propagated || lazy_materialization_applied))
     {
@@ -962,8 +960,7 @@ void optimizeTreeSecondPass(
         qcc_stack.push_back({.node = &root});
         while (!qcc_stack.empty())
         {
-            if (!late_copy_reads.contains(qcc_stack.back().node->step.get()))
-                updateQueryConditionCache(qcc_stack, optimization_settings);
+            updateQueryConditionCache(qcc_stack, optimization_settings);
 
             auto & qcc_frame = qcc_stack.back();
             if (qcc_frame.next_child < qcc_frame.node->children.size())
