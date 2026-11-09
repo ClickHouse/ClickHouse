@@ -108,7 +108,7 @@ Key ALWAYS_INLINE readStagedKey(const char * key_pos, [[maybe_unused]] size_t ke
     {
         /// The packed values come first, then the string. For a non-empty string the staged routing hash is
         /// the hash that the key stores (see `KeysAndPackedStringHashMap::hash`), so the rebuild reuses it.
-        /// `build` consults the functor only for the strings that store a hash (see `KeysAndPackedString`).
+        /// `build` calls the functor only for the keys whose hash it stores (see `KeysAndPackedString`).
         using Keys = decltype(Key::keys);
         return Key::build(
             unalignedLoad<Keys>(key_pos),

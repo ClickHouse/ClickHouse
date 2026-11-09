@@ -403,8 +403,8 @@ struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBa
     /// The fixed-width values are packed and the string is hashed in place, as by `HashMethodPackedString`.
     static constexpr bool has_cheap_key_holder = true;
 
-    /// The hash that the key stores (see `KeysAndPackedString`): the content hash of the string, continued with
-    /// the fixed-width values, so that it covers the whole key.
+    /// The hash that the key stores (see `KeysAndPackedString`): the content hash of the string, continued
+    /// with the fixed-width values, so that it covers the whole key.
     struct Hash
     {
         Keys keys;
