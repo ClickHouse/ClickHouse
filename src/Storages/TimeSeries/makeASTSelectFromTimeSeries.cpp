@@ -46,6 +46,7 @@ namespace
     constexpr const char * tags_subquery_alias = "__tags";
     constexpr const char * metric_families_subquery_alias = "__metric_families";
     constexpr const char * metric_families_with_all_suffixes_subquery_alias = "__metric_families_with_all_suffixes";
+    constexpr const char * exemplars_subquery_alias = "__exemplars";
 
     /// Alias of `concat(metric_family, arrayJoin(timeSeriesMetricTypeToSuffixes(type)))`
     /// (see `makeMetricFamiliesFullJoinElement`).
@@ -445,6 +446,41 @@ namespace
         return makeTableElementFromSubquery(std::move(inner), metric_families_subquery_alias);
     }
 
+    /// Builds `LEFT JOIN (SELECT id, CAST(arraySort(groupUniqArray((timestamp, value, labels))), '<type>') AS exemplars
+    /// FROM <exemplars> GROUP BY id) AS __exemplars USING (id)`, giving every time series its distinct exemplars sorted by timestamp.
+    ASTPtr makeExemplarsJoinElement(const StorageID & exemplars_table_id, const NameAndTypePair & exemplars_outer_column_name_and_type)
+    {
+        auto inner = make_intrusive<ASTSelectQuery>();
+        auto select_list = make_intrusive<ASTExpressionList>();
+        select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        auto exemplars = makeASTFunction("arraySort", makeASTFunction("groupUniqArray", makeASTFunction("tuple",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value),
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Labels))));
+        auto cast = makeASTFunction("CAST", std::move(exemplars), make_intrusive<ASTLiteral>(exemplars_outer_column_name_and_type.type->getName()));
+        cast->setAlias(exemplars_outer_column_name_and_type.name);
+        select_list->children.push_back(std::move(cast));
+        inner->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
+        inner->setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(exemplars_table_id));
+        auto group_by = make_intrusive<ASTExpressionList>();
+        group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        inner->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by);
+
+        auto join = make_intrusive<ASTTableJoin>();
+        join->kind = JoinKind::Left;
+        join->strictness = JoinStrictness::All;
+        auto using_list = make_intrusive<ASTExpressionList>();
+        using_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        join->using_expression_list = using_list;
+        join->children.push_back(join->using_expression_list);
+
+        auto exemplars_elem = makeTableElementFromSubquery(std::move(inner), exemplars_subquery_alias);
+        auto & exemplars_elem_ref = *exemplars_elem->as<ASTTablesInSelectQueryElement>();
+        exemplars_elem_ref.table_join = join;
+        exemplars_elem_ref.children.push_back(join);
+        return exemplars_elem;
+    }
+
     /// Builds the SELECT list of a multi-table read: one entry per requested outer column.
     ASTPtr makeJoinedSelectList(const NameSet & requested_columns, const NameSet & requested_tags,
                                 const std::unordered_map<String, String> & columns_by_tags, const String & samples_outer_column_name)
@@ -464,6 +500,8 @@ namespace
             select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Unit));
         if (requested_columns.contains(TimeSeriesColumnNames::Help))
             select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Help));
+        if (requested_columns.contains(TimeSeriesColumnNames::Exemplars))
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Exemplars));
         return select_list;
     }
 
@@ -683,11 +721,14 @@ namespace
     /// when the "samples" table is not read the query anchors on the "tags" table. The subquery aggregates the rows
     /// with `FINAL` and for the tables of the earlier versions (see makeSamplesTableElement).
     /// The "tags" table is always read — it bridges "samples" (joined by id) and "metric families" (joined by matching
-    /// metric_name against the expanded member names).
+    /// metric_name against the expanded member names). The "exemplars" table, when read, is joined by id after "tags"
+    /// (see makeExemplarsJoinElement), so every row of a time series gets all its exemplars.
     ASTPtr buildSelectQueryFromMultipleTables(
         const StorageID & tags_table_id,
         const std::optional<StorageID> & samples_table_id,
         const std::optional<StorageID> & metric_families_table_id,
+        const std::optional<StorageID> & exemplars_table_id,
+        const std::optional<NameAndTypePair> & exemplars_outer_column_name_and_type,
         const char * metric_family_column_name,
         const NameSet & requested_columns,
         const NameSet & requested_tags,
@@ -711,6 +752,8 @@ namespace
         {
             tables->children.push_back(makeTagsTableElement(tags_table_id, /* deduplicate_by_id= */ final));
         }
+        if (exemplars_table_id)
+            tables->children.push_back(makeExemplarsJoinElement(*exemplars_table_id, *exemplars_outer_column_name_and_type));
         if (metric_families_table_id)
             tables->children.push_back(makeMetricFamiliesFullJoinElement(*metric_families_table_id, metric_family_column_name));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
@@ -742,6 +785,9 @@ ASTPtr makeASTSelectFromTimeSeries(
                      || requested_columns.contains(TimeSeriesColumnNames::Unit)
                      || requested_columns.contains(TimeSeriesColumnNames::Help);
 
+    /// The exemplars are joined to the time series by id, so the "tags" table is read too.
+    bool need_exemplars = requested_columns.contains(TimeSeriesColumnNames::Exemplars);
+
     auto storage_settings = storage.getStorageSettings();
 
     /// With `FINAL` the read deduplicates unmerged "tags" parts (`LIMIT 1 BY id`) and merges unmerged rows of the same
@@ -756,7 +802,7 @@ ASTPtr makeASTSelectFromTimeSeries(
     /// If we read both "samples" and "metric families" tables then we also need to read the "tags" table as a bridge between them.
     /// If we read neither "samples" nor "metric families" tables then we need to read the "tags" table even if it's not requested
     /// (so that `SELECT count() FROM time_series` returns the number of time series).
-    if (need_samples == need_metric_families)
+    if ((need_samples == need_metric_families) || need_exemplars)
         need_tags = true;
 
     /// Collect information about each target table we're going to read.
@@ -786,11 +832,20 @@ ASTPtr makeASTSelectFromTimeSeries(
 
     const char * metric_family_column_name = TimeSeriesColumnNames::getInnerMetricFamily(storage.getVersion());
 
+    std::optional<StorageID> exemplars_table_id;
+    std::optional<NameAndTypePair> exemplars_outer_column_name_and_type;
+    if (need_exemplars)
+    {
+        exemplars_table_id = storage.getTargetTableID(ViewTarget::Exemplars, context);
+        exemplars_outer_column_name_and_type.emplace(
+            TimeSeriesColumnNames::Exemplars, storage_metadata->columns.get(TimeSeriesColumnNames::Exemplars).type);
+    }
+
     /// Single-table reads (no join).
     if (need_samples && !need_tags && !need_metric_families)
         return buildSelectQueryFromSamplesOnly(*samples_table_id, requested_columns, samples_outer_column_name_and_type, has_bucketed_samples, final);
 
-    if (need_tags && !need_samples && !need_metric_families)
+    if (need_tags && !need_samples && !need_metric_families && !need_exemplars)
         return buildSelectQueryFromTagsOnly(*tags_table_id, requested_columns, requested_tags, columns_by_tags,
                                             /* deduplicate_tags_by_id= */ final);
 
@@ -799,7 +854,8 @@ ASTPtr makeASTSelectFromTimeSeries(
 
     /// Multi-table reads: anchored on "samples" when it is read, otherwise on "tags".
     chassert(need_tags);
-    return buildSelectQueryFromMultipleTables(*tags_table_id, samples_table_id, metric_families_table_id, metric_family_column_name,
+    return buildSelectQueryFromMultipleTables(*tags_table_id, samples_table_id, metric_families_table_id,
+                                              exemplars_table_id, exemplars_outer_column_name_and_type, metric_family_column_name,
                                               requested_columns, requested_tags, columns_by_tags, samples_outer_column_name_and_type,
                                               has_bucketed_samples, final);
 }

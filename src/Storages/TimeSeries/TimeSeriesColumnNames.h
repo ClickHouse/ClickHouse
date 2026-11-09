@@ -45,6 +45,11 @@ struct TimeSeriesColumnNames
     static constexpr const char * Unit = "unit";
     static constexpr const char * Help = "help";
 
+    /// The "exemplars" table contains one exemplar per row: `id`, `timestamp`, `value` and the exemplar's own `labels`.
+    /// The outer column `exemplars` has the (timestamp, value, labels) tuples of a time series.
+    static constexpr const char * Labels = "labels";
+    static constexpr const char * Exemplars = "exemplars";
+
     /// The outer column with (timestamp, value) pairs of a time series, also returned by `prometheusQuery` and `prometheusQueryRange`,
     /// and the column of `timeSeriesSelector` with the sorted samples of a time series.
     /// It's named `time_series` in tables of versions before 3, see `getOuterSamples`.

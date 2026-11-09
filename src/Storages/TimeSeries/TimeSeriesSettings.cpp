@@ -29,6 +29,7 @@ namespace ErrorCodes
     DECLARE(UInt64, version, TimeSeriesVersion::LATEST, "The version of the TimeSeries table: it determines the set of the target tables and their structure. The version is pinned automatically when a table is created and cannot be changed afterwards. Tables created before this setting was introduced are considered as version 0", 0) \
     DECLARE(Map, tags_to_columns, Map{}, "Map specifying which tags should be put to separate columns of the 'tags' table. Syntax: {'tag1': 'column1', 'tag2' : column2, ...}", 0) \
     DECLARE(Bool, store_time_ranges, true, "If set to true then the table stores the time range (the minimum and the maximum timestamp) of each time series in the 'time ranges' target table, and uses it to filter time series by time. Not applicable to tables of version 7 or earlier, they use the 'store_min_time_and_max_time' setting instead", 0) \
+    DECLARE(Bool, store_exemplars, false, "If set to true then the table stores the exemplars of the time series in the 'exemplars' target table and has the outer column 'exemplars'. Disabled by default. Requires version 12 or later", 0) \
     DECLARE(UInt64, samples_bucket_step_seconds, 3600, "The length in seconds of the time buckets of the 'samples' table: a row of the table contains the samples of one time series with timestamps in one bucket, and the 'bucket' column contains the start of the bucket, i.e. the timestamp rounded down to a multiple of this setting. The default is 1 hour; the effective value is pinned into the table definition at CREATE time. Requires 'version' to be at least 11", 0) \
     DECLARE(ASTFunction, samples_partition_by, String{}, "Partition key of the inner 'samples' table, for example 'toStartOfWeek(bucket)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toYYYYMM(toDateTime(bucket, 'UTC'))' is used, i.e. one partition per month. Requires 'version' to be at least 11", 0) \
     DECLARE(UInt64, samples_index_granularity, 256, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for a non-MergeTree engine. The default is 32768 for tables of version 10 or earlier, which store one sample per row", 0) \
@@ -64,6 +65,7 @@ TimeSeriesSettings::TimeSeriesSettings() : impl(std::make_unique<TimeSeriesSetti
     /// The settings read from a CREATE query without this class must use the same defaults (see CreateQueryTimeSeriesSettings.h).
     chassert((*this)[TimeSeriesSetting::recent_samples_ttl_seconds].value == detail::TIME_SERIES_RECENT_SAMPLES_TTL_SECONDS_DEFAULT);
     chassert((*this)[TimeSeriesSetting::store_time_ranges].value == detail::TIME_SERIES_STORE_TIME_RANGES_DEFAULT);
+    chassert((*this)[TimeSeriesSetting::store_exemplars].value == detail::TIME_SERIES_STORE_EXEMPLARS_DEFAULT);
 }
 
 TimeSeriesSettings::TimeSeriesSettings(const TimeSeriesSettings & settings) : impl(std::make_unique<TimeSeriesSettingsImpl>(*settings.impl))
@@ -144,6 +146,12 @@ bool TimeSeriesSettings::isTimeRangesTargetEnabled() const
         && (*this)[TimeSeriesSetting::store_time_ranges];
 }
 
+bool TimeSeriesSettings::isExemplarsTargetEnabled() const
+{
+    return ((*this)[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_EXEMPLARS_TARGET)
+        && (*this)[TimeSeriesSetting::store_exemplars];
+}
+
 bool TimeSeriesSettings::hasBucketedSamples() const
 {
     return (*this)[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES;
@@ -189,6 +197,7 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
     check_setting_requires_version("samples_index_granularity_bytes", TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
     check_setting_requires_version("recent_samples_bucket_step_seconds", TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
     check_setting_requires_version("recent_samples_index_granularity_bytes", TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
+    check_setting_requires_version("store_exemplars", TimeSeriesVersion::MIN_WITH_EXEMPLARS_TARGET);
 
     auto check_bucket_step = [](const SettingFieldUInt64 & bucket_step, std::string_view setting_name)
     {

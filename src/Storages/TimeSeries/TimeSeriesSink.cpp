@@ -285,6 +285,77 @@ namespace
             throw Exception(ErrorCodes::INCORRECT_DATA, "Got {} samples without a metric name or tags", num_samples);
     }
 
+    /// Returns the types of the elements of the outer column `exemplars`: the timestamp, the value and the labels.
+    const DataTypes & getExemplarElementTypes(const DataTypePtr & exemplars_type)
+    {
+        return typeid_cast<const DataTypeTuple &>(*typeid_cast<const DataTypeArray &>(*exemplars_type).getNestedType()).getElements();
+    }
+
+    /// Returns the outer column `exemplars` as an array column, throws if it's another column.
+    const ColumnArray & getExemplarsArrays(const ColumnWithTypeAndName & exemplars_column)
+    {
+        const auto * exemplars_arrays = typeid_cast<const ColumnArray *>(exemplars_column.column.get());
+        const auto * exemplars_tuples = exemplars_arrays ? typeid_cast<const ColumnTuple *>(&exemplars_arrays->getData()) : nullptr;
+        if (!exemplars_tuples || (exemplars_tuples->tupleSize() != 3))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected an array of tuples with 3 elements for the column `{}`, got {}",
+                            exemplars_column.name, exemplars_column.column->getName());
+        return *exemplars_arrays;
+    }
+
+    /// Throws if a row without a metric name and tags has exemplars: such exemplars can't be stored.
+    void checkNoExemplarsWithoutTimeSeries(size_t num_exemplars)
+    {
+        if (num_exemplars > 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Got {} exemplars without a metric name or tags", num_exemplars);
+    }
+
+    /// Builds a block for the exemplars table (the columns `id`, `timestamp`, `value`, `labels`) from the outer column `exemplars`.
+    Block makeExemplarsBlock(
+        const PaddedPODArray<UInt8> & filter,
+        const IColumn & id_column,
+        const DataTypePtr & id_type,
+        const ColumnWithTypeAndName & exemplars_column)
+    {
+        const auto & exemplars_arrays = getExemplarsArrays(exemplars_column);
+        const auto & exemplars_tuples = typeid_cast<const ColumnTuple &>(exemplars_arrays.getData());
+        const auto & offsets = exemplars_arrays.getOffsets();
+        const auto & element_types = getExemplarElementTypes(exemplars_column.type);
+
+        auto out_id = id_type->createColumn();
+        MutableColumns out_columns;
+        for (size_t j = 0; j != 3; ++j)
+            out_columns.push_back(exemplars_tuples.getColumn(j).cloneEmpty());
+
+        size_t id_index = 0;
+        for (size_t i = 0; i < filter.size(); ++i)
+        {
+            size_t start = (i == 0) ? 0 : offsets[i - 1];
+            size_t num_exemplars = offsets[i] - start;
+
+            if (!filter[i])
+            {
+                checkNoExemplarsWithoutTimeSeries(num_exemplars);
+                continue;
+            }
+
+            if (num_exemplars)
+            {
+                out_id->insertManyFrom(id_column, id_index, num_exemplars);
+                for (size_t j = 0; j != 3; ++j)
+                    out_columns[j]->insertRangeFrom(exemplars_tuples.getColumn(j), start, num_exemplars);
+            }
+
+            ++id_index;
+        }
+
+        Block exemplars_block;
+        exemplars_block.insert(ColumnWithTypeAndName{std::move(out_id), id_type, TimeSeriesColumnNames::ID});
+        exemplars_block.insert(ColumnWithTypeAndName{std::move(out_columns[0]), element_types[0], TimeSeriesColumnNames::Timestamp});
+        exemplars_block.insert(ColumnWithTypeAndName{std::move(out_columns[1]), element_types[1], TimeSeriesColumnNames::Value});
+        exemplars_block.insert(ColumnWithTypeAndName{std::move(out_columns[2]), element_types[2], TimeSeriesColumnNames::Labels});
+        return exemplars_block;
+    }
+
     /// Fills columns id, timestamp, value for the "samples" table of a table storing one sample per row
     /// (tables of earlier versions, see `TimeSeriesSettings::hasBucketedSamples`).
     void fillSamplesColumns(
@@ -849,7 +920,8 @@ TimeSeriesSink::TimeSeriesSink(
 
     insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
         || is_insert_column(TimeSeriesColumnNames::Tags)
-        || is_insert_column(TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion()));
+        || is_insert_column(TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion()))
+        || (time_series_storage.hasTarget(ViewTarget::Exemplars) && is_insert_column(TimeSeriesColumnNames::Exemplars));
 
     insert_metric_families = is_insert_column(TimeSeriesColumnNames::MetricFamily)
         || is_insert_column(TimeSeriesColumnNames::Type)
@@ -1033,6 +1105,18 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     /// The recent samples table (if any) receives every sample too, but its buckets can have another step.
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
         recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
+
+    /// The exemplars table (if any) receives the exemplars of every time series, with the types of the outer column `exemplars`.
+    if (time_series_storage.hasTarget(ViewTarget::Exemplars))
+    {
+        const auto & exemplar_types = getExemplarElementTypes(getHeader().getByName(TimeSeriesColumnNames::Exemplars).type);
+        Block exemplars_header;
+        exemplars_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
+        exemplars_header.insert(ColumnWithTypeAndName{exemplar_types[0], TimeSeriesColumnNames::Timestamp});
+        exemplars_header.insert(ColumnWithTypeAndName{exemplar_types[1], TimeSeriesColumnNames::Value});
+        exemplars_header.insert(ColumnWithTypeAndName{exemplar_types[2], TimeSeriesColumnNames::Labels});
+        exemplars_pipeline = createTargetPipeline(ViewTarget::Exemplars, exemplars_header);
+    }
 }
 
 
@@ -1168,8 +1252,10 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 
     if (!num_time_series)
     {
-        /// All rows have empty metric names and no tags - samples must also be empty.
+        /// All rows have empty metric names and no tags - samples and exemplars must also be empty.
         checkNoSamplesWithoutTimeSeries(total_samples);
+        if (exemplars_pipeline)
+            checkNoExemplarsWithoutTimeSeries(getExemplarsArrays(block.getByName(TimeSeriesColumnNames::Exemplars)).getData().size());
 
         /// Nothing to insert.
         return;
@@ -1220,6 +1306,14 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_pipeline->push(std::move(samples_blocks.samples_block));
         if (samples_blocks.recent_samples_block)
             recent_samples_pipeline->push(std::move(*samples_blocks.recent_samples_block));
+    }
+
+    /// Step 6. Assemble and push the exemplars block: an exemplar is pushed after the samples of its time series.
+    if (exemplars_pipeline)
+    {
+        Block exemplars_block = makeExemplarsBlock(filter, *id_column, id_type, block.getByName(TimeSeriesColumnNames::Exemplars));
+        if (exemplars_block.rows())
+            exemplars_pipeline->push(std::move(exemplars_block));
     }
 }
 
@@ -1304,6 +1398,8 @@ void TimeSeriesSink::onFinish()
         samples_pipeline->executor->finish();
     if (recent_samples_pipeline)
         recent_samples_pipeline->executor->finish();
+    if (exemplars_pipeline)
+        exemplars_pipeline->executor->finish();
     if (metric_families_pipeline)
     {
         metric_families_pipeline->executor->finish();
