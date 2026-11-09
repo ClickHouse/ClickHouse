@@ -376,12 +376,17 @@ if (ENABLE_BUILD_PATH_MAPPING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fdebug-compilation-dir=. -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=")
     set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -fdebug-compilation-dir=. -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=")
 
-    # With the remapping, objects do not depend on the checkout or build directory, so ccache may hash paths relative to the
-    # source directory and ignore the working directory. Only depend mode (ccache >= 4.0, see cmake/ccache.cmake) keeps
-    # invoking the compiler with the original paths that -ffile-prefix-map needs.
-    if (CCACHE_EXECUTABLE MATCHES "/ccache$" AND CCACHE_VERSION VERSION_GREATER_EQUAL "4.0")
-        set (CMAKE_C_COMPILER_LAUNCHER env CCACHE_BASEDIR=${PROJECT_SOURCE_DIR} CCACHE_NOHASHDIR=true ${CMAKE_C_COMPILER_LAUNCHER})
-        set (CMAKE_CXX_COMPILER_LAUNCHER env CCACHE_BASEDIR=${PROJECT_SOURCE_DIR} CCACHE_NOHASHDIR=true ${CMAKE_CXX_COMPILER_LAUNCHER})
+    # With the remapping, objects do not depend on the checkout, so ccache may hash paths relative to the source directory
+    # (with -g it hashes the working directory relocated by -ffile-prefix-map). Only the depend mode of ccache 4.0 to 4.9
+    # (see cmake/ccache.cmake) invokes the compiler with the original paths that -ffile-prefix-map needs; since 4.10 it passes
+    # the rewritten relative ones.
+    if (CCACHE_EXECUTABLE MATCHES "/ccache$" AND CCACHE_VERSION VERSION_GREATER_EQUAL "4.0" AND CCACHE_VERSION VERSION_LESS "4.10")
+        set (CMAKE_C_COMPILER_LAUNCHER env CCACHE_BASEDIR=${PROJECT_SOURCE_DIR} ${CMAKE_C_COMPILER_LAUNCHER})
+        set (CMAKE_CXX_COMPILER_LAUNCHER env CCACHE_BASEDIR=${PROJECT_SOURCE_DIR} ${CMAKE_CXX_COMPILER_LAUNCHER})
+        # ENABLE_CHECK_HEAVY_BUILDS saved the C++ launcher before this point; contrib/ restores it.
+        if (USING_HEAVY_BUILD_CHECK_LAUNCHER)
+            set (HEAVY_BUILD_CHECK_ORIGINAL_CMAKE_CXX_COMPILER_LAUNCHER env CCACHE_BASEDIR=${PROJECT_SOURCE_DIR} ${HEAVY_BUILD_CHECK_ORIGINAL_CMAKE_CXX_COMPILER_LAUNCHER})
+        endif ()
     endif ()
 endif ()
 
