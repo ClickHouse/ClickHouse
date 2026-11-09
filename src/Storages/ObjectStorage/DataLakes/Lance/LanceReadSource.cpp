@@ -229,7 +229,9 @@ std::optional<ScanCoordinator::Batch> ScanCoordinator::nextBatch()
         bool propagate = false;
         {
             std::lock_guard lock(state_mutex);
-            if (current_state == State::Running)
+            /// Another consumer may have observed the natural end of the data while this one was failing
+            /// to take a batch: the batch is lost, so the failure must not be suppressed.
+            if (current_state == State::Running || (current_state == State::Ended && reached_end_of_data))
             {
                 current_state = State::Failed;
                 first_exception = std::current_exception();
@@ -253,7 +255,10 @@ std::optional<ScanCoordinator::Batch> ScanCoordinator::nextBatch()
         {
             std::lock_guard lock(state_mutex);
             if (current_state == State::Running)
+            {
                 current_state = State::Ended;
+                reached_end_of_data = true;
+            }
         }
         accountStatsOnce();
         return std::nullopt;

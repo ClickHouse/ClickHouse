@@ -129,6 +129,9 @@ private:
     mutable std::mutex state_mutex;
     State current_state = State::Running;
     std::exception_ptr first_exception;
+    /// The producer finished normally. Unlike the stop at the limit or a cancellation, the rows of a batch
+    /// that a consumer failed to take after that are still needed, so its failure must be propagated.
+    bool reached_end_of_data = false;
     std::atomic_bool stats_accounted = false;
     std::mutex current_metrics_mutex;
     Scan::Stats reported_current_metrics;

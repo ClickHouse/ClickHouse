@@ -406,6 +406,87 @@ TEST(LanceScanCoordinator, ProducerErrorPropagatesOnce)
     EXPECT_TRUE(state->cancelled);
 }
 
+namespace
+{
+
+/// The first consumer fails to take the last batch, while the second one observes the natural end of the data.
+class FailingWhileOtherConsumerEndsProvider final : public Lance::BatchProvider
+{
+public:
+    std::optional<Lance::Scan::Batch> nextBatch() override
+    {
+        std::unique_lock lock(mutex);
+        if (calls++ == 0)
+        {
+            failing_consumer_entered = true;
+            condition.notify_all();
+            condition.wait(lock, [&] { return release_failure; });
+            throw std::runtime_error("fake Lance batch import error");
+        }
+        producer_stats.producer_eof = 1;
+        return std::nullopt;
+    }
+
+    void releaseBatch(UInt64) noexcept override { }
+    void requestCancel() noexcept override { }
+    const std::shared_ptr<arrow::Schema> & schema() const override { return projected_schema; }
+    Lance::Scan::Stats stats() const noexcept override
+    {
+        std::lock_guard lock(mutex);
+        return producer_stats;
+    }
+
+    mutable std::mutex mutex;
+    std::condition_variable condition;
+    size_t calls = 0;
+    bool failing_consumer_entered = false;
+    bool release_failure = false;
+
+private:
+    std::shared_ptr<arrow::Schema> projected_schema = arrow::schema({arrow::field("id", arrow::int64())});
+    Lance::Scan::Stats producer_stats;
+};
+
+}
+
+TEST(LanceScanCoordinator, ConsumerErrorAfterNaturalEndPropagates)
+{
+    auto provider_holder = std::make_unique<FailingWhileOtherConsumerEndsProvider>();
+    auto & provider = *provider_holder;
+    auto coordinator = Lance::ScanCoordinator::createWithProvider(std::move(provider_holder), false);
+
+    std::atomic_bool failing_consumer_threw = false;
+    std::thread failing_consumer(
+        [&]
+        {
+            try
+            {
+                std::ignore = coordinator->nextBatch();
+            }
+            catch (const std::runtime_error &)
+            {
+                failing_consumer_threw = true;
+            }
+        });
+    {
+        std::unique_lock lock(provider.mutex);
+        provider.condition.wait(lock, [&] { return provider.failing_consumer_entered; });
+    }
+
+    EXPECT_FALSE(coordinator->nextBatch().has_value());
+    EXPECT_EQ(coordinator->state(), Lance::ScanCoordinator::State::Ended);
+
+    {
+        std::lock_guard lock(provider.mutex);
+        provider.release_failure = true;
+    }
+    provider.condition.notify_all();
+    failing_consumer.join();
+
+    EXPECT_TRUE(failing_consumer_threw);
+    EXPECT_EQ(coordinator->state(), Lance::ScanCoordinator::State::Failed);
+}
+
 TEST(LanceScanCoordinator, CancelWakesWaitingConsumer)
 {
     auto state = std::make_shared<FakeBatchProviderState>();
