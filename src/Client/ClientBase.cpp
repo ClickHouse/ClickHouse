@@ -745,12 +745,28 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         /// client's memory before being rejected. Apply the dedicated size check first, to the same text the
         /// parser would transpile: from the first significant token to the end of the input. This lexer
         /// does not retain tokens, so the scan needs constant memory. A plain `SET` is not affected: it is
-        /// parsed by `ParserQuery` (`is_set_escape`).
+        /// parsed by `ParserQuery` (`is_set_escape`). Neither is any other statement that the polyglot parser
+        /// takes as native ClickHouse SQL (e.g. `SET ROLE NONE` or `SET TRANSACTION SNAPSHOT`): it ends at its
+        /// own semicolon, so a script may exceed `max_query_size` as a whole as long as each such statement
+        /// fits. They are recognized with the same classifier as the parser and the server use
+        /// (`parsePolyglotNativeStatement`), over a token stream bounded by `max_query_size`, so the probe
+        /// itself cannot tokenize an oversized input.
         const auto check_polyglot_query_size = [&]()
         {
             const size_t max_query_size = settings[Setting::max_query_size];
             if (dialect != Dialect::polyglot || is_set_escape || !max_query_size)
                 return;
+            {
+                Tokens probe_tokens(pos, end, max_query_size);
+                IParser::Pos probe_pos(
+                    probe_tokens,
+                    static_cast<uint32_t>(settings[Setting::max_parser_depth]),
+                    static_cast<uint32_t>(settings[Setting::max_parser_backtracks]));
+                ASTPtr probe;
+                Expected probe_expected;
+                if (parsePolyglotNativeStatement(probe_pos, probe, probe_expected))
+                    return;
+            }
             Lexer lexer(pos, end);
             Token token = lexer.nextToken();
             while (!token.isSignificant() && !token.isEnd())
