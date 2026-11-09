@@ -285,6 +285,7 @@ namespace ProfileEvents
     extern const Event IndexAnalysisRounds;
     extern const Event SelectedParts;
     extern const Event SelectedPartsTotal;
+    extern const Event GranulesDroppedByPartitionKey;
     extern const Event SelectedRanges;
     extern const Event SelectedMarks;
     extern const Event SelectedMarksTotal;
@@ -3864,6 +3865,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         log,
         result.index_stats);
 
+    /// the estimation passes prune the same parts again on their own, only the index analysis counts
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey,
+        result.index_stats.front().num_granules_after - result.index_stats.back().num_granules_after);
+
     /// Loading statistics costs a few reads per part, which is more than a small read that pruning by
     /// statistics could save, so parts are pruned by statistics only if the primary key leaves enough marks.
     res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
@@ -6963,7 +6968,7 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
     PartsForPrewhere res;
     res.parts = MergeTreeDataSelectExecutor::filterParts(
         getParts(), *indexes, getStorageMetadata(), data, getContext(),
-        max_block_numbers_to_read.get(), log, unused_stats, /* check_index_usage */ false);
+        max_block_numbers_to_read.get(), log, unused_stats);
 
     /// Pruning parts decides by itself whether the read is large enough to load statistics.
     /// It prunes the parts whose statistics are in memory regardless, before the primary key is probed below.
@@ -7106,7 +7111,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
         auto pruned_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
             parts, indexes->partition_pruner, indexes->minmax_idx_condition,
             indexes->part_values, getStorageMetadata(), data, getContext(),
-            max_block_numbers_to_read.get(), getLogger("ReadFromMergeTree"), unused_stats, /* check_index_usage */ false);
+            max_block_numbers_to_read.get(), getLogger("ReadFromMergeTree"), unused_stats);
         return data.getConditionSelectivityEstimator(pruned_parts, required_columns, getContext());
     }
 

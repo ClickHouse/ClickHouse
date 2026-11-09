@@ -92,7 +92,6 @@ namespace ProfileEvents
 extern const Event FilteringMarksWithPrimaryKeyProcessedMarks;
 extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
-extern const Event GranulesDroppedByPartitionKey;
 extern const Event GranulesDroppedByPrimaryKey;
 extern const Event GranulesDroppedBySkipIndexes;
 extern const Event IndexBinarySearchAlgorithm;
@@ -760,12 +759,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     LoggerPtr log,
-    ReadFromMergeTree::IndexStats & index_stats,
-    bool check_index_usage)
+    ReadFromMergeTree::IndexStats & index_stats)
 {
     return filterPartsByPartition(
         parts, indexes.partition_pruner, indexes.minmax_idx_condition, indexes.part_values,
-        metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats, check_index_usage);
+        metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats);
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -811,12 +809,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
         max_block_numbers_to_read,
         part_filter_counters,
         query_status);
-
-    /// the estimation passes prune the same parts again with `check_index_usage = false`
-    if (check_index_usage)
-        ProfileEvents::increment(
-            ProfileEvents::GranulesDroppedByPartitionKey,
-            part_filter_counters.num_initial_selected_granules - part_filter_counters.num_granules_after_partition_pruner);
 
     index_stats.emplace_back(ReadFromMergeTree::IndexStat{
         .type = ReadFromMergeTree::IndexType::None,
