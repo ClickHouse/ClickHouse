@@ -7,7 +7,7 @@ cluster = ClickHouseCluster(__file__)
 # 26.3 records an empty object for an empty INSERT into a StripeLog table on object storage and reads the table fine.
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/stripelog_object_storage.xml"],
+    main_configs=["configs/stripelog_object_storage.xml", "configs/backups.xml"],
     image="clickhouse/clickhouse-server",
     tag="26.3.42.3",
     with_installed_binary=True,
@@ -57,3 +57,8 @@ def test_stripelog_with_empty_insert_is_readable_after_upgrade(started_cluster):
                 node.query(f"SELECT n FROM t_{policy} ORDER BY n", settings=settings)
                 == "1\n2\n"
             )
+
+        backup = f"File('/var/lib/clickhouse/backups/t_{policy}')"
+        node.query(f"BACKUP TABLE t_{policy} TO {backup}")
+        node.query(f"RESTORE TABLE t_{policy} AS t_{policy}_restored FROM {backup}")
+        assert node.query(f"SELECT n FROM t_{policy}_restored ORDER BY n") == "1\n2\n"
