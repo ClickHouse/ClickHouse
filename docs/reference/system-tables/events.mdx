@@ -86,6 +86,26 @@ How many delayed records the adaptive aggregation staged into its partition buff
 
 How many times the adaptive aggregation thawed the local tables because the staged stream proved repeat-dominated.
 
+### AdaptiveCodecBlocksPriced {#adaptivecodecblockspriced}
+
+Number of blocks that adaptive codec selection priced from the start, compressing them with every candidate codec and keeping the smallest output.
+
+### AdaptiveCodecBlocksRepriced {#adaptivecodecblocksrepriced}
+
+Number of blocks that adaptive codec selection priced after the remembered winner had lost ground on them.
+
+### AdaptiveCodecBlocksReused {#adaptivecodecblocksreused}
+
+Number of blocks that adaptive codec selection compressed with the remembered winner alone.
+
+### AdaptiveCodecBytesDefault {#adaptivecodecbytesdefault}
+
+Compressed bytes the default codec produced on the sample blocks of adaptive codec selection, one per window of `adaptive_codec_selection_period` blocks.
+
+### AdaptiveCodecBytesWritten {#adaptivecodecbyteswritten}
+
+Compressed bytes adaptive codec selection wrote on its sample blocks. The ratio to `AdaptiveCodecBytesDefault` is the saving against the default codec.
+
 ### AddressesDiscovered {#addressesdiscovered}
 
 Total count of new addresses in DNS resolve results for HTTP connections
@@ -4731,6 +4751,10 @@ Number of rows of Parquet PREWHERE input columns read as dictionary indexes, so 
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 The total number of rows that were passed through filter
+
+### ParquetTopKRowGroupsBoundedByDictionary {#parquettopkrowgroupsboundedbydictionary}
+
+The number of parquet row groups whose `ORDER BY ... LIMIT` sort column range was taken from the values of its dictionary that can pass the filter, because its min/max statistics could not bound it (see `use_top_k_dynamic_filtering`)
 
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
