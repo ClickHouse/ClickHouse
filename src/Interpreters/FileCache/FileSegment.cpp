@@ -20,6 +20,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 
 namespace fs = std::filesystem;
 
@@ -65,6 +66,55 @@ namespace FailPoints
 String toString(FileSegmentKind kind)
 {
     return String(magic_enum::enum_name(kind));
+}
+
+namespace
+{
+
+/// Not `ResourceLink::operator==`, which ignores `scheduling_context`.
+bool sameLinks(const IOSchedulingSettings & lhs, const IOSchedulingSettings & rhs)
+{
+    auto same = [](const ResourceLink & a, const ResourceLink & b)
+    {
+        return a.queue == b.queue && a.allocation_queue == b.allocation_queue && a.scheduling_context == b.scheduling_context;
+    };
+    return same(lhs.read_resource_link, rhs.read_resource_link) && same(lhs.write_resource_link, rhs.write_resource_link);
+}
+
+bool hasLinks(const IOSchedulingSettings & io_scheduling)
+{
+    return io_scheduling.read_resource_link || io_scheduling.write_resource_link;
+}
+
+void countBoundCachedReader([[maybe_unused]] const IOSchedulingSettings & io_scheduling, [[maybe_unused]] bool bind)
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    for (const auto * link : {&io_scheduling.read_resource_link, &io_scheduling.write_resource_link})
+    {
+        if (!link->scheduling_context)
+            continue;
+        if (bind)
+            link->scheduling_context->bound_cached_readers.fetch_add(1);
+        else
+            link->scheduling_context->bound_cached_readers.fetch_sub(1);
+    }
+#endif
+}
+
+}
+
+FileSegment::DownloadState::~DownloadState()
+{
+    countBoundCachedReader(reader_io_scheduling, /* bind */ false);
+}
+
+void FileSegment::setReaderIOSchedulingUnlocked(DownloadState & download, const IOSchedulingSettings & io_scheduling)
+{
+    if (download.remote_file_reader && !sameLinks(download.reader_io_scheduling, io_scheduling))
+        download.remote_file_reader->setIOSchedulingSettings(io_scheduling);
+    countBoundCachedReader(io_scheduling, /* bind */ true);
+    countBoundCachedReader(download.reader_io_scheduling, /* bind */ false);
+    download.reader_io_scheduling = io_scheduling;
 }
 
 FileSegment::FileSegment(
@@ -307,7 +357,7 @@ void FileSegment::resetDownloadDataUnlocked(const FileSegmentGuard::Lock &)
     download_data.reset();
 }
 
-String FileSegment::getOrSetDownloader()
+String FileSegment::getOrSetDownloader(const IOSchedulingSettings & io_scheduling)
 {
     auto lk = lock();
 
@@ -322,7 +372,9 @@ String FileSegment::getOrSetDownloader()
         if (!allow_new_downloader)
             return "notAllowed:" + stateToString(download_state);
 
-        current_downloader = getOrCreateDownloadDataUnlocked(lk).downloader_id = caller_id;
+        auto & download = getOrCreateDownloadDataUnlocked(lk);
+        setReaderIOSchedulingUnlocked(download, io_scheduling);
+        current_downloader = download.downloader_id = caller_id;
         setDownloadState(State::DOWNLOADING, lk);
         chassert(key_metadata.lock());
     }
@@ -344,7 +396,12 @@ scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
     /// Every transition to `PARTIALLY_DOWNLOADED` resets the downloader under the same lock.
     chassert(getDownloaderUnlocked(lk).empty());
 
-    getOrCreateDownloadDataUnlocked(lk).downloader_id = getCallerId();
+    auto & download = getOrCreateDownloadDataUnlocked(lk);
+    /// The idle reader may still be bound to the I/O scheduling links of a previous downloader's query.
+    /// Unbind it like `getOrSetDownloader` does, because `complete` keeps the links while there is a downloader
+    /// and they would outlive the holder they belong to.
+    setReaderIOSchedulingUnlocked(download, {});
+    download.downloader_id = getCallerId();
     setDownloadState(State::DOWNLOADING, lk);
     return [this]
     {
@@ -438,14 +495,17 @@ void FileSegment::resetRemoteFileReader()
         download_data->remote_file_reader.reset();
 }
 
-FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
+FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader(const IOSchedulingSettings & io_scheduling)
 {
     auto lk = lock();
     if (download_data && download_data->remote_file_reader
         && (download_state == State::DOWNLOADED
             || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION))
     {
-        return std::move(download_data->remote_file_reader);
+        setReaderIOSchedulingUnlocked(*download_data, io_scheduling);
+        auto reader = std::move(download_data->remote_file_reader);
+        setReaderIOSchedulingUnlocked(*download_data, {});
+        return reader;
     }
     return nullptr;
 }
@@ -1078,7 +1138,11 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     return desired_size - downloaded_size;
 }
 
-void FileSegment::complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size)
+void FileSegment::complete(
+    FileSegmentPtr && file_segment,
+    bool allow_background_download,
+    bool force_shrink_to_downloaded_size,
+    const IOSchedulingSettings & holder_io_scheduling)
 {
     if (!file_segment)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is nullptr");
@@ -1102,10 +1166,14 @@ void FileSegment::complete(FileSegmentPtr && file_segment, bool allow_background
         file_segment.reset();
     );
 
-    file_segment->complete(locked_key, allow_background_download, force_shrink_to_downloaded_size);
+    file_segment->complete(locked_key, allow_background_download, force_shrink_to_downloaded_size, holder_io_scheduling);
 }
 
-void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_background_download, bool force_shrink_to_downloaded_size)
+void FileSegment::complete(
+    const LockedKeyPtr & locked_key,
+    bool allow_background_download,
+    bool force_shrink_to_downloaded_size,
+    const IOSchedulingSettings & holder_io_scheduling)
 {
     auto segment_lock = lock();
 
@@ -1131,6 +1199,11 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
             resetDownloadingStateUnlocked(segment_lock);
         resetDownloaderUnlocked(segment_lock);
     }
+
+    /// The idle reader must not keep the links of a holder that leaves.
+    if (download_data && download_data->downloader_id.empty() && hasLinks(download_data->reader_io_scheduling)
+        && sameLinks(download_data->reader_io_scheduling, holder_io_scheduling))
+        setReaderIOSchedulingUnlocked(*download_data, {});
 
     if (segment_kind == FileSegmentKind::Ephemeral && is_last_holder)
     {
@@ -1517,6 +1590,8 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     queue_iterator = nullptr;
     if (download_data && download_data->cache_writer)
         download_data->cache_writer->cancel();
+    if (download_data)
+        setReaderIOSchedulingUnlocked(*download_data, {});
     resetDownloadDataUnlocked(lock);
 }
 
@@ -1634,6 +1709,7 @@ FileSegmentsHolderSharedPtr FileSegmentsHolder::popHolder()
     /// already counts it, so the splice just transfers ownership. The new holder completes the
     /// segment (and decrements the gauge) on destruction.
     auto result = std::make_shared<FileSegmentsHolder>();
+    result->io_scheduling = io_scheduling;
     result->file_segments.splice(result->file_segments.begin(), file_segments, file_segments.begin());
     chassert(result->file_segments.size() == 1);
     return result;
@@ -1647,7 +1723,7 @@ FileSegmentsHolder::~FileSegmentsHolder()
 FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl(bool allow_background_download, bool force_shrink_to_downloaded_size)
 {
     auto file_segment_it = file_segments.begin();
-    FileSegment::complete(std::move(*file_segment_it), allow_background_download, force_shrink_to_downloaded_size);
+    FileSegment::complete(std::move(*file_segment_it), allow_background_download, force_shrink_to_downloaded_size, io_scheduling);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
     return file_segments.erase(file_segment_it);
 }
