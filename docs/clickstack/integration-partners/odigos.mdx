@@ -89,7 +89,7 @@ helm upgrade --install odigos odigos/odigos \
   --set onPremToken=$ODIGOS_ONPREM_TOKEN
 ```
 
-You can pass additional configuration overrides with `--set` flags or a custom values file (`-f`). The chart's default values are in [helm/odigos/values.yaml](https://github.com/odigos-io/odigos/blob/main/helm/odigos/values.yaml) on GitHub.
+You can pass additional configuration overrides with `--set` flags or a custom values file (`-f`). To inspect the chart's default values, run `helm show values odigos/odigos`.
 
 Verify Odigos pods are running:
 
