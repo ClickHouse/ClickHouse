@@ -72,10 +72,11 @@ $CLICKHOUSE_CLIENT --user "$user" --query "
 
 # The right side of the join is served from the cache, and the join holds those columns. The read stops before its
 # second range, the cache is dropped while the join holds what it was served, and the query goes on and ends.
+# query_plan_join_swap_table = 0 keeps it the build side when the size of numbers(10) is known from an earlier join.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP"
 $CLICKHOUSE_CLIENT --user "$user" --query "
     SELECT count() FROM numbers(10) AS a JOIN (SELECT k, v FROM t WHERE k < 300000 OR k >= 350000) AS b ON a.number = b.k
-    SETTINGS use_columns_cache = 1, max_threads = 1, join_algorithm = 'hash', use_query_condition_cache = 0" &
+    SETTINGS use_columns_cache = 1, max_threads = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, use_query_condition_cache = 0" &
 query_pid=$!
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP PAUSE"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP COLUMNS CACHE"
