@@ -2,13 +2,13 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
+#include <Analyzer/Utils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -29,15 +29,20 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
-#include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
+#include <Functions/FunctionFactory.h>
 #include <Parsers/parseQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/Fragments/FragmentGraph.h>
+#include <Processors/QueryPlan/Fragments/FragmentGraphExplain.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -51,7 +56,6 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -62,6 +66,7 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/HiddenSecret.h>
 #include <Common/JSONBuilder.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
@@ -71,8 +76,8 @@
 #include <Common/formatReadable.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <Interpreters/HypotheticalObjectStore.h>
-#include <Storages/MergeTree/WhatIfIndexEstimator.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
+#include <Storages/MergeTree/WhatIf/WhatIfEstimator.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -93,6 +98,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool explain_syntax_single_record;
+    extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool use_concurrency_control;
@@ -112,13 +118,9 @@ namespace ErrorCodes
 namespace
 {
     /// Walk the AST and expand parameterized view "table function" calls into their inlined,
-    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
-    ///
-    /// In the analyzer path, without this expansion the query tree would show the unexpanded
-    /// table function call. In the legacy path, `ExplainAnalyzedSyntaxMatcher` covers the FROM
-    /// table expression via `StorageView::replaceWithSubquery`, which only rewrites the first
-    /// table expression and leaves JOIN sides untouched; this visitor is complementary, expanding
-    /// parameterized views that appear on the right side of a JOIN as well.
+    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` and `EXPLAIN AST optimize = 1` show
+    /// the resolved query. Without this expansion the query tree would show the unexpanded table
+    /// function call, on either side of a JOIN.
     struct ExpandParameterizedViewsMatcher
     {
         struct Data : public WithContext
@@ -182,24 +184,23 @@ namespace
             if (TableFunctionFactory::instance().isTableFunctionName(func->name))
                 return;
 
-            String database_name = query_context->getCurrentDatabase();
-            String table_name = func->name;
-            if (func->isCompoundName())
+            auto is_parameterized_view = [](const StoragePtr & candidate)
             {
-                std::vector<std::string> parts;
-                splitInto<'.'>(parts, func->name);
-                if (parts.size() != 2)
-                    return;
-                database_name = parts[0];
-                table_name = parts[1];
+                const auto * view = candidate ? candidate->as<StorageView>() : nullptr;
+                return view && view->isParameterizedView();
+            };
+
+            auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(func->name, query_context);
+            StoragePtr storage;
+            if (!table_name.empty())
+                storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
+            /// A view whose own name has a dot: `` `v.x`(...) ``.
+            if (!is_parameterized_view(storage) && !func->isCompoundName() && table_name != func->name)
+            {
+                table_name = func->name;
+                storage = DatabaseCatalog::instance().tryGetTable({query_context->getCurrentDatabase(), table_name}, query_context);
             }
-
-            auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
-            if (!storage)
-                return;
-
-            const auto * storage_view = storage->as<StorageView>();
-            if (!storage_view || !storage_view->isParameterizedView())
+            if (!is_parameterized_view(storage))
                 return;
 
             auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
@@ -210,6 +211,11 @@ namespace
             /// `EXPLAIN SYNTAX` would fail for users that can query the view but not its inner
             /// tables. Leave the original parameterized call intact in that case.
             if (metadata->sql_security_type && metadata->sql_security_type != SQLSecurityType::INVOKER)
+                return;
+
+            /// The inlined body is the view definition, which needs `SHOW COLUMNS` on the view, as `SHOW CREATE` does.
+            const auto view_id = storage->getStorageID();
+            if (!query_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, view_id.getDatabaseName(), view_id.getTableName()))
                 return;
 
             auto view_query = metadata->getSelectQuery().inner_query->clone();
@@ -241,31 +247,42 @@ namespace
     {
         struct Data : public WithContext
         {
-            explicit Data(ContextPtr context_) : WithContext(context_) {}
+            Data(ContextPtr context_, bool run_passes_, Int64 passes_, bool only_analyze_)
+                : WithContext(context_), run_passes(run_passes_), passes(passes_), only_analyze(only_analyze_)
+            {
+            }
+
+            bool run_passes;
+            Int64 passes;
+            bool only_analyze;
         };
 
         static bool needChildVisit(ASTPtr & node, ASTPtr &)
         {
-            return !node->as<ASTSelectQuery>();
+            return !node->as<ASTSelectWithUnionQuery>();
         }
 
         static void visit(ASTPtr & ast, Data & data)
         {
-            if (auto * select = ast->as<ASTSelectQuery>())
-                visit(*select, ast, data);
-        }
+            auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>();
+            if (!select_with_union_query)
+                return;
 
-        static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
-        {
-            InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+            auto query_tree = buildQueryTree(ast, data.getContext());
 
-            const SelectQueryInfo & query_info = interpreter.getQueryInfo();
-            if (query_info.view_query)
+            if (data.run_passes)
             {
-                ASTPtr tmp;
-                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
+                QueryTreePassManager query_tree_pass_manager(data.getContext());
+                addQueryTreePasses(query_tree_pass_manager, data.only_analyze);
+                size_t pass_index = data.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(data.passes);
+                query_tree_pass_manager.run(query_tree, pass_index);
             }
+
+            ConvertToASTOptions ast_options;
+            ast_options.use_source_expression_for_constants = true;
+            auto analyzed_query = query_tree->toAST(ast_options);
+
+            *select_with_union_query = analyzed_query->as<ASTSelectWithUnionQuery &>();
         }
     };
 
@@ -302,7 +319,20 @@ namespace
         {
             if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
             {
-                auto secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node).getResult();
+                auto settings_changes = table_function_node->getSettingsChanges();
+                bool has_secret_settings = false;
+                for (auto & change : settings_changes)
+                {
+                    if (renderSecretChangeValue(change))
+                    {
+                        change.value = String(HIDDEN_SECRET);
+                        has_secret_settings = true;
+                    }
+                }
+                if (has_secret_settings)
+                    table_function_node->setSettingsChanges(std::move(settings_changes));
+
+                auto secret_arguments = findSecretArguments(*table_function_node);
                 if (!secret_arguments.hasSecrets())
                     return;
 
@@ -317,12 +347,12 @@ namespace
                         if (auto * constant = node->as<ConstantNode>())
                             constant->setMaskId();
                         else
-                            node = std::make_shared<ConstantNode>(Field("[HIDDEN]"));
+                            node = std::make_shared<ConstantNode>(Field(String(HIDDEN_SECRET)));
                     });
             }
             else if (auto * function_node = query_tree_node->as<FunctionNode>())
             {
-                auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node).getResult();
+                auto secret_arguments = findSecretArguments(*function_node);
                 if (!secret_arguments.hasSecrets())
                     return;
 
@@ -341,7 +371,7 @@ namespace
     /// Replace a node with a single `'[HIDDEN]'` literal, keeping its alias.
     void hideWholeNode(ASTPtr & node)
     {
-        auto hidden = make_intrusive<ASTLiteral>(Field("[HIDDEN]"));
+        auto hidden = make_intrusive<ASTLiteral>(Field(String(HIDDEN_SECRET)));
         hidden->setAlias(node->tryGetAlias());
         node = std::move(hidden);
     }
@@ -360,12 +390,11 @@ namespace
             hideLiteralsInSubtree(child);
     }
 
-    /// Keep in sync with the names `FunctionSecretArgumentsFinder` sends to `findEncryptionFunctionSecretArguments`
-    /// and `findHMACSecretArguments`. A name missing here only makes the dump stricter: its span is hidden whole.
-    bool isEncryptionOrHMACFunction(const ASTFunction & function)
+    /// A function (not a table function or an engine) with a secret argument: `encrypt`, `HMAC`, ...
+    bool isFunctionWithSecretArguments(const ASTFunction & function)
     {
-        return function.name == "encrypt" || function.name == "decrypt" || function.name == "aes_encrypt_mysql"
-            || function.name == "aes_decrypt_mysql" || function.name == "tryDecrypt" || equalsCaseInsensitive(function.name, "HMAC");
+        return function.getKind() == ASTFunction::Kind::ORDINARY_FUNCTION
+            && FunctionFactory::instance().tryGetSecretArgumentsSpec(function.name);
     }
 
     bool isKeyValueArgument(const IAST & node)
@@ -435,7 +464,7 @@ namespace
             if (!function || !function->arguments)
                 return;
 
-            auto secret_arguments = FunctionSecretArgumentsFinderAST(*function).getResult();
+            auto secret_arguments = SecretArgumentsRegistry::instance().find(function->getKind(), FunctionAST(*function));
             if (!secret_arguments.hasSecrets())
                 return;
 
@@ -443,7 +472,7 @@ namespace
             for (size_t i = 0; i < arguments.size(); ++i)
             {
                 if (auto * map = arguments[i]->as<ASTFunction>();
-                    map && map->arguments && std::ranges::contains(secret_arguments.nested_maps, map->name))
+                    map && map->arguments && secret_arguments.nested_maps.contains(map->name))
                 {
                     for (auto & entry : map->arguments->children)
                         hideWholeNode(secretValueSlot(entry));
@@ -483,7 +512,7 @@ namespace
                 /// Only the span of `encrypt` / `HMAC` keeps its structure. Any other unnamed span without a
                 /// replacement, such as an unreadable url in `mongodb(concat(...), 'c')`, is hidden whole. So is a
                 /// `key = value` in the span: it is a positional secret written as a comparison.
-                if (isEncryptionOrHMACFunction(*function) && !isKeyValueArgument(*arguments[i]))
+                if (isFunctionWithSecretArguments(*function) && !isKeyValueArgument(*arguments[i]))
                     hideLiteralsInSubtree(arguments[i]);
                 else
                     hideWholeNode(arguments[i]);
@@ -625,6 +654,8 @@ struct QueryPlanSettings
             {"json", json},
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
+            {"fragments", query_plan_options.fragments},
+            {"tree", query_plan_options.tree},
             {"keep_logical_steps", keep_logical_steps},
             {"input_headers", query_plan_options.input_headers},
             {"column_structure", query_plan_options.column_structure},
@@ -958,7 +989,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
     ContextPtr context;
-    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> parallel_replicas_builder;
+    QueryPlanWithParallelReplicasBuilder parallel_replicas_builder;
     bool ignore_quota = false;
     bool ignore_limits = false;
     UInt64 planning_ns = 0;
@@ -1011,7 +1042,6 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     const auto analyze_settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
     result->query_plan_options = analyze_settings.query_plan_options;
-    result->query_plan_options.show_secrets = canDisplaySecrets(getContext());
     result->time = analyze_settings.query_plan_options.time;
 
     /// This is the only place that turns join statistics on, and it must happen before any interpreter
@@ -1093,7 +1123,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
             if (settings.optimize)
             {
-                ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+                ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
+                ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
+
+                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ false);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
@@ -1134,8 +1167,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (explain_ok)
                 break;
 
-            /// Not a `SELECT`: there is no query tree to dump, so the query is shown as parsed.
-            ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+            /// Not a `SELECT`: the query is shown as parsed, with every `SELECT` inside it converted through the query tree.
+            ExplainAnalyzedSyntaxVisitor::Data data(query_context, settings.run_query_tree_passes, settings.query_tree_passes, /*only_analyze=*/ false);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
             IAST::FormatSettings format_settings(settings.oneline);
@@ -1176,7 +1209,28 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 }
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast_settings, pretty_version);
-            settings.query_plan_options.show_secrets = canDisplaySecrets(query_context);
+
+            if (settings.query_plan_options.tree)
+            {
+                if (settings.query_plan_options.fragments)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'fragments'");
+                if (settings.json)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'json'");
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'distributed'");
+                if (!settings.optimize)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'tree' requires option 'optimize'");
+            }
+
+            if (settings.query_plan_options.fragments)
+            {
+                if (settings.json)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'json'");
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'distributed'");
+                if (!settings.optimize)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'fragments' requires option 'optimize'");
+            }
 
             QueryPlan plan;
 
@@ -1198,8 +1252,38 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.keep_logical_steps = settings.keep_logical_steps;
                 optimization_settings.is_explain = true;
+                optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
+
+                if (settings.query_plan_options.fragments || settings.query_plan_options.tree)
+                {
+                    const size_t max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+                    const auto build_explain = [&](const FragmentGraph & graph)
+                    {
+                        if (settings.query_plan_options.tree)
+                            explainAsTree(graph, buf, settings.query_plan_options, max_step_description_length);
+                        else
+                            explainAsFragments(graph, buf, settings.query_plan_options, max_step_description_length);
+                    };
+                    if (plan.staysDistributed())
+                    {
+                        /// The distributed_plan_cut consumes the plan since `EXPLAIN` owns this plan and discards it after printing.
+                        /// `distributed_plan_cut` must outlive `graph`, whose fragments point to the plans of its stages.
+                        auto distributed_plan_cut = plan.cutIntoDistributedPlan(optimization_settings);
+                        auto query_plan_as_fragment_graph = buildFragmentGraph(distributed_plan_cut.distributed_plan);
+                        build_explain(query_plan_as_fragment_graph);
+                    }
+                    else
+                    {
+                        std::optional<String> fallback_reason;
+                        if (plan.didFallBackToLocal())
+                            fallback_reason = plan.getDistributedPlanFallbackReason();
+                        auto query_plan_as_fragment_graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
+                        build_explain(query_plan_as_fragment_graph);
+                    }
+                    break;
+                }
             }
 
             if (settings.json)
@@ -1246,6 +1330,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.is_explain = true;
+                optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
@@ -1284,6 +1369,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     /* no_destination */ false,
                     /* async_insert */ false,
                     is_initial_insert);
+                insert.setExplainOnly(true);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
                 // we do not need it anymore, it would not be executed
@@ -1314,7 +1400,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).
-            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+            auto optimization_settings = QueryPlanOptimizationSettings(context);
+            optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
+            auto builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
             plan.explainEstimate(res_columns);
             insert_buf = false;
@@ -1358,7 +1446,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(query_ast.get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN WHATIF query");
 
-            auto whatif_result = estimateHypotheticalIndexes(query_ast, query_context, ast.getSettings());
+            auto whatif_result = estimateHypotheticalObjects(query_ast, query_context, ast.getSettings());
             whatif_result.format(buf);
             break;
         }
@@ -1373,7 +1461,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// previously done here), so invalid settings are still rejected, just without re-parsing.
             /// EXPLAIN ANALYZE executes the inner SELECT, so quota and result limits must follow the same
             /// rules as running that SELECT directly; the inner interpreter resolves the effective
-            /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`).
+            /// ignore_quota / ignore_limits during planning (e.g. `system.one` is exempt from the quota).
             auto & analyzed = getAnalyzedInnerQuery();
 
             /// A query that fell back to local execution is a plain local query and is analyzable.
@@ -1413,7 +1501,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
             /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.
             /// EXPLAIN ANALYZE rejects distributed plans above, so this covers the whole plan tree.
-            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan, analyzed.query_plan_options.show_secrets);
+            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan);
 
             plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 

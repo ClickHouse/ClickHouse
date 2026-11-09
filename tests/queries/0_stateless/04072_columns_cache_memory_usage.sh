@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+# and their `ProfileEvents` and `memory_usage` never reach the `query_log` rows checked below.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parallel_replicas=0"
+
 # This test verifies two distinct memory properties of the columns cache.
 #
 # Part 1 measures the per-query memory overhead of the cache: the peak memory of one
@@ -21,6 +25,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # Both parts assert that the cache was really engaged (`ColumnsCacheHits` is checked), so
 # that neither of them can silently compare the cache-disabled path against itself.
+#
+# The measured queries run with `max_untracked_memory = 0`: otherwise a thread may defer up to that
+# much of its allocations (1 MiB in the test configuration) before `memory_usage` sees them.
 #
 # Part 1 raises the block limits so that the whole read task is one block. The cache stores
 # one entry per granule of a column, and a cache-populating query holds a copy of the rows of
@@ -63,14 +70,14 @@ $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_cache_memory FINAL;"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP COLUMNS CACHE;"
 
 # Query without cache to establish baseline
-$CLICKHOUSE_CLIENT --log_queries=1 --log_comment='memory_baseline' --query "
+$CLICKHOUSE_CLIENT --log_queries=1 --max_untracked_memory=0 --log_comment='memory_baseline' --query "
 SELECT sum(id), sum(length(str)), sum(length(arr)), sum(length(nums))
 FROM t_cache_memory
 SETTINGS use_columns_cache = 0, $BLOCK_SETTINGS;
 "
 
 # Query with cache (cold - first read, will populate cache)
-$CLICKHOUSE_CLIENT --log_queries=1 --log_comment='memory_cold_cache' --query "
+$CLICKHOUSE_CLIENT --log_queries=1 --max_untracked_memory=0 --log_comment='memory_cold_cache' --query "
 SELECT sum(id), sum(length(str)), sum(length(arr)), sum(length(nums))
 FROM t_cache_memory
 SETTINGS
@@ -81,7 +88,7 @@ SETTINGS
 "
 
 # Query with cache (warm - should read from cache)
-$CLICKHOUSE_CLIENT --log_queries=1 --log_comment='memory_warm_cache' --query "
+$CLICKHOUSE_CLIENT --log_queries=1 --max_untracked_memory=0 --log_comment='memory_warm_cache' --query "
 SELECT sum(id), sum(length(str)), sum(length(arr)), sum(length(nums))
 FROM t_cache_memory
 SETTINGS
@@ -179,7 +186,7 @@ $CLICKHOUSE_CLIENT --query "
 SELECT sum(id), sum(length(str)) FROM t_cache_growth_0 SETTINGS $CACHE_SETTINGS FORMAT Null;
 "
 
-$CLICKHOUSE_CLIENT --log_queries=1 --log_comment='memory_growth_small_cache' --query "
+$CLICKHOUSE_CLIENT --log_queries=1 --max_untracked_memory=0 --log_comment='memory_growth_small_cache' --query "
 SELECT sum(id), sum(length(str)) FROM t_cache_growth_0 SETTINGS $CACHE_SETTINGS FORMAT Null;
 "
 
@@ -196,7 +203,7 @@ done
 LARGE_CACHE_BYTES=$($CLICKHOUSE_CLIENT --query "SELECT sum(bytes) FROM system.columns_cache;")
 
 # The very same query again, now against a much larger cache.
-$CLICKHOUSE_CLIENT --log_queries=1 --log_comment='memory_growth_large_cache' --query "
+$CLICKHOUSE_CLIENT --log_queries=1 --max_untracked_memory=0 --log_comment='memory_growth_large_cache' --query "
 SELECT sum(id), sum(length(str)) FROM t_cache_growth_0 SETTINGS $CACHE_SETTINGS FORMAT Null;
 "
 

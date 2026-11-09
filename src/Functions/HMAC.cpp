@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SetWithMemoryTracking.h>
@@ -118,18 +119,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        validateFunctionArguments(
-            *this,
-            arguments,
-            FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "Hash algorithm name (e.g., 'sha256')"},
-                {"message", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "Message to be authenticated"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "Secret key for HMAC"},
-            });
-
-        return std::make_shared<DataTypeString>();
+        return "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -211,6 +203,19 @@ public:
     }
 };
 
+/// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+void findHMACSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    if (finder.function->arguments->size() < 3)
+        return;
+
+    /// We hide the key argument and any following for the case of mistyping or using extra arguments by mistake:
+    /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+    /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
+    finder.result.start = 2;
+    finder.result.count = finder.function->arguments->size() - 2;
+}
+
 }
 
 REGISTER_FUNCTION(FunctionHMAC)
@@ -290,7 +295,7 @@ SELECT
         category
     };
 
-    factory.registerFunction<FunctionHMAC>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionHMAC>(documentation, FunctionFactory::Case::Insensitive, SecretArgumentsSpec{.custom = findHMACSecretArguments});
 }
 
 }

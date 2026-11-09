@@ -4,7 +4,6 @@
 -- _partition_value) or with a derived partition-key expression (toYYYYMM(d)) must not be confused
 -- with the partition constant during folding. Results must match the unfolded path.
 
-SET enable_analyzer = 1;
 SET use_statistics_for_part_pruning=0;
 
 -- _partition_id physical column that is also the partition key

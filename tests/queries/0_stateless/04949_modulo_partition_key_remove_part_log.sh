@@ -41,6 +41,10 @@ do
     sleep 1
 done
 
+# SYSTEM FLUSH LOGS covers only the rows queued when it starts, so a row logged while the
+# last flush in the loop was blocked needs one more.
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS part_log"
+
 $CLICKHOUSE_CLIENT -q "
 SELECT 'remove part', partition FROM system.part_log
 WHERE event_date >= yesterday() AND toUnixTimestamp64Micro(event_time_microseconds) >= $SINCE

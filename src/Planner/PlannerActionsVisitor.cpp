@@ -2,8 +2,6 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <WindowFunctions/IWindowFunction.h>
-
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -1204,6 +1202,20 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & function_node = node->as<FunctionNode &>();
     auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
+    const auto * query_tree_index_hint = FunctionIndexHint::tryGet(function_node.getFunction());
+    bool implied = query_tree_index_hint && query_tree_index_hint->isImplied();
+
+    size_t index_hint_function_level = actions_stack.size() - 1;
+    if (const auto * existing_node = actions_stack[index_hint_function_level].tryGetNode(function_node_name))
+    {
+        /// Equal hints share one node, so a user-written one makes it not implied.
+        auto * existing_index_hint = FunctionIndexHint::tryGet(existing_node->function_base);
+        if (existing_index_hint && !implied)
+            existing_index_hint->setImplied(false);
+
+        return {function_node_name, Levels(index_hint_function_level)};
+    }
+
     ActionsDAG index_hint_actions_dag;
     auto & index_hint_actions_dag_outputs = index_hint_actions_dag.getOutputs();
     std::unordered_set<std::string_view> index_hint_actions_dag_output_node_names;
@@ -1227,9 +1239,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto index_hint_function = std::make_shared<FunctionIndexHint>();
     index_hint_function->setActions(std::move(index_hint_actions_dag));
+    index_hint_function->setImplied(implied);
     auto index_hint_function_overload_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint_function));
 
-    size_t index_hint_function_level = actions_stack.size() - 1;
     actions_stack[index_hint_function_level].addFunctionIfNecessary(function_node_name, {}, index_hint_function_overload_resolver);
 
     return {function_node_name, Levels(index_hint_function_level)};
@@ -1272,17 +1284,24 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 /// gates on the setting).
 void markFoldedSecretConstants(const FunctionNode & function_node, const ActionsDAG::NodeRawConstPtrs & children)
 {
-    const auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(function_node).getResult();
+    const auto secret_arguments = findSecretArguments(function_node);
     if (!secret_arguments.hasSecrets())
         return;
 
-    for (size_t i = 0; i < children.size(); ++i)
+    auto mark = [&](size_t index)
     {
         /// Any node carrying a constant column is a folded secret value, whether it is a plain COLUMN
         /// node or a FUNCTION node folded to a constant (e.g. `concat(k1, k2)`); flag either.
-        if (secret_arguments.isSecretArgument(i) && children[i]->column && !children[i]->is_masked_secret)
-            const_cast<ActionsDAG::Node *>(children[i])->is_masked_secret = true;
-    }
+        if (index < children.size() && children[index]->column && !children[index]->is_masked_secret)
+            const_cast<ActionsDAG::Node *>(children[index])->is_masked_secret = true;
+    };
+
+    for (size_t i = secret_arguments.start; i < secret_arguments.start + secret_arguments.count; ++i)
+        mark(i);
+    for (const auto & [index, _] : secret_arguments.masked_arguments)
+        mark(index);
+    for (const auto & [index, _] : secret_arguments.replaced_arguments)
+        mark(index);
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)

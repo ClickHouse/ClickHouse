@@ -216,6 +216,7 @@ public:
 
     /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
+    /// Throws if the current query is cancelled or exceeds `max_execution_time`, whatever its `timeout_overflow_mode`.
     bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
@@ -483,6 +484,11 @@ private:
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> shutdown_prepared_called {false};
     std::optional<ShutdownDeadline> shutdown_deadline;
+
+    /// Serializes concurrent calls to shutdown(). A repeated call (e.g. from the failure path of
+    /// startupImpl racing with the first, full shutdown) tears down whatever a concurrent startup()
+    /// re-armed, and some of the members it touches are not atomic.
+    std::mutex shutdown_mutex;
 
     /// We call flushAndPrepareForShutdown before acquiring DDLGuard, so we can shutdown a table that is being created right now
     mutable std::mutex flush_and_shutdown_mutex;
@@ -967,7 +973,7 @@ private:
     void startBackgroundMovesIfNeeded() override;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

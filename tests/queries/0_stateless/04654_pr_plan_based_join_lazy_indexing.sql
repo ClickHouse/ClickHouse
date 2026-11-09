@@ -13,7 +13,6 @@ CREATE TABLE lzi_right (a UInt64, b UInt64, c String) ENGINE = MergeTree ORDER B
 INSERT INTO lzi_left  SELECT number, number, toString(number) FROM numbers(10000);
 INSERT INTO lzi_right SELECT number, 50, toString(number) FROM numbers(100);
 
-SET enable_analyzer = 1;
 SET query_plan_min_columns_for_join_lazy_indexing = 1;
 SET query_plan_optimize_join_order_limit = 1;
 SET query_plan_join_swap_table = 'false';
