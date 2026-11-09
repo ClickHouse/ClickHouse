@@ -2222,25 +2222,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 });
         }
 
-        /// A file read under its own names yields whole columns, while a tuple element can be requested as a flat
-        /// column (see `filterTupleColumnsToRead`).
-        if (reads_file_under_own_names)
-        {
-            NameSet names_in_storage;
-            for (const auto & column : read_from_format_info.requested_columns)
-                names_in_storage.insert(column.getNameInStorage());
-            auto extract_dag = createSubcolumnsExtractionActions(
-                builder.getHeader(), Names(names_in_storage.begin(), names_in_storage.end()), context_);
-            if (!extract_dag.getNodes().empty())
-            {
-                auto extract_actions = std::make_shared<ExpressionActions>(std::move(extract_dag));
-                builder.addSimpleTransform([&](const SharedHeader & header)
-                {
-                    return std::make_shared<ExpressionTransform>(header, extract_actions);
-                });
-            }
-        }
-
         source = input_format;
     }
 
