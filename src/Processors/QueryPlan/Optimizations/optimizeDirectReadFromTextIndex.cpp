@@ -593,7 +593,7 @@ private:
     ActionsDAG & actions_dag;
     TextIndexReadInfos text_index_read_infos;
     bool direct_read_from_text_index = false;
-    /// Nodes of the DAG composed with the steps below, so that a function is matched on what it computes over the scan columns.
+    /// Maps the nodes of this DAG to the DAG composed with the steps below, i.e. to what they compute over the scan columns.
     const ActionsDAG::NodeMapping * composed_nodes = nullptr;
     /// Input nodes of the virtual columns in the DAG, by column name.
     std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
@@ -1110,7 +1110,6 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
 
 /// Applies the tokenizer/preprocessor/postprocessor rewrite to text-search functions in an arbitrary DAG,
 /// without any direct read from the text index. Returns true if the DAG was modified.
-/// Functions are matched on `composed_nodes`, their nodes in the DAG composed with the steps below.
 static bool applyTextIndexInject(
     ReadFromMergeTree & read_from_merge_tree_step,
     ActionsDAG & dag,
@@ -1220,7 +1219,7 @@ void processAndOptimizeTextIndexFunctions(
             ++walk_begin; /// the merged-away step is detached now, the filter sits directly above the scan
     }
 
-    /// The steps walked so far, composed into one DAG over the scan columns before they are rewritten, as the index analysis composes filters.
+    /// The steps walked so far, composed into one DAG over the scan columns. Each step is composed before it is rewritten.
     ActionsDAG steps_below;
     auto compose = [&](const ActionsDAG & dag)
     {
