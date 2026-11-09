@@ -11,6 +11,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -118,6 +119,13 @@ void flattenDocument(const std::string & prefix, const rapidjson::Value & docume
   *
   * A scalar subquery is `Nullable`, and `NULL` when there is no such column. Then the type of the
   * value itself is taken, which checks nothing, and the insert fails on the missing column.
+  *
+  * A collection without a database is resolved by the insert as `Context::resolveStorageID` does,
+  * where a temporary table of the session shadows a table of the current database. `system.columns`
+  * lists the temporary tables of the session under the empty database, so both are read and the
+  * empty database, which sorts first, wins:
+  *
+  *     ... WHERE database IN ('', currentDatabase()) AND ... ORDER BY database LIMIT 1
   */
 ASTPtr makeColumnTypeName(const std::shared_ptr<QueryMetadata> & metadata, const std::string & column, const ASTPtr & value)
 {
@@ -131,13 +139,26 @@ ASTPtr makeColumnTypeName(const std::shared_ptr<QueryMetadata> & metadata, const
         ASTSelectQuery::Expression::WHERE,
         makeASTFunction(
             "and",
-            makeASTFunction(
-                "equals",
-                make_intrusive<ASTIdentifier>("database"),
-                database.empty() ? ASTPtr(makeASTFunction("currentDatabase")) : ASTPtr(make_intrusive<ASTLiteral>(Field(database)))),
+            database.empty()
+                ? ASTPtr(makeASTFunction(
+                      "in",
+                      make_intrusive<ASTIdentifier>("database"),
+                      makeASTFunction("tuple", make_intrusive<ASTLiteral>(Field(String())), makeASTFunction("currentDatabase"))))
+                : ASTPtr(makeASTFunction("equals", make_intrusive<ASTIdentifier>("database"), make_intrusive<ASTLiteral>(Field(database)))),
             makeASTFunction(
                 "equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(Field(metadata->getCollectionName()))),
             makeASTFunction("equals", make_intrusive<ASTIdentifier>("name"), make_intrusive<ASTLiteral>(Field(column)))));
+    if (database.empty())
+    {
+        auto order_by = make_intrusive<ASTExpressionList>();
+        auto element = make_intrusive<ASTOrderByElement>();
+        element->children.push_back(make_intrusive<ASTIdentifier>("database"));
+        element->direction = 1;
+        element->nulls_direction = 1;
+        order_by->children.push_back(std::move(element));
+        select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(Field(UInt64(1))));
+    }
 
     auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
     auto list_of_selects = make_intrusive<ASTExpressionList>();
