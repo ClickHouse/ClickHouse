@@ -1,0 +1,50 @@
+-- With one ON disjunct and no additional filter, the probe of a hash join splits a left block into batches of at most 4096
+-- rows. For each batch, it looks up the keys of the rows and then adds their matches. The size of the left block must not
+-- change the result of a join. Every join below runs on left blocks of 1000, 4095, 4096, 4097, 12288 and 20001 rows, and the
+-- six runs must give the same result.
+
+SET join_algorithm = 'hash', join_use_nulls = 0, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0;
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+
+-- 3500 keys: the even numbers below 7000. Every tenth key has a second row.
+CREATE TABLE r (k UInt64, s String, lc LowCardinality(String), k2 UInt32, t UInt32, v UInt64) ENGINE = Memory;
+INSERT INTO r SELECT number * 2 AS k, toString(k), toString(k), k % 100, 5, number FROM numbers(3500);
+INSERT INTO r SELECT number * 20 AS k, toString(k), toString(k), k % 100, 8, 3500 + number FROM numbers(350);
+
+CREATE TABLE results (name String, block UInt32, rows UInt64, checksum UInt64) ENGINE = Memory;
+
+-- 50000 left rows with keys below 6000 in random order. Half of the keys are odd, so they are not in `r`, and the keys of
+-- `r` from 6000 on are in no left row. The left blocks have `max_block_size` rows.
+{% set l = '(SELECT intHash64(number) % 6000 AS k, toString(k) AS s, toLowCardinality(s) AS lc, toUInt32(k % 100) AS k2, toUInt32(number % 10) AS t, number AS x FROM numbers(50000)) AS l' -%}
+
+-- A checksum must not depend on the order of the threads. A join that takes one right row of a key may take any row of the
+-- key, so its checksum reads only what the rows of a key share.
+{% set pairs = 'count(), sum(cityHash64(l.x, r.v))' -%}
+{% set left_row_and_key = 'count(), sum(cityHash64(l.x, r.k))' -%}
+{% set right_key = 'count(), sum(cityHash64(r.k))' -%}
+{% set cases = [
+    ('inner all', pairs, 'INNER JOIN r ON l.k = r.k'),
+    ('left all', pairs, 'LEFT JOIN r ON l.k = r.k'),
+    ('right all', pairs, 'RIGHT JOIN r ON l.k = r.k'),
+    ('full all', pairs, 'FULL JOIN r ON l.k = r.k'),
+    ('inner any', right_key, 'ANY INNER JOIN r ON l.k = r.k'),
+    ('left any', left_row_and_key, 'ANY LEFT JOIN r ON l.k = r.k'),
+    ('left semi', left_row_and_key, 'LEFT SEMI JOIN r ON l.k = r.k'),
+    ('asof', pairs, 'ASOF JOIN r ON l.k = r.k AND l.t >= r.t'),
+    ('asof left', pairs, 'ASOF LEFT JOIN r ON l.k = r.k AND l.t >= r.t'),
+    ('string key', pairs, 'INNER JOIN r ON l.s = r.s'),
+    ('low cardinality key', pairs, 'LEFT JOIN r ON l.lc = r.lc'),
+    ('two key columns', pairs, 'LEFT JOIN r ON l.k = r.k AND l.k2 = r.k2'),
+    ('string and integer key columns', pairs, 'FULL JOIN r ON l.s = r.s AND l.k = r.k'),
+    ('nullable key', pairs, 'LEFT JOIN r ON if(l.x % 11 = 0, NULL, l.k) = r.k'),
+    ('condition on the left table', pairs, 'LEFT JOIN r ON l.k = r.k AND l.t != 3'),
+] -%}
+
+{% for block in [1000, 4095, 4096, 4097, 12288, 20001] -%}
+SET max_block_size = {{ block }};
+{% for name, columns, join in cases -%}
+INSERT INTO results SELECT '{{ name }}', {{ block }}, {{ columns }} FROM {{ l }} {{ join }};
+{% endfor -%}
+{% endfor %}
+-- The name of the join, its runs, their distinct results, and the result.
+SELECT name, count(), uniqExact((rows, checksum)), any(rows), any(checksum) FROM results GROUP BY name ORDER BY name;

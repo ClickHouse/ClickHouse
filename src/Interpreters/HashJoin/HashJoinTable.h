@@ -14,7 +14,6 @@
 
 #include <absl/functional/function_ref.h>
 
-#include <algorithm>
 #include <any>
 #include <functional>
 #include <optional>
@@ -175,46 +174,6 @@ ALWAYS_INLINE auto makeJoinPrefetcher(bool use_prefetch, size_t total, PrefetchA
         use_prefetch, total, std::forward<PrefetchAction>(prefetch_action)};
 }
 
-/// Counts the map lookups of a sample of the probe rows of a multi-disjunct join. A row looks the maps up in order, and
-/// a join that stops at the first match may never reach the later maps. Prefetching a map that few rows look up costs
-/// more than it saves. So after every `period_samples` sampled rows the probe prefetches only the leading maps that at
-/// least a quarter of those rows looked up. One row in every `sample_stride` is sampled, at an offset that cycles through
-/// the stride, so data that repeats every few rows does not bias the sample.
-class MultiMapLookupSampler
-{
-public:
-    explicit MultiMapLookupSampler(size_t num_maps) : lookups(num_maps) {}
-
-    static size_t nextSampledRow(size_t row)
-    {
-        const size_t stride_idx = row / sample_stride + 1;
-        return stride_idx * sample_stride + stride_idx % sample_stride;
-    }
-
-    void countLookup(size_t map_idx) { ++lookups[map_idx]; }
-
-    /// Returns true when this sampled row ends a period.
-    bool sampleDone() { return ++samples % period_samples == 0; }
-
-    /// Returns the number of maps to prefetch, at most `max_maps`, and starts a new period.
-    NO_INLINE size_t takeLimit(size_t max_maps)
-    {
-        size_t limit = 1;
-        while (limit < max_maps && lookups[limit] >= min_lookups)
-            ++limit;
-        std::ranges::fill(lookups, 0);
-        return limit;
-    }
-
-private:
-    static constexpr size_t sample_stride = 16;
-    static constexpr size_t period_samples = 128;
-    static constexpr size_t min_lookups = period_samples / 4;
-
-    std::vector<UInt32> lookups;
-    size_t samples = 0;
-};
-
 /// For a direct-addressed map: the minimum key and the range size from the minimum to the maximum key.
 struct JoinKeyRange
 {
@@ -297,191 +256,10 @@ std::string_view keyBytes(const Key & key)
 
 void insertKey(MutableColumns & columns, const KeyLayout & layout, std::string_view key, size_t times);
 
-template <
-    typename KeyGetter,
-    typename Map,
-    bool fast_path,
-    bool stops_at_first_match,
-    bool prefetch_later_maps,
-    typename RowState,
-    bool lazy_row_filter,
-    typename OnMatch,
-    typename OnRowEnd>
-NO_INLINE size_t probeAllRows(
-    std::vector<KeyGetter> && key_getter_vector,
-    const std::vector<const Map *> & mapv,
-    std::span<const JoinOnKeyColumns> keys,
-    const ScatteredBlock::Selector::Range & selector,
-    bool enable_prefetch,
-    IColumn::Offset max_offset,
-    IColumn::Offset & offset,
-    OnMatch on_match,
-    OnRowEnd on_row_end)
-{
-    static_assert(
-        !lazy_row_filter || (!fast_path && !stops_at_first_match), "`lazy_row_filter` excludes `fast_path` and `stops_at_first_match`");
-
-    size_t rows = ScatteredBlock::Selector::size(selector);
-    const size_t num_clauses = keys.size();
-
-    /// Per-clause skip bytes, prepared once per call (see `JoinOnKeyColumns::buildRowSkipData`).
-    std::vector<const UInt8 *> skip_datas;
-    std::vector<IColumn::Filter> skip_buffers;
-    if constexpr (!fast_path && !lazy_row_filter)
-    {
-        skip_datas.resize(num_clauses);
-        skip_buffers.resize(num_clauses);
-        for (size_t d = 0; d < num_clauses; ++d)
-            skip_datas[d] = keys[d].buildRowSkipData(skip_buffers[d], selector.first, rows);
-    }
-
-    Arena pool;
-
-    /// Raw pointers: a hardened `operator[]` computes the vector size on every lookup, which takes registers this memory-bound loop needs.
-    chassert(mapv.size() == num_clauses && key_getter_vector.size() == num_clauses);
-    const Map * const * maps = mapv.data();
-    KeyGetter * key_getters = key_getter_vector.data();
-    /// A prepared key getter builds no key for a row that its skip bytes mark, so it always has skip bytes: also on the fast
-    /// path, and with `lazy_row_filter`, whose loop still checks each row itself.
-    constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
-    if constexpr (prepared)
-    {
-        skip_datas.resize(num_clauses);
-        for (size_t d = 0; d < num_clauses; ++d)
-        {
-            if constexpr (lazy_row_filter)
-                skip_datas[d] = keys[d].buildRowSkipData(key_getters[d].skip_buffer, selector.first, rows);
-            skip_datas[d] = key_getters[d].skipOrAllSelected(skip_datas[d]);
-        }
-    }
-    const UInt8 * const * skip_data = skip_datas.data();
-
-    /// Software prefetch for multi-map variant. A one-bucket map prefetches only the first map. With `prefetch_later_maps`, a
-    /// two-level map also prefetches the later maps that are not cache-resident and that `MultiMapLookupSampler` allows, because
-    /// a lookup there loads the bucket header before the cell. A sampled limit starts at one map: `PrefetchingHelper` sets the
-    /// look-ahead from the first rows, and a look-ahead measured while prefetching more maps is too short once the limit drops.
-    chassert(!mapv.empty());
-    constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
-
-    bool use_prefetch = false;
-    size_t max_prefetched_maps = 1;
-    if constexpr (can_prefetch)
-    {
-        use_prefetch = shouldUseJoinPrefetch(enable_prefetch, mapv[0]);
-        /// A later map of a two-level layout counts only when it does not fit in the cache.
-        if constexpr (prefetch_later_maps && Map::NUM_BUCKETS > 1)
-            while (use_prefetch && max_prefetched_maps < mapv.size()
-                   && mapv[max_prefetched_maps]->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin())
-                ++max_prefetched_maps;
-    }
-    const bool samples_lookups = stops_at_first_match && max_prefetched_maps > 1;
-    size_t num_prefetched_maps = samples_lookups ? 1 : max_prefetched_maps;
-    MultiMapLookupSampler sampler(samples_lookups ? num_clauses : 0);
-    size_t next_sampled_row = samples_lookups ? 0 : rows;
-
-    /// Before the prefetcher is created, see `PreparedJoinKeys::prepareRows`: the first map, and the other maps that are
-    /// prefetched from the start. The maps that a sampled limit adds later are prepared then. With `lazy_row_filter` the loop
-    /// looks up every row that it does not skip in every map, so the keys of every map are prepared.
-    if constexpr (prepared)
-    {
-        const size_t num_prepared_maps = lazy_row_filter ? num_clauses : num_prefetched_maps;
-        for (size_t map_idx = 0; map_idx < num_prepared_maps; ++map_idx)
-            key_getters[map_idx].prepareRows(selector, skip_data[map_idx]);
-    }
-
-    auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
-        [&](size_t k) __attribute__((always_inline))
-        {
-            if constexpr (can_prefetch)
-            {
-                const size_t row = selectorIndexAt(selector, k);
-                constexpr bool check_skip = prepared && !fast_path;
-                if (!check_skip || !skip_data[0][row])
-                    maps[0]->prefetch(key_getters[0].getKeyHolder(row, pool));
-                if constexpr (Map::NUM_BUCKETS > 1)
-                    for (size_t map_idx = 1; map_idx < num_prefetched_maps; ++map_idx)
-                        if (!check_skip || !skip_data[map_idx][row])
-                            maps[map_idx]->prefetch(key_getters[map_idx].getKeyHolder(row, pool));
-            }
-        });
-
-    IColumn::Offset current_offset = offset;
-    size_t i = 0;
-    for (; i < rows && current_offset < max_offset; ++i)
-    {
-        if constexpr (can_prefetch)
-            prefetcher.prefetchAt(i);
-
-        const size_t ind = selectorIndexAt(selector, i);
-
-        bool right_row_found = false;
-        RowState row_state;
-        size_t onexpr_idx = 0;
-        for (; onexpr_idx < num_clauses; ++onexpr_idx)
-        {
-            bool skip_row = false;
-            if constexpr (lazy_row_filter)
-                skip_row = (keys[onexpr_idx].null_map && (*keys[onexpr_idx].null_map)[ind]) || keys[onexpr_idx].isRowFiltered(ind);
-            else if constexpr (!fast_path)
-                skip_row = (prepared || skip_data[onexpr_idx]) && skip_data[onexpr_idx][ind];
-
-            if (!skip_row)
-            {
-                auto find_result = key_getters[onexpr_idx].findKey(*maps[onexpr_idx], ind, pool);
-
-                if (find_result.isFound())
-                {
-                    right_row_found = true;
-                    on_match(i, ind, find_result, onexpr_idx + 1 == num_clauses, row_state, current_offset);
-
-                    if constexpr (stops_at_first_match)
-                        break;
-                }
-            }
-        }
-
-        if constexpr (stops_at_first_match && Map::NUM_BUCKETS > 1)
-        {
-            if (i == next_sampled_row) [[unlikely]]
-            {
-                /// The row looked up every map up to the one it stopped at, except where its key is skipped.
-                const size_t reached_maps = std::min(onexpr_idx + 1, num_clauses);
-                for (size_t map_idx = 0; map_idx < reached_maps; ++map_idx)
-                {
-                    if constexpr (!fast_path)
-                        if (skip_data[map_idx] && skip_data[map_idx][ind])
-                            continue;
-                    sampler.countLookup(map_idx);
-                }
-                if (sampler.sampleDone())
-                {
-                    const size_t limit = sampler.takeLimit(max_prefetched_maps);
-                    /// The prefetch reads the keys of the maps that it prefetches, so the keys of an added map are prepared
-                    /// from the next row on. A dropped map builds each key where it is read again, because few rows read it.
-                    if constexpr (prepared)
-                    {
-                        for (size_t map_idx = num_prefetched_maps; map_idx < limit; ++map_idx)
-                            key_getters[map_idx].prepareRange({ind + 1, selector.second}, skip_data[map_idx]);
-                        for (size_t map_idx = limit; map_idx < num_prefetched_maps; ++map_idx)
-                            key_getters[map_idx].prepareRange({}, nullptr);
-                    }
-                    num_prefetched_maps = limit;
-                }
-                next_sampled_row = MultiMapLookupSampler::nextSampledRow(i);
-            }
-        }
-
-        on_row_end(i, right_row_found, current_offset);
-    }
-
-    offset = current_offset;
-    return i;
 }
 
-}
-
-/// The hash table of one ON disjunct of a `HashJoin`. All the tables of a join have one key type. `probe` and `probeAll` take
-/// that type as a template argument, so `HashJoin` switches on it once per block. The other methods switch on the stored type.
+/// The hash table of one ON disjunct of a `HashJoin`. All the tables of a join have one key type. `mapOf` takes that type
+/// as a template argument, so the probe switches on it once per block. The other methods switch on the stored type.
 class HashJoinTable
 {
 public:
@@ -604,6 +382,12 @@ public:
 
     size_t bufferBytes() const;
     size_t bufferSizeInCells() const;
+
+    /// The cell offset that `JoinProbe::findKeys` records for a key that is not found: one past the last cell. The used flags
+    /// per key have a slot there, so the match step sets a flag without checking whether the row matched.
+    size_t missingKeyOffset() const { return bufferSizeInCells() + 1; }
+    /// The size of the used flags per key: one flag per cell offset and one at `missingKeyOffset`.
+    size_t keyFlagsSize() const { return missingKeyOffset() + 1; }
     size_t cellSize() const;
 
     /// Replaces the map of a `key32` or `key64` table with a direct-addressed one if its keys span a small enough range. That
@@ -630,119 +414,12 @@ public:
     /// Frees the maps. The table stays, so that a concurrent `keys` stays valid.
     void releaseMaps();
 
-    /// Looks up the key of every row of `selector`. For each row, calls `body(i, ind, find_result, offset)` with the position `i`,
-    /// the row `ind`, and the output offset. The loop keeps the offset so that it stays in a register. A row with a NULL key
-    /// or one the ON-section mask filters out gets a result that is not found; `fast_path` assumes there is none. `TYPE` is `type()`.
-    template <Type TYPE, typename Maps, bool fast_path, typename Body>
-    ALWAYS_INLINE void probe(
-        const JoinOnKeyColumns & keys,
-        const ScatteredBlock::Selector::Range & selector,
-        bool enable_prefetch,
-        IColumn::Offset & offset,
-        Body && body) const
+    /// The map of the key type `TYPE`, which must be `type()`.
+    template <Type TYPE, typename Maps>
+    const JoinMapOf<TYPE, Maps> & mapOf() const
     {
-        using Map = const JoinMapOf<TYPE, Maps>;
-        using KeyGetter = typename KeyGetterForType<TYPE, Map>::Type;
-        using FindResult = typename KeyGetter::FindResult;
-        constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
-
         chassert(key_type == TYPE);
-        const Map & map = typedMap<TYPE, Maps>(*this);
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(keys.key_columns, keys.key_sizes, key_range);
-
-        size_t rows = ScatteredBlock::Selector::size(selector);
-
-        /// The skip pointer is a local so that it can stay in a register across the calls in
-        /// the loop body (see `JoinOnKeyColumns::buildRowSkipData`).
-        const UInt8 * skip_data = nullptr;
-        IColumn::Filter skip_buffer;
-        if constexpr (!fast_path)
-            skip_data = keys.buildRowSkipData(skip_buffer, selector.first, rows);
-
-        Arena pool;
-
-        /// Software prefetch during the probe phase.
-        constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
-
-        bool use_prefetch = false;
-        if constexpr (can_prefetch)
-            use_prefetch = shouldUseJoinPrefetch(enable_prefetch, &map);
-
-        constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
-        /// Before the prefetcher is created, see `PreparedJoinKeys::prepareRows`.
-        if constexpr (prepared)
-        {
-            skip_data = key_getter.skipOrAllSelected(skip_data);
-            key_getter.prepareRows(selector, skip_data);
-        }
-
-        auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
-            [&](size_t k) __attribute__((always_inline))
-            {
-                if constexpr (can_prefetch)
-                {
-                    const size_t row = selectorIndexAt(selector, k);
-                    if (prepared && !fast_path && skip_data[row])
-                        return;
-                    map.prefetch(key_getter.getKeyHolder(row, pool));
-                }
-            });
-
-        for (size_t i = 0; i < rows; ++i)
-        {
-            if constexpr (can_prefetch)
-                prefetcher.prefetchAt(i);
-
-            const size_t ind = selectorIndexAt(selector, i);
-
-            bool skip_row = false;
-            if constexpr (!fast_path)
-                skip_row = (prepared || skip_data) && skip_data[ind];
-
-            body(i, ind, skip_row ? FindResult() : key_getter.findKey(map, ind, pool), offset);
-        }
-    }
-
-    /// Looks up the key of every row of `selector` in `tables`, in order. For each table that has the key, calls
-    /// `on_match(i, ind, find_result, is_last_disjunct, row_state, offset)`, where `row_state` is a `RowState` made for the row.
-    /// Then calls `on_row_end(i, found, offset)`. Skips the NULL and masked keys as `probe` does. With `stops_at_first_match`, a
-    /// row stops at its first match. The loop stops before a row once `offset` reaches `max_offset`, and returns the rows processed.
-    /// It prefetches the first table. With `prefetch_later_maps` it also prefetches the two-level tables after the first, up to
-    /// the first one that fits in the cache. With `stops_at_first_match` it prefetches only as many as `MultiMapLookupSampler` allows.
-    /// `lazy_row_filter` checks the NULL key and the mask of each row when the loop visits it, and does not prepare them for all
-    /// of `selector`. That is cheaper when a call visits few rows, as a join with a residual condition does, and costs two checks
-    /// per row otherwise. It excludes `fast_path`, which has nothing to check, and `stops_at_first_match`, whose sampler reads
-    /// the prepared bytes. `TYPE` is the `type()` of every table.
-    template <
-        Type TYPE,
-        typename Maps,
-        bool fast_path,
-        bool stops_at_first_match,
-        bool prefetch_later_maps,
-        typename RowState,
-        bool lazy_row_filter = false,
-        typename OnMatch,
-        typename OnRowEnd>
-    static ALWAYS_INLINE size_t probeAll(
-        std::span<const std::unique_ptr<HashJoinTable>> tables,
-        std::span<const JoinOnKeyColumns> keys,
-        const ScatteredBlock::Selector::Range & selector,
-        bool enable_prefetch,
-        IColumn::Offset max_offset,
-        IColumn::Offset & offset,
-        OnMatch on_match,
-        OnRowEnd on_row_end)
-    {
-        using Map = const JoinMapOf<TYPE, Maps>;
-        using KeyGetter = typename KeyGetterForType<TYPE, Map>::Type;
-
-        chassert(std::ranges::all_of(tables, [](const auto & table) { return table->key_type == TYPE; }));
-        std::vector<const Map *> mapv;
-        std::vector<KeyGetter> key_getter_vector;
-        prepareProbeAll<TYPE, Maps>(tables, keys, mapv, key_getter_vector);
-        return detail::probeAllRows<KeyGetter, Map, fast_path, stops_at_first_match, prefetch_later_maps, RowState, lazy_row_filter>(
-            std::move(key_getter_vector), mapv, keys, selector, enable_prefetch, max_offset, offset, std::move(on_match),
-            std::move(on_row_end));
+        return typedMap<TYPE, Maps>(*this);
     }
 
 private:
@@ -1149,26 +826,6 @@ private:
                 detail::insertKey(columns, layout, detail::keyBytes(key), rows);
                 return rows;
             });
-    }
-
-    /// The map pointers and the key getters of `probeAll`. Out of line, so that the callers of one key type share one copy.
-    template <Type TYPE, typename Maps>
-    static NO_INLINE void prepareProbeAll(
-        std::span<const std::unique_ptr<HashJoinTable>> tables,
-        std::span<const JoinOnKeyColumns> keys,
-        std::vector<const JoinMapOf<TYPE, Maps> *> & mapv,
-        std::vector<typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type> & key_getter_vector)
-    {
-        using KeyGetter = typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type;
-        constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
-
-        mapv.resize(keys.size());
-        for (size_t d = 0; d < keys.size(); ++d)
-        {
-            mapv[d] = &typedMap<TYPE, Maps>(*tables[d]);
-            key_getter_vector.push_back(
-                createJoinKeyGetter<KeyGetter, is_asof_join>(keys[d].key_columns, keys[d].key_sizes, tables[d]->key_range));
-        }
     }
 
     template <bool is_signed, typename Key, typename Maps>

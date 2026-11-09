@@ -38,14 +38,12 @@ struct JoinOnKeyColumns
 
     Sizes key_sizes;
 
+    /// The key getter of these columns that `JoinProbe::keptKeyGetter` keeps for the later key searches of the call.
+    mutable std::shared_ptr<void> kept_key_getter;
+
     JoinOnKeyColumns(
         const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
         bool keep_lowcardinality = false);
-
-    bool isRowFiltered(size_t i) const
-    {
-        return join_mask_column.isRowFiltered(i);
-    }
 
     /// A row with a NULL key and a row filtered out by the ON-section mask have the same
     /// effect - the row matches nothing - so the probe loop needs a single skip byte per
@@ -251,9 +249,6 @@ public:
     }
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
-
-    /// `PreSelectedRows` returns false. It keeps one ref per right row for the additional filter.
-    static constexpr bool appendsWholeKey() { return true; }
 
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
