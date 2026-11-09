@@ -756,6 +756,29 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        {
+            /// SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster] [FOR TABLE [db.]table [INDEX index]]
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+
+            if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
+            {
+                if (!ParserKeyword{Keyword::TABLE}.ignore(pos, expected))
+                    return false;
+                if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                    return false;
+
+                if (ParserKeyword{Keyword::INDEX}.ignore(pos, expected))
+                {
+                    ASTPtr index;
+                    if (!ParserIdentifier{}.parse(pos, index, expected))
+                        return false;
+                    res->index_name = getIdentifierName(index);
+                }
+            }
+            break;
+        }
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
             ParserLiteral path_parser;
@@ -1306,7 +1329,14 @@ Clears the userspace page cache, ClickHouse's own in-memory cache of data read f
 
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
-Clears the vector similarity index cache.
+Clears the cache of [vector similarity indexes](/reference/engines/table-engines/mergetree-family/annindexes), which holds the deserialized vector index granules in memory.
+Its size is configured with the server-level setting [`vector_similarity_index_cache_size`](/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
+
+```sql
+SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table [INDEX index_name]]
+```
+
+With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed, and with `INDEX`, only those of the given vector similarity index of the table. The cache entries of the other tables and indexes stay cached.
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 

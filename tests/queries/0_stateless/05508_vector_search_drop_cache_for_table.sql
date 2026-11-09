@@ -1,11 +1,12 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest, no-parallel, no-parallel-replicas
 -- no-fasttest: the fast test build has no vector similarity indexes, because it is built without the `usearch` library
 -- no-parallel: other tests clear the whole vector similarity index cache, which would turn the cache hits expected below into misses
+-- no-parallel-replicas: the test counts the cache lookups of each search, and with parallel replicas a search can look up its
+--     cache entry more than once (also when automatic parallel replicas only collect statistics: the plan built for costing
+--     looks it up again)
 
 -- Tests `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE <table> [INDEX <index>]`: it evicts the cache entries of that
 -- table (or of that index of the table), and keeps the entries of other tables and indexes.
-
-SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
 
 DROP TABLE IF EXISTS tab1;
 DROP TABLE IF EXISTS tab2;
@@ -20,6 +21,9 @@ SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab');
 SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE db.tab INDEX idx');
 SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER c FOR TABLE db.tab INDEX idx');
 SELECT formatQuery('SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE ON CLUSTER c');
+
+-- The table and the index are kept in the JSON representation of the query.
+SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER c FOR TABLE db.tab INDEX idx'));
 
 -- `FOR TABLE` needs a table name, and `INDEX` needs `FOR TABLE`.
 SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE'); -- { serverError SYNTAX_ERROR }

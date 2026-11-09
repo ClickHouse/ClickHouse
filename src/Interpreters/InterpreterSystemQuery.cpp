@@ -591,8 +591,12 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearIndexUncompressedCache();
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+            /// The privilege is global, also for `FOR TABLE`.
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
-            system_context->clearVectorSimilarityIndexCache();
+            if (table_id.empty())
+                system_context->clearVectorSimilarityIndexCache();
+            else
+                clearVectorSimilarityIndexCacheForTable(query);
             break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
@@ -2877,6 +2881,19 @@ void InterpreterSystemQuery::clearTimeSeriesCaches()
 
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     storagePtrToTimeSeries(table)->clearCaches();
+}
+
+void InterpreterSystemQuery::clearVectorSimilarityIndexCacheForTable(const ASTSystemQuery & query)
+{
+    auto table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
+    auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Command CLEAR VECTOR SIMILARITY INDEX CACHE FOR TABLE is supported only for MergeTree tables, but got: {}", table->getName());
+
+    /// The cache keys are built from the paths of the parts, which `RENAME TABLE` changes for a table without a UUID.
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+    merge_tree->clearVectorSimilarityIndexCache(query.index_name);
 }
 
 void InterpreterSystemQuery::prewarmMarkCache()

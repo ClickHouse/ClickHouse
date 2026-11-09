@@ -201,13 +201,14 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     /// would create too much lock contention in the cache (this was learned the hard way).
     /// Don't populate the cache for parts which are not Active (e.g. Outdated after a mutation).
     /// Such parts will be removed soon and caching them is wasteful.
-    /// Also note that the cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
-    /// the key used during eviction in `IMergeTreeDataPart::removeFromVectorIndexCache`.
+    /// Also note that the cache key must use `getPathForCacheKey` (it is based on `getRelativePathOfActivePart`, not `getFullPath`)
+    /// to match the key used during eviction in `IMergeTreeDataPart::removeFromVectorIndexCache` and
+    /// `MergeTreeData::clearVectorSimilarityIndexCache`.
     /// The cache key needs the part itself; without one the granule is loaded directly.
     auto concrete_part = data_part_info->getDataPart();
     if (index->isVectorSimilarityIndex() && concrete_part && concrete_part->getState() == MergeTreeDataPartState::Active)
     {
-        VectorSimilarityIndexCacheKey key{concrete_part->getDataPartStorage().getDiskName() + ":" + concrete_part->getRelativePathOfActivePart(),
+        VectorSimilarityIndexCacheKey key{concrete_part->getPathForCacheKey(),
                                           index->getFileName(),
                                           mark};
 

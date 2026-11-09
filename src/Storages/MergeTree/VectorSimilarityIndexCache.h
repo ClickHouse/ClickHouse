@@ -5,6 +5,9 @@
 #include <Common/SipHash.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
+#include <optional>
+#include <unordered_set>
+
 namespace ProfileEvents
 {
     extern const Event VectorSimilarityIndexCacheMisses;
@@ -113,6 +116,16 @@ public:
     void removeEntriesFromCache(const String & path_to_data_part)
     {
         Base::remove([path_to_data_part](const Key & key, const MappedPtr &) { return key.path_to_data_part == path_to_data_part; });
+    }
+
+    /// Removes the entries of several data parts in a single pass over the cache. If `index_name` is set, removes only the
+    /// entries of that index. Like `Key::index_name`, it is the file name of the index (`IMergeTreeIndex::getFileName`).
+    void removeEntriesFromCache(const std::unordered_set<String> & paths_to_data_parts, const std::optional<String> & index_name)
+    {
+        Base::remove([&](const Key & key, const MappedPtr &)
+        {
+            return paths_to_data_parts.contains(key.path_to_data_part) && (!index_name || key.index_name == *index_name);
+        });
     }
 
 private:
