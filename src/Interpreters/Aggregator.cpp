@@ -31,6 +31,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveRowSelection.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -926,7 +927,15 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
-        adaptive_argument_layout = AdaptiveArgumentLayout::build(header_, keys_positions, aggregates_positions);
+        /// The bucket top-K counts the staged records of a key as its rows, in its count bins and its
+        /// count-first units, so a record that combined several rows of its key would undercount it.
+        if (params.adaptive_aggregator_combine_arg_min_max && !params.bucket_top_k)
+            adaptive_row_selection = adaptiveRowSelectionOf(params.aggregates);
+        adaptive_argument_layout = AdaptiveArgumentLayout::build(
+            header_,
+            keys_positions,
+            aggregates_positions,
+            /*with_multiplicity=*/adaptive_row_selection && adaptive_row_selection->countsRows());
         /// Distinct tuples of the arguments describe one set-valued aggregate. Multiple independent sets
         /// can have different reduction factors, so they cannot share this estimate. The fixed states of
         /// the other aggregates are covered by the per-key state cost.

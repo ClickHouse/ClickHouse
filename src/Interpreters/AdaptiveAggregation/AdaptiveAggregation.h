@@ -60,6 +60,10 @@ struct AdaptiveAggregationProducer;
 /// The record layout of the aggregate arguments that general payloads stage.
 struct AdaptiveArgumentLayout;
 
+/// The aggregates that select one row of their group by one ordering column, whose misses of a key combine
+/// into one record.
+struct AdaptiveRowSelection;
+
 /// What the record writer staged beyond the fixed parts of a batch's records, for the accounting of the batch.
 struct AdaptiveStagedBytes;
 

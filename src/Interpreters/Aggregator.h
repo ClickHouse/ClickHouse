@@ -690,6 +690,9 @@ private:
     /// The record layout of the staged aggregate arguments; set when the adaptive aggregation is engaged and the
     /// query has aggregate functions.
     std::unique_ptr<const AdaptiveArgumentLayout> adaptive_argument_layout;
+    /// Set with the layout when every aggregate selects one row of its group by one ordering column, so the
+    /// misses of a key combine into one record (see `AdaptiveRowSelection`).
+    std::unique_ptr<const AdaptiveRowSelection> adaptive_row_selection;
     /// Per-query aggregate metadata used to estimate the cost of retaining states and merging them.
     size_t adaptive_state_bytes_per_distinct_input = 0;
     /// The only aggregate whose state grows per distinct input; its arguments are sampled when
