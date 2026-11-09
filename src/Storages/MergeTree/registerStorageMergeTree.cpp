@@ -3088,7 +3088,7 @@ SELECT * FROM UAct
         .syntax = "ENGINE = CollapsingMergeTree(sign) ORDER BY expr",
         .related = {"MergeTree", "VersionedCollapsingMergeTree", "ReplicatedCollapsingMergeTree"}});
 
-    factory.registerStorage("ReplacingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
+    factory.registerStorage("ReplacingMergeTree", create, SecretArgumentsSpec{}, ordered_insert_features, Documentation{
         .description = R"DOCS_MD(
 The engine differs from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) in that it removes duplicate entries with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
@@ -4788,7 +4788,7 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .syntax = "ENGINE = ReplicatedCollapsingMergeTree('zoo_path', 'replica_name', sign) ORDER BY expr",
         .related = {"CollapsingMergeTree"}});
 
-    factory.registerStorage("ReplicatedReplacingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
+    factory.registerStorage("ReplicatedReplacingMergeTree", create, SecretArgumentsSpec{}, ordered_insert_features, Documentation{
         .description = "Replicated version of the ReplacingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedReplacingMergeTree('zoo_path', 'replica_name'[, ver [, is_deleted]]) ORDER BY expr",
         .related = {"ReplacingMergeTree"}});

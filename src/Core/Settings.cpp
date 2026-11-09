@@ -343,8 +343,9 @@ This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent 
 across up to this many threads.
 
 Destinations whose results depend on insertion order keep a single write stream regardless of this setting:
-`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree` without a version column
-(including their replicated variants), `EmbeddedRocksDB`, and `KeeperMap`.
+`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
+(including their replicated variants), `EmbeddedRocksDB`, and `KeeperMap`. This also applies when such a destination is
+reached through a materialized view or an `Alias` table.
 
 Possible values:
 
