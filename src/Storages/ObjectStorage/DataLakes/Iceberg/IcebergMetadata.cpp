@@ -895,12 +895,7 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
                     if (metadata_was_written)
                         object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
                 }
-                if (persistent_components.metadata_cache)
-                {
-                    persistent_components.metadata_cache->remove(persistent_components.table_path);
-                    if (persistent_components.table_uuid)
-                        persistent_components.metadata_cache->remove(*persistent_components.table_uuid);
-                }
+                persistent_components.invalidateMetadataCache();
             }
             catch (...)
             {
