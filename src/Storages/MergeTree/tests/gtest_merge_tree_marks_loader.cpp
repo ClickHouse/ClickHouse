@@ -28,7 +28,6 @@ public:
     Int64 getMinDataVersion() const override { unexpectedCall(); }
     Int64 getMaxDataVersion() const override { unexpectedCall(); }
     IndexPtr getIndexPtr() const override { unexpectedCall(); }
-    MergeTreePartMinMaxIndexPtr getMinMaxIndex() const override { unexpectedCall(); }
     DataPartStoragePtr getDataPartStorage() const override { return {}; }
     const NamesAndTypesList & getColumns() const override { unexpectedCall(); }
     const ColumnsDescription & getColumnsDescription() const override { unexpectedCall(); }
@@ -52,7 +51,6 @@ public:
     const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { unexpectedCall(); }
     const MergeTreeIndexGranularity & getIndexGranularity() const override { unexpectedCall(); }
     SerializationPtr getSerialization(const NameAndTypePair &) const override { unexpectedCall(); }
-    SerializationPtr tryGetSerialization(const String &) const override { unexpectedCall(); }
     const SerializationInfoByName & getSerializationInfos() const override { unexpectedCall(); }
     String getTableName() const override { unexpectedCall(); }
     void reportBroken() override { unexpectedCall(); }

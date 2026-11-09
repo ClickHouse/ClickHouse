@@ -4,7 +4,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
@@ -36,12 +35,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCOMPATIBLE_COLUMNS;
-    extern const int NETWORK_ERROR;
-}
-
-namespace DB::FailPoints
-{
-    extern const char delta_lake_commit_fail_before_log_write[];
 }
 
 namespace DeltaLake
@@ -50,19 +43,22 @@ namespace DeltaLake
 namespace
 {
 
-/// The Delta protocol defines `add.modificationTime` as milliseconds since the epoch.
-UInt64 getCurrentTimeMs()
+UInt64 getCurrentTime()
 {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-void exportRecordBatch(
-    const arrow::RecordBatch & batch,
+void exportTable(
+    std::shared_ptr<arrow::Table> table,
     ffi::FFI_ArrowArray & array,
     ffi::FFI_ArrowSchema & schema)
 {
+    auto batch = table->CombineChunksToBatch();
+    if (!batch.ok())
+        DB::throwFromArrowStatus(batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create chunks batch");
+
     arrow::Status status = arrow::ExportRecordBatch(
-        batch,
+        **batch,
         reinterpret_cast<ArrowArray *>(&array),
         reinterpret_cast<ArrowSchema *>(&schema));
 
@@ -83,10 +79,8 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
             std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeString>())), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
-        /// The kernel JSON-encodes this struct into `add.stats`, so its field names are the
-        /// committed JSON keys and must be the protocol's own.
         {std::make_shared<DB::DataTypeTuple>(
-                DB::DataTypes{std::make_shared<DB::DataTypeInt64>()}, DB::Names{"numRecords"}), "stats"}
+                DB::DataTypes{std::make_shared<DB::DataTypeString>()}, DB::Names{"stats_json"}), "stats"}
     };
 
     DB::MutableColumns columns;
@@ -106,8 +100,10 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         columns[0]->insert(path);
         columns[1]->insert(partition_values);
         columns[2]->insert(size_bytes);
-        columns[3]->insert(getCurrentTimeMs());
-        columns[4]->insert(DB::Tuple{DB::Field(static_cast<Int64>(size_rows))});
+        columns[3]->insert(getCurrentTime());
+        std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
+        DB::Tuple stats{stats_json};
+        columns[4]->insert(stats);
     }
 
     DB::FormatSettings format_settings;
@@ -135,13 +131,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 
 static constexpr auto engine_info = "ClickHouse";
 
-WriteTransaction::WriteTransaction(
-    DeltaLake::KernelHelperPtr kernel_helper_,
-    DB::NamesAndTypesList table_schema_,
-    std::unordered_set<String> table_timestamp_ntz_paths_)
+WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_, DB::NamesAndTypesList table_schema_)
     : kernel_helper(kernel_helper_)
     , table_schema(std::move(table_schema_))
-    , table_timestamp_ntz_paths(std::move(table_timestamp_ntz_paths_))
     , log(getLogger("WriteTransaction"))
 {
 }
@@ -162,12 +154,6 @@ const DB::NamesAndTypesList & WriteTransaction::getWriteSchema() const
 {
     assertTransactionCreated();
     return write_schema;
-}
-
-const std::unordered_set<String> & WriteTransaction::getTimestampNtzPaths() const
-{
-    assertTransactionCreated();
-    return write_timestamp_ntz_paths;
 }
 
 void WriteTransaction::create(const DB::Names & partition_columns)
@@ -193,16 +179,13 @@ void WriteTransaction::create(const DB::Names & partition_columns)
         unpartitioned_write_context = DeltaLake::KernelUtils::unwrapResult(
             ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
             "get_unpartitioned_write_context");
-        auto write_schema_result = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
-        write_schema = std::move(write_schema_result.schema);
-        write_timestamp_ntz_paths = std::move(write_schema_result.timestamp_ntz_paths);
+        write_schema = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
     }
     else
     {
         /// delta-kernel exposes no partitioned write context via FFI (TODO(#2355)), so derive the
         /// write schema directly; per-partition values are handled when committing.
         write_schema = table_schema;
-        write_timestamp_ntz_paths = table_timestamp_ntz_paths;
     }
 
     /// The reader resolves every committed `add.path` against `getDataPath`, so write under it too.
@@ -239,64 +222,30 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Will commit {} files", files.size());
     auto write_metadata = getWriteMetadata(files, log);
 
-    /// Metadata too large for one Arrow record batch comes back as several table chunks. Recombining them
-    /// would hit the same 32-bit offset limit, so each record batch is added to the transaction on its own.
-    /// `TableBatchReader` yields nothing for an empty table, which still has to reach the kernel as before.
-    arrow::RecordBatchVector batches;
-    if (write_metadata->num_rows() == 0)
-    {
-        auto empty_batch = arrow::RecordBatch::MakeEmpty(write_metadata->schema());
-        if (!empty_batch.ok())
-            DB::throwFromArrowStatus(empty_batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create an empty record batch");
-        batches.push_back(*std::move(empty_batch));
-    }
-    else
-    {
-        arrow::TableBatchReader batch_reader(*write_metadata);
-        while (true)
-        {
-            std::shared_ptr<arrow::RecordBatch> batch;
-            arrow::Status read_status = batch_reader.ReadNext(&batch);
-            if (!read_status.ok())
-                DB::throwFromArrowStatus(read_status, DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to read a record batch");
-            if (!batch)
-                break;
-            batches.push_back(std::move(batch));
-        }
-    }
-
-    for (const auto & batch : batches)
-    {
-        ffi::FFI_ArrowArray array{};
-        ffi::FFI_ArrowSchema schema{};
-        SCOPE_EXIT({
-            if (schema.release)
-                schema.release(&schema);
-        });
-        exportRecordBatch(*batch, array, schema);
-
-        KernelEngineData engine_data;
-        try
-        {
-            /// Takes ownership of `array` (but not`schema`) if successfully called.
-            engine_data = DeltaLake::KernelUtils::unwrapResult(
-                ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
-                "get_engine_data");
-        }
-        catch (...)
-        {
-            if (array.release)
-                array.release(&array);
-            throw;
-        }
-
-        ffi::add_files(transaction.get(), engine_data.release());
-    }
-
-    fiu_do_on(DB::FailPoints::delta_lake_commit_fail_before_log_write, {
-        throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a commit failure before the log write enabled");
+    ffi::FFI_ArrowArray array{};
+    ffi::FFI_ArrowSchema schema{};
+    SCOPE_EXIT({
+        if (schema.release)
+            schema.release(&schema);
     });
+    exportTable(write_metadata, array, schema);
 
+    KernelEngineData engine_data;
+    try
+    {
+        /// Takes ownership of `array` (but not`schema`) if successfully called.
+        engine_data = DeltaLake::KernelUtils::unwrapResult(
+            ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
+            "get_engine_data");
+    }
+    catch (...)
+    {
+        if (array.release)
+            array.release(&array);
+        throw;
+    }
+
+    ffi::add_files(transaction.get(), engine_data.release());
     using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
     KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
         ffi::commit(transaction.release(), engine.get()),

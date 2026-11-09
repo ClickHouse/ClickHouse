@@ -22,7 +22,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Image img="/images/managed-postgres/read-replica-dialog.webp" alt="只读副本管理对话框" size="md" border />
 
-## 管理只读副本 {#managing-read-replicas}
+<div id="managing-read-replicas">
+  ## 管理只读副本
+</div>
 
 **只读副本** 页面提供两种视图，可通过右上角的 **Flow** 和 **Table** 控件进行切换。
 
@@ -68,7 +70,7 @@ ClickHouse Managed Postgres 中的只读副本采用传输 WAL架构，而非流
   ### 通过对象存储传输 WAL
 </div>
 
-当主节点数据库处理事务时，会生成预写日志 (WAL) 记录。这些 WAL 分段会持续归档到对象存储中。只读副本会从对象存储中拉取并重放这些 WAL 分段，以与主节点保持同步。
+当主节点数据库处理事务时，会生成预写日志 (WAL) 记录。这些 WAL 分段会持续归档到对象存储 (S3) 中。只读副本会从对象存储中拉取并重放这些 WAL 分段，以与主节点保持同步。
 
 这种架构不同于[高可用待机节点](/zh/products/managed-postgres/high-availability)，后者通过与主节点的直接连接使用流式复制。
 
