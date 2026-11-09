@@ -153,6 +153,22 @@ ASTPtr parseArithmeticOperand(const rapidjson::Value & value, std::string_view o
     return parseUpdateValue(value, operator_name, /* documents_are_values = */ false);
 }
 
+/** The operand of `$inc` and `$mul` for the field `column`, see `parseArithmeticOperand`, converted
+  * to the type of the column. Mongo rejects an arithmetic update of an existing field that is not a
+  * number, while `plus` of a `Bool` and the operand converted to a `Bool` is a `Bool` again, so a
+  * column of a type of another category than numbers is rejected as well, see
+  * `makeFieldOfAnotherCategory`. The type is a constant, so the check folds when the mutation is
+  * validated and no mutation is created.
+  */
+ASTPtr checkedArithmeticOperand(const rapidjson::Value & value, std::string_view operator_name, const std::string & column)
+{
+    auto operand = checkedConstant(parseArithmeticOperand(value, operator_name), column);
+    return withFoldedCheck(
+        std::move(operand),
+        makeFieldOfAnotherCategory(column, ConstantCategory::Number),
+        fmt::format("Cannot apply '{}' to the field '{}', which is not a number", operator_name, column));
+}
+
 /** The operand of `$min` and `$max`. Mongo compares values of different types in the BSON order,
   * where any number is less than any string, for example, so the value of a field of one type is
   * kept or replaced by an operand of another type depending on the types alone - and a field of a
@@ -231,10 +247,10 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
         /// The operand has to fit the column, see `checkedConstant`.
         else if (name == "$inc")
             assignments.push_back(
-                makeAssignment(column, makeASTFunction("plus", field(), checkedConstant(parseArithmeticOperand(it->value, name), column))));
+                makeAssignment(column, makeASTFunction("plus", field(), checkedArithmeticOperand(it->value, name, column))));
         else if (name == "$mul")
-            assignments.push_back(makeAssignment(
-                column, makeASTFunction("multiply", field(), checkedConstant(parseArithmeticOperand(it->value, name), column))));
+            assignments.push_back(
+                makeAssignment(column, makeASTFunction("multiply", field(), checkedArithmeticOperand(it->value, name, column))));
         else if (name == "$min")
             assignments.push_back(makeAssignment(column, makeBsonMinimum(column, parseComparedOperand(it->value, name, column))));
         else if (name == "$max")
