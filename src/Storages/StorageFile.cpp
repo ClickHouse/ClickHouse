@@ -642,16 +642,27 @@ String normalizeDiskRelativePath(const String & input)
 /// boundary is the whole disk, while a `SubdirectoryDiskWrapper` confines user files to a
 /// subdirectory of it. For other object-storage disks there is no symlink concept in the
 /// user-visible namespace, so the check trivially passes.
-bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path)
+namespace
 {
-    const auto description = disk->getDataSourceDescription();
-    const bool paths_are_filesystem_paths = description.type == DataSourceType::Local
+
+/// Whether the user-visible paths of a disk are filesystem paths under `disk->getPath()`,
+/// so that they follow filesystem symlinks, see `isDiskRelativePathInsideRoot`.
+bool diskPathsAreFilesystemPaths(const IDisk & disk)
+{
+    const auto description = disk.getDataSourceDescription();
+    return description.type == DataSourceType::Local
         || (description.type == DataSourceType::ObjectStorage
             && description.metadata_type == MetadataStorageType::Local)
         || (description.type == DataSourceType::ObjectStorage
             && description.object_storage_type == ObjectStorageType::Local
             && description.metadata_type == MetadataStorageType::Plain);
-    if (!paths_are_filesystem_paths)
+}
+
+}
+
+bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path)
+{
+    if (!diskPathsAreFilesystemPaths(*disk))
         return true;
 
     /// Resolve every symlink explicitly here (rather than relying on `pathStartsWith`
@@ -4158,8 +4169,11 @@ namespace
 /// and `DiskEncrypted` initializes the encryptor of an appending writer at the plaintext size it saw
 /// when opening the file. Two overlapping appends would therefore encrypt both payloads at the same
 /// offset while the backing `O_APPEND` writes place them one after another, corrupting the file.
-/// Different `StorageFile` objects (e.g. two `INSERT INTO FUNCTION file` queries) do not share a lock,
-/// so the registry is keyed by the disk name and the disk-relative path.
+/// Different `StorageFile` objects (e.g. two `INSERT INTO FUNCTION file` queries, or a `File` table and
+/// such a query) do not share a lock, so the registry is keyed by the identity of the file: for a disk
+/// whose paths are filesystem paths, the path with every symlink resolved, so that an in-root symlink
+/// and its target, or two disks over the same directory, share one lock; otherwise the disk name and
+/// the disk-relative path. `TRUNCATE` of a `File` table takes the same lock, because it rewrites the file.
 class UserFilesDiskWriteLocks
 {
 public:
@@ -4182,13 +4196,44 @@ public:
         return locks;
     }
 
-    /// Returns nullptr when the lock is not acquired within `timeout`; a negative timeout does not wait.
-    std::unique_ptr<Holder> tryAcquire(const String & disk_name, const String & relative_path, std::chrono::milliseconds timeout)
+    /// Returns nullptr for a plain local disk, which needs no lock, see the comment above.
+    /// Throws `TIMEOUT_EXCEEDED` when the lock is not acquired within `timeout`; a negative timeout does not wait.
+    std::unique_ptr<Holder> acquire(
+        const DiskPtr & disk, const String & relative_path, std::chrono::milliseconds timeout, const String & path_for_error)
     {
-        String key = disk_name;
+        if (isPlainLocalDisk(*disk))
+            return nullptr;
+
+        auto holder = tryAcquire(getKey(disk, relative_path), timeout);
+        if (!holder)
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Lock timeout exceeded while waiting for another query writing to file {}", path_for_error);
+        return holder;
+    }
+
+private:
+    static String getKey(const DiskPtr & disk, const String & relative_path)
+    {
+        if (diskPathsAreFilesystemPaths(*disk))
+        {
+            std::error_code ec;
+            const fs::path resolved = canonicalPathFollowingDanglingSymlinks(fs::path(disk->getPath()) / relative_path, ec);
+            if (ec)
+                throw Exception(
+                    ErrorCodes::CANNOT_STAT,
+                    "Cannot resolve the path {} on disk {}: {}", relative_path, disk->getName(), ec.message());
+            return "/" + resolved.string();
+        }
+
+        String key = disk->getName();
         key += '\0';
         key += relative_path;
+        return key;
+    }
 
+    std::unique_ptr<Holder> tryAcquire(String key, std::chrono::milliseconds timeout)
+    {
         std::unique_lock lock(mutex);
         auto is_free = [&] { return !locked_files.contains(key); };
         if (timeout.count() < 0)
@@ -4203,7 +4248,6 @@ public:
         return std::make_unique<Holder>(*this, std::move(key));
     }
 
-private:
     void release(const String & key)
     {
         {
@@ -4318,16 +4362,9 @@ public:
             const bool truncate = (flags & O_TRUNC) != 0;
             UInt64 existing_size = 0;
             WriteMode mode = WriteMode::Rewrite;
-            if (!isPlainLocalDisk(*user_files_disk))
-            {
-                /// Held until the write buffer is finalized or the sink is destroyed, see `UserFilesDiskWriteLocks`.
-                disk_write_lock = UserFilesDiskWriteLocks::instance().tryAcquire(
-                    user_files_disk->getName(), user_files_disk_relative_path, getLockTimeoutMs(getContext()));
-                if (!disk_write_lock)
-                    throw Exception(
-                        ErrorCodes::TIMEOUT_EXCEEDED,
-                        "Lock timeout exceeded while waiting for another query writing to file {}", path);
-            }
+            /// Held until the write buffer is finalized or the sink is destroyed, see `UserFilesDiskWriteLocks`.
+            disk_write_lock = UserFilesDiskWriteLocks::instance().acquire(
+                user_files_disk, user_files_disk_relative_path, getLockTimeoutMs(getContext()), path);
             if (!truncate && isPlainLocalDisk(*user_files_disk))
             {
                 /// A plain local disk opens `WriteMode::Append` with `O_APPEND | O_CREAT`, so the file
@@ -4846,7 +4883,7 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
 void StorageFile::truncate(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
+    ContextPtr local_context,
     TableExclusiveLockHolder &)
 {
     if (is_path_with_globs)
@@ -4872,6 +4909,12 @@ void StorageFile::truncate(
                 throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                     "Path `{}` is not inside any user files disk", path);
             validateDiskRelativePathBoundary(disk, relative);
+
+            /// The rewrite must not overlap a writer of the same file from another `StorageFile` object
+            /// (e.g. `INSERT INTO FUNCTION file`), which the exclusive table lock does not cover: an appending
+            /// writer of `DiskEncrypted` has already read the encryption header, and would append ciphertext
+            /// without a header to the emptied file. Held through the finalization of the rewrite.
+            auto disk_write_lock = UserFilesDiskWriteLocks::instance().acquire(disk, relative, getLockTimeoutMs(local_context), path);
 
             if (!disk->existsFile(relative))
                 continue;

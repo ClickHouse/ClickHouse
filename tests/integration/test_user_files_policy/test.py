@@ -1204,6 +1204,72 @@ def test_encrypted_disk_concurrent_appends():
         == f"41\t{expected_sum}"
     )
 
+
+def test_encrypted_disk_aliased_appends_and_truncate():
+    """The writers of one file on an `encrypted` disk are serialized by the identity of the file,
+    not by the spelling of its path: overlapping appends through an in-root symlink and its target
+    must not corrupt the file. `TRUNCATE` of a `File` table rewrites the file, so it must not
+    overlap an append from another storage object either, which would leave ciphertext without
+    an encryption header."""
+    node_encrypted.query(
+        "INSERT INTO FUNCTION file('aliased_appends.csv', 'CSV', 'x UInt64') "
+        "SELECT 1000000 SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    node_encrypted.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "ln -sfn aliased_appends.csv "
+            "/test_user_files_disk_encrypted_backing/encrypted/user_files/aliased_appends_link.csv",
+        ]
+    )
+
+    def insert(name, i):
+        node_encrypted.query(
+            f"INSERT INTO FUNCTION file('{name}', 'CSV', 'x UInt64') "
+            f"SELECT {i * 100} + number FROM numbers(10) WHERE sleepEachRow(0.05) = 0 "
+            "SETTINGS max_block_size = 1"
+        )
+
+    names = ["aliased_appends.csv", "aliased_appends_link.csv"]
+    threads = [
+        threading.Thread(target=insert, args=(names[i % 2], i)) for i in range(4)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    expected_sum = 1000000 + sum(i * 100 + n for i in range(4) for n in range(10))
+    assert (
+        node_encrypted.query(
+            "SELECT count(), sum(x) FROM file('aliased_appends.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == f"41\t{expected_sum}"
+    )
+
+    node_encrypted.query("DROP TABLE IF EXISTS aliased_truncate")
+    node_encrypted.query(
+        "CREATE TABLE aliased_truncate (x UInt64) ENGINE = File(CSV, 'aliased_appends.csv')"
+    )
+    insert_thread = threading.Thread(target=insert, args=("aliased_appends_link.csv", 7))
+    insert_thread.start()
+    # Truncate while the append is running.
+    for _ in range(200):
+        if node_encrypted.query(
+            "SELECT count() FROM system.processes WHERE query LIKE 'INSERT INTO FUNCTION file(\\'aliased_appends_link.csv%'"
+        ).strip() != "0":
+            break
+    node_encrypted.query("TRUNCATE TABLE aliased_truncate")
+    insert_thread.join()
+
+    # The append either completes before the truncation or starts after it; in both cases the
+    # file stays readable and contains whole inserts.
+    result = node_encrypted.query("SELECT count(), sum(x) FROM aliased_truncate").strip()
+    assert result in ("0\t0", f"10\t{sum(700 + n for n in range(10))}"), result
+    node_encrypted.query("DROP TABLE aliased_truncate")
+
+
 def test_local_literal_partition_id_filename():
     """A literal file name that merely contains the `{_partition_id}` substring, read without
     `INSERT ... PARTITION BY`, must resolve to a real disk-qualified path.
