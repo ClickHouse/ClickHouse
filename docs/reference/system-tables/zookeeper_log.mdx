@@ -36,7 +36,7 @@ It is safe to truncate or drop this table at any time.
 - `path` ([String](/reference/data-types/string)) — The path to the ZooKeeper node specified in the request, or an empty string if the request not requires specifying a path.
 - `data` ([String](/reference/data-types/string)) — The data written to the ZooKeeper node (for the SET and CREATE requests — what the request wanted to write, for the response to the GET request — what was read) or an empty string.
 - `is_ephemeral` ([UInt8](/reference/data-types/int-uint)) — Is the ZooKeeper node being created as an ephemeral.
-- `is_sequential` ([UInt8](/reference/data-types/int-uint)) — Is the ZooKeeper node being created as an sequential.
+- `is_sequential` ([UInt8](/reference/data-types/int-uint)) — Is the ZooKeeper node being created as a sequential.
 - `version` ([Nullable(Int32)](/reference/data-types/nullable)) — The version of the ZooKeeper node that the request expects when executing. This is supported for CHECK, SET, REMOVE requests (is relevant -1 if the request does not check the version or NULL for other requests that do not support version checking).
 - `requests_size` ([UInt32](/reference/data-types/int-uint)) — The number of requests included in the multi request (this is a special request that consists of several consecutive ordinary requests and executes them atomically). All requests included in multi request will have the same xid.
 - `request_idx` ([UInt32](/reference/data-types/int-uint)) — The number of the request included in multi request (for multi request — 0, then in order from 1).

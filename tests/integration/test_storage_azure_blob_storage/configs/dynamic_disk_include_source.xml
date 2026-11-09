@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- An Azure endpoint without credentials: a disk that includes it uses the server's own identity. -->
+    <azure_server_identity>
+        <storage_account_url>http://azurite1:10000/devstoreaccount1</storage_account_url>
+    </azure_server_identity>
+</clickhouse>

@@ -1,0 +1,51 @@
+-- runtime filter across an exchange
+Query fragment 3 (main) · tasks=1
+Query fragment 2 (stage_2) · tasks=3
+Query fragment 1 (stage_1) · tasks=3
+└──BuildRuntimeFilter (Build runtime join filter on sid)
+   │  Filter id: RF1
+Query fragment 0 (stage_0) · tasks=3
+└──Filter ((Apply runtime join filter + Change column names to column identifiers))
+   │  Filter column: RF1(bid, sid from default.small)
+-- two runtime filters
+Query fragment 5 (main) · tasks=1
+Query fragment 4 (stage_4) · tasks=3
+Query fragment 3 (stage_3) · tasks=3
+└──BuildRuntimeFilter (Build runtime join filter on bid)
+   │  Filter id: RF2
+Query fragment 2 (stage_2) · tasks=3
+└──BuildRuntimeFilter (Build runtime join filter on sid)
+   │  Filter id: RF1
+Query fragment 1 (stage_1) · tasks=3
+└──Filter ((Apply runtime join filter + Change column names to column identifiers))
+   │  Filter column: RF1(bid, sid from default.small)
+Query fragment 0 (stage_0) · tasks=3
+└──Filter ((Apply runtime join filter + Change column names to column identifiers))
+   │  Filter column: RF2(bid, bid)
+-- runtime filter applied in a fragment with a higher id
+Query fragment 2 (main) · tasks=1
+Query fragment 1 (stage_1) · tasks=3
+      ├──Filter ((Apply runtime join filter + Change column names to column identifiers))
+      │  │  Filter column: RF1(bid, sid from default.small)
+Query fragment 0 (stage_0) · tasks=1
+└──BuildRuntimeFilter (Build runtime join filter on sid)
+   │  Filter id: RF1
+-- runtime filter on a received expression
+Query fragment 4 (main) · tasks=1
+Query fragment 3 (stage_3) · tasks=3
+Query fragment 2 (stage_2) · tasks=3
+└──BuildRuntimeFilter (Build runtime join filter on k)
+   │  Filter id: RF1
+Query fragment 1 (stage_1) · tasks=3
+Query fragment 0 (stage_0) · tasks=3
+└──Filter ((Apply runtime join filter + Change column names to column identifiers))
+   │  Filter column: RF1(bid, sid MOD 10 from default.small)
+-- distinct IN sets in different fragments
+Query fragment 5 (main) · tasks=1
+Query fragment 4 (stage_4) · tasks=3
+Query fragment 3 (stage_3) · tasks=1
+Query fragment 2 (stage_2) · tasks=3
+   │  Filter column: sid IN subquery1
+Query fragment 1 (stage_1) · tasks=1
+Query fragment 0 (stage_0) · tasks=3
+   │  Filter column: bid IN subquery2

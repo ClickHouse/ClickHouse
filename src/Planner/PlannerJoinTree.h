@@ -32,6 +32,10 @@ struct JoinTreeQueryPlan
     std::unordered_map<String, String> shard_collapse_duplicate_keys{};
 };
 
+/// Throw if a subquery of `node` with parallel replicas enabled uses a different implementation
+/// (query-based or plan-based) than the query (`query_context`).
+void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & node, const ContextPtr & query_context);
+
 /// Turn parallel replicas off for a query joining multiple tables when
 /// `parallel_replicas_for_queries_with_multiple_tables` is disabled.
 /// It has to run before the parallel-replicas compatibility checks of `Planner::buildPlanForQueryNode`:
