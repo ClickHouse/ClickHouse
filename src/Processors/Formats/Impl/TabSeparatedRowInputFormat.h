@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <IO/PeekableReadBuffer.h>
@@ -57,17 +58,17 @@ public:
     void skipRowEndDelimiter() override;
     size_t skipPrefixBeforeHeader() override;
 
-    std::vector<String> readRow() { return readRowImpl<false>(); }
-    std::vector<String> readNames() override { return readHeaderRow(); }
-    std::vector<String> readTypes() override { return readHeaderRow(); }
-    std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
+    VectorWithMemoryTracking<String> readRow() { return readRowImpl<false>(); }
+    VectorWithMemoryTracking<String> readNames() override { return readHeaderRow(); }
+    VectorWithMemoryTracking<String> readTypes() override { return readHeaderRow(); }
+    VectorWithMemoryTracking<String> readHeaderRow() { return readRowImpl<true>(); }
 
     void skipRow() override;
 
     template <bool read_string>
     String readFieldIntoString();
 
-    std::vector<String> readRowForHeaderDetection() override { return readHeaderRow(); }
+    VectorWithMemoryTracking<String> readRowForHeaderDetection() override { return readHeaderRow(); }
 
     void checkNullValueForNonNullable(DataTypePtr type) override;
 
@@ -85,7 +86,7 @@ public:
 
 private:
     template <bool is_header>
-    std::vector<String> readRowImpl();
+    VectorWithMemoryTracking<String> readRowImpl();
 
     PeekableReadBuffer * buf;
     bool is_raw;
@@ -103,7 +104,7 @@ private:
     BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override { return BoolValueIntoNumericColumn::None; }
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
-    std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
+    std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
 
     PeekableReadBuffer buf;
     TabSeparatedFormatReader reader;

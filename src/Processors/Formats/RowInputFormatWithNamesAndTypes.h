@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Core/CaseAwareBlockNameMap.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -65,7 +67,7 @@ private:
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
-    void tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names);
+    void tryDetectHeader(VectorWithMemoryTracking<String> & column_names, VectorWithMemoryTracking<String> & type_names);
 
 protected:
     bool with_names;
@@ -108,12 +110,12 @@ public:
     virtual bool isGarbageAfterField(size_t, ReadBuffer::Position) { return false; }
 
     /// Read row with names and return the list of them.
-    virtual std::vector<String> readNames() = 0;
+    virtual VectorWithMemoryTracking<String> readNames() = 0;
     /// Read row with types and return the list of them.
-    virtual std::vector<String> readTypes() = 0;
+    virtual VectorWithMemoryTracking<String> readTypes() = 0;
 
     /// Read row with raw values.
-    virtual std::vector<String> readRowForHeaderDetection()
+    virtual VectorWithMemoryTracking<String> readRowForHeaderDetection()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented for format reader");
     }
@@ -203,7 +205,7 @@ public:
     /// the destination type, not the types themselves.
     bool validatesDeclaredTypesByName() const override { return hasExactTypesFromData(); }
 
-    std::unordered_map<String, String> getDeclaredTypeNames() const override { return declared_type_names; }
+    UnorderedMapWithMemoryTracking<String, String> getDeclaredTypeNames() const override { return declared_type_names; }
 
     /// When a types row is present but the parser is configured to ignore it
     /// (`input_format_with_types_use_header` = 0), `readSchema` still returns those declared types
@@ -254,7 +256,7 @@ protected:
     }
 
     /// Return column fields with inferred types. In case of no more rows, return nullopt.
-    virtual std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes()
+    virtual std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> readRowAndGetFieldsAndDataTypes()
     {
         throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented"};
     }
@@ -263,15 +265,15 @@ protected:
     bool with_types;
 
 private:
-    void tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out);
-    std::vector<String> readNamesFromFields(const std::vector<String> & fields);
+    void tryDetectHeader(VectorWithMemoryTracking<String> & column_names_out, VectorWithMemoryTracking<String> & type_names_out);
+    VectorWithMemoryTracking<String> readNamesFromFields(const VectorWithMemoryTracking<String> & fields);
 
     FormatWithNamesAndTypesReader * format_reader;
     bool try_detect_header;
     bool names_detected_from_data = false;
     bool types_detected_from_data = false;
     /// The type names of the types row as read by the last `readSchema` call, see `getDeclaredTypeNames`.
-    std::unordered_map<String, String> declared_type_names;
+    UnorderedMapWithMemoryTracking<String, String> declared_type_names;
     bool header_detection_attempted = false;
     DataTypes buffered_types;
 };

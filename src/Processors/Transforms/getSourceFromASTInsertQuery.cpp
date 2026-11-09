@@ -38,6 +38,7 @@
 #include <Interpreters/StorageID.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/String.h>
@@ -341,7 +342,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_has_strict_order_of_columns = true;
     bool format_has_exact_types_from_data = false;
     bool format_validates_declared_types_by_name = false;
-    std::unordered_map<String, String> format_declared_type_names; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type returned by `ISchemaReader::getDeclaredTypeNames`
+    UnorderedMapWithMemoryTracking<String, String> format_declared_type_names;
     bool format_schema_describes_parsed_data = true;
     bool format_allows_variable_number_of_columns = false;
     bool format_allows_fewer_columns_than_expected = false;
