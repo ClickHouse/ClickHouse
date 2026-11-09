@@ -72,9 +72,13 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     const auto chosen_compression_method = chooseCompressionMethod(path, compression_method);
 
     auto write_settings = context->getWriteSettings();
-    /// HDFS rejects conditional writes, so it keeps writing unconditionally.
+    /// HDFS rejects conditional writes, so it keeps writing unconditionally,
+    /// and so does a write that GCS cannot condition.
     if (fail_if_exists && object_storage->getType() != ObjectStorageType::HDFS)
+    {
         write_settings.object_storage_write_if_none_match = "*";
+        write_settings.object_storage_write_if_none_match_best_effort = true;
+    }
 
     auto buffer = object_storage->writeObject(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
