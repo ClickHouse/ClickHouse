@@ -80,6 +80,14 @@ std::optional<std::string> tryGetPhysicalName(const std::string & name, const DB
 /// inside a name is escaped with a backslash, so a column `a.b` and the field `b` of a column `a` have different keys.
 std::string appendToLogicalPath(const std::string & logical_path, const std::string & field_name);
 
+/// Replaces the logical names of the fields of the structs inside `type` (of a column with the logical path
+/// `parent_logical_name` and the physical name `parent_physical_name`) with their physical names.
+DB::DataTypePtr replaceTypeNamesToPhysicalRecursively(
+    const DB::DataTypePtr & type,
+    const std::string & parent_logical_name,
+    const std::string & parent_physical_name,
+    const DB::NameToNameMap & physical_names_map);
+
 }
 
 #endif

@@ -297,13 +297,20 @@ DB::ObjectIterator TableChanges::iterate(
     auto table_changes = createTableChanges(version_range, *helper, engine.get());
 
     /// The logical schema of the change data feed, with physical names, is the result of the transform of every file.
+    /// The fields of structs have physical names too, as in the columns read from the data files: a requested subcolumn
+    /// (e.g. `c-t.c-t-x` for `t.x`) is found by its physical name in the type of the column that the transform outputs.
     KernelSharedSchema logical_schema(ffi::table_changes_schema(table_changes.get()));
     auto expression_schema = convertToClickHouseSchema(logical_schema.get(), engine.get());
     if (!physical_names_map.empty())
     {
-        for (auto & [name, _] : expression_schema)
-            if (!isChangeDataFeedColumn(name))
-                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map);
+        for (auto & [name, type] : expression_schema)
+        {
+            if (isChangeDataFeedColumn(name))
+                continue;
+            const auto logical_path = appendToLogicalPath({}, name);
+            name = getPhysicalName(logical_path, physical_names_map);
+            type = replaceTypeNamesToPhysicalRecursively(type, logical_path, name, physical_names_map);
+        }
     }
 
     /// `table_changes_scan` consumes the table changes.
