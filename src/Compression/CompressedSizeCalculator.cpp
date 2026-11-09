@@ -56,6 +56,9 @@ void CompressedSizeCalculator::nextImpl()
 
     chassert(offset() <= INT_MAX);
     const UInt32 decompressed_size = static_cast<UInt32>(offset());
+    /// Lives for one block: a scratch kept by every calculator would hold a block's worth of memory per stream of every
+    /// group of `estimateCompressionRatio`.
+    PODArray<char> scratch;
 
     /// On-disk block layout must match CompressedWriteBuffer::nextImpl (checksum + header + payload)
     compressed_total

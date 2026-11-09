@@ -43,7 +43,6 @@ private:
     CompressionCodecPtr codec;
     const size_t block_size;
     bool ending_block = false;
-    PODArray<char> scratch;
     UInt64 compressed_total = 0;
 };
 
