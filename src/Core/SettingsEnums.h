@@ -503,6 +503,15 @@ enum class DatabaseDataLakeCatalogType : uint8_t
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
 
+enum class DatabaseDataLakeSnapshotLoadingMode : uint8_t
+{
+    AUTO,
+    ALL,
+    REFS,
+};
+
+DECLARE_SETTING_ENUM(DatabaseDataLakeSnapshotLoadingMode)
+
 DECLARE_SETTING_ENUM(FileCachePolicy)
 
 enum class VectorSearchFilterStrategy : uint8_t

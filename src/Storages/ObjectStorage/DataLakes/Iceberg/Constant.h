@@ -52,6 +52,7 @@ DEFINE_ICEBERG_FIELD(type)
 DEFINE_ICEBERG_FIELD(transform);
 DEFINE_ICEBERG_FIELD(direction);
 DEFINE_ICEBERG_FIELD(variant);
+DEFINE_ICEBERG_FIELD(unknown);
 
 DEFINE_ICEBERG_FIELD(uuid);
 DEFINE_ICEBERG_FIELD(value);
@@ -124,6 +125,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(timestamp_ms, timestamp-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(last_updated_ms, last-updated-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(last_column_id, last-column-id);
 DEFINE_ICEBERG_FIELD_ALIAS(element_id, element-id);
+DEFINE_ICEBERG_FIELD_ALIAS(identifier_field_ids, identifier-field-ids);
 DEFINE_ICEBERG_FIELD_ALIAS(element_required, element-required);
 DEFINE_ICEBERG_FIELD_ALIAS(key_id, key-id);
 DEFINE_ICEBERG_FIELD_ALIAS(value_id, value-id);
