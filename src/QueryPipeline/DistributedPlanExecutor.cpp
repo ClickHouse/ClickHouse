@@ -1626,9 +1626,12 @@ protected:
             return stage_finished;
         }
 
-        /// Cancel all unfinished tasks. Collects task info under lock, then
-        /// sends HTTP cancel requests without holding lock so that
-        /// `checkStatusFunc` threads can observe the cancellation and exit.
+        /// Cancels the tasks still tracked when the query ends, once: `cleanup` calls this once, and the tasks leave
+        /// `stage_tasks` here, so a second call finds none. Collects them under the lock and sends the requests without
+        /// it, so that `checkStatusFunc` threads can observe the cancellation and exit.
+        /// This can run on a thread of the killed query itself (whichever thread takes the source's `executor_mutex`
+        /// first runs the teardown). An HTTP request from such a thread is stopped before it is sent, so the worker
+        /// client sends `cancel`, `forget` and the cleanup polls with `withoutQueryCancellationCheck`.
         void cancel()
         {
             VectorWithMemoryTracking<RunningTaskInfo> tasks_to_cancel;
