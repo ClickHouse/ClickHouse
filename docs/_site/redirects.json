@@ -55665,6 +55665,10 @@
   },
   {
     "destination": "/products/cloud/features/ai-ml",
+    "source": "/products/agentic-data-stack"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml",
     "source": "/products/agentic-data-stack/overview"
   },
   {
@@ -55688,12 +55692,20 @@
     "source": "/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
+    "destination": "/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/products/cloud/features/ai-ml/aichat"
+  },
+  {
     "destination": "/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
     "destination": "/ar/products/cloud/features/ai-ml",
     "source": "/ar/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/ar/products/cloud/features/ai-ml",
+    "source": "/ar/products/agentic-data-stack"
   },
   {
     "destination": "/ar/products/cloud/features/ai-ml",
@@ -55716,12 +55728,20 @@
     "source": "/ar/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
+    "destination": "/ar/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/ar/products/cloud/features/ai-ml/aichat"
+  },
+  {
     "destination": "/ar/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/ar/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
     "destination": "/es/products/cloud/features/ai-ml",
     "source": "/es/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/es/products/cloud/features/ai-ml",
+    "source": "/es/products/agentic-data-stack"
   },
   {
     "destination": "/es/products/cloud/features/ai-ml",
@@ -55744,12 +55764,20 @@
     "source": "/es/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
+    "destination": "/es/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/es/products/cloud/features/ai-ml/aichat"
+  },
+  {
     "destination": "/es/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/es/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
     "destination": "/fr/products/cloud/features/ai-ml",
     "source": "/fr/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/fr/products/cloud/features/ai-ml",
+    "source": "/fr/products/agentic-data-stack"
   },
   {
     "destination": "/fr/products/cloud/features/ai-ml",
@@ -55772,12 +55800,20 @@
     "source": "/fr/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
+    "destination": "/fr/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/fr/products/cloud/features/ai-ml/aichat"
+  },
+  {
     "destination": "/fr/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/fr/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
     "destination": "/ja/products/cloud/features/ai-ml",
     "source": "/ja/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/ja/products/cloud/features/ai-ml",
+    "source": "/ja/products/agentic-data-stack"
   },
   {
     "destination": "/ja/products/cloud/features/ai-ml",
@@ -55800,12 +55836,20 @@
     "source": "/ja/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
+    "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/ja/products/cloud/features/ai-ml/aichat"
+  },
+  {
     "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/ja/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
     "destination": "/ko/products/cloud/features/ai-ml",
     "source": "/ko/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/ko/products/cloud/features/ai-ml",
+    "source": "/ko/products/agentic-data-stack"
   },
   {
     "destination": "/ko/products/cloud/features/ai-ml",
@@ -55828,12 +55872,20 @@
     "source": "/ko/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
+    "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/ko/products/cloud/features/ai-ml/aichat"
+  },
+  {
     "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/ko/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
     "destination": "/pt-BR/products/cloud/features/ai-ml",
     "source": "/pt-BR/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/ai-ml",
+    "source": "/pt-BR/products/agentic-data-stack"
   },
   {
     "destination": "/pt-BR/products/cloud/features/ai-ml",
@@ -55856,12 +55908,20 @@
     "source": "/pt-BR/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
+    "destination": "/pt-BR/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/pt-BR/products/cloud/features/ai-ml/aichat"
+  },
+  {
     "destination": "/pt-BR/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/pt-BR/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
     "destination": "/ru/products/cloud/features/ai-ml",
     "source": "/ru/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/ru/products/cloud/features/ai-ml",
+    "source": "/ru/products/agentic-data-stack"
   },
   {
     "destination": "/ru/products/cloud/features/ai-ml",
@@ -55884,12 +55944,20 @@
     "source": "/ru/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
+    "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/ru/products/cloud/features/ai-ml/aichat"
+  },
+  {
     "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
     "source": "/ru/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
     "destination": "/zh/products/cloud/features/ai-ml",
     "source": "/zh/products/agentic-data-stack/overview"
+  },
+  {
+    "destination": "/zh/products/cloud/features/ai-ml",
+    "source": "/zh/products/agentic-data-stack"
   },
   {
     "destination": "/zh/products/cloud/features/ai-ml",
@@ -55910,6 +55978,10 @@
   {
     "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
     "source": "/zh/products/cloud/features/ai-ml/aichat/using-ai-chat"
+  },
+  {
+    "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "source": "/zh/products/cloud/features/ai-ml/aichat"
   },
   {
     "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
