@@ -761,7 +761,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             for (size_t i = 0; i != paths_size; ++i)
             {
                 String path;
-                readStringBinary(path, *structure_stream);
+                readStringBinaryGrowing(path, *structure_stream);
                 structure_state->flattened_paths.push_back(std::move(path));
             }
 
@@ -797,7 +797,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             for (size_t i = 0; i != dynamic_paths_size; ++i)
             {
                 String path;
-                readStringBinary(path, *structure_stream);
+                readStringBinaryGrowing(path, *structure_stream);
                 structure_state->sorted_dynamic_paths->push_back(std::move(path));
             }
             structure_state->dynamic_paths.insert(structure_state->sorted_dynamic_paths->begin(), structure_state->sorted_dynamic_paths->end());
