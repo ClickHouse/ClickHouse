@@ -22,8 +22,9 @@ foreach (target str_neon str_sve)
         LINK_LIBRARIES "")
     # Preserve compiler unwind data and nonleaf frame chains. No x86 rewriting pass
     # applies to these objects. Disable loop idioms that call libc recursively.
+    # Whole-program vtables require LTO; override the inherited release flag too.
     target_compile_options (${target} PRIVATE
-        -O3 -ffreestanding -fno-builtin -fno-stack-protector -fno-lto
+        -O3 -ffreestanding -fno-builtin -fno-stack-protector -fno-lto -fno-whole-program-vtables
         -ffunction-sections -fdata-sections
         -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer)
 endforeach ()

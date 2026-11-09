@@ -23,9 +23,10 @@ foreach (unit sse2 sse42 avx2 evex evex512 dispatch)
     set_target_properties (str_${unit} PROPERTIES
         INTERPROCEDURAL_OPTIMIZATION FALSE LINK_LIBRARIES "")
     # The post-pass consumes machine code, so disable LTO and stale source-level debug data.
+    # Whole-program vtables require LTO; override the inherited release flag too.
     # Retain every frame pointer: the post-pass removes unwind information.
     target_compile_options (str_${unit} PRIVATE
-        -O3 -fno-builtin -fno-stack-protector -fno-lto -g0 -fPIC
+        -O3 -fno-builtin -fno-stack-protector -fno-lto -fno-whole-program-vtables -g0 -fPIC
         -ffunction-sections -fdata-sections
         -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer)
     if (unit STREQUAL "sse2" OR unit STREQUAL "dispatch")
