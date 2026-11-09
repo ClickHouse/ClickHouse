@@ -22,7 +22,6 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationSpilledRecords;
     extern const Event AdaptiveAggregationSpilledBytes;
     extern const Event AdaptiveAggregationFrozenTableSpills;
-    extern const Event AdaptiveAggregationIndexedTables;
 }
 
 namespace DB

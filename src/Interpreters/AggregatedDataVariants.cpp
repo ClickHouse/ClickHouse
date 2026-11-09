@@ -13,6 +13,7 @@ namespace ProfileEvents
 {
     extern const Event AggregationPreallocatedElementsInHashTables;
     extern const Event AggregationConvertedToTwoLevel;
+    extern const Event AggregationIndexedTables;
 }
 
 namespace DB

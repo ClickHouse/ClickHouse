@@ -40,7 +40,7 @@ SETTINGS enable_adaptive_aggregator = 0, log_comment = 'scan';
 
 -- The producers of the adaptive aggregation indexed their tables, and none of them froze.
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['AdaptiveAggregationIndexedTables'] > 0, ProfileEvents['AdaptiveAggregationLocalFreezes'] = 0
+SELECT ProfileEvents['AggregationIndexedTables'] > 0, ProfileEvents['AdaptiveAggregationLocalFreezes'] = 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND log_comment = 'cell_index';
 

@@ -105,7 +105,7 @@ SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 
 SELECT 'ok';
 
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['AdaptiveAggregationIndexedTables'] > 0, ProfileEvents['AdaptiveAggregationLocalFreezes'] > 0,
+SELECT log_comment, ProfileEvents['AggregationIndexedTables'] > 0, ProfileEvents['AdaptiveAggregationLocalFreezes'] > 0,
     ProfileEvents['AggregationConvertedToTwoLevel'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
@@ -113,7 +113,7 @@ WHERE current_database = currentDatabase() AND event_date >= yesterday() AND typ
 ORDER BY log_comment;
 
 -- Only the thawed tables convert to two-level, each once, and the frozen one stays indexed.
-SELECT log_comment, ProfileEvents['AdaptiveAggregationIndexedTables'] > 0, ProfileEvents['AdaptiveAggregationThaws'] > 0,
+SELECT log_comment, ProfileEvents['AggregationIndexedTables'] > 0, ProfileEvents['AdaptiveAggregationThaws'] > 0,
     ProfileEvents['AggregationConvertedToTwoLevel'] BETWEEN 1 AND ProfileEvents['AdaptiveAggregationThaws']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND log_comment = 'thawed';
