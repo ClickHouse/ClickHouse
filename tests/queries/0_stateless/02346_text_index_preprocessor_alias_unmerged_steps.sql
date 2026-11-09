@@ -123,6 +123,24 @@ SELECT count() FROM tab WHERE hasAnyTokens(concat(CAST(s, 'String'), lower(CAST(
 
 DROP TABLE tab;
 
+-- `m[key]` matches the index on `mapValues(m)` whatever the key is, also when the key or `m[key]` is computed in a step below.
+CREATE TABLE tab
+(
+    m Map(String, String),
+    k String,
+    INDEX idx(mapValues(m)) TYPE text(tokenizer = splitByString([' ']))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab VALUES (map('a', 'FOO-QUX '), 'A');
+
+SELECT hasAnyTokens(m[multiIf(k = 'A', 'a', k = 'B', 'b', k = 'C', 'c', k = 'D', 'd', k = 'E', 'e', k)], 'FOO') FROM tab;
+SELECT hasAnyTokens(m[key], 'FOO') FROM (SELECT m, multiIf(k = 'A', 'a', k = 'B', 'b', k = 'C', 'c', k = 'D', 'd', k = 'E', 'e', k = 'F', 'f', k) AS key FROM tab ORDER BY key LIMIT 1);
+SELECT hasAnyTokens(v, 'FOO') FROM (SELECT m[multiIf(k = 'A', 'a', k = 'B', 'b', k = 'C', 'c', k = 'D', 'd', k = 'E', 'e', k = 'F', 'f', k)] AS v FROM tab ORDER BY v LIMIT 1);
+SELECT count() FROM tab WHERE hasAnyTokens(m[multiIf(k = 'A', 'a', k = 'B', 'b', k = 'C', 'c', k = 'D', 'd', k = 'E', 'e', k)], 'FOO') SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes = 0;
+
+DROP TABLE tab;
+
 -- Steps referencing a column twice share subexpressions: matching a function on the composed DAG must not expand them.
 CREATE TABLE tab
 (

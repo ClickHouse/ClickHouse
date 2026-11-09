@@ -113,10 +113,6 @@ size_t getNameLengthLowerBound(
     NameLengthBounds & bounds,
     const std::unordered_map<String, size_t> & captured_bounds)
 {
-    /// Not counted: constant arguments, such as a needle or a tokenizer, also folded functions, are matched by value.
-    if (node->column)
-        return 0;
-
     if (auto it = bounds.find(node); it != bounds.end())
         return it->second;
 
@@ -152,6 +148,48 @@ size_t getNameLengthLowerBound(
     bound = std::min(bound, limit);
     bounds.emplace(node, bound);
     return bound;
+}
+
+/// Replaces the parts of `node` whose name in index analysis is longer than `max_name_length` by opaque inputs of `dag`.
+/// Such a part is not in an indexed expression, but one may ignore it, like the key of `m[key]` for `mapValues(m)`.
+const ActionsDAG::Node * replaceLongSubexpressions(
+    const ActionsDAG::Node * node,
+    size_t max_name_length,
+    ActionsDAG & dag,
+    NameLengthBounds & bounds,
+    ActionsDAG::NodeMapping & replaced)
+{
+    if (getNameLengthLowerBound(node, max_name_length + 1, bounds, {}) <= max_name_length)
+        return node;
+
+    if (auto it = replaced.find(node); it != replaced.end())
+        return it->second;
+
+    const ActionsDAG::Node * result = nullptr;
+    if (node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        result = replaceLongSubexpressions(node->children.front(), max_name_length, dag, bounds, replaced);
+    }
+    else if (node->type == ActionsDAG::ActionType::FUNCTION)
+    {
+        auto children = node->children;
+        for (auto & child : children)
+            child = replaceLongSubexpressions(child, max_name_length, dag, bounds, replaced);
+
+        if (children != node->children)
+        {
+            result = &dag.addFunction(node->function_base, std::move(children), {});
+            if (getNameLengthLowerBound(result, max_name_length + 1, bounds, {}) > max_name_length)
+                result = nullptr;
+        }
+    }
+
+    /// Longer than every index column name, so no indexed expression contains this name.
+    if (!result)
+        result = &dag.addInput(String(max_name_length + 1, '_') + std::to_string(replaced.size()), node->result_type);
+
+    replaced.emplace(node, result);
+    return result;
 }
 
 /// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
@@ -557,13 +595,6 @@ public:
             if (input->result_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
                 virtual_column_inputs.emplace(input->result_name, input);
         }
-
-        if (!composed_nodes)
-            return;
-
-        for (const auto & [_, info] : text_index_read_infos)
-            for (const auto & name : typeid_cast<const MergeTreeIndexConditionText &>(*info.condition).getHeader().getNames())
-                max_index_name_length = std::max(max_index_name_length, name.size());
     }
 
     struct ResultReplacement
@@ -654,8 +685,6 @@ private:
     bool direct_read_from_text_index = false;
     /// Maps the nodes of this DAG to the DAG composed with the steps below, i.e. to what they compute over the scan columns.
     const ActionsDAG::NodeMapping * composed_nodes = nullptr;
-    size_t max_index_name_length = 0;
-    NameLengthBounds name_length_bounds;
     /// Input nodes of the virtual columns in the DAG, by column name.
     std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
@@ -772,18 +801,7 @@ private:
         if (!need_transform_function && !direct_read_from_text_index)
             return &function_node;
 
-        const auto * matched_node = getComposedNode(&function_node);
-
-        /// Index analysis expands the arguments into trees, exponential in the nesting of steps that share subexpressions.
-        /// An argument that matches an index has no more functions and columns than its index column name has characters.
-        if (matched_node != &function_node
-            && std::ranges::any_of(matched_node->children, [&](const auto * argument)
-            {
-                return getNameLengthLowerBound(argument, max_index_name_length + 1, name_length_bounds, {}) > max_index_name_length;
-            }))
-            return &function_node;
-
-        auto selected_conditions = selectConditions(*matched_node, context);
+        auto selected_conditions = selectConditions(*getComposedNode(&function_node), context);
         if (selected_conditions.empty())
             return &function_node;
 
@@ -1291,12 +1309,26 @@ void processAndOptimizeTextIndexFunctions(
             ++walk_begin; /// the merged-away step is detached now, the filter sits directly above the scan
     }
 
+    size_t max_index_name_length = 0;
+    for (const auto & [_, info] : text_index_infos)
+        for (const auto & name : typeid_cast<const MergeTreeIndexConditionText &>(*info.condition).getHeader().getNames())
+            max_index_name_length = std::max(max_index_name_length, name.size());
+
     /// The steps walked so far, composed into one DAG over the scan columns. Each step is composed before it is rewritten.
     ActionsDAG steps_below;
+    NameLengthBounds name_length_bounds;
+    ActionsDAG::NodeMapping replaced_nodes;
     auto compose = [&](const ActionsDAG & dag)
     {
         ActionsDAG::NodeMapping composed_nodes;
         steps_below.mergeInplace(dag.clone(composed_nodes));
+
+        /// The steps above see the long subexpressions of a column as opaque inputs and do not expand them.
+        for (auto & output : steps_below.getOutputs())
+            if (const auto * replacement = replaceLongSubexpressions(output, max_index_name_length, steps_below, name_length_bounds, replaced_nodes);
+                replacement != output)
+                output = &steps_below.addAlias(*replacement, output->result_name);
+
         return composed_nodes;
     };
 
