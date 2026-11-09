@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
+# Tag no-replicated-database: the replica of the other shard applies each `ALTER` again to the same table directory.
 
 # https://github.com/ClickHouse/ClickHouse/issues/118905
 # A `truncate[W]` partition field of an Iceberg `int` column is an `int` (4-byte bounds), and values near -2147483648
