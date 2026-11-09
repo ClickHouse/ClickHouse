@@ -6,6 +6,7 @@ import os
 import pathlib
 import re
 import shlex
+import subprocess
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -184,11 +185,17 @@ def check_yamllint(file_paths):
 def check_xmllint(file_paths):
     if not isinstance(file_paths, list):
         file_paths = [file_paths]
-    file_paths = " ".join([f"'{file}'" for file in file_paths])
-    exit_code, out, err = Shell.get_res_stdout_stderr(
-        f"xmllint --noout --nonet {file_paths}", verbose=False
+    # Pass the files as separate arguments, without a shell. A `sh -c` command line is a
+    # single argument, limited to 128 KiB by the kernel (`MAX_ARG_STRLEN`), and the names
+    # of all XML files under `tests/` and `programs/` are about 260 KB, so with two CPUs
+    # (two chunks) it failed with `[Errno 7] Argument list too long: '/bin/sh'`.
+    proc = subprocess.run(
+        ["xmllint", "--noout", "--nonet", *file_paths],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    return out or err
+    return proc.stdout.strip() or proc.stderr.strip()
 
 
 def check_functional_test_cases(files):
@@ -365,6 +372,15 @@ SERVER_DATA_MANIPULATION_EXCLUSIONS = {
     "03599_empty_checksums_txt_not_fatal.sh",
     # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
     "04326_disks_app_read_checksums.sh",
+    # False positive: no server is involved. The test runs `clickhouse-local` with `HOME` pointed
+    # at a per-test directory under CLICKHOUSE_TMP, so the path it reads from `system.tables` is
+    # inside that directory, and the files it corrupts are the ones `clickhouse-local` itself
+    # wrote there a few lines earlier.
+    "05227_broken_persisted_table_does_not_block_clickhouse_local.sh",
+    # False positive: no server is involved. The test runs `clickhouse-local` with `--path` set to a
+    # per-test directory under CLICKHOUSE_TMP, so the path it reads from `system.tables` is inside
+    # that directory, and the files it corrupts are the ones `clickhouse-local` itself wrote there.
+    "05407_clickhouse_local_buffer_flush_with_broken_table_load.sh",
 }
 
 

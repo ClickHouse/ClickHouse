@@ -1158,7 +1158,7 @@ TEST(ObjectSerialization, PrefixReadObjectStructureObservesCancellation)
     });
 
     /// Empty names, which leaves the loop's OWN checkpoint as the only one that can fire: for a
-    /// zero-length name `readStringBinaryCancellable`'s chunk loop runs no iterations at all. The
+    /// zero-length name `readStringBinaryGrowingCancellable`'s chunk loop runs no iterations at all. The
     /// repeated names are rejected only after the whole list is read, so the read is still cancellable.
     runInFreshThread([]
     {

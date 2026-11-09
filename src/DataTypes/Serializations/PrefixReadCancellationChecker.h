@@ -141,4 +141,30 @@ inline void readStringBinaryCancellable(String & s, ReadBuffer & buf, PrefixRead
     }
 }
 
+/// Chunked `readStringBinaryGrowing`: the string grows as the bytes arrive, never to the declared length
+/// first. Same accepted inputs, same error codes.
+inline void readStringBinaryGrowingCancellable(String & s, ReadBuffer & buf, PrefixReadCancellationChecker & cancellation_checker)
+{
+    static constexpr size_t read_chunk_size = 64 * 1024;
+
+    size_t size = 0;
+    readVarUInt(size, buf);
+
+    if (size > DEFAULT_MAX_STRING_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+
+    s.clear();
+    while (s.size() < size)
+    {
+        if (buf.eof())
+            throwReadAfterEOF();
+
+        const size_t bytes_to_copy = std::min({size - s.size(), buf.available(), read_chunk_size});
+        s.append(buf.position(), bytes_to_copy);
+        buf.position() += bytes_to_copy;
+        if (s.size() < size)
+            cancellation_checker.check(bytes_to_copy);
+    }
+}
+
 }

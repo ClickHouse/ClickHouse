@@ -412,7 +412,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 }
                 else
                 {
-                    readStringBinaryCancellable(data_type_name, *structure_stream, cancellation_checker);
+                    readStringBinaryGrowingCancellable(data_type_name, *structure_stream, cancellation_checker);
                     data_type = getDataTypesCache().getType(data_type_name);
                 }
 
@@ -466,7 +466,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 String data_type_name;
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 {
-                    readStringBinaryCancellable(data_type_name, *structure_stream, cancellation_checker);
+                    readStringBinaryGrowingCancellable(data_type_name, *structure_stream, cancellation_checker);
                     variants.push_back(getDataTypesCache().getType(data_type_name));
                     cancellation_checker.check();
                 }
@@ -738,6 +738,9 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
 
 void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    /// See the comment in `deserializeBinary`: the nesting depth comes from the data.
+    checkStackSize();
+
     /// Serialize NULL as Nothing type with no value.
     if (field.isNull())
     {
@@ -775,6 +778,9 @@ void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_nu
 
 void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    /// See the comment in `deserializeBinary`: the nesting depth comes from the data.
+    checkStackSize();
+
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_column = dynamic_column.getVariantColumn();
     auto global_discr = variant_column.globalDiscriminatorAt(row_num);
@@ -802,7 +808,7 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
 
 void SerializationDynamic::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    /// See the comment in deserializeBinary: the nesting depth comes from the data.
+    /// See the comment in `deserializeBinary`: the nesting depth comes from the data.
     checkStackSize();
 
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
@@ -990,6 +996,23 @@ static void deserializeTextImpl(
 }
 
 template <typename NestedSerialize, typename SerializeNull>
+static void serializeBinaryEncodedValue(std::string_view value, WriteBuffer & ostr, NestedSerialize nested_serialize, SerializeNull serialize_null)
+{
+    ReadBufferFromMemory buf(value);
+    auto variant_type = decodeDataType(buf);
+    if (isNothing(variant_type))
+    {
+        serialize_null(ostr);
+        return;
+    }
+    auto tmp_variant_column = variant_type->createColumn();
+    /// Pass the decoded type so a cache miss doesn't parse the name through DataTypeFactory again.
+    auto variant_serialization = getDataTypesCache().getSerialization(variant_type->getName(), variant_type);
+    variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
+    nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
+}
+
+template <typename NestedSerialize, typename SerializeNull>
 static void serializeTextImpl(
     const IColumn & column,
     size_t row_num,
@@ -997,7 +1020,7 @@ static void serializeTextImpl(
     NestedSerialize nested_serialize,
     SerializeNull serialize_null)
 {
-    /// See the comment in deserializeBinary: the same data-driven nesting is walked here, one level per nested value.
+    /// See the comment in `deserializeBinary`: the same data-driven nesting is walked here, one level per nested value.
     checkStackSize();
 
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
@@ -1013,14 +1036,7 @@ static void serializeTextImpl(
     /// Check if this row has value in shared variant. In this case we should first deserialize it from binary format.
     if (global_discr == dynamic_column.getSharedVariantDiscriminator())
     {
-        auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
-        ReadBufferFromMemory buf(value);
-        auto variant_type = decodeDataType(buf);
-        auto tmp_variant_column = variant_type->createColumn();
-        /// Pass the decoded type so a cache miss doesn't parse the name through DataTypeFactory again.
-        auto variant_serialization = getDataTypesCache().getSerialization(variant_type->getName(), variant_type);
-        variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
-        nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
+        serializeBinaryEncodedValue(dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num)), ostr, nested_serialize, serialize_null);
         return;
     }
 
@@ -1198,6 +1214,18 @@ void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_
     };
 
     serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
+}
+
+void SerializationDynamic::serializeBinaryEncodedValueTextJSON(std::string_view value, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent)
+{
+    checkStackSize();
+    auto serialize_null = [](WriteBuffer & buf) { SerializationNullable::serializeNullJSON(buf); };
+    if (pretty)
+        serializeBinaryEncodedValue(value, ostr, [&](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+            { serialization.serializeTextJSONPretty(col, row, buf, settings, indent); }, serialize_null);
+    else
+        serializeBinaryEncodedValue(value, ostr, [&](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+            { serialization.serializeTextJSON(col, row, buf, settings); }, serialize_null);
 }
 
 void SerializationDynamic::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
