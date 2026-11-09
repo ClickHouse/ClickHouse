@@ -1712,12 +1712,14 @@ void MergeTreeData::checkProperties(
                 (void)code;
                 errors.push_back(error);
             }
-            const auto error_message = has_expression_validation_errors
-                ? "Cannot apply ALTER because it breaks skip indices: {}"
-                : "Cannot validate secondary indices: {}";
+            if (has_expression_validation_errors)
+                throw Exception(
+                    index_errors.front().first,
+                    "Cannot apply ALTER because it breaks skip indices: {}",
+                    fmt::join(errors, "; "));
             throw Exception(
                 index_errors.front().first,
-                error_message,
+                "Cannot validate secondary indices: {}",
                 fmt::join(errors, "; "));
         }
     }
