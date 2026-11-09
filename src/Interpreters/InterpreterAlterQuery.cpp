@@ -403,8 +403,6 @@ void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const
     }
 }
 
-/// Drops the metadata and the storage snapshots the query has cached, so that the next reads see
-/// the metadata committed as of now.
 void dropQueryMetadataCache(const ContextPtr & context)
 {
     auto metadata_cache = context->getQueryMetadataCache();
@@ -451,7 +449,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             table->checkAlterIsPossible(*alter_commands, context);
             context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
-            /// The caches hold the metadata from before this ALTER, the following segments must see its result.
+            /// The following segments must see the metadata this ALTER committed.
             dropQueryMetadataCache(context);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
