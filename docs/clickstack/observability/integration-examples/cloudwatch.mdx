@@ -42,7 +42,7 @@ export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
 Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/logs` suffix; the exporter appends the signal path.
 
 </Tab>
-<Tab title="Self-managed">
+<Tab title="Self-managed" id="self-managed">
 
 Use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-managed getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
 

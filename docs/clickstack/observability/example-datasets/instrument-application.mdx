@@ -9,7 +9,7 @@ keywords: ['ClickStack', 'HackerNews Analyzer', 'OpenTelemetry', 'instrumentatio
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { AgentPrompt } from '/snippets/components/AgentPrompt/AgentPrompt.jsx';
+import { AgentPrompt as ManagedAgentPrompt } from '/snippets/components/AgentPrompt/AgentPrompt.jsx';
 import { Image } from '/snippets/components/Image.jsx';
 import InstrumentApplication from '/snippets/clickstack/_instrument_application.mdx';
 
@@ -98,7 +98,7 @@ Pick one path. All three end at the same instrumented app.
 
 With the repo cloned and `.env` filled in, paste this prompt into a coding agent **in that directory** to instrument the application.
 
-<AgentPrompt
+<ManagedAgentPrompt
   prompt="Use curl to download, read and follow: https://raw.githubusercontent.com/ClickHouse/hn-news-analyzer/main/agent.md"
   description="After you clone hn-news-analyzer and fill .env, run this prompt from that directory. Works with Claude Code, Cursor, Codex, and other coding agents."
   outline={[

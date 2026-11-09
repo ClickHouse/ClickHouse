@@ -100,7 +100,7 @@ The `traceOrigins` option is key to connecting session replays with backend trac
 The Browser SDK masks inputs and text by default. See [privacy controls](/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) for privacy-sensitive applications, and [attaching user information](/clickstack/observability/ingesting-data/sdks/browser#users-and-errors) so you can search and filter sessions by user in the UI.
 
 </Tab>
-<Tab title="Self-managed">
+<Tab title="Self-managed" id="self-managed">
 
 Self-managed ClickHouse Observability is fully compatible with OpenTelemetry, so you can send browser telemetry (traces, exceptions) using the standard OpenTelemetry JavaScript SDK or any of the [language SDKs](/clickstack/observability/ingesting-data/sdks). However, **session replay requires the Browser SDK** (`@clickhouse/clickstack-browser`), which extends the OpenTelemetry SDK with session recording, console capture, and network request capture. If you only need traces without session replay, any OTel-compatible browser SDK will work with the service.
 

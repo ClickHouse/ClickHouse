@@ -42028,7 +42028,7 @@
     "source": "/use-cases/observability/clickstack/faq"
   },
   {
-    "destination": "/clickstack/getting-started",
+    "destination": "/clickstack/getting-started/oss",
     "source": "/use-cases/observability/clickstack/getting-started"
   },
   {
@@ -42260,7 +42260,7 @@
     "source": "/use-cases/observability/clickstack/monitoring-kubernetes"
   },
   {
-    "destination": "/clickstack/notebooks",
+    "destination": "/clickstack/observability/notebooks",
     "source": "/use-cases/observability/clickstack/notebooks"
   },
   {
@@ -42276,7 +42276,7 @@
     "source": "/use-cases/observability/clickstack/production"
   },
   {
-    "destination": "/clickstack/managing/rbac",
+    "destination": "/clickstack/observability/managing/rbac",
     "source": "/use-cases/observability/clickstack/rbac"
   },
   {
@@ -56057,7 +56057,7 @@
   },
   {
     "source": "/clickstack/self-configured/migration/datadog",
-    "destination": "/clickstack/observability/migration/datadog#self-configured"
+    "destination": "/clickstack/observability/migration/datadog/index#self-managed"
   },
   {
     "source": "/clickstack/self-configured/migration/elastic",
@@ -56906,5 +56906,25 @@
   {
     "source": "/clickstack/observability/ingesting-data/collector",
     "destination": "/clickstack/self-configured/ingesting-data/collector"
+  },
+  {
+    "source": "/clickstack/getting-started",
+    "destination": "/clickstack/getting-started/oss"
+  },
+  {
+    "source": "/clickstack/managing/isolating-read-write",
+    "destination": "/clickstack/self-configured/managing/isolating-read-write"
+  },
+  {
+    "source": "/clickstack/managing/rbac",
+    "destination": "/clickstack/observability/managing/rbac"
+  },
+  {
+    "source": "/clickstack/notebooks",
+    "destination": "/clickstack/observability/notebooks"
+  },
+  {
+    "source": "/clickstack/getting-started/index",
+    "destination": "/clickstack/getting-started/oss"
   }
 ]

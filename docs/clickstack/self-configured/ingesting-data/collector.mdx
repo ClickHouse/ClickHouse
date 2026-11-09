@@ -249,7 +249,7 @@ We additionally recommend:
 
 - Configuring the collector to communicate with ClickHouse over HTTPS.
 - Create a dedicated user for ingestion with limited permissions - see below.
-- Enabling TLS for the OTLP endpoint, ensuring encrypted communication between SDKs/agents and the collector. This can be configured via [custom collector configuration](#extending-collector-config-self-configured).
+- Enabling TLS for the OTLP endpoint, ensuring encrypted communication between SDKs/agents and the collector. This can be configured via [custom collector configuration](#extending-collector-config).
 
 ### Creating an ingestion user {#creating-an-ingestion-user-self-configured}
 
@@ -409,7 +409,7 @@ In this case, OTel agents can be configured to send data to Kafka via the [Kafka
 <Info>
 **OTel collector configuration**
 
-The ClickStack OpenTelemetry collector distribution can be configured with Kafka using [custom collector configuration](#extending-collector-config-self-configured).
+The ClickStack OpenTelemetry collector distribution can be configured with Kafka using [custom collector configuration](#extending-collector-config).
 </Info>
 
 ## Estimating resources {#estimating-resources-self-configured}
