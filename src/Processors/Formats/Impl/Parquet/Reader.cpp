@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
@@ -135,8 +136,12 @@ static size_t memoryLimitOfCurrentThread()
 /// The size of a column, bounded from above, with the values of each `LowCardinality` column in it expanded over all
 /// its rows, as e.g. a conversion to a type without `LowCardinality` takes them. `IColumn::byteSize` counts only the
 /// dictionary and the indexes, which may be much smaller.
-static size_t maxByteSizeWithExpandedLowCardinality(const IColumn & column)
+/// Nothing, if the column has a `JSON` or a `Dynamic` column in it: their output is not bounded by their size, e.g.
+/// `toJSONString` repeats the names of the paths of `JSON` in every row, while the column holds each name once.
+static std::optional<size_t> maxByteSizeWithExpandedValues(const IColumn & column)
 {
+    if (typeid_cast<const ColumnObject *>(&column) || typeid_cast<const ColumnDynamic *>(&column))
+        return std::nullopt;
     if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
     {
         const IColumn & dictionary = *low_cardinality->getDictionary().getNestedNotNullableColumn();
@@ -147,10 +152,16 @@ static size_t maxByteSizeWithExpandedLowCardinality(const IColumn & column)
         return low_cardinality->byteSize() + low_cardinality->size() * (max_value_bytes + 1);
     }
     /// The subcolumns are counted with their values expanded, which is never less than their size.
-    size_t res = column.byteSize();
+    std::optional<size_t> res = column.byteSize();
     column.forEachSubcolumn([&](const IColumn::WrappedPtr & subcolumn)
     {
-        res += maxByteSizeWithExpandedLowCardinality(*subcolumn) - subcolumn->byteSize();
+        if (!res)
+            return;
+        const std::optional<size_t> subcolumn_bytes = maxByteSizeWithExpandedValues(*subcolumn);
+        if (subcolumn_bytes)
+            *res += *subcolumn_bytes - subcolumn->byteSize();
+        else
+            res.reset();
     });
     return res;
 }
@@ -3239,12 +3250,19 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
             count_assembled_column(*output_idx, chunk_rows, chunk_bytes, size_unknown);
         }
         /// A cached column is counted by its largest chunk, with the values of `LowCardinality` expanded: the cached
-        /// chunk is compact, but the query may convert it whole, e.g. by `CAST` to `String`.
+        /// chunk is compact, but the query may convert it whole, e.g. by `CAST` to `String`. The size of a cached
+        /// `JSON` or `Dynamic` column is unknown, as when it is assembled, see `count_assembled_column`.
         for (const auto & chunks : row_group.cached_columns)
         {
             size_t max_chunk_bytes = 0;
             for (const auto & chunk : chunks)
-                max_chunk_bytes = std::max(max_chunk_bytes, maxByteSizeWithExpandedLowCardinality(*chunk));
+            {
+                const std::optional<size_t> bytes = maxByteSizeWithExpandedValues(*chunk);
+                if (bytes)
+                    max_chunk_bytes = std::max(max_chunk_bytes, *bytes);
+                else
+                    size_unknown = true;
+            }
             chunk_bytes += static_cast<double>(max_chunk_bytes);
         }
         /// The chunks of the files read in parallel are processed at the same time, and the scheduler cannot split them,

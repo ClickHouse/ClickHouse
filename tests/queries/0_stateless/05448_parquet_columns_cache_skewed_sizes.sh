@@ -29,7 +29,9 @@
 # - a chunk served from the cache, in each of several files read in parallel, of which the chunks do not fit the memory
 #   limit together;
 # - a chunk served from the cache, of `LowCardinality` strings, or arrays of them, which take little in the cache, but
-#   much more converted to strings.
+#   much more converted to strings;
+# - a chunk served from the cache, of `JSON`, which takes little in the cache, but much more as text, where each row
+#   repeats the names of the paths.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -294,5 +296,25 @@ $CLICKHOUSE_CLIENT -q "
     ${ENTRIES};
     SELECT count(), sum(cityHash64(CAST(s, 'String'))) FROM file('${FILE}', Parquet, ${STRUCTURE}) SETTINGS ${SETTINGS}, use_columns_cache = 1;
     SELECT count(), sum(cityHash64(CAST(a, 'Array(String)'))) FROM file('${FILE}', Parquet, ${STRUCTURE}) SETTINGS ${SETTINGS}, use_columns_cache = 1"
+
+echo "--- chunks of JSON served from the cache, converted to text"
+# 65536 rows of an unshredded variant: objects of one field, of the same name of 1 KiB, with a value of type `Int8`.
+# `JSON` holds the name once, but `toJSONString` repeats it in every row, 64 MiB in total.
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO FUNCTION file('${FILE}', Parquet, 'v Tuple(metadata String, value String)')
+    SELECT tuple(concat(unhex('41010000000004'), repeat('k', 1024)), unhex('02010000020C05')) FROM numbers(65536)
+    SETTINGS output_format_parquet_string_as_string = 0, engine_file_truncate_on_insert = 1"
+touch -d "1 minute ago" "${FILE_PATH}"
+SETTINGS="max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_prefer_block_bytes = 0,
+    input_format_parquet_memory_low_watermark = 0, input_format_parquet_memory_high_watermark = '4Mi',
+    max_memory_usage = '48Mi', max_untracked_memory = 65536"
+QUERY="SELECT count(), sum(length(toJSONString(v))) FROM file('${FILE}', Parquet, 'v JSON')"
+$CLICKHOUSE_CLIENT -q "
+    SYSTEM DROP COLUMNS CACHE;
+    ${QUERY} SETTINGS ${SETTINGS}, use_columns_cache = 0;
+    ${QUERY} SETTINGS max_threads = 1, input_format_parquet_max_block_size = 65536, input_format_parquet_prefer_block_bytes = 0,
+        use_columns_cache = 1;
+    ${ENTRIES};
+    ${QUERY} SETTINGS ${SETTINGS}, use_columns_cache = 1"
 
 rm -f "${FILE_PATH}" "${FILE_PATH}.tmp"
