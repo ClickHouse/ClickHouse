@@ -69,8 +69,10 @@ namespace ErrorCodes
 namespace Setting
 {
 
+extern const SettingsBool cast_keep_nullable;
 extern const SettingsBool enable_positional_arguments_for_projections;
 extern const SettingsBool prefer_column_name_to_alias;
+extern const SettingsBool transform_null_in;
 
 }
 
@@ -601,9 +603,12 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
     /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
     mut_context->setSetting("optimize_respect_aliases", true);
-    /// Resolve aliases as a reload of the stored definition does, which analyzes it with the server settings.
-    mut_context->setSetting(
-        "prefer_column_name_to_alias", query_context->getGlobalContext()->getSettingsRef()[Setting::prefer_column_name_to_alias].value);
+    /// Resolve aliases, and the types and names of the expressions the projection parts persist, as a reload of the
+    /// stored definition does, which analyzes it with the server settings.
+    const auto & global_settings = query_context->getGlobalContext()->getSettingsRef();
+    mut_context->setSetting("prefer_column_name_to_alias", global_settings[Setting::prefer_column_name_to_alias].value);
+    mut_context->setSetting("cast_keep_nullable", global_settings[Setting::cast_keep_nullable].value);
+    mut_context->setSetting("transform_null_in", global_settings[Setting::transform_null_in].value);
     /// A projection is always calculated locally. With parallel replicas the analysis treats the source as remote
     /// and replaces the right hand side of `GLOBAL IN` in the stored query in place with a temporary table, which
     /// does not exist when the projection is calculated. The context may be the global one (with the settings of the
@@ -733,8 +738,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
         const auto virtuals = metadata_snapshot->virtuals;
-        metadata.sorting_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context);
-        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context);
+        metadata.sorting_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, mut_context);
+        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, mut_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 

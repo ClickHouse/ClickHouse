@@ -58,3 +58,58 @@ ALTER TABLE t_null_in_replicated COMMENT COLUMN x 'c' SETTINGS transform_null_in
 INSERT INTO t_null_in_replicated VALUES (1), (2), (NULL);
 SELECT count() FROM t_null_in_replicated;
 DROP TABLE t_null_in_replicated;
+
+-- The same holds for projections: their parts persist the projection's sorting key and column types.
+
+SELECT '-- Projection sorting key, INSERT after the ALTER';
+DROP TABLE IF EXISTS t_cast_projection;
+CREATE TABLE t_cast_projection (x Nullable(UInt64), y UInt64, PROJECTION p (SELECT x, y ORDER BY CAST(x, 'UInt32')))
+ENGINE = MergeTree ORDER BY y;
+ALTER TABLE t_cast_projection COMMENT COLUMN x 'c' SETTINGS cast_keep_nullable = 1;
+INSERT INTO t_cast_projection VALUES (1, 10), (2, 20), (3, 30);
+SELECT count() FROM t_cast_projection;
+SELECT name, sum(rows) FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_cast_projection' AND active GROUP BY name;
+DROP TABLE t_cast_projection;
+
+SELECT '-- Projection sorting key, merge after the ALTER';
+DROP TABLE IF EXISTS t_null_in_projection;
+CREATE TABLE t_null_in_projection (x UInt64, y UInt64, PROJECTION p (SELECT x, y ORDER BY (x IN (1, 2))))
+ENGINE = MergeTree ORDER BY y;
+ALTER TABLE t_null_in_projection COMMENT COLUMN x 'c' SETTINGS transform_null_in = 1;
+INSERT INTO t_null_in_projection VALUES (1, 10), (2, 20), (3, 30);
+INSERT INTO t_null_in_projection VALUES (4, 40), (1, 50);
+OPTIMIZE TABLE t_null_in_projection FINAL;
+SELECT count(), sum(x) FROM t_null_in_projection;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_null_in_projection' AND active;
+SELECT name, sum(rows) FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_null_in_projection' AND active GROUP BY name;
+DROP TABLE t_null_in_projection;
+
+SELECT '-- Projection added by the ALTER, INSERT after it';
+DROP TABLE IF EXISTS t_cast_added_projection;
+CREATE TABLE t_cast_added_projection (x Nullable(UInt64), y UInt64) ENGINE = MergeTree ORDER BY y;
+ALTER TABLE t_cast_added_projection ADD PROJECTION p (SELECT x, y ORDER BY CAST(x, 'UInt32')) SETTINGS cast_keep_nullable = 1;
+INSERT INTO t_cast_added_projection VALUES (1, 10), (2, 20), (3, 30);
+SELECT count() FROM t_cast_added_projection;
+SELECT name, sum(rows) FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_cast_added_projection' AND active GROUP BY name;
+DROP TABLE t_cast_added_projection;
+
+SELECT '-- Aggregate projection, an unrelated ALTER is not refused';
+DROP TABLE IF EXISTS t_cast_aggregate_projection;
+CREATE TABLE t_cast_aggregate_projection (x Nullable(UInt64), PROJECTION p (SELECT CAST(x, 'UInt32') AS k, count() GROUP BY k))
+ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_cast_aggregate_projection COMMENT COLUMN x 'c' SETTINGS cast_keep_nullable = 1;
+INSERT INTO t_cast_aggregate_projection VALUES (1), (2), (2);
+SELECT CAST(x, 'UInt32') AS k, count() FROM t_cast_aggregate_projection GROUP BY k ORDER BY k;
+DROP TABLE t_cast_aggregate_projection;
+
+SELECT '-- ReplicatedMergeTree projection, INSERT after a comment-only ALTER';
+DROP TABLE IF EXISTS t_cast_projection_replicated;
+CREATE TABLE t_cast_projection_replicated (x Nullable(UInt64), y UInt64, PROJECTION p (SELECT x, y ORDER BY CAST(x, 'UInt32')))
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_cast_projection_replicated', 'r1') ORDER BY y;
+ALTER TABLE t_cast_projection_replicated COMMENT COLUMN x 'c' SETTINGS cast_keep_nullable = 1;
+INSERT INTO t_cast_projection_replicated VALUES (1, 10), (2, 20), (3, 30);
+SELECT count() FROM t_cast_projection_replicated;
+DROP TABLE t_cast_projection_replicated;

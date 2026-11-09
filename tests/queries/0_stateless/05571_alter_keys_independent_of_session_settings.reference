@@ -19,3 +19,18 @@
 3
 -- ReplicatedMergeTree, INSERT after a comment-only ALTER
 3
+-- Projection sorting key, INSERT after the ALTER
+3
+p	3
+-- Projection sorting key, merge after the ALTER
+5	11
+1
+p	5
+-- Projection added by the ALTER, INSERT after it
+3
+p	3
+-- Aggregate projection, an unrelated ALTER is not refused
+1	1
+2	2
+-- ReplicatedMergeTree projection, INSERT after a comment-only ALTER
+3
