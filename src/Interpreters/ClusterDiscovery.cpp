@@ -233,9 +233,10 @@ ClusterDiscovery::ClusterDiscovery(
         String zk_name = zkutil::extractZooKeeperName(zk_name_and_root);
 
         /// Advertise the port peers must actually dial: with `secure` enabled that is `tcp_port_secure`, not `tcp_port`.
+        /// Observers do not register themselves, so they only need client-side TLS and no local secure listener.
         bool is_secure_connection = config.getBool(cluster_config_prefix + ".secure", false);
         UInt16 advertised_port = context->getTCPPort();
-        if (is_secure_connection)
+        if (is_secure_connection && !is_observer)
         {
             auto secure_port = context->getTCPPortSecure();
             if (!secure_port)
