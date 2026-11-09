@@ -1,0 +1,20 @@
+--- local: position deletes, snapshots and data files before OPTIMIZE
+1	1	3
+--- local: after OPTIMIZE
+position deletes: 0
+5
+1	a
+2	b
+4	d
+5	e
+6	f
+--- s3: position deletes, snapshots and data files before OPTIMIZE
+1	1	3
+--- s3: after OPTIMIZE
+position deletes: 0
+5
+1	a
+2	b
+4	d
+5	e
+6	f
