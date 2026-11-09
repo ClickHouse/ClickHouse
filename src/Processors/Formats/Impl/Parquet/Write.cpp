@@ -820,6 +820,8 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             scratch.resize(static_cast<size_t>(compressed_size));
             return scratch;
         }
+        /// One-shot path for zstd: the page is already fully in memory and of known size, and zstd is faster
+        /// and less memory better than the streaming zstd path especially at higher compression levels.
         case CompressionMethod::Zstd:
         {
             const size_t max_dest_size = ZSTD_compressBound(source.size());
