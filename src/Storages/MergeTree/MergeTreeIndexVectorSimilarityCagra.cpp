@@ -7,8 +7,8 @@
 #include <Core/Field.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <GPU/CuvsLibrary.h>
-#include <cuda_runtime_api.h>
+#include <GPU/CuvsCagra.cuh>
+#include <GPU/GPUDevice.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -19,11 +19,12 @@
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/HashTable/HashSet.h>
-#include <base/scope_guard.h>
 
 #include <usearch/index_plugins.hpp>
 
 #include <algorithm>
+#include <cstdlib>
+#include <string_view>
 #include <atomic>
 #include <thread>
 #include <cmath>
@@ -44,16 +45,14 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int FORMAT_VERSION_TOO_OLD;
-    extern const int GPU_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
-
-namespace Cuvs = GPU::Cuvs;
 
 namespace
 {
@@ -64,9 +63,9 @@ constexpr size_t min_rows_for_graph = 10000;
 /// What CAGRA marks a missing neighbour with, when fewer than `limit` were found.
 constexpr UInt32 invalid_neighbour = std::numeric_limits<UInt32>::max();
 
-Cuvs::DistanceType toCuvsMetric(CagraMetric metric)
+GPU::CagraDistance toCagraDistance(CagraMetric metric)
 {
-    return metric == CagraMetric::L2 ? Cuvs::L2Expanded : Cuvs::InnerProduct;
+    return metric == CagraMetric::L2 ? GPU::CagraDistance::L2 : GPU::CagraDistance::InnerProduct;
 }
 
 void normalizeImpl(float * vector, size_t dimensions)
@@ -94,153 +93,40 @@ void checkFinite(const float * vector, size_t dimensions, int error_code, std::s
             throw Exception(error_code, "Vector for vector similarity index ({}) must not contain non-finite values (NaN or Inf)", context);
 }
 
-struct CagraIndexParamsHolder
+/// cuVS runs on the device of the `GPUDevice`, and allocates from its memory pool.
+void checkCanUseDevice()
 {
-    Cuvs::CagraIndexParams * params = nullptr;
-    CagraIndexParamsHolder() { Cuvs::check(Cuvs::api().cagraIndexParamsCreate(&params), "cuvsCagraIndexParamsCreate"); }
-    ~CagraIndexParamsHolder() { Cuvs::api().cagraIndexParamsDestroy(params); }
-};
+    GPU::GPUDevice::instance();
 
-struct CagraSearchParamsHolder
-{
-    Cuvs::CagraSearchParams * params = nullptr;
-    CagraSearchParamsHolder() { Cuvs::check(Cuvs::api().cagraSearchParamsCreate(&params), "cuvsCagraSearchParamsCreate"); }
-    ~CagraSearchParamsHolder() { Cuvs::api().cagraSearchParamsDestroy(params); }
-};
-
-struct CagraIndexHolder
-{
-    Cuvs::CagraIndexHandle index = nullptr;
-    CagraIndexHolder() { Cuvs::check(Cuvs::api().cagraIndexCreate(&index), "cuvsCagraIndexCreate"); }
-    ~CagraIndexHolder() { Cuvs::api().cagraIndexDestroy(index); }
-};
-
-struct DatasetHolder
-{
-    Cuvs::DatasetHandle dataset = nullptr;
-    ~DatasetHolder()
-    {
-        if (dataset)
-            Cuvs::api().datasetDestroy(dataset);
-    }
-};
-
-std::vector<UInt32> buildGraphImpl(const std::vector<float> & dataset, size_t rows, size_t dimensions, CagraMetric metric, CagraParams params)
-{
-    auto lease = Cuvs::ResourcesPool::instance().acquire();
-    const auto & api = Cuvs::api();
-
-    CagraIndexParamsHolder index_params;
-    index_params.params->metric = toCuvsMetric(metric);
-    index_params.params->graph_degree = params.graph_degree;
-    index_params.params->intermediate_graph_degree = params.intermediate_graph_degree;
-    index_params.params->build_algo = Cuvs::AUTO_SELECT;
-
-    Cuvs::Matrix host_dataset(dataset.data(), rows, dimensions, kDLFloat, false);
-    DatasetHolder dataset_view;
-    Cuvs::check(api.datasetMakeStandardView(lease.get(), host_dataset.get(), &dataset_view.dataset), "cuvsDatasetMakeStandardView");
-
-    CagraIndexHolder index;
-    Cuvs::check(api.cagraBuild(lease.get(), index_params.params, dataset_view.dataset, index.index), "cuvsCagraBuild");
-
-    DLManagedTensor device_graph{};
-    Cuvs::check(api.cagraIndexGetGraph(index.index, &device_graph), "cuvsCagraIndexGetGraph");
-    SCOPE_EXIT({
-        if (device_graph.deleter)
-            device_graph.deleter(&device_graph);
-    });
-
-    if (device_graph.dl_tensor.ndim != 2 || static_cast<size_t>(device_graph.dl_tensor.shape[0]) != rows
-        || static_cast<size_t>(device_graph.dl_tensor.shape[1]) != params.graph_degree)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CAGRA built a graph of unexpected shape");
-
-    std::vector<UInt32> graph(rows * params.graph_degree);
-    Cuvs::Matrix host_graph(graph.data(), rows, params.graph_degree, kDLUInt, false);
-    Cuvs::check(api.matrixCopy(lease.get(), &device_graph, host_graph.get()), "cuvsMatrixCopy");
-    Cuvs::check(api.streamSync(lease.get()), "cuvsStreamSync");
-    return graph;
+    /// When a thread exits, glibc trims its cache of stacks (40 MiB by default) and frees the DTVs of the evicted ones -
+    /// in the exiting thread, after jemalloc has torn down its state of that thread. jemalloc then initializes the thread
+    /// anew and puts a new tcache, which lives in the TLS of the thread, into the list of an arena; the stack goes away
+    /// and the next walk of that list crashes. The threads of OpenMP that cuVS starts during a build make the cache
+    /// overflow. A large enough cache never trims.
+    const char * tunables = std::getenv("GLIBC_TUNABLES"); // NOLINT(concurrency-mt-unsafe)
+    if (!tunables || !std::string_view(tunables).contains("glibc.pthread.stack_cache_size="))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "The `cagra` method of the vector similarity index needs the server to be started with the environment variable "
+            "`GLIBC_TUNABLES=glibc.pthread.stack_cache_size=17179869184`");
 }
 
 /// Builds the graph of `rows` vectors of `dataset` on the device and returns it, `rows * graph_degree` neighbours.
 std::vector<UInt32> buildGraph(const std::vector<float> & dataset, size_t rows, size_t dimensions, CagraMetric metric, CagraParams params)
 {
-    std::vector<UInt32> graph;
-    Cuvs::execute([&] { graph = buildGraphImpl(dataset, rows, dimensions, metric, params); });
+    checkCanUseDevice();
+    std::vector<UInt32> graph(rows * params.graph_degree);
+    GPU::buildCagraGraph(dataset.data(), rows, dimensions, toCagraDistance(metric),
+        params.graph_degree, params.intermediate_graph_degree, graph.data());
     return graph;
 }
 
 }
 
-/// The vectors of a granule on the device. Allocated with the CUDA runtime of ClickHouse, not from the workspace of cuVS,
-/// which is capped at a quarter of the device memory per `cuvsResources_t`. Both runtimes are on the primary context of
-/// the device, so the pointer is valid for cuVS as well.
-class DeviceDataset : private boost::noncopyable
-{
-public:
-    explicit DeviceDataset(size_t bytes)
-    {
-        if (cudaError_t error = cudaMalloc(&ptr, bytes); error != cudaSuccess)
-            throw Exception(ErrorCodes::GPU_ERROR, "Cannot allocate {} on the device for a CAGRA index: {}", ReadableSize(bytes), cudaGetErrorString(error));
-    }
-    ~DeviceDataset() { cudaFree(ptr); }
-    void * data() const { return ptr; }
-private:
-    void * ptr = nullptr;
-};
-
 /// The graph and the vectors of a granule on the device, ready to search.
-class CagraDeviceIndex : private boost::noncopyable
+class CagraDeviceIndex : public GPU::CagraIndex
 {
 public:
-    explicit CagraDeviceIndex(const MergeTreeIndexGranuleCagra & granule)
-    {
-        const auto & api = Cuvs::api();
-
-        const size_t bytes = granule.rows * granule.dimensions * sizeof(float);
-        auto device_dataset = std::make_unique<DeviceDataset>(bytes);
-        Cuvs::Matrix host_matrix(granule.dataset.data(), granule.rows, granule.dimensions, kDLFloat, false);
-        Cuvs::Matrix device_matrix(device_dataset->data(), granule.rows, granule.dimensions, kDLFloat, true);
-        Cuvs::check(api.matrixCopy(resources.get(), host_matrix.get(), device_matrix.get()), "cuvsMatrixCopy");
-
-        /// The graph is copied to the device by cuVS.
-        Cuvs::Matrix host_graph(granule.graph.data(), granule.rows, granule.graph_degree, kDLUInt, false);
-        Cuvs::check(api.cagraIndexFromArgs(resources.get(), toCuvsMetric(granule.metric), host_graph.get(), device_matrix.get(), index.index),
-            "cuvsCagraIndexFromArgs");
-
-        /// The search needs rows aligned to 16 bytes. When they are, the dense copy is used as it is, otherwise cuVS makes an
-        /// aligned copy, and the dense one is not needed after that.
-        if (granule.dimensions % 4 == 0)
-        {
-            Cuvs::check(api.datasetMakePaddedView(resources.get(), device_matrix.get(), &padded.dataset), "cuvsDatasetMakePaddedView");
-            dataset = std::move(device_dataset);
-        }
-        else
-        {
-            Cuvs::check(api.datasetMakePadded(resources.get(), device_matrix.get(), Cuvs::CUVS_DATASET_MEM_TYPE_DEVICE, &padded.dataset),
-                "cuvsDatasetMakePadded");
-        }
-        Cuvs::check(api.cagraUpdateDataset(resources.get(), padded.dataset, index.index), "cuvsCagraUpdateDataset");
-        Cuvs::check(api.streamSync(resources.get()), "cuvsStreamSync");
-    }
-
-    Cuvs::CagraIndexHandle get() const { return index.index; }
-
-private:
-    /// Its own: the memory of the index stays allocated from it for as long as the index lives, see `Cuvs::DeviceBuffer`.
-    struct OwnedResources
-    {
-        Cuvs::Resources handle = 0;
-        OwnedResources() { Cuvs::check(Cuvs::api().resourcesCreate(&handle), "cuvsResourcesCreate"); }
-        ~OwnedResources() { Cuvs::api().resourcesDestroy(handle); }
-        Cuvs::Resources get() const { return handle; }
-    };
-
-    /// Destroyed in the reverse order: the index, then the padded dataset, then the memory it may be a view of, then the
-    /// resources all of it came from.
-    OwnedResources resources;
-    std::unique_ptr<DeviceDataset> dataset;
-    DatasetHolder padded;
-    CagraIndexHolder index;
+    using GPU::CagraIndex::CagraIndex;
 };
 
 MergeTreeIndexGranuleCagra::MergeTreeIndexGranuleCagra(const String & index_name_, CagraMetric metric_, size_t dimensions_)
@@ -321,13 +207,8 @@ std::shared_ptr<CagraDeviceIndex> MergeTreeIndexGranuleCagra::getDeviceIndex() c
     if (!device_index)
     {
         Stopwatch watch;
-        /// Made and destroyed on the threads of cuVS, see `GPU::Cuvs::execute`.
-        Cuvs::execute([&]
-        {
-            device_index = std::shared_ptr<CagraDeviceIndex>(
-                new CagraDeviceIndex(*this),
-                [](CagraDeviceIndex * index) { Cuvs::execute([index] { delete index; }); });
-        });
+        checkCanUseDevice();
+        device_index = std::make_shared<CagraDeviceIndex>(dataset.data(), graph.data(), rows, dimensions, graph_degree, toCagraDistance(metric));
         LOG_TRACE(logger, "Uploaded CAGRA index {} of {} rows ({}) to the device in {} ms",
             backQuote(index_name), rows, ReadableSize(memoryUsageBytes()), watch.elapsedMilliseconds());
     }
@@ -385,35 +266,7 @@ NearestNeighbours MergeTreeIndexGranuleCagra::search(const std::vector<float> & 
     std::vector<UInt32> neighbours(k);
     std::vector<float> distances(k);
 
-    Cuvs::execute([&]
-    {
-        const auto & api = Cuvs::api();
-        auto lease = Cuvs::ResourcesPool::instance().acquire();
-
-        /// One allocation for the query and the results: the query, then `k` neighbours and `k` distances.
-        Cuvs::DeviceBuffer buffer(lease.get(), (dimensions + 2 * k) * sizeof(float));
-        auto * device_query = static_cast<float *>(buffer.data());
-        auto * device_neighbours = reinterpret_cast<UInt32 *>(device_query + dimensions);
-        auto * device_distances = reinterpret_cast<float *>(device_neighbours + k);
-
-        Cuvs::Matrix host_query(query.data(), 1, dimensions, kDLFloat, false);
-        Cuvs::Matrix query_matrix(device_query, 1, dimensions, kDLFloat, true);
-        Cuvs::Matrix neighbours_matrix(device_neighbours, 1, k, kDLUInt, true);
-        Cuvs::Matrix distances_matrix(device_distances, 1, k, kDLFloat, true);
-        Cuvs::check(api.matrixCopy(lease.get(), host_query.get(), query_matrix.get()), "cuvsMatrixCopy");
-
-        CagraSearchParamsHolder search_params;
-        search_params.params->itopk_size = std::max(candidates, k);
-
-        Cuvs::check(api.cagraSearch(lease.get(), search_params.params, device->get(), query_matrix.get(), neighbours_matrix.get(),
-            distances_matrix.get(), Cuvs::Filter{0, Cuvs::NO_FILTER}), "cuvsCagraSearch");
-
-        Cuvs::Matrix host_neighbours(neighbours.data(), 1, k, kDLUInt, false);
-        Cuvs::Matrix host_distances(distances.data(), 1, k, kDLFloat, false);
-        Cuvs::check(api.matrixCopy(lease.get(), neighbours_matrix.get(), host_neighbours.get()), "cuvsMatrixCopy");
-        Cuvs::check(api.matrixCopy(lease.get(), distances_matrix.get(), host_distances.get()), "cuvsMatrixCopy");
-        Cuvs::check(api.streamSync(lease.get()), "cuvsStreamSync");
-    });
+    device->search(query.data(), 1, k, candidates, neighbours.data(), distances.data());
 
     NearestNeighbours result;
     result.rows.reserve(k);
@@ -462,33 +315,7 @@ void MergeTreeIndexGranuleCagra::searchBatch(const std::vector<float> & queries,
     std::vector<UInt32> found_neighbours(num_queries * k);
     std::vector<float> found_distances(num_queries * k);
 
-    Cuvs::execute([&]
-    {
-        const auto & api = Cuvs::api();
-        auto lease = Cuvs::ResourcesPool::instance().acquire();
-
-        Cuvs::DeviceBuffer buffer(lease.get(), num_queries * (dimensions + 2 * k) * sizeof(float));
-        auto * device_queries = static_cast<float *>(buffer.data());
-        auto * device_neighbours = reinterpret_cast<UInt32 *>(device_queries + num_queries * dimensions);
-        auto * device_distances = reinterpret_cast<float *>(device_neighbours + num_queries * k);
-
-        Cuvs::Matrix host_queries(queries.data(), num_queries, dimensions, kDLFloat, false);
-        Cuvs::Matrix queries_matrix(device_queries, num_queries, dimensions, kDLFloat, true);
-        Cuvs::Matrix neighbours_matrix(device_neighbours, num_queries, k, kDLUInt, true);
-        Cuvs::Matrix distances_matrix(device_distances, num_queries, k, kDLFloat, true);
-        Cuvs::check(api.matrixCopy(lease.get(), host_queries.get(), queries_matrix.get()), "cuvsMatrixCopy");
-
-        CagraSearchParamsHolder search_params;
-        search_params.params->itopk_size = std::max(candidates, k);
-        Cuvs::check(api.cagraSearch(lease.get(), search_params.params, device->get(), queries_matrix.get(), neighbours_matrix.get(),
-            distances_matrix.get(), Cuvs::Filter{0, Cuvs::NO_FILTER}), "cuvsCagraSearch");
-
-        Cuvs::Matrix host_neighbours(found_neighbours.data(), num_queries, k, kDLUInt, false);
-        Cuvs::Matrix host_distances(found_distances.data(), num_queries, k, kDLFloat, false);
-        Cuvs::check(api.matrixCopy(lease.get(), neighbours_matrix.get(), host_neighbours.get()), "cuvsMatrixCopy");
-        Cuvs::check(api.matrixCopy(lease.get(), distances_matrix.get(), host_distances.get()), "cuvsMatrixCopy");
-        Cuvs::check(api.streamSync(lease.get()), "cuvsStreamSync");
-    });
+    device->search(queries.data(), num_queries, k, candidates, found_neighbours.data(), found_distances.data());
 
     for (size_t q = 0; q < num_queries; ++q)
     {

@@ -118,13 +118,6 @@ if (ENABLE_GPU)
     add_subdirectory (GPU)
 
     add_headers_and_sources(dbms GPU)
-
-    # The DLPack tensors of the C API of cuVS, for the `cagra` method of the vector similarity index. Only for the sources
-    # which call cuVS: an include directory of the whole of `dbms` would change the command line of each of its files.
-    set_source_files_properties (
-        GPU/CuvsLibrary.cpp
-        Storages/MergeTree/MergeTreeIndexVectorSimilarityCagra.cpp
-        PROPERTIES INCLUDE_DIRECTORIES "${ClickHouse_SOURCE_DIR}/contrib/dlpack/include")
 endif ()
 
 if (ENABLE_EXAMPLES)
@@ -612,7 +605,7 @@ add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 
 if (ENABLE_GPU)
-    target_link_libraries (dbms PRIVATE clickhouse_gpu_cudf ch_gpu::cudart ch_contrib::nvcomp)
+    target_link_libraries (dbms PRIVATE clickhouse_gpu_cudf clickhouse_gpu_cuvs ch_gpu::cudart ch_contrib::nvcomp)
 
     # The streams are named as `rmm::cuda_stream_view`, which holds a `cudaStream_t` and nothing
     # of either standard library. Only the headers are taken: linking the island's targets would
