@@ -256,8 +256,7 @@ struct Reader
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
-        /// Not in the file, but sized like an array of the file (SchemaConverter::addMissingElementsOfTuplesInArrays).
-        /// Reported in the block missing values like `is_missing_column`, so that its DEFAULT still applies.
+        /// Not in the file but sized like an array of the file; set in block missing values so that its DEFAULT applies.
         bool report_as_missing = false;
         bool needs_cast = false; // if output_type is different from input_type
 

@@ -1322,7 +1322,6 @@ std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
 
     std::stable_sort(leaves.begin(), leaves.end(), [](const Leaf & a, const Leaf & b) { return a.cost < b.cost; });
 
-    /// The leaves are read as a requested leaf with no type hint, see processSubtreePrimitive.
     std::exception_ptr first_error;
     for (Leaf & leaf : leaves)
     {
@@ -1370,7 +1369,6 @@ std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
         return primitive_idx;
     }
 
-    /// A leaf that cannot be read may be skipped only with the setting that skips such requested leaves.
     if (first_error && !options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference)
         std::rethrow_exception(first_error);
     return std::nullopt;
