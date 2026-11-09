@@ -519,6 +519,15 @@ ASTPtr tryBuildAdditionalFilterAST(
     return node_to_ast[dag.getOutputs().front()];
 }
 
+/// Whether another expression has an alias that is the short name of one of the columns.
+static bool hasAliasOfColumn(const IAST & ast, const IdentifierNameSet & columns, const String & table_alias)
+{
+    const auto column = table_alias + "." + ast.tryGetAlias();
+    const auto * identifier = ast.as<ASTIdentifier>();
+    return (columns.contains(column) && !(identifier && identifier->name() == column))
+        || std::ranges::any_of(ast.children, [&](const auto & child) { return hasAliasOfColumn(*child, columns, table_alias); });
+}
+
 /// Splices `pushed_down_filters` into `query_ast` and says whether it did. `context` is the one the rewrite
 /// mutates (external tables for GLOBAL IN); `rewrite_context` is the one whose settings decide whether the
 /// rewrite happens at all.
@@ -613,6 +622,13 @@ static bool addFilters(
         table_identifier_ast ? DatabaseAndTableWithAlias(table_identifier_ast) : DatabaseAndTableWithAlias{},
         table_snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
     table_with_columns.table.alias = table_alias;
+
+    /// Do not shorten the names of columns if a short name can refer to an alias, a projection column or a lambda argument.
+    IdentifierNameSet names;
+    predicate->collectIdentifierNames(names);
+    if (hasAliasOfColumn(getSelectQuery(query_ast), names, table_alias)
+        || std::ranges::any_of(names, [&](const auto & name) { return names.contains(table_alias + "." + name); }))
+        table_with_columns.table = {};
 
     bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
