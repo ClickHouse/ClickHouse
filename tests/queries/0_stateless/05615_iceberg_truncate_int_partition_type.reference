@@ -63,3 +63,9 @@ x = -2147483648	[3]
 ml_1	1
 ml_2	1
 ml_3	2
+--- DELETE and UPDATE after promoting the int column to long
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+1	-2147483648
+2	5
+3	5

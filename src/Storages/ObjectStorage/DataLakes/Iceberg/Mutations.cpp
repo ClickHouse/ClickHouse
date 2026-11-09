@@ -669,17 +669,22 @@ void validateSnapshotForMutation(
                     file_entry->parsed_entry->file_path_key.serialize(),
                     file_format);
 
-            /// A delete file records `truncate[W]` of an `int` column as an `int`, so it never pairs with a value outside that range.
+            /// A delete file records the `truncate[W]` value computed for the current column type, so it never pairs with
+            /// a recorded value that computation cannot produce.
             const auto & partition_value = file_entry->normalized_partition_key_value;
             for (const auto & partition_field : *file_entry->common_partition_specification)
             {
-                if (!Poco::toLower(partition_field.transform_name).starts_with("truncate") || partition_field.tuple_index < 0
-                    || static_cast<size_t>(partition_field.tuple_index) >= partition_value.size())
+                const auto transform = parseTransformAndArgument(partition_field.transform_name);
+                if (!transform || transform->transform_name != "icebergTruncate" || !transform->argument
+                    || partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= partition_value.size())
                     continue;
 
                 const auto source = persistent_table_components.schema_processor->tryGetFieldCharacteristics(
                     current_schema_id, partition_field.source_id);
-                if (!source || !WhichDataType(removeNullable(source->type)).isInt32())
+                if (!source)
+                    continue;
+                const WhichDataType source_type(removeNullable(source->type));
+                if (!source_type.isInt32() && !source_type.isInt64())
                     continue;
 
                 const auto & value = partition_value[partition_field.tuple_index];
@@ -687,11 +692,26 @@ void validateSnapshotForMutation(
                     continue;
 
                 const Int64 recorded_value = value.safeGet<Int64>();
-                if (recorded_value < std::numeric_limits<Int32>::min() || recorded_value > std::numeric_limits<Int32>::max())
+                const bool fits_int
+                    = recorded_value >= std::numeric_limits<Int32>::min() && recorded_value <= std::numeric_limits<Int32>::max();
+                if (source_type.isInt32() && !fits_int)
                     throw Exception(
                         ErrorCodes::NOT_IMPLEMENTED,
                         "Iceberg DELETE and UPDATE are not supported for this table: data file `{}` has `{}` partition value {}, "
                         "which does not fit the Iceberg `int` type (written by an older ClickHouse version). "
+                        "Copy the rows into a new table to mutate them",
+                        file_entry->parsed_entry->file_path_key.serialize(),
+                        partition_field.partition_name,
+                        recorded_value);
+
+                /// Only the 32-bit wraparound of an `int` value gives a key in `int` range that is not a multiple of the width.
+                const size_t width = *transform->argument;
+                if (source_type.isInt64() && fits_int && width != 0 && width <= static_cast<size_t>(std::numeric_limits<Int32>::max())
+                    && recorded_value % static_cast<Int64>(width) != 0)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Iceberg DELETE and UPDATE are not supported for this table: data file `{}` has `{}` partition value {}, "
+                        "computed in 32-bit arithmetic before the column was promoted from `int` to `long`. "
                         "Copy the rows into a new table to mutate them",
                         file_entry->parsed_entry->file_path_key.serialize(),
                         partition_field.partition_name,

@@ -148,7 +148,28 @@ ${CH} --query "
         AND query_id IN ('${CLICKHOUSE_TEST_UNIQUE_NAME}_ml_1', '${CLICKHOUSE_TEST_UNIQUE_NAME}_ml_2', '${CLICKHOUSE_TEST_UNIQUE_NAME}_ml_3')
     ORDER BY query_id"
 
+echo '--- DELETE and UPDATE after promoting the int column to long'
+# 2147483646, the key of -2147483648, is not what truncate[10] of a long computes, so mutations are refused.
+${CH} --query "
+    CREATE TABLE t_promoted (id Int32, x Int32)
+    ENGINE = IcebergLocal('${LAKE}/t_promoted', 'Parquet') PARTITION BY icebergTruncate(10, x);
+    INSERT INTO t_promoted VALUES (1, -2147483648);
+    INSERT INTO t_promoted VALUES (2, 5);
+    ALTER TABLE t_promoted MODIFY COLUMN x Int64;"
+${CH} --query "ALTER TABLE t_promoted DELETE WHERE id = 1" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
+${CH} --query "ALTER TABLE t_promoted UPDATE id = 3 WHERE id = 1" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
+${CH} --query "SELECT id, x FROM t_promoted ORDER BY id"
+${CH} --query "
+    CREATE TABLE t_promoted_ok (id Int32, x Int32)
+    ENGINE = IcebergLocal('${LAKE}/t_promoted_ok', 'Parquet') PARTITION BY icebergTruncate(10, x);
+    INSERT INTO t_promoted_ok VALUES (1, -2147483638), (2, 5);
+    ALTER TABLE t_promoted_ok MODIFY COLUMN x Int64;
+    ALTER TABLE t_promoted_ok DELETE WHERE id = 1;
+    ALTER TABLE t_promoted_ok UPDATE id = 3 WHERE id = 2;
+    SELECT id, x FROM t_promoted_ok ORDER BY id;"
+
 ${CH} --query "
     DROP TABLE t_int; DROP TABLE t_nullable; DROP TABLE t_int16; DROP TABLE t_wide; DROP TABLE t_too_wide;
-    DROP TABLE t_too_wide_long; DROP TABLE t_long; DROP TABLE t_string; DROP TABLE legacy; DROP TABLE t_ml;"
+    DROP TABLE t_too_wide_long; DROP TABLE t_long; DROP TABLE t_string; DROP TABLE legacy; DROP TABLE t_ml;
+    DROP TABLE t_promoted; DROP TABLE t_promoted_ok;"
 rm -rf "${LAKE}"
