@@ -897,6 +897,10 @@ def test_partitioned_write_filtered_grant():
     node1.query(f"GRANT WRITE ON S3('^{minio_url}/{allowed}/.*$') TO {user}")
     # Keys starting with `allowed_<suffix>-`, so that `{_partition_id}` can be in the first segment of the key.
     node1.query(f"GRANT WRITE ON S3('^{minio_url}/{allowed}-.*$') TO {user}")
+    # A grant that allows the typed file name `{_schema_hash}.tsv`, because it contains `schema`, but not the name it expands
+    # to, which has only hex digits, so that a write is allowed only if the typed name is the one checked.
+    schema_dir = f"schema_{suffix}"
+    node1.query(f"GRANT WRITE ON S3('^{minio_url}/{schema_dir}/[^/]*schema[^/]*\\\\.tsv$') TO {user}")
     # Only file names without a dot, such as the template `{_partition_id}.tsv` and `1.tsv`, in a directory with a dot,
     # `versioned.<suffix>/`.
     versioned = f"versioned.{suffix}"
@@ -947,6 +951,11 @@ def test_partitioned_write_filtered_grant():
         assert "Not enough privileges" in insert_s3_error(f"{versioned}/1.tsv", settings={"s3_create_new_file_on_insert": 1})
         assert s3_keys(f"{versioned}/") == [f"{versioned}/1.tsv"]
         assert s3_keys(f"versioned.1.{suffix}/") == []
+
+        # Reject: an unpartitioned write whose key is expanded after the source access check: the typed
+        # `schema_<suffix>/{_schema_hash}.tsv` is inside the grant, but `schema_<suffix>/<hash>.tsv`, which is written, is not.
+        assert "Not enough privileges" in insert_s3_error(f"{schema_dir}/{{_schema_hash}}.tsv")
+        assert s3_keys(f"{schema_dir}/") == []
 
         # Reject: a partition id that makes the key fully qualified, `allowed_<suffix>-s3://root2/owned_<suffix>_1.tsv`,
         # which the object storage would write as `owned_<suffix>_1.tsv` into the bucket `root2`, while the checked URI

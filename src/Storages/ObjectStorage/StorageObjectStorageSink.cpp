@@ -196,15 +196,14 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     if (write_access_check)
         write_access_check(context, configuration->getURIForAccessCheck(file_path));
 
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, query_settings, file_path, /* sequence_number */1))
-    {
-        file_path = *new_key;
+    /// A key renamed by `s3_create_new_file_on_insert` can be outside the grant, e.g. `data.1.tsv` for `data.tsv`.
+    std::function<void(const String &)> check_new_key;
+    if (write_access_check)
+        check_new_key = [&](const String & new_key) { write_access_check(context, configuration->getURIForAccessCheck(new_key)); };
 
-        /// The new key can be outside the grant, e.g. `team.1.v1/data.tsv` for `team.v1/data.tsv`.
-        if (write_access_check)
-            write_access_check(context, configuration->getURIForAccessCheck(file_path));
-    }
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, query_settings, file_path, /* sequence_number */1, check_new_key))
+        file_path = *new_key;
 
     last_written_object_path = file_path;
 

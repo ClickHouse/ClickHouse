@@ -1094,12 +1094,20 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     const auto paths = configuration->getPaths();
     /// Unless the insert truncates, the probe below checks the first path, which is written when it is free.
     auto write_path = settings.truncate_on_insert ? paths.back().path : paths.front().path;
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
+
+    /// The written key can differ from the typed URI that the source access check covered, e.g. after `{_schema_hash}`
+    /// is expanded, so it is checked before it is probed or written.
+    if (write_access_check)
+        write_access_check(local_context, configuration->getURIForAccessCheck(write_path));
+
+    /// A key renamed by `s3_create_new_file_on_insert` can be outside the grant, e.g. `data.1.tsv` for `data.tsv`.
+    std::function<void(const String &)> check_new_key;
+    if (write_access_check)
+        check_new_key = [&](const String & new_key) { write_access_check(local_context, configuration->getURIForAccessCheck(new_key)); };
+
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, settings, paths.front().path, paths.size(), check_new_key))
     {
-        /// The new key is computed at write time and can be outside the grant that the typed URI passed,
-        /// e.g. `data.1.tsv` for `data.tsv` with a grant on `data\.tsv`.
-        if (write_access_check)
-            write_access_check(local_context, configuration->getURIForAccessCheck(*new_key));
         configuration->addPath({*new_key});
         write_path = *new_key;
     }
