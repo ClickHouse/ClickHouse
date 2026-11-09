@@ -214,7 +214,7 @@ JOB_START = time.monotonic()
 # confirmation rerun, the fallback's CIDB lookup, the uploads' minimum below, packing the logs and
 # writing the result.
 JOB_END_RESERVE_SEC = 300
-# The uploads get at least this long, however late the job is.
+# The uploads, and the dashboard gate after them, get at least this long, however late the job is.
 DASHBOARD_MIN_UPLOAD_SEC = 60
 # compare.sh's confirmation reruns end this long before `job_end`: after them, the rest of the report,
 # the uploads and the dashboard gate take about two minutes.
@@ -1051,9 +1051,7 @@ def create_log_export_configs():
         # is the one whose `system.settings` probe can fail; the patched server
         # is the side the check reports on, and it keeps its export.
         try:
-            if not log_export.create_config(config_dir, host, password):
-                print(f"WARNING: Failed to write the log export config into [{config_dir}]")
-                continue
+            log_export.create_config(config_dir, host, password)
             write_ci_logs_sender_user(config_dir, binary)
         except Exception:
             traceback.print_exc()
@@ -1191,7 +1189,8 @@ class CIDBUnavailableReason(str):
 
 
 def job_end(info):
-    """Until when the dashboard gate and its confirmation may run so that the job ends before its timeout."""
+    """Until when the dashboard confirmation may run so that the job ends before its timeout; the uploads
+    and the gate too, unless the job is already late (`upload_budget`)."""
     config = info.job_config
     timeout = config.get("timeout") if isinstance(config, Mapping) else getattr(config, "timeout", None)
     if not isinstance(timeout, (int, float)) or timeout <= 0:
@@ -1906,18 +1905,23 @@ def dashboard_did_not_answer(status, body):
     return status >= 500 and any(s in message for s in DASHBOARD_OUTAGE_SIGNATURES)
 
 
-def dashboard_api_get(path, params=None, timeout_sec=60):
+def dashboard_api_get(path, params=None, *, deadline):
     """GET `path` from the dashboard API and return the decoded JSON body.
 
     Every failure, transport or HTTP, is raised as `PerfDashboardError` so the
     caller can retry the whole step or fail the check with the reason. It is a
     `PerfDashboardUnavailable` when the dashboard did not answer: a transport
-    failure, or an HTTP error that `dashboard_did_not_answer` recognizes."""
+    failure, or an HTTP error that `dashboard_did_not_answer` recognizes.
+    No request starts after `deadline`. Each socket operation of a request
+    waits at most 60 s, or the time that was left when the request started."""
     url = f"{PERF_DASHBOARD_API_URL}{path}"
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise PerfDashboardUnavailable(f"no time left for a request to [{url}]")
     try:
-        with urllib.request.urlopen(url, timeout=timeout_sec) as response:
+        with urllib.request.urlopen(url, timeout=min(60, remaining)) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         try:
@@ -1943,7 +1947,7 @@ def dashboard_list(data, key):
     return value
 
 
-def dashboard_run_id(info):
+def dashboard_run_id(info, deadline):
     """The dashboard's identifier of the comparison run this job belongs to.
 
     PR runs are keyed by PR number and head sha. Master runs carry a
@@ -1951,7 +1955,7 @@ def dashboard_run_id(info):
     sha; the newest run for the sha is the one this job uploads into."""
     if info.pr_number:
         return f"pr-{info.pr_number}-{info.sha}"
-    data = dashboard_api_get("/runs", {"scope": "master", "q": info.sha[:12]})
+    data = dashboard_api_get("/runs", {"scope": "master", "q": info.sha[:12]}, deadline=deadline)
     identities = []
     for item in dashboard_list(data, "items"):
         identity = item.get("identity") if isinstance(item, dict) else None
@@ -1986,11 +1990,12 @@ def read_shard_queries(metrics_tsv_path):
     return tests, queries
 
 
-def dashboard_has_shard(run_id, arch, test):
+def dashboard_has_shard(run_id, arch, test, deadline):
     """True once the dashboard serves this arch's data for `test`, i.e. the
     tables uploaded by this job in the REPORT stage are visible."""
     data = dashboard_api_get(
-        f"/runs/{urllib.parse.quote(run_id)}/tests/{urllib.parse.quote(test)}"
+        f"/runs/{urllib.parse.quote(run_id)}/tests/{urllib.parse.quote(test)}",
+        deadline=deadline,
     )
     tables = dashboard_list(data, "testTimes")
     if not all(isinstance(table, dict) and isinstance(table.get("title"), str) for table in tables):
@@ -2005,11 +2010,12 @@ def dashboard_query_link(run_id, test, query_index):
     )
 
 
-def fetch_dashboard_slowdowns(run_id, arch, shard_queries):
+def fetch_dashboard_slowdowns(run_id, arch, shard_queries, deadline):
     """Slowdown rows of this shard with the dashboard's confidence tier."""
     data = dashboard_api_get(
         f"/runs/{urllib.parse.quote(run_id)}/confidence",
         {"metrics": DASHBOARD_GATE_METRIC},
+        deadline=deadline,
     )
     rows = []
     for row in dashboard_list(data, "slowdowns"):
@@ -2085,9 +2091,9 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
             )
         try:
             if run_id is None:
-                run_id = dashboard_run_id(info)
-            if dashboard_has_shard(run_id, arch, tests[0]):
-                rows = fetch_dashboard_slowdowns(run_id, arch, shard_queries)
+                run_id = dashboard_run_id(info, deadline)
+            if dashboard_has_shard(run_id, arch, tests[0], deadline):
+                rows = fetch_dashboard_slowdowns(run_id, arch, shard_queries, deadline)
                 break
             reason = f"run [{run_id}] has no {arch} data for test [{tests[0]}] yet"
         except PerfDashboardUnavailable as e:
@@ -3553,7 +3559,7 @@ def main():
         res = results[-1].is_ok()
 
     # In `master_head` mode the dashboard gate judges the shard on these
-    # uploads, so its wait ends by their deadline, and by `end` at the latest.
+    # uploads, so its wait ends by their deadline.
     upload_deadline = None
     if compare_against_master:
         budget = upload_budget(end)
@@ -3808,7 +3814,7 @@ def main():
                         info,
                         get_perf_arch(),
                         f"{perf_wd}/report/all-query-metrics.tsv",
-                        upload_deadline if end is None else min(upload_deadline, end),
+                        upload_deadline,
                         missing_dashboard_inputs,
                     )
                     dashboard_regressions = confirm_dashboard_regressions(
