@@ -258,23 +258,34 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
 {
     number_of_rows_in_part = data_part->getRowCount();
 
-    /// Remember all columns that are read from the part. Some of them are read only by `PREWHERE` steps
-    /// and are absent from the result block, so they cannot be measured in `update` and keep this estimation.
-    NameSet names_set(columns.begin(), columns.end());
-    for (const auto & column : sample_block)
-    {
-        if (names_set.contains(column.name))
-            columns_from_part.insert(column);
-    }
-
     /// Initialize with sample block until update won't called.
     initialize(sample_block, {}, columns);
 }
 
 void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update)
 {
-    fixed_columns_bytes_per_row = 0;
-    dynamic_columns_infos.clear();
+    /// Columns that are read only by `PREWHERE` steps are absent from the result block (the header of the reading step
+    /// contains only columns that are used later in the query), but they still occupy memory while the block is being read.
+    /// Their sizes cannot be measured in `update`, so they keep the estimation obtained from the part in the constructor.
+    size_t prewhere_only_fixed_columns_bytes_per_row = 0;
+    std::vector<ColumnInfo> prewhere_only_dynamic_columns_infos;
+    if (from_update)
+    {
+        for (const auto & [column_name, size_of_value] : fixed_columns_from_part)
+        {
+            if (!sample_block.has(column_name))
+                prewhere_only_fixed_columns_bytes_per_row += size_of_value;
+        }
+
+        for (auto & info : dynamic_columns_infos)
+        {
+            if (!sample_block.has(info.name))
+                prewhere_only_dynamic_columns_infos.push_back(std::move(info));
+        }
+    }
+
+    fixed_columns_bytes_per_row = prewhere_only_fixed_columns_bytes_per_row;
+    dynamic_columns_infos = std::move(prewhere_only_dynamic_columns_infos);
 
     std::unordered_set<String> names_set;
     if (!from_update)
@@ -298,8 +309,11 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         if ((!column_from_part || !column_from_part->isSubcolumn()) && column_data->valuesHaveFixedSize())
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
-            fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
+            fixed_columns_bytes_per_row += size_of_value;
             max_size_per_row_fixed = std::max(max_size_per_row_fixed, static_cast<double>(size_of_value));
+
+            if (!from_update)
+                fixed_columns_from_part.emplace_back(column_name, size_of_value);
         }
         else
         {
@@ -351,14 +365,8 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
     if (!is_initialized_in_update)
     {
         /// Reinitialize with read block to update estimation for DEFAULT and MATERIALIZED columns without data.
-        /// Columns that are read only by `PREWHERE` steps are not in the result block (the header of the reading step
-        /// contains only columns that are used later in the query), but they still occupy memory while the block
-        /// is being read. Keep them with the estimation obtained from the part.
-        Block block = sample_block.cloneWithColumns(columns);
-        for (const auto & column : columns_from_part)
-            block.insertUnique(column);
-
-        initialize(block, block.getColumns(), {}, true);
+        /// Columns that are read only by `PREWHERE` steps are absent from the read block and keep the estimation from the part.
+        initialize(sample_block, columns, {}, true);
         is_initialized_in_update = true;
     }
 
