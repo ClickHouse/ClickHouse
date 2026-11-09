@@ -18,7 +18,10 @@ Endpoints:
   POST /v1/embeddings_slow           — like `/v1/embeddings`, but slow in the same way.
   POST /v1/chat/hang                 — like `/v1/chat/slow`, but sleeps HANG_RESPONSE_SECONDS, so a
       request is still in flight when the server shuts down.
-  POST /v1/chat/jitter               — like `/v1/chat/completions` without a schema (echoes the user
+  POST /v1/chat/slow_first           — like `/v1/chat/completions` without a schema, but the request
+      with the user message `0` sleeps SLOW_FIRST_RESPONSE_SECONDS. `/concurrency` reports in
+      `served_while_slow` how many other requests were served while it was in flight.
+  POST /v1/chat/jitter              — like `/v1/chat/completions` without a schema (echoes the user
       message), but sleeps a random 0 to JITTER_MAX_SECONDS first, so concurrent requests complete out
       of order.
   GET  /set-flaky?count=N            — arm the flaky endpoints below to fail their next N requests
@@ -107,6 +110,13 @@ JITTER_MAX_SECONDS = 0.3
 # Requests the slow endpoints have served, and the high-water mark of how many they were serving
 # simultaneously, since the last `/reset-concurrency`. Guarded by `_LOCK`.
 CONCURRENCY = {"requests": 0, "in_flight": 0, "max_concurrency": 0}
+
+# How long the slow request of `/v1/chat/slow_first` takes to answer.
+SLOW_FIRST_RESPONSE_SECONDS = 2
+
+# Whether the slow request of `/v1/chat/slow_first` is in flight, and how many other requests were
+# served meanwhile, since the last `/reset-concurrency`. Guarded by `_LOCK`.
+SLOW_FIRST = {"in_flight": False, "served_while_slow": 0}
 
 
 def extract_user_message(body):
@@ -284,6 +294,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 snapshot = {
                     "requests": CONCURRENCY["requests"],
                     "max_concurrency": CONCURRENCY["max_concurrency"],
+                    "served_while_slow": SLOW_FIRST["served_while_slow"],
                 }
             self._send_json(200, snapshot)
             return
@@ -291,6 +302,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if parsed.path == "/reset-concurrency":
             with _LOCK:
                 CONCURRENCY.update(requests=0, in_flight=0, max_concurrency=0)
+                SLOW_FIRST.update(in_flight=False, served_while_slow=0)
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
@@ -363,6 +375,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/v1/chat/hang":
             self._serve_slowly(lambda: make_success_response(extract_user_message(body)), HANG_RESPONSE_SECONDS)
+            return
+
+        if parsed.path == "/v1/chat/slow_first":
+            message = extract_user_message(body)
+            if message == "0":
+                with _LOCK:
+                    SLOW_FIRST["in_flight"] = True
+                try:
+                    time.sleep(SLOW_FIRST_RESPONSE_SECONDS)
+                finally:
+                    with _LOCK:
+                        SLOW_FIRST["in_flight"] = False
+            else:
+                with _LOCK:
+                    if SLOW_FIRST["in_flight"]:
+                        SLOW_FIRST["served_while_slow"] += 1
+            self._send_json(200, make_success_response(message))
             return
 
         if parsed.path == "/v1/chat/jitter":

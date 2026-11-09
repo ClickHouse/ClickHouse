@@ -207,7 +207,7 @@ The AI functions differ from most traditional ClickHouse functions in that their
 The default is `8`. A value above `1` loosens two guarantees:
 
 - A request's token usage is only known once its response arrives, so [`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) and [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) may overshoot by one request's worth per request in flight, rather than by one request's worth in total.
-- A wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, as many requests as the concurrency allows.
+- Requests for later rows are dispatched while earlier ones are in flight, so a query that fails on its first row may still have issued, and been billed for, requests for other rows. No request is dispatched once one has failed.
 
 [`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
 

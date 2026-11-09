@@ -10804,7 +10804,7 @@ A query running on several threads (at most `max_threads`) can have up to this m
 A value above `1` loosens two guarantees:
 
 - A request's token usage is only known once its response arrives, so the token quotas (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) may overshoot by one request's worth per request in flight - that is, by up to this many requests' worth rather than by one.
-- A whole wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, up to this many requests.
+- Requests for later rows are dispatched while earlier ones are in flight, so a query that fails on its first row may still have issued, and been billed for, requests for other rows. No request is dispatched once one has failed.
 
 `ai_function_max_api_calls_per_query` is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
 )", BETA, \

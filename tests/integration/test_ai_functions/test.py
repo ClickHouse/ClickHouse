@@ -125,6 +125,13 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"api_key = 'test-key'"
         )
         instance.query(
+            f"CREATE NAMED COLLECTION ai_slow_first AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/slow_first', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
             f"CREATE NAMED COLLECTION ai_jitter AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/jitter', "
@@ -2894,6 +2901,22 @@ def test_max_concurrent_requests_keeps_api_call_quota_exact(started_cluster):
         "is an exact cap even with concurrent requests"
     )
     assert int(get_profile_events(qid)["api_calls"]) == 5
+
+
+def test_slow_request_does_not_hold_up_other_rows(started_cluster):
+    """A slow request holds only its own slot: the other rows are requested while it is in flight,
+    and every row still gets its own response."""
+    _reset_concurrency()
+    result = instance.query(
+        "SELECT countIf(aiGenerate(toString(number), map('credentials', 'ai_slow_first')) = toString(number)) "
+        "FROM numbers(20)",
+        settings={"ai_function_max_concurrent_requests_per_thread": 2},
+    ).strip()
+    assert result == "20", f"expected every row to get its own response, got {result}"
+    served_while_slow = _concurrency_stats()["served_while_slow"]
+    assert served_while_slow >= 10, (
+        f"only {served_while_slow} of the other 19 rows were served while the slow request was in flight"
+    )
 
 
 def test_concurrent_responses_map_to_their_rows(started_cluster):

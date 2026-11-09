@@ -182,16 +182,6 @@ namespace
 
 constexpr auto cancellation_check_interval = std::chrono::milliseconds(100);
 
-/// Waits for a submitted request. Throws once the query is killed or exceeds its time limit,
-/// so a request queued behind other queries' requests does not hold the query.
-template <typename Response>
-std::optional<Response> waitForRequest(std::future<std::optional<Response>> & request, const AIQuotaTracker & quota)
-{
-    while (request.wait_for(cancellation_check_interval) != std::future_status::ready)
-        quota.throwIfCancelled();
-    return request.get();
-}
-
 /// Waits for the submitted requests to finish, until the query is killed or exceeds its time limit.
 /// The tasks own everything they use, so they may outlive the query.
 template <typename Response>
@@ -204,6 +194,52 @@ void drainRequests(VectorWithMemoryTracking<std::future<std::optional<Response>>
         while (request.wait_for(cancellation_check_interval) != std::future_status::ready)
             if (quota.isCancelled())
                 return;
+    }
+}
+
+template <typename Response>
+bool isPending(const std::future<std::optional<Response>> & request)
+{
+    return request.valid() && request.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+}
+
+/// Issues requests for items `0..count-1` with at most `max_in_flight` of them in flight, and passes their
+/// responses to `apply` in item order. A completed request frees its slot while earlier ones are in flight.
+/// `submit(i, completions)` returns an empty future when item `i` issues no request; `apply(i, response)` then
+/// receives nothing, as it does for a request that failed with `ai_function_throw_on_error` disabled.
+/// No request is issued once one has thrown. Throws once the query is killed or exceeds its time limit.
+template <typename Response, typename Submit, typename Apply>
+void runRequestsInSlidingWindow(size_t count, size_t max_in_flight, const AIQuotaTracker & quota, Submit && submit, Apply && apply)
+{
+    auto completions = std::make_shared<AIRequestCompletions>();
+    VectorWithMemoryTracking<std::future<std::optional<Response>>> requests(count);
+
+    /// Wait for the issued requests to complete on error, so that API-call and request counts are recorded.
+    /// They were already dispatched and billed either way. A cancelled query does not wait.
+    SCOPE_EXIT_SAFE({ drainRequests(requests, quota); });
+
+    size_t submitted = 0;
+    size_t issued = 0;
+    size_t completed = 0;
+    for (size_t applied = 0; applied < count; ++applied)
+    {
+        while (applied == submitted || isPending(requests[applied]))
+        {
+            if (submitted < count && issued - completed < max_in_flight && !completions->hasFailed())
+            {
+                requests[submitted] = submit(submitted, completions);
+                issued += requests[submitted].valid();
+                ++submitted;
+                continue;
+            }
+            completed = completions->waitForMoreThan(completed, cancellation_check_interval);
+            quota.throwIfCancelled();
+        }
+
+        std::optional<Response> response;
+        if (requests[applied].valid())
+            response = requests[applied].get();
+        apply(applied, std::move(response));
     }
 }
 
@@ -423,77 +459,53 @@ void FunctionBaseAI::embedTexts(
 
     /// Equivalent to (n + max_batch_size - 1) / max_batch_size but can't overflow
     const size_t num_batches = inputs.empty() ? 0 : 1 + (inputs.size() - 1) / max_batch_size;
-    const size_t concurrency = std::min(max_concurrent_requests, num_batches);
 
-    /// Batches go out in waves of size `concurrency` and each completed wave is applied before the next
-    /// one starts, so at most that many of this call's requests are in flight at a time.
-    VectorWithMemoryTracking<std::future<std::optional<AIEmbeddingResponse>>> wave;
-    wave.reserve(concurrency);
-
-    /// Wait for all waves to complete on error, so that API-call and request counts are recorded
-    /// They were already dispatched and billed either way. A cancelled query does not wait.
-    SCOPE_EXIT_SAFE({ drainRequests(wave, *quota); });
-
-    for (size_t wave_begin = 0; wave_begin < num_batches; wave_begin += concurrency)
+    auto submit = [&](size_t batch, const AIRequestCompletionsPtr & completions)
     {
-        const size_t wave_end = std::min(wave_begin + concurrency, num_batches);
+        /// Once the quota is exhausted nothing more is issued, and the batch's inputs stay empty.
+        if (quota->checkQuotas())
+            return std::future<std::optional<AIEmbeddingResponse>>();
 
-        wave.clear();
-        /// fire off `concurrency` batches at a time
-        for (size_t batch = wave_begin; batch < wave_end; ++batch)
+        const size_t begin = batch * max_batch_size;
+        const size_t end = std::min(begin + max_batch_size, inputs.size());
+
+        AIEmbeddingRequest ai_embedding_request;
+        ai_embedding_request.model = model;
+        ai_embedding_request.dimensions = dimensions;
+        ai_embedding_request.function_name = function_name;
+        ai_embedding_request.query_id = query_id;
+        ai_embedding_request.initial_query_id = initial_query_id;
+        ai_embedding_request.inputs.reserve(end - begin);
+        for (size_t k = begin; k < end; ++k)
+            ai_embedding_request.inputs.emplace_back(inputs[k]);
+
+        return submitAIRequest(provider, std::move(ai_embedding_request), policy, quota, completions);
+    };
+
+    auto apply = [&](size_t batch, std::optional<AIEmbeddingResponse> ai_embedding_response)
+    {
+        const size_t begin = batch * max_batch_size;
+        const size_t end = std::min(begin + max_batch_size, inputs.size());
+
+        /// Nothing when no request was issued for this batch, or when it failed and
+        /// `ai_function_throw_on_error` is disabled; either way its inputs stay empty.
+        if (!ai_embedding_response)
         {
-            /// Once the quota is exhausted nothing more is issued, so the batch's slot stays an
-            /// empty future and its inputs stay empty.
-            if (quota->checkQuotas())
-            {
-                wave.emplace_back();
-                continue;
-            }
-
-            const size_t begin = batch * max_batch_size;
-            const size_t end = std::min(begin + max_batch_size, inputs.size());
-
-            AIEmbeddingRequest ai_embedding_request;
-            ai_embedding_request.model = model;
-            ai_embedding_request.dimensions = dimensions;
-            ai_embedding_request.function_name = function_name;
-            ai_embedding_request.query_id = query_id;
-            ai_embedding_request.initial_query_id = initial_query_id;
-            ai_embedding_request.inputs.reserve(end - begin);
-            for (size_t k = begin; k < end; ++k)
-                ai_embedding_request.inputs.emplace_back(inputs[k]);
-
-            wave.push_back(submitAIRequest(provider, std::move(ai_embedding_request), policy, quota));
+            result.texts_skipped += end - begin;
+            return;
         }
 
-        /// get the results for our `concurrency` batches
-        for (size_t k = 0; k < wave.size(); ++k)
+        chassert(ai_embedding_response->embeddings.size() == end - begin,
+            "Number of inputs does not match number of output embeddings");
+
+        for (size_t j = 0; j < ai_embedding_response->embeddings.size(); ++j)
         {
-            const size_t begin = (wave_begin + k) * max_batch_size;
-            const size_t end = std::min(begin + max_batch_size, inputs.size());
-
-            /// Nothing when no request was issued for this batch, or when it failed and
-            /// `ai_function_throw_on_error` is disabled; either way its inputs stay empty.
-            std::optional<AIEmbeddingResponse> ai_embedding_response;
-            if (wave[k].valid())
-                ai_embedding_response = waitForRequest(wave[k], *quota);
-
-            if (!ai_embedding_response)
-            {
-                result.texts_skipped += end - begin;
-                continue;
-            }
-
-            chassert(ai_embedding_response->embeddings.size() == end - begin,
-                "Number of inputs does not match number of output embeddings");
-
-            for (size_t j = 0; j < ai_embedding_response->embeddings.size(); ++j)
-            {
-                result.embeddings[begin + j] = std::move(ai_embedding_response->embeddings[j]);
-                ++result.texts_embedded;
-            }
+            result.embeddings[begin + j] = std::move(ai_embedding_response->embeddings[j]);
+            ++result.texts_embedded;
         }
-    }
+    };
+
+    runRequestsInSlidingWindow<AIEmbeddingResponse>(num_batches, max_concurrent_requests, *quota, submit, apply);
 }
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -554,78 +566,53 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
     });
 
-    const size_t concurrency = std::min<UInt64>(settings[Setting::ai_function_max_concurrent_requests_per_thread].value, input_rows_count);
-
-    /// Requests go out in waves of `concurrency` rows, and each completed wave is applied to the
-    /// result column in row order. A wave waits for its slowest request before the next one starts,
-    /// which gives up a little throughput next to a sliding window, but keeps row ordering, quota
-    /// accounting and error propagation identical to issuing the requests one at a time.
-    VectorWithMemoryTracking<std::future<std::optional<AIResponse>>> wave;
-    wave.reserve(concurrency);
-
-    /// Wait for all waves to complete on error, so that API-call and request counts are recorded
-    /// They were already dispatched and billed either way. A cancelled query does not wait.
-    SCOPE_EXIT_SAFE({ drainRequests(wave, *quota_tracker); });
-
-    for (size_t wave_begin = 0; wave_begin < input_rows_count; wave_begin += concurrency)
+    auto submit = [&](size_t row, const AIRequestCompletionsPtr & completions)
     {
-        const size_t wave_end = std::min(wave_begin + concurrency, input_rows_count);
+        /// A NULL prompt produces NULL, and once the quota is exhausted a row keeps its default
+        /// value. Neither issues a request.
+        if ((prompt_nullable && prompt_nullable->getNullMapData()[row]) || quota_tracker->checkQuotas())
+            return std::future<std::optional<AIResponse>>();
 
-        wave.clear();
-        for (size_t row = wave_begin; row < wave_end; ++row)
+        AIChatRequest ai_request;
+        ai_request.system_prompt = system_prompt;
+        ai_request.user_message = sanitizeForModel(buildUserMessage(arguments, row));
+        ai_request.response_format = response_format;
+        ai_request.model = model;
+        ai_request.temperature = temperature;
+        ai_request.max_tokens = max_tokens;
+        ai_request.function_name = getName();
+        ai_request.query_id = query_id;
+        ai_request.initial_query_id = initial_query_id;
+
+        return submitAIRequest(provider, std::move(ai_request), policy, quota_tracker, completions);
+    };
+
+    auto apply = [&](size_t row, std::optional<AIResponse> ai_response)
+    {
+        /// A NULL prompt produces NULL without a request.
+        if (prompt_nullable && prompt_nullable->getNullMapData()[row])
         {
-            /// A NULL prompt produces NULL, and once the quota is exhausted a row keeps its default
-            /// value. Neither issues a request, so the row's slot stays an empty future.
-            if ((prompt_nullable && prompt_nullable->getNullMapData()[row]) || quota_tracker->checkQuotas())
-            {
-                wave.emplace_back();
-                continue;
-            }
-
-            AIChatRequest ai_request;
-            ai_request.system_prompt = system_prompt;
-            ai_request.user_message = sanitizeForModel(buildUserMessage(arguments, row));
-            ai_request.response_format = response_format;
-            ai_request.model = model;
-            ai_request.temperature = temperature;
-            ai_request.max_tokens = max_tokens;
-            ai_request.function_name = getName();
-            ai_request.query_id = query_id;
-            ai_request.initial_query_id = initial_query_id;
-
-            wave.push_back(submitAIRequest(provider, std::move(ai_request), policy, quota_tracker));
+            result_col->insertDefault();
+            null_map_col->getData()[row] = 1;
+            return;
         }
 
-        for (size_t k = 0; k < wave.size(); ++k)
+        /// Nothing when no request was issued because the API-call quota was exhausted, or when
+        /// the request failed and `ai_function_throw_on_error` is disabled; either way the row
+        /// keeps its default value.
+        if (!ai_response)
         {
-            const size_t row = wave_begin + k;
-
-            /// A NULL prompt produces NULL without a request.
-            if (prompt_nullable && prompt_nullable->getNullMapData()[row])
-            {
-                result_col->insertDefault();
-                null_map_col->getData()[row] = 1;
-                continue;
-            }
-
-            /// Nothing when no request was issued because the API-call quota was exhausted, or when
-            /// the request failed and `ai_function_throw_on_error` is disabled; either way the row
-            /// keeps its default value.
-            std::optional<AIResponse> ai_response;
-            if (wave[k].valid())
-                ai_response = waitForRequest(wave[k], *quota_tracker);
-
-            if (!ai_response)
-            {
-                result_col->insertDefault();
-                ++rows_skipped;
-                continue;
-            }
-
-            insertProcessedResult(*result_col, postProcessResponse(ai_response->result));
-            ++rows_processed;
+            result_col->insertDefault();
+            ++rows_skipped;
+            return;
         }
-    }
+
+        insertProcessedResult(*result_col, postProcessResponse(ai_response->result));
+        ++rows_processed;
+    };
+
+    runRequestsInSlidingWindow<AIResponse>(
+        input_rows_count, settings[Setting::ai_function_max_concurrent_requests_per_thread].value, *quota_tracker, submit, apply);
 
     if (result_type->isNullable())
     {
