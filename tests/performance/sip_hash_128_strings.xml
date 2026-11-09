@@ -20,13 +20,11 @@
     <query>SELECT count() FROM fixed_strings_16 WHERE NOT ignore(sipHash128(s)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(sipHash128(SearchPhrase)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(sipHash128(URL)) SETTINGS max_threads = 1</query>
-    <query>SELECT uniqExact(s) FROM strings_0_15 GROUP BY rowNumberInBlock() % 1000 SETTINGS max_threads = 1</query>
     <query>SELECT uniqExact(s) FROM strings_16_64 GROUP BY rowNumberInBlock() % 1000 SETTINGS max_threads = 1</query>
     <query>SELECT uniqExact(s) FROM strings_0_300 GROUP BY rowNumberInBlock() % 1000 SETTINGS max_threads = 1</query>
     <query>SELECT uniqExact(s) FROM strings_1000_2000 GROUP BY rowNumberInBlock() % 1000 SETTINGS max_threads = 1</query>
     <query>SELECT uniqExact(s) FROM fixed_strings_16 GROUP BY rowNumberInBlock() % 1000 SETTINGS max_threads = 1</query>
     <query>SELECT uniqExact(s) FROM ipv6s GROUP BY rowNumberInBlock() % 1000 SETTINGS max_threads = 1</query>
-    <query>SELECT uniqExact(s) FROM strings_0_15 SETTINGS max_threads = 1, optimize_uniq_exact_radix_partitioning = 0</query>
     <query>SELECT uniqExact(s) FROM strings_16_64 SETTINGS max_threads = 1, optimize_uniq_exact_radix_partitioning = 0</query>
     <query>SELECT uniqExact(s) FROM strings_0_300 SETTINGS max_threads = 1, optimize_uniq_exact_radix_partitioning = 0</query>
     <query>SELECT uniqExact(s) FROM strings_1000_2000 SETTINGS max_threads = 1, optimize_uniq_exact_radix_partitioning = 0</query>
