@@ -4,6 +4,8 @@
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
 
+#include <span>
+
 
 namespace DB
 {
@@ -47,7 +49,7 @@ protected:
 
     void resetFormatterImpl() override;
 
-    void writeLine(const std::vector<String> & values);
+    void writeLine(std::span<const String> values);
 
     FormatSettings settings;
     bool with_names;
