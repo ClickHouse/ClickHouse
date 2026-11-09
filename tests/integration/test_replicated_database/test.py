@@ -1887,6 +1887,73 @@ def test_sync_database_replica_strict(started_cluster):
     dummy_node.query("drop database if exists strict_sync sync")
 
 
+def test_drop_database_while_worker_drops_table_sync(started_cluster):
+    # `DROP DATABASE` checks every table before it stops the replication worker. It must release them before
+    # `stopReplication`: the worker may be executing a `DROP TABLE ... SYNC` from another replica, which waits until
+    # nothing else holds the table, while `stopReplication` waits for the worker.
+    db = "drop_db_while_drop_table_sync"
+    failpoint = "database_replicated_stop_entry_execution"
+    main_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    dummy_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    main_node.query(
+        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'replica1')"
+    )
+    dummy_node.query(
+        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'replica2')"
+    )
+    main_node.query(f"CREATE TABLE {db}.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+    def logged_checking_task(entry):
+        for _ in range(10):
+            if dummy_node.contains_in_log(f"DDLWorker({db}): Checking task {entry}"):
+                return True
+            time.sleep(0.5)
+        return False
+
+    dummy_node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        main_node.query(
+            f"DROP TABLE {db}.t SYNC", settings={"distributed_ddl_task_timeout": 0}
+        )
+        entry = main_node.query(
+            f"SELECT max(name) FROM system.zookeeper WHERE path = '/clickhouse/databases/{db}/log'"
+        ).strip()
+        # Builds with `chassert` first pause in its dry run in `DDLWorker::scheduleTasks`, which does not execute
+        # the entry. Only the pass that executes it logs "Checking task".
+        for _ in range(3):
+            dummy_node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+            if logged_checking_task(entry):
+                break
+            dummy_node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        else:
+            pytest.fail(
+                f"The worker of replica2 did not pause before executing {entry}"
+            )
+
+        query_id = f"{db}_{generate_random_string()}"
+        drop = dummy_node.get_query_request(
+            f"DROP DATABASE {db} SYNC", query_id=query_id, timeout=120
+        )
+        assert_eq_with_retry(
+            dummy_node,
+            f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'",
+            "1\n",
+        )
+        # Let it reach `stopReplication`.
+        time.sleep(3)
+    finally:
+        dummy_node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    # Times out if `DROP DATABASE` still holds the table.
+    drop.get_answer()
+    assert (
+        dummy_node.query(f"SELECT count() FROM system.databases WHERE name = '{db}'")
+        == "0\n"
+    )
+    main_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
 def test_system_database_replicas_with_ro(started_cluster):
     prefix = generate_random_string()
     database_1 = f"{prefix}_test_system_database_replicas_1"

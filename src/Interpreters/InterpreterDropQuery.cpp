@@ -33,6 +33,10 @@
 
 #include "config.h"
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
@@ -578,11 +582,20 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         }
 
         /// Last, because these checks may consume `force_drop_table`.
+        const fs::path force_drop_file = fs::path(table_context->getFlagsPath()) / "force_drop_table";
         for (const auto & table : tables_to_check)
         {
+            bool force_drop_file_existed = fs::exists(force_drop_file);
             table->checkTableCanBeDropped(table_context);
-            tables_with_checked_drop.insert(table);
+            /// A table under the limit is checked again in `executeToTableImpl`, after `flushAndPrepareForShutdown`, so a
+            /// table that grows in between is still refused. The table that consumed the flag cannot be checked again.
+            if (force_drop_file_existed && !fs::exists(force_drop_file))
+                tables_with_checked_drop.insert(table);
         }
+
+        /// A table reference held here would block a `DROP TABLE ... SYNC` the replication worker is executing, which
+        /// waits until nothing else holds the table, while `stopReplication` waits for the worker.
+        tables_to_check.clear();
         database->stopReplication();
     }
 
