@@ -1878,22 +1878,32 @@ void AlterCommands::apply(
 
     const bool columns_changed = metadata_copy.columns != metadata.columns;
 
+    /// Keys must be what CREATE and a reload resolve in the global context (parts persist their types),
+    /// so a session setting must not decide them here either.
+    ContextPtr key_context = context->getGlobalContext();
+    if (context->isAnalyzingBackgroundExpressions())
+    {
+        auto background_key_context = Context::createCopy(key_context);
+        background_key_context->setAnalyzingBackgroundExpressions(true);
+        key_context = background_key_context;
+    }
+
     /// Changes in columns may lead to changes in keys expression.
-    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
         metadata_copy.primary_key = KeyDescription::getPrimaryKeyFromAST(
-            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, context);
+            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, key_context);
     }
     else
     {
-        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
-        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
 
     /// Derived inputs and types can change even when the partition key output structure does not.
     if (metadata_copy.minmax_count_projection && columns_changed)
@@ -1902,12 +1912,12 @@ void AlterCommands::apply(
         auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
         FunctionNameNormalizer::visit(partition_key.get());
         metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
+            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, key_context));
     }
 
     // /// And in sample key expression
     if (metadata_copy.sampling_key.definition_ast != nullptr)
-        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
 
     /// Changes in columns may lead to changes in secondary indices
     const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
