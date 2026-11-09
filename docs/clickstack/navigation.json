@@ -356,6 +356,7 @@
             "clickstack/managed-onboarding/instrument-application-serverless",
             "clickstack/managed-onboarding/instrument-application",
             "clickstack/managed-onboarding/managed-getting-started",
+            "clickstack/managed-onboarding/migrating-from-datadog-serverless",
             "clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless",
             "clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs",
             "clickstack/managed-onboarding/monitoring-kubernetes-serverless",

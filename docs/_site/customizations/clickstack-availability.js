@@ -837,6 +837,12 @@
       "/clickstack/self-configured/managed-onboarding/managed-getting-started"
     ]
   ],
+  "/clickstack/managed-onboarding/migrating-from-datadog-serverless": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/migrating-from-datadog-serverless"
+    ]
+  ],
   "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs": [
     [
       "Open Source",
