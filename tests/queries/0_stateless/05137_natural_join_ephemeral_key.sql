@@ -34,8 +34,8 @@ SELECT * FROM p0 NATURAL JOIN p1 ORDER BY ALL;
 -- A `USING` key naming an `EPHEMERAL` column is rejected because the column is not readable, and the
 -- rejection does not depend on how the left side is spelled either.
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
-SELECT CAST(e, 'UInt8') AS e FROM e0 JOIN e1 USING (e); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
-SELECT CAST(e, 'UInt8') AS e FROM merge(currentDatabase(), '^e0$') AS m JOIN e1 USING (e); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+SELECT CAST(e, 'UInt8') AS e FROM e0 JOIN e1 USING (e); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT CAST(e, 'UInt8') AS e FROM merge(currentDatabase(), '^e0$') AS m JOIN e1 USING (e); -- { serverError UNKNOWN_IDENTIFIER }
 
 DROP TABLE p1;
 DROP TABLE p0;
