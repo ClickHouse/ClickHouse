@@ -1013,7 +1013,7 @@ void checkNoExpressionsOutsideOfChildren(const IAST & ast)
 
 }
 
-void validateStoredExpressionForAIAgent(const String & expression, std::string_view origin, bool allow_schema_access)
+Strings validateStoredExpressionForAIAgent(const String & expression, std::string_view origin, bool allow_schema_access)
 {
     ParserExpression parser;
     const ASTPtr ast = parseQuery(
@@ -1021,6 +1021,11 @@ void validateStoredExpressionForAIAgent(const String & expression, std::string_v
 
     try
     {
+        /// A scalar subquery of the expression (`x < (SELECT ... FROM numbers(10) SETTINGS
+        /// make_distributed_plan = 1)`) is a query of its own, with the same ways around the
+        /// sandbox as the query of the tool.
+        checkNoQueryParameters(*ast);
+        checkNoProtectedSettingChanges(*ast);
         checkNoExternalAccess(*ast);
         if (!allow_schema_access)
             checkNoSchemaAccess(*ast);
@@ -1039,6 +1044,8 @@ void validateStoredExpressionForAIAgent(const String & expression, std::string_v
             "The {} reads other tables, which the server does when the table is read, so it is not allowed for the "
             "read-only tool. Use the run_query tool for this query",
             origin);
+
+    return collectFunctionNamesForAIAgent(*ast);
 }
 
 void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)

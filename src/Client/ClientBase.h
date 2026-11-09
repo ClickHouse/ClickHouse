@@ -282,12 +282,16 @@ protected:
     /// The same, for a query whose result can render the credentials of an external-engine table
     /// (`SHOW CREATE`): the display of secrets is turned off for it, which the other internal
     /// queries must not pay for - it is a setting change, and a session that rejects it would
-    /// then fail a harmless schema or documentation lookup as well.
+    /// then fail a harmless schema or documentation lookup as well. Returns the first cell of the
+    /// result whole, like `executeScalarQueryForAI`: a table definition does not fit the per-row
+    /// cap of `formatBlockAsTextForAI`.
     String executeInternalQueryForAIMaskingSecrets(const String & query, const NameToNameMap & params);
 
     /// Execute a query internally for the AI agent and return the first cell of the result as
     /// unescaped text (empty when no rows). For free-form values with their own newlines.
     String executeScalarQueryForAI(const String & query, const NameToNameMap & params);
+    /// The first cell of the result as unescaped text, or an empty string for an empty result.
+    static String firstCellAsTextForAI(const Block & result);
 
     /// Run a query for the AI agent through the normal query processing path: the query is
     /// echoed and executed, and its output is displayed exactly as if the user typed it.

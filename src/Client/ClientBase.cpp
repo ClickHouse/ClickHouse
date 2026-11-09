@@ -117,6 +117,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <string_view>
@@ -4662,11 +4663,11 @@ bool ClientBase::processAIChat(const String & text_)
             text = command;
     }
 
+    /// In batch mode the line is a part of the input to process, not a question to skip: report it
+    /// as an error, so that `--query '? ...'` or a script with such a line fails instead of
+    /// succeeding without doing anything.
     if (!is_interactive)
-    {
-        error_stream << "The AI chat (the `?` command) is only available in interactive mode." << std::endl;
-        return true;
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The AI chat (the `?` command) is only available in interactive mode");
 
     /// A known `/`-command runs as the command itself, without involving the agent (and works
     /// even when no AI provider is configured). A misspelled one, or one given an argument it does
@@ -4818,8 +4819,7 @@ String ClientBase::executeInternalQueryForAIMaskingSecrets(const String & query,
     if (!connection)
         throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
 
-    const Block result = fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true, /*needs_secret_masking=*/ true);
-    return formatBlockAsTextForAI(result);
+    return firstCellAsTextForAI(fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true, /*needs_secret_masking=*/ true));
 }
 
 String ClientBase::executeScalarQueryForAI(const String & query, const NameToNameMap & params)
@@ -4827,7 +4827,11 @@ String ClientBase::executeScalarQueryForAI(const String & query, const NameToNam
     if (!connection)
         throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
 
-    const Block result = fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true);
+    return firstCellAsTextForAI(fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true));
+}
+
+String ClientBase::firstCellAsTextForAI(const Block & result)
+{
     if (result.rows() == 0 || result.columns() == 0)
         return "";
 
@@ -5700,18 +5704,23 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
     }
 
     /// The table is read through an allowed engine; what is left is what the server evaluates for
-    /// the read without the query writing it.
+    /// the read without the query writing it. The functions these expressions call are resolved by
+    /// the server like those of the query, so they are collected for the same check of
+    /// `checkFunctionsForAIReadOnlyTool`.
+    std::set<String> stored_expression_functions;
     const auto check_stored_expressions = [&](const String & database, const String & table)
     {
         const auto [begin, end] = column_expressions.equal_range({database, table});
         for (auto it = begin; it != end; ++it)
-            validateStoredExpressionForAIAgent(
-                it->second, fmt::format("a column expression of the table `{}.{}`", database, table), allow_schema_access);
+            for (auto & function : validateStoredExpressionForAIAgent(
+                     it->second, fmt::format("a column expression of the table `{}.{}`", database, table), allow_schema_access))
+                stored_expression_functions.insert(std::move(function));
 
         for (const auto & [policy_database, policy_table, filter] : row_policy_filters)
             if ((policy_database.empty() || policy_database == database) && (policy_table.empty() || policy_table == table))
-                validateStoredExpressionForAIAgent(
-                    filter, fmt::format("the filter of a row policy of the table `{}.{}`", database, table), allow_schema_access);
+                for (auto & function : validateStoredExpressionForAIAgent(
+                         filter, fmt::format("the filter of a row policy of the table `{}.{}`", database, table), allow_schema_access))
+                    stored_expression_functions.insert(std::move(function));
     };
 
     for (const auto & reference : tables)
@@ -5732,7 +5741,11 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
                         reference.table,
                         it->second);
                 check_stored_expressions("", reference.table);
-                continue;
+
+                /// Most statements resolve an unqualified name to the temporary table first, but not
+                /// all: `SHOW CREATE VIEW`, `EXISTS TABLE` and `EXISTS VIEW` resolve it to a table of
+                /// the current database. Which of the two the statement reads is not known here, so
+                /// the table of the current database is checked as well, when there is one.
             }
             database = current_database;
         }
@@ -5811,6 +5824,8 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
 
         check_stored_expressions(database, reference.table);
     }
+
+    checkFunctionsForAIReadOnlyTool(Strings(stored_expression_functions.begin(), stored_expression_functions.end()));
 }
 
 String ClientBase::queryTextForAIContext(std::string_view query, const ASTPtr & parsed_query)
@@ -6337,6 +6352,14 @@ Block ClientBase::fetchInternalQueryResult(
     /// The distributed query plan would dispatch the internal query to the stateless workers of the
     /// cluster in the same way, so it is switched off as well.
     settings_to_send->set("make_distributed_plan", false);
+    /// The pagination of the session (`limit`, `offset`, `page`) would apply to the internal query
+    /// as well, and cut rows out of its result: a safety probe of the agent would then see fewer
+    /// rows than there are, and take the missing ones for a missing user-defined function or table.
+    /// It is reset like the settings above, with the same failure of a session that cannot reset it.
+    /// `page` is not `IMPORTANT`, so a server that predates it ignores it.
+    settings_to_send->set("limit", Float64(0));
+    settings_to_send->set("offset", Float64(0));
+    settings_to_send->set("page", Float64(0));
 
     /// This is a complete query exchange on the shared connection, so it follows the same
     /// resynchronization discipline as the regular queries: recover from a previous failed
