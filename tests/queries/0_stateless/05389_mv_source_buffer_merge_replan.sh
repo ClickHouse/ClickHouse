@@ -4,9 +4,10 @@
 # and a `merge` table with a `Distributed` child plans it again for the source table. The source table read by that
 # plan is the table, while the IN subqueries of the view query, also with a table on the right, check those rows
 # against the inserted block. Rows already in the `Distributed` table are read on the shard, where the source table is
-# the table, so they are checked against the table. A refreshable view appending to the source table behaves like an
-# INSERT. The values do not depend on whether the inserted rows are already in the table. The database name is spelled
-# out: `currentDatabase()` in the view query does not resolve to the test database during the push.
+# the table, so they are checked against the table. An ordinary view in such a subquery reads the table, also when the
+# analyzer inlines it. A refreshable view appending to the source table behaves like an INSERT. The values do not depend
+# on whether the inserted rows are already in the table. The database name is spelled out: `currentDatabase()` in the
+# view query does not resolve to the test database during the push.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,7 +19,10 @@ DROP TABLE IF EXISTS mv_merge_not_in;
 DROP TABLE IF EXISTS mv_merge_not_in_table;
 DROP TABLE IF EXISTS mv_buffer_not_in_table;
 DROP TABLE IF EXISTS mv_buffer_join;
+DROP TABLE IF EXISTS mv_merge_inlined_view;
+DROP TABLE IF EXISTS mv_buffer_inlined_view;
 DROP TABLE IF EXISTS dst;
+DROP VIEW IF EXISTS v;
 DROP TABLE IF EXISTS buf;
 DROP TABLE IF EXISTS dist;
 DROP TABLE IF EXISTS dist_target;
@@ -65,6 +69,20 @@ CREATE MATERIALIZED VIEW mv_buffer_join TO dst AS
         (SELECT count() FROM buf AS b JOIN src AS s ON b.x = s.x + 1) AS value
     FROM src;
 
+-- 'v' reads the table, which has all 10 rows of 'src' and of 'buf': of the 12 rows read, only the flushed 110 is not in
+-- it, so the value is 12 * 100 + 1. The block would leave 11.
+CREATE VIEW v AS SELECT x FROM src;
+
+CREATE MATERIALIZED VIEW mv_merge_inlined_view TO dst AS
+    SELECT 'merge_inlined_view' AS name, count() AS block_rows,
+        (SELECT count() * 100 + countIf(x NOT IN (SELECT x FROM v)) FROM merge(${CLICKHOUSE_DATABASE}, '^(src|dist)\$') WHERE x >= 100) AS value
+    FROM src SETTINGS analyzer_inline_views = 1;
+
+CREATE MATERIALIZED VIEW mv_buffer_inlined_view TO dst AS
+    SELECT 'buffer_inlined_view' AS name, count() AS block_rows,
+        (SELECT count() * 100 + countIf(x NOT IN (SELECT x FROM v)) FROM buf) AS value
+    FROM src SETTINGS analyzer_inline_views = 1;
+
 INSERT INTO src VALUES (1), (2), (3);
 INSERT INTO src_dup VALUES (101), (102), (103);
 
@@ -104,7 +122,10 @@ DROP TABLE mv_merge_not_in;
 DROP TABLE mv_merge_not_in_table;
 DROP TABLE mv_buffer_not_in_table;
 DROP TABLE mv_buffer_join;
+DROP TABLE mv_merge_inlined_view;
+DROP TABLE mv_buffer_inlined_view;
 DROP TABLE dst;
+DROP VIEW v;
 DROP TABLE buf;
 DROP TABLE dist;
 DROP TABLE dist_target;
