@@ -18,8 +18,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # producers, one each. `o` has no ties, so every group has one best row and the results are exact.
 
 ROWS="SELECT number AS x, (number % 2) * 1000000 + intDiv(number, 16) AS k, (number * 7919) % 1000003 AS o FROM (
-    SELECT number FROM numbers(0, 40000) UNION ALL SELECT number FROM numbers(40000, 40000)
-    UNION ALL SELECT number FROM numbers(80000, 40000) UNION ALL SELECT number FROM numbers(120000, 40000))"
+    SELECT number FROM numbers(0, 8000) UNION ALL SELECT number FROM numbers(8000, 8000)
+    UNION ALL SELECT number FROM numbers(16000, 8000) UNION ALL SELECT number FROM numbers(24000, 8000))"
 
 queries=""
 counter="SELECT sum(value) FROM system.events WHERE event = 'AdaptiveAggregationCombinedRows'"
@@ -46,14 +46,14 @@ add_shape "Sparse ordering column" "SELECT k, max(ts), count() FROM sparse GROUP
 
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size = 12;
-SET adaptive_aggregator_freeze_threshold = 1024, adaptive_aggregator_freeze_threshold_bytes = 0;
+SET adaptive_aggregator_freeze_threshold = 256, adaptive_aggregator_freeze_threshold_bytes = 0;
 SET adaptive_aggregator_disable_thaw = 1, collect_hash_table_stats_during_aggregation = 0;
 SET group_by_two_level_threshold = 100000000, group_by_two_level_threshold_bytes = 1000000000;
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 SET optimize_aggregation_in_order = 0;
 CREATE TABLE sparse (k UInt64, ts UInt64) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, index_granularity = 8192;
-INSERT INTO sparse SELECT (number % 2) * 1000000 + intDiv(number, 16), if(number % 3 = 0, number, 0) FROM numbers(160000);
+    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, index_granularity = 2048;
+INSERT INTO sparse SELECT (number % 2) * 1000000 + intDiv(number, 16), if(number % 3 = 0, number, 0) FROM numbers(64000);
 OPTIMIZE TABLE sparse FINAL;
 SELECT 'check', 'serialization of ts', serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 'sparse' AND column = 'ts' AND active;
 ${queries}
