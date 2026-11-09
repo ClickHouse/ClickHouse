@@ -143,7 +143,7 @@ void UserDefinedSQLFunctionVisitor::visitImpl(
             return;
 
         UnorderedSetWithMemoryTracking<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_, inside_apply ? &lambda_names : nullptr);
         if (replace_result)
             ast = replace_result;
     }
@@ -158,7 +158,11 @@ bool isVariadic(const ASTPtr & arg)
 }
 }
 
-ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_)
+ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(
+    const ASTFunction & function,
+    UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process,
+    ContextPtr context_,
+    const std::unordered_set<String> * shadowed_names) /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
 {
     if (udf_in_replace_process.contains(function.name))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -259,9 +263,11 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
         for (auto & child : ast_node_to_update->children)
         {
-            if (auto * inner_function = child->as<ASTFunction>())
+            /// The analyzer resolves the functions in the body of a UDF in the scope of the query, so a lambda declared
+            /// there shadows a UDF of the same name called from the body too.
+            if (auto * inner_function = child->as<ASTFunction>(); inner_function && !(shadowed_names && shadowed_names->contains(inner_function->name)))
             {
-                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_);
+                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_, shadowed_names);
                 if (replace_result)
                     child = replace_result;
             }

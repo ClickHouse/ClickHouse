@@ -153,7 +153,12 @@ void applyDataTypeDefaultNullableToColumnDeclarations(ASTAlterQuery & alter)
         DataTypePtr type = is_add
             ? InterpreterCreateQuery::getColumnType(col_decl, /*make_columns_nullable=*/ true, /*pin_current_state_version=*/ true)
             : makeNullable(DataTypeFactory::instance().get(col_decl.getType()));
-        col_decl.setType(dataTypeToAST(type));
+        /// The declaration was already materialized with `uuid_type_version` (see `materializeUUIDTypeVersion`), so
+        /// a bare `UUID` in the resolved type is the historical one: pin it, so that `AlterCommand::parse` does not
+        /// resolve it again as `UUID2`.
+        ASTPtr type_ast = dataTypeToAST(type);
+        pinHistoricalUUIDTypeNamesInPlace(*type_ast);
+        col_decl.setType(std::move(type_ast));
     }
 }
 
