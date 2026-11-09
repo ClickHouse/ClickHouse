@@ -1,0 +1,146 @@
+-- aggregation, the whole document
+[
+  {
+    "Plan": {
+      "Node Type": "GatherSend",
+      "Node Id": "GatherSend_21",
+      "Description": "final_result",
+      "Plans": [
+        {
+          "Node Type": "GatherReceive",
+          "Node Id": "GatherReceive_20",
+          "Exchange Id": 1,
+          "Description": "exchange_1"
+        }
+      ]
+    },
+    "Fragments": [
+      {
+        "Id": 0,
+        "Stage": "stage_0",
+        "Tasks": 3,
+        "Plan": {
+          "Node Type": "ShuffleSend",
+          "Node Id": "ShuffleSend_17",
+          "Exchange Id": 0,
+          "Description": "exchange_0",
+          "Plans": [
+            {
+              "Node Type": "Aggregating",
+              "Node Id": "Aggregating_10",
+              "Description": "partial",
+              "Plans": [
+                {
+                  "Node Type": "Expression",
+                  "Node Id": "Expression_6",
+                  "Description": "(Before GROUP BY + Change column names to column identifiers)",
+                  "Plans": [
+                    {
+                      "Node Type": "ReadFromMergeTree",
+                      "Node Id": "ReadFromMergeTree_0",
+                      "Description": "default.big"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "Id": 1,
+        "Stage": "stage_1",
+        "Tasks": 3,
+        "Plan": {
+          "Node Type": "GatherSend",
+          "Node Id": "GatherSend_19",
+          "Exchange Id": 1,
+          "Description": "exchange_1",
+          "Plans": [
+            {
+              "Node Type": "Expression",
+              "Node Id": "Expression_7",
+              "Description": "(Project names + Projection)",
+              "Plans": [
+                {
+                  "Node Type": "MergingAggregated",
+                  "Node Id": "MergingAggregated_13",
+                  "Description": "merge",
+                  "Plans": [
+                    {
+                      "Node Type": "ShuffleReceive",
+                      "Node Id": "ShuffleReceive_18",
+                      "Exchange Id": 0,
+                      "Description": "exchange_0"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "Id": 2,
+        "Stage": "main",
+        "Tasks": 1,
+        "Plan": {
+          "Node Type": "GatherSend",
+          "Node Id": "GatherSend_21",
+          "Description": "final_result",
+          "Plans": [
+            {
+              "Node Type": "GatherReceive",
+              "Node Id": "GatherReceive_20",
+              "Exchange Id": 1,
+              "Description": "exchange_1"
+            }
+          ]
+        }
+      }
+    ],
+    "Exchanges": [
+      {
+        "Id": 0,
+        "Name": "exchange_0",
+        "From": 0,
+        "To": 1,
+        "Kind": "hash",
+        "Keys": ["modulo(__table1.bid, 10_UInt8)"],
+        "Mode": "streaming",
+        "Source Buckets": 3,
+        "Destination Buckets": 3
+      },
+      {
+        "Id": 1,
+        "Name": "exchange_1",
+        "From": 1,
+        "To": 2,
+        "Kind": "gather",
+        "Mode": "streaming",
+        "Source Buckets": 3,
+        "Destination Buckets": 1
+      }
+    ],
+    "Levels": [
+      [0],
+      [1],
+      [2]
+    ]
+  }
+]
+-- order by: the sort order of the gather
+[{"Id":0,"Name":"exchange_0","From":0,"To":1,"Kind":"gather","Sort Description":[{"Column":"__table1.bid","Ascending":false,"With Fill":false}],"Mode":"streaming","Source Buckets":3,"Destination Buckets":1}]
+-- persisted
+persisted
+-- shuffle join: levels, exchanges and an exchange id on both ends of every exchange
+[[0,1],[2],[3],[4]]	[(0,'exchange_0',0,2,'hash'),(1,'exchange_1',1,2,'hash'),(2,'exchange_2',2,3,'hash'),(3,'exchange_3',3,4,'gather')]	5	1
+-- the top-level plan is the plan of the fragment that produces the result
+GatherSend	final_result	0	1
+-- estimated rows only with estimates = 1
+0
+-- make_distributed_plan = 0
+1	0	0
+-- fallback to local execution
+0	make_distributed_plan does not support WITH TOTALS
+-- errors
