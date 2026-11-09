@@ -495,6 +495,8 @@ static DataFileColumnStatistics getColumnStatisticsForRewrite(const ParsedManife
             stats.value_counts.emplace_back(field_id, *column_info.rows_count);
         if (column_info.nulls_count.has_value())
             stats.null_value_counts.emplace_back(field_id, *column_info.nulls_count);
+        if (column_info.nans_count.has_value())
+            stats.nan_value_counts.emplace_back(field_id, *column_info.nans_count);
     }
     /// Bounds stay the raw serialized bytes, so they round-trip whatever the column type.
     for (const auto & [field_id, bounds] : entry.value_bounds)
