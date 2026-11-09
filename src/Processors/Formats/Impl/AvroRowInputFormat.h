@@ -4,9 +4,10 @@
 
 #if USE_AVRO
 
-#include <map>
-#include <unordered_map>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -57,7 +58,7 @@ public:
         bool null_as_default_,
         const FormatSettings & settings_,
         const NameSet & absent_columns = {},
-        std::unordered_set<String> uuid2_paths_ = {});
+        UnorderedSetWithMemoryTracking<String> uuid2_paths_ = {});
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
     /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
@@ -89,10 +90,10 @@ private:
         /// Skip
         SkipFn skip_fn;
         /// Record | Union
-        std::vector<Action> actions;
+        VectorWithMemoryTracking<Action> actions;
         /// For flattened Nested column
-        std::vector<size_t> nested_column_indexes;
-        std::vector<DeserializeFn> nested_deserializers;
+        VectorWithMemoryTracking<size_t> nested_column_indexes;
+        VectorWithMemoryTracking<DeserializeFn> nested_deserializers;
 
 
         Action() : type(Noop) {}
@@ -107,15 +108,15 @@ private:
             , target_column_idx(0)
             , skip_fn(skip_fn_) {}
 
-        Action(const std::vector<size_t> & nested_column_indexes_, const std::vector<DeserializeFn> & nested_deserializers_)
+        Action(const VectorWithMemoryTracking<size_t> & nested_column_indexes_, const VectorWithMemoryTracking<DeserializeFn> & nested_deserializers_)
             : type(Nested)
             , target_column_idx(0)
             , nested_column_indexes(nested_column_indexes_)
             , nested_deserializers(nested_deserializers_) {}
 
-        static Action recordAction(const std::vector<Action> & field_actions) { return Action(Type::Record, field_actions); }
+        static Action recordAction(const VectorWithMemoryTracking<Action> & field_actions) { return Action(Type::Record, field_actions); }
 
-        static Action unionAction(const std::vector<Action> & branch_actions) { return Action(Type::Union, branch_actions); }
+        static Action unionAction(const VectorWithMemoryTracking<Action> & branch_actions) { return Action(Type::Union, branch_actions); }
 
 
         void execute(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
@@ -143,7 +144,7 @@ private:
             }
         }
     private:
-        Action(Type type_, std::vector<Action> actions_)
+        Action(Type type_, VectorWithMemoryTracking<Action> actions_)
             : type(type_)
             , target_column_idx(0)
             , actions(actions_) {}
@@ -155,16 +156,16 @@ private:
     AvroDeserializer::Action createAction(const Block & header, const avro::NodePtr & node, const std::string & current_path = "");
 
     /// Bitmap of columns found in Avro schema
-    std::vector<bool> column_found;
+    VectorWithMemoryTracking<bool> column_found;
     /// Deserialize/Skip actions for a row
     Action row_action;
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
-    std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
+    MapWithMemoryTracking<avro::Name, SkipFn> symbolic_skip_fn_map;
 
     /// Guard against infinite recursion in createDeserializeFn and createAction
     /// when Avro schema contains cyclic symbolic references (e.g. TypeA -> TypeB -> TypeA).
-    std::unordered_set<std::string> symbolic_deserialize_guard;
+    UnorderedSetWithMemoryTracking<std::string> symbolic_deserialize_guard;
 
     /// The column `createDeserializeFn` is building for, for error messages.
     String current_column_name;
@@ -173,7 +174,7 @@ private:
 
     const FormatSettings & settings;
 
-    std::unordered_set<String> uuid2_paths;
+    UnorderedSetWithMemoryTracking<String> uuid2_paths;
 };
 
 class AvroRowInputFormat final : public IRowInputFormat
@@ -219,7 +220,7 @@ private:
 
     std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
-    std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
+    UnorderedMapWithMemoryTracking<SchemaId, AvroDeserializer> deserializer_cache;
     const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
 
     avro::InputStreamPtr input_stream;
@@ -243,17 +244,17 @@ public:
     /// `uuid2_paths` are the dotted paths of the values written from `UUID2` (see `AVRO_UUID2_PATHS_METADATA_KEY`);
     /// a `uuid` logical type at such a path is inferred as `UUID2` instead of `UUID`. `path` is the path of `node`.
     static DataTypePtr avroNodeToDataType(
-        const avro::NodePtr & node, bool allow_nullable_tuple_type, const std::unordered_set<String> & uuid2_paths, const String & path);
+        const avro::NodePtr & node, bool allow_nullable_tuple_type, const UnorderedSetWithMemoryTracking<String> & uuid2_paths, const String & path);
 
     /// Reads the `UUID2` paths from the metadata of an Avro file (see `AVRO_UUID2_PATHS_METADATA_KEY`).
-    static std::unordered_set<String> readUUID2Paths(
-        const std::map<std::string, std::vector<uint8_t>> & metadata, const FormatSettings & format_settings);
+    static UnorderedSetWithMemoryTracking<String> readUUID2Paths(
+        const std::map<std::string, std::vector<uint8_t>> & metadata, const FormatSettings & format_settings); /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `avro::DataFileReaderBase::metadata`
 private:
     static DataTypePtr avroNodeToDataTypeImpl(
         const avro::NodePtr & node,
-        std::unordered_set<std::string> & seen_names,
+        UnorderedSetWithMemoryTracking<std::string> & seen_names,
         bool allow_nullable_tuple_type,
-        const std::unordered_set<String> & uuid2_paths,
+        const UnorderedSetWithMemoryTracking<String> & uuid2_paths,
         const String & path);
 
     bool confluent;

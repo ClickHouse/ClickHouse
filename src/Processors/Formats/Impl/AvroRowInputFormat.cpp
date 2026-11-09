@@ -56,7 +56,6 @@
 #include <ValidSchema.hh>
 
 #include <array>
-#include <unordered_set>
 
 namespace DB
 {
@@ -215,7 +214,7 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
             decimal_type.getScale(),
             decimal_type.getPrecision());
 
-    return [tmp = std::vector<uint8_t>(), target_type, fixed_size](IColumn & column, avro::Decoder & decoder) mutable
+    return [tmp = std::vector<uint8_t>(), target_type, fixed_size](IColumn & column, avro::Decoder & decoder) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::Decoder` returns and fills std::vector
     {
         static constexpr size_t field_type_size = sizeof(typename DecimalType::FieldType);
         if (fixed_size)
@@ -234,11 +233,11 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
         {
             /// Extent value to required size by adding padding.
             /// Check if value is negative or positive.
-            std::vector<uint8_t> padding;
+            VectorWithMemoryTracking<uint8_t> padding;
             if (tmp[0] & 128)
-                padding = std::vector<uint8_t>(field_type_size - tmp.size(), 0xff);
+                padding = VectorWithMemoryTracking<uint8_t>(field_type_size - tmp.size(), 0xff);
             else
-                padding = std::vector<uint8_t>(field_type_size - tmp.size(), 0);
+                padding = VectorWithMemoryTracking<uint8_t>(field_type_size - tmp.size(), 0);
             tmp.insert(tmp.begin(), padding.begin(), padding.end());
         }
 
@@ -590,7 +589,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
 
                     /// Avro record fields are encoded positionally, so build a deserializer for
                     /// each field in declared order together with the column it targets.
-                    std::vector<std::pair<DeserializeFn, bool>> field_deserializers;
+                    VectorWithMemoryTracking<std::pair<DeserializeFn, bool>> field_deserializers;
                     field_deserializers.reserve(2);
                     for (int i = 0; i != 2; ++i)
                     {
@@ -705,11 +704,11 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 const auto & nested_types = variant_type.getVariants();
 
                 using AvroUnionIndex = size_t;
-                std::map<AvroUnionIndex, ColumnVariant::Discriminator> union_index_to_global_discriminator;
-                std::vector<DeserializeFn> nested_deserializers;
+                MapWithMemoryTracking<AvroUnionIndex, ColumnVariant::Discriminator> union_index_to_global_discriminator;
+                VectorWithMemoryTracking<DeserializeFn> nested_deserializers;
                 nested_deserializers.reserve(root_node->leaves());
 
-                std::unordered_set<ColumnVariant::Discriminator> used_discriminators;
+                UnorderedSetWithMemoryTracking<ColumnVariant::Discriminator> used_discriminators;
 
                 size_t non_null_size = 0;
                 for (size_t i = 0; i != root_node->leaves(); ++i)
@@ -738,7 +737,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     /// so that the branches of `Variant(Tuple(x UUID), Tuple(x UUID2))` from a file without the paths,
                     /// which have the same inferred type, go to different alternatives, and an exact match over another one.
                     std::optional<ColumnVariant::Discriminator> exact_discriminator;
-                    std::vector<ColumnVariant::Discriminator> compatible_discriminators;
+                    VectorWithMemoryTracking<ColumnVariant::Discriminator> compatible_discriminators;
                     for (size_t d = 0; d < nested_types.size(); ++d)
                     {
                         if (variant->equals(*nested_types[d]))
@@ -847,7 +846,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
         case avro::AVRO_ENUM:
             if (target.isString())
             {
-                std::vector<std::string> symbols;
+                VectorWithMemoryTracking<std::string> symbols;
                 symbols.reserve(root_node->names());
                 for (int i = 0; i < static_cast<int>(root_node->names()); ++i)
                 {
@@ -890,7 +889,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             size_t fixed_size = root_node->fixedSize();
             if (canBeDeserializedFromFixed(target_type, fixed_size))
             {
-                return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable
+                return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::Decoder` returns and fills std::vector
                 {
                     decoder.decodeFixed(tmp_fixed.size(), tmp_fixed);
                     column.insertData(reinterpret_cast<const char *>(tmp_fixed.data()), tmp_fixed.size());
@@ -899,7 +898,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             }
             if (target.isUUID() || target.isUUID2())
             {
-                return [tmp = std::vector<uint8_t>(), fixed_size, is_uuid2 = target.isUUID2()](IColumn & column, avro::Decoder & decoder) mutable
+                return [tmp = std::vector<uint8_t>(), fixed_size, is_uuid2 = target.isUUID2()](IColumn & column, avro::Decoder & decoder) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::Decoder` returns and fills std::vector
                 {
                     decoder.decodeFixed(fixed_size, tmp);
                     if (tmp.size() != 36)
@@ -941,7 +940,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             {
                 const DataTypeTuple & tuple_type = assert_cast<const DataTypeTuple &>(*target_type);
                 const auto & nested_types = tuple_type.getElements();
-                std::vector<std::pair<DeserializeFn, size_t>> nested_deserializers;
+                VectorWithMemoryTracking<std::pair<DeserializeFn, size_t>> nested_deserializers;
                 nested_deserializers.reserve(root_node->leaves());
                 if (root_node->leaves() != nested_types.size())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "The number of leaves in record doesn't match the number of elements in tuple");
@@ -1083,7 +1082,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
         }
         case avro::AVRO_UNION:
         {
-            std::vector<SkipFn> union_skip_fns;
+            VectorWithMemoryTracking<SkipFn> union_skip_fns;
             union_skip_fns.reserve(root_node->leaves());
             for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
             {
@@ -1120,7 +1119,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
         }
         case avro::AVRO_RECORD:
         {
-            std::vector<SkipFn> field_skip_fns;
+            VectorWithMemoryTracking<SkipFn> field_skip_fns;
             field_skip_fns.reserve(root_node->leaves());
             for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
             {
@@ -1156,9 +1155,9 @@ void AvroDeserializer::Action::deserializeNested(MutableColumns & columns, avro:
     /// in avro we have single row Array(Record) and we can
     /// deserialize it once.
 
-    std::vector<ColumnArray::Offsets *> arrays_offsets;
+    VectorWithMemoryTracking<ColumnArray::Offsets *> arrays_offsets;
     arrays_offsets.reserve(nested_column_indexes.size());
-    std::vector<IColumn *> nested_columns;
+    VectorWithMemoryTracking<IColumn *> nested_columns;
     nested_columns.reserve(nested_column_indexes.size());
     for (size_t index : nested_column_indexes)
     {
@@ -1240,7 +1239,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
     else if (node->type() == avro::AVRO_RECORD)
     {
-        std::vector<AvroDeserializer::Action> field_actions(node->leaves());
+        VectorWithMemoryTracking<AvroDeserializer::Action> field_actions(node->leaves());
         for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
         {
             const auto & field_node = node->leafAt(i);
@@ -1251,7 +1250,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
     else if (node->type() == avro::AVRO_UNION)
     {
-        std::vector<AvroDeserializer::Action> branch_actions(node->leaves());
+        VectorWithMemoryTracking<AvroDeserializer::Action> branch_actions(node->leaves());
         for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
         {
             const auto & branch_node = node->leafAt(i);
@@ -1270,7 +1269,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
             return AvroDeserializer::Action(createSkipFn(node));
 
         /// Check that all nested columns are Arrays.
-        std::unordered_map<String, DataTypePtr> nested_types;
+        UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_types;
         for (const auto & name : nested_names)
         {
             auto type = header.getByName(name).type;
@@ -1280,8 +1279,8 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         }
 
         /// Create nested deserializer for each nested column.
-        std::vector<DeserializeFn> nested_deserializers;
-        std::vector<size_t> nested_indexes;
+        VectorWithMemoryTracking<DeserializeFn> nested_deserializers;
+        VectorWithMemoryTracking<size_t> nested_indexes;
         for (int i = 0; i != static_cast<int>(nested_avro_node->leaves()); ++i)
         {
             const auto & name = nested_avro_node->nameAt(i);
@@ -1335,7 +1334,7 @@ AvroDeserializer::AvroDeserializer(
     bool null_as_default_,
     const FormatSettings & settings_,
     const NameSet & absent_columns,
-    std::unordered_set<String> uuid2_paths_)
+    UnorderedSetWithMemoryTracking<String> uuid2_paths_)
     : null_as_default(null_as_default_), settings(settings_), uuid2_paths(std::move(uuid2_paths_))
 {
     const auto & schema_root = schema.root();
@@ -1380,7 +1379,7 @@ AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, P
 namespace
 {
 
-void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, std::unordered_set<Int64> & field_ids)
+void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, UnorderedSetWithMemoryTracking<Int64> & field_ids)
 {
     checkStackSize();
 
@@ -1407,7 +1406,7 @@ void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, std::unordered_se
 /// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose
 /// field id is not in the file, if the file identifies all its top-level fields by id.
 NameSet getColumnsAbsentFromIcebergFile(
-    const Block & header, const ColumnMapper & column_mapper, const std::map<std::string, std::vector<uint8_t>> & metadata)
+    const Block & header, const ColumnMapper & column_mapper, const std::map<std::string, std::vector<uint8_t>> & metadata) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::DataFileReaderBase::metadata` returns std::map
 {
     auto it = metadata.find("avro.schema");
     if (it == metadata.end())
@@ -1433,7 +1432,7 @@ NameSet getColumnsAbsentFromIcebergFile(
             return {};
     }
 
-    std::unordered_set<Int64> file_field_ids;
+    UnorderedSetWithMemoryTracking<Int64> file_field_ids;
     collectIcebergFieldIds(root, file_field_ids);
 
     NameSet result;
@@ -1599,7 +1598,7 @@ AvroSchemaReader::AvroSchemaReader(ReadBuffer & in_, bool confluent_, const Form
 NamesAndTypesList AvroSchemaReader::readSchema()
 {
     avro::NodePtr root_node;
-    std::unordered_set<String> uuid2_paths;
+    UnorderedSetWithMemoryTracking<String> uuid2_paths;
     if (confluent)
     {
         UInt32 schema_id = readConfluentSchemaId(in);
@@ -1623,7 +1622,7 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
     {
         checkStackSize();
-        std::unordered_set<std::string> seen_names;
+        UnorderedSetWithMemoryTracking<std::string> seen_names;
         names_and_types.emplace_back(
             root_node->nameAt(i),
             avroNodeToDataTypeImpl(
@@ -1633,10 +1632,10 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     return names_and_types;
 }
 
-std::unordered_set<String> AvroSchemaReader::readUUID2Paths(
-    const std::map<std::string, std::vector<uint8_t>> & metadata, const FormatSettings & format_settings)
+UnorderedSetWithMemoryTracking<String> AvroSchemaReader::readUUID2Paths(
+    const std::map<std::string, std::vector<uint8_t>> & metadata, const FormatSettings & format_settings) /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `avro::DataFileReaderBase::metadata`
 {
-    std::unordered_set<String> uuid2_paths;
+    UnorderedSetWithMemoryTracking<String> uuid2_paths;
     auto it = metadata.find(AVRO_UUID2_PATHS_METADATA_KEY);
     if (it == metadata.end())
         return uuid2_paths;
@@ -1663,17 +1662,17 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_
 }
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(
-    const avro::NodePtr & node, bool allow_nullable_tuple_type, const std::unordered_set<String> & uuid2_paths, const String & path)
+    const avro::NodePtr & node, bool allow_nullable_tuple_type, const UnorderedSetWithMemoryTracking<String> & uuid2_paths, const String & path)
 {
-    std::unordered_set<std::string> seen_names;
+    UnorderedSetWithMemoryTracking<std::string> seen_names;
     return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type, uuid2_paths, path);
 }
 
 DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(
     const avro::NodePtr & node,
-    std::unordered_set<std::string> & seen_names,
+    UnorderedSetWithMemoryTracking<std::string> & seen_names,
     bool allow_nullable_tuple_type,
-    const std::unordered_set<String> & uuid2_paths,
+    const UnorderedSetWithMemoryTracking<String> & uuid2_paths,
     const String & path)
 {
     checkStackSize();
