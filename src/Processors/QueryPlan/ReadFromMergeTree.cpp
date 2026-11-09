@@ -3358,14 +3358,19 @@ bool filterImpliesIndexCondition(
     if (!index_conjuncts.empty())
         return false;
 
-    /// Index conditions find indexed expressions by name in `index_analysis_dag`, so the filter must calculate each of them
-    /// like the writer did.
+    /// Index conditions find indexed expressions and their subexpressions by name in `index_analysis_dag`, so the filter
+    /// must calculate each of them like the writer did.
     const auto indexed_matches = matchTrees(
         index.selected_rows_expression->getActionsDAG().getOutputs(), index_analysis_dag, /*check_monotonicity=*/false, max_set_size_to_compare);
-    const NameSet index_columns(index.column_names.begin(), index.column_names.end());
+    NameSet index_subexpressions;
+    for (const auto & action : index.expression->getActions())
+        index_subexpressions.insert(action.node->result_name);
     for (const auto & node : index_analysis_dag.getNodes())
     {
-        if (node.type != ActionsDAG::ActionType::FUNCTION || !index_columns.contains(RPNBuilderTreeNode(&node, context).getColumnName()))
+        if (node.type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+        const RPNBuilderTreeNode rpn_node(&node, context);
+        if (!index_subexpressions.contains(rpn_node.getColumnName()) && !index_subexpressions.contains(rpn_node.getColumnNameWithModuloLegacy()))
             continue;
         auto it = indexed_matches.find(&node);
         if (it == indexed_matches.end() || !it->second.node || it->second.monotonicity || !hasSameFunctionSemantics(&node, indexed_matches))
