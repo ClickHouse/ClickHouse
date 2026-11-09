@@ -190,7 +190,7 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 "
 check_index_validation_error \
     'ALTER TABLE alter_policy_multi_column_indices MODIFY COLUMN x UInt32, MODIFY COLUMN y UInt64' \
-    'Code: 43.' 'ILLEGAL_TYPE_OF_ARGUMENT' 'idx_length_y' 'idx_token_y' \
+    'Code: 524.' 'ALTER_OF_COLUMN_IS_FORBIDDEN' 'idx_length_y' 'idx_token_y' \
     'Cannot apply ALTER because it breaks skip indices:' 'idx_x' 'alter_column_secondary_index_mode'
 echo 'Modify collects policy, expression, and type errors across columns'
 check_index_validation_error \

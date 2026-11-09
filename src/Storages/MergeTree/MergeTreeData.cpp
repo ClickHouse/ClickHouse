@@ -6369,7 +6369,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     removeImplicitStatistics(new_metadata.columns);
     auto settings_defaults = getDefaultSettings();
     std::vector<std::pair<int, String>> secondary_index_errors;
-    size_t rename_policy_errors_count = 0;
+    /// Policy rejections used to throw before expression and type validation. Keep them first
+    /// in the aggregate to preserve their error code, with all other diagnostics following.
+    size_t policy_errors_count = 0;
     /// Keys, TTL and projections, and the indices the commands add, are built with this context. They are executed in the
     /// background, so AI functions reject it. A replica replaying an ALTER the initiator already committed must not fail on it.
     auto apply_context = Context::createCopy(local_context);
@@ -6861,17 +6863,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
-                    /// Subcolumn expression validation can also fail after a rename. Keep the explicit
-                    /// policy rejection first without discarding the expression diagnostics.
                     secondary_index_errors.emplace(
-                        secondary_index_errors.begin() + rename_policy_errors_count,
+                        secondary_index_errors.begin() + policy_errors_count,
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                         fmt::format(
                             "The ALTER of the column '{}' is forbidden because it is used by the indices {}. Check the MergeTree "
                             "setting 'alter_column_secondary_index_mode' to change this behaviour",
                             backQuoteIfNeed(command.column_name),
                             backQuotedList(it->second)));
-                    ++rename_policy_errors_count;
+                    ++policy_errors_count;
                 }
             }
 
@@ -6911,13 +6911,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 {
                     if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                     {
-                        secondary_index_errors.emplace_back(
+                        secondary_index_errors.emplace(
+                            secondary_index_errors.begin() + policy_errors_count,
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             fmt::format(
                                 "The ALTER CLEAR of the column '{}' is forbidden because it is used by the indices {}. Check the "
                                 "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
                                 backQuoteIfNeed(command.column_name),
                                 backQuotedList(it->second)));
+                        ++policy_errors_count;
                     }
                 }
             }
@@ -6983,13 +6985,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
-                    secondary_index_errors.emplace_back(
+                    secondary_index_errors.emplace(
+                        secondary_index_errors.begin() + policy_errors_count,
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                         fmt::format(
                             "The ALTER of the column '{}' is forbidden because it is used by the indices {}. Check the MergeTree setting "
                             "'alter_column_secondary_index_mode' to change this behaviour",
                             backQuoteIfNeed(command.column_name),
                             backQuotedList(it->second)));
+                    ++policy_errors_count;
                 }
             }
 
