@@ -371,7 +371,8 @@ TEST(RuntimeFilterSerialization, TransportedPartialOfUInt16KeysSwitchesToBloomFi
         keys->insertValue(key);
     filter.insert(std::move(keys));
 
-    ReadBufferFromString in(serializeToString(filter));
+    const String state = serializeToString(filter);
+    ReadBufferFromString in(state);
     auto received = AdaptiveSetRuntimeFilter::deserialize(in, type, makeGeometry());
     finishInsert(received);
     auto probe = ColumnUInt16::create();
