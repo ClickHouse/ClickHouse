@@ -13389,8 +13389,13 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 continue;
         }
 
-        if ((minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
-            || (partition_pruner && partition_pruner->canBePruned(*part)))
+        if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        {
+            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, part->index_granularity->getMarksCountWithoutFinal());
+            continue;
+        }
+
+        if (partition_pruner && partition_pruner->canBePruned(*part))
         {
             ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, part->index_granularity->getMarksCountWithoutFinal());
             continue;
