@@ -975,12 +975,12 @@ ALWAYS_INLINE UInt64 Aggregator::adaptiveRankCount(AggregateDataPtr & mapped, IC
 size_t Aggregator::collectAdaptiveTableStatistics(
     AggregatedDataVariants & variants,
     AdaptiveTopKCountBins * bins,
-    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * bucket_maxima) const
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const
 {
     size_t work = 0;
 #define M(NAME) \
     else if (variants.type == AggregatedDataVariants::Type::NAME) \
-        work = collectAdaptiveTableStatistics(*variants.NAME, variants.aggregates_pool, bins, bucket_maxima);
+        work = collectAdaptiveTableStatistics(*variants.NAME, variants.aggregates_pool, bins, max_count_per_bucket);
 
     if (variants.empty()) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
@@ -998,7 +998,7 @@ size_t Aggregator::collectAdaptiveTableStatistics(
     Method & method,
     Arena * arena,
     AdaptiveTopKCountBins * bins,
-    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * bucket_maxima) const
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const
 {
     size_t work = 0;
     if constexpr (MapAggregationMethod<Method>)
@@ -1007,7 +1007,7 @@ size_t Aggregator::collectAdaptiveTableStatistics(
         /// is at most the sum of those of the cells and records merged into it, so the bins bound it as they bound a row
         /// count.
         ColumnUInt64::MutablePtr scratch;
-        if ((bins || bucket_maxima) && bucket_top_k_rank == BucketTopKRank::FinalizedResult)
+        if ((bins || max_count_per_bucket) && bucket_top_k_rank == BucketTopKRank::FinalizedResult)
             scratch = ColumnUInt64::create();
         const auto add = [&](auto & table)
         {
@@ -1017,9 +1017,9 @@ size_t Aggregator::collectAdaptiveTableStatistics(
                 {
                     if (bins)
                         bins->add(hash_of(), adaptiveRankCount(mapped, scratch.get(), arena));
-                    if (bucket_maxima)
+                    if (max_count_per_bucket)
                     {
-                        UInt64 & maximum = (*bucket_maxima)[adaptiveCountBin(hash_of()) / adaptive_count_bins_per_bucket];
+                        UInt64 & maximum = (*max_count_per_bucket)[adaptiveCountBin(hash_of()) / adaptive_count_bins_per_bucket];
                         maximum = std::max(maximum, adaptiveRankCount(mapped, scratch.get(), arena));
                     }
                     for (size_t i : adaptive_parallel_merge_indices)

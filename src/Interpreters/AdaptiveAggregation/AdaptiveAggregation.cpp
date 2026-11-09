@@ -305,12 +305,12 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     /// the buckets with the largest bounds first. Only the pruning of an aggregation in which no producer froze lacks the
     /// bins that order the buckets otherwise, so the producer measures them only where that pruning can run (see
     /// `adaptiveTopKPrunesWithoutFreeze`).
-    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_maxima_storage{};
-    auto * const bucket_maxima = !count_bins && adaptiveTopKPrunesWithoutFreeze() ? &bucket_maxima_storage : nullptr;
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> max_count_per_bucket_storage{};
+    auto * const max_count_per_bucket = !count_bins && adaptiveTopKPrunesWithoutFreeze() ? &max_count_per_bucket_storage : nullptr;
 
     size_t estimated_merge_work = adaptive.total_staged_records * adaptive_parallel_merge_indices.size();
-    if (count_bins || bucket_maxima || !adaptive_parallel_merge_indices.empty())
-        estimated_merge_work += collectAdaptiveTableStatistics(local_variants, count_bins, bucket_maxima);
+    if (count_bins || max_count_per_bucket || !adaptive_parallel_merge_indices.empty())
+        estimated_merge_work += collectAdaptiveTableStatistics(local_variants, count_bins, max_count_per_bucket);
 
     std::optional<AdaptiveTopKPruning::ProducerBins> bins;
     if (count_bins)
@@ -367,7 +367,7 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     if (bins)
         shared.top_k_pruning->addProducerBins(std::move(*bins));
     else if (params.adaptiveTopKPrunes())
-        shared.top_k_pruning->addMergeCountedTable(local_variants, bucket_maxima);
+        shared.top_k_pruning->addMergeCountedTable(local_variants, max_count_per_bucket);
 }
 
 void Aggregator::prepareAdaptiveTopKPruning(

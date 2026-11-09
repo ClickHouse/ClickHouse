@@ -84,7 +84,7 @@ public:
     struct ProducerBins
     {
         AdaptiveTopKCountBins counts;
-        std::array<UInt16, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_maxima{};
+        std::array<UInt16, ADAPTIVE_AGGREGATION_NUM_BUCKETS> max_bin_per_bucket{};
     };
 
     /// The bounds of the bins of a bucket.
@@ -116,15 +116,16 @@ public:
     /// Hands a producer's finished bins over, under the session's `producer_buffers_mutex`.
     void addProducerBins(ProducerBins && bins) { producer_bins.push_back(std::move(bins)); }
 
-    /// Hands over the table of a producer that never froze, under the session's `producer_buffers_mutex`. The merge adds
-    /// its groups to the bounds (see `addToBounds`). `bucket_maxima`, unless null, holds the largest count of a group of
-    /// each bucket in the table, which the producer measures where the pruning can run without a freeze (see
-    /// `Aggregator::adaptiveTopKPrunesWithoutFreeze`). A table without them takes no part in the order of the buckets.
+    /// Hands over the table of a producer that never froze, under the session's `producer_buffers_mutex`. The
+    /// merge adds its groups to the bounds (see `addToBounds`). `max_count_per_bucket`, unless null, holds
+    /// the largest count of a group of each bucket in the table, which the producer measures where the
+    /// pruning can run without a freeze (see `Aggregator::adaptiveTopKPrunesWithoutFreeze`). A table without
+    /// it takes no part in the order of the buckets.
     void addMergeCountedTable(
-        const AggregatedDataVariants & table, const std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * bucket_maxima)
+        const AggregatedDataVariants & table, const std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket)
     {
         merge_counted_tables.push_back(&table);
-        if (bucket_maxima)
+        if (max_count_per_bucket)
             for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
                 merge_counted_bucket_maxima[bucket] += (*bucket_maxima)[bucket];
     }

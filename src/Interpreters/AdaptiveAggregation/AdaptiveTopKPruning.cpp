@@ -13,7 +13,7 @@ AdaptiveTopKPruning::ProducerBins AdaptiveTopKPruning::finalizeProducerCounts(Ad
     for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
     {
         const UInt16 * bucket_bins = producer.counts.bins.get() + bucket * adaptive_count_bins_per_bucket;
-        producer.bucket_maxima[bucket] = *std::max_element(bucket_bins, bucket_bins + adaptive_count_bins_per_bucket);
+        producer.max_bin_per_bucket[bucket] = *std::max_element(bucket_bins, bucket_bins + adaptive_count_bins_per_bucket);
     }
     return producer;
 }

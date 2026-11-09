@@ -1226,19 +1226,19 @@ private:
     void executeStagedArguments(
         Arena * arena, PaddedPODArray<AggregateDataPtr> & places, const Columns & arguments, bool use_compiled_functions) const;
 
-    /// Estimates the work of the selected aggregate states and, when requested, adds rank counts to the producer's
-    /// top-K bins, or, with `bucket_maxima`, raises its largest rank count of each bucket. The statistics visit the same
-    /// cells before the producer hands its table to the merge.
+    /// Estimates the work of the selected aggregate states and, when requested, adds rank counts to the
+    /// producer's top-K bins, or, with `max_count_per_bucket`, raises its largest rank count of each bucket.
+    /// The statistics visit the same cells before the producer hands its table to the merge.
     size_t collectAdaptiveTableStatistics(
         AggregatedDataVariants & variants,
         AdaptiveTopKCountBins * bins,
-        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * bucket_maxima) const;
+        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const;
     template <typename Method>
     size_t collectAdaptiveTableStatistics(
         Method & method,
         Arena * arena,
         AdaptiveTopKCountBins * bins,
-        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * bucket_maxima) const;
+        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const;
 
     /// The rank of the group with the aggregate states at `mapped`, which the top-K pruning bounds: its count, or the
     /// distinct count of its `uniqExact` or `uniqExactIf` rank, finalized into `scratch`.
