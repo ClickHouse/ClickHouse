@@ -72,7 +72,6 @@ SELECT uniqExact(x) FROM t_empty SETTINGS empty_result_for_aggregation_by_empty_
 DROP TABLE IF EXISTS t_memory;
 CREATE TABLE t_memory (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_memory SELECT number FROM numbers(1000000);
-OPTIMIZE TABLE t_memory FINAL;
 SELECT 'memory', uniqExact(x) FROM t_memory SETTINGS max_threads = 1, max_memory_usage = '8Mi', max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_block_size = 8192;
 
 DROP TABLE t_uint;
@@ -218,10 +217,9 @@ DROP TABLE t_layers_final;
 -- A projection that the filter makes cheaper to read is still chosen; it is not sorted by the argument.
 DROP TABLE IF EXISTS t_projection;
 CREATE TABLE t_projection (x UInt64, y UInt64, PROJECTION p (SELECT * ORDER BY y)) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 128;
-INSERT INTO t_projection SELECT number, (number * 7919) % 100000 FROM numbers(100000);
-OPTIMIZE TABLE t_projection FINAL;
-SELECT 'projection', uniqExact(x) FROM t_projection WHERE y = 43700 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
-SELECT 'projection plan', count() FROM (EXPLAIN PIPELINE SELECT uniqExact(x) FROM t_projection WHERE y = 43700 SETTINGS optimize_use_projections = 1) WHERE explain LIKE '%UniqExactInOrderTransform%';
+INSERT INTO t_projection SELECT number, (number * 7919) % 20000 FROM numbers(20000);
+SELECT 'projection', uniqExact(x) FROM t_projection WHERE y = 4370 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT 'projection plan', count() FROM (EXPLAIN PIPELINE SELECT uniqExact(x) FROM t_projection WHERE y = 4370 SETTINGS optimize_use_projections = 1) WHERE explain LIKE '%UniqExactInOrderTransform%';
 DROP TABLE t_projection;
 
 -- Without layers (floats, here), several streams would be merged into one on a single thread, so they are aggregated as usual,
