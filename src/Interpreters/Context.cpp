@@ -8001,28 +8001,41 @@ void Context::reloadClusterConfig() const
     while (true)
     {
         ConfigurationPtr cluster_config;
+        std::vector<std::pair<String, ClusterPtr>> sql_clusters;
         {
             std::lock_guard lock(shared->clusters_mutex);
             cluster_config = shared->clusters_config;
+            if (shared->clusters)
+            {
+                for (const auto & [name, cluster] : shared->clusters->getContainer())
+                {
+                    if (cluster->getSourceId() == Cluster::SourceId::SQL)
+                        sql_clusters.emplace_back(name, cluster);
+                }
+            }
         }
 
         const auto & config = cluster_config ? *cluster_config : getConfigRef();
         auto new_clusters = std::make_shared<Clusters>(config, *settings, getMacros());
+
+        /// Rebuild SQL clusters outside `clusters_mutex`: `rematerialize` resolves hosts, and
+        /// config clusters are already built without that lock. Keep the original `ClusterPtr`
+        /// so a concurrent `ALTER`/`DROP` is not overwritten or resurrected on the swap below.
+        std::vector<std::pair<ClusterPtr, ClusterPtr>> rematerialized;
+        rematerialized.reserve(sql_clusters.size());
+        for (const auto & [name, cluster] : sql_clusters)
+            rematerialized.emplace_back(cluster, SQLClusterFactory::rematerialize(*cluster, getGlobalContext()));
 
         bool clusters_reloaded = false;
         {
             std::lock_guard lock(shared->clusters_mutex);
             if (shared->clusters_config.get() == cluster_config.get())
             {
-                /// Preserve SQL-managed clusters from the *current* map under the same lock as the
-                /// swap. Copying from a snapshot taken outside this lock races with `DROP CLUSTER`
-                /// and can resurrect a cluster that was already removed (seen as a non-zero
-                /// `system.clusters` count after DROP, then `CLUSTER_ALREADY_EXISTS` on CREATE).
                 if (shared->clusters)
                 {
-                    for (const auto & [name, cluster] : shared->clusters->getContainer())
+                    for (const auto & [name, live] : shared->clusters->getContainer())
                     {
-                        if (cluster->getSourceId() != Cluster::SourceId::SQL)
+                        if (live->getSourceId() != Cluster::SourceId::SQL)
                             continue;
 
                         /// Config and SQL cluster names must not collide. Reject here so a newly
@@ -8036,7 +8049,16 @@ void Context::reloadClusterConfig() const
                                 name);
                         }
 
-                        new_clusters->setCluster(name, SQLClusterFactory::rematerialize(*cluster, getGlobalContext()));
+                        ClusterPtr rebuilt = live;
+                        for (const auto & [original, rematerialized_cluster] : rematerialized)
+                        {
+                            if (original.get() == live.get())
+                            {
+                                rebuilt = rematerialized_cluster;
+                                break;
+                            }
+                        }
+                        new_clusters->setCluster(name, rebuilt);
                     }
                 }
 

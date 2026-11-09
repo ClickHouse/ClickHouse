@@ -11,6 +11,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <base/sleep.h>
 
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -88,6 +89,17 @@ void validatePortProperty(const Field & value)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Port must be in range 1..65535, got {}", port);
 }
 
+/// `Cluster` reads `weight` and `priority` with Poco `getInt`. Negative values used to be
+/// stored as `UInt64` (e.g. `weight = -1` → `18446744073709551615`) and then fail with
+/// `POCO_EXCEPTION` rather than `BAD_ARGUMENTS`. `weight` is a `UInt32` slot count, so it
+/// cannot be negative; `priority` is signed (`lower` means higher priority).
+void validateIntProperty(const Field & value, std::string_view name, Int64 min, Int64 max)
+{
+    Int64 parsed = applyVisitor(FieldVisitorConvertToNumber<Int64>(), value);
+    if (parsed < min || parsed > max)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` must be in range {}..{}, got {}", name, min, max, parsed);
+}
+
 void validateClusterLevelProperties(const Properties & properties)
 {
     validateNoDuplicateProperties(properties, "at cluster level");
@@ -117,6 +129,10 @@ void validateShardProperties(const Properties & properties, bool has_replicas)
 
         if (change.name == "port")
             validatePortProperty(change.value);
+        else if (change.name == "weight")
+            validateIntProperty(change.value, change.name, 0, std::numeric_limits<Int32>::max());
+        else if (change.name == "priority")
+            validateIntProperty(change.value, change.name, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
     }
 }
 
@@ -131,6 +147,8 @@ void validateReplicaProperties(const Properties & properties)
 
         if (change.name == "port")
             validatePortProperty(change.value);
+        else if (change.name == "priority")
+            validateIntProperty(change.value, change.name, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
     }
 }
 
@@ -224,8 +242,12 @@ void setConfigValue(Poco::Util::AbstractConfiguration & config, const String & k
         config.setString(key, value.safeGet<String>());
     else if (value.getType() == Field::Types::Bool)
         config.setBool(key, value.safeGet<bool>());
+    else if (value.getType() == Field::Types::Int64)
+        config.setInt64(key, value.safeGet<Int64>());
+    else if (value.getType() == Field::Types::UInt64)
+        config.setUInt64(key, value.safeGet<UInt64>());
     else
-        config.setUInt64(key, applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value));
+        config.setInt64(key, applyVisitor(FieldVisitorConvertToNumber<Int64>(), value));
 }
 
 void applyReplicaProperties(Poco::Util::AbstractConfiguration & config, const String & prefix, const Properties & properties)
