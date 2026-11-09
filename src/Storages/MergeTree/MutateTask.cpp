@@ -2280,8 +2280,13 @@ static NameToNameVector collectFilesForRenames(
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
 
+    /// One source column can be retired twice. Shared streams are counted once, so decrement them once.
+    NameSet removed_source_columns;
     auto remove_column_streams = [&](const String & column_name)
     {
+        if (!removed_source_columns.insert(column_name).second)
+            return;
+
         /// Delete files if they are no longer shared with another column.
         auto remove_stream = [&](const std::optional<String> & stream_name)
         {

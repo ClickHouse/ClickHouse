@@ -15,7 +15,9 @@
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -545,6 +547,65 @@ static bool nameOrParentIn(const NameSet & names, const String & name)
     }
 }
 
+/// Cast inputs of a replacement default to the current type, then return the stored columns to put back.
+static std::vector<ColumnWithTypeAndName> convertReplacementDefaultInputs(
+    Block & block,
+    const NameSet & materialized,
+    const ColumnsDescription & columns,
+    ContextPtr context)
+{
+    std::vector<String> pending(materialized.begin(), materialized.end());
+    NameSet seen;
+    NameSet queued;
+    NamesAndTypesList to_convert;
+
+    while (!pending.empty())
+    {
+        String name = std::move(pending.back());
+        pending.pop_back();
+        if (!seen.insert(name).second)
+            continue;
+
+        const auto * description = columns.tryGet(name);
+        if (!description || !description->default_desc.expression)
+            continue;
+
+        auto expression = description->default_desc.expression->clone();
+        RequiredSourceColumnsVisitor::Data data;
+        RequiredSourceColumnsVisitor(data).visit(expression);
+        for (const auto & identifier : data.requiredColumns())
+        {
+            if (!block.has(identifier))
+            {
+                if (columns.tryGet(identifier))
+                    pending.push_back(identifier);
+                continue;
+            }
+
+            if (!queued.insert(identifier).second)
+                continue;
+
+            const auto & stored = block.getByName(identifier);
+            const auto * current = columns.tryGet(identifier);
+            if (!current || stored.type->equals(*current->type))
+                continue;
+
+            to_convert.emplace_back(identifier, current->type);
+        }
+    }
+
+    std::vector<ColumnWithTypeAndName> saved;
+    if (to_convert.empty())
+        return saved;
+
+    saved.reserve(to_convert.size());
+    for (const auto & column : to_convert)
+        saved.push_back(block.getByName(column.name));
+
+    performRequiredConversions(block, to_convert, context, columns.getDefaults());
+    return saved;
+}
+
 /// Materialize columns this statement freed or cleared. Leave other missing columns for the read path.
 static void applyStoredColumnIdentity(
     Block & block,
@@ -602,6 +663,7 @@ static void applyStoredColumnIdentity(
 
     NamesAndTypesList required;
     NameSet required_names;
+    NameSet materialized;
     bool materialize = false;
 
     auto requireColumn = [&](const String & name, const DataTypePtr & type)
@@ -609,6 +671,7 @@ static void applyStoredColumnIdentity(
         if (block.has(name) || !required_names.insert(name).second)
             return;
         required.emplace_back(name, type);
+        materialized.insert(name);
         materialize = true;
     };
 
@@ -655,9 +718,17 @@ static void applyStoredColumnIdentity(
     for (auto & column : block)
         column.column = column.column->decompress();
 
+    auto saved_inputs = convertReplacementDefaultInputs(block, materialized, metadata.columns, context);
+
     auto dag = addMissingDefaults(block, required, metadata.columns, context);
     auto actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context->getSettingsRef()));
     actions->execute(block);
+
+    for (const auto & column : saved_inputs)
+    {
+        if (block.has(column.name))
+            block.getByName(column.name) = column;
+    }
 
     if (!placeholder.empty() && block.has(placeholder))
         block.erase(placeholder);
