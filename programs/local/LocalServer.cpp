@@ -1207,6 +1207,9 @@ void LocalServer::cleanup()
         // Delete the temporary directory if needed.
         if (temporary_directory_to_delete)
         {
+            /// A dump keeps the file caches of its disks in this directory, so the disks go first.
+            if (getClientConfiguration().has("dump-schema"))
+                shared_context.reset();
             LOG_DEBUG(&logger(), "Removing temporary directory: {}", temporary_directory_to_delete->string());
             fs::remove_all(*temporary_directory_to_delete);
             temporary_directory_to_delete.reset();
