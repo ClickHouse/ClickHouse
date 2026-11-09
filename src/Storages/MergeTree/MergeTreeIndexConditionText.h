@@ -158,6 +158,7 @@ public:
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
         IsShadowingColumn is_column_shadowing_map_subcolumn_,
+        NameToNameMap map_subcolumn_index_columns_,
         JSONIndexArgumentTypes json_argument_types_,
         TextIndexAutomatonBudgetPtr automaton_budget_ = nullptr);
 
@@ -302,6 +303,7 @@ private:
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
     IsShadowingColumn is_column_shadowing_map_subcolumn;
+    const NameToNameMap map_subcolumn_index_columns;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
     std::shared_ptr<const ITokenizer> owned_tokenizer;
