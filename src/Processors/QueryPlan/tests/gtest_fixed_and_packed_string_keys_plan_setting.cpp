@@ -20,9 +20,10 @@ using namespace DB;
 /// whenever an aggregation step can choose one of the `keys*_packed_string` methods. Otherwise it would
 /// aggregate with the serialized method and split keys over different two-level buckets.
 ///
-/// A peer that predates the name rejects any plan carrying it (`QueryPlanSerializationSettings` is a
-/// strict named schema). Such a peer gets the name only where its serialized method could corrupt the
-/// distributed merge, so it fails closed there and nowhere else.
+/// A peer that predates the name rejects any plan carrying it, because the setting is declared `IMPORTANT`:
+/// the reader of `QueryPlanSerializationSettings` skips only the unknown names that are not. Such a peer gets
+/// the name only where its serialized method could corrupt the distributed merge, so it fails closed there
+/// and nowhere else.
 namespace
 {
 
@@ -45,11 +46,11 @@ Aggregator::Params makeParams(const Names & keys, bool enable_fixed_and_packed_s
     return params;
 }
 
-/// Whether the name appears in the binary settings stream written by `writeChangedBinary`.
+/// Whether the name appears in the settings stream written by `QueryPlanSerializationSettings::write`.
 bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
 {
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.write(out);
     return out.str().contains("enable_fixed_and_packed_string_keys_in_aggregation");
 }
 
