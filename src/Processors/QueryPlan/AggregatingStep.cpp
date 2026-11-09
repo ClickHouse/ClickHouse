@@ -1367,10 +1367,12 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     /// initiator does.
     ///
     /// A peer that predates the name always uses the serialized method for these keys, and its two-level
-    /// bucket numbering differs. As with the packed-string-keys setting above, such a peer gets the name only
-    /// when the plan can go two-level: it then rejects the plan, because the setting is `IMPORTANT`, instead
-    /// of corrupting the distributed merge. With both thresholds at `0`, its single-level blocks merge as a
-    /// plain union by key, so the name stays off the wire.
+    /// bucket numbering differs, so it must reject the plan instead of corrupting the distributed merge. A
+    /// peer below the setting's version throws on any unknown name. As with the packed-string-keys setting
+    /// above, it gets the name only when the plan can go two-level: with both thresholds at `0`, its
+    /// single-level blocks merge as a plain union by key, so the name stays off the wire. A peer at the
+    /// setting's version that does not know the name yet gets it whenever this step can choose the method,
+    /// and throws too, because the setting is `IMPORTANT`.
     if (params.enable_fixed_and_packed_string_keys
         && (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FIXED_AND_PACKED_STRING_KEYS_SETTING
             || params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)

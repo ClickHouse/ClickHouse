@@ -306,9 +306,9 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
 
     /// The same for `enable_fixed_and_packed_string_keys_in_aggregation`, whose plan default `false` is the
     /// method of a peer that predates it (see `AggregatingStep::serializeSettings`). The value is written
-    /// whenever this step can choose the method, so a peer that predates the name rejects the plan, because
-    /// the setting is `IMPORTANT`: for the reason above, no two-level condition can show that its serialized
-    /// method would merge the producers' input correctly.
+    /// whenever this step can choose the method, so a peer that predates the name rejects the plan, even one
+    /// that skips unknown names, as the setting is `IMPORTANT`. For the reason above, no two-level condition
+    /// can show that its serialized method would merge the producers' input correctly.
     if (params.enable_fixed_and_packed_string_keys
         && aggregationCanUseFixedAndPackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))
         settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation] = true;

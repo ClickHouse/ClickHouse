@@ -20,10 +20,10 @@ using namespace DB;
 /// whenever an aggregation step can choose one of the `keys*_packed_string` methods. Otherwise it would
 /// aggregate with the serialized method and split keys over different two-level buckets.
 ///
-/// A peer that predates the name rejects any plan carrying it, because the setting is declared `IMPORTANT`:
-/// the reader of `QueryPlanSerializationSettings` skips only the unknown names that are not. Such a peer gets
-/// the name only where its serialized method could corrupt the distributed merge, so it fails closed there
-/// and nowhere else.
+/// A peer that predates the name rejects any plan carrying it. A peer below the setting's version throws on
+/// any unknown name, and a peer at that version that does not know the name yet throws because the setting is
+/// declared `IMPORTANT`. A peer below the version gets the name only where its serialized method could
+/// corrupt the distributed merge, so it fails closed there and nowhere else.
 namespace
 {
 

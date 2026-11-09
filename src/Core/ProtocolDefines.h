@@ -155,11 +155,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// as `Settings` are sent in the native protocol, instead of the binary encoding of each value. A reader skips a
 /// name it does not know, unless the setting is declared `IMPORTANT`. The binary encoding is no longer supported
 /// at all, so a peer below this version can neither send nor receive a plan (see the constant below).
-/// Version 21 also registers the `enable_fixed_and_packed_string_keys_in_aggregation` plan setting.
-/// A peer at this version receives it whenever an aggregation step can choose the method. The setting is
-/// declared `IMPORTANT`, so a peer that predates it rejects the name instead of skipping it. Such a peer gets
-/// the name only where its serialized method could corrupt two-level distributed merging, so it fails closed
-/// there and nowhere else.
+/// Version 21 also registers the `enable_fixed_and_packed_string_keys_in_aggregation` plan setting. A peer at
+/// this version receives it whenever an aggregation step can choose the method. The setting is declared
+/// `IMPORTANT`, so a peer at this version that does not know the name yet rejects the plan instead of
+/// skipping the name and aggregating with another method.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
