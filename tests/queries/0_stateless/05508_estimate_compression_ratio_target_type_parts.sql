@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS t_nullable;
 DROP TABLE IF EXISTS t_ip;
 DROP TABLE IF EXISTS t_sparse;
 DROP TABLE IF EXISTS t_arrays;
+DROP TABLE IF EXISTS t_wide;
 DROP TABLE IF EXISTS est;
 
 CREATE TABLE t_strings
@@ -32,6 +33,7 @@ SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index
     propagate_types_serialization_versions_to_nested_types = 1, min_columns_to_activate_adaptive_write_buffer = 500;
 
 CREATE TABLE t_unique AS t_strings;
+CREATE TABLE t_wide AS t_strings;
 CREATE TABLE t_ints
 (
     x UInt64 CODEC(LZ4),
@@ -86,6 +88,8 @@ INSERT INTO t_ints SELECT x, x, x, x, x, x FROM (SELECT number * 3 + number % 7 
 INSERT INTO t_nullable SELECT x, x, x, x FROM (SELECT if(number % 10 = 0, NULL, concat('region_', toString(number % 16))) AS x FROM numbers(100000));
 INSERT INTO t_ip SELECT x, x, x, x FROM (SELECT toIPv4(167772160 + number * 7) AS x FROM numbers(100000));
 INSERT INTO t_sparse SELECT x, x, x, x, x FROM (SELECT if(number % 50 = 0, concat('x', toString(number)), '') AS x FROM numbers(100000));
+-- Rows of about 200 bytes: granules of 8192 rows take more than a state holds at once.
+INSERT INTO t_wide SELECT x, x, x, x, x FROM (SELECT concat(repeat('x', 180), toString(cityHash64(number % 1000))) AS x FROM numbers(100000));
 INSERT INTO t_arrays SELECT x, x, x FROM (SELECT arrayMap(i -> toUInt32(i * 3 + number % 5), range(number % 20)) AS x FROM numbers(100000));
 
 -- One part per table, and the source column of `t_sparse` is read sparse.
@@ -116,6 +120,10 @@ INSERT INTO est SELECT 't_sparse', 'str_zstd', estimateCompressionRatio('ZSTD(3)
 INSERT INTO est SELECT 't_sparse', 'str_lz4', estimateCompressionRatio('LZ4', 'String')(x) FROM t_sparse;
 INSERT INTO est SELECT 't_sparse', 'lc_lz4', estimateCompressionRatio('LZ4', 'LowCardinality(String)')(x) FROM t_sparse;
 INSERT INTO est SELECT 't_sparse', 'lc_zstd', estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(x) FROM t_sparse;
+INSERT INTO est SELECT 't_wide', 'str_zstd', estimateCompressionRatio('ZSTD(3)', 'String')(x) FROM t_wide;
+INSERT INTO est SELECT 't_wide', 'str_lz4', estimateCompressionRatio('LZ4', 'String')(x) FROM t_wide;
+INSERT INTO est SELECT 't_wide', 'lc_lz4', estimateCompressionRatio('LZ4', 'LowCardinality(String)')(x) FROM t_wide;
+INSERT INTO est SELECT 't_wide', 'lc_zstd', estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(x) FROM t_wide;
 INSERT INTO est SELECT 't_arrays', 'array32_zstd', estimateCompressionRatio('ZSTD(3)', 'Array(UInt32)')(x) FROM t_arrays;
 INSERT INTO est SELECT 't_arrays', 'array64_lz4', estimateCompressionRatio('LZ4', 'Array(UInt64)')(x) FROM t_arrays;
 
@@ -143,4 +151,5 @@ DROP TABLE t_nullable;
 DROP TABLE t_ip;
 DROP TABLE t_sparse;
 DROP TABLE t_arrays;
+DROP TABLE t_wide;
 DROP TABLE est;

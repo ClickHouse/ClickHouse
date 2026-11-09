@@ -27,6 +27,7 @@
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
@@ -250,9 +251,11 @@ public:
 
 /// The defaults of `MergeTree` the estimate follows.
 constexpr size_t GRANULE_ROWS = 8192;
-/// The writer bounds a granule by `index_granularity_bytes` (10 MiB) over all columns. One column is bounded by less, which
-/// keeps the rows a state holds small.
-constexpr size_t GRANULE_BYTES = DBMS_DEFAULT_BUFFER_SIZE;
+/// `index_granularity_bytes`: the writer ends a granule earlier when its rows take this much (over all columns of the table).
+constexpr size_t GRANULE_BYTES = 10 * 1024 * 1024;
+/// A state holds at most this many bytes of rows. A wider granule is written in pieces, which only a `LowCardinality` target
+/// notices (a header of 16 bytes per piece).
+constexpr size_t PENDING_BYTES = DBMS_DEFAULT_BUFFER_SIZE;
 constexpr size_t DEFAULT_MIN_COMPRESS_BLOCK_SIZE = 65536;
 constexpr size_t DEFAULT_MAX_COMPRESS_BLOCK_SIZE = DBMS_DEFAULT_BUFFER_SIZE;
 
@@ -320,8 +323,11 @@ struct EstimateCompressionRatioWithTargetData
     UInt64 source_bytes = 0;
     /// The compressed bytes in the target type: the finished parts and the merged states.
     UInt64 compressed_bytes = 0;
-    /// Rows of the source type waiting for their granule.
+    /// Rows of the source type waiting to be written.
     MutableColumnPtr pending;
+    /// The rows and bytes of the open granule written so far, when it is written in pieces.
+    size_t granule_rows = 0;
+    size_t granule_bytes = 0;
     /// The part the granules go to, until the state is read.
     std::unique_ptr<TargetPart> part;
     /// Set while the part changes. It stays set if that fails, and the state cannot be read then.
@@ -397,7 +403,7 @@ public:
     {
         auto & data_ref = data(place);
         pendingOf(data_ref).insertFrom(*columns[0], row_num);
-        if (isGranuleFull(data_ref))
+        if (isPendingFull(data_ref))
             writePending(data_ref);
     }
 
@@ -495,9 +501,15 @@ private:
         return *data_ref.pending;
     }
 
-    static bool isGranuleFull(const Data & data_ref)
+    static bool completesGranule(const Data & data_ref)
     {
-        return data_ref.pending->size() >= GRANULE_ROWS || data_ref.pending->byteSize() >= GRANULE_BYTES;
+        return data_ref.granule_rows + data_ref.pending->size() >= GRANULE_ROWS
+            || data_ref.granule_bytes + data_ref.pending->byteSize() >= GRANULE_BYTES;
+    }
+
+    static bool isPendingFull(const Data & data_ref)
+    {
+        return completesGranule(data_ref) || data_ref.pending->byteSize() >= PENDING_BYTES;
     }
 
     void addRows(Data & data_ref, const IColumn & column, size_t row_begin, size_t row_end) const
@@ -509,31 +521,36 @@ private:
         while (row_begin < row_end)
         {
             auto & pending = pendingOf(data_ref);
-            const size_t room_rows = GRANULE_ROWS - std::min(GRANULE_ROWS, pending.size());
-            const size_t room_bytes = GRANULE_BYTES - std::min(GRANULE_BYTES, pending.byteSize());
+            const size_t pending_bytes = pending.byteSize();
+            const size_t room_rows = GRANULE_ROWS - std::min(GRANULE_ROWS, data_ref.granule_rows + pending.size());
+            const size_t room_bytes = std::min(
+                PENDING_BYTES - std::min(PENDING_BYTES, pending_bytes),
+                GRANULE_BYTES - std::min(GRANULE_BYTES, data_ref.granule_bytes + pending_bytes));
             const size_t rows = std::max<size_t>(1, std::min({row_end - row_begin, room_rows, room_bytes / bytes_per_row}));
             pending.insertRangeFrom(column, row_begin, rows);
-            /// A granule ends after the first row that fills it, as in `add`, whatever the blocks. The bytes only grow with
-            /// the rows, so only a range that went past `GRANULE_BYTES` is added again row by row to find that row.
-            if (rows > 1 && pending.byteSize() >= GRANULE_BYTES)
+            /// The pending rows are written after the first row that fills them, as in `add`, whatever the blocks. The bytes
+            /// only grow with the rows, so only a range that filled them by bytes is added again row by row to find that row.
+            const size_t bytes = pending.byteSize();
+            if (rows > 1 && (bytes >= PENDING_BYTES || data_ref.granule_bytes + bytes >= GRANULE_BYTES))
             {
                 pending.popBack(rows);
-                while (row_begin < row_end && !isGranuleFull(data_ref))
+                while (row_begin < row_end && !isPendingFull(data_ref))
                     pending.insertFrom(column, row_begin++);
             }
             else
             {
                 row_begin += rows;
             }
-            if (isGranuleFull(data_ref))
+            if (isPendingFull(data_ref))
                 writePending(data_ref);
         }
     }
 
-    /// Writes the pending rows to the part as one granule.
+    /// Writes the pending rows to the part: a granule, or a piece of one.
     void writePending(Data & data_ref) const
     {
         throwIfBroken(data_ref);
+        const bool ends_granule = completesGranule(data_ref);
 
         ColumnPtr rows = data_ref.pending->getPtr();
         /// A value the target type cannot hold is an error here, before the state changes.
@@ -554,11 +571,14 @@ private:
         /// As `MergeTreeDataPartWriterWide::getCurrentMarksForColumn` before a granule: a stream that holds
         /// `min_compress_block_size` ends its compressed block.
         auto & part = *data_ref.part;
-        for (auto & [_, stream] : part.streams)
-            if (stream->offset() >= min_compress_block_size)
-                stream->endBlock();
+        if (data_ref.granule_rows == 0)
+            for (auto & [_, stream] : part.streams)
+                if (stream->offset() >= min_compress_block_size)
+                    stream->endBlock();
         part.serialization->serializeBinaryBulkWithMultipleStreams(*converted, 0, converted->size(), part.settings, part.state);
 
+        data_ref.granule_rows = ends_granule ? 0 : data_ref.granule_rows + rows->size();
+        data_ref.granule_bytes = ends_granule ? 0 : data_ref.granule_bytes + rows->byteSize();
         data_ref.source_bytes += rows_bytes;
         converted.reset();
         rows.reset();
@@ -584,7 +604,7 @@ private:
     {
         auto part = std::make_unique<TargetPart>();
 
-        /// Sparse or not by the default values of the first granule, as a part by those of the rows inserted.
+        /// Sparse or not by the default values of the first rows, as a part by those of the rows inserted.
         auto info = target_type->createSerializationInfo(mergeTreeInfoSettings());
         info->add(first_granule);
         part->serialization = target_type->getSerialization(*info);
@@ -621,13 +641,15 @@ private:
         return part;
     }
 
-    /// Writes the last granule and the suffix, and adds the compressed bytes of the part. A finished state has no part and no
+    /// Writes the last rows and the suffix, and adds the compressed bytes of the part. A finished state has no part and no
     /// pending rows, so reading it again gives the same totals.
     void finish(Data & data_ref) const
     {
         throwIfBroken(data_ref);
         if (data_ref.pending && !data_ref.pending->empty())
             writePending(data_ref);
+        data_ref.granule_rows = 0;
+        data_ref.granule_bytes = 0;
         if (!data_ref.part)
             return;
 
@@ -673,7 +695,7 @@ private:
 }
 
 static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
-    const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
+    const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings * settings)
 {
     if (arguments.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires exactly one argument", name);
@@ -739,8 +761,14 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
     }
 
     if (target_type)
+    {
+        /// As `CAST` and `CREATE TABLE`, which reject suspicious and experimental types the settings do not allow. Without
+        /// settings (a state type read from a table) the type is trusted.
+        if (settings)
+            validateDataType(target_type, DataTypeValidationSettings(*settings));
         return std::make_shared<AggregateFunctionEstimateCompressionRatioWithTarget>(
             arguments, parameters, std::move(target_type), codec, block_size_bytes);
+    }
     return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes);
 }
 

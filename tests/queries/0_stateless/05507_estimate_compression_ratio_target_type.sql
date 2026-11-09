@@ -38,6 +38,9 @@ SELECT estimateCompressionRatio('UInt32')(s) FROM src; -- { serverError CANNOT_P
 SELECT estimateCompressionRatio('Enum8(\'only\' = 1)')(toUInt8(2)); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT estimateCompressionRatio('DateTime')('01/02/2020') > 0 SETTINGS cast_string_to_date_time_mode = 'best_effort';
 SELECT estimateCompressionRatio('DateTime')('01/02/2020') SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
+-- Suspicious and experimental types need their settings, as in `CAST`.
+SELECT estimateCompressionRatio('LowCardinality(UInt8)')(toUInt8(n)) FROM src; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY }
+SELECT estimateCompressionRatio('LowCardinality(UInt8)')(toUInt8(n)) > 0 FROM src SETTINGS allow_suspicious_low_cardinality_types = 1;
 -- A codec the target type cannot take, or that compresses nothing by itself.
 SELECT estimateCompressionRatio('T64', 'String')(n) FROM src WHERE n > 1000000; -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
 SELECT estimateCompressionRatio('Delta', 'LowCardinality(String)')(n) FROM src WHERE n > 1000000; -- { serverError BAD_ARGUMENTS }
