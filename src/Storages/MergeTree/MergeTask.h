@@ -248,6 +248,8 @@ private:
         NamesAndTypesList gathering_columns{};
         NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
+        /// Subcolumns used by the merging algorithm, read in addition to `merging_columns`.
+        Names merging_subcolumns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
         NamesAndTypesList virtual_columns{};
@@ -354,7 +356,7 @@ private:
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
 
-        std::function<bool()> is_cancelled{};
+        std::function<bool()> merge_cancelled{};
 
         /// Local variables for this stage
         size_t sum_input_rows_upper_bound{0};
