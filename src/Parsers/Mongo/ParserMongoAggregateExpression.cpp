@@ -95,8 +95,6 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$round", "roundBankers"},
     {"$trunc", "trunc"},
     {"$exp", "exp"},
-    {"$ln", "log"},
-    {"$log10", "log10"},
     {"$reverseArray", "reverse"},
     {"$concatArrays", "arrayConcat"},
     {"$setIntersection", "arrayIntersect"},
@@ -158,35 +156,97 @@ ASTPtr makeBalancedFold(const std::string & function, const std::vector<ASTPtr> 
     return makeASTFunction(function, makeBalancedFold(function, operands, begin, middle), makeBalancedFold(function, operands, middle, end));
 }
 
-/** The operands of an operator such as `$add`, converted to `Float64` and folded with the binary
-  * `function` one after another, from the first to the last, as Mongo evaluates them: with doubles,
-  * `[1e16, 1.0, -1e16, 1.0]` add up to `1`, while `(1e16 + 1) + (-1e16 + 1)` is `0`. The fold is
-  * done by `arrayFold` over a flat array, so its depth does not grow with the number of operands,
-  * see `makeBalancedFold`. Every value is a `Nullable(Float64)`, so that the accumulator keeps its
+ASTPtr makeRuntimeTypeName(const ASTPtr & value);
+ASTPtr withValue(ASTPtr value, const std::function<ASTPtr(const ASTPtr &)> & body);
+
+/** The operands of an operator such as `$add`, folded with the binary `function` one after another,
+  * from the first to the last, as Mongo evaluates them: with doubles, `[1e16, 1.0, -1e16, 1.0]` add
+  * up to `1`, while `(1e16 + 1) + (-1e16 + 1)` is `0`. Mongo also keeps an exact integer subtotal
+  * until it reaches an operand that is not an integer, or until the subtotal leaves the range of a
+  * 64-bit integer, and only then continues in doubles: `[9007199254740993, -9007199254740992, 0.0]`
+  * is `1.0`, while the first operand alone is not a double. So the accumulator is a tuple of the
+  * exact subtotal, the floating point one, and whether the latter is the one in use.
+  * The fold is done by `arrayFold` over a flat array, so its depth does not grow with the number of
+  * operands, see `makeBalancedFold`. Every value is `Nullable`, so that the accumulator keeps its
   * type when some of the operands are `Nullable` and others are not - or a `NULL` literal, of the
-  * type `Nullable(Nothing)` - and a `NULL` operand gives a `NULL`.
+  * type `Nullable(Nothing)` - and a `NULL` operand gives a `NULL`. The result is a
+  * `Nullable(Float64)`. Nothing here throws: `accurateCastOrNull` gives `NULL` for an operand that
+  * is not an integer, whose exact value is not used.
   */
 ASTPtr makeSequentialFloatFold(const std::string & function, const std::vector<ASTPtr> & operands)
 {
-    const auto to_float = [](const ASTPtr & operand)
+    static const String accumulator_type = "Tuple(Nullable(Int128), Nullable(Float64), UInt8)";
+    static const String operand_type = "Tuple(Nullable(Float64), Nullable(Int128), UInt8)";
+    const auto element = [](const char * tuple, UInt64 index)
     {
-        return makeASTFunction("CAST", operand->clone(), makeLiteral(Field(String("Nullable(Float64)"))));
+        return makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(tuple), makeLiteral(Field(index)));
     };
-    if (operands.size() == 1)
-        return to_float(operands.front());
-    std::vector<ASTPtr> rest;
-    rest.reserve(operands.size() - 1);
-    for (size_t i = 1; i < operands.size(); ++i)
-        rest.push_back(to_float(operands[i]));
-    auto parameters = makeASTFunction(
-        "tuple", make_intrusive<ASTIdentifier>("__mongo_fold_accumulator"), make_intrusive<ASTIdentifier>("__mongo_fold_operand"));
+    const auto make_tuple = [](ASTPtr first, ASTPtr second, ASTPtr third, const String & type)
+    {
+        return makeASTFunction(
+            "CAST",
+            makeASTFunction("tuple", std::move(first), std::move(second), std::move(third)),
+            makeLiteral(Field(type)));
+    };
+
+    std::vector<ASTPtr> values;
+    values.reserve(operands.size());
+    for (const auto & operand : operands)
+    {
+        /// The type of a `Dynamic` is the one of its value, see `makeRuntimeTypeName`.
+        auto is_integer = makeASTFunction(
+            "match", makeRuntimeTypeName(operand), makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*U?Int)"))));
+        values.push_back(make_tuple(
+            makeASTFunction("CAST", operand->clone(), makeLiteral(Field(String("Nullable(Float64)")))),
+            makeASTFunction("accurateCastOrNull", operand->clone(), makeLiteral(Field(String("Int128")))),
+            std::move(is_integer),
+            operand_type));
+    }
+
+    const char * accumulator = "__mongo_fold_accumulator";
+    const char * operand = "__mongo_fold_operand";
+    /// The subtotal is within the range of a 64-bit integer, and an operand within the one of a
+    /// `UInt64`, so neither their sum nor their product overflows an `Int128`.
+    auto exact = makeASTFunction(function, element(accumulator, 1), element(operand, 2));
+    auto exact_fits = makeASTFunction(
+        "and",
+        element(operand, 3),
+        makeASTFunction("greaterOrEquals", exact->clone(), makeLiteral(Field(std::numeric_limits<Int64>::min()))),
+        makeASTFunction("lessOrEquals", exact->clone(), makeLiteral(Field(std::numeric_limits<Int64>::max()))));
     auto body = makeASTFunction(
-        function, make_intrusive<ASTIdentifier>("__mongo_fold_accumulator"), make_intrusive<ASTIdentifier>("__mongo_fold_operand"));
-    return makeASTFunction(
+        "multiIf",
+        element(accumulator, 3),
+        make_tuple(
+            makeLiteral(Field(UInt64(0))),
+            makeASTFunction(function, element(accumulator, 2), element(operand, 1)),
+            makeLiteral(Field(UInt64(1))),
+            accumulator_type),
+        std::move(exact_fits),
+        make_tuple(exact->clone(), makeLiteral(Field(UInt64(0))), makeLiteral(Field(UInt64(0))), accumulator_type),
+        /// The first operand that is not an integer, or a subtotal out of the range: the subtotal
+        /// becomes a double, as in Mongo.
+        make_tuple(
+            makeLiteral(Field(UInt64(0))),
+            makeASTFunction(function, makeASTFunction("toFloat64", element(accumulator, 1)), element(operand, 1)),
+            makeLiteral(Field(UInt64(1))),
+            accumulator_type));
+
+    /// The identity of the operation, so that the first operand is taken as it is.
+    const UInt64 identity = function == "multiply" ? 1 : 0;
+    auto initial = make_tuple(
+        makeLiteral(Field(identity)), makeLiteral(Field(UInt64(0))), makeLiteral(Field(UInt64(0))), accumulator_type);
+    auto parameters = makeASTFunction("tuple", make_intrusive<ASTIdentifier>(accumulator), make_intrusive<ASTIdentifier>(operand));
+    auto folded = makeASTFunction(
         "arrayFold",
         makeASTFunction("lambda", std::move(parameters), std::move(body)),
-        makeFunction("array", std::move(rest)),
-        to_float(operands.front()));
+        makeFunction("array", std::move(values)),
+        std::move(initial));
+
+    return withValue(std::move(folded), [](const ASTPtr & result)
+    {
+        auto get = [&](UInt64 index) { return makeASTFunction("tupleElement", result->clone(), makeLiteral(Field(index))); };
+        return makeASTFunction("if", get(3), get(2), makeASTFunction("toFloat64", get(1)));
+    });
 }
 
 /// A member of the document of an operator such as `$regexFind` or `$dateTrunc`.
@@ -610,6 +670,16 @@ ASTPtr makeToDate(ASTPtr argument)
     });
 }
 
+/** `converted` for a `NULL` `value` is `NULL`, as the conversion operators of Mongo return. A
+  * conversion of a `Dynamic` is not `Nullable`, and turns its `NULL` into the default value of the
+  * type it converts to, such as `0` or an empty string, whatever `cast_keep_nullable` is. For a type
+  * that is not `Nullable` the condition is a constant `false`.
+  */
+ASTPtr withNullPreserved(const ASTPtr & value, ASTPtr converted)
+{
+    return makeASTFunction("if", makeASTFunction("isNull", value->clone()), makeNull(), std::move(converted));
+}
+
 /** The lowering of `$toInt`. `toInt32` wraps a value outside the range of a 32-bit integer around,
   * while Mongo rejects it, so the truncated value is checked first; the fraction of a value in the
   * range is truncated by both. The truncation is done exactly by `toInt128`, as in `makeToLong`: a
@@ -638,11 +708,13 @@ ASTPtr makeToInt(ASTPtr argument)
             std::move(out_of_range),
             makeLiteral(Field(String("The value of '$toInt' is out of the range of a 32-bit integer"))));
         /// The condition is never true: it throws instead.
-        return makeASTFunction(
-            "if",
-            std::move(guard),
-            makeASTFunction("toInt32", makeLiteral(Field(UInt64(0)))),
-            makeASTFunction("toInt32", value->clone()));
+        return withNullPreserved(
+            value,
+            makeASTFunction(
+                "if",
+                std::move(guard),
+                makeASTFunction("toInt32", makeLiteral(Field(UInt64(0)))),
+                makeASTFunction("toInt32", value->clone())));
     });
 }
 
@@ -656,7 +728,7 @@ ASTPtr makeToInt(ASTPtr argument)
 ASTPtr makeToLong(ASTPtr argument)
 {
     const bool is_literal = argument->as<ASTLiteral>() != nullptr;
-    return withValue(std::move(argument), [is_literal](const ASTPtr & value)
+    return withValue(std::move(argument), [is_literal](const ASTPtr & value) -> ASTPtr
     {
         auto bounded = makeASTFunction(
             "less", makeASTFunction("abs", makeASTFunction("toFloat64", value->clone())), makeLiteral(Field(Float64(1e19))));
@@ -675,7 +747,8 @@ ASTPtr makeToLong(ASTPtr argument)
         if (is_literal)
             return checked;
         /// A date held by a `Dynamic` is a date too, see `makeIsRuntimeDate`.
-        return makeASTFunction("if", makeIsRuntimeDate(value), makeEpochMilliseconds(makeDateOrEpoch(value)), std::move(checked));
+        return withNullPreserved(
+            value, makeASTFunction("if", makeIsRuntimeDate(value), makeEpochMilliseconds(makeDateOrEpoch(value)), std::move(checked)));
     });
 }
 
@@ -687,11 +760,13 @@ ASTPtr makeToDouble(ASTPtr argument)
     return withValue(std::move(argument), [](const ASTPtr & value)
     {
         /// A date held by a `Dynamic` is a date too, see `makeIsRuntimeDate`.
-        return makeASTFunction(
-            "if",
-            makeIsRuntimeDate(value),
-            makeASTFunction("toFloat64", makeEpochMilliseconds(makeDateOrEpoch(value))),
-            makeASTFunction("toFloat64", value->clone()));
+        return withNullPreserved(
+            value,
+            makeASTFunction(
+                "if",
+                makeIsRuntimeDate(value),
+                makeASTFunction("toFloat64", makeEpochMilliseconds(makeDateOrEpoch(value))),
+                makeASTFunction("toFloat64", value->clone())));
     });
 }
 
@@ -861,7 +936,8 @@ ASTPtr makeToString(ASTPtr argument)
             makeASTFunction(
                 "substring", makeASTFunction("toString", value->clone()), makeLiteral(Field(UInt64(1))), makeLiteral(Field(UInt64(0)))));
         /// A date held by a `Dynamic` is a date too, see `makeIsRuntimeDate`.
-        return makeASTFunction("if", makeIsRuntimeDate(value), std::move(date_text), makeASTFunction("toString", value->clone()));
+        return withNullPreserved(
+            value, makeASTFunction("if", makeIsRuntimeDate(value), std::move(date_text), makeASTFunction("toString", value->clone())));
     });
 }
 
@@ -1222,6 +1298,21 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         });
     }
 
+    /// Mongo rejects the logarithm of a number that is not positive, for which `log` and `log10`
+    /// return an infinity or `NaN`. `NaN` fails no comparison and stays `NaN`, a `NULL` stays `NULL`.
+    if (name == "$ln" || name == "$log10")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return withValue(arguments[0], [&](const ASTPtr & value)
+        {
+            return withRowGuard(
+                makeASTFunction(name == "$ln" ? "log" : "log10", value->clone()),
+                makeASTFunction("lessOrEquals", value->clone(), makeLiteral(Field(UInt64(0)))),
+                fmt::format("The argument of '{}' must be a positive number", name));
+        });
+    }
+
     if (name == "$toString")
     {
         auto arguments = parseArguments(argument);
@@ -1553,7 +1644,25 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     {
         auto arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 2);
-        return makeASTFunction("divide", makeASTFunction("log", arguments[0]), makeASTFunction("log", arguments[1]));
+        /// Mongo rejects a number that is not positive, and a base that is not positive or is `1`,
+        /// see `$ln`.
+        return withValues(arguments, [](const std::vector<ASTPtr> & values)
+        {
+            const auto & number = values[0];
+            const auto & base = values[1];
+            auto checked_number = withRowGuard(
+                makeASTFunction("log", number->clone()),
+                makeASTFunction("lessOrEquals", number->clone(), makeLiteral(Field(UInt64(0)))),
+                "The argument of '$log' must be a positive number");
+            auto checked_base = withRowGuard(
+                makeASTFunction("log", base->clone()),
+                makeASTFunction(
+                    "or",
+                    makeASTFunction("lessOrEquals", base->clone(), makeLiteral(Field(UInt64(0)))),
+                    makeASTFunction("equals", base->clone(), makeLiteral(Field(UInt64(1))))),
+                "The base of '$log' must be a positive number other than 1");
+            return makeASTFunction("divide", std::move(checked_number), std::move(checked_base));
+        });
     }
 
     if (name == "$cmp")
