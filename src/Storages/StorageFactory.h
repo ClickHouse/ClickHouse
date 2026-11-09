@@ -171,6 +171,9 @@ public:
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
     AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
+    /// The grants that `getExportAccess` can require of any definition, for an `ON CLUSTER` initiator that cannot read
+    /// the definition its workers inherit.
+    AccessRightsElements getExportAccessOfUnknownDefinition() const;
 
 private:
     Storages storages;

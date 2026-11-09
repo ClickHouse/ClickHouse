@@ -20,6 +20,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
 
+#include <base/sort.h>
+
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -392,6 +394,19 @@ AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsCh
         if (creator.features.get_export_access_fn)
             res.append_range(creator.features.get_export_access_fn(changes));
     }
+    return res;
+}
+
+AccessRightsElements StorageFactory::getExportAccessOfUnknownDefinition() const
+{
+    /// An engine sends data only to a destination of its own source type, see `ObjectStorageQueuePostProcessor::process`.
+    AccessRightsElements res;
+    for (const auto & [_, creator] : storages)
+    {
+        if (creator.features.get_export_access_fn && creator.features.source_access_type)
+            res.emplace_back(AccessType::WRITE, AccessTypeObjects::toStringSource(*creator.features.source_access_type));
+    }
+    ::sort(res.begin(), res.end());
     return res;
 }
 
