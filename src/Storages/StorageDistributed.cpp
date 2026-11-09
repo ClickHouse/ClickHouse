@@ -705,7 +705,7 @@ bool queryTreeContainsShardDependentFunctions(const QueryTreeNodePtr & root)
     return false;
 }
 
-/// The plan-level read pushes only expressions, filters and limits to the shards and finishes the rest
+/// The plan-level read pushes only expressions, filters, sorting and limits to the shards and finishes the rest
 /// of the query on the initiator. An aggregation or a window function would then receive every row of
 /// every shard instead of the partially aggregated states, so such queries keep the legacy path that
 /// runs them on the shards up to `WithMergeableState`. The same holds for a JOIN or ARRAY JOIN, which the
@@ -717,6 +717,11 @@ bool queryTreeIsPlainRead(const QueryTreeNodePtr & root)
         return false;
 
     if (query_node->hasGroupBy() || query_node->isGroupByAll() || query_node->hasWindow())
+        return false;
+
+    /// The legacy path also applies DISTINCT and LIMIT BY on each shard before sending the rows,
+    /// while the plan-level read would send every row of every shard to the initiator.
+    if (query_node->isDistinct() || query_node->hasLimitBy())
         return false;
 
     const auto & join_tree = query_node->getJoinTree();

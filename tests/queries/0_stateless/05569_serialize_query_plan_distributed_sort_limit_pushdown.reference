@@ -1,0 +1,42 @@
+-- Each shard sorts and keeps limit + offset rows
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      ReadFromRemote (Read from remote replica)
+        Limit
+          Sorting
+            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+              ReadFromTable
+        Limit
+          Sorting
+            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+              ReadFromTable
+-- Shard limits are limit + offset, sorted on each shard with that limit
+5
+-- Same result as the classic path
+998
+998
+997
+998
+998
+997
+-- Without distributed_push_down_limit the shards send every row
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      ReadFromRemote (Read from remote replica)
+        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+          ReadFromTable
+        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+          ReadFromTable
+-- DISTINCT keeps the classic path
+1
+1
+0
+1
+2
+-- LIMIT BY keeps the classic path
+3
+0
+1
+2

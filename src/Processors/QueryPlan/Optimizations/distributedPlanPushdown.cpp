@@ -210,6 +210,49 @@ static void tryCopyLimitToRemotePlan(
     placeholder.absorbLimitCopy(limit);
 }
 
+/// Sort each shard's rows and keep only its first `limit + offset` of them, as the classic path does at
+/// `WithMergeableState`, so that a shard sends at most that many rows instead of all of them.
+/// The initiator keeps its own sorting and limit: per-shard results are not globally sorted or limited.
+static void tryCopySortingAndLimitToRemotePlan(
+    LimitStep & limit, SortingStep & sorting, ReadFromRemotePlanStep & placeholder, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.distributed_push_down_limit)
+        return;
+
+    if (placeholder.isLimitCopied())
+        return;
+
+    /// Per-shard tie sets cannot be combined into the global tie set.
+    if (limit.withTies())
+        return;
+
+    /// A shard limit would break exact rows-before-limit reporting when all input must be read.
+    if (limit.alwaysReadTillEnd())
+        return;
+
+    /// Zero also represents overflow of `limit + offset`.
+    const size_t shard_limit = limit.getLimitForSorting();
+    if (shard_limit == 0)
+        return;
+
+    if (sorting.getType() != SortingStep::Type::Full || sorting.hasPartitions())
+        return;
+
+    const SortDescription & sort_description = sorting.getSortDescription();
+    if (sort_description.empty())
+        return;
+    for (const auto & column : sort_description)
+        if (column.with_fill)
+            return;
+
+    placeholder.absorbStep(std::make_unique<SortingStep>(
+        placeholder.getOutputHeader(),
+        sort_description,
+        shard_limit,
+        sorting.getSettings()));
+    placeholder.absorbLimitCopy(limit);
+}
+
 static bool dagReferencesOnlyInlineSets(const ActionsDAG & dag);
 
 static bool columnReferencesOnlyInlineSets(const IColumn & column)
@@ -273,10 +316,14 @@ void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
         if (auto * sorting = typeid_cast<SortingStep *>(child_node->step.get());
             sorting && child_node->children.size() == 1)
         {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
             if (auto * placeholder = typeid_cast<ReadFromRemotePlanStep *>(child_node->children.front()->step.get()))
+            {
+#if defined(OS_LINUX) || defined(OS_DARWIN)
                 tryEnableDistributedLazyMaterialization(*limit, *sorting, *placeholder, optimization_settings);
 #endif
+                /// No-op if the coordinated Top-K above has already copied the sorting and the limit.
+                tryCopySortingAndLimitToRemotePlan(*limit, *sorting, *placeholder, optimization_settings);
+            }
             return;
         }
     }
