@@ -81,7 +81,7 @@ append_case()
             merge_tree_use_deserialization_prefixes_cache = 1,
             optimize_read_in_order = 0,
             optimize_aggregation_in_order = 0,
-            enable_adaptive_aggregator = 0,
+            enable_adaptive_aggregator = 0, use_columns_cache = 0,
             collect_hash_table_stats_during_aggregation = 0,
             compile_aggregate_expressions = 0,
             max_rows_to_group_by = 0,

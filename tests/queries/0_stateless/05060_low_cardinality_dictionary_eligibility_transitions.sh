@@ -85,7 +85,7 @@ for dictionary_sequence in different same; do
                 optimize_read_in_order = 1,
                 query_plan_remove_redundant_sorting = 0,
                 optimize_aggregation_in_order = 0,
-                enable_adaptive_aggregator = 0,
+                enable_adaptive_aggregator = 0, use_columns_cache = 0, enable_parallel_replicas = 0,
                 max_rows_to_group_by = 0,
                 group_by_two_level_threshold = ${two_level_threshold},
                 group_by_two_level_threshold_bytes = 0;

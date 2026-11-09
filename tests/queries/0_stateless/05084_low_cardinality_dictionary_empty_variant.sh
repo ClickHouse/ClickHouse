@@ -87,7 +87,7 @@ for key_mode in decoded index; do
                 enable_lazy_columns_replication = 0,
                 optimize_read_in_order = 0,
                 optimize_aggregation_in_order = 0,
-                enable_adaptive_aggregator = 0,
+                enable_adaptive_aggregator = 0, use_columns_cache = 0,
                 empty_result_for_aggregation_by_empty_set = 0,
                 collect_hash_table_stats_during_aggregation = 0,
                 compile_aggregate_expressions = 0,

@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS low_cardinality_dictionary_index_premerge_05046;
 SET
     max_rows_to_group_by = 0,
     optimize_aggregation_in_order = 0,
-    enable_adaptive_aggregator = 0,
+    enable_adaptive_aggregator = 0, use_columns_cache = 0,
     collect_hash_table_stats_during_aggregation = 0,
     max_bytes_before_external_group_by = 0,
     max_bytes_ratio_before_external_group_by = 0;

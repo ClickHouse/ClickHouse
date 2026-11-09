@@ -100,7 +100,7 @@ append_case()
             query_plan_remove_redundant_sorting = 0,
             query_plan_lift_up_union = 0,
             optimize_aggregation_in_order = 0,
-            enable_adaptive_aggregator = 0,
+            enable_adaptive_aggregator = 0, use_columns_cache = 0,
             collect_hash_table_stats_during_aggregation = 0,
             compile_expressions = 0,
             compile_aggregate_expressions = 0,
