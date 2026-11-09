@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/TypeTree.h>
@@ -1589,6 +1590,52 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
     return names;
 }
 
+/// A filter names a column by its raw name and a key node by its expression, so a column
+/// named `f(x)` and the key node computing `f(x)` look the same.
+static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPushDown & filter_dag, const ExpressionActions & key_expr)
+{
+    if (!filter_dag.dag)
+        return {};
+
+    NameSet computed_names;
+    NameSet input_names;
+    for (const auto & node : key_expr.getActionsDAG().getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::INPUT)
+            input_names.insert(node.result_name);
+        else if (node.type != ActionsDAG::ActionType::COLUMN)
+            computed_names.insert(node.result_name);
+    }
+
+    NameSet result;
+    for (const auto * input : filter_dag.dag->getInputs())
+        if (computed_names.contains(input->result_name) && !input_names.contains(input->result_name))
+            result.insert(input->result_name);
+
+    return result;
+}
+
+static bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & names)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT && names.contains(node->result_name))
+            return true;
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
 void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
 {
     /// So far the only supported function is mortonEncode and hilbertEncode (Morton and Hilbert curves).
@@ -1625,8 +1672,8 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
 
             /// So far we only support the case of two arguments.
             if (2 == curve.arguments.size()
-                && !WhichDataType(removeLowCardinality(curve.arguments[0].type)).isUInt64()
-                && !WhichDataType(removeLowCardinality(curve.arguments[1].type)).isUInt64())
+                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[0].type))).isUInt64()
+                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[1].type))).isUInt64())
                 key_space_filling_curves.push_back(std::move(curve));
         }
     }
@@ -1687,6 +1734,7 @@ KeyCondition::KeyCondition(
     auto info = BuildInfo {
         .key_expr = key_expr_,
         .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
+        .columns_named_like_key_expressions = getColumnsNamedLikeKeyExpressions(filter_dag, *key_expr_),
         .require_ready_sets = require_ready_sets_};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
@@ -2395,7 +2443,7 @@ static bool castValuesAreTheOnlyMatches(const IColumn & floats, const IColumn & 
 ///
 /// A wider `Decimal` converts its integer to `Float64` in several rounding steps, so any float is reported for it, and so is
 /// any other float, also a `BFloat16` or one inside a `Dynamic` value: `Float32` is stored as `Float64` in a `Field` as well.
-static bool floatValuesMissKeyValues(
+bool floatValuesMissKeyValues(
     ColumnPtr column, DataTypePtr type, const DataTypePtr & key_expression_input_type, const DataTypePtr & comparison_type)
 {
     if (!anyInTypeTree(*key_expression_input_type, [](const IDataType & input_type) { return isColumnedAsDecimal(input_type); }))
@@ -5244,6 +5292,10 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
         return;
     }
 
+    if (node_dag && !info.columns_named_like_key_expressions.empty()
+        && readsInputNamedIn(*node_dag, info.columns_named_like_key_expressions))
+        return;
+
     /// For example, `ORDER BY a` and `WHERE a = 1`. Here, the function is "equals".
     if (node.isFunction())
     {
@@ -5343,6 +5395,27 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         return;
     }
 
+    /// `empty(s)` and `notEmpty(s)` of a string are the same as `s = ''` and `s != ''`
+    /// (`ConvertEmptyStringComparisonToFunctionPass` rewrites the latter to the former).
+    /// Analyze them as these comparisons, so that keys computed from the string, like `cityHash64(s)`, are used as well.
+    if (num_args == 1 && (func_name == "empty" || func_name == "notEmpty"))
+    {
+        const auto * arg_dag_node = func.getArgumentAt(0).getDAGNode();
+        if (arg_dag_node && isString(removeNullable(removeLowCardinality(arg_dag_node->result_type))))
+        {
+            const auto string_type = std::make_shared<DataTypeString>();
+            const ColumnWithTypeAndName empty_string{string_type->createColumnConst(1, Field(String())), string_type, {}};
+            extractComparisonAtomsForKeyArgument(
+                func.getArgumentAt(0),
+                info,
+                func_name == "empty" ? "equals" : "notEquals",
+                empty_string,
+                allow_relaxed_pruning,
+                group);
+            return;
+        }
+    }
+
     /// Unary functions over a key expression, like isNull(key), empty(key), etc.
     if (num_args == 1)
     {
@@ -5364,8 +5437,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
             throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
         /// empty/notEmpty produce a meaningful range only for String key columns.
-        /// For Nullable(String) they are the same as the comparisons with an empty string,
-        /// which are analyzed with the same ranges.
+        /// Usually, they are analyzed as the comparisons with an empty string above.
         if ((func_name == "empty" || func_name == "notEmpty") && !isString(removeNullable(key_expr_type)))
             return;
 
@@ -6058,7 +6130,11 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                     return std::nullopt;
                 }
 
-                const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                /// A string that does not parse as the key type, such as `'2026-07-16T12:30:45.123Z'` for a
+                /// `DateTime64` key, cannot supply a comparison bound. The comparison itself may still accept
+                /// it (for example, with `cast_string_to_date_time_mode = 'best_effort'`), so the index
+                /// declines the candidate instead of failing the query.
+                const_value = tryConvertFieldToType(const_value, *key_expr_type_not_null);
                 if (const_value.isNull())
                     return std::nullopt;
                 /// This exact conversion preserves the candidate's relaxation state.
@@ -7304,7 +7380,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
     size_t first_function_number,
-    DataTypePtr current_type,
+    const DataTypePtr & key_type,
     bool single_point)
 {
     if (functions.empty())
@@ -7317,7 +7393,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
-    current_type = recursiveRemoveLowCardinality(current_type);
+    DataTypePtr current_type = recursiveRemoveLowCardinality(key_type);
 
     /// The functions are evaluated on the endpoints of a key range, which are values the analysis
     /// substitutes rather than values the query asked about, so they can fail for an endpoint the
@@ -8987,7 +9063,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 }
 
 void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                          std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
+                                          std::function<std::optional<VectorWithMemoryTracking<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
 {
     forEachAtomWithPolarity(rpn, [&](RPNElement & rpn_element, bool positive)
     {
@@ -9023,7 +9099,7 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
                 return;
             }
 
-            hashes.emplace_back(std::vector<uint64_t>{*hashed_value});
+            hashes.emplace_back(VectorWithMemoryTracking<uint64_t>{*hashed_value});
 
             std::vector<std::size_t> key_columns_for_element;
             key_columns_for_element.emplace_back(rpn_element.getKeyColumn());
@@ -9507,7 +9583,7 @@ std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> KeyCondition::topLevelC
     return std::move(stack[0].conjuncts);
 }
 
-void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const
+void KeyCondition::extractSingleColumnConditions(VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const
 {
     using RPNRanges = std::vector<std::pair<size_t, size_t>>;
     RPNRanges conjuncts = topLevelConjunction();
