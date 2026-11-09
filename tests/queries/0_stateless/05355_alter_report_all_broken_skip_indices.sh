@@ -175,6 +175,35 @@ echo 'Expression, type, and lazy-conversion index errors reported together'
 $CLICKHOUSE_CLIENT --query 'DROP TABLE alter_mixed_expression_type_lazy_indices'
 
 $CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE TABLE alter_policy_multi_column_indices
+    (
+        x UInt64,
+        y String,
+        z UInt64,
+        INDEX idx_x x TYPE minmax,
+        INDEX idx_length_y length(y) TYPE minmax,
+        INDEX idx_token_y y TYPE tokenbf_v1(256, 2, 0)
+    ) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS add_minmax_index_for_numeric_columns = 0,
+             add_minmax_index_for_string_columns = 0,
+             alter_column_secondary_index_mode = 'throw';
+"
+check_index_validation_error \
+    'ALTER TABLE alter_policy_multi_column_indices MODIFY COLUMN x UInt32, MODIFY COLUMN y UInt64' \
+    'Code: 43.' 'ILLEGAL_TYPE_OF_ARGUMENT' 'idx_length_y' 'idx_token_y' \
+    'Cannot apply ALTER because it breaks skip indices:' 'idx_x' 'alter_column_secondary_index_mode'
+echo 'Modify collects policy, expression, and type errors across columns'
+check_index_validation_error \
+    'ALTER TABLE alter_policy_multi_column_indices RENAME COLUMN x TO renamed_x, RENAME COLUMN y TO renamed_y' \
+    'Code: 524.' 'ALTER_OF_COLUMN_IS_FORBIDDEN' 'idx_x' 'idx_token_y' 'idx_length_y'
+echo 'Rename collects policy errors across columns'
+check_index_validation_error \
+    'ALTER TABLE alter_policy_multi_column_indices CLEAR COLUMN x, CLEAR COLUMN y' \
+    'Code: 524.' 'ALTER_OF_COLUMN_IS_FORBIDDEN' 'idx_x' 'idx_token_y' 'idx_length_y'
+echo 'Clear collects policy errors across columns'
+$CLICKHOUSE_CLIENT --query 'DROP TABLE alter_policy_multi_column_indices'
+
+$CLICKHOUSE_CLIENT --multiquery --query "
     CREATE TABLE alter_invalid_text_indices
     (
         value String,

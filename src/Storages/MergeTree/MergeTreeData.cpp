@@ -1614,7 +1614,7 @@ void MergeTreeData::checkProperties(
                 new_virtuals_sample_block.dumpStructure(), old_virtuals_sample_block.dumpStructure());
     }
 
-    if (!new_metadata.secondary_indices.empty())
+    if (!new_metadata.secondary_indices.empty() || (secondary_index_errors && !secondary_index_errors->empty()))
     {
         std::unordered_set<String> indices_names;
         std::unordered_set<String> columns_with_text_indexes;
@@ -6860,12 +6860,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
-                    throw Exception(
+                    secondary_index_errors.emplace_back(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "The ALTER of the column '{}' is forbidden because it is used by the indices {}. Check the MergeTree "
-                        "setting 'alter_column_secondary_index_mode' to change this behaviour",
-                        backQuoteIfNeed(command.column_name),
-                        backQuotedList(it->second));
+                        fmt::format(
+                            "The ALTER of the column '{}' is forbidden because it is used by the indices {}. Check the MergeTree "
+                            "setting 'alter_column_secondary_index_mode' to change this behaviour",
+                            backQuoteIfNeed(command.column_name),
+                            backQuotedList(it->second)));
                 }
             }
 
@@ -6905,12 +6906,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 {
                     if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                     {
-                        throw Exception(
+                        secondary_index_errors.emplace_back(
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                            "The ALTER CLEAR of the column '{}' is forbidden because it is used by the indices {}. Check the "
-                            "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
-                            backQuoteIfNeed(command.column_name),
-                            backQuotedList(it->second));
+                            fmt::format(
+                                "The ALTER CLEAR of the column '{}' is forbidden because it is used by the indices {}. Check the "
+                                "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
+                                backQuoteIfNeed(command.column_name),
+                                backQuotedList(it->second)));
                     }
                 }
             }
@@ -6976,12 +6978,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
-                    throw Exception(
+                    secondary_index_errors.emplace_back(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "The ALTER of the column '{}' is forbidden because it is used by the indices {}. Check the MergeTree setting "
-                        "'alter_column_secondary_index_mode' to change this behaviour",
-                        backQuoteIfNeed(command.column_name),
-                        backQuotedList(it->second));
+                        fmt::format(
+                            "The ALTER of the column '{}' is forbidden because it is used by the indices {}. Check the MergeTree setting "
+                            "'alter_column_secondary_index_mode' to change this behaviour",
+                            backQuoteIfNeed(command.column_name),
+                            backQuotedList(it->second)));
                 }
             }
 
