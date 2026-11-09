@@ -175,7 +175,6 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
                         ranges.getNumberOfMarks(), total_granules, part_info->getPartName());
-        total_granules = ranges.getNumberOfMarks();
     }
 
     /// Prune with a predicate known only at read time (e.g. a JOIN's collected keys).
