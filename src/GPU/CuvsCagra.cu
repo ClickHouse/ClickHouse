@@ -7,7 +7,6 @@
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
-#include <rmm/cuda_stream_view.hpp>
 #include <rmm/error.hpp>
 
 #include <algorithm>
@@ -26,16 +25,12 @@ cuvs::distance::DistanceType cuvsDistanceOf(CagraDistance distance)
     return distance == CagraDistance::L2 ? cuvs::distance::DistanceType::L2Expanded : cuvs::distance::DistanceType::InnerProduct;
 }
 
-/// The resources of the calling thread, on its per-thread default stream: calls from different threads do not queue
-/// behind each other, and cuVS keeps what it caches between searches (the descriptors of datasets) in them.
+/// The resources of the calling thread. Their stream is by default the per-thread default stream, so calls from
+/// different threads do not queue behind each other, and cuVS keeps what it caches between searches (the descriptors
+/// of datasets) in them.
 raft::resources & threadResources()
 {
-    thread_local raft::resources resources = []
-    {
-        raft::resources res;
-        raft::resource::set_cuda_stream(res, rmm::cuda_stream_per_thread);
-        return res;
-    }();
+    thread_local raft::resources resources;
     return resources;
 }
 
@@ -89,7 +84,7 @@ __host__ void buildCagraGraph(
         if (static_cast<size_t>(device_graph.extent(0)) != rows || static_cast<size_t>(device_graph.extent(1)) != graph_degree)
             throwGPUError("CAGRA built a graph of unexpected shape");
 
-        const auto stream = raft::resource::get_cuda_stream(res);
+        const cudaStream_t stream = raft::resource::get_cuda_stream(res).get();
         checkCuda(cudaMemcpyAsync(graph, device_graph.data_handle(), rows * graph_degree * sizeof(uint32_t), cudaMemcpyDeviceToHost, stream),
             "copying a CAGRA graph to the host");
         raft::resource::sync_stream(res);
@@ -139,7 +134,7 @@ __host__ void CagraIndex::search(const float * queries, size_t num_queries, size
     translateErrors("searching a CAGRA index", [&]
     {
         auto & res = threadResources();
-        const auto stream = raft::resource::get_cuda_stream(res);
+        const cudaStream_t stream = raft::resource::get_cuda_stream(res).get();
         const auto rows = static_cast<int64_t>(num_queries);
         const auto k = static_cast<int64_t>(limit);
 
