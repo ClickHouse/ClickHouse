@@ -193,6 +193,13 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
 {
     auto & resolved_streams = resolved_streams_by_column[name_and_type.name];
 
+    const auto add_resolved_stream = [&](const String & full_stream_name, MergeTreeWriterStream * stream, const bool is_offsets)
+    {
+        const ResolvedStream resolved_stream{.stream = stream, .is_offsets = is_offsets};
+        resolved_streams.push_back(resolved_stream);
+        resolved_streams_by_full_name.emplace(full_stream_name, resolved_stream);
+    };
+
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -210,13 +217,16 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         /// Shared offsets for Nested type.
         if (const auto it = column_streams.find(stream_name); it != column_streams.end())
         {
-            resolved_streams.push_back({.stream = it->second.get(), .is_offsets = is_offsets});
+            add_resolved_stream(full_stream_name, it->second.get(), is_offsets);
             return;
         }
 
         /// Don't write offsets more than one time for Nested type in case elements of nested had been written separately, i.e. via Vertical merge.
         if (written_offset_substreams && is_offsets && written_offset_substreams->contains(stream_name))
+        {
+            written_before_full_names.insert(full_stream_name);
             return;
+        }
 
         auto it = stream_name_to_full_name.find(stream_name);
         if (it != stream_name_to_full_name.end() && it->second != full_stream_name)
@@ -280,12 +290,11 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
             settings.marks_compress_block_size,
             query_write_settings));
         chassert(inserted);
-        resolved_streams.push_back({.stream = stream_it->second.get(), .is_offsets = is_offsets});
+        add_resolved_stream(full_stream_name, stream_it->second.get(), is_offsets);
 
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
 
-        full_name_to_stream_name.emplace(full_stream_name, stream_name);
         stream_name_to_full_name.emplace(stream_name, full_stream_name);
     };
 
@@ -295,26 +304,19 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
-const String & MergeTreeDataPartWriterWide::getStreamName(
+const MergeTreeDataPartWriterWide::ResolvedStream * MergeTreeDataPartWriterWide::resolveStream(
     const NameAndTypePair & column,
     const ISerialization::SubstreamPath & substream_path) const
 {
-    auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-    String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
+    const auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
-    if (written_offset_substreams)
-    {
-        bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
-        /// If it has been written already return an empty string placeholder, to avoid writing it again.
-        if (is_offsets && written_offset_substreams->contains(stream_name))
-            return already_written_stream_holder;
-    }
+    if (const auto it = resolved_streams_by_full_name.find(full_stream_name); it != resolved_streams_by_full_name.end())
+        return &it->second;
 
-    auto it = full_name_to_stream_name.find(full_stream_name);
-    if (it == full_name_to_stream_name.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} not found", full_stream_name);
+    if (written_before_full_names.contains(full_stream_name))
+        return nullptr;
 
-    return it->second;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} not found", full_stream_name);
 }
 
 const MergeTreeDataPartWriterWide::ResolvedStreams & MergeTreeDataPartWriterWide::getResolvedStreams(const String & column_name) const
@@ -335,17 +337,15 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return nullptr;
 
-        auto stream_name = getStreamName(column, substream_path);
-        if (stream_name.empty())
+        const auto * resolved_stream = resolveStream(column, substream_path);
+        if (!resolved_stream)
             return nullptr;
 
         /// Don't write offsets more than one time for Nested type.
-        bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
-        if (is_offsets && offset_substreams.contains(stream_name))
+        if (resolved_stream->is_offsets && offset_substreams.contains(resolved_stream->stream->escaped_column_name))
             return nullptr;
 
-
-        return &column_streams.at(stream_name)->compressed_hashing;
+        return &resolved_stream->stream->compressed_hashing;
     };
 }
 
@@ -592,8 +592,11 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
     serialize_settings.stream_mark_getter = [this, name_and_type](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
     {
-        const auto & stream = column_streams.at(getStreamName(name_and_type, substream_path));
-        return {stream->plain_hashing.count(), stream->compressed_hashing.offset()};
+        const auto * resolved_stream = resolveStream(name_and_type, substream_path);
+        if (!resolved_stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark requested for an offsets stream of column {} written before this writer", name_and_type.name);
+
+        return {resolved_stream->stream->plain_hashing.count(), resolved_stream->stream->compressed_hashing.offset()};
     };
     return serialize_settings;
 }
@@ -912,6 +915,8 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
     }
 
     resolved_streams_by_column.clear();
+    resolved_streams_by_full_name.clear();
+    written_before_full_names.clear();
     column_streams.clear();
     serialization_states.clear();
 
@@ -962,6 +967,8 @@ void MergeTreeDataPartWriterWide::cancel() noexcept
             stream.second->cancel();
 
     resolved_streams_by_column.clear();
+    resolved_streams_by_full_name.clear();
+    written_before_full_names.clear();
     column_streams.clear();
     serialization_states.clear();
 

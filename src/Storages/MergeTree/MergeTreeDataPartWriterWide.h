@@ -132,7 +132,6 @@ private:
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
         const WrittenOffsetSubstreams & offset_substreams) const;
-    const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     /// A stream of a column resolved once in `addStreams`; its name is `stream->escaped_column_name`. The list of
     /// a column is in the order of `enumerateStreams`, without the ephemeral substreams and without the offsets
@@ -147,6 +146,10 @@ private:
 
     const ResolvedStreams & getResolvedStreams(const String & column_name) const;
 
+    /// The stream of `substream_path` of `column`, or null for an offsets stream written before this writer
+    /// (`written_offset_substreams`). Throws for a stream `addStreams` did not register.
+    const ResolvedStream * resolveStream(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
+
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
@@ -160,10 +163,14 @@ private:
     /// functions iterate this list instead of enumerating the substreams and building the stream names again.
     std::unordered_map<String, ResolvedStreams> resolved_streams_by_column;
 
-    /// Some long column names may be replaced to hashes.
-    /// Below are mapping from original stream name to actual
-    /// stream name (probably hash of the stream) and vice versa.
-    std::unordered_map<String, String> full_name_to_stream_name;
+    /// The same streams by full stream name, for the getters the serialization calls with a substream path.
+    std::unordered_map<String, ResolvedStream> resolved_streams_by_full_name;
+
+    /// Full names of the offsets streams written before this writer (`written_offset_substreams`). They have no
+    /// stream in this writer, and `resolveStream` returns null for them instead of failing.
+    NameSet written_before_full_names;
+
+    /// Some long stream names are replaced with hashes. Maps the actual stream name, possibly a hash, to the full one.
     std::unordered_map<String, String> stream_name_to_full_name;
 
     /// Non written marks to disk (for each column). Waiting until all rows for
@@ -181,8 +188,6 @@ private:
     /// Number of streams opened for the whole part. Peak write memory scales with this rather than
     /// with the number of columns, since one column can own thousands of substreams.
     std::optional<size_t> streams_to_open_in_part;
-
-    String already_written_stream_holder;
 };
 
 }
