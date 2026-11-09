@@ -15,6 +15,7 @@
 #include <Common/ProfileEvents.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveRowSelection.h>
 #include <Interpreters/AdaptiveAggregation/GrowingCountTopK.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/RowDataStore.h>
@@ -767,6 +768,19 @@ void Aggregator::executeStagedArgumentRecords(
     }
 
     executeStagedArguments(arena, places, arguments, use_compiled_functions);
+
+    /// A record that combined several misses of its key stands for their rows (see `AdaptiveMissCombiner`):
+    /// each `count` took one of them above and takes the others from the record's multiplicity.
+    if (argument_layout.multiplicity_offset)
+    {
+        for (const size_t aggregate : adaptive_row_selection->count_aggregates)
+        {
+            const size_t state_offset = offsets_of_aggregate_states[aggregate];
+            for (size_t row = 0; row < rows; ++row)
+                getCountState(places[row] + state_offset)
+                    += argument_layout.multiplicityOf(records.ptrs[row] + Record::fixed_arguments_offset) - 1;
+        }
+    }
 }
 
 void Aggregator::executeStagedArguments(

@@ -145,6 +145,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
 /// Version 21 also registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer at this
 /// version or above. A peer below it thaws as it always did, which changes no result.
+/// Version 21 also registers the `adaptive_aggregator_combine_arg_min_max` plan setting, written only towards
+/// a peer at this version or above. A peer below it stages every missed row, which changes only the speed and
+/// the memory.
 /// Version 21 also adds the `hash_join_layout` plan setting, written only towards a peer at this version or above.
 /// A peer below it picks the layout of a hash join itself. That can change only the speed, the memory use and the
 /// order of rows.
@@ -210,6 +213,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AG
 /// First query-plan serialization version that knows the `adaptive_aggregator_disable_thaw` plan setting
 /// name. Gates writing it in `AggregatingStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW = 21;
+/// First query-plan serialization version that knows the `adaptive_aggregator_combine_arg_min_max` plan
+/// setting name. Gates writing it in `AggregatingStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_COMBINE_ARG_MIN_MAX = 21;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOBS_LIST_PARTS = 10;
 /// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 11;

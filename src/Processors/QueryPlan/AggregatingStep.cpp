@@ -72,6 +72,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const QueryPlanSerializationSettingsBool adaptive_aggregator_disable_thaw;
+    extern const QueryPlanSerializationSettingsBool adaptive_aggregator_combine_arg_min_max;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsBool use_aggregation_memory_tracker;
@@ -1290,6 +1291,12 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW)
         settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw] = params.adaptive_aggregator_disable_thaw;
 
+    /// The same for another name of that version. A peer that predates it stores every missed row, which
+    /// changes only the speed and the memory of the aggregation.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_COMBINE_ARG_MIN_MAX)
+        settings[QueryPlanSerializationSetting::adaptive_aggregator_combine_arg_min_max]
+            = params.adaptive_aggregator_combine_arg_min_max;
+
     /// A peer predating the name keeps its own two-level decision: writing an unknown name would make it throw
     /// while reading the step settings (before version 21 the reader threw on an unknown name), which would break every distributed `GROUP BY` of a query that
     /// sets `use_aggregation_memory_tracker` or a `compatibility` below the release that fixes the regression.
@@ -1601,6 +1608,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_combine_arg_min_max],
         ctx.version >=DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER
             ? bool(ctx.settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker])
             : bool(ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker])};

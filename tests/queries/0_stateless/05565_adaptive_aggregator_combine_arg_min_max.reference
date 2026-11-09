@@ -1,0 +1,30 @@
+UInt8, largest	results match: 1	fewer records: 1
+UInt16, largest	results match: 1	fewer records: 1
+UInt32, largest	results match: 1	fewer records: 1
+UInt64, largest	results match: 1	fewer records: 1
+Int8, largest	results match: 1	fewer records: 1
+Int16, largest	results match: 1	fewer records: 1
+Int32, largest	results match: 1	fewer records: 1
+Int64, largest	results match: 1	fewer records: 1
+Date, largest	results match: 1	fewer records: 1
+Date32, largest	results match: 1	fewer records: 1
+DateTime, largest	results match: 1	fewer records: 1
+DateTime64, largest	results match: 1	fewer records: 1
+Enum8, largest	results match: 1	fewer records: 1
+Enum16, largest	results match: 1	fewer records: 1
+IPv4, largest	results match: 1	fewer records: 1
+Time, largest	results match: 1	fewer records: 1
+Time64, largest	results match: 1	fewer records: 1
+Interval, largest	results match: 1	fewer records: 1
+Decimal32, largest	results match: 1	fewer records: 1
+Decimal64, largest	results match: 1	fewer records: 1
+UInt64, smallest	results match: 1	fewer records: 1
+Int64, smallest	results match: 1	fewer records: 1
+DateTime64, smallest	results match: 1	fewer records: 1
+any next to argMax	results match: 1	fewer records: 1
+two counts next to argMin	results match: 1	fewer records: 1
+argMax alone	results match: 1	fewer records: 1
+max before argMax	results match: 1	fewer records: 1
+min alone	results match: 1	fewer records: 1
+probing bypassed	results match: 1	fewer records: 1
+probing bypassed	1

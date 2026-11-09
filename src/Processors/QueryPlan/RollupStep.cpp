@@ -58,6 +58,11 @@ RollupStep::RollupStep(const SharedHeader & input_header_, Aggregator::Params pa
     , final(final_)
     , use_nulls(use_nulls_)
 {
+    /// The adaptive aggregation still runs in the `AggregatingStep` before this step, which aggregates the
+    /// rows. This step only merges the resulting states into the `ROLLUP` levels (see
+    /// `GroupByModifierTransform::merge`), and its aggregates carry no argument names, which the adaptive
+    /// setup in the `Aggregator` constructor needs. So the switch is off for this step's own aggregator only.
+    params.enable_adaptive_aggregator = false;
 }
 
 ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number);

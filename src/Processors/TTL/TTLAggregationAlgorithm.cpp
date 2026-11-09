@@ -172,6 +172,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /* adaptive_aggregator_freeze_threshold */ 0,
         /* adaptive_aggregator_freeze_threshold_bytes */ 0,
         /* adaptive_aggregator_disable_thaw */ false,
+        /* adaptive_aggregator_combine_arg_min_max */ false,
         /* use_aggregation_memory_tracker */ true);
 
     aggregator = std::make_unique<Aggregator>(header, params);

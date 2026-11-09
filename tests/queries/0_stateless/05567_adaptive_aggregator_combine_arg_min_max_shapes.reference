@@ -1,0 +1,12 @@
+argMax and argMin	results match: 1	same records: 1
+two ordering columns	results match: 1	same records: 1
+Nullable argument	results match: 1	same records: 1
+combinator	results match: 1	same records: 1
+another aggregate function	results match: 1	same records: 1
+Float64 ordering	results match: 1	same records: 1
+String ordering	results match: 1	same records: 1
+any and count only	results match: 1	same records: 1
+bucket top-K by count	results match: 1	same records: 1
+top-K by the ordering value	results match: 1	fewer records: 1
+top-K by the key	results match: 1
+HAVING	results match: 1	fewer records: 1

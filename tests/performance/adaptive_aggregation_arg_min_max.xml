@@ -1,0 +1,11 @@
+<test>
+    <!-- Aggregations whose aggregate functions all pick one row of each group by the same column, as a
+         deduplication by the latest version does. A frozen table of the adaptive aggregator combines the rows
+         of a key that reach it close together into one record, which keeps their best row and, for `count`,
+         their number. In the order of the table the rows of a user come in runs, so nearly all of them
+         combine. The queries cover numeric and `String` arguments, the largest and the smallest `EventTime`,
+         and a `count` next to a selection. -->
+    <query>SELECT UserID, argMax(RegionID, EventTime), argMax(ResolutionWidth, EventTime), argMax(CounterID, EventTime), argMax(OS, EventTime), argMax(Age, EventTime) FROM hits_100m_single GROUP BY UserID FORMAT Null</query>
+    <query>SELECT UserID, argMin(URL, EventTime), min(EventTime) FROM hits_100m_single GROUP BY UserID FORMAT Null</query>
+    <query>SELECT UserID, argMax(URL, EventTime), count() FROM hits_100m_single GROUP BY UserID FORMAT Null</query>
+</test>

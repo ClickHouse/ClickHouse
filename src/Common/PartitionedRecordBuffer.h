@@ -65,6 +65,12 @@ public:
         return at;
     }
 
+    /// Gives back the last record of the partition, of `bytes` bytes, so the next append to the partition
+    /// reuses its storage. The caller guarantees that the record is the partition's last and that neither
+    /// `finishAppending` nor `clear` came after its append. A record never straddles two chunks, so it lies
+    /// in the partition's current chunk, which the rollback can leave empty.
+    ALWAYS_INLINE void rollback(size_t partition, size_t bytes);
+
     /// Prefetches the storage of a later record, whose append can target any partition.
     ALWAYS_INLINE void prefetchAppend(size_t partition) const { __builtin_prefetch(cursors[partition].pos, 1); }
 
@@ -156,6 +162,15 @@ struct PartitionedRecordBuffer::ChunkHeader
     char * records() { return reinterpret_cast<char *>(this) + sizeof(ChunkHeader); }
     const char * records() const { return reinterpret_cast<const char *>(this) + sizeof(ChunkHeader); }
 };
+
+inline void PartitionedRecordBuffer::rollback(size_t partition, size_t bytes)
+{
+    Cursor & cursor = cursors[partition];
+    chassert(cursor.records > 0 && bytes <= static_cast<size_t>(cursor.pos - chains[partition].last->records()));
+    cursor.pos -= bytes;
+    cursor.remaining += static_cast<UInt32>(bytes);
+    --cursor.records;
+}
 
 template <typename Callback>
 void PartitionedRecordBuffer::forEachChunk(size_t partition, Callback && callback) const

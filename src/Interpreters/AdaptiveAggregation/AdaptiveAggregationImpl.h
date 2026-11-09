@@ -17,6 +17,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 #include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
+#include <Interpreters/AdaptiveAggregation/AdaptivePartitionTails.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveTopKPruning.h>
 #include <Interpreters/AdaptiveAggregation/StagedRecords.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -44,10 +45,6 @@ constexpr size_t adaptive_append_prefetch_distance = 8;
 /// The staged records of this many consecutive buckets share allocation blocks, so their memory is released as the
 /// merge tasks advance through the bucket order, while the grouping holds when the pruning reorders the buckets.
 constexpr size_t adaptive_staging_block_buckets = 16;
-/// Partition-count combining starts with a bounded trial of nonconsecutive misses in each block.
-constexpr size_t adaptive_count_combining_sample_records = 1024;
-/// Combining continues only if at least one lookup in this many reuses a missed key's count descriptor.
-constexpr size_t adaptive_count_combining_min_hit_rate_inverse = 8;
 /// Fixed-width arguments are gathered column by column into bounded batches of staged records, so
 /// width and nullability are dispatched once per field while the destination rows remain in cache.
 constexpr size_t adaptive_argument_staging_batch_rows = 1024;
@@ -267,20 +264,35 @@ struct AdaptiveMergeTask
     PaddedPODArray<UInt64> best_hashes;
 };
 
-/// The misses of a frozen producer's current block, or of a part of it, one descriptor per delayed record in staging
-/// order: the routing hash, the source row of the record's arguments, the multiplicity of a count record, and the key.
-/// The misses are added in row order, so the source rows ascend. A count record stands for the rows of its key that the
-/// kernel combined into it, consecutive or not. A string-like key is kept as its size, and the writer reads its bytes
-/// from the key state, which holds them for the whole block. When the state does not, as with the serialized methods
-/// that serialize row by row, the kernel keeps the bytes as well, one key after another, and once for all the records
-/// of a constant key: building the key again would serialize it a second time. The kernel stages such a batch whenever
-/// the kept bytes reach `adaptive_miss_batch_max_key_bytes`. A fixed-width key is kept as its value, which the kernel
-/// has at hand, while reading it back from the key columns would pack it a second time. The arrays are cleared after
-/// every staging but keep their capacity.
+/// What `Aggregator::appendDelayedRecords` staged for a batch, for the accounting of the batch (see
+/// `Aggregator::accountStagedBatch`): the bytes of the keys, and the bytes of the whole records as the buffer
+/// holds them.
+struct AdaptiveStagedBytes
+{
+    size_t key_bytes = 0;
+    size_t record_bytes = 0;
+};
+
+/// The misses of a frozen producer's current block, or of a part of it, one descriptor per delayed record in
+/// staging order: the routing hash, the source row of the record's arguments, the multiplicity of a record
+/// that stands for several rows, and the key. The misses are added in row order. A descriptor stands for the
+/// misses of its key that combined into it as the tail of its partition (see `AdaptivePartitionTails`): a
+/// count record counts them, and the record of a row selection takes the best of their rows (see
+/// `AdaptiveRowSelection`), so its source row moves forward to a later row. The source rows are therefore
+/// distinct, but they ascend only until a source row moves. A batch is filled either by `add` or by
+/// `addCount`, so it has a multiplicity for every record or for none. A string-like key is kept as its size,
+/// and the writer reads its bytes from the key state, which holds them for the whole block. When the state
+/// does not, as with the serialized methods that serialize row by row, the kernel keeps the bytes as well,
+/// one key after another, and once for all the records of a constant key: building the key again would
+/// serialize it a second time. The kernel stages such a batch whenever the kept bytes reach
+/// `adaptive_miss_batch_max_key_bytes`. A fixed-width key is kept as its value, which the kernel has at hand,
+/// while reading it back from the key columns would pack it a second time. The arrays are cleared after every
+/// staging but keep their capacity.
 class AdaptiveMissBatch
 {
 public:
-    /// Adds the miss of `row`, with the bytes of a string-like key if `keep_key_bytes`.
+    /// Adds the miss of `row`, with the bytes of a string-like key if `keep_key_bytes`. The row follows every
+    /// row that the batch took.
     template <typename RecordKey, typename Key>
     ALWAYS_INLINE void add(UInt32 row, UInt64 hash, const Key & key, bool keep_key_bytes)
     {
@@ -290,9 +302,10 @@ public:
         addKey<RecordKey>(key, keep_key_bytes);
     }
 
-    /// Adds a count record of the key of `row` with `multiplicity` rows, with the bytes of a string-like key if
-    /// `keep_key_bytes`. A fixed-width key stages no size: the writer substitutes the compile-time constant, so the hot
-    /// staging loop skips a dead store per record.
+    /// Adds a record of the key of `row` that stands for `multiplicity` rows, a count record or the record of
+    /// a row selection that counts rows, with the bytes of a string-like key if `keep_key_bytes`. A
+    /// fixed-width key stages no size: the writer substitutes the compile-time constant, so the hot staging
+    /// loop skips a dead store per record.
     template <typename RecordKey, typename Key>
     ALWAYS_INLINE void addCount(UInt32 row, UInt64 hash, const Key & key, UInt32 multiplicity, bool keep_key_bytes)
     {
@@ -303,9 +316,30 @@ public:
         source_rows.push_back(row);
     }
 
-    /// Adds a row to count record `i`, or to the last count record.
-    ALWAYS_INLINE void incrementCount(size_t i) { ++multiplicities[i]; }
-    ALWAYS_INLINE void incrementLastCount() { ++multiplicities.back(); }
+    /// The multiplicity of record `i` of those added by `addCount`, which grows by the rows that combine into
+    /// the record. The reference is valid until the next `addCount`.
+    ALWAYS_INLINE UInt32 & multiplicityOf(size_t i) { return multiplicities[i]; }
+
+    /// Moves the arguments of record `i` to `row`, a better row of its key under a row selection (see
+    /// `AdaptiveRowSelection`). The row is the kernel's current one, so it follows every row that the batch
+    /// took.
+    ALWAYS_INLINE void setSourceRow(size_t i, UInt32 row)
+    {
+        chassert(row > source_rows[i]);
+        source_rows[i] = row;
+    }
+
+    /// Notes that a record of the batch replaces a record of an earlier batch, of `staged` bytes, which a
+    /// better row of its key rolled back (see `AdaptivePartitionTails`). The accounting counts the staged
+    /// records net of them.
+    ALWAYS_INLINE void addReplaced(const AdaptiveStagedBytes & staged)
+    {
+        ++replaced_records;
+        replaced.key_bytes += staged.key_bytes;
+        replaced.record_bytes += staged.record_bytes;
+    }
+    size_t replacedRecords() const { return replaced_records; }
+    const AdaptiveStagedBytes & replacedBytes() const { return replaced; }
 
     /// Marks the block's keys as constant, before the misses are added: their columns hold a single row, from which every
     /// key is read, while the arguments of each record stay at its source row. The records then share the kept bytes of
@@ -319,8 +353,6 @@ public:
 
     size_t size() const { return hashes.size(); }
     bool empty() const { return hashes.empty(); }
-    UInt64 hashAt(size_t i) const { return hashes[i]; }
-    UInt64 lastHash() const { return hashes.back(); }
 
     /// The descriptors, read-only, for the writer and the accounting of the batch. The keys are the sizes of string-like
     /// keys with the bytes the kernel kept, one key after another, or the raw bytes of one fixed-width key per record.
@@ -338,6 +370,8 @@ public:
         keys.clear();
         multiplicities.clear();
         keys_are_const = false;
+        replaced_records = 0;
+        replaced = {};
     }
 
 private:
@@ -366,14 +400,8 @@ private:
     PaddedPODArray<char> keys;
     PaddedPODArray<UInt32> multiplicities;
     bool keys_are_const = false;
-};
-
-/// What `Aggregator::appendDelayedRecords` staged for a batch, for the accounting of the batch (see
-/// `Aggregator::accountStagedBatch`): the bytes of the keys, and the bytes of the whole records as the buffer holds them.
-struct AdaptiveStagedBytes
-{
-    size_t key_bytes = 0;
-    size_t record_bytes = 0;
+    size_t replaced_records = 0;
+    AdaptiveStagedBytes replaced;
 };
 
 /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
@@ -489,9 +517,12 @@ struct AdaptiveAggregationProducer
     bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
     bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
 
+    /// Starts a frozen phase. The tails of an earlier phase go, so a record of this phase replaces only
+    /// records whose bytes this phase's thaw evidence counted.
     void freeze(size_t used_arena_bytes_at_freeze, size_t memory_usage_at_freeze, size_t estimated_table_bytes_per_key)
     {
         phase.emplace<FrozenState>(used_arena_bytes_at_freeze, memory_usage_at_freeze, estimated_table_bytes_per_key);
+        tails.reset();
     }
     void learnAgain() { phase = LearningState{}; }
     void standDown() { phase = BaselineState{}; }
@@ -508,6 +539,13 @@ struct AdaptiveAggregationProducer
 
     /// The current block's misses.
     AdaptiveMissBatch misses;
+    /// The tails of the producer's partitions, into which the misses of a key-only, count or row-selection
+    /// aggregation combine (see `AdaptivePartitionTails`). The first frozen block of a phase creates them,
+    /// and they are dropped with the records they point into.
+    std::unique_ptr<IAdaptivePartitionTails> tails;
+    /// The ranks of the current block's rows under the aggregation's row selection (see
+    /// `fillRowSelectionRanks`).
+    PaddedPODArray<Int64> row_selection_ranks;
 
     /// The producer's count bins when the aggregation prunes by the top-K, allocated by the first freeze and handed
     /// over at the finish.
