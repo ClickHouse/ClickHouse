@@ -24,6 +24,9 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::
  * */
 std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor);
 
+/// Identifies everything besides the values that the two functions above read from the descriptor.
+String parquetHashKind(const parquet::ColumnDescriptor * parquet_column_descriptor);
+
 }
 
 #endif
