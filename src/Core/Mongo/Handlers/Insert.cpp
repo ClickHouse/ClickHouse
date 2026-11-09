@@ -27,6 +27,7 @@
 #include <rapidjson/writer.h>
 
 #include <map>
+#include <mutex>
 #include <limits>
 #include <optional>
 #include <set>
@@ -734,6 +735,19 @@ void InsertHandler::createTable(
 
     if (is_placeholder)
     {
+        /** Two first inserts may both find the empty placeholder, and the one that alters it second
+          * would drop the `json` column the first one kept for a field of its document - and with
+          * it the documents the first one has already written. So the transition is serialized,
+          * and whether the table is still the placeholder is checked again once it is: after the
+          * first `ALTER` it is not, and the second insert writes into the columns the first one
+          * created, as into any existing collection. A placeholder is only created and altered
+          * by the Mongo handlers, so a lock of this server is what all of them share.
+          */
+        static std::mutex placeholder_mutex;
+        std::lock_guard lock(placeholder_mutex);
+        if (!isPlaceholderCollection(collection, executor))
+            return;
+
         /// The placeholder is given the schema of the first inserted document, so that a
         /// collection created explicitly ends up with the same columns as one created by the
         /// insert itself. The columns are altered rather than the table recreated: an `ALTER`
