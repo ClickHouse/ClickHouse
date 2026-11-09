@@ -225,7 +225,8 @@ struct SetMethodHashed
 
     Data data;
 
-    using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, SetMethodMapped<Data>, set_method_use_cache<Data, true>>;
+    using State = ColumnsHashing::HashMethodHashed<
+        typename Data::value_type, SetMethodMapped<Data>, set_method_use_cache<Data, true>, /*need_offset=*/ false, /*prepare_keys=*/ true>;
 
     /// Appends the retained fingerprint to a `UInt128` comparison column.
     static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes &)
