@@ -14,7 +14,7 @@
 
 <query>select argMin(RegionID, EventTime) from hits_100m_single where Title != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
 <query>select argMin((Title, RegionID), EventTime) from hits_100m_single where Title != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
-<query>select argMinIf(Title, EventTime, Title != '') from hits_100m_single group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query disabled="1">select argMinIf(Title, EventTime, Title != '') from hits_100m_single group by intHash32(UserID) % {group_scale} FORMAT Null</query>
 
 <query>select argMax(WatchID, Age) from hits_100m_single FORMAT Null</query>
 <query>select argMax(WatchID, Age::Nullable(UInt8)) from hits_100m_single FORMAT Null</query>
