@@ -14,7 +14,6 @@ SET parallel_replicas_allow_view_over_mergetree = 1;
 -- make every assertion below pass without exercising the planner paths under test.
 SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
-SET enable_analyzer = 1;
 
 -- Per-query values of parallel_replicas_allow_view_over_mergetree must be honored
 -- consistently by the parallel-replicas decision and the plan build.

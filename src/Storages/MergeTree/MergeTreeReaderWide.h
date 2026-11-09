@@ -7,6 +7,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/StreamWithSizeHint.h>
 
 
 namespace DB
@@ -57,8 +58,9 @@ public:
 
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
-    /// Return map (column to read) -> (list of all streams required to read this column).
-    std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
+    /// Return map (requested column name) -> (list of all streams required to read this column, each stream once; the
+    /// size hints of a stream reported several times are summed).
+    std::unordered_map<String, std::vector<StreamWithSizeHint>> getAllColumnsSubstreams();
 
 private:
     /// Prefixes or data of a single column can be deserialized in parallel from different streams, so
@@ -93,37 +95,6 @@ private:
 
     FileStreams streams;
 
-    struct StreamInfo
-    {
-        /// The name of the stream, or `std::nullopt` if the part doesn't have it.
-        std::optional<String> name;
-        /// The element of `avg_value_size_hints` for the stream, found on first use.
-        double * avg_value_size_hint = nullptr;
-    };
-
-    /// The fields of a substream that the name of its stream may depend on.
-    struct SubstreamKey
-    {
-        ISerialization::Substream::Type type;
-        String variant_element_name;
-        String name_of_substream;
-        String object_path_name;
-        size_t bucket;
-    };
-
-    struct StreamInfoEntry
-    {
-        String column_name;
-        std::vector<SubstreamKey> substream_path;
-        StreamInfo info;
-    };
-
-    /// Guards `streams_info`: substreams of a single column can be deserialized in parallel.
-    std::mutex streams_info_mutex;
-    /// Keyed by a hash of the column name and the substream path, the entries are compared exactly.
-    /// The elements are never moved or erased, so references to them stay valid.
-    std::unordered_multimap<UInt64, StreamInfoEntry> streams_info;
-
     /// Which columns a read of the part touches, and whether their streams continue from where the
     /// previous read left them or seek to the mark. Returns nothing for a column that is not read.
     using ColumnReadSelector = std::function<std::optional<bool>(size_t pos)>;
@@ -146,26 +117,19 @@ private:
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization);
 
+    /// Only the part's own serialization tells a stream it lacks by design from a subcolumn its type lacks.
+    bool isReadWithTypeInPart(const NameAndTypePair & name_and_type) const;
+
     ReadBuffer * getStream(
         bool seek_to_start,
         const ISerialization::SubstreamPath & substream_path,
-        const std::optional<String> & stream_name,
+        const MergeTreeDataPartChecksums & checksums,
         const NameAndTypePair & name_and_type,
         size_t from_mark,
         bool seek_to_mark,
         ISerialization::SubstreamsCache & cache);
 
     MergeTreeReaderStream & getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
-
-    /// Returns the information about the stream for the substream of the column.
-    /// Building the name of a stream is expensive (escaping, splitting of nested names, lookups in checksums) and the name is
-    /// requested several times for every substream on every read, so the results are memoized for the lifetime of the reader.
-    StreamInfo & getStreamInfo(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path);
-    const std::optional<String> & getStreamName(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path)
-    {
-        return getStreamInfo(name_and_type, substream_path).name;
-    }
-    double & getAvgValueSizeHint(StreamInfo & stream_info);
 
     void readData(
         const NameAndTypePair & name_and_type,
@@ -222,22 +186,11 @@ private:
     bool read_without_marks = false;
     LoggerPtr log;
 
-    /// Names of the result columns as the query requests them, position by position with
-    /// `columns_to_read`, which holds the names in the part: for a column renamed after the part
-    /// was written, the part still knows it by its old name. Cache entries are identified by the
-    /// requested name, so `system.columns_cache` and its access checks see the column as the
-    /// current schema names it. The renames themselves invalidate the table's entries, so a
-    /// name never refers to two columns within one schema identity.
-    Names requested_column_names;
-
     /// Columns without a single stream in the part, the counterpart of `partially_read_columns`.
     /// Filled by `addStreams`.
     NameSet columns_absent_from_part;
 
-    /// Columns whose rows are not a function of the row range they are read for, so an entry
-    /// written by one read would be wrong for another: the distinct-paths subcolumn of a `JSON`
-    /// column (`ObjectDistinctPaths`) emits the path names of the part once per reader and the
-    /// shared data paths per call, rather than a value per row. Such a column is read from the
+    /// Columns that are not cacheable, see `isColumnNotCacheable`. Such a column is read from the
     /// part by every read, like a partially read column. Filled by `addStreams`.
     NameSet columns_not_cacheable;
 
@@ -285,25 +238,6 @@ private:
     /// granule is read from the part its streams are positioned at that granule again. Streams
     /// can only be positioned at marks, which is why the unit is a granule.
 
-    /// Whether this reader can use the cache at all: the cache is on, and the part is a wide part
-    /// of a table with a UUID (the key of the cache).
-    bool columns_cache_reads_possible = false;
-    bool columns_cache_writes_possible = false;
-
-    /// How the marks of the part are cut into stripes, and the identity of every result column
-    /// for the cache. See `ColumnsCacheKey`.
-    ColumnsCacheStripes stripes;
-    std::vector<UInt128> column_identities;
-
-    /// The name of the part in the cache, see `getColumnsCachePartName`.
-    String columns_cache_part_name;
-
-    /// Invalidation generation captured once when the reader was created, not per mark range.
-    /// Passed to ColumnsCache::setMany so a deferred write is dropped if the table was
-    /// invalidated (e.g. RENAME COLUMN), or the whole cache dropped by `SYSTEM DROP
-    /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
-    UInt64 cache_table_generation = 0;
-
     /// Whether `startColumnsCacheRange` has begun a range of this reader already.
     bool columns_cache_range_started = false;
 
@@ -344,9 +278,6 @@ private:
     std::vector<bool> accumulated_from_disk;
     MutableColumns accumulated_columns;
 
-    /// Entries ready to be written, written together at the end of the call.
-    std::vector<ColumnsCache::MappedPtr> pending_entries;
-
     /// Begin a new contiguous mark range at `from_mark`: write what the previous range left,
     /// look the stripes of the new one up in the cache and reset the state.
     void startColumnsCacheRange(size_t from_mark, size_t end_mark, size_t num_columns);
@@ -370,14 +301,6 @@ private:
     /// a whole entry of an empty result column are not copied: the entry's column goes to
     /// `shared_columns`.
     void serveRowsFromColumnsCache(size_t first_mark, size_t row_begin, size_t rows, MutableColumns & res_columns, Columns & shared_columns);
-
-    /// Whether a deferred write may begin or go on: the query-wide budgets may have run out.
-    bool canWriteToColumnsCache() const;
-
-    /// Whether the cache admits the stripe, see `ColumnsCache::shouldAdmit`: decided once per stripe, when the
-    /// block that reads it is sized (see `canReadWholeColumnsCacheStripe`), and the same decision when it is written.
-    bool admitStripeToColumnsCache(size_t stripe);
-    std::optional<std::pair<size_t, bool>> stripe_admission;
 
     /// Whether every regular column of the stripe is served from the cache.
     bool isColumnsCacheStripeServed(size_t stripe);
@@ -413,12 +336,6 @@ private:
         const std::vector<size_t> & sizes_before_reading,
         MutableColumns & res_columns,
         Columns & shared_columns);
-
-    /// Queue an entry for the granules [first_mark, end_mark) of the result column at `pos`.
-    void addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column);
-
-    /// Write the pending entries to the cache.
-    void flushPendingColumnsCacheWrites();
 };
 
 }

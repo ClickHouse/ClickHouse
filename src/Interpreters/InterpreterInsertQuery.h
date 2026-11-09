@@ -66,6 +66,9 @@ public:
     /// Never set this for a user-visible target table.
     void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
 
+    /// The pipeline is built only to be printed by `EXPLAIN PIPELINE` and is not executed.
+    void setExplainOnly(bool value) { explain_only = value; }
+
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
@@ -95,7 +98,8 @@ public:
         const StoragePtr & table,
         size_t max_threads_,
         bool no_squash_,
-        bool async_insert_);
+        bool async_insert_,
+        ProcessorPtr * returning_output = nullptr);
 
 private:
     static Block getSampleBlock(
@@ -120,6 +124,14 @@ private:
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
+
+    /// For INSERT ... RETURNING: the processor with the copy of the data written into the table.
+    ProcessorPtr returning_output;
+    /// The insert pushes to dependent materialized views sequentially (`parallel_view_processing = 0`),
+    /// so the combined pipeline with the RETURNING query must not widen it.
+    bool returning_insert_views_serial = false;
+    bool explain_only = false;
+    void addReturning(ASTInsertQuery & query, const StoragePtr & table, BlockIO & res);
 
     /// `destination_lock` is moved into the async insert queue transform when that route is taken, so the
     /// transform can drop it as soon as the queue has the block; the caller is left with an empty holder.

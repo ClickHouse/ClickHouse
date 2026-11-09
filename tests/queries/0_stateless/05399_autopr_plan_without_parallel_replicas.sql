@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS t_autopr_plan_without_pr;
 CREATE TABLE t_autopr_plan_without_pr (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_autopr_plan_without_pr SELECT number, number FROM numbers(100000);
 
-SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
+SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
     parallel_replicas_local_plan = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     automatic_parallel_replicas_min_bytes_per_replica = 0, serialize_query_plan = 0;
