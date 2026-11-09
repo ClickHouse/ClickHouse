@@ -77,7 +77,7 @@ append_case()
             optimize_read_in_order = 1,
             query_plan_remove_redundant_sorting = 0,
             optimize_aggregation_in_order = 0,
-            enable_adaptive_aggregator = 0,
+            enable_adaptive_aggregator = 0, use_columns_cache = 0,
             collect_hash_table_stats_during_aggregation = 0,
             compile_aggregate_expressions = 0,
             max_rows_to_group_by = 0,
@@ -108,7 +108,8 @@ append_case two_level k "${AGGREGATES}" 1 1073741824
 # different keys, convert to two-level, and spill itself; otherwise no spill is initiated.
 append_case retired_result_spill k "${AGGREGATES}" 2 1
 
-# Inline counts and aggregation without aggregate functions have separate conversion paths.
+# Aggregation without aggregate functions has a separate conversion path. An inline count stays
+# on the value-keyed method, which counts per dictionary position: it never switches dictionaries.
 append_case inline_count k ', count()' 1 1073741824
 append_case keys_only k '' 1 1073741824
 

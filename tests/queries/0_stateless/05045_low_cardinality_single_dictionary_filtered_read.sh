@@ -36,7 +36,7 @@ ${CLICKHOUSE_CLIENT_TRACE} --query_id="05045_${CLICKHOUSE_DATABASE}" -q "
     SELECT count()
     FROM
     (
-        SELECT s, count()
+        SELECT s, count(), sum(toUInt64(s) % 64)
         FROM ${TABLE_NAME}
         PREWHERE toUInt64(s) % 64 < 16
         GROUP BY s

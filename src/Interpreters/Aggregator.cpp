@@ -897,15 +897,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         }
     }
 
-    can_reorder_dictionary_aggregation = canUseSingleLowCardinalityDictionary(method_chosen)
-        && std::ranges::all_of(
-            aggregate_functions,
-            [](const auto * function)
-            {
-                const auto properties = AggregateFunctionFactory::instance().tryGetProperties(function->getName(), NullsAction::EMPTY);
-                return properties && !properties->is_order_dependent;
-            });
-
     /// See `Params::aggregation_in_order` and `method_chosen_for_in_order`: the `prealloc_serialized`
     /// method serializes the whole block's keys on state construction, which is pathological for the
     /// per-run in-order path, where a fresh state is constructed for every run of equal order-key
@@ -941,6 +932,16 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
                 ;
         }
     }
+
+    /// After the top-K adjustment above: `canUseSingleLowCardinalityDictionary` depends on `is_simple_count`.
+    can_reorder_dictionary_aggregation = canUseSingleLowCardinalityDictionary(method_chosen)
+        && std::ranges::all_of(
+            aggregate_functions,
+            [](const auto * function)
+            {
+                const auto properties = AggregateFunctionFactory::instance().tryGetProperties(function->getName(), NullsAction::EMPTY);
+                return properties && !properties->is_order_dependent;
+            });
 
     /// See the comment on the member: the kept-keys cutoff must stay inert for the fixed hash
     /// map methods, whose tables are bounded by the key space anyway.
@@ -1233,6 +1234,11 @@ bool Aggregator::canUseSingleLowCardinalityDictionary(AggregatedDataVariants::Ty
     /// The kept-keys cutoff rebuilds every producer's table from a value-keyed seed and tracks the
     /// producers' tables by index, so it cannot see index-keyed tables or dictionary shards.
     if (params.shared_kept_keys_for_overflow_any)
+        return false;
+
+    /// With the inline count, the value-keyed method counts the rows of each dictionary position of a
+    /// block and does one lookup per distinct position, which is faster than the index-keyed table.
+    if (is_simple_count)
         return false;
 
     using Type = AggregatedDataVariants::Type;

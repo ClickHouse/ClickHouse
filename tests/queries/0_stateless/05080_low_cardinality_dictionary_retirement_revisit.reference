@@ -24,7 +24,7 @@ other
 shared
 query paths: name, all parts selected, dictionary switches, two-level, spilled
 decoded_control	1	0	1	0
-inline_count	1	11	1	0
+inline_count	1	0	1	0
 keys_only	1	11	1	0
 retired_result_spill	1	11	1	1
 single_level	1	11	0	0
