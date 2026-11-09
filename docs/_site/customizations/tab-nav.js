@@ -72,7 +72,7 @@
   }
 
   // ── Mobile section header styling ─────────────────────────────────────────
-  var SECTION_HEADERS = ['ClickHouse', 'Open source'];
+  var SECTION_HEADERS = ['ClickHouse', 'Deployments', 'Applications', 'Open source'];
 
   function styleDropdownHeaders() {
     document.querySelectorAll('a.mobile-nav-tabs-item').forEach(function (a) {
@@ -81,14 +81,14 @@
       if (SECTION_HEADERS.indexOf(text) === -1) return;
 
       a.dataset.headerStyled = '1';
+      a.setAttribute('aria-disabled', 'true');
+      a.setAttribute('tabindex', '-1');
       a.style.fontWeight = '700';
-      a.style.fontSize = '0.75rem';
-      a.style.letterSpacing = '0.05em';
-      a.style.textTransform = 'uppercase';
-      a.style.opacity = '0.5';
+      a.style.fontSize = '0.875rem';
+      a.style.letterSpacing = 'normal';
+      a.style.textTransform = 'none';
       a.style.pointerEvents = 'none';
       a.style.cursor = 'default';
-      a.style.borderBottom = '1px solid rgba(255,255,255,0.08)';
       a.style.paddingBottom = '8px';
       a.style.marginBottom = '2px';
 

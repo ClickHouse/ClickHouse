@@ -3210,23 +3210,6 @@ div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) {
     top: 10px !important;
 }
 
-/* Match clickhouse.com/clickhouse navbar dropdown panel radius (8px instead
-   of Mintlify's default 16px). Targets the panel that wraps `.nav-dropdown-item`. */
-div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div:not(.nav-dropdown-content) {
-    border-radius: 8px !important;
-}
-
-/* External link arrow on nav dropdown items: black in light, white in dark */
-.nav-dropdown-item .lucide-arrow-up-right {
-    color: #000 !important;
-    stroke: #000 !important;
-    stroke-width: 3 !important;
-}
-.dark .nav-dropdown-item .lucide-arrow-up-right {
-    color: #FAFF69 !important;
-    stroke: #FAFF69 !important;
-}
-
 /* Hide language-picker flag icons. Some country flags (e.g. Russia) are
    politically sensitive given current geopolitics — language choice is not
    meant to imply national affiliation. We hide the wrapper div (not just
@@ -3243,18 +3226,10 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 .nav-dropdown-item:has(img[src$="section-header.svg"]) {
     pointer-events: none;
     cursor: default;
-    padding: 8px !important;
-    font-size: 14px !important;
-    line-height: 1.4 !important;
-    font-weight: 700 !important;
-    text-transform: none !important;
-    letter-spacing: normal !important;
-    color: #111827 !important;
     background: transparent !important;
 }
 .dark .nav-dropdown-item:has(img[src$="section-header.svg"]),
 :is(.dark) .nav-dropdown-item:has(img[src$="section-header.svg"]) {
-    color: #ffffff !important;
     background: transparent !important;
 }
 /* Hide the placeholder icon and its hover background */
@@ -3319,11 +3294,6 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     display: flex !important;
     align-items: center;
     gap: 8px;
-    padding: 4px 8px !important;
-    color: #111827 !important;
-    font-size: 14px !important;
-    font-weight: 700;
-    line-height: 1.25 !important;
     pointer-events: none;
     cursor: default;
 }
@@ -3334,10 +3304,6 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     filter: grayscale(1);
     opacity: 0.85;
 }
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) span {
-    font-size: 14px !important;
-    font-weight: 700 !important;
-}
 /* The four ClickHouse documentation sections precede the Postgres product
    item, which lets us indent exactly those links without affecting other
    top-nav menus. */
@@ -3346,19 +3312,10 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     align-items: center;
     gap: 8px;
     min-height: auto !important;
-    padding: 3px 8px 3px 34px !important;
-    font-size: 13px !important;
+    padding: 6px 8px 6px 34px !important;
 }
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"])) img {
     display: none !important;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"]))[aria-current] {
-    border-radius: 4px;
-    background: rgba(17, 24, 39, 0.08) !important;
-    color: #111827 !important;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"]))[aria-current] span {
-    color: inherit !important;
 }
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) {
     display: flex !important;
@@ -3366,10 +3323,7 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     gap: 8px;
     min-height: auto !important;
     margin-top: 8px;
-    padding: 10px 8px 4px !important;
     font-size: 0 !important;
-    line-height: 1 !important;
-    color: transparent !important;
 }
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) img {
     display: block !important;
@@ -3382,29 +3336,10 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) > *:not(img) {
     display: none !important;
 }
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current] {
-    border-radius: 4px;
-    background: rgba(17, 24, 39, 0.08) !important;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current]::before {
-    color: #111827;
-}
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])::before {
     content: "Managed Postgres";
     display: block;
     order: 1;
-    color: #111827;
-    font-size: 14px;
-    font-weight: 700;
-    line-height: 1.25;
-}
-.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]),
-:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) {
-    color: #ffffff !important;
-}
-.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])::before,
-:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])::before {
-    color: #ffffff;
 }
 .dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) img,
 :is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) img {
@@ -3416,154 +3351,12 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     filter: brightness(0) invert(1);
     opacity: 0.85;
 }
-.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"]))[aria-current],
-:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"]))[aria-current] {
-    background: rgba(255, 255, 255, 0.08) !important;
-    color: #ffffff !important;
-}
-.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current],
-:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current] {
-    background: rgba(255, 255, 255, 0.08) !important;
-}
-.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current]::before,
-:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current]::before {
-    color: #ffffff;
-}
-
-/* Products is a three-column product catalogue. The marker is the Security
-   entry, which uniquely identifies this menu without coupling the layout to
-   its translated tab label. */
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) {
-    display: grid !important;
-    grid-template-columns: repeat(3, max-content) !important;
-    grid-template-rows: 28px 28px 28px 52px 52px 28px;
-    grid-auto-flow: row !important;
-    align-content: start;
-    justify-content: start;
-    column-gap: 34px !important;
-    row-gap: 0;
-    width: fit-content !important;
-    min-width: 0 !important;
-    max-width: calc(100vw - 32px) !important;
-    padding: 16px !important;
-    background-image: none !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item {
-    grid-row: auto !important;
-    grid-column: 3 !important;
-    min-height: auto !important;
-    margin: 0;
-    padding: 4px 0 !important;
-    font-size: 14px !important;
-    line-height: 20px !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(-n + 3) {
-    grid-column: 1 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(n + 4):nth-child(-n + 8) {
-    grid-column: 2 !important;
-}
-/* Each section owns its rows. Without explicit row positions, CSS grid's
-   placement cursor starts the Open source links after Applications. */
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(4),
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(9) {
-    grid-row: 1 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(5),
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(10) {
-    grid-row: 2 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(6),
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(11) {
-    grid-row: 3 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7),
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
-    grid-row: 4 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8),
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(13) {
-    grid-row: 5 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(14) {
-    grid-row: 6 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) {
-    min-height: auto !important;
-    padding: 2px 0 8px !important;
-    color: #6b7280 !important;
-    font-size: 12px !important;
-    font-weight: 700 !important;
-    line-height: 16px !important;
-    letter-spacing: normal;
-    text-transform: uppercase;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) span {
-    font-size: 12px !important;
-    font-weight: 700 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) {
-    align-items: flex-start;
-    padding: 4px 0 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) img {
-    display: none !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span {
-    color: #111827;
-    font-size: 14px !important;
-    font-weight: 600 !important;
-    line-height: 20px !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7),
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8) {
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child::after,
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > div > span:first-child::after {
-    display: block;
-    margin-top: 2px;
-    padding-left: 16px;
-    color: #a3a3a3;
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 16px;
-    background-repeat: no-repeat;
-    background-position: left center;
-    background-size: 12px;
-    content: "";
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child,
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > div > span:first-child {
-    display: block;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child::after {
-    content: "langfuse";
-    background-image: url("/images/icons/logo-langfuse.svg");
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > div > span:first-child::after {
-    content: "runreveal";
-    background-image: url("/images/integrations/logos/runreveal.webp");
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > svg:last-child,
-[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > svg:last-child {
-    display: none !important;
-}
-.dark [role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]),
-:is(.dark) [role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) {
-    color: #a3a3a3 !important;
-}
-.dark [role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span,
-:is(.dark) [role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span {
-    color: #ffffff;
-}
 
 /* Keep the Products layout coupled to the Security destination. */
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) {
     display: grid !important;
     grid-template-columns: repeat(3, max-content) !important;
-    grid-template-rows: 28px 28px 52px 52px 28px;
+    grid-template-rows: 32px 32px 56px 56px 32px;
     grid-auto-flow: row !important;
     align-content: start;
     justify-content: start;
@@ -3581,9 +3374,6 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     align-self: start;
     min-height: auto !important;
     margin: 0;
-    padding: 4px 0 !important;
-    font-size: 14px !important;
-    line-height: 20px !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(-n + 3) {
     grid-column: 1 !important;
@@ -3611,38 +3401,18 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     grid-row: 5 !important;
 }
 /* Applications has two taller partner-logo rows. Pull the Open source rows
-   back into their own 28px rhythm instead of inheriting those row heights. */
+   back into their own 32px rhythm instead of inheriting those row heights. */
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(11) {
     transform: translateY(-24px);
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
     transform: translateY(-48px);
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) {
-    padding: 2px 0 8px !important;
-    color: #6b7280 !important;
-    font-size: 12px !important;
-    font-weight: 700 !important;
-    line-height: 16px !important;
-    letter-spacing: normal;
-    text-transform: uppercase;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) span {
-    font-size: 12px !important;
-    font-weight: 700 !important;
-}
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) {
     align-items: flex-start;
-    padding: 4px 0 !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) img {
     display: none !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span {
-    color: #111827;
-    font-size: 14px !important;
-    font-weight: 600 !important;
-    line-height: 20px !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div > span:first-child,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child {
@@ -3653,7 +3423,6 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     display: block;
     margin-top: 2px;
     padding-left: 16px;
-    color: #a3a3a3;
     font-size: 12px;
     font-weight: 400;
     line-height: 16px;
@@ -3669,19 +3438,6 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child::after {
     content: "runreveal";
     background-image: url("/images/integrations/logos/runreveal.webp");
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > svg:last-child,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > svg:last-child {
-    display: block !important;
-    opacity: 0.6 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href^="https://"] > svg:last-child {
-    display: block !important;
-    opacity: 0.6 !important;
-}
-.dark [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span,
-:is(.dark) [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span {
-    color: #ffffff;
 }
 /* Horizontal separator in the Integrations top-nav dropdown, between the
    "Ecosystem" entry and the section entries (ClickPipes / Language clients /
@@ -3778,49 +3534,6 @@ html:not(.dark) .card a {
    hinting that the link leaves the docs site */
 .goal-card-link:hover .ch-external-arrow {
     transform: rotate(-45deg);
-}
-
-/* Langfuse opens outside the docs site. Replace Mintlify's high-emphasis tile
-   with one small, unboxed external-link glyph. */
-a.nav-dropdown-item[href^="https://langfuse.com/docs"],
-a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover,
-a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus,
-a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible {
-    background: transparent !important;
-    box-shadow: none !important;
-}
-
-a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
-    width: 0.75rem !important;
-    height: 0.75rem !important;
-    padding: 0 !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    outline: 0 !important;
-    background: none !important;
-    box-shadow: none !important;
-    fill: none !important;
-    color: #9ca3af !important;
-    opacity: 0.6 !important;
-}
-
-a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
-a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
-    color: #2563eb !important;
-    opacity: 1 !important;
-    transform: translate(1px, -1px);
-}
-
-.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child,
-:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
-    color: #71717a !important;
-}
-
-.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
-.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child,
-:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
-:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
-    color: #fdff75 !important;
 }
 
 /* ============================================
@@ -4424,54 +4137,9 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
     .ch-ask-ai-button::after { animation: none; }
 }
 
-/* Give every external Products link the same visible glyph and hover state.
-   This is deliberately later than the Langfuse-specific dropdown styles. */
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > a.nav-dropdown-item[href^="https://"] > svg:last-child {
-    display: block !important;
-    align-self: center;
-    width: 0.75rem !important;
-    height: 0.75rem !important;
-    padding: 0 !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    background: none !important;
-    box-shadow: none !important;
-    fill: none !important;
-    color: #71717a !important;
-    opacity: 0.6 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > a.nav-dropdown-item[href^="https://"]:hover > svg:last-child,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > a.nav-dropdown-item[href^="https://"]:focus-visible > svg:last-child {
-    color: #fdff75 !important;
-    opacity: 1 !important;
-    transform: translate(1px, -1px);
-}
-
-/* Match the type scale and colour used by the Integrations dropdown. */
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item > span,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item > div > span:first-child {
-    color: #9f9f9f !important;
-    font-size: 14px !important;
-    font-weight: 500 !important;
-    line-height: 20px !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) > div > span {
-    color: #111827 !important;
-}
-.dark [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) > div > span,
-:is(.dark) [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) > div > span {
-    color: #ffffff !important;
-}
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(5) > div > span {
     font-size: 0 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span::before,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(5) > div > span::before {
-    color: #9f9f9f;
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 20px;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span::before {
     content: "Cloud";
@@ -4481,4 +4149,92 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href="/products/agentic-data-stack/overview"] {
     display: none !important;
+}
+
+/* Shared top-navigation presentation. Menu-specific rules above only arrange
+   products, section headings, icons, and partner captions. */
+:root {
+    --ch-nav-text: #374151;
+    --ch-nav-strong: #111827;
+    --ch-nav-muted: #6b7280;
+    --ch-nav-hover: rgba(17, 24, 39, 0.05);
+    --ch-nav-active: rgba(17, 24, 39, 0.08);
+}
+.dark {
+    --ch-nav-text: #b3b3b3;
+    --ch-nav-strong: #ffffff;
+    --ch-nav-muted: #a3a3a3;
+    --ch-nav-hover: rgba(255, 255, 255, 0.05);
+    --ch-nav-active: rgba(255, 255, 255, 0.08);
+}
+[role="menu"]:has(> .nav-dropdown-item) {
+    border-radius: 8px !important;
+}
+.nav-dropdown-item {
+    color: var(--ch-nav-text) !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    line-height: 20px !important;
+    padding: 6px 8px !important;
+    border-radius: 4px !important;
+}
+/* Menu links use text labels; retain only the Databases product marks. */
+.nav-dropdown-item > img:not([src$="icon-clickhouse.svg"]):not([src$="icon-postgres.svg"]) {
+    display: none !important;
+}
+.nav-dropdown-item > div > span,
+.nav-dropdown-item > span {
+    color: inherit !important;
+    font-size: inherit !important;
+    font-weight: inherit !important;
+    line-height: inherit !important;
+}
+.nav-dropdown-item:is(:hover, :focus-visible, [data-highlighted]) {
+    color: var(--ch-nav-strong) !important;
+    background: var(--ch-nav-hover) !important;
+}
+.nav-dropdown-item[aria-current] {
+    color: var(--ch-nav-strong) !important;
+    background: var(--ch-nav-active) !important;
+}
+.nav-dropdown-item:has(img[src$="section-header.svg"]),
+[role="menu"]:has(img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) {
+    color: var(--ch-nav-strong) !important;
+    font-weight: 700 !important;
+    background: transparent !important;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.nav-dropdown-item:has(img[src$="icon-postgres.svg"]) {
+    color: var(--ch-nav-strong) !important;
+    font-weight: 700 !important;
+}
+/* Preserve the abbreviated labels while inheriting the shared state colors. */
+.nav-dropdown-item::before,
+.nav-dropdown-item > div > span::before {
+    color: inherit;
+    font-size: 14px;
+    font-weight: inherit;
+    line-height: 20px;
+}
+.nav-dropdown-item > div > span::after {
+    color: var(--ch-nav-muted);
+}
+.nav-dropdown-item[href^="https://"] > svg:last-child {
+    display: block !important;
+    align-self: center;
+    width: 12px !important;
+    height: 12px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+    fill: none !important;
+    color: inherit !important;
+    opacity: 0.65 !important;
+}
+.nav-dropdown-item[href^="https://"]:is(:hover, :focus-visible, [data-highlighted]) > svg:last-child {
+    opacity: 1 !important;
+    transform: translate(1px, -1px);
 }
