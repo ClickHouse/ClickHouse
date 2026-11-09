@@ -653,6 +653,9 @@ dolor_main_configs = [
 ]
 if server_settings is not None:
     dolor_main_configs.append(server_settings)
+# In-flush trace_log symbolization is too slow under sanitizers for the stop window.
+if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1":
+    dolor_main_configs.append("../config/config.d/trace_log_no_symbolize.xml")
 
 
 servers: list[ClickHouseInstance] = []
@@ -773,12 +776,12 @@ leak_lower_bound, leak_upper_bound = args.time_between_leak_detections
 if args.with_leak_detection:
     leak_detector.reset_and_capture_baseline(cluster)
 # Test timeout if set
-test_limit = None if args.timeout is UNSET else time.time() + args.timeout * 60
+test_limit = None if args.timeout is UNSET else time.monotonic() + args.timeout * 60
 reached_limit = False
 
 
 while all_running and (not reached_limit):
-    start = time.time()
+    start = time.monotonic()
     finish = start + random.randint(lower_bound, upper_bound)
     next_leak_detection = start + random.randint(leak_lower_bound, leak_upper_bound)
     next_monitoring = start + random.randint(
@@ -795,16 +798,16 @@ while all_running and (not reached_limit):
             if pid is None:
                 logger.info(f"The server {server.name} stopped during the workload")
                 all_running = False
-        reached_limit = test_limit is not None and time.time() >= test_limit
+        reached_limit = test_limit is not None and time.monotonic() >= test_limit
         if reached_limit:
             logger.info("Test timeout reached, stopping the load generator and exiting")
         if all_running and (not reached_limit):
-            if args.with_leak_detection and next_leak_detection < time.time():
+            if args.with_leak_detection and next_leak_detection < time.monotonic():
                 leak_detector.run_next_leak_detection(cluster, client)
                 next_leak_detection += random.randint(
                     leak_lower_bound, leak_upper_bound
                 )
-            if args.with_monitoring and next_monitoring < time.time():
+            if args.with_monitoring and next_monitoring < time.monotonic():
                 tables_oracle.run_health_check(cluster, servers, logger)
                 next_monitoring += random.randint(
                     monitoring_lower_bound, monitoring_upper_bound
