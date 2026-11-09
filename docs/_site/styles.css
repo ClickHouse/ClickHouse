@@ -4410,3 +4410,25 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
     .ch-ask-ai-button::before,
     .ch-ask-ai-button::after { animation: none; }
 }
+
+/* Give every external Products link the same visible glyph and hover state.
+   This is deliberately later than the Langfuse-specific dropdown styles. */
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > a.nav-dropdown-item[href^="https://"] > svg:last-child {
+    display: block !important;
+    width: 0.75rem !important;
+    height: 0.75rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+    fill: none !important;
+    color: #71717a !important;
+    opacity: 0.6 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > a.nav-dropdown-item[href^="https://"]:hover > svg:last-child,
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > a.nav-dropdown-item[href^="https://"]:focus-visible > svg:last-child {
+    color: #fdff75 !important;
+    opacity: 1 !important;
+    transform: translate(1px, -1px);
+}

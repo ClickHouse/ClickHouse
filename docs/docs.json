@@ -130,16 +130,16 @@
                 "item": "ClickStack"
               },
               {
-                "href": "https://www.librechat.ai/docs",
-                "item": "LibreChat"
-              },
-              {
                 "href": "/chdb",
                 "item": "chDB"
               },
               {
                 "href": "/products/kubernetes-operator/overview",
                 "item": "Kubernetes Operator"
+              },
+              {
+                "href": "https://www.librechat.ai/docs",
+                "item": "LibreChat"
               }
             ],
             "tab": "Products"
