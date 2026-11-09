@@ -157,7 +157,8 @@ public:
         bool null_as_default_,
         bool case_insensitive_matching_ = false,
         bool dictionary_as_low_cardinality_ = false,
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore);
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore,
+        UnorderedMapWithMemoryTracking<UInt64, DataTypePtr> count_only_structs_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -188,6 +189,9 @@ private:
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
+    /// ORC column ids of the structs read only for the count of a list's elements or a map's entries, with the types to
+    /// return their default values in.
+    const UnorderedMapWithMemoryTracking<UInt64, DataTypePtr> count_only_structs;
 };
 }
 #endif

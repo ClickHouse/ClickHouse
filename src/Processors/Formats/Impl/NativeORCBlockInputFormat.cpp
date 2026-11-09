@@ -1176,8 +1176,16 @@ static std::optional<size_t> findORCStructFieldByName(const ORC::Type * orc_type
     return std::nullopt;
 }
 
-static void
-updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_case, UnorderedSetWithMemoryTracking<UInt64> & include_typeids)
+/// A struct below a list or a map, with the type requested for it. If no column of the struct is read, the struct is
+/// still needed for the count of the list's elements or the map's entries.
+using ORCStructCandidates = VectorWithMemoryTracking<std::pair<const ORC::Type *, DataTypePtr>>;
+
+static void updateIncludeTypeIds(
+    DataTypePtr type,
+    const ORC::Type * orc_type,
+    bool ignore_case,
+    UnorderedSetWithMemoryTracking<UInt64> & include_typeids,
+    ORCStructCandidates & count_only_candidates)
 {
     /// Recurses the file-controlled ORC type tree in lockstep with the (parser-bounded) CH type.
     /// Keep a stack backstop here too: this runs in prepareFileReader, before the
@@ -1198,7 +1206,10 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
             const auto * array_type = typeid_cast<const DataTypeArray *>(non_nullable_type.get());
             if (array_type)
             {
-                updateIncludeTypeIds(array_type->getNestedType(), orc_type->getSubtype(0), ignore_case, include_typeids);
+                updateIncludeTypeIds(
+                    array_type->getNestedType(), orc_type->getSubtype(0), ignore_case, include_typeids, count_only_candidates);
+                if (orc_type->getSubtype(0)->getKind() == ORC::STRUCT)
+                    count_only_candidates.emplace_back(orc_type->getSubtype(0), array_type->getNestedType());
                 return;
             }
             break;
@@ -1207,8 +1218,14 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
             const auto * map_type = typeid_cast<const DataTypeMap *>(non_nullable_type.get());
             if (map_type)
             {
-                updateIncludeTypeIds(map_type->getKeyType(), orc_type->getSubtype(0), ignore_case, include_typeids);
-                updateIncludeTypeIds(map_type->getValueType(), orc_type->getSubtype(1), ignore_case, include_typeids);
+                updateIncludeTypeIds(
+                    map_type->getKeyType(), orc_type->getSubtype(0), ignore_case, include_typeids, count_only_candidates);
+                updateIncludeTypeIds(
+                    map_type->getValueType(), orc_type->getSubtype(1), ignore_case, include_typeids, count_only_candidates);
+                if (orc_type->getSubtype(0)->getKind() == ORC::STRUCT)
+                    count_only_candidates.emplace_back(orc_type->getSubtype(0), map_type->getKeyType());
+                if (orc_type->getSubtype(1)->getKind() == ORC::STRUCT)
+                    count_only_candidates.emplace_back(orc_type->getSubtype(1), map_type->getValueType());
                 return;
             }
             break;
@@ -1227,13 +1244,18 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
                     {
                         if (auto field_i = findORCStructFieldByName(orc_type, element_names[tuple_i], ignore_case))
                             updateIncludeTypeIds(
-                                tuple_type->getElement(tuple_i), orc_type->getSubtype(*field_i), ignore_case, include_typeids);
+                                tuple_type->getElement(tuple_i),
+                                orc_type->getSubtype(*field_i),
+                                ignore_case,
+                                include_typeids,
+                                count_only_candidates);
                     }
                 }
                 else
                 {
                     for (size_t i = 0; i < tuple_type->getElements().size() && i < orc_type->getSubtypeCount(); ++i)
-                        updateIncludeTypeIds(tuple_type->getElement(i), orc_type->getSubtype(i), ignore_case, include_typeids);
+                        updateIncludeTypeIds(
+                            tuple_type->getElement(i), orc_type->getSubtype(i), ignore_case, include_typeids, count_only_candidates);
                 }
                 return;
             }
@@ -1255,7 +1277,7 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
             {
                 const auto * branch_orc_type = orc_type->getSubtype(i);
                 if (branch_hints[i])
-                    updateIncludeTypeIds(branch_hints[i], branch_orc_type, ignore_case, include_typeids);
+                    updateIncludeTypeIds(branch_hints[i], branch_orc_type, ignore_case, include_typeids, count_only_candidates);
                 else
                     include_typeids.insert(branch_orc_type->getColumnId());
             }
@@ -1267,6 +1289,43 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
 
     /// A requested type of another kind reads the whole node, and the cast to the requested type converts it or throws.
     include_typeids.insert(orc_type->getColumnId());
+}
+
+/// Whether a column of the subtree of `orc_type`, or one of its ancestors (which reads the subtree whole), is included.
+static bool isORCTypeRead(
+    const ORC::Type & root, const ORC::Type & orc_type, const UnorderedSetWithMemoryTracking<UInt64> & include_typeids)
+{
+    for (UInt64 id = orc_type.getColumnId(); id <= orc_type.getMaximumColumnId(); ++id)
+        if (include_typeids.contains(id))
+            return true;
+
+    const ORC::Type * node = &root;
+    while (node && node->getColumnId() < orc_type.getColumnId())
+    {
+        if (include_typeids.contains(node->getColumnId()))
+            return true;
+
+        const ORC::Type * child = nullptr;
+        for (UInt64 i = 0; i < node->getSubtypeCount() && !child; ++i)
+            if (node->getSubtype(i)->getMaximumColumnId() >= orc_type.getColumnId())
+                child = node->getSubtype(i);
+        node = child;
+    }
+    return false;
+}
+
+/// The field of an ORC struct with the fewest columns, or the struct itself if it has no fields.
+static const ORC::Type & getNarrowestORCStructField(const ORC::Type & orc_struct)
+{
+    const ORC::Type * narrowest = &orc_struct;
+    for (UInt64 i = 0; i < orc_struct.getSubtypeCount(); ++i)
+    {
+        const auto * field = orc_struct.getSubtype(i);
+        if (narrowest == &orc_struct
+            || field->getMaximumColumnId() - field->getColumnId() < narrowest->getMaximumColumnId() - narrowest->getColumnId())
+            narrowest = field;
+    }
+    return *narrowest;
 }
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(
@@ -1298,26 +1357,44 @@ void NativeORCBlockInputFormat::prepareFileReader()
             format_filter_info->filter_actions_dag.get(),
             format_settings.orc.case_insensitive_column_matching));
 
+    const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
+    const auto & header = getPort().getHeader();
+    const auto & file_schema = file_reader->getType();
+    UnorderedSetWithMemoryTracking<UInt64> include_typeids;
+    ORCStructCandidates count_only_candidates;
+    for (const auto & column : header)
+    {
+        auto adjusted_type = column.type;
+        const auto * orc_type = traverseDownORCTypeByName(column.name, &file_schema, adjusted_type, ignore_case);
+        if (!orc_type)
+            continue;
+
+        updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids, count_only_candidates);
+        /// The type is adjusted only for a subcolumn of a flattened Nested column, which is below a list.
+        if (adjusted_type != column.type && orc_type->getKind() == ORC::STRUCT)
+            count_only_candidates.emplace_back(orc_type, adjusted_type);
+    }
+
+    /// After all columns, so that a struct read by another column is not read as defaults. Inner structs come first, so an
+    /// outer struct sees the column included for an inner one.
+    UnorderedMapWithMemoryTracking<UInt64, DataTypePtr> count_only_structs;
+    for (const auto & [orc_struct, requested_type] : count_only_candidates)
+    {
+        if (isORCTypeRead(file_schema, *orc_struct, include_typeids))
+            continue;
+        include_typeids.insert(getNarrowestORCStructField(*orc_struct).getColumnId());
+        count_only_structs.emplace(orc_struct->getColumnId(), removeNullable(requested_type));
+    }
+    include_indices.assign(include_typeids.begin(), include_typeids.end());
+
     orc_column_to_ch_column = std::make_unique<ORCColumnToCHColumn>(
         getPort().getHeader(),
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching,
         format_settings.orc.dictionary_as_low_cardinality,
-        format_settings.date_time_overflow_behavior);
-
-    const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
-    const auto & header = getPort().getHeader();
-    const auto & file_schema = file_reader->getType();
-    UnorderedSetWithMemoryTracking<UInt64> include_typeids;
-    for (const auto & column : header)
-    {
-        auto adjusted_type = column.type;
-        const auto * orc_type = traverseDownORCTypeByName(column.name, &file_schema, adjusted_type, ignore_case);
-        if (orc_type)
-            updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids);
-    }
-    include_indices.assign(include_typeids.begin(), include_typeids.end());
+        format_settings.date_time_overflow_behavior,
+        std::move(count_only_structs));
 
     if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs)
         sargs = buildORCSearchArgument(*format_filter_info->key_condition, header, file_schema, format_settings);
@@ -1537,13 +1614,15 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     bool null_as_default_,
     bool case_insensitive_matching_,
     bool dictionary_as_low_cardinality_,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_)
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
+    UnorderedMapWithMemoryTracking<UInt64, DataTypePtr> count_only_structs_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
     , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
     , date_time_overflow_behavior(date_time_overflow_behavior_)
+    , count_only_structs(std::move(count_only_structs_))
 {
 }
 
@@ -2861,6 +2940,12 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         }
         case ORC::STRUCT:
         {
+            if (auto it = count_only_structs.find(orc_type->getColumnId()); it != count_only_structs.end())
+                return {
+                    it->second->createColumnConstWithDefaultValue(orc_column->numElements)->convertToFullColumnIfConst(),
+                    it->second,
+                    column_name};
+
             Columns tuple_elements;
             DataTypes tuple_types;
             Strings tuple_names;
