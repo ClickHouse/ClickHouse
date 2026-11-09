@@ -303,7 +303,7 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    AggregateFunctionProperties properties = {.is_order_dependent = true};
+    AggregateFunctionProperties properties = {.is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::AllExceptFirst};
     factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation, properties});
 }
 
