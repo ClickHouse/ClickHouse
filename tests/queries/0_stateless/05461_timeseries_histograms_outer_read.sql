@@ -72,15 +72,15 @@ SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSer
 FROM
 (
     SELECT timeSeriesGroupArrayHistogramsState(histograms) AS state
-    FROM timeSeriesSamples(ts)
-    WHERE id IN (SELECT id FROM timeSeriesTags(ts) WHERE metric_name = 'parts')
+    FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts)
+    WHERE id IN (SELECT id FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_name = 'parts')
 )
 SETTINGS max_threads = 1;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_histogram_states.native', Native)
 SELECT timeSeriesGroupArrayHistogramsState(histograms) AS state
-FROM timeSeriesSamples(ts)
-WHERE id IN (SELECT id FROM timeSeriesTags(ts) WHERE metric_name = 'parts')
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts)
+WHERE id IN (SELECT id FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_name = 'parts')
 SETTINGS engine_file_truncate_on_insert = 1, max_threads = 1;
 
 SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArrayHistogramsMerge(state))
@@ -91,8 +91,8 @@ SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSer
 FROM
 (
     SELECT arraySort(h -> h.timestamp, arrayFlatten(groupArray(histograms))) AS histograms
-    FROM timeSeriesSamples(ts)
-    WHERE id IN (SELECT id FROM timeSeriesTags(ts) WHERE metric_name = 'parts')
+    FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts)
+    WHERE id IN (SELECT id FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_name = 'parts')
 );
 
 SELECT '-- disjoint input arrays can each contain duplicate timestamps';
@@ -100,8 +100,8 @@ SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int),
                timeSeriesGroupArrayHistograms(arraySort(h -> h.timestamp, arrayConcat(histograms, histograms))))
 FROM
 (
-    SELECT histograms FROM timeSeriesSamples(ts)
-    WHERE id IN (SELECT id FROM timeSeriesTags(ts) WHERE metric_name = 'mixed')
+    SELECT histograms FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts)
+    WHERE id IN (SELECT id FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_name = 'mixed')
     ORDER BY bucket
 )
 SETTINGS max_threads = 1;

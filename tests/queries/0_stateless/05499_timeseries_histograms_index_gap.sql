@@ -16,8 +16,8 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.count_int, h
     VALUES ('too_wide', map(), [toDateTime64(100, 3)], [2], [1], [[(-2147483648, 1), (1, 1)]]); -- { serverError INCORRECT_DATA }
 
 SELECT t.metric_name, s.histograms.positive_int
-FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 ORDER BY t.metric_name;
-SELECT count() FROM timeSeriesTags(ts);
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts);
 
 DROP TABLE ts;

@@ -1,9 +1,9 @@
 -- The counter reset hints after `timeSeriesGroupArrayHistograms` merges arrays of histogram samples: where the sample's predecessor
 -- is no longer the one the hint was computed against (the first sample of every merged array but the first, and every sample whose
--- neighbour changed by sorting or deduplication), the hint is detected again against the new predecessor, as the sink does within one
--- insert (a count decrease is a reset); explicit resets, hints within an array and gauge markers are kept, the result doesn't depend on
--- the order of the inputs, and the changed hints don't change which payload wins a later conflict. The same happens when the parts of
--- the samples table are merged.
+-- neighbour changed by sorting or deduplication), the hint is detected again from the data against the new predecessor, as the sink does
+-- within one insert (a count decrease is a reset), an explicit reset too; hints within an array and gauge markers are kept, the result
+-- doesn't depend on the order of the inputs, and the changed hints don't change which payload wins a later conflict. The same happens
+-- when the parts of the samples table are merged.
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
 SET max_threads = 1;
@@ -35,7 +35,7 @@ FROM values('scenario String, part UInt8, samples Array(Tuple(UInt32, Int64, UIn
     ('gauge', 2, [(100, 1, 3), (101, 2, 3), (102, 3, 3)]),
     ('single', 1, [(100, 1, 2), (101, 2, 1)]));
 
--- Detect hints only where adjacency changes, preserving known hints within a range, explicit resets and gauge markers everywhere.
+-- Detect hints only where adjacency changes, preserving known hints within a range and gauge markers everywhere.
 SELECT scenario, arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), merged),
        merged = arrayReduce('timeSeriesGroupArrayHistograms', arrayReverse(arrays))
 FROM
@@ -78,16 +78,16 @@ INSERT INTO ts_histogram_hints (metric_name, histograms.timestamp, histograms.co
 VALUES ('m', [toDateTime64(100, 3), toDateTime64(101, 3)], [100, 120], [100, 120], [100, 120], [2, 2]);
 INSERT INTO ts_histogram_hints (metric_name, histograms.timestamp, histograms.count_int, histograms.zero_count_int, histograms.sum, histograms.counter_reset_hint)
 VALUES ('m', [toDateTime64(100, 3), toDateTime64(101, 3), toDateTime64(102, 3)], [1, 2, 3], [1, 2, 3], [1, 2, 3], [2, 2, 2]);
-SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), histograms) FROM timeSeriesSamples(ts_histogram_hints) ORDER BY ALL;
+SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), histograms) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_histogram_hints) ORDER BY ALL;
 OPTIMIZE TABLE ts_histogram_hints FINAL;
-SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), histograms) FROM timeSeriesSamples(ts_histogram_hints) ORDER BY ALL;
+SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), histograms) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_histogram_hints) ORDER BY ALL;
 
 -- Sorting and deduplicating a single insert detects the reset against the new predecessor.
 TRUNCATE TABLE ts_histogram_hints;
 INSERT INTO ts_histogram_hints (metric_name, histograms.timestamp, histograms.count_int, histograms.zero_count_int, histograms.sum, histograms.counter_reset_hint)
 VALUES ('m', [toDateTime64(100, 3), toDateTime64(101, 3), toDateTime64(100, 3), toDateTime64(101, 3), toDateTime64(102, 3)],
         [100, 120, 1, 2, 3], [100, 120, 1, 2, 3], [100, 120, 1, 2, 3], [2, 2, 2, 2, 2]);
-SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), histograms) FROM timeSeriesSamples(ts_histogram_hints);
+SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), histograms) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_histogram_hints);
 
 DROP TABLE ts_histogram_hints;
 DROP TABLE histogram_hint_inputs;

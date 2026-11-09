@@ -1,0 +1,4 @@
+-- the hint of B is detected against C, whichever merge made C its predecessor
+[(100,10,0),(200,2,1),(300,5,2)]	1	1	1	1	1	1
+-- an explicit reset is kept while the predecessor stays, and detected again when a sample lands in between
+[(100,10,2),(300,15,1)]	[(100,10,2),(200,12,2),(300,15,2)]	[(100,10,2),(200,12,2),(300,15,2)]

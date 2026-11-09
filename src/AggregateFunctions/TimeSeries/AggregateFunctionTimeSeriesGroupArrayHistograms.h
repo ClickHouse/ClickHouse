@@ -109,9 +109,8 @@ struct AggregateFunctionTimeSeriesGroupArrayHistogramsData
 /// the same timestamp the greatest one under the order of `TimeSeriesDuplicateTimestampRule` wins (the greatest total count,
 /// then the greatest `sum`, then the other elements). Arrays in timestamp order are appended, and overlapping arrays are sorted
 /// and deduplicated. Where the predecessor of a kept sample changes (the first sample of every array but the first, a sample whose
-/// neighbour changed by sorting or deduplication), its counter reset hint is computed again against the new predecessor by
-/// TimeSeriesHistogramCounterResetRule, as on insert; explicit resets and gauge markers are kept. The result type is the argument
-/// type, so the function fits `SimpleAggregateFunction`.
+/// neighbour changed by sorting or deduplication), its counter reset hint is detected again by TimeSeriesHistogramCounterResetRule.
+/// The result type is the argument type, so the function fits `SimpleAggregateFunction`.
 template <typename TimestampType>
 class AggregateFunctionTimeSeriesGroupArrayHistograms final
     : public IAggregateFunctionDataHelper<AggregateFunctionTimeSeriesGroupArrayHistogramsData<TimestampType>, AggregateFunctionTimeSeriesGroupArrayHistograms<TimestampType>>
@@ -284,21 +283,18 @@ private:
     static void appendRanges(const Data & data, ColumnTuple & tuple_to)
     {
         ProfileEvents::increment(ProfileEvents::TimeSeriesGroupArrayHistogramsAppendOnlyMerges);
-        const TimeSeriesHistogramsColumnsView view{tuple_to};
-        auto & hints = getCounterResetHints(tuple_to);
+        const TimeSeriesHistogramsColumnsMutableView view{tuple_to};
+        const TimeSeriesHistogramPayloadColumnsView payload{view};
+        auto & hints = view.counter_reset_hint.getData();
         for (const auto & range : data.ranges)
         {
             const size_t begin = tuple_to.size();
             tuple_to.insertRangeFrom(*range.source, range.offset, range.size);
+            /// An explicit reset isn't preserved here or in `sortRanges`: the stored hint was about another predecessor, and detecting
+            /// from the data alone makes the result independent of the order of the merges, as `SimpleAggregateFunction` requires.
             if (&range != &data.ranges.front())
-                hints[begin] = TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(view, begin - 1, begin);
+                hints[begin] = TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(payload, begin - 1, begin, /* preserve_explicit_reset = */ false);
         }
-    }
-
-    static ColumnUInt8::Container & getCounterResetHints(ColumnTuple & tuple)
-    {
-        return assert_cast<ColumnUInt8 &>(tuple.getColumn(
-            TimeSeriesHistogramsColumns::getTuplePosition(TimeSeriesHistogramsColumn::CounterResetHint))).getData();
     }
 
     /// The arrays overlap in time: they are concatenated into a column of their own, sorted by timestamp, deduplicated
@@ -320,13 +316,14 @@ private:
 
         /// Collapses each run of equal timestamps into the winning element, in place at the beginning of the permutation. The rule
         /// orders the whole payload, so the result is the same for any order of the elements with the same timestamp (the sort is not stable).
-        const TimeSeriesHistogramsColumnsView view{source};
+        const TimeSeriesHistogramsColumnsMutableView view{source};
+        const TimeSeriesHistogramPayloadColumnsView payload{view};
         size_t num_unique = 1;
         for (size_t i = 1; i < num_elements; ++i)
         {
             if (timestamps[permutation[i]] == timestamps[permutation[num_unique - 1]])
             {
-                if (TimeSeriesDuplicateTimestampRule::histogramSampleWins(view, permutation[num_unique - 1], permutation[i]))
+                if (TimeSeriesDuplicateTimestampRule::histogramSampleWins(payload, permutation[num_unique - 1], permutation[i]))
                     permutation[num_unique - 1] = permutation[i];
             }
             else
@@ -336,7 +333,7 @@ private:
         }
 
         /// The winners are decided first; then every kept sample whose predecessor in the result isn't its predecessor in its input
-        /// array gets its hint against the new one: the first sample of every range (the ranges are adjacent in the concatenated
+        /// array gets its hint detected against the new one: the first sample of every range (the ranges are adjacent in the concatenated
         /// column, so adjacency alone doesn't tell) and the samples moved next to another one by the sort or the deduplication.
         /// The first sample of the result keeps its hint, as the first sample of an insert does.
         PaddedPODArray<UInt8> is_range_start(num_elements, 0);
@@ -346,13 +343,13 @@ private:
             is_range_start[range_begin] = 1;
             range_begin += range.size;
         }
-        auto & hints = getCounterResetHints(source);
+        auto & hints = view.counter_reset_hint.getData();
         for (size_t i = 1; i < num_unique; ++i)
         {
             const size_t current = permutation[i];
             const size_t previous = permutation[i - 1];
             if ((current != previous + 1) || is_range_start[current])
-                hints[current] = TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(view, previous, current);
+                hints[current] = TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(payload, previous, current, /* preserve_explicit_reset = */ false);
         }
 
         /// Copy consecutive source rows together, directly into the result without materializing a permuted column.

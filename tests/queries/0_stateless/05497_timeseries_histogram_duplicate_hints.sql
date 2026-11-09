@@ -55,7 +55,7 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.counter_rese
     ('no_first', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [2, 1], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]);
 
 SELECT t.metric_name, s.histograms.counter_reset_hint
-FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 ORDER BY t.metric_name;
 
 DROP TABLE ts;

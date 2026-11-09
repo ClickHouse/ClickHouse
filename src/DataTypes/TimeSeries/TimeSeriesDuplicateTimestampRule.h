@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Common/NaNUtils.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <base/types.h>
 
 
 namespace DB
 {
-class TimeSeriesHistogramsColumnsView;
 
 /// The rules deciding which of two samples of one time series with the same timestamp is kept. TimeSeriesSink applies them to the
 /// duplicates within one INSERT, the aggregate functions `timeSeriesGroupArray` (through `timeseriesMaxValueForDuplicateTimestamp`)
@@ -29,7 +29,7 @@ public:
     }
 
     /// Whether the histogram sample `candidate` of `view` replaces the histogram sample `kept`: `compareHistograms(view, candidate, kept) > 0`.
-    static bool histogramSampleWins(const TimeSeriesHistogramsColumnsView & view, size_t kept, size_t candidate);
+    static bool histogramSampleWins(const TimeSeriesHistogramPayloadColumnsView & view, size_t kept, size_t candidate);
 
     /// An order over the payload (every element but `timestamp`) of the histogram samples `lhs` and `rhs` of `view`: the greater
     /// sample is preferred. Returns a negative number, 0 or a positive number. The first differing key decides:
@@ -40,7 +40,7 @@ public:
     /// 4. for otherwise identical payloads, the counter reset hint, unknown preferred over known hints.
     /// Floats compare as in `CompareHelper`: a NaN is less than any number, two NaNs are equal, as are `0.0` and `-0.0`; only for
     /// payloads equal up to those does the kept sample depend on the order of the samples (the limit of `floatSampleWins` too).
-    static int compareHistograms(const TimeSeriesHistogramsColumnsView & view, size_t lhs, size_t rhs);
+    static int compareHistograms(const TimeSeriesHistogramPayloadColumnsView & view, size_t lhs, size_t rhs);
 };
 
 }

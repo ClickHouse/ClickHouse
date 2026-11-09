@@ -77,7 +77,7 @@ INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.schema, 
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.custom_values) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [[1]]); -- { serverError INCORRECT_DATA }
 
 SELECT '-- nothing of a rejected insert is written';
-SELECT (SELECT count() FROM timeSeriesTags(ts_val)), (SELECT count() FROM timeSeriesTimeRanges(ts_val)), (SELECT count() FROM timeSeriesSamples(ts_val));
+SELECT (SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_val)), (SELECT count() FROM timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts_val)), (SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_val));
 
 SELECT '-- the accepted histograms are stored as sent (one per timestamp)';
 -- An empty integer histogram: the timestamp alone.
@@ -109,7 +109,7 @@ INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_in
 
 SELECT toUnixTimestamp64Milli(h.timestamp) AS timestamp_ms, h.flags, h.counter_reset_hint, h.schema, h.zero_threshold, h.sum,
        h.count_int, h.zero_count_int, h.positive_int, h.negative_int, h.count_float, h.positive_float, h.custom_values
-FROM timeSeriesSamples(ts_val) ARRAY JOIN histograms AS h
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_val) ARRAY JOIN histograms AS h
 ORDER BY h.timestamp;
 
 DROP TABLE ts_val;

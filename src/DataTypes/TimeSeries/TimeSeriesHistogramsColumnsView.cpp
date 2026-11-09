@@ -1,5 +1,6 @@
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
+#include <Columns/ColumnsDateTime.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -18,6 +19,7 @@ namespace
 {
     using Element = TimeSeriesHistogramsColumn;
     using Registry = TimeSeriesHistogramsColumns;
+    using PayloadColumns = TimeSeriesHistogramPayloadColumnsMutableView::Columns;
 
     [[noreturn]] void throwUnexpectedColumn(std::string_view column_name, std::string_view expected_type, const IColumn & column)
     {
@@ -25,19 +27,28 @@ namespace
             column_name, expected_type, column.getName());
     }
 
-    /// The column of an element of `source`, checked against the registry's type (`structureEquals` compares the column classes
-    /// recursively, arrays with their data and tuples element by element) and cast to the class of the view member it initializes:
-    /// `Ref` is `decltype(member)`, e.g. `const ColumnFloat64 &` or `ColumnArray &`. Throws ILLEGAL_COLUMN naming the element.
+    /// The column of `element` of `source` as `Ref`, the type of the view member; throws ILLEGAL_COLUMN if it isn't of the registry's type.
     template <typename Ref, typename Source>
     Ref checkedElement(const Source & source, Element element)
     {
         auto & column = source.element(element);
+        /// `structureEquals` compares the column classes recursively, so one check covers the data of the arrays and the tuple elements.
         if (!column.structureEquals(Registry::getEmptyColumn(element)))
             throwUnexpectedColumn(Registry::getName(element), Registry::getType(element), column);
         return assert_cast<Ref>(column);
     }
 
-    /// The sources of the columns a view is built over: `timestamps`, the payload elements, and the offsets of the outer arrays.
+    /// The timestamps column as `Ref`; throws ILLEGAL_COLUMN unless it has a timestamp type of a TimeSeries table.
+    template <typename Ref>
+    Ref checkedTimestamps(Ref column)
+    {
+        /// `ColumnDateTime` is `ColumnUInt32`, so the second check covers `DateTime` and `UInt32`.
+        if (!typeid_cast<const ColumnDateTime64 *>(&column) && !typeid_cast<const ColumnUInt32 *>(&column))
+            throwUnexpectedColumn(TimeSeriesColumnNames::Timestamp, "DateTime64, DateTime or UInt32", column);
+        return column;
+    }
+
+    /// The sources of the columns a view is built over: the payload elements, the timestamps and the offsets of the outer arrays.
 
     /// A tuple of the stored shape; `Tuple` is `const ColumnTuple` or `ColumnTuple`.
     template <typename Tuple>
@@ -57,6 +68,9 @@ namespace
         auto & element(Element element) const { return tuple.getColumn(Registry::getTuplePosition(element)); }
         static const ColumnArray::Offsets * outerOffsets() { return nullptr; }
     };
+
+    template <typename Tuple>
+    TupleSource(Tuple &) -> TupleSource<Tuple>;
 
     /// The outer `histograms.*` columns of a block, all arrays with the offsets of `histograms.timestamp`.
     struct BlockSource
@@ -91,19 +105,34 @@ namespace
         }
     };
 
-    /// The columns being built by TimeSeriesHistogramsColumnsMutableView's users.
+    /// The columns being built by the users of the mutable views: the payload columns, and the timestamps if the view has them.
     struct BuiltColumnsSource
     {
-        IColumn & timestamps_column;
-        const TimeSeriesHistogramsColumnsMutableView::Columns & payload;
+        IColumn * timestamps_column = nullptr;
+        const PayloadColumns & payload;
 
-        IColumn & timestamps() const { return timestamps_column; }
+        IColumn & timestamps() const { return *timestamps_column; }
         IColumn & element(Element element) const { return *payload[static_cast<size_t>(element)]; }
+        static const ColumnArray::Offsets * outerOffsets() { return nullptr; }
     };
+
+    /// The columns of a mutable view, for its read-only counterpart; `timestamps` and `outerOffsets` only for a view with timestamps.
+    template <typename View>
+    struct ViewSource
+    {
+        const View & view;
+
+        IColumn & timestamps() const { return view.timestamps; }
+        IColumn & element(Element element) const { return view.getPayloadColumn(element); }
+        const ColumnArray::Offsets * outerOffsets() const { return view.outer_offsets; }
+    };
+
+    template <typename View>
+    ViewSource(const View &) -> ViewSource<View>;
 
     /// The pairs of row `row` of an array of `Tuple(index Int32, count Count)`.
     template <typename Count>
-    TimeSeriesHistogramsColumnsView::Pairs<Count> pairsAt(const ColumnArray & pairs, size_t row)
+    TimeSeriesHistogramBucketPairs<Count> pairsAt(const ColumnArray & pairs, size_t row)
     {
         const auto & tuple = assert_cast<const ColumnTuple &>(pairs.getData());
         const auto & indexes = assert_cast<const ColumnInt32 &>(tuple.getColumn(Registry::getPairIndexPosition())).getData();
@@ -115,85 +144,48 @@ namespace
 }
 
 
+template <bool is_const>
 template <typename Source>
-TimeSeriesHistogramsColumnsView::TimeSeriesHistogramsColumnsView(const Source & source)
-    : timestamps(source.timestamps())
-    , flags(checkedElement<decltype(flags)>(source, Element::Flags))
-    , counter_reset_hint(checkedElement<decltype(counter_reset_hint)>(source, Element::CounterResetHint))
-    , schema(checkedElement<decltype(schema)>(source, Element::Schema))
-    , zero_threshold(checkedElement<decltype(zero_threshold)>(source, Element::ZeroThreshold))
-    , sum(checkedElement<decltype(sum)>(source, Element::Sum))
-    , count_int(checkedElement<decltype(count_int)>(source, Element::CountInt))
-    , zero_count_int(checkedElement<decltype(zero_count_int)>(source, Element::ZeroCountInt))
-    , count_float(checkedElement<decltype(count_float)>(source, Element::CountFloat))
-    , zero_count_float(checkedElement<decltype(zero_count_float)>(source, Element::ZeroCountFloat))
-    , positive_int(checkedElement<decltype(positive_int)>(source, Element::PositiveInt))
-    , negative_int(checkedElement<decltype(negative_int)>(source, Element::NegativeInt))
-    , positive_float(checkedElement<decltype(positive_float)>(source, Element::PositiveFloat))
-    , negative_float(checkedElement<decltype(negative_float)>(source, Element::NegativeFloat))
-    , custom_values(checkedElement<decltype(custom_values)>(source, Element::CustomValues))
-    , outer_offsets(source.outerOffsets())
+TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::TimeSeriesHistogramPayloadColumnsViewImpl(FromSource, const Source & source)
+    : flags(checkedElement<Ref<ColumnUInt8>>(source, Element::Flags))
+    , counter_reset_hint(checkedElement<Ref<ColumnUInt8>>(source, Element::CounterResetHint))
+    , schema(checkedElement<Ref<ColumnInt8>>(source, Element::Schema))
+    , zero_threshold(checkedElement<Ref<ColumnFloat64>>(source, Element::ZeroThreshold))
+    , sum(checkedElement<Ref<ColumnFloat64>>(source, Element::Sum))
+    , count_int(checkedElement<Ref<ColumnInt64>>(source, Element::CountInt))
+    , zero_count_int(checkedElement<Ref<ColumnInt64>>(source, Element::ZeroCountInt))
+    , count_float(checkedElement<Ref<ColumnFloat64>>(source, Element::CountFloat))
+    , zero_count_float(checkedElement<Ref<ColumnFloat64>>(source, Element::ZeroCountFloat))
+    , positive_int(checkedElement<Ref<ColumnArray>>(source, Element::PositiveInt))
+    , negative_int(checkedElement<Ref<ColumnArray>>(source, Element::NegativeInt))
+    , positive_float(checkedElement<Ref<ColumnArray>>(source, Element::PositiveFloat))
+    , negative_float(checkedElement<Ref<ColumnArray>>(source, Element::NegativeFloat))
+    , custom_values(checkedElement<Ref<ColumnArray>>(source, Element::CustomValues))
 {
 }
 
-TimeSeriesHistogramsColumnsView::TimeSeriesHistogramsColumnsView(const ColumnTuple & tuple)
-    : TimeSeriesHistogramsColumnsView(TupleSource<const ColumnTuple>{tuple})
+template <bool is_const>
+TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::TimeSeriesHistogramPayloadColumnsViewImpl(Ref<ColumnTuple> tuple)
+    : TimeSeriesHistogramPayloadColumnsViewImpl(FromSource{}, TupleSource{tuple})
 {
 }
 
-TimeSeriesHistogramsColumnsView::TimeSeriesHistogramsColumnsView(const Block & block)
-    : TimeSeriesHistogramsColumnsView(BlockSource{block})
+template <bool is_const>
+TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::TimeSeriesHistogramPayloadColumnsViewImpl(const Columns & payload) requires (!is_const)
+    : TimeSeriesHistogramPayloadColumnsViewImpl(FromSource{}, BuiltColumnsSource{nullptr, payload})
 {
 }
 
-TimeSeriesHistogramsColumnsView::StoredColumns TimeSeriesHistogramsColumnsView::getColumnsInStoredOrder() const
+template <bool is_const>
+TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::TimeSeriesHistogramPayloadColumnsViewImpl(
+    const TimeSeriesHistogramPayloadColumnsViewImpl<!is_const> & other) requires is_const
+    : TimeSeriesHistogramPayloadColumnsViewImpl(FromSource{}, ViewSource{other})
 {
-    const auto element = [this](Element element_) -> const IColumn &
-    {
-        switch (element_)
-        {
-            case Element::Flags: return flags;
-            case Element::CounterResetHint: return counter_reset_hint;
-            case Element::Schema: return schema;
-            case Element::ZeroThreshold: return zero_threshold;
-            case Element::Sum: return sum;
-            case Element::CountInt: return count_int;
-            case Element::ZeroCountInt: return zero_count_int;
-            case Element::CountFloat: return count_float;
-            case Element::ZeroCountFloat: return zero_count_float;
-            case Element::PositiveInt: return positive_int;
-            case Element::NegativeInt: return negative_int;
-            case Element::PositiveFloat: return positive_float;
-            case Element::NegativeFloat: return negative_float;
-            case Element::CustomValues: return custom_values;
-        }
-    };
-
-    StoredColumns result;
-    result[Registry::getTimestampPosition()] = &timestamps;
-    for (const auto payload_element : Registry::getAll())
-        result[Registry::getTuplePosition(payload_element)] = &element(payload_element);
-    return result;
 }
 
-TimeSeriesHistogramsColumnsView::IntPairs TimeSeriesHistogramsColumnsView::intPairsAt(const ColumnArray & pairs, size_t row)
-{
-    return pairsAt<Int64>(pairs, row);
-}
-
-TimeSeriesHistogramsColumnsView::FloatPairs TimeSeriesHistogramsColumnsView::floatPairsAt(const ColumnArray & pairs, size_t row)
-{
-    return pairsAt<Float64>(pairs, row);
-}
-
-std::span<const Float64> TimeSeriesHistogramsColumnsView::floatsAt(const ColumnArray & values, size_t row)
-{
-    const auto & data = assert_cast<const ColumnFloat64 &>(values.getData()).getData();
-    return {data.data() + values.getOffset(row), values.getSize(row)};
-}
-
-
-TimeSeriesHistogramsColumnsMutableView::Columns TimeSeriesHistogramsColumnsMutableView::createPayloadColumns()
+template <bool is_const>
+typename TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::Columns
+TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::createPayloadColumns() requires (!is_const)
 {
     Columns result;
     for (const auto element : Registry::getAll())
@@ -201,34 +193,118 @@ TimeSeriesHistogramsColumnsMutableView::Columns TimeSeriesHistogramsColumnsMutab
     return result;
 }
 
+template <bool is_const>
+typename TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::template Ref<IColumn>
+TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::getPayloadColumn(Element element) const
+{
+    switch (element)
+    {
+        case Element::Flags: return flags;
+        case Element::CounterResetHint: return counter_reset_hint;
+        case Element::Schema: return schema;
+        case Element::ZeroThreshold: return zero_threshold;
+        case Element::Sum: return sum;
+        case Element::CountInt: return count_int;
+        case Element::ZeroCountInt: return zero_count_int;
+        case Element::CountFloat: return count_float;
+        case Element::ZeroCountFloat: return zero_count_float;
+        case Element::PositiveInt: return positive_int;
+        case Element::NegativeInt: return negative_int;
+        case Element::PositiveFloat: return positive_float;
+        case Element::NegativeFloat: return negative_float;
+        case Element::CustomValues: return custom_values;
+    }
+}
+
+template <bool is_const>
+typename TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::PayloadColumns
+TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::getPayloadColumnsInStoredOrder() const
+{
+    /// The stored order of the payload is the canonical order of the registry: `getTuplePosition` follows the enum.
+    PayloadColumns result;
+    for (const auto element : Registry::getAll())
+        result[static_cast<size_t>(element)] = &getPayloadColumn(element);
+    return result;
+}
+
+template <bool is_const>
+TimeSeriesHistogramBucketPairs<Int64> TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::intPairsAt(const ColumnArray & pairs, size_t row)
+{
+    return pairsAt<Int64>(pairs, row);
+}
+
+template <bool is_const>
+TimeSeriesHistogramBucketPairs<Float64> TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::floatPairsAt(const ColumnArray & pairs, size_t row)
+{
+    return pairsAt<Float64>(pairs, row);
+}
+
+template <bool is_const>
+std::span<const Float64> TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::floatsAt(const ColumnArray & values, size_t row)
+{
+    const auto & data = assert_cast<const ColumnFloat64 &>(values.getData()).getData();
+    return {data.data() + values.getOffset(row), values.getSize(row)};
+}
+
+template <bool is_const>
+void TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::insertPayloadFrom(
+    const TimeSeriesHistogramPayloadColumnsViewImpl<true> & source, size_t row) const requires (!is_const)
+{
+    for (const auto element : Registry::getAll())
+        getPayloadColumn(element).insertFrom(source.getPayloadColumn(element), row);
+}
+
+
+template <bool is_const>
 template <typename Source>
-TimeSeriesHistogramsColumnsMutableView::TimeSeriesHistogramsColumnsMutableView(const Source & source)
-    : timestamps(source.timestamps())
-    , flags(checkedElement<decltype(flags)>(source, Element::Flags))
-    , counter_reset_hint(checkedElement<decltype(counter_reset_hint)>(source, Element::CounterResetHint))
-    , schema(checkedElement<decltype(schema)>(source, Element::Schema))
-    , zero_threshold(checkedElement<decltype(zero_threshold)>(source, Element::ZeroThreshold))
-    , sum(checkedElement<decltype(sum)>(source, Element::Sum))
-    , count_int(checkedElement<decltype(count_int)>(source, Element::CountInt))
-    , zero_count_int(checkedElement<decltype(zero_count_int)>(source, Element::ZeroCountInt))
-    , count_float(checkedElement<decltype(count_float)>(source, Element::CountFloat))
-    , zero_count_float(checkedElement<decltype(zero_count_float)>(source, Element::ZeroCountFloat))
-    , positive_int(checkedElement<decltype(positive_int)>(source, Element::PositiveInt))
-    , negative_int(checkedElement<decltype(negative_int)>(source, Element::NegativeInt))
-    , positive_float(checkedElement<decltype(positive_float)>(source, Element::PositiveFloat))
-    , negative_float(checkedElement<decltype(negative_float)>(source, Element::NegativeFloat))
-    , custom_values(checkedElement<decltype(custom_values)>(source, Element::CustomValues))
+TimeSeriesHistogramsColumnsViewImpl<is_const>::TimeSeriesHistogramsColumnsViewImpl(typename Base::FromSource from_source, const Source & source)
+    : Base(from_source, source)
+    , timestamps(checkedTimestamps<Ref<IColumn>>(source.timestamps()))
+    , outer_offsets(source.outerOffsets())
 {
 }
 
-TimeSeriesHistogramsColumnsMutableView::TimeSeriesHistogramsColumnsMutableView(IColumn & timestamps_, const Columns & payload)
-    : TimeSeriesHistogramsColumnsMutableView(BuiltColumnsSource{timestamps_, payload})
+template <bool is_const>
+TimeSeriesHistogramsColumnsViewImpl<is_const>::TimeSeriesHistogramsColumnsViewImpl(Ref<ColumnTuple> tuple)
+    : TimeSeriesHistogramsColumnsViewImpl(typename Base::FromSource{}, TupleSource{tuple})
 {
 }
 
-TimeSeriesHistogramsColumnsMutableView::TimeSeriesHistogramsColumnsMutableView(ColumnTuple & tuple)
-    : TimeSeriesHistogramsColumnsMutableView(TupleSource<ColumnTuple>{tuple})
+template <bool is_const>
+TimeSeriesHistogramsColumnsViewImpl<is_const>::TimeSeriesHistogramsColumnsViewImpl(const Block & block) requires is_const
+    : TimeSeriesHistogramsColumnsViewImpl(typename Base::FromSource{}, BlockSource{block})
 {
 }
+
+template <bool is_const>
+TimeSeriesHistogramsColumnsViewImpl<is_const>::TimeSeriesHistogramsColumnsViewImpl(IColumn & timestamps_, const Columns & payload) requires (!is_const)
+    : TimeSeriesHistogramsColumnsViewImpl(typename Base::FromSource{}, BuiltColumnsSource{&timestamps_, payload})
+{
+}
+
+template <bool is_const>
+TimeSeriesHistogramsColumnsViewImpl<is_const>::TimeSeriesHistogramsColumnsViewImpl(
+    const TimeSeriesHistogramsColumnsViewImpl<!is_const> & other) requires is_const
+    : TimeSeriesHistogramsColumnsViewImpl(typename Base::FromSource{}, ViewSource{other})
+{
+}
+
+template <bool is_const>
+typename TimeSeriesHistogramsColumnsViewImpl<is_const>::StoredColumns
+TimeSeriesHistogramsColumnsViewImpl<is_const>::getColumnsInStoredOrder() const
+{
+    StoredColumns result;
+    result[Registry::getTimestampPosition()] = &timestamps;
+    const auto payload = Base::getPayloadColumnsInStoredOrder();
+    for (const auto element : Registry::getAll())
+        result[Registry::getTuplePosition(element)] = payload[static_cast<size_t>(element)];
+    return result;
+}
+
+
+template class TimeSeriesHistogramPayloadColumnsViewImpl<true>;
+template class TimeSeriesHistogramPayloadColumnsViewImpl<false>;
+template class TimeSeriesHistogramsColumnsViewImpl<true>;
+template class TimeSeriesHistogramsColumnsViewImpl<false>;
 
 }

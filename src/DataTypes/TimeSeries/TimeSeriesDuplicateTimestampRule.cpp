@@ -10,7 +10,7 @@ namespace DB
 
 namespace
 {
-    using View = TimeSeriesHistogramsColumnsView;
+    using View = TimeSeriesHistogramPayloadColumnsView;
 
     /// `IColumn::compareAt` orders a NaN below any number with this hint, so a NaN count or sum loses to any other.
     constexpr int nan_is_less = -1;
@@ -46,8 +46,8 @@ int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_
         return by_sum;
 
     /// The remaining elements in the stored order, each with the comparison of its column (arrays and tuples lexicographically).
-    /// The timestamps are equal within a run of duplicates, and the counts and the sum are equal or were decided above.
-    for (const IColumn * column : view.getColumnsInStoredOrder())
+    /// The counts and the sum are equal or were decided above.
+    for (const IColumn * column : view.getPayloadColumnsInStoredOrder())
     {
         if (column == &view.counter_reset_hint)
         {

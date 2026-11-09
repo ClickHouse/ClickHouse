@@ -53,7 +53,7 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histo
                 histograms.count_int, histograms.zero_count_int, histograms.count_float, histograms.zero_count_float,
                 histograms.positive_int, histograms.negative_int, histograms.positive_float, histograms.negative_float, histograms.custom_values)
     VALUES ('h', map(), [toDateTime64(100, 3)], [0], [0], [0], [0.], [1.], [1], [0], [0.], [0.], [[(0, 1)]], [[]], [[]], [[]], [[]]);
-SELECT length(samples), length(histograms), histograms.count_int FROM timeSeriesSamples(ts) ORDER BY ALL;
+SELECT length(samples), length(histograms), histograms.count_int FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) ORDER BY ALL;
 SELECT histograms.count_int FROM ts ORDER BY ALL;
 SELECT metric_name, samples, histograms.timestamp, histograms.count_int, histograms.positive_int FROM ts ORDER BY metric_name;
 SELECT count() FROM ts;

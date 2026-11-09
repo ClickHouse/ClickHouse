@@ -13,12 +13,12 @@ INSERT INTO ts (metric_name, tags, samples, histograms.timestamp, histograms.cou
     VALUES ('m', map('job', 'api'), [(toDateTime64(100, 3), 1.)], [toDateTime64(110, 3), toDateTime64(130, 3)], [1, 2], [0.5, 1.5], [[(0, 1)], [(0, 2)]]);
 
 SELECT t.metric_name, s.bucket, s.samples, arrayMap(h -> (h.timestamp, h.count_int, h.sum, h.positive_int), s.histograms), s.min_time, s.max_time
-FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id;
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id;
 
 -- The count of the buckets doesn't match `count_int`.
 INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.positive_int)
     SETTINGS async_insert = 1, wait_for_async_insert = 1
     VALUES ('m', map('job', 'api'), [toDateTime64(140, 3)], [5], [[(0, 1)]]); -- { serverError INCORRECT_DATA }
-SELECT sum(length(histograms)) FROM timeSeriesSamples(ts);
+SELECT sum(length(histograms)) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
 
 DROP TABLE ts;

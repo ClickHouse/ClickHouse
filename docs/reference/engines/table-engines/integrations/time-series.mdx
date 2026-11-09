@@ -191,8 +191,9 @@ unknown hint. A counter sample following a gauge sample, the sample following a 
 predecessor (an integer histogram after a float one or the reverse) get an unknown hint whatever their counts.
 When rows are merged by `timeSeriesGroupArrayHistograms` (in background merges, in reads with `FINAL`, and when the aggregate is called
 directly), the hint of every sample whose predecessor changed (the first sample of every merged array but the first, and every sample
-whose neighbour changed by sorting or deduplication) is computed again against the new predecessor by the same rules; explicit reset
-hints and gauge markers are kept.
+whose neighbour changed by sorting or deduplication) is detected again from the data against the new predecessor by the same rules,
+whatever hint it had: an explicit or an earlier detected reset was about another predecessor. Gauge markers are kept. So a stored hint
+depends only on the sample's final predecessor, not on the order of the merges.
 
 The _samples_ table must have columns:
 

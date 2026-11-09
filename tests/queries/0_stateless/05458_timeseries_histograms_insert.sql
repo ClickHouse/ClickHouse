@@ -27,8 +27,8 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histo
 SELECT t.metric_name, toUnixTimestamp64Milli(h.timestamp) AS timestamp_ms, h.flags, h.counter_reset_hint, h.schema, h.zero_threshold, h.sum,
        h.count_int, h.zero_count_int, h.positive_int, h.negative_int, h.count_float, h.zero_count_float, h.positive_float, h.negative_float, h.custom_values,
        length(s.samples)
-FROM timeSeriesSamples(ts) AS s ARRAY JOIN s.histograms AS h
-JOIN timeSeriesTags(ts) AS t ON s.id = t.id
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s ARRAY JOIN s.histograms AS h
+JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 WHERE t.metric_name IN ('int_hist', 'float_hist')
 ORDER BY t.metric_name;
 
@@ -38,7 +38,7 @@ INSERT INTO ts (metric_name, tags, samples, histograms.timestamp, histograms.cou
             [toDateTime64(125, 3), toDateTime64(145, 3)], [1, 2], [0.5, 1.5], [[(0, 1)], [(0, 2)]]);
 
 SELECT t.metric_name, s.bucket, s.min_time, s.max_time, s.samples, s.histograms.timestamp, s.histograms.count_int
-FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 WHERE t.metric_name = 'mixed'
 ORDER BY s.bucket;
 
@@ -49,7 +49,7 @@ INSERT INTO ts (metric_name, tags, samples, histograms.timestamp, histograms.cou
             [[(0, 1)], [(0, 2)], [(0, 3)], [(0, 4)]]);
 
 SELECT t.metric_name, s.bucket, s.min_time, s.max_time, s.samples, s.histograms.timestamp, s.histograms.count_int
-FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 WHERE t.metric_name = 'buckets'
 ORDER BY s.bucket;
 
@@ -67,27 +67,27 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histo
             [[], [(0, 4.5)], [], [], [], [], [], [], [], []]);
 
 SELECT t.metric_name, toUnixTimestamp64Milli(h.timestamp) AS timestamp_ms, h.flags, h.count_int, h.count_float, h.sum, h.positive_int, h.positive_float
-FROM timeSeriesSamples(ts) AS s ARRAY JOIN s.histograms AS h
-JOIN timeSeriesTags(ts) AS t ON s.id = t.id
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s ARRAY JOIN s.histograms AS h
+JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 WHERE t.metric_name = 'dups'
 ORDER BY h.timestamp;
 
 SELECT '-- the time range of a series covers its float samples and its histograms';
 SELECT t.metric_name, min(r.min_time), max(r.max_time)
-FROM timeSeriesTimeRanges(ts) AS r JOIN timeSeriesTags(ts) AS t ON r.id = t.id
+FROM timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts) AS r JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON r.id = t.id
 GROUP BY t.metric_name
 ORDER BY t.metric_name;
 
 SELECT '-- errors: a histogram needs a series, the payload columns need the timestamps';
 INSERT INTO ts (histograms.timestamp, histograms.count_int) VALUES ([toDateTime64(100, 3)], [0]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts (metric_name, tags, histograms.count_int) VALUES ('x', map('job', 'api'), [1]); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM timeSeriesTags(ts) WHERE metric_name = 'x';
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_name = 'x';
 
 SELECT '-- histograms.timestamp alone is a valid empty integer histogram: the other columns default to zeros and empty arrays aligned with the timestamps';
 INSERT INTO ts (metric_name, tags, histograms.timestamp) VALUES ('timestamps_only', map('job', 'api'), [toDateTime64(100, 3), toDateTime64(160, 3)]);
 
 SELECT t.metric_name, s.bucket, length(s.samples), s.histograms.timestamp, s.histograms.flags, s.histograms.count_int, s.histograms.positive_int
-FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 WHERE t.metric_name = 'timestamps_only'
 ORDER BY s.bucket;
 
@@ -96,7 +96,7 @@ INSERT INTO ts (metric_name, tags, samples) VALUES ('floats_only', map('job', 'a
 INSERT INTO ts VALUES ('all_columns', map('job', 'api'), [(toDateTime64(100, 3), 2.)], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], '', '', '', '');
 
 SELECT t.metric_name, s.samples, s.histograms
-FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 WHERE t.metric_name IN ('floats_only', 'all_columns')
 ORDER BY t.metric_name;
 
@@ -114,8 +114,8 @@ SELECT concat('mixed_counts_', ordering), map(), arrayMap(i -> toDateTime64(100,
 FROM values('ordering String, permutation Array(UInt8)', ('ABC', [1, 2, 3]), ('ACB', [1, 3, 2]));
 
 SELECT t.metric_name, h.flags, h.count_int, h.count_float, h.sum
-FROM timeSeriesSamples(ts) AS s ARRAY JOIN s.histograms AS h
-JOIN timeSeriesTags(ts) AS t ON s.id = t.id
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s ARRAY JOIN s.histograms AS h
+JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 WHERE t.metric_name IN ('mixed_counts_ABC', 'mixed_counts_ACB')
 ORDER BY t.metric_name;
 
@@ -125,7 +125,7 @@ CREATE TABLE ts_recent ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds =
 INSERT INTO ts_recent (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
     VALUES ('m', map('job', 'api'), [(now64(3) - INTERVAL 3 MINUTE, 1.)], [now64(3) - INTERVAL 2 MINUTE, now64(3) - INTERVAL 1 MINUTE], [1, 2], [0, 0], [[(0, 1)], [(0, 2)]]);
 
-SELECT (SELECT (sum(length(samples)), sum(length(histograms))) FROM timeSeriesSamples(ts_recent)) AS samples_table,
+SELECT (SELECT (sum(length(samples)), sum(length(histograms))) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_recent)) AS samples_table,
        (SELECT (sum(length(samples)), sum(length(histograms))) FROM merge(currentDatabase(), '^\\.inner_id\\.recentsamples\\.')) AS recent_samples_table;
 
 DROP TABLE ts_recent;

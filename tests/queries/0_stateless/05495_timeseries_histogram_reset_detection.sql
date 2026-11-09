@@ -147,11 +147,11 @@ FROM
            arrayFlatten(arrayMap(x -> x.2, arraySort(x -> x.1, groupArray((s.bucket, s.histograms.counter_reset_hint))))) AS actual
     FROM
     (
-        SELECT 'samples' AS source, id, bucket, histograms FROM timeSeriesSamples(ts_reset_detection)
+        SELECT 'samples' AS source, id, bucket, histograms FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_reset_detection)
         UNION ALL
         SELECT 'recent' AS source, id, bucket, histograms FROM merge(currentDatabase(), '^\\.inner_id\\.recentsamples\\.')
     ) AS s
-    INNER JOIN timeSeriesTags(ts_reset_detection) AS t ON s.id = t.id
+    INNER JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_reset_detection) AS t ON s.id = t.id
     INNER JOIN histogram_reset_cases AS c ON t.tags['case'] = c.name
     GROUP BY s.source, c.name, flavour, c.expected
 )
@@ -168,7 +168,7 @@ INSERT INTO ts_reset_detection (metric_name, histograms.timestamp, histograms.fl
 VALUES ('integer_to_float', ['2026-01-01 00:01:40', '2026-01-01 00:01:41'], [0, 1], [10, 0], [10, 0], [0, 1], [0, 1], [0, 2]),
        ('float_to_integer', ['2026-01-01 00:01:40', '2026-01-01 00:01:41'], [1, 0], [0, 1], [0, 1], [10, 0], [10, 0], [0, 2]);
 SELECT t.metric_name, s.histograms.counter_reset_hint
-FROM timeSeriesSamples(ts_reset_detection) AS s INNER JOIN timeSeriesTags(ts_reset_detection) AS t ON s.id = t.id
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_reset_detection) AS s INNER JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_reset_detection) AS t ON s.id = t.id
 WHERE t.metric_name != 'reset_test' ORDER BY t.metric_name;
 
 DROP TABLE ts_reset_detection;

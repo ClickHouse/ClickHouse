@@ -1,7 +1,5 @@
 #include <DataTypes/TimeSeries/TimeSeriesHistogramCounterResetRule.h>
 
-#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
-
 #include <algorithm>
 #include <bit>
 
@@ -11,7 +9,7 @@ namespace DB
 
 namespace
 {
-    using View = TimeSeriesHistogramsColumnsView;
+    using View = TimeSeriesHistogramPayloadColumnsView;
     using Hint = TimeSeriesHistogramCounterResetHint;
 
     /// A missing populated bucket is a reset. Missing empty buckets and newly appearing buckets are allowed.
@@ -41,20 +39,24 @@ bool TimeSeriesHistogramCounterResetRule::isStaleMarker(Float64 sum)
     return std::bit_cast<UInt64>(sum) == 0x7ff0000000000002ULL;
 }
 
-UInt8 TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(const View & view, size_t previous, size_t current)
+UInt8 TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(
+    const View & view,
+    size_t previous,
+    size_t current,
+    bool preserve_explicit_reset)
 {
+    /// A stale marker carries only `sum`, so its counts can't be compared with the predecessor's.
     if (isStaleMarker(view.sum.getData()[current]))
         return Hint::Unknown;
+    /// A gauge marker describes the sample itself, not its relation to the predecessor.
     const UInt8 hint = view.counter_reset_hint.getData()[current];
-    if ((hint == Hint::Gauge) || (hint == Hint::Reset))
+    if ((hint == Hint::Gauge) || (preserve_explicit_reset && (hint == Hint::Reset)))
         return hint;
     return detect(view, previous, current);
 }
 
 UInt8 TimeSeriesHistogramCounterResetRule::detect(const View & columns, size_t previous, size_t current)
 {
-    /// Matches the comparisons in Prometheus's histogram chunk appenders: schema and zero-threshold changes leave reset
-    /// detection to the reader. Bucket counts can be compared directly only when those properties are unchanged.
     const bool is_float = columns.isFloatAt(current);
     if (is_float != columns.isFloatAt(previous) || columns.counter_reset_hint.getData()[previous] == Hint::Gauge)
         return Hint::Unknown;
@@ -68,12 +70,12 @@ UInt8 TimeSeriesHistogramCounterResetRule::detect(const View & columns, size_t p
     if (count_decreased)
         return Hint::Reset;
 
+    /// Bucket counts are comparable only under the same schema and zero threshold; otherwise the detection is left to the reader.
     if (columns.schema.getData()[current] != columns.schema.getData()[previous]
         || columns.zero_threshold.getData()[current] != columns.zero_threshold.getData()[previous])
         return Hint::Unknown;
 
-    /// Exponential histograms have empty custom bounds. The bounds are compared by value, as Prometheus's `CustomBucketBoundsMatch`
-    /// does (NaN bounds are rejected on insert, so every bound compares equal to itself).
+    /// Comparing the bounds by value is sound because NaN bounds are rejected on insert.
     const bool same_custom_bounds = std::ranges::equal(
         View::floatsAt(columns.custom_values, previous), View::floatsAt(columns.custom_values, current));
     if (!same_custom_bounds)

@@ -7,70 +7,80 @@
 
 #include <array>
 #include <span>
-#include <vector>
+#include <type_traits>
 
 
 namespace DB
 {
 class Block;
 
-/// Typed read-only view of the columns of histogram samples, one row per sample: `timestamp` and the payload elements of
-/// TimeSeriesHistogramsColumns. The constructors check the types of the columns and throw ILLEGAL_COLUMN naming the element.
-/// Every consumer of the stored histograms goes through this view and never reads the tuple directly, so that another encoding
-/// of the counts can later put a decode step behind it. The static accessors return the pairs or the values of one row of an
-/// array element as contiguous ranges.
-class TimeSeriesHistogramsColumnsView
+/// The buckets of one side of a histogram: bucket `i` has the index `indexes[i]` and the count `counts[i]`; the indexes increase.
+template <typename Count>
+struct TimeSeriesHistogramBucketPairs
+{
+    std::span<const Int32> indexes;
+    std::span<const Count> counts;
+
+    size_t size() const { return indexes.size(); }
+};
+
+/// Typed view of the payload columns of histogram samples, one row per sample: the elements of TimeSeriesHistogramsColumns after
+/// `timestamp` (positions 1 to 14 of the stored tuple; position 0 is never looked at), read-only when `is_const`, otherwise over
+/// columns being built. The constructors throw ILLEGAL_COLUMN on a column of another type than the registry's.
+template <bool is_const>
+class TimeSeriesHistogramPayloadColumnsViewImpl
 {
 public:
-    /// The buckets of one side of a histogram: bucket `i` has the index `indexes[i]` and the count `counts[i]`; the indexes increase.
-    template <typename Count>
-    struct Pairs
-    {
-        std::span<const Int32> indexes;
-        std::span<const Count> counts;
+    template <typename T>
+    using Ref = std::conditional_t<is_const, const T &, T &>;
 
-        size_t size() const { return indexes.size(); }
-    };
+    template <typename T>
+    using Ptr = std::conditional_t<is_const, const T *, T *>;
+
+    template <typename Count>
+    using Pairs = TimeSeriesHistogramBucketPairs<Count>;
 
     using IntPairs = Pairs<Int64>;
     using FloatPairs = Pairs<Float64>;
 
-    /// Over the sub-columns of a tuple of the stored shape `Tuple(timestamp, flags, ..., custom_values)`, e.g. the data of the
-    /// `histograms` column of a samples table or of the result of `timeSeriesSelector`. The elements are found by position
-    /// (see `TimeSeriesHistogramsColumns::getTuplePosition`).
-    explicit TimeSeriesHistogramsColumnsView(const ColumnTuple & tuple);
+    static constexpr size_t NUM_PAYLOAD_COLUMNS = TimeSeriesHistogramsColumns::getAll().size();
 
-    /// Over the nested columns of the outer `histograms.*` columns of `block` (see `TimeSeriesHistogramsColumns::getOuterColumnName`):
-    /// each is an array column, and all of them share one offsets column, which `outer_offsets` exposes. Throws ILLEGAL_COLUMN if an
-    /// array has other offsets than `histograms.timestamp`.
-    explicit TimeSeriesHistogramsColumnsView(const Block & block);
+    /// The payload columns being built, indexed by TimeSeriesHistogramsColumn.
+    using Columns = std::array<MutableColumnPtr, NUM_PAYLOAD_COLUMNS>;
 
-    /// The number of samples.
-    size_t size() const { return timestamps.size(); }
+    static Columns createPayloadColumns() requires (!is_const);
 
-    const IColumn & timestamps;
-    const ColumnUInt8 & flags;
-    const ColumnUInt8 & counter_reset_hint;
-    const ColumnInt8 & schema;
-    const ColumnFloat64 & zero_threshold;
-    const ColumnFloat64 & sum;
-    const ColumnInt64 & count_int;
-    const ColumnInt64 & zero_count_int;
-    const ColumnFloat64 & count_float;
-    const ColumnFloat64 & zero_count_float;
-    const ColumnArray & positive_int;
-    const ColumnArray & negative_int;
-    const ColumnArray & positive_float;
-    const ColumnArray & negative_float;
-    const ColumnArray & custom_values;
+    /// Over a tuple of the stored shape (see `TimeSeriesHistogramsColumns::getTuplePosition`), e.g. the data of a `histograms` column.
+    explicit TimeSeriesHistogramPayloadColumnsViewImpl(Ref<ColumnTuple> tuple);
 
-    /// The offsets shared by the outer arrays, one entry per row of the block; null for a view over a tuple.
-    const ColumnArray::Offsets * const outer_offsets = nullptr;
+    /// Over the payload columns being built, all of them non-null.
+    explicit TimeSeriesHistogramPayloadColumnsViewImpl(const Columns & payload) requires (!is_const);
 
-    /// The columns of the view in the order of the elements of the stored tuple (see `TimeSeriesHistogramsColumns::getTimestampPosition`
-    /// and `getTuplePosition`): `timestamps` first, then the payload elements. For building a tuple of the stored shape from the view.
-    using StoredColumns = std::array<const IColumn *, TimeSeriesHistogramsColumns::getAll().size() + 1>;
-    StoredColumns getColumnsInStoredOrder() const;
+    /// The read-only view of a mutable view. Explicit because it checks the columns again: a loop must not convert per row.
+    explicit TimeSeriesHistogramPayloadColumnsViewImpl(const TimeSeriesHistogramPayloadColumnsViewImpl<!is_const> & other) requires is_const;
+
+    size_t size() const { return flags.size(); }
+
+    Ref<ColumnUInt8> flags;
+    Ref<ColumnUInt8> counter_reset_hint;
+    Ref<ColumnInt8> schema;
+    Ref<ColumnFloat64> zero_threshold;
+    Ref<ColumnFloat64> sum;
+    Ref<ColumnInt64> count_int;
+    Ref<ColumnInt64> zero_count_int;
+    Ref<ColumnFloat64> count_float;
+    Ref<ColumnFloat64> zero_count_float;
+    Ref<ColumnArray> positive_int;
+    Ref<ColumnArray> negative_int;
+    Ref<ColumnArray> positive_float;
+    Ref<ColumnArray> negative_float;
+    Ref<ColumnArray> custom_values;
+
+    Ref<IColumn> getPayloadColumn(TimeSeriesHistogramsColumn element) const;
+
+    /// The payload columns in the order of the stored tuple: `flags` first.
+    using PayloadColumns = std::array<Ptr<IColumn>, NUM_PAYLOAD_COLUMNS>;
+    PayloadColumns getPayloadColumnsInStoredOrder() const;
 
     /// Whether sample `row` is a float histogram (bit `IsFloat` of its flags), otherwise it is an integer one.
     bool isFloatAt(size_t row) const { return TimeSeriesHistogramFlags::isFloat(flags.getData()[row]); }
@@ -90,52 +100,68 @@ public:
     /// The values of row `row` of `custom_values`.
     static std::span<const Float64> floatsAt(const ColumnArray & values, size_t row);
 
+    /// Appends the payload of sample `row` of `source`.
+    void insertPayloadFrom(const TimeSeriesHistogramPayloadColumnsViewImpl<true> & source, size_t row) const requires (!is_const);
+
+protected:
+    /// Tag of the constructors over a source of columns: without it the constructor template would accept any argument, e.g. a view
+    /// of the other constness, and win over the converting constructor.
+    struct FromSource
+    {
+    };
+
+    /// `Source` gives the columns: `element(TimeSeriesHistogramsColumn)`.
+    template <typename Source>
+    TimeSeriesHistogramPayloadColumnsViewImpl(FromSource, const Source & source);
+};
+
+
+/// The payload view with the timestamps of the samples: over the whole stored tuple, or over the outer `histograms.*` columns of a
+/// block. The constructors throw ILLEGAL_COLUMN unless the timestamps have a timestamp type of a TimeSeries table.
+template <bool is_const>
+class TimeSeriesHistogramsColumnsViewImpl : public TimeSeriesHistogramPayloadColumnsViewImpl<is_const>
+{
+public:
+    using Base = TimeSeriesHistogramPayloadColumnsViewImpl<is_const>;
+    using typename Base::Columns;
+
+    template <typename T>
+    using Ref = typename Base::template Ref<T>;
+
+    template <typename T>
+    using Ptr = typename Base::template Ptr<T>;
+
+    explicit TimeSeriesHistogramsColumnsViewImpl(Ref<ColumnTuple> tuple);
+
+    /// Over the outer `histograms.*` array columns of `block` (see `TimeSeriesHistogramsColumns::getOuterColumnName`), which must
+    /// share their offsets.
+    explicit TimeSeriesHistogramsColumnsViewImpl(const Block & block) requires is_const;
+
+    /// Over the columns being built, all of them non-null.
+    TimeSeriesHistogramsColumnsViewImpl(IColumn & timestamps_, const Columns & payload) requires (!is_const);
+
+    /// The read-only view of a mutable view (see the base class).
+    explicit TimeSeriesHistogramsColumnsViewImpl(const TimeSeriesHistogramsColumnsViewImpl<!is_const> & other) requires is_const;
+
+    Ref<IColumn> timestamps;
+
+    /// The offsets of the outer arrays of the block, one entry per row; null for a view over anything but a block.
+    const ColumnArray::Offsets * const outer_offsets = nullptr;
+
+    /// All the columns in the order of the stored tuple: `timestamps` first, then the payload.
+    using StoredColumns = std::array<Ptr<IColumn>, Base::NUM_PAYLOAD_COLUMNS + 1>;
+    StoredColumns getColumnsInStoredOrder() const;
+
 private:
     /// `Source` gives the columns: `timestamps()`, `element(TimeSeriesHistogramsColumn)` and `outerOffsets()`.
     template <typename Source>
-    explicit TimeSeriesHistogramsColumnsView(const Source & source);
+    TimeSeriesHistogramsColumnsViewImpl(typename Base::FromSource, const Source & source);
 };
 
 
-/// The mutable counterpart of TimeSeriesHistogramsColumnsView, for building the columns of histogram samples.
-class TimeSeriesHistogramsColumnsMutableView
-{
-public:
-    /// The payload columns, one per element of the registry in the canonical order (indexed by the enum).
-    using Columns = std::array<MutableColumnPtr, TimeSeriesHistogramsColumns::getAll().size()>;
-
-    /// Creates empty payload columns of the types of the registry.
-    static Columns createPayloadColumns();
-
-    /// Over the columns being built: `timestamps_` and the payload columns, all of them non-null.
-    TimeSeriesHistogramsColumnsMutableView(IColumn & timestamps_, const Columns & payload);
-
-    /// Over the sub-columns of a tuple of the stored shape (see the read-only view).
-    explicit TimeSeriesHistogramsColumnsMutableView(ColumnTuple & tuple);
-
-    /// The number of samples.
-    size_t size() const { return timestamps.size(); }
-
-    IColumn & timestamps;
-    ColumnUInt8 & flags;
-    ColumnUInt8 & counter_reset_hint;
-    ColumnInt8 & schema;
-    ColumnFloat64 & zero_threshold;
-    ColumnFloat64 & sum;
-    ColumnInt64 & count_int;
-    ColumnInt64 & zero_count_int;
-    ColumnFloat64 & count_float;
-    ColumnFloat64 & zero_count_float;
-    ColumnArray & positive_int;
-    ColumnArray & negative_int;
-    ColumnArray & positive_float;
-    ColumnArray & negative_float;
-    ColumnArray & custom_values;
-
-private:
-    /// `Source` gives the columns: `timestamps()` and `element(TimeSeriesHistogramsColumn)`.
-    template <typename Source>
-    explicit TimeSeriesHistogramsColumnsMutableView(const Source & source);
-};
+using TimeSeriesHistogramPayloadColumnsView = TimeSeriesHistogramPayloadColumnsViewImpl<true>;
+using TimeSeriesHistogramPayloadColumnsMutableView = TimeSeriesHistogramPayloadColumnsViewImpl<false>;
+using TimeSeriesHistogramsColumnsView = TimeSeriesHistogramsColumnsViewImpl<true>;
+using TimeSeriesHistogramsColumnsMutableView = TimeSeriesHistogramsColumnsViewImpl<false>;
 
 }
