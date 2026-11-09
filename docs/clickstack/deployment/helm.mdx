@@ -171,13 +171,14 @@ hyperdx:
     MONGODB_PASSWORD: "your-mongodb-password"
 ```
 
-For external secret management (e.g. using a secrets operator), you can reference a pre-existing Kubernetes secret:
+To load the default connections and sources from a pre-existing Kubernetes secret, for example one managed by a secrets operator:
 ```yaml
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "my-external-secret"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "my-external-secret"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 <Tip>
@@ -201,10 +202,11 @@ hyperdx:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 Create the connection secret separately:
