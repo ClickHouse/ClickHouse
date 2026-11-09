@@ -1469,6 +1469,10 @@ private:
     /// understates when the Top-K conversion truncates it.
     /// `keep_table_buffer` leaves the converted table empty but with its buffer, for a caller that fills it again
     /// (the adaptive merge's units), where an ordinary conversion releases the buffer at once.
+    /// `top_k_threshold` serves the Top-K conversion: a floor for a descending order, a ceiling for an
+    /// ascending one. The caller guarantees that a cell ranked worse than the threshold has `bucket_top_k`
+    /// groups ahead of it in the output of the aggregation's other conversions, so it cannot reach the top,
+    /// and the conversion drops it. The worst rank of the order trivially qualifies: no cell is ranked worse.
     template <typename Method>
     AggregatedChunk convertOneBucketToChunk(
         AggregatedDataVariants & data_variants,
@@ -1478,7 +1482,8 @@ private:
         Int32 bucket,
         UntruncatedAggregationKeys * untruncated_keys,
         size_t * full_group_count,
-        bool keep_table_buffer = false) const;
+        bool keep_table_buffer = false,
+        std::optional<UInt64> top_k_threshold = std::nullopt) const;
 
     /// The dispatch over the two-level variants of the conversion above, with its parameters.
     AggregatedChunk convertOneBucketToChunk(
@@ -1487,22 +1492,36 @@ private:
         bool final,
         Int32 bucket,
         UntruncatedAggregationKeys * untruncated_keys = nullptr,
-        bool keep_table_buffer = false) const;
+        bool keep_table_buffer = false,
+        std::optional<UInt64> top_k_threshold = std::nullopt) const;
 
     /// The bucket-local Top-K conversion (see `Params::bucket_top_k`): materializes only the
     /// bucket's n best cells by their rank count and destroys the rest, so the sorter
-    /// upstream receives at most 256 * n candidate rows instead of every group.
+    /// upstream receives at most 256 * n candidate rows instead of every group. It also drops the cells
+    /// ranked worse than `top_k_threshold` (see `convertOneBucketToChunk`).
     template <typename Method>
     requires MapAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const;
+        Method & method,
+        Arena * arena,
+        Arenas & pools_for_output,
+        Int32 bucket,
+        UntruncatedAggregationKeys * untruncated_keys,
+        bool keep_table_buffer,
+        std::optional<UInt64> top_k_threshold) const;
 
     /// `bucket_top_k` ranks groups by an aggregate, so it is never set for a set method, which has no aggregate
     /// functions at all. This overload exists only because the call site tests it at run time.
     template <typename Method>
     requires SetAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const;
+        Method & method,
+        Arena * arena,
+        Arenas & pools_for_output,
+        Int32 bucket,
+        UntruncatedAggregationKeys * untruncated_keys,
+        bool keep_table_buffer,
+        std::optional<UInt64> top_k_threshold) const;
 
     /// The bucket-local Top-K conversion for a count rank, read as the inline count or as the count state, or for a
     /// rank finalized from a `uniqExact` or `uniqExactIf` state (see `bucket_top_k_rank`). The two count readings
@@ -1511,12 +1530,23 @@ private:
     template <bool finalized_rank, typename Method>
     requires MapAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopKImpl(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const;
+        Method & method,
+        Arena * arena,
+        Arenas & pools_for_output,
+        Int32 bucket,
+        UntruncatedAggregationKeys * untruncated_keys,
+        bool keep_table_buffer,
+        std::optional<UInt64> top_k_threshold) const;
 
     /// The rank count of the group with state `place` when `Params::bucket_top_k` ranks by `uniqExact` or
     /// `uniqExactIf`: the aggregate's result, finalized into `scratch`, a `ColumnUInt64` emptied first.
     /// `insertResultInto` leaves the state valid for the merge and the conversion that follow.
     UInt64 finalizeBucketTopKRank(AggregateDataPtr place, IColumn & scratch, Arena * arena) const;
+
+    /// The ranks of the groups in a chunk of the final conversion when `Params::bucket_top_k` is set: the
+    /// result column of the aggregate `Params::bucket_top_k_rank_index`, which is `UInt64` for every rank the
+    /// plan optimization admits.
+    std::span<const UInt64> bucketTopKRanks(const Chunk & chunk) const;
 
     /// `full_group_count`, when non-null, receives the merged bucket's group count (see
     /// `convertOneBucketToChunk`).
