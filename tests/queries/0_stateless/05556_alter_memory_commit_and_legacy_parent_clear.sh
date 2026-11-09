@@ -38,19 +38,26 @@ $CLICKHOUSE_CLIENT -q "DROP DICTIONARY d_memory_rollback"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_memory_rollback"
 rm -f "$alter_err"
 
-# An unmarked parent `CLEAR COLUMN`, as an older server persisted it, still clears `n.a`.
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_legacy_parent_clear"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_legacy_parent_clear (id UInt8, \`n.a\` UInt8) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 1000000, min_bytes_for_wide_part = 1000000000, enable_block_number_column = 0, enable_block_offset_column = 0"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_legacy_parent_clear VALUES (1, 7)"
-$CLICKHOUSE_CLIENT -q "SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_legacy_parent_clear' AND active"
-data_path=$($CLICKHOUSE_CLIENT -q "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 't_legacy_parent_clear'")
-$CLICKHOUSE_CLIENT -q "DETACH TABLE t_legacy_parent_clear"
-cat > "${data_path}/mutation_100000.txt" << 'EOF'
+# An unmarked parent `CLEAR COLUMN` from before `/*exact*/` still clears `n.a`. The table stays under `CLICKHOUSE_TMP`.
+data_dir="${CLICKHOUSE_TMP}/legacy_parent_clear_${CLICKHOUSE_DATABASE}"
+rm -rf "$data_dir"
+mkdir -p "$data_dir"
+table_uuid="11111111-1111-1111-1111-111111111111"
+
+local_query()
+{
+    ${CLICKHOUSE_BINARY} local --path "$data_dir" --query "$1"
+}
+
+local_query "CREATE TABLE t_legacy_parent_clear UUID '${table_uuid}' (id UInt8, \`n.a\` UInt8) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 1000000, min_bytes_for_wide_part = 1000000000, enable_block_number_column = 0, enable_block_offset_column = 0"
+local_query "INSERT INTO t_legacy_parent_clear VALUES (1, 7)"
+local_query "SELECT part_type FROM system.parts WHERE active"
+table_dir=$(find "$data_dir" -type d -name "$table_uuid")
+cat > "${table_dir}/mutation_100000.txt" << 'EOF'
 format version: 1
 create time: 2026-11-09 00:00:00
 commands: (CLEAR COLUMN n)
 EOF
-$CLICKHOUSE_CLIENT -q "ATTACH TABLE t_legacy_parent_clear"
-$CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_legacy_parent_clear FINAL"
-$CLICKHOUSE_CLIENT -q "SELECT \`n.a\` FROM t_legacy_parent_clear"
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_legacy_parent_clear"
+local_query "OPTIMIZE TABLE t_legacy_parent_clear FINAL"
+local_query "SELECT \`n.a\` FROM t_legacy_parent_clear"
+rm -rf "$data_dir"
