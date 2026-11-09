@@ -257,7 +257,7 @@ Possible values:
 - Positive integer.
 - 0 — setting does not participate in block formation.
 )", 0) \
-    DECLARE(Float, insert_squashing_max_memory_ratio, 1. / 16, R"(
+    DECLARE(Double, insert_squashing_max_memory_ratio, 1. / 16, R"(
 Caps `min_insert_block_size_bytes` by this fraction of the server's memory limit (`max_server_memory_usage`)
 in the squashing stages of an `INSERT`: the squashing for the target table, the squashing of the results of
 dependent materialized views, and the block size of the source of a trivial `INSERT ... SELECT`.
@@ -272,7 +272,7 @@ The cap depends only on the memory limit and this setting, not on the number of 
 insert streams. Note that the memory limit can change at runtime (see `memory_worker_dynamic_hard_limit`),
 and when the cap binds, a retried `INSERT` may be split into blocks differently than the first attempt.
 
-Set to `0` to disable the cap.
+Possible values: from `0` to `1`. Set to `0` to disable the cap.
 )", 0, \
         {"26.11", 0.1125, 1. / 16, "New setting. The cap of `min_insert_block_size_bytes` by the memory limit was hardcoded as 0.9 / 8 of the limit; it is now configurable and lower by default, so that an `INSERT` into a wide table fits into the memory of a small server."}) \
     DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, R"(

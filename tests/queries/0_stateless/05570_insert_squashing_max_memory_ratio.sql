@@ -34,6 +34,12 @@ SELECT 'uncapped', table, count(), sum(rows) FROM system.parts
 WHERE database = currentDatabase() AND table IN ('t_squash_ratio', 't_squash_ratio_dst') AND active
 GROUP BY table ORDER BY table;
 
+-- A ratio outside of [0, 1] is rejected instead of overflowing the conversion of the cap to an integer.
+INSERT INTO t_squash_ratio SELECT number FROM numbers(10) SETTINGS insert_squashing_max_memory_ratio = 1e20; -- { serverError BAD_ARGUMENTS }
+INSERT INTO t_squash_ratio SELECT number FROM numbers(10) SETTINGS insert_squashing_max_memory_ratio = -1; -- { serverError BAD_ARGUMENTS }
+INSERT INTO t_squash_ratio SELECT number FROM numbers(10) SETTINGS insert_squashing_max_memory_ratio = 1;
+SELECT 'ratio 1', count() FROM t_squash_ratio;
+
 DROP TABLE t_squash_ratio_mv;
 DROP TABLE t_squash_ratio_dst;
 DROP TABLE t_squash_ratio;

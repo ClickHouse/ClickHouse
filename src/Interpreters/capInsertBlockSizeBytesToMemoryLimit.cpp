@@ -1,6 +1,7 @@
 #include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 
 #include <Core/Settings.h>
+#include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 
 #include <algorithm>
@@ -10,13 +11,23 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsFloat insert_squashing_max_memory_ratio;
+    extern const SettingsDouble insert_squashing_max_memory_ratio;
+}
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
 }
 
 size_t capInsertBlockSizeBytesToMemoryLimit(size_t min_block_size_bytes, const Settings & settings)
 {
-    const double ratio = static_cast<double>(settings[Setting::insert_squashing_max_memory_ratio]);
-    if (ratio <= 0)
+    const double ratio = settings[Setting::insert_squashing_max_memory_ratio];
+    /// The negated comparison also rejects NaN. A ratio above 1 is meaningless, and rejecting it keeps the
+    /// product with the memory limit representable in `size_t`.
+    if (!(ratio >= 0 && ratio <= 1))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The value of the setting `insert_squashing_max_memory_ratio` must be from 0 to 1, got {}", ratio);
+    if (ratio == 0)
         return min_block_size_bytes;
 
     const Int64 memory_limit = total_memory_tracker.getHardLimit();
