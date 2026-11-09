@@ -946,6 +946,11 @@ struct ContextSharedPart : boost::noncopyable
     /// while shutdown() destroys trace_collector, so it must be atomic rather than optional::has_value().
     std::atomic<bool> has_trace_collector = false;
 
+    /// Serializes changes of the cluster namespace (`setClustersConfig` and installing a SQL-managed cluster).
+    /// Locked before `clusters_mutex`. It lets `installSQLCluster` write metadata to disk or Keeper without
+    /// holding `clusters_mutex`, which every cluster lookup needs, while a concurrent config reload still
+    /// cannot take the name between the namespace check and the publication.
+    std::mutex clusters_namespace_mutex;
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     mutable std::mutex clusters_mutex;                       /// Guards clusters, clusters_config and cluster_discovery
@@ -8133,6 +8138,7 @@ void Context::startClusterDiscovery()
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
     {
+        std::lock_guard namespace_lock(shared->clusters_namespace_mutex);
         std::lock_guard lock(shared->clusters_mutex);
         if (enable_discovery && !shared->cluster_discovery)
         {
@@ -8215,25 +8221,36 @@ void Context::installSQLCluster(
     bool allow_replace_sql)
 {
     {
-        std::lock_guard lock(shared->clusters_mutex);
-        auto clusters = getClustersImpl(lock);
+        /// The namespace lock keeps `setClustersConfig` from taking the name until the cluster is published.
+        /// `clusters_mutex` is released while `persist` writes the metadata, so a slow Keeper or disk write
+        /// does not block lookups of unrelated clusters.
+        std::lock_guard namespace_lock(shared->clusters_namespace_mutex);
 
-        if (auto existing = clusters->getCluster(cluster_name))
         {
-            if (existing->getSourceId() != Cluster::SourceId::SQL)
-                throwClusterNameOccupied(cluster_name, existing->getSourceId());
-            if (!allow_replace_sql)
-                throwClusterNameOccupied(cluster_name, Cluster::SourceId::SQL);
-        }
+            std::lock_guard lock(shared->clusters_mutex);
+            auto clusters = getClustersImpl(lock);
 
-        if (shared->cluster_discovery)
-        {
-            if (auto discovered = shared->cluster_discovery->getCluster(cluster_name))
-                throwClusterNameOccupied(cluster_name, discovered->getSourceId());
+            if (auto existing = clusters->getCluster(cluster_name))
+            {
+                if (existing->getSourceId() != Cluster::SourceId::SQL)
+                    throwClusterNameOccupied(cluster_name, existing->getSourceId());
+                if (!allow_replace_sql)
+                    throwClusterNameOccupied(cluster_name, Cluster::SourceId::SQL);
+            }
+
+            if (shared->cluster_discovery)
+            {
+                if (auto discovered = shared->cluster_discovery->getCluster(cluster_name))
+                    throwClusterNameOccupied(cluster_name, discovered->getSourceId());
+            }
         }
 
         persist();
-        clusters->setCluster(cluster_name, cluster);
+
+        std::lock_guard lock(shared->clusters_mutex);
+        /// `reloadClusterConfig` may have replaced the map meanwhile (with the same config, so with the same
+        /// names); publish into the current one.
+        getClustersImpl(lock)->setCluster(cluster_name, cluster);
         ++shared->clusters_version;
     }
     notifyDDLWorkerAfterClustersChange();
