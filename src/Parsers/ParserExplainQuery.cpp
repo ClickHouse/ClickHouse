@@ -383,7 +383,7 @@ Settings:
 - `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Not supported together with `json`. Default: 0.
-- `fragments` — For a query executed by stateless workers (`make_distributed_plan = 1`), prints the plan of every query fragment and the exchanges between the fragments. Requires `optimize = 1`. Not supported together with `json` or `distributed`. Default: 0. See [Query fragments](#explain-plan-fragments).
+- `fragments` — For a query executed by stateless workers (`make_distributed_plan = 1`), prints the plan of every query fragment and the exchanges between the fragments. Requires `optimize = 1`. Not supported together with `distributed`. Default: 0. See [Query fragments](#explain-plan-fragments) and, with `json = 1`, [Query fragments in JSON](#explain-plan-fragments-json).
 - `tree` — Draws every step except `Expression` as a box connected to the boxes of its inputs, with the details `EXPLAIN` prints under the step. The nested plans of a step, such as the per-table plans of `ReadFromMerge`, are drawn after the main drawing, each as a plan of its own. For a query executed by stateless workers (`make_distributed_plan = 1`), also draws the query fragments as frames around their steps and the exchanges as edges between the fragments, followed by the exchanges and the levels. Requires `optimize = 1`. Not supported together with `fragments`, `json` or `distributed`. Default: 0. See [Query fragment tree](#explain-plan-fragments-tree).
 - `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1.
 - `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
@@ -420,7 +420,7 @@ Limit (preliminary LIMIT)
 Step and query cost estimation is not supported.
 </Note>
 
-When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type`, `Node Id`, and `Plans`. `Node Type` is a string with the step name, and `Node Id` is a unique step identifier (the step name with a numeric suffix, e.g. `Union_10`). `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings.
+When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type`, `Node Id`, and `Plans`. `Node Type` is a string with the step name, and `Node Id` is a unique step identifier (the step name with a numeric suffix, e.g. `Union_10`). `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings. With `fragments = 1`, the document also describes the query fragments and the exchanges between them, see [Query fragments in JSON](#explain-plan-fragments-json).
 
 Example:
 
@@ -906,6 +906,48 @@ Exchanges:
   exchange_1: broadcast, streaming, F1 -> F2, buckets 1 -> 3
   exchange_2: gather, streaming, F2 -> F3, buckets 3 -> 1
 Levels: [F0, F1] -> [F2] -> [F3]
+```
+
+#### Query fragments in JSON {#explain-plan-fragments-json}
+
+With `fragments` = 1 and `json` = 1, a query that is executed by stateless workers is described as one JSON document with these keys:
+
+- `Plan` — the plan of the query fragment that produces the result. `EXPLAIN` shows the plan after it is cut, so this is not the plan of the whole query.
+- `Fragments` — the query fragments by ascending id, each with `Id`, `Stage` (the stage name), `Tasks` (the number of tasks) and `Plan`, which has the same form as with `json` = 1 without `fragments`.
+- `Exchanges` — the exchanges by ascending id, each with `Id`, `Name`, `From` and `To` (the ids of the fragment that sends the data and of the fragment that reads it), `Kind` (`hash`, `broadcast`, `gather` or `any`), `Keys` for `hash`, `Sort Description` for a `gather` that keeps the sort order, `Mode` (`streaming` or `persisted`), `Source Buckets`, `Destination Buckets` and, with `estimates` = 1 when the planner has an estimate, `Estimated Rows`.
+- `Levels` — the fragment ids grouped by their depth, as arrays, from the fragments without dependencies to the fragment that produces the result.
+
+The send and receive steps of an exchange have the key `Exchange Id` with the id of the exchange. The send step of the result (`final_result`) sends it to the client, not to an exchange, and has no `Exchange Id`. Column names are not shortened, whatever the value of `pretty`.
+
+When the query is not distributed, the document is the same as without `fragments`. If the query could not be distributed and fell back to local execution, the document has the key `Fallback Reason` after `Plan`.
+
+Example (trimmed):
+
+```sql
+EXPLAIN fragments = 1, json = 1, description = 0
+SELECT bid % 10 AS k, sum(bid)
+FROM big
+GROUP BY k
+SETTINGS make_distributed_plan = 1
+FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {"Node Type": "GatherSend", "Node Id": "GatherSend_21", "Plans": [ ... ]},
+    "Fragments": [
+      {"Id": 0, "Stage": "stage_0", "Tasks": 3, "Plan": {"Node Type": "ShuffleSend", "Node Id": "ShuffleSend_17", "Exchange Id": 0, "Plans": [ ... ]}},
+      {"Id": 1, "Stage": "stage_1", "Tasks": 3, "Plan": {"Node Type": "GatherSend", "Node Id": "GatherSend_19", "Exchange Id": 1, "Plans": [ ... ]}},
+      {"Id": 2, "Stage": "main", "Tasks": 1, "Plan": {"Node Type": "GatherSend", "Node Id": "GatherSend_21", "Plans": [ ... ]}}
+    ],
+    "Exchanges": [
+      {"Id": 0, "Name": "exchange_0", "From": 0, "To": 1, "Kind": "hash", "Keys": ["modulo(__table1.bid, 10_UInt8)"], "Mode": "streaming", "Source Buckets": 3, "Destination Buckets": 3},
+      {"Id": 1, "Name": "exchange_1", "From": 1, "To": 2, "Kind": "gather", "Mode": "streaming", "Source Buckets": 3, "Destination Buckets": 1}
+    ],
+    "Levels": [[0], [1], [2]]
+  }
+]
 ```
 
 #### Query fragment tree {#explain-plan-fragments-tree}
