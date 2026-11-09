@@ -469,6 +469,8 @@ protected:
     std::unique_ptr<WriteBuffer> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
+    /// Set when a buffer the query output ends in (`std_out_wrapper`, the `INTO OUTFILE` file) is canceled.
+    std::atomic<bool> output_buffer_canceled = false;
     /// Wrapper for hooking into the flush event.
     std::unique_ptr<WriteBuffer> std_out_wrapper;
 
@@ -631,6 +633,10 @@ protected:
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;
+
+    /// The output of the current query result failed (`LocalFormatError`): the query is cancelled,
+    /// and the rest of its result is only drained.
+    bool local_format_error_happened = false;
 
     std::function<void(bool)> on_waiting_for_query_input;
 
