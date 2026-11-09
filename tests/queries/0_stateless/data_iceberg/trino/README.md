@@ -19,7 +19,7 @@ The expected results in the tests are taken from these Trino tests. The tables k
 
 The Delta Lake UniForm tables `databricks133/uniform_iceberg_v1` and `databricks143/uniform_iceberg_v2`
 of `plugin/trino-delta-lake/src/test/resources` are also read as Iceberg tables
-(`05768_iceberg_trino_uniform`); they are not copied here, the test uses them from `data_delta_lake/trino`.
+(`05619_iceberg_trino_uniform`); they are not copied here, the test uses them from `data_delta_lake/trino`.
 
 Not included:
 
