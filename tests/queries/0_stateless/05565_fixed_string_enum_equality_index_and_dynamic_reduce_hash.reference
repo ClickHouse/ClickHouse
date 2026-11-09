@@ -1,16 +1,13 @@
 bloom_filter
 1
-2
 1
-2
 1
-2
 partition and primary key
-2
-2
+1
+1
 constant after filter
-['61','6100']
-['61','6100']
+['61']
+['61']
 Dynamic
 0
 1000

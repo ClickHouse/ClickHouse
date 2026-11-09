@@ -24,7 +24,7 @@ SELECT count() FROM t_reduce WHERE arrayReduce('groupConcatIf', a, [1]) = 'a' SE
 
 DROP TABLE t_reduce;
 
--- An `Enum` is compared with a constant `FixedString` as with a full column: by its name, zero-padded.
+-- An `Enum` is compared with a constant `FixedString` as with a full column: by its name, without the trailing zero bytes of the `FixedString`.
 SELECT 'enum';
 SELECT
     materialize(CAST('a\0' AS Enum8('a' = 1, 'a\0' = 2))) = toFixedString('a', 1),

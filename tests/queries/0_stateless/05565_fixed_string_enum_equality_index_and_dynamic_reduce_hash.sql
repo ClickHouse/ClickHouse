@@ -1,5 +1,5 @@
--- An `Enum` is compared with a `FixedString` by its name zero-padded, so `toFixedString('a', 1)` equals both 'a' and 'a\0'.
--- Index analysis and the replacement of a filtered column with a constant must not assume a single enum value.
+-- An `Enum` is compared with a `FixedString` by its name, without the trailing zero bytes of the `FixedString`, so
+-- `toFixedString('a', 1)` equals 'a' but not 'a\0'. Index analysis and the replacement of a filtered column with a constant agree.
 
 DROP TABLE IF EXISTS t_enum_bf;
 CREATE TABLE t_enum_bf

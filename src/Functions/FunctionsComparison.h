@@ -1293,8 +1293,8 @@ private:
         const IDataType * type_string = left_const ? left_type.get() : right_type.get();
         const DataTypePtr & type_to_compare = !left_const ? left_type : right_type;
 
-        /// An `Enum` is compared with a `FixedString` as its name, zero-padded like a `String` (see `executeGeneric`).
-        /// Converting the constant to an exact `Enum` value would compare it in another domain than a full column.
+        /// An `Enum` is compared with a `FixedString` as its name, with the trailing zero bytes of the `FixedString` removed
+        /// (see `executeGeneric`). Converting the constant to an exact `Enum` value would keep them.
         if (isFixedString(*type_string) && isEnum(removeNullable(removeLowCardinality(type_to_compare))))
             return nullptr;
 
@@ -1593,13 +1593,14 @@ private:
     {
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
 
-        /// A `FixedString` is compared with a `String` zero-padded, while its cast to `String` keeps the
-        /// padding. So keep the `FixedString` side as is and compare it with the other side cast to
-        /// `String`, as for a `String` argument, for example an `Enum`.
+        /// A `FixedString` compared with another type through `String`, for example with an `Enum`, is converted
+        /// without its trailing zero bytes, as it always was, whatever `cast_fixed_string_to_string_strip_trailing_zeros` is.
+        /// So `toFixedString('7', 4)` equals the `Enum` name `'7'`, and a `FixedString` value equals at most one name:
+        /// index analysis, constant propagation and join keys rely on an `Enum` value being equal to one `Enum` name.
         if (isString(common_type) && isFixedString(c0.type) != isFixedString(c1.type))
         {
-            ColumnPtr c0_converted = isFixedString(c0.type) ? c0.column : castColumn(c0, common_type);
-            ColumnPtr c1_converted = isFixedString(c1.type) ? c1.column : castColumn(c1, common_type);
+            ColumnPtr c0_converted = castColumn(c0, common_type, nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
+            ColumnPtr c1_converted = castColumn(c1, common_type, nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
             if (auto res = executeString(c0_converted.get(), c1_converted.get()))
                 return res;
         }
@@ -1636,14 +1637,19 @@ private:
         const ColumnWithTypeAndName & column_type_name1,
         size_t input_rows_count) const
     {
-        /// First, unwrap the two array columns
+        /// First, unwrap the two array columns. A constant is not materialized: its single row is gathered from
+        /// for every input row, so only the elements of the common prefixes are copied.
         chassert(column_type_name0.column && column_type_name1.column);
-        ColumnPtr full_column0 = column_type_name0.column->convertToFullColumnIfConst();
-        ColumnPtr full_column1 = column_type_name1.column->convertToFullColumnIfConst();
+        const bool is_const0 = isColumnConst(*column_type_name0.column);
+        const bool is_const1 = isColumnConst(*column_type_name1.column);
+        const IColumn & data_column0 = is_const0
+            ? assert_cast<const ColumnConst &>(*column_type_name0.column).getDataColumn() : *column_type_name0.column;
+        const IColumn & data_column1 = is_const1
+            ? assert_cast<const ColumnConst &>(*column_type_name1.column).getDataColumn() : *column_type_name1.column;
 
         /// With ColumnArray we have access to offsets and we can handle array of arrays
-        const auto & column_array0 = assert_cast<const ColumnArray &>(*full_column0);
-        const auto & column_array1 = assert_cast<const ColumnArray &>(*full_column1);
+        const auto & column_array0 = assert_cast<const ColumnArray &>(data_column0);
+        const auto & column_array1 = assert_cast<const ColumnArray &>(data_column1);
         /// Fetch all offsets from both ColumnArrays
         const auto & offsets0 = column_array0.getOffsets();
         const auto & offsets1 = column_array1.getOffsets();
@@ -1665,8 +1671,13 @@ private:
         /// Handles [1] = [1] as well as [[1]] = [[1]]
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            ColumnArray::Offset off0 = offsets0[row];
-            ColumnArray::Offset off1 = offsets1[row];
+            /// A constant has one row, which starts at 0 for every input row.
+            if (is_const0)
+                prev0 = 0;
+            if (is_const1)
+                prev1 = 0;
+            ColumnArray::Offset off0 = offsets0[is_const0 ? 0 : row];
+            ColumnArray::Offset off1 = offsets1[is_const1 ? 0 : row];
             size_t len0 = off0 - prev0;
             size_t len1 = off1 - prev1;
             size_t common = std::min(len0, len1);
