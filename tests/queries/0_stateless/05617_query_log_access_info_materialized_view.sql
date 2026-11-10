@@ -73,7 +73,9 @@ SELECT
     log_comment,
     replaceAll(query, currentDatabase() || '.', '') AS body,
     arrayStringConcat(arrayMap(x -> replaceAll(x, currentDatabase() || '.', ''), tables), ',') AS tables_read,
-    arrayStringConcat(arrayMap(x -> replaceAll(x, currentDatabase() || '.', ''), columns), ',') AS columns_read
+    arrayStringConcat(arrayMap(x -> replaceAll(x, currentDatabase() || '.', ''), columns), ',') AS columns_read,
+    arrayStringConcat(arrayMap(x -> replaceAll(x, currentDatabase() || '.', ''), partitions), ',') AS partitions_read,
+    arrayStringConcat(arrayMap(x -> replaceAll(x, currentDatabase(), 'db'), databases), ',') AS databases_read
 FROM system.query_log
 WHERE current_database = currentDatabase() AND NOT is_initial_query AND type = 'QueryFinish'
     AND log_comment IN ('read_definer', 'read_memory')

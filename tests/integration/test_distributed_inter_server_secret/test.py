@@ -382,6 +382,22 @@ def test_user_query_log_insecure_cluster_uses_initial_user(user, password):
     assert get_user_query_log_count_by_id(n2, id_, user, password) == 0
     assert get_user_query_log_count_by_id(n2, id_, "default") == 0
 
+    # Read through the `insecure` cluster, n2 runs the query as `default` with `initial_user` = `user`,
+    # so it must not return the top-level rows of `user`. The seed exists only on n2.
+    seed_id = "query-user_query_log-seed-" + user + "-" + generate_query_id()
+    n2.query("SELECT 1", user=user, password=password, query_id=seed_id)
+    assert get_user_query_log_count_by_id(n2, seed_id, user, password) == 1
+    assert (
+        int(
+            n1.query(
+                f"SELECT count() FROM cluster('insecure', system.user_query_log) WHERE query_id = '{seed_id}' AND type = 'QueryFinish'",
+                user=user,
+                password=password,
+            )
+        )
+        == 0
+    )
+
 
 @users
 def test_user_secure_cluster(user, password):
