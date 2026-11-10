@@ -9,9 +9,12 @@ namespace DB
 /// Inside a stripe of a compact part the data of a column is contiguous (see the `MergeTree` setting
 /// `compact_parts_max_granules_to_buffer`), so every buffer reads its column sequentially, the columns
 /// can be prefetched in parallel, and a query that reads a subset of columns does not read the data of
-/// the other columns. It's suitable for compact parts with large stripes.
+/// the other columns.
 /// If the part is written without stripes (all columns of a granule are adjacent), all columns share one
-/// buffer, because separate buffers would read the whole file for every column.
+/// buffer, because separate buffers would read the whole file for every column. All columns also share one
+/// buffer when only a few granules are read (see the setting `merge_tree_compact_parts_min_granules_to_multibuffer_read`).
+/// The choice is made for the mark ranges of the current read task and is made again when a reused reader
+/// gets the ranges of another task.
 class MergeTreeReaderCompactMultipleBuffers : public MergeTreeReaderCompact
 {
 public:
@@ -32,10 +35,14 @@ public:
 
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
+    void updateAllMarkRanges(const MarkRanges & ranges) override;
+
 private:
     MergeTreeReaderStream & getStream(const NameAndTypePair & column) override;
     void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) override;
     void init();
+    /// Whether to read all columns with one buffer for the current `all_mark_ranges`.
+    bool shouldUseSharedStream();
     void updateStreamsReadRequestMap();
 
     struct Stream

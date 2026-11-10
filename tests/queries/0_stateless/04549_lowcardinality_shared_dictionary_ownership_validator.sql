@@ -42,7 +42,7 @@ DROP TABLE t_lc_shared_dict_wide;
 
 DROP TABLE IF EXISTS t_lc_shared_dict_compact;
 
--- The same reads from a Compact part: MergeTreeReaderCompactSingleBuffer validates per granule.
+-- The same reads from a Compact part: `MergeTreeReaderCompactMultipleBuffers` validates per granule.
 CREATE TABLE t_lc_shared_dict_compact
 (
     key UInt64,
