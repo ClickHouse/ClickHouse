@@ -5475,6 +5475,7 @@ void MergeTreeData::checkUniqueKeyOptimizeIsPossible(const StorageInMemoryMetada
     if (!metadata.hasUniqueKey())
         return;
 
+    /// CREATE and ALTER refuse TTL on a unique-key table, so only an attached one can have it.
     if (metadata.hasAnyTTL())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "OPTIMIZE is not supported for UNIQUE KEY tables with TTL: merge-time TTL "
