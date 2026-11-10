@@ -25,6 +25,7 @@
 #include "Poco/Exception.h"
 #include "Poco/Ascii.h"
 #include "Poco/CombinedRotateStrategy.h"
+#include <utility>
 
 
 namespace Poco {
@@ -111,15 +112,7 @@ void FileChannel::log(const Message& msg)
 
 	if (_pRotateStrategy && _pArchiveStrategy && _pRotateStrategy->mustRotate(_pFile))
 	{
-		try
-		{
-			_pFile = _pArchiveStrategy->archive(_pFile, _streamCompress);
-			purge();
-		}
-		catch (...)
-		{
-			_pFile = newLogFile();
-		}
+		unsafeRotate();
 		// we must call mustRotate() again to give the
 		// RotateByIntervalStrategy a chance to write its timestamp
 		// to the new file.
@@ -340,17 +333,25 @@ void FileChannel::unsafeOpen()
 	{
 		_pFile = newLogFile();
 		if (_rotateOnOpen && _pFile->size() > 0)
-		{
-			try
-			{
-				_pFile = _pArchiveStrategy->archive(_pFile, _streamCompress);
-				purge();
-			}
-			catch (...)
-			{
-				_pFile = newLogFile();
-			}
-		}
+			unsafeRotate();
+	}
+}
+
+
+void FileChannel::unsafeRotate()
+{
+	/// `archive` deletes the current `LogFile` before it renames the files and opens the new one.
+	/// Reset `_pFile` first: if both `archive` and `newLogFile` throw, `_pFile` stays null instead of
+	/// pointing to the deleted object, and the next `log` call opens the file again in `unsafeOpen`.
+	LogFile * pFile = std::exchange(_pFile, nullptr);
+	try
+	{
+		_pFile = _pArchiveStrategy->archive(pFile, _streamCompress);
+		purge();
+	}
+	catch (...)
+	{
+		_pFile = newLogFile();
 	}
 }
 

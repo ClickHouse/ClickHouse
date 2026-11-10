@@ -246,6 +246,10 @@ protected:
     void unsafeOpen();
 
 private:
+    void unsafeRotate();
+    /// Archives the current log file and opens a new one. The caller holds `_mutex`.
+    /// If the new file cannot be opened, `_pFile` is null and the exception propagates.
+
     LogFile * newLogFile();
     void archiveCorrupted(const std::string & path);
     bool setNoPurge(const std::string & value);
