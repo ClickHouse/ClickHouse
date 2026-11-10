@@ -7,6 +7,7 @@
 
     <fill_query>INSERT INTO t_estimate_target SELECT number % 1000, concat('region_', toString(number % 16)) FROM numbers(10000000)</fill_query>
 
+    <query>SELECT estimateCompressionRatio('LZ4')(s) FROM t_estimate_target FORMAT Null</query>
     <query>SELECT estimateCompressionRatio('LZ4', 'String')(s) FROM t_estimate_target FORMAT Null</query>
     <query>SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(s) FROM t_estimate_target FORMAT Null</query>
     <query>SELECT k, estimateCompressionRatio('LZ4', 'LowCardinality(String)')(s) FROM t_estimate_target GROUP BY k FORMAT Null</query>
