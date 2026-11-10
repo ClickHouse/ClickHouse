@@ -1,5 +1,7 @@
--- Tags: long
+-- Tags: long, no-msan
 -- long: 640 000 rows of JSON, and the tag keeps the randomized index_granularity at 100 or above.
+-- no-msan: about 500 s under MSan against 15 s in a debug build, too close to the 600 s per-test timeout;
+-- the test still runs under ASan, UBSan and TSan.
 
 -- Several whole-column and sub-object readers per task over big parts read by many tasks: multi-step PREWHERE, a filter
 -- moved by the optimizer, ORDER BY with LIMIT, scattered keys, calls that cut granules, before and after a merge. The part

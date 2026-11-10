@@ -70,6 +70,10 @@ struct MergeTreeReaderSettings
     bool can_read_part_without_marks = false;
     /// If true, the data stream is compressed.
     bool is_compressed = true;
+    /// If false (the default), text index streams read out of file order (dictionary, postings,
+    /// positions) use a userspace page cache lookahead of one block instead of
+    /// `page_cache_lookahead_blocks`, see `makeTextIndexReaderSettings`.
+    bool use_page_cache_lookahead_for_text_index = false;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
     /// If the query condition cache should serve conditions involving the current time by deriving
@@ -215,9 +219,9 @@ struct MergeTreeWriterSettings
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
-    float max_memory_ratio_to_activate_adaptive_write_buffer{};
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
+    UInt64 adaptive_codec_selection_period = 1;
 };
 
 }
