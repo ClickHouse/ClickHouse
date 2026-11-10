@@ -17,7 +17,7 @@ trap 'rm -rf "${BASE_DIR}"' EXIT
 
 cd "${BASE_DIR}/work" || exit 1
 
-SETTINGS="--allow_experimental_delta_kernel_rs=1 --allow_delta_lake_writes=1 --allow_delta_lake_create_table=1"
+SETTINGS="--allow_delta_lake_writes=1 --allow_delta_lake_create_table=1"
 
 echo "--- create and write through a relative path"
 ${CLICKHOUSE_LOCAL} ${SETTINGS} -q "
@@ -43,6 +43,6 @@ ${CLICKHOUSE_LOCAL} ${SETTINGS} -q "SELECT count(), sum(id) FROM deltaLakeLocal(
 
 echo "--- a table written by Spark, read through a relative path"
 cd "${CUR_DIR}/data_delta_lake" || exit 1
-${CLICKHOUSE_LOCAL} --allow_experimental_delta_kernel_rs=1 -q "
+${CLICKHOUSE_LOCAL} -q "
 SELECT count(), sum(c1) FROM deltaLakeLocal('lakehouses/spark_catalog/test/t0');
 "
