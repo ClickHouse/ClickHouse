@@ -14,6 +14,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
+#include <Common/StringUtils.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/Joins.h>
 #include <Core/Settings.h>
