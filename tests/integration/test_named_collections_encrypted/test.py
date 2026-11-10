@@ -261,3 +261,45 @@ def test_local_storage_key_rotation(cluster):
     # Back to the module's configuration for the other tests; nothing stored is encrypted with key B.
     set_local_storage_keys(node, f"<key_hex>{KEY_A}</key_hex>")
     node.restart_clickhouse()
+
+
+def test_local_storage_missing_key(cluster):
+    node = cluster.instances["node_encrypted"]
+
+    # Encrypted with key A, the key of the module's configuration.
+    node.query("CREATE NAMED COLLECTION locked AS key1=1")
+
+    # Key A is removed from the configuration before `locked` is rewritten with another key. The
+    # server still starts, and the collections it can decrypt are available; `locked` is skipped
+    # with an error in the log and stays in the storage.
+    set_local_storage_keys(node, f"<key_hex>{KEY_B}</key_hex>")
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            "SELECT name FROM system.named_collections WHERE name IN ('collection1', 'locked') ORDER BY name"
+        )
+        == "collection1\n"
+    )
+    assert node.contains_in_log("Cannot read named collection 'locked', skipping it")
+    node.query("CREATE NAMED COLLECTION fresh AS key1=2")
+
+    # Once key A is configured again, `locked` is back.
+    set_local_storage_keys(
+        node,
+        f'<key_hex id="0">{KEY_A}</key_hex><key_hex id="1">{KEY_B}</key_hex>'
+        "<current_key_id>1</current_key_id>",
+    )
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            "SELECT name, collection['key1'] FROM system.named_collections "
+            "WHERE name IN ('locked', 'fresh') ORDER BY name"
+        )
+        == "fresh\t2\nlocked\t1\n"
+    )
+
+    # Back to the module's configuration for the other tests.
+    node.query("DROP NAMED COLLECTION locked")
+    node.query("DROP NAMED COLLECTION fresh")
+    set_local_storage_keys(node, f"<key_hex>{KEY_A}</key_hex>")
+    node.restart_clickhouse()

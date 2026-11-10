@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int DATA_ENCRYPTION_ERROR;
 }
 
 static const std::string named_collections_storage_config_path = "named_collections_storage";
@@ -619,6 +620,19 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
             {
                 LOG_DEBUG(getLogger("NamedCollectionsMetadataStorage"),
                     "Collection '{}' was removed while reading, skipping", collection_name);
+                continue;
+            }
+            throw;
+        }
+        catch (const Exception & e)
+        {
+            /// The entry is encrypted with a key which is not configured, for example a key removed
+            /// after a rotation before every entry was rewritten. The other collections stay available;
+            /// the entry is kept in the storage and loads again once its key is configured.
+            if (e.code() == ErrorCodes::DATA_ENCRYPTION_ERROR)
+            {
+                LOG_ERROR(getLogger("NamedCollectionsMetadataStorage"),
+                    "Cannot read named collection '{}', skipping it: {}", collection_name, e.message());
                 continue;
             }
             throw;
