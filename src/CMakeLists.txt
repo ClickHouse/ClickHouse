@@ -1138,6 +1138,10 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_rust::delta_kernel_rs)
     endif ()
 
+    if (TARGET ch_rust::avro)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_rust::avro)
+    endif ()
+
     if (TARGET ch_contrib::azure_sdk)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
     endif()
