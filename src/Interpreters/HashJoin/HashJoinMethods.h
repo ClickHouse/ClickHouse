@@ -9,6 +9,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 #include <base/types.h>
+#include <span>
 
 namespace DB
 {
@@ -24,10 +25,11 @@ struct Inserter
     /// `any_take_last_row` is read from the join once, before the loop that calls this. Reading it here
     /// costs a load per row: the map this writes to lives inside the join object, so the compiler cannot
     /// prove that the write leaves the flag alone and has to reload it.
-    static ALWAYS_INLINE bool
-    insertOne(bool any_take_last_row, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
+    static ALWAYS_INLINE bool insertOne(
+        bool any_take_last_row, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        new_keys += emplace_result.isInserted();
 
         const bool store_row = emplace_result.isInserted() || any_take_last_row;
         if (store_row)
@@ -36,15 +38,17 @@ struct Inserter
     }
 
     /// A set map holds no reference to a right row, so there is nothing to do beyond adding the key.
-    static ALWAYS_INLINE void insertKeyOnly(HashMap & map, KeyGetter & key_getter, size_t i, Arena & pool)
+    /// The key is still counted: `~HashJoin` statistics and the runtime filter read `keys_to_join`.
+    static ALWAYS_INLINE void insertKeyOnly(HashMap & map, KeyGetter & key_getter, size_t i, Arena & pool, size_t & new_keys)
     {
-        key_getter.emplaceKey(map, i, pool);
+        new_keys += key_getter.emplaceKey(map, i, pool).isInserted();
     }
 
     static ALWAYS_INLINE bool
-    insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
+    insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        new_keys += emplace_result.isInserted();
 
         if (emplace_result.isInserted())
             new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
@@ -68,9 +72,11 @@ struct Inserter
         UInt32 stored_block_no,
         size_t i,
         Arena & pool,
+        size_t & new_keys,
         const IColumn & asof_column)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        new_keys += emplace_result.isInserted();
         typename HashMap::mapped_type * time_series_map = &emplace_result.getMapped();
 
         if (emplace_result.isInserted())
@@ -85,19 +91,18 @@ template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
 public:
-    static void insertFromBlockImpl(
+    /// Inserts clause `map_idx` of a block into `maps`. Each slot inserts its rows of `per_slot` under its own lock.
+    static BuildResult insertFromBlockImpl(
         HashJoin & join,
         HashJoin::Type type,
         MapsTemplate & maps,
+        size_t map_idx,
+        std::span<const ScatteredBlock::Selector> per_slot,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         UInt32 stored_block_no,
-        const ScatteredBlock::Selector & selector,
         ConstNullMapPtr null_map,
-        const JoinCommon::JoinMask & join_mask,
-        Arena & pool,
-        bool & is_inserted,
-        bool & all_values_unique);
+        const JoinCommon::JoinMask & join_mask);
 
     using MapsTemplateVector = std::vector<const MapsTemplate *>;
 
@@ -150,28 +155,26 @@ private:
         typename Map,
         bool need_filter,
         bool fast_path,
-        typename AddedColumns,
-        typename Selector>
+        typename AddedColumns>
     static size_t joinRightColumns(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags,
-        const Selector & selector);
+        const ScatteredBlock::Selector::Range & selector);
 
     template <
         typename KeyGetter,
         typename Map,
         bool need_filter,
         bool fast_path,
-        typename AddedColumns,
-        typename Selector>
+        typename AddedColumns>
     static size_t joinRightColumns(
         KeyGetter & key_getter,
         const Map * map,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags,
-        const Selector & selector);
+        const ScatteredBlock::Selector::Range & selector);
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
     template <typename KeyGetter, typename Map, typename AddedColumns>

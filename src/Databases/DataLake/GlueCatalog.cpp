@@ -19,9 +19,13 @@
 #include <aws/glue/model/TableInput.h>
 #include <aws/glue/model/StorageDescriptor.h>
 #include <aws/glue/model/Column.h>
+#include <aws/core/client/DefaultRetryStrategy.h>
+#include <aws/core/http/HttpResponse.h>
 
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <base/unit.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -77,6 +81,7 @@ namespace DB::Setting
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
+    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
 }
 
 namespace DB::ServerSetting
@@ -96,6 +101,22 @@ namespace DataLake
 
 namespace
 {
+
+/// The generated Glue error mapper marks every modeled exception as not retryable, including server
+/// faults such as `InternalServiceException` (HTTP 500), so a transient status is retried regardless.
+class GlueRetryStrategy : public Aws::Client::DefaultRetryStrategy
+{
+public:
+    /// NOLINTNEXTLINE(google-runtime-int)
+    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> & error, long attempted_retries) const override
+    {
+        if (attempted_retries >= m_maxRetries)
+            return false;
+        if (DB::CurrentThread::isInitialized() && DB::CurrentThread::get().isQueryCanceled())
+            return false;
+        return error.ShouldRetry() || Aws::Http::IsRetryableHttpResponseCode(error.GetResponseCode());
+    }
+};
 
 /// A Glue table is readable only if it is an Iceberg table. `table_type` is available in
 /// both the bulk `GetTables` listing and `tryGetTableMetadata`, so the two stay consistent.
@@ -168,6 +189,7 @@ GlueCatalog::GlueCatalog(
     client_configuration.connectTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_connect_timeout_ms]);
     client_configuration.requestTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_request_timeout_ms]);
     client_configuration.region = region;
+    client_configuration.retryStrategy = std::make_shared<GlueRetryStrategy>();
     auto endpoint_provider = std::make_shared<Aws::Glue::GlueEndpointProvider>();
 
     Aws::Auth::AWSCredentials credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key);
@@ -635,10 +657,15 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
 
+    auto resolve_context = DB::Context::createCopy(getContext());
+    DB::Settings resolve_settings = resolve_context->getSettingsCopy();
+    resolve_settings[DB::Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
+    resolve_context->setSettings(resolve_settings);
+
     try
     {
         auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
+            object_storage, table_path, *storage_settings, nullptr, resolve_context, log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 
