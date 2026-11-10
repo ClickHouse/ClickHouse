@@ -13,11 +13,13 @@
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
 #include <Core/UUID.h>
+#include <Core/Defines.h>
+#include <Core/Names.h>
+#include <base/unit.h>
 #include <IO/ReadSettings.h>
 #include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <Formats/FormatSettings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -68,6 +70,7 @@ struct OvercommitTracker;
 namespace DB
 {
 
+struct FormatSettings;
 class ASTSelectQuery;
 
 class SystemLogs;
@@ -1446,18 +1449,22 @@ public:
     std::shared_ptr<StreamingCursor> getStreamingCursor() const;
 
     /// I/O formats.
+    /// The overloads without FormatSettings exist so that this header does not need its definition.
+    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
     InputFormatPtr getInputFormat(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        const std::optional<FormatSettings> & format_settings,
         const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
         const std::optional<UInt64> & min_block_size_rows = std::nullopt,
         const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
-    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const;
+    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
+    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const;
 
     InterserverIOHandler & getInterserverIOHandler();
     const InterserverIOHandler & getInterserverIOHandler() const;
@@ -1726,6 +1733,11 @@ public:
     void setGPU(const ServerSettings & server_settings);
     /// Throws when `enable_gpu` is not set.
     GPU::GPUDevice & getGPU() const;
+    /// Applies the limits of the cache of the kernels compiled for expressions from the reloaded `server_settings`.
+    /// Without a GPU there is no cache to resize, as `enable_gpu` takes effect only at the start of the server.
+    void updateGPUKernelCacheConfiguration(const ServerSettings & server_settings);
+    /// The limits of that cache, in bytes and in kernels, or zeros without a GPU.
+    std::pair<size_t, size_t> getGPUKernelCacheLimits() const;
 #endif
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
@@ -2043,6 +2055,7 @@ public:
     void setStopIntrospectionServersCallback(StopIntrospectionServersCallback && callback);
 
     void shutdown();
+    bool isShutdownCalled() const;
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
@@ -2148,7 +2161,7 @@ public:
 
     /// Tells DatabaseReplicated to make this query conditional: it'll only succeed if table with the given UUID exists.
     /// Used by refreshable materialized views to prevent creating inner tables after the MV is dropped.
-    /// Doesn't do anything if not in DatabaseReplicated.
+    /// A CREATE with a parent table re-creates the view's inner table from its stored definition.
     void setParentTable(UUID uuid);
     std::optional<UUID> getParentTable() const;
     /// Allows cancelling DDL query in DatabaseReplicated. Usage:
