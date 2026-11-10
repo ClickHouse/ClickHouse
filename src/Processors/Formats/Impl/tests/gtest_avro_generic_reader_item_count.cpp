@@ -406,6 +406,7 @@ std::string recordOfNulls(const std::string & name, size_t fields_count, bool wi
     return R"({"type":"record","name":")" + name + R"(","fields":[)" + fields + "]}";
 }
 
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(THREAD_SANITIZER)
 /// `A0` is a record of two nulls, and `Ai` is a record of two fields of type `A(i-1)`, the first of which defines it and the
 /// second of which refers to it. The schema is a few KB, and a datum of `A<levels>` that is constructed in full has
 /// `2^(levels + 2) - 1` datums, which are 262143 datums for 16 levels although the value that they hold takes no bytes.
@@ -420,6 +421,7 @@ std::string doublingRecords(size_t levels)
 }
 
 constexpr size_t doubling_levels = 16;
+#endif
 
 /// A record `W` of `wide_record_fields` records `S` of `wide_record_ints` ints, which has 1 + 300 * (1 + 250) = 75301 datums, of
 /// which 75000 are ints, and of which every one is backed by a byte of the input.
