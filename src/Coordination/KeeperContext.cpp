@@ -793,10 +793,7 @@ void KeeperContext::setBlockACL(bool block_acl_)
     block_acl = block_acl_;
 }
 
-namespace
-{
-
-bool isOpNumSupported(const KeeperFeatureFlags & feature_flags, Coordination::OpNum operation)
+bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
 {
     switch (operation)
     {
@@ -854,13 +851,6 @@ bool isOpNumSupported(const KeeperFeatureFlags & feature_flags, Coordination::Op
         case Coordination::OpNum::SessionID:
             return true;
     }
-}
-
-}
-
-bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
-{
-    return isOpNumSupported(feature_flags, operation);
 }
 
 uint64_t KeeperContext::lastCommittedIndex() const
