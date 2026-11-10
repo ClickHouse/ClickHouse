@@ -19,6 +19,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDictionary.h>
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
+#include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserProjectionSelectQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
@@ -827,29 +828,8 @@ static bool parseInsertPayload(
     const char * end)
 {
     ParserSelectWithUnionQuery select_p;
-
-    if (select_p.parse(pos, insert_select, expected))
-        return true;
-
-    if (ParserKeyword{Keyword::VALUES}.ignore(pos, expected))
+    auto capture_inline_data = [&]
     {
-        insert_format = "Values";
-        if (pos->type != TokenType::Semicolon && pos->type != TokenType::EndOfStream)
-        {
-            insert_data = pos->begin;
-            insert_data_end = insert_data ? end : nullptr;
-        }
-        return true;
-    }
-
-    if (ParserKeyword{Keyword::FORMAT}.ignore(pos, expected))
-    {
-        ParserIdentifier format_name_p;
-        ASTPtr format_name_ast;
-        if (!format_name_p.parse(pos, format_name_ast, expected))
-            return false;
-        insert_format = getIdentifierName(format_name_ast);
-
         const char * data = nullptr;
         IParser::Pos last_token = pos;
         --last_token;
@@ -870,6 +850,49 @@ static bool parseInsertPayload(
 
         insert_data = data != end ? data : nullptr;
         insert_data_end = data ? end : nullptr;
+    };
+
+    if (select_p.parse(pos, insert_select, expected))
+    {
+        /// Mirrors `ParserInsertQuery`: a SELECT may be followed by `FORMAT <name>`.
+        if (ParserKeyword{Keyword::FORMAT}.ignore(pos, expected))
+        {
+            ParserIdentifier format_name_p;
+            ASTPtr format_name_ast;
+            if (!format_name_p.parse(pos, format_name_ast, expected))
+                return false;
+            insert_format = getIdentifierName(format_name_ast);
+
+            if (selectReadsInlineDataViaInputFunction(insert_select))
+                capture_inline_data();
+        }
+        else if (selectReadsInlineDataViaInputFunction(insert_select))
+        {
+            capture_inline_data();
+        }
+        return true;
+    }
+
+    if (ParserKeyword{Keyword::VALUES}.ignore(pos, expected))
+    {
+        insert_format = "Values";
+        if (pos->type != TokenType::Semicolon && pos->type != TokenType::EndOfStream)
+        {
+            insert_data = pos->begin;
+            insert_data_end = insert_data ? end : nullptr;
+        }
+        return true;
+    }
+
+    if (ParserKeyword{Keyword::FORMAT}.ignore(pos, expected))
+    {
+        ParserIdentifier format_name_p;
+        ASTPtr format_name_ast;
+        if (!format_name_p.parse(pos, format_name_ast, expected))
+            return false;
+        insert_format = getIdentifierName(format_name_ast);
+
+        capture_inline_data();
 
         return true;
     }

@@ -86,3 +86,29 @@ CREATE TABLE IF NOT EXISTS t_fmt3 (a UInt32, b String) ENGINE = MergeTree ORDER 
 
 SELECT a, b FROM t_fmt3 ORDER BY a;
 DROP TABLE t_fmt3;
+
+DROP TABLE IF EXISTS t_input1;
+CREATE TABLE t_input1 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AS INSERT SELECT * FROM input('a UInt32, b String') FORMAT CSV
+1;"input_row1"
+2;"input_row2";
+
+SELECT a, b FROM t_input1 ORDER BY a;
+DROP TABLE t_input1;
+
+DROP TABLE IF EXISTS t_input2;
+CREATE TABLE t_input2 (a UInt32, b String) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_input2 VALUES (10, 'existing');
+
+CREATE TABLE IF NOT EXISTS t_input2 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AND INSERT SELECT * FROM input('a UInt32, b String') FORMAT CSV
+1;"new_via_input";
+
+SELECT a, b FROM t_input2 ORDER BY a;
+DROP TABLE t_input2;
+
+-- Test 1: `parseQueryToJSON` / `formatQueryFromJSON` keep the `AS INSERT` clause.
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE IF NOT EXISTS t (a UInt8) ENGINE = Memory AS INSERT SELECT 1'));
+
+-- Test 2: inline data cannot be represented in the JSON AST, so it is rejected instead of being silently dropped.
+SELECT parseQueryToJSON('CREATE TABLE t (a UInt8) ENGINE = Memory AS INSERT VALUES (1), (2)'); -- { serverError BAD_ARGUMENTS }

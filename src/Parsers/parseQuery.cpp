@@ -524,8 +524,8 @@ ASTPtr tryParseQuery(
     IParser::Pos set_lookahead(token_iterator);
     const bool committed_to_set = parser.consumesRawText() && isCommittedToSetQuery(set_lookahead);
     const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
-    if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead)
-        && !ParserKeyword(Keyword::CREATE).ignore(lookahead))
+    if (consumes_raw_text
+        || (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead) && !ParserKeyword(Keyword::CREATE).ignore(lookahead)))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {

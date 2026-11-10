@@ -217,6 +217,9 @@ public:
 
     bool isCreateQueryWithImmediateInsertSelect() const;
 
+    /// Try to find table function input() in SELECT part
+    void tryFindInputFunction(ASTPtr & input_function) const;
+
 protected:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 

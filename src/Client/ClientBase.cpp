@@ -2540,6 +2540,10 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 onProfileEvents(packet.block);
                 break;
 
+            case Protocol::Server::EndOfStream:
+                onEndOfStream();
+                return false;
+
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
                     "Unexpected packet from server (expected Data, Exception, Log, TableColumns, TimezoneUpdate, "
@@ -2667,12 +2671,15 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         /// The server sends its `session_timezone` with the structure of the data it reads through `input`
         /// (also for RETURNING); it must be applied before the data is parsed in other threads.
         ASTPtr input_function;
-        if (parsed_insert_query.select)
-            parsed_insert_query.tryFindInputFunction(input_function);
-        const bool wait_for_timezone_update = (input_function || parsed_insert_query.returning)
+        if (parsed_insert_query && parsed_insert_query->select)
+            parsed_insert_query->tryFindInputFunction(input_function);
+        else if (parsed_create_query && parsed_create_query->insert_select)
+            parsed_create_query->tryFindInputFunction(input_function);
+
+        const bool wait_for_timezone_update =
+            (input_function || (parsed_insert_query && parsed_insert_query->returning))
             && connection->getConnectionType() != IServerConnection::Type::LOCAL
             && connection->getServerRevision(connection_parameters.timeouts) >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES;
-
         /// Receive description of table structure.
         Block sample;
         ColumnsDescription columns_description;
@@ -2729,7 +2736,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
     /// `FROM INFILE` names the data source, so stdin is not read for it. Do not even check stdin then: the check waits
     /// for data or EOF, so an open pipe would block the query.
-    bool have_data_in_stdin = !parsed_insert_query->infile && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+    bool have_data_in_stdin = (!parsed_insert_query || !parsed_insert_query->infile) && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
 
     if (need_render_progress)
     {
@@ -3280,15 +3287,18 @@ void ClientBase::processParsedSingleQuery(
 
         ASTPtr input_function;
         const auto * insert = parsed_query->as<ASTInsertQuery>();
+        const auto * create_ast = parsed_query->as<ASTCreateQuery>();
         const auto * create_with_insert = [&]() -> const ASTCreateQuery *
         {
             if (const auto * c = parsed_query->as<ASTCreateQuery>())
-                if (c->insert_data && (c->has_as_insert || c->has_and_insert) && !c->insert_format.empty())
+                if (c->insert_data && (c->has_as_insert || c->has_and_insert) && !c->insert_format.empty() && !c->insert_select)
                     return c;
             return nullptr;
         }();
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
+        else if (create_ast && create_ast->insert_select)
+            create_ast->tryFindInputFunction(input_function);
 
         /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
         /// `send_table_structure_on_insert_with_inline_data = 0`), it takes precedence over `async_insert`
@@ -3333,13 +3343,16 @@ void ClientBase::processParsedSingleQuery(
         else
             query = query_;
 
+        bool create_select_needs_input = create_ast && create_ast->insert_select && input_function;
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data)
+        if ((insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data)
+            || create_select_needs_input)
         {
+            bool format_empty = insert ? insert->format.empty() : create_ast->insert_format.empty();
             /// The reader format for `input()` can come from the query `FORMAT` clause or from the
             /// `input_format` / `format` settings (mirrors `getSourceFromASTInsertQuery`); only reject
             /// when none of them is set.
-            if (input_function && insert->format.empty()
+            if (input_function && format_empty
                 && client_context->getSettingsRef()[Setting::input_format].value.empty()
                 && client_context->getSettingsRef()[Setting::format].value.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -3911,7 +3924,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     insert_query_without_data_length = insert->data - query_to_execute.data();
                 }
                 else if (const auto * create = parsed_query->as<ASTCreateQuery>();
-                         create && create->insert_data && (create->has_as_insert || create->has_and_insert))
+                         create && create->insert_data && (create->has_as_insert || create->has_and_insert) && !create->insert_select)
                 {
                     insert_query_without_data_length = create->insert_data - query_to_execute.data();
                 }
@@ -4114,7 +4127,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]),
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]));
                 }
-                else if (create_ast && create_ast->insert_data && (create_ast->has_as_insert || create_ast->has_and_insert))
+                else if (create_ast && create_ast->insert_data && (create_ast->has_as_insert || create_ast->has_and_insert) && !create_ast->insert_select)
                 {
                     this_query_end = create_ast->insert_data_end;
                     adjustQueryEnd(

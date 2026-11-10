@@ -3284,6 +3284,37 @@ static BlockIO executeQueryImpl(
 
             insert_query->tail.reset();
         }
+        else if (out_ast->as<ASTCreateQuery>() && dynamic_cast<const ASTCreateQuery*>(out_ast.get())->insert_select && dynamic_cast<const ASTCreateQuery*>(out_ast.get())->insert_data)
+        {
+            const auto * create_query = out_ast->as<ASTCreateQuery>();
+            ASTPtr input_function;
+            
+            auto synthetic_insert = make_intrusive<ASTInsertQuery>();
+            synthetic_insert->select = create_query->insert_select;
+            synthetic_insert->format = create_query->insert_format;
+            synthetic_insert->data = create_query->insert_data;
+            synthetic_insert->end = create_query->insert_data_end;
+            
+            synthetic_insert->tryFindInputFunction(input_function);
+            if (input_function)
+            {
+                const ASTSelectQuery * select_query_hint = synthetic_insert->select->as<ASTSelectQuery>();
+                if (!select_query_hint)
+                {
+                    if (const auto * union_query = synthetic_insert->select->as<ASTSelectWithUnionQuery>();
+                        union_query && union_query->list_of_selects->children.size() == 1)
+                        select_query_hint = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
+                }
+                StoragePtr storage = context->executeTableFunction(input_function, select_query_hint);
+                auto & input_storage = dynamic_cast<StorageInput &>(*storage);
+                auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(context, false);
+                
+                auto pipe = getSourceFromASTInsertQuery(
+                    synthetic_insert, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
+                
+                input_storage.setPipe(std::move(pipe));
+            }
+        }
         else if (!insert_query || !insert_query->returning)
         {
             /// reset Input callbacks if query is not INSERT SELECT,

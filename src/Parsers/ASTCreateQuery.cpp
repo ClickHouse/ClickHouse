@@ -33,6 +33,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_USAGE_OF_INPUT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -538,6 +539,11 @@ void ASTCreateQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
 
 void ASTCreateQuery::writeJSON(WriteBuffer & out) const
 {
+    /// Inline data (`AS INSERT VALUES (1)`, `AS INSERT FORMAT ... <payload>`) is a non-owning view into the
+    /// original query buffer that `formatImpl` does not print. Rather than emit lossy JSON, reject such queries.
+    if (insert_data)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CREATE ... AS/AND INSERT` with inline data is not supported by parseQueryToJSON during AST JSON deserialization");
+
     JSONObjectWriter w(out, "CreateQuery");
 
     w.writeString("database", getDatabase());
@@ -561,6 +567,8 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
         w.writeString("as_table", as_table);
     if (!attach_from_path.empty())
         w.writeString("attach_from_path", attach_from_path);
+    if (!insert_format.empty())
+        w.writeString("insert_format", insert_format);
 
     w.writeBool("attach", attach);
     w.writeBool("if_not_exists", if_not_exists);
@@ -584,6 +592,8 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("has_attach_from_path", has_attach_from_path);
     if (attach_as_replicated.has_value())
         w.writeBool("attach_as_replicated", *attach_as_replicated);
+    w.writeBool("has_and_insert", has_and_insert);
+    w.writeBool("has_as_insert", has_as_insert);
 
     w.writeChild("columns_list", columns_list);
     w.writeChild("aliases_list", aliases_list);
@@ -606,6 +616,7 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("dictionary_attributes_list", dictionary_attributes_list);
     w.writeChild("dictionary", dictionary);
     w.writeChild("refresh_strategy", refresh_strategy);
+    w.writeChild("insert_select", insert_select);
     writeOutputOptionsJSON(w);
 }
 
@@ -638,6 +649,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     as_database = r.getString("as_database");
     as_table = r.getString("as_table");
     attach_from_path = r.getString("attach_from_path");
+    insert_format = r.getString("insert_format");
 
     attach = r.getBool("attach");
     if_not_exists = r.getBool("if_not_exists");
@@ -662,7 +674,8 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     has_attach_from_path = r.getBool("has_attach_from_path");
     if (r.has("attach_as_replicated"))
         attach_as_replicated = r.getBool("attach_as_replicated");
-
+    has_and_insert = r.getBool("has_and_insert");
+    has_as_insert = r.getBool("has_as_insert");
     /// `WINDOW VIEW` was removed, so the fields above no longer include `is_window_view`, the watermark
     /// strategies, `allowed_lateness`, or the `watermark_function` / `lateness_function` children, and
     /// `JSONObjectReader` ignores keys it does not read. Dropping them silently would deserialize a legacy
@@ -825,6 +838,12 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(refresh_strategy, child);
 
+    /// `insert_select` is parser-produced as an `ASTSelectWithUnionQuery` (`ParserSelectWithUnionQuery` in
+    /// `parseInsertPayload`); `InterpreterCreateQuery` uses it as a generic `SELECT`, so reject any other node type.
+    child = r.readChildOfType<ASTSelectWithUnionQuery>("insert_select");
+    if (child)
+        set(insert_select, child);
+
     /// `formatQueryImpl` only enters the `CREATE DATABASE` branch when `database` is set and `table` is unset.
     /// All other forms (`TABLE`, `VIEW`, `MATERIALIZED VIEW`, `DICTIONARY`, ...) require `table`;
     /// otherwise we fall into a `chassert(table); table->format(...)` path that null-derefs in release builds.
@@ -836,10 +855,10 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     const bool requires_table =
         is_ordinary_view || is_materialized_view
         || is_dictionary || is_time_series_table
-        || is_populate || is_create_empty || is_clone_as
+        || is_populate || is_create_empty || is_clone_as || has_and_insert || has_as_insert
         || replace_view || replace_table || create_or_replace
         || has_attach_from_path || attach_as_replicated.has_value()
-        || columns_list || aliases_list || select
+        || columns_list || aliases_list || select || insert_select
         || as_table_function
         || targets || sql_security
         || dictionary_attributes_list || dictionary || refresh_strategy
@@ -987,6 +1006,48 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` declares 'is_clone_as' without a source to clone from during AST JSON "
             "deserialization");
+
+    /// `AS INSERT` / `AND INSERT` are mutually exclusive: the parser sets exactly one of them, and `formatQueryImpl`
+    /// prints `AND INSERT` whenever `has_and_insert` is set, which would hide `has_as_insert`.
+    if (has_and_insert && has_as_insert)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` sets both 'has_and_insert' and 'has_as_insert' during AST JSON deserialization, but they are mutually exclusive");
+
+    const bool has_insert_clause = has_and_insert || has_as_insert;
+
+    /// `insert_select` / `insert_format` are only formatted inside the `AS INSERT` / `AND INSERT` clause,
+    /// but `InterpreterCreateQuery` consumes them whenever they are set. Reject hidden state.
+    if (!has_insert_clause && (insert_select || !insert_format.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'insert_select' / 'insert_format' set without 'has_and_insert' or 'has_as_insert' during AST JSON deserialization");
+
+    if (has_insert_clause)
+    {
+        /// `parseInsertPayload` requires a `SELECT`, `VALUES` or `FORMAT <name>`; without any of them
+        /// `formatQueryImpl` would emit a bare `AS INSERT`.
+        if (!insert_select && insert_format.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`CreateQuery` has 'has_and_insert' or 'has_as_insert' set but neither 'insert_select' nor 'insert_format' during AST JSON deserialization");
+
+        /// The parser accepts `AND INSERT` only after `IF NOT EXISTS`, and neither form together with `EMPTY` / `CLONE`.
+        if (has_and_insert && !if_not_exists)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`CreateQuery` has 'has_and_insert' set without 'if_not_exists' during AST JSON deserialization");
+        if (is_create_empty || is_clone_as)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`CreateQuery` cannot combine 'has_and_insert' / 'has_as_insert' with 'is_create_empty' / 'is_clone_as' during AST JSON deserialization");
+
+        /// The parser takes the `AS INSERT` branch instead of `AS SELECT` / `AS <table>` / `AS <table function>`;
+        /// a surviving `select` would be hidden by the `else if (select)` in `formatQueryImpl` yet still executed.
+        if (select || as_table_function || !as_table.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`CreateQuery` cannot combine 'has_and_insert' / 'has_as_insert' with 'select', 'as_table_function' or 'as_table' during AST JSON deserialization");
+
+        /// Only `ParserCreateTableQuery` produces these clauses.
+        if (isView() || is_dictionary)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`CreateQuery` has 'has_and_insert' / 'has_as_insert' set for a view or dictionary during AST JSON deserialization");
+    }
 
     readOutputOptionsJSON(r);
 }
@@ -1269,6 +1330,9 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
             {
                 insert_select->format(ostr, settings, state, frame);
             }
+
+            if (!insert_format.empty())
+                ostr << " FORMAT " << insert_format;
         }
         else if (insert_format == "Values")
         {
@@ -1395,4 +1459,31 @@ bool ASTCreateQuery::isCreateQueryWithImmediateInsertSelect() const
 {
     return (select || has_and_insert || has_as_insert) && !attach && !is_create_empty && !is_ordinary_view && (!is_materialized_view || is_populate);
 }
+
+static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
+{
+    if (!ast)
+        return;
+    for (const auto & child : ast->children)
+        tryFindInputFunctionImpl(child, input_function);
+
+    if (const auto * table_function_ast = ast->as<ASTFunction>())
+    {
+        if (table_function_ast->name == "input")
+        {
+            if (input_function)
+                throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "You can use the `input` function only once in a query.");
+            input_function = ast;
+        }
+    }
+}
+
+void ASTCreateQuery::tryFindInputFunction(ASTPtr & input_function) const
+{
+    if (insert_select)
+        tryFindInputFunctionImpl(insert_select, input_function);
+    else if (select)
+        tryFindInputFunctionImpl(select, input_function);
+}
+
 }
