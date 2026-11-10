@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: the test needs a mutation between other `ALTER` commands of one query, which `Replicated` databases prohibit.
+
 -- An `ALTER` query is executed as segments of consecutive commands of the same kind, and `AlterCommands::prepare`
 -- decides whether a conditional command (`IF EXISTS`) runs by the columns committed before its segment. A mutation
 -- between the commands starts a new segment, so a column added before the mutation counts as existing. The columns
