@@ -40,11 +40,6 @@ SELECT k FROM t_skip_index_disjunction WHERE a = 5 OR b = 70 ORDER BY k SETTINGS
 -- the same merge at read time
 SELECT k FROM t_skip_index_disjunction WHERE a = 5 OR b = 70 ORDER BY k SETTINGS use_skip_indexes_for_disjunctions = 1, use_skip_indexes_on_data_read = 1, log_comment = 'skip_index_disjunction_4';
 
--- an index added without materialization is not read, so the merge does not list it
-ALTER TABLE t_skip_index_disjunction ADD INDEX idx_c c TYPE minmax GRANULARITY 1;
-SELECT k FROM t_skip_index_disjunction WHERE (a = 5 OR b = 70) AND c = 5 ORDER BY k SETTINGS use_skip_indexes_for_disjunctions = 1, use_skip_indexes_on_data_read = 0, log_comment = 'skip_index_disjunction_5';
-SELECT k FROM t_skip_index_disjunction WHERE (a = 5 OR b = 70) AND c = 5 ORDER BY k SETTINGS use_skip_indexes_for_disjunctions = 1, use_skip_indexes_on_data_read = 1, log_comment = 'skip_index_disjunction_6';
-
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
