@@ -3,6 +3,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
 
+#include "config.h"
+
+#if USE_SIMDUTF
+#    include <simdutf.h>
+#endif
+
 namespace DB
 {
 namespace ErrorCodes
@@ -16,14 +22,42 @@ struct ValidUTF8Impl
 
     static constexpr bool is_fixed_to_constant = false;
 
+    /// Row i is the bytes [row_begin(i), row_begin(i + 1)).
+    template <typename RowBegin>
+    static void validateRows(const UInt8 * data, size_t rows, RowBegin row_begin, PaddedPODArray<UInt8> & res)
+    {
+#if USE_SIMDUTF
+        const size_t data_end = row_begin(rows);
+        size_t row = 0;
+        while (row < rows)
+        {
+            /// The bytes before valid_end are valid UTF-8, so a row there is valid iff it does not end in the middle of a
+            /// code point, i.e. the byte after it is not a continuation byte. Its start is checked as the previous row's end.
+            const size_t begin = row_begin(row);
+            const size_t valid_end
+                = begin + simdutf::validate_utf8_with_errors(reinterpret_cast<const char *>(data + begin), data_end - begin).count;
+            for (; row < rows; ++row)
+            {
+                const size_t end = row_begin(row + 1);
+                if (end >= valid_end || (data[end] & 0xC0) == 0x80)
+                    break;
+                res[row] = 1;
+            }
+            for (; row < rows && row_begin(row + 1) == valid_end; ++row)
+                res[row] = 1;
+            /// This row contains the first invalid byte or ends in the middle of a code point.
+            if (row < rows)
+                res[row++] = 0;
+        }
+#else
+        for (size_t row = 0; row < rows; ++row)
+            res[row] = isValidUTF8(data + row_begin(row), row_begin(row + 1) - row_begin(row));
+#endif
+    }
+
     static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res, size_t input_rows_count)
     {
-        size_t prev_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            res[i] = isValidUTF8(data.data() + prev_offset, offsets[i] - prev_offset);
-            prev_offset = offsets[i];
-        }
+        validateRows(data.data(), input_rows_count, [&](size_t i) { return offsets[static_cast<ssize_t>(i) - 1]; }, res);
     }
 
     static void vectorFixedToConstant(const ColumnString::Chars &, size_t, UInt8 &, size_t)
@@ -32,8 +66,7 @@ struct ValidUTF8Impl
 
     static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res, size_t input_rows_count)
     {
-        for (size_t i = 0; i < input_rows_count; ++i)
-            res[i] = isValidUTF8(data.data() + i * n, n);
+        validateRows(data.data(), input_rows_count, [n](size_t i) { return i * n; }, res);
     }
 
     [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &, size_t)

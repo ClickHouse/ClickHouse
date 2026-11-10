@@ -15,7 +15,7 @@ file(MAKE_DIRECTORY "${MUSL_GENERATED_DIR}/bits")
 # and must be generated eagerly at configure time (like version.h below), not by a build target.
 # Both cmake/linux/toolchain-*-musl.cmake add ${CMAKE_BINARY_DIR}/contrib/musl-cmake/include to
 # the global compile flags of every C/C++/ASM target via MUSL_INCLUDE_FLAGS. If these headers were
-# produced by a normal build target, only the targets that depend on it (musl, musl-crt1, cxx,
+# produced by a normal build target, only the targets that depend on it (musl, musl-rcrt1, cxx,
 # cxxabi, unwind) would be ordered after their generation; any other target that transitively
 # includes a musl libc header (e.g. via <stdint.h> or <sys/types.h>) could start compiling before
 # the files exist and fail on a clean parallel build. Generating at configure time makes them
@@ -34,12 +34,13 @@ execute_process(
     COMMAND sed -f "${MUSL_SOURCE_DIR}/tools/mkalltypes.sed"
             "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/alltypes.h.in"
             "${MUSL_SOURCE_DIR}/include/alltypes.h.in"
-    OUTPUT_FILE "${MUSL_GENERATED_DIR}/bits/alltypes.h"
+    OUTPUT_VARIABLE MUSL_ALLTYPES
     RESULT_VARIABLE MUSL_ALLTYPES_RESULT
 )
 if (NOT MUSL_ALLTYPES_RESULT EQUAL 0)
     message(FATAL_ERROR "Failed to generate bits/alltypes.h for ${MUSL_ARCH}")
 endif()
+write_file_if_changed("${MUSL_GENERATED_DIR}/bits/alltypes.h" "${MUSL_ALLTYPES}")
 
 # bits/syscall.h: the syscall numbers, followed by the SYS_* aliases derived from them.
 file(READ "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/syscall.h.in" MUSL_SYSCALL_NUMBERS)
@@ -51,7 +52,7 @@ execute_process(
 if (NOT MUSL_SYSCALL_RESULT EQUAL 0)
     message(FATAL_ERROR "Failed to generate bits/syscall.h for ${MUSL_ARCH}")
 endif()
-file(WRITE "${MUSL_GENERATED_DIR}/bits/syscall.h" "${MUSL_SYSCALL_NUMBERS}${MUSL_SYSCALL_ALIASES}")
+write_file_if_changed("${MUSL_GENERATED_DIR}/bits/syscall.h" "${MUSL_SYSCALL_NUMBERS}${MUSL_SYSCALL_ALIASES}")
 
 # Generate version.h
 execute_process(
@@ -62,7 +63,7 @@ execute_process(
 )
 
 set(MUSL_VERSION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/version.h")
-file(WRITE "${MUSL_VERSION_HEADER}" "#define VERSION \"${MUSL_VERSION}\"\n")
+write_file_if_changed("${MUSL_VERSION_HEADER}" "#define VERSION \"${MUSL_VERSION}\"\n")
 
 add_custom_target(musl-headers
     DEPENDS
@@ -1743,31 +1744,36 @@ target_compile_definitions(musl PUBLIC
 )
 
 # CRT objects (startup/shutdown code), linked into every executable in the canonical
-# order crt1.o, crti.o, [program objects and libraries], crtn.o: crti/crtn provide the
+# order rcrt1.o, crti.o, [program objects and libraries], crtn.o: crti/crtn provide the
 # prologue/epilogue of the `.init`/`.fini` sections and must wrap every other
 # contribution to them. CMake's Ninja generator always emits $<TARGET_OBJECTS:...>
 # before the target's own objects, so the order cannot be expressed through source
 # lists; instead the objects are copied to stable paths below and wired into the link
-# line in cmake/linux/default_libs.cmake (crt1/crti through CMAKE_EXE_LINKER_FLAGS,
+# line in cmake/linux/default_libs.cmake (rcrt1/crti through CMAKE_EXE_LINKER_FLAGS,
 # which precede all objects, and crtn through DEFAULT_LIBS, which follow all libraries).
 
-add_library(musl-crt1 OBJECT "${MUSL_SOURCE_DIR}/crt/crt1.c")
-target_include_directories(musl-crt1 PRIVATE
+# rcrt1.o is the startup file of static PIE executables: it includes ldso/dlstart.c, which
+# applies the executable's own relocations before anything else runs.
+add_library(musl-rcrt1 OBJECT "${MUSL_SOURCE_DIR}/crt/rcrt1.c")
+target_include_directories(musl-rcrt1 PRIVATE
     # src/include first: provides features.h with the 'hidden' and 'weak' macros
     "${MUSL_SOURCE_DIR}/src/include"
     "${MUSL_SOURCE_DIR}/src/internal"
     "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
     "${MUSL_GENERATED_DIR}"
 )
-target_compile_options(musl-crt1 PRIVATE
+target_compile_options(musl-rcrt1 PRIVATE
     -std=c99
+    # Same as upstream musl's Makefile for rcrt1.o.
+    -fPIC
+    -DCRT
     -ffreestanding
     # Runs before the thread pointer and the canary exist (upstream musl NOSSP_OBJS covers all CRT objects).
     -fno-stack-protector
     -fno-sanitize=all
     -fno-builtin
 )
-add_dependencies(musl-crt1 musl-headers)
+add_dependencies(musl-rcrt1 musl-headers)
 
 add_library(musl-crti OBJECT "${MUSL_SOURCE_DIR}/crt/${MUSL_ARCH}/crti.s")
 set_source_files_properties(
@@ -1788,12 +1794,12 @@ target_compile_options(musl-crtn PRIVATE -Qunused-arguments -Wa,--noexecstack)
 # the `musl` -> `musl-crt` dependency below that would form a dependency cycle
 # involving non-static-library targets, which CMake rejects. They also don't link
 # anything — they only compile standalone startup objects.
-set_target_properties(musl-crt1 musl-crti musl-crtn PROPERTIES LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
+set_target_properties(musl-rcrt1 musl-crti musl-crtn PROPERTIES LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
 
 # Copy the CRT objects to stable paths so that the link flags in
 # cmake/linux/default_libs.cmake can reference them. Every executable links the `musl`
 # library, and `musl` depends on `musl-crt`, so the copies exist before any link runs.
-foreach (crt crt1 crti crtn)
+foreach (crt rcrt1 crti crtn)
     add_custom_command(
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${crt}.o"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_OBJECTS:musl-${crt}>" "${CMAKE_CURRENT_BINARY_DIR}/${crt}.o"
@@ -1804,7 +1810,7 @@ foreach (crt crt1 crti crtn)
 endforeach ()
 add_custom_target(musl-crt
     DEPENDS
-        "${CMAKE_CURRENT_BINARY_DIR}/crt1.o"
+        "${CMAKE_CURRENT_BINARY_DIR}/rcrt1.o"
         "${CMAKE_CURRENT_BINARY_DIR}/crti.o"
         "${CMAKE_CURRENT_BINARY_DIR}/crtn.o"
 )

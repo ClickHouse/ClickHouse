@@ -129,8 +129,9 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
-    const ManifestFileIterator & manifest_file,
-    DB::ContextPtr context)
+    const DB::KeyDescription * partition_key_,
+    DB::ContextPtr context,
+    bool require_ready_sets)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
     , initial_schema_id(initial_schema_id_)
@@ -146,12 +147,32 @@ ManifestFilesPruner::ManifestFilesPruner(
         schema_processor, current_schema_id, initial_schema_id, filter_dag, used_columns_in_filter, row_lineage_columns);
     chassert(transformed_dag != nullptr);
 
-    if (manifest_file.hasPartitionKey())
+    if (partition_key_)
     {
-        partition_key = &manifest_file.getPartitionKeyDescription();
+        partition_key = partition_key_;
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         partition_key_condition.emplace(
-            inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
+            inverted_dag,
+            context,
+            partition_key->column_names,
+            partition_key->expression,
+            /* single_point_ */ true,
+            /* skip_analysis_ */ false,
+            require_ready_sets);
+
+        NamesAndTypesList nullable_columns;
+        for (const auto & [name, type] : partition_key->expression->getRequiredColumnsWithTypes())
+            nullable_columns.emplace_back(name, makeNullableSafe(type));
+        nullable_partition_key.emplace(
+            KeyDescription::getKeyFromAST(partition_key->definition_ast, ColumnsDescription(nullable_columns), {}, context));
+        nullable_partition_key_condition.emplace(
+            inverted_dag,
+            context,
+            nullable_partition_key->column_names,
+            nullable_partition_key->expression,
+            /* single_point_ */ true,
+            /* skip_analysis_ */ false,
+            require_ready_sets);
     }
 
     for (Int32 used_column_id : used_columns_in_filter)
@@ -175,7 +196,21 @@ ManifestFilesPruner::ManifestFilesPruner(
             = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
-        min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
+        KeyCondition condition(
+            inverted_dag,
+            context,
+            {name_and_type->name},
+            expression,
+            /* single_point_ */ false,
+            /* skip_analysis_ */ false,
+            require_ready_sets);
+        if (KeyCondition::typeMayHideNaN(name_and_type->type))
+        {
+            KeyCondition relaxed = condition;
+            relaxed.relaxAtomsOverNaNHidingColumns({name_and_type->type});
+            nan_relaxed_min_max_key_conditions.emplace(used_column_id, std::move(relaxed));
+        }
+        min_max_key_conditions.emplace(used_column_id, std::move(condition));
     }
 }
 
@@ -183,7 +218,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const Poco::JSON::Array::Ptr & partition_specification_json,
     Int32 schema_id,
     const IcebergSchemaProcessor & schema_processor,
-    DB::ContextPtr context)
+    DB::ContextPtr context,
+    bool keep_nullable)
 {
     PartitionKeyFromSpec result;
 
@@ -218,7 +254,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
         /// against these input columns, which must contain each source column at most once.
         if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(column_characteristics->type));
+            partition_columns_description.emplace_back(
+                numeric_column_name, keep_nullable ? column_characteristics->type : removeNullable(column_characteristics->type));
     }
 
     if (!partition_columns_description.empty())
@@ -407,16 +444,23 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 
     if (partition_key_condition.has_value())
     {
+        /// The stripped key drops a set's NULL elements, so a tuple holding NULL (+inf) needs the Nullable key.
+        bool holds_null = false;
+        for (size_t i = 0; i < partition_value.size() && i < nullable_partition_key->data_types.size(); ++i)
+            holds_null |= partition_value[i].isNull() && nullable_partition_key->data_types[i]->isNullable();
+        const auto & key = holds_null ? *nullable_partition_key : *partition_key;
+        const auto & key_condition = holds_null ? *nullable_partition_key_condition : *partition_key_condition;
+
         /// A spec field whose source column or transform cannot be modelled is left out of the
         /// partition key, so the key is narrower than the tuple and the two are not index-aligned.
         /// Only the partition key is unusable then; the min/max conditions below still apply.
-        if (partition_key->data_types.size() == partition_value.size())
+        if (key.data_types.size() == partition_value.size())
         {
             std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
             for (size_t i = 0; i < index_value.size(); ++i)
             {
                 auto & field = index_value[i];
-                const auto & type = partition_key->data_types.at(i);
+                const auto & type = key.data_types.at(i);
                 // NULL_LAST
                 if (field.isNull())
                     field = POSITIVE_INFINITY;
@@ -424,8 +468,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                     field = convertPartitionValueToType(field, type);
             }
 
-            bool can_be_true = partition_key_condition->mayBeTrueInRange(
-                partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+            bool can_be_true = key_condition.mayBeTrueInRange(
+                partition_value.size(), index_value.data(), index_value.data(), key.data_types);
 
             if (!can_be_true)
             {
@@ -438,6 +482,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
     {
         DataTypePtr column_type;
         bool has_no_nulls = true;
+        bool has_no_nans = true;
 
         if (auto lineage_column = row_lineage_columns.find(column_id); lineage_column != row_lineage_columns.end())
         {
@@ -453,6 +498,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
             auto info_it = entry->parsed_entry->columns_infos.find(column_id);
             has_no_nulls = info_it != entry->parsed_entry->columns_infos.end() && info_it->second.nulls_count.has_value()
                 && *info_it->second.nulls_count == 0;
+            has_no_nans = info_it != entry->parsed_entry->columns_infos.end() && info_it->second.nans_count.has_value()
+                && *info_it->second.nans_count == 0;
         }
 
         const DataTypes data_types{column_type};
@@ -475,9 +522,16 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
             }
         }
 
+        const KeyCondition * min_max_condition = &key_condition;
+        if (!has_no_nans)
+        {
+            if (auto relaxed_it = nan_relaxed_min_max_key_conditions.find(column_id); relaxed_it != nan_relaxed_min_max_key_conditions.end())
+                min_max_condition = &relaxed_it->second;
+        }
+
         auto rect_it = entry_hyperrectangles.find(column_id);
         if (has_no_nulls && rect_it != entry_hyperrectangles.end()
-            && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, data_types))
+            && !min_max_condition->mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, data_types))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }

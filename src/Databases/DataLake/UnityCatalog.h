@@ -53,6 +53,12 @@ public:
 
     DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::DELTA; }
 
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
+
     /// Register a freshly created external DELTA table with Unity; `metadata_content` holds the Delta schema from `createInitial`.
     /// The shared `ICatalog` parameter (a `vN.metadata.json` path for Iceberg) is the table's storage location for DeltaLake/Unity.
     void createTable(
@@ -68,7 +74,7 @@ private:
     const std::string bearer_token;
 
     std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params = {}) const;
-    std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const;
+    std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const;
 
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 

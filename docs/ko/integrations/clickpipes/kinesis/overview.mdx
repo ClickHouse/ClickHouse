@@ -34,11 +34,11 @@ Kinesis ClickPipes는 ClickPipes UI를 통해 수동으로 배포하고 관리�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="데이터 소스 유형 선택" size="lg" border />
 
-4. ClickPipe 이름, 설명(선택 사항), IAM 역할 또는 자격 증명, 기타 연결 정보를 입력하여 양식을 작성합니다.
+4. ClickPipe 이름, 설명(선택 사항), IAM role 또는 자격 증명, 기타 연결 정보를 입력하여 양식을 작성합니다.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="연결 정보 입력" size="lg" border />
 
-5. Kinesis 스트림, **Data 포맷**, 시작 offset을 선택합니다. `Protobuf`의 경우 `.proto` 파일 또는 직렬화된 `FileDescriptorSet`(최대 768 KiB)을 업로드하십시오. 스키마 레지스트리는 필요하지 않습니다.
+5. Kinesis 스트림, **데이터 포맷**, 시작 offset을 선택합니다. Kinesis ClickPipes는 JSON, Avro, Protobuf를 지원합니다. `Protobuf`는 `.proto` 파일 또는 직렬화된 `FileDescriptorSet`(최대 768 KiB)을 업로드하거나 AWS Glue 스키마 레지스트리를 구성하십시오. Avro는 AWS Glue 스키마 레지스트리를 구성하십시오. 업로드한 Protobuf 스키마와 스키마 레지스트리를 함께 사용하지 마십시오.
 
    UI에는 선택한 스트림의 샘플 데이터가 표시됩니다. **Use Kinesis Enhanced Fan-Out**은 기본적으로 활성화되어 있습니다. 자세한 내용은 [Amazon Kinesis 문서](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html)를 참조하십시오.
 
@@ -88,7 +88,14 @@ Kinesis ClickPipes는 ClickPipes UI를 통해 수동으로 배포하고 관리�
 지원되는 포맷은 다음과 같습니다:
 
 * [JSON](/ko/reference/formats/JSON/JSON)
+* [Avro](/ko/reference/formats/Avro/AvroConfluent) (AWS Glue 스키마 레지스트리 사용)
 * [Protobuf](/ko/reference/formats/Protobuf/Protobuf)
+
+## AWS Glue 스키마 레지스트리 {#aws-glue-schema-registry}
+
+Kinesis ClickPipes는 AWS Glue 스키마 레지스트리에서 Avro 및 Protobuf 스키마를 가져올 수 있습니다. ClickPipe 생성 과정에서 **AWS Glue**를 선택한 다음, 레지스트리의 AWS 리전과 이름을 입력하십시오. 레지스트리 액세스에 사용할 IAM role을 선택적으로 지정할 수 있으며, 지정하지 않으면 ClickPipes는 Kinesis 소스의 IAM 아이덴티티를 사용합니다. 이 아이덴티티에는 `glue:GetSchemaVersion` 권한이 있어야 합니다.
+
+동일한 필드는 [OpenAPI](/ko/integrations/clickpipes/programmatic-access/openapi) 또는 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 통해서도 구성할 수 있습니다. 필요한 IAM 정책과 세부 구성 방법은 [스키마 레지스트리 가이드](/ko/integrations/clickpipes/kafka/schema-registries#aws-glue-schema-registry)를 참고하십시오.
 
 <div id="compression">
   ## 압축

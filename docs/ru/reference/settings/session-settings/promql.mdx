@@ -14,7 +14,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Эти SETTING доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## promql_database
+## promql_database {#promql_database}
 
 <PrivatePreviewBadge />
 
@@ -22,19 +22,19 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Указывает имя базы данных, которое использует диалект &#39;promql&#39;. Пустая строка означает текущую базу данных.
 
-## promql_evaluation_time
+## promql_evaluation_time {#promql_evaluation_time}
 
 <PrivatePreviewBadge />
 
 **Псевдонимы**: `evaluation_time`
 
-<SettingsInfoBlock type="FloatAuto" default_value="auto" />
+<SettingsInfoBlock type="DoubleAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "Параметр был переименован. Предыдущее имя — `evaluation_time`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "Параметр был переименован. Предыдущее имя — `evaluation_time`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "auto"},{"label": "Новая экспериментальная настройка. Тогда она называлась `evaluation_time`; теперь это её псевдоним."}]}]} />
 
-Задаёт время оценки, используемое в диалекте promql. `auto` означает текущее время.
+Задаёт время оценки, используемое в диалекте promql, в виде Unix-временной метки в секундах с необязательной дробной частью. `auto` означает текущее время.
 
-## promql_table
+## promql_table {#promql_table}
 
 <PrivatePreviewBadge />
 

@@ -34,6 +34,7 @@ public:
     void markDirectoryExplicit(const std::string & path);
 
     std::optional<DirectoryRemoteInfo> getDirectoryRemoteInfo(const std::string & path) const;
+    bool existsFileOrDirectory(const std::string & path) const;
     const FsSnapshot & getSnapshot() const { return *tx_snapshot; }
     std::shared_ptr<Preconditions> getTxPreconditions() const;
 

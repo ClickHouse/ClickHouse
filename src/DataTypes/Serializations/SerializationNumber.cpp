@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <IO/writeJSONNumber.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 
 #include <Columns/ColumnConst.h>
@@ -139,7 +140,12 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
     T x{};
 
     if constexpr (is_integer<T> && is_arithmetic_v<T>)
-        readIntTextUnsafe(x, istr);
+    {
+        if (settings.check_integer_text_overflow)
+            readIntTextUnsafe<T, void, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr);
+        else
+            readIntTextUnsafe(x, istr);
+    }
     else
         deserializeNumberText(x, istr, settings);
 
@@ -154,7 +160,16 @@ bool SerializationNumber<T>::tryDeserializeText(IColumn & column, ReadBuffer & i
 {
     T x{};
 
-    if (!tryDeserializeNumberText(x, istr, settings) || (whole && !istr.eof()))
+    /// `tryReadIntText`'s own overflow check is skipped for the big-int widths.
+    bool parsed = false;
+    if constexpr (is_integer<T> && is_arithmetic_v<T> && is_big_int_v<T>)
+        parsed = settings.check_integer_text_overflow
+            ? readIntTextUnsafe<T, bool, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr)
+            : tryDeserializeNumberText(x, istr, settings);
+    else
+        parsed = tryDeserializeNumberText(x, istr, settings);
+
+    if (!parsed || (whole && !istr.eof()))
         return false;
 
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);

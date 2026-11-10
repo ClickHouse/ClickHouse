@@ -50,6 +50,7 @@ def get_spark(log_dir=None):
         )
         .config("spark.driver.memory", "2g")
         .config("spark.executor.memory", "2g")
+        .config("spark.databricks.delta.writeChecksumFile.enabled", "false")
         .master("local")
     )
 
@@ -84,22 +85,14 @@ def generate_cluster_def(common_path, port, azure_container):
                 <type>local</type>
                 <path>{common_path}</path>
             </disk_local_common>
-            <disk_s3_0_common>
+            <disk_s3_common>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/var/lib/clickhouse/user_files/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <no_sign_request>0</no_sign_request>
                 <skip_access_check>true</skip_access_check>
-            </disk_s3_0_common>
-            <disk_s3_1_common>
-                <type>s3</type>
-                <endpoint>http://minio1:9001/root/var/lib/clickhouse/user_files/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-                <no_sign_request>0</no_sign_request>
-                <skip_access_check>true</skip_access_check>
-            </disk_s3_1_common>
+            </disk_s3_common>
             <disk_azure_common>
                 <type>object_storage</type>
                 <object_storage_type>azure_blob_storage</object_storage_type>
@@ -117,20 +110,13 @@ def generate_cluster_def(common_path, port, azure_container):
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
             </disk_azure_prefixed>
-            <disk_s3_0_with_cache>
+            <disk_s3_with_cache>
                 <type>cache</type>
-                <disk>disk_s3_0_common</disk>
-                <path>/tmp/s3_0_cache/</path>
+                <disk>disk_s3_common</disk>
+                <path>/tmp/s3_cache/</path>
                 <max_size>1000000000</max_size>
                 <skip_access_check>true</skip_access_check>
-            </disk_s3_0_with_cache>
-            <disk_s3_1_with_cache>
-                <type>cache</type>
-                <disk>disk_s3_1_common</disk>
-                <path>/tmp/s3_1_cache/</path>
-                <max_size>1000000000</max_size>
-                <skip_access_check>true</skip_access_check>
-            </disk_s3_1_with_cache>
+            </disk_s3_with_cache>
             <disk_azure_with_cache>
                 <type>cache</type>
                 <disk>disk_azure_common</disk>
@@ -140,7 +126,7 @@ def generate_cluster_def(common_path, port, azure_container):
             </disk_azure_with_cache>
         </disks>
     </storage_configuration>
-    <allowed_disks_for_table_engines>disk_s3_1_common,disk_s3_0_common,disk_local_common,disk_azure_common,disk_azure_prefixed,disk_s3_0_with_cache,disk_s3_1_with_cache,disk_azure_with_cache</allowed_disks_for_table_engines>
+    <allowed_disks_for_table_engines>disk_s3_common,disk_local_common,disk_azure_common,disk_azure_prefixed,disk_s3_with_cache,disk_azure_with_cache</allowed_disks_for_table_engines>
 </clickhouse>
 """
         )
@@ -176,18 +162,6 @@ def started_cluster():
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
-        )
-        cluster.add_instance(
-            "node_with_disabled_delta_kernel",
-            main_configs=[conf_path, "configs/cluster.xml"],
-            user_configs=[
-                "configs/users.xml",
-                "configs/disabled_delta_kernel.xml",
-            ],
-            with_minio=True,
-            with_azurite=True,
-            stay_alive=True,
-            with_zookeeper=True,
         )
 
         logging.info("Starting cluster...")
@@ -283,24 +257,15 @@ def get_delta_metadata(delta_metadata_file):
     return combined_json
 
 
-def get_node(cluster, use_delta_kernel):
-    if use_delta_kernel == "1":
-        return cluster.instances["node1"]
-    elif use_delta_kernel == "0":
-        return cluster.instances["node_with_disabled_delta_kernel"]
-    else:
-        assert False
-
-
 def get_uuid_str():
     return str(uuid.uuid4()).replace("-", "_")
 
 
-def get_disk_name(storage_type, use_delta_kernel, disk_suffix, with_cache=False):
+def get_disk_name(storage_type, disk_suffix, with_cache=False):
     if storage_type == "s3":
         if with_cache:
-            return f"disk_s3_{use_delta_kernel}_with_cache"
-        return f"disk_s3_{use_delta_kernel}{disk_suffix}"
+            return "disk_s3_with_cache"
+        return f"disk_s3{disk_suffix}"
     elif storage_type == "azure":
         if with_cache:
             return "disk_azure_with_cache"
@@ -316,13 +281,12 @@ def create_delta_table(
     storage_type,
     table_name,
     cluster,
-    use_delta_kernel,
     path_suffix,
     disk_suffix,
     with_cache=False,
     **kwargs,
 ):
-    disk_name = get_disk_name(storage_type, use_delta_kernel, disk_suffix, with_cache)
+    disk_name = get_disk_name(storage_type, disk_suffix, with_cache)
     instance.query(
         f"""
         DROP TABLE IF EXISTS {table_name};
@@ -353,16 +317,13 @@ def create_initial_data_file(
     return result_path
 
 
-@pytest.mark.parametrize(
-    "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("1", "local"), ("0", "azure")],
-)
+@pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
 @pytest.mark.parametrize("with_cache", [False, True])
-def test_single_log_file(started_cluster, use_delta_kernel, storage_type, with_cache):
+def test_single_log_file(started_cluster, storage_type, with_cache):
     if with_cache and storage_type == "local":
         pytest.skip("Cache is not supported with local disk")
 
-    instance = get_node(started_cluster, use_delta_kernel)
+    instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = f"test_single_log_file_{get_uuid_str()}"
 
@@ -388,12 +349,22 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type, with_c
     )
     write_delta_from_file(spark, parquet_data_path, delta_path)
 
-    files = default_upload_directory(
-        started_cluster,
-        storage_type,
-        delta_path,
-        TABLE_NAME,
-    )
+    if storage_type == "azure":
+        # Azure keeps a leading slash as a part of the blob name, while the table
+        # location of `delta-kernel-rs` (`az://container/var/lib/...`) has none.
+        # Upload with relative blob names, so that they match the table path.
+        files = AzureUploader(
+            started_cluster.blob_service_client,
+            started_cluster.azure_container_name,
+            use_relpath=True,
+        ).upload_directory(delta_path, delta_path.lstrip("/"))
+    else:
+        files = default_upload_directory(
+            started_cluster,
+            storage_type,
+            delta_path,
+            TABLE_NAME,
+        )
 
     assert len(files) == 2  # 1 metadata files + 1 data file
 
@@ -402,7 +373,6 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type, with_c
         storage_type,
         TABLE_NAME,
         started_cluster,
-        use_delta_kernel,
         (
             f"'{TABLE_NAME}'"
             if storage_type != "azure"
@@ -417,7 +387,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type, with_c
         inserted_data
     )
 
-    disk_name = get_disk_name(storage_type, use_delta_kernel, "_common", with_cache)
+    disk_name = get_disk_name(storage_type, "_common", with_cache)
 
     storage_path = (
         f"{TABLE_NAME}"

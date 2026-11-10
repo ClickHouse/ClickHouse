@@ -8,6 +8,7 @@
 #include <delta_kernel_ffi.hpp>
 #include <Poco/JSON/Array.h>
 #include <exception>
+#include <unordered_set>
 
 namespace ffi
 {
@@ -18,11 +19,21 @@ struct SharedGlobalScanState;
 namespace DeltaLake
 {
 
+struct TableSchemaResult
+{
+    DB::NamesAndTypesList schema;
+    /// Logical name to physical name mapping, for columnMapping.mode = 'name'.
+    DB::NameToNameMap physical_names_map;
+    /// Dotted paths of the `timestamp_ntz` leaves, spelled as the Parquet writer spells a column path:
+    /// a struct field's own name, `element` for an array child, `key`/`value` for a map's.
+    std::unordered_set<String> timestamp_ntz_paths;
+};
+
 /// Get table schema and physical column map (logical name to physical name mapping).
 /// Represents table schema from DeltaLake metadata.
 /// Contains partition columns.
 /// `engine` is required by `ffi::get_from_string_map` (v0.23.0).
-std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
+TableSchemaResult getTableSchemaFromSnapshot(
     ffi::SharedSnapshot * snapshot,
     ffi::SharedExternEngine * engine);
 
@@ -30,7 +41,13 @@ std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
 /// Represents read schema based on data files.
 DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine);
 
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine);
+struct WriteSchemaResult
+{
+    DB::NamesAndTypesList schema;
+    std::unordered_set<String> timestamp_ntz_paths;
+};
+
+WriteSchemaResult getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine);
 
 /// Get list of partition columns.
 /// Read schema does not contain partition columns,
