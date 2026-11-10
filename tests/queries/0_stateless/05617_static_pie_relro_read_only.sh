@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: linux
 
 # The `PT_GNU_RELRO` range of the executable (GOT, relocated read-only data) must be read-only
 # at runtime, not only marked in the ELF file: a static PIE has no dynamic linker to apply it,
