@@ -156,11 +156,8 @@
     <!-- manifest_list_prune: partition-only filter with cache off; all twelve manifests are decoded today, and whole-manifest skipping via the manifest-list partition summary will show here once implemented. -->
     <query>SELECT count(), sum(l_quantity) FROM {database}.manifest_grid WHERE l_month = 199406 SETTINGS use_iceberg_metadata_files_cache = 0</query>
 
-    <!-- manifest_decode_serial: cache-off full scan decoding the twelve manifests one at a time. -->
-    <query>SELECT count(), sum(l_quantity) FROM {database}.manifest_grid SETTINGS use_iceberg_metadata_files_cache = 0, iceberg_manifest_decode_concurrency = 1</query>
-
-    <!-- manifest_decode_parallel: the same scan with concurrent manifest decoding; the pair isolates the parallel decode path. -->
-    <query>SELECT count(), sum(l_quantity) FROM {database}.manifest_grid SETTINGS use_iceberg_metadata_files_cache = 0, iceberg_manifest_decode_concurrency = 8</query>
+    <!-- manifest_scan: cache-off full scan reading and parsing the twelve manifests. -->
+    <query>SELECT count(), sum(l_quantity) FROM {database}.manifest_grid SETTINGS use_iceberg_metadata_files_cache = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS {database}.evo_add</drop_query>
     <drop_query>DROP TABLE IF EXISTS {database}.evo_drop</drop_query>
