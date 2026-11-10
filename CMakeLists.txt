@@ -585,6 +585,15 @@ if (ENABLE_CFI AND NOT ENABLE_THINLTO)
         "when ThinLTO is enabled. Current configuration has ENABLE_THINLTO=${ENABLE_THINLTO}.")
 endif ()
 
+if (ENABLE_CFI_DIAGNOSTICS AND NOT ENABLE_CFI)
+    message (FATAL_ERROR "ENABLE_CFI_DIAGNOSTICS requires ENABLE_CFI.")
+endif ()
+
+# Both runtimes bundle `sanitizer_common`, so they cannot be linked together.
+if (ENABLE_CFI_DIAGNOSTICS AND ENABLE_XRAY)
+    message (FATAL_ERROR "ENABLE_CFI_DIAGNOSTICS is incompatible with ENABLE_XRAY.")
+endif ()
+
 if (ENABLE_CFI AND ENABLE_TESTS)
     message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_TESTS. "
         "ThinLTO (required by CFI) is disabled when building tests. "
@@ -615,40 +624,21 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     endif()
 
     if (ENABLE_CFI)
-        # CFI checks: virtual dispatch type safety and bad downcasts via static_cast.
-        # cfi-icall is omitted because C function pointers in contrib libraries (compiled without
-        # CFI) would cause false positives. Start conservative; broaden after baseline is clean.
-        # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
-        #
-        # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
-        # visibility the resulting binary crashes with SIGSEGV before main runs. Validated
-        # empirically by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with
-        # signal 11.
-        #
-        # That crash was originally attributed to inline-static singletons like
-        # `Context::global_context_instance` being duplicated per shared object. That is not the
-        # cause. Every `-Wunique-object-duplication` site has since been fixed (the warning now
-        # reports nothing under `-fvisibility=hidden`) and the crash is unchanged: it is
-        # `numa_init()`, a pre-main libc constructor, calling `free()` — which this binary
-        # interposes in `Common/malloc.cpp` — and reaching jemalloc before jemalloc has
-        # initialised. Whether it fires at all depends on static-initialisation order, so it can
-        # appear to come and go with unrelated changes. Fixing that is what would let CFI use
-        # `hidden`; the duplication fixes on their own do not.
-        # CFI vtable visibility is still satisfied for in-binary types because
-        # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
-        # the linker to treat all vtables as internal to the binary.
-        #
-        # CFI is left in the default trap mode: a violation executes an illegal instruction
-        # (SIGILL) and CI's core-dump handler yields a stack trace pinpointing the bad vcall/cast.
-        # Diagnostic mode (`-fno-sanitize-trap=cfi`, which prints a UBSan-style type/location
-        # report) is deliberately NOT used: it makes Clang link `libclang_rt.ubsan_standalone`,
-        # which this toolchain does not ship (only select compiler-rt libs are built from contrib),
-        # so even host tools like `protoc` fail to link — validated by WeeklyCFI run 28943752776.
-        # `-fno-sanitize-recover=cfi` is redundant in trap mode but kept as an explicit marker that
-        # a violation must never be continued past.
-        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
-        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
+        # All CFI checks, in trap mode: a violation executes an illegal instruction (SIGILL).
+        # Clang checks (and devirtualizes) only classes with hidden LTO visibility, so C++ needs
+        # `-fvisibility=hidden`; symbols that the shared libc must see are marked with default
+        # visibility at their definitions. C has no classes, so it keeps the default visibility.
+        # Libraries that put `visibility("default")` on their classes would exempt them from CFI.
+        add_compile_definitions (_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS _LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS)
+        if (ENABLE_CFI_DIAGNOSTICS)
+            set (CFI_FLAGS "-fsanitize=cfi -fsanitize-recover=cfi -fno-sanitize-trap=cfi")
+        else ()
+            set (CFI_FLAGS "-fsanitize=cfi -fno-sanitize-recover=cfi -fsanitize-trap=cfi")
+        endif ()
+        set (CFI_FLAGS "${CFI_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/cmake/cfi-ignorelist.txt")
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=default")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
     endif ()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
