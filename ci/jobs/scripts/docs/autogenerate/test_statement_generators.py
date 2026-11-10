@@ -136,9 +136,7 @@ def main():
             binary="unused",
             docs_dir=str(docs),
             repo_root=root,
-            migrate=object(),
             lk=object(),
-            file_map={},
         )
         assert len(artifacts) == 1
         assert artifacts[0].path == page

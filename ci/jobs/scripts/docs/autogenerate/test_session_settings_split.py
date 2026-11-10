@@ -19,15 +19,6 @@ def load_module():
     return mod
 
 
-def load_migrate_module():
-    spec = importlib.util.spec_from_file_location(
-        "docs_migrate", HERE.parents[4] / "docs/_migration/migrate.py")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def load_lychee_module():
     path = HERE.parent / "lychee_check.py"
     spec = importlib.util.spec_from_file_location("lychee_check", path)
@@ -110,7 +101,7 @@ def setting_names(mod, content):
 
 def main():
     mod = load_module()
-    migrate = load_migrate_module()
+    transform = mod.mintlify_transform
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
 
     repo_root = HERE.parents[4]
@@ -143,11 +134,11 @@ def main():
         "CloudSupportedBadge",
         "VersionBadge",
     ):
-        migrated, _ = migrate.transform_imports(
+        migrated, _ = transform.transform_imports(
             f"import {badge} from '@theme/badges/{badge}';\n\n"
             f"<{badge} />\n\n"
             "Content after the badge.\n",
-            migrate.Lookups(),
+            transform.Lookups(docs_root=repo_root / "docs"),
             [],
         )
         assert migrated == (
@@ -157,12 +148,12 @@ def main():
             "Content after the badge.\n"
         )
 
-        migrated_snippet, _ = migrate.transform_imports(
+        migrated_snippet, _ = transform.transform_imports(
             f'import {badge} from '
             f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
             f"<{badge} />\n\n"
             "Content after the badge.\n",
-            migrate.Lookups(),
+            transform.Lookups(docs_root=repo_root / "docs"),
             [],
         )
         assert migrated_snippet == (
@@ -171,17 +162,17 @@ def main():
             f"<{badge} />\n\n"
             "Content after the badge.\n"
         )
-        remigrated_snippet, _ = migrate.transform_imports(
+        remigrated_snippet, _ = transform.transform_imports(
             migrated_snippet,
-            migrate.Lookups(),
+            transform.Lookups(docs_root=repo_root / "docs"),
             [],
         )
         assert remigrated_snippet == migrated_snippet
 
-    migrated_namespace, _ = migrate.transform_imports(
+    migrated_namespace, _ = transform.transform_imports(
         "import * as BadgeNS from '@theme/badges/CloudNotSupportedBadge';\n\n"
         "<BadgeNS.CloudNotSupportedBadge />\n",
-        migrate.Lookups(),
+        transform.Lookups(docs_root=repo_root / "docs"),
         [],
     )
     assert migrated_namespace == (
@@ -1340,9 +1331,8 @@ def main():
         observed_beta_rewrite = []
 
         def fake_generate_artifacts(
-                gen, binary, docs_dir, repo_root, migrate, lk, file_map,
-                generated_routes=None):
-            del binary, migrate, lk, file_map
+                gen, binary, docs_dir, repo_root, lk, generated_routes=None):
+            del binary, lk
             if gen["name"] in mod.SETTINGS_SPLIT_FAMILIES:
                 family = mod.SETTINGS_SPLIT_FAMILIES[gen["name"]]
                 return [mod.GeneratedArtifact(
@@ -1370,14 +1360,13 @@ def main():
 
         mod.ALL_GENERATORS = mod.SETTINGS_GENERATORS
         mod.aggregate_generators = lambda docs_dir: []
-        mod.table_engine_generators = lambda docs_dir, file_map: []
-        mod.database_engine_generators = lambda docs_dir, file_map: []
-        mod.data_type_generators = lambda docs_dir, file_map: []
-        mod.format_generators = lambda docs_dir, file_map: []
-        mod.table_function_generators = lambda docs_dir, file_map: []
-        mod.window_function_generators = lambda docs_dir, file_map: []
-        mod.import_migrate = lambda docs_dir: object()
-        mod.build_file_map = lambda migrate, slug_map: (object(), {})
+        mod.table_engine_generators = lambda docs_dir: []
+        mod.database_engine_generators = lambda docs_dir: []
+        mod.data_type_generators = lambda docs_dir: []
+        mod.format_generators = lambda docs_dir: []
+        mod.table_function_generators = lambda docs_dir: []
+        mod.window_function_generators = lambda docs_dir: []
+        mod.mintlify_transform.build_lookups = lambda docs_root: object()
         mod.generate_artifacts = fake_generate_artifacts
         mod.stale_settings_page_paths = (
             lambda family_name, artifacts, docs_dir: []
