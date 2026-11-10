@@ -233,7 +233,6 @@ private:
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
 
-private:
     String used_named_collection_name;
 };
 
