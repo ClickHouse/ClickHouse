@@ -305,7 +305,7 @@ try
 catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
-    if (!isRetryableException(std::current_exception()))
+    if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
         read_task_info->data_part_info->reportBroken();
     throw;
 }
