@@ -2805,6 +2805,81 @@ def test_insert_rejects_integers_out_of_the_range_of_the_column(started_cluster)
     arrays.drop()
 
 
+def test_insert_rejects_integers_out_of_the_range_of_a_wide_integer_column(started_cluster):
+    """The range of a column of a 128 or 256 bit integer type is checked too: the reader would
+    store a quoted number out of it wrapped around."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.insert_wide_integers", password="123")
+    node.query(
+        "CREATE TABLE db.insert_wide_integers (id Int32, u128 UInt128, i128 Int128, u256 UInt256, i256 Int256, "
+        "a128 Array(UInt128)) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    collection = make_client()["db"]["insert_wide_integers"]
+    for document in [
+        {"id": 1, "u128": str(2**128)},
+        {"id": 1, "u128": "-1"},
+        {"id": 1, "i128": str(2**127)},
+        {"id": 1, "i128": str(-(2**127) - 1)},
+        {"id": 1, "u256": str(2**256)},
+        {"id": 1, "u256": "1" + "0" * 100},
+        {"id": 1, "i256": str(2**255)},
+        {"id": 1, "i256": str(-(2**255) - 1)},
+        {"id": 1, "a128": ["1", str(2**128)]},
+    ]:
+        with pytest.raises(pymongo.errors.OperationFailure, match="out of the range"):
+            collection.insert_one(document)
+    assert collection.count_documents({}) == 0
+
+    collection.insert_one(
+        {
+            "id": 2,
+            "u128": str(2**128 - 1),
+            "i128": str(-(2**127)),
+            "u256": str(2**256 - 1),
+            "i256": str(-(2**255)),
+            "a128": [str(2**128 - 1)],
+        }
+    )
+    assert node.query(
+        "SELECT u128, i128, u256, i256, a128 FROM db.insert_wide_integers FORMAT TSV", password="123"
+    ).strip() == "\t".join(
+        [str(2**128 - 1), str(-(2**127)), str(2**256 - 1), str(-(2**255)), f"[{2**128 - 1}]"]
+    )
+    node.query("DROP TABLE db.insert_wide_integers", password="123")
+
+
+def test_document_sequence_before_the_body(started_cluster):
+    """`OP_MSG` allows its sections in any order, so a document sequence may come before the body."""
+    collection = make_client()["db"]["sequence_before_body"]
+    collection.drop()
+    body = b"\x00" + bson.encode({"insert": "sequence_before_body", "$db": "db"})
+    section = b"documents\x00" + b"".join(bson.encode({"id": i}) for i in [1, 2])
+    sequence = b"\x01" + struct.pack("<i", 4 + len(section)) + section
+    payload = struct.pack("<I", 0) + sequence + body
+    sock = connect_raw()
+    try:
+        authenticate_raw(sock)
+        sock.sendall(struct.pack("<iiii", 16 + len(payload), 1, 0, OP_MSG) + payload)
+        reply = read_op_msg(sock)
+        assert reply["ok"] == 1, reply
+        assert reply["n"] == 2, reply
+    finally:
+        sock.close()
+    assert sorted(document["id"] for document in collection.find({})) == [1, 2]
+    collection.drop()
+
+
+def test_find_sorted_by_a_field_with_a_parenthesis(started_cluster):
+    """The sort document of `find` may name a field with a `)` in its name."""
+    collection = make_client()["db"]["sort_parenthesis"]
+    collection.drop()
+    collection.insert_many([{"id": 1, "x)y": 2}, {"id": 2, "x)y": 1}])
+    assert [document["id"] for document in collection.find({}).sort("x)y", 1)] == [2, 1]
+    collection.drop()
+
+
 def test_transaction_envelopes_are_rejected(started_cluster):
     """A command that is a part of a multi-document transaction is rejected before it changes
     anything, while a retryable write, which carries `lsid` and `txnNumber` alone, is executed."""
