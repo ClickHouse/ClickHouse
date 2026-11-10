@@ -578,8 +578,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
         /// Set when the server refused `Expect: 100-continue` with `417 Expectation Failed`. The request
         /// is then sent once more without the header, and that does not count as a redirect.
         bool expect_continue_rejected = false;
+        size_t max_redirects = s3_max_redirects;
 
-        for (size_t attempt = 0; attempt <= s3_max_redirects + (expect_continue_rejected ? 1 : 0); ++attempt)
+        for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
 
@@ -691,6 +692,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     /// The server, or a proxy on the way, does not support the expectation.
                     LOG_DEBUG(log, "Server refused `Expect: 100-continue` for {}, sending the request again without it", uri);
                     expect_continue_rejected = true;
+                    ++max_redirects;
                     continue;
                 }
 
