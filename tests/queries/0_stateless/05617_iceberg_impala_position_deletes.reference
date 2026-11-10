@@ -67,6 +67,3 @@ iceberg_spark_compaction_with_dangling_delete
 3	30
 5	50
 4
-iceberg_lineitem_multiblock
-17886	0
-17886

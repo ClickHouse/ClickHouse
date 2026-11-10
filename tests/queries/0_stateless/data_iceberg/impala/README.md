@@ -29,3 +29,5 @@ Tables of the Impala test data that are not included:
   required field. Impala skips such records with a warning; it is not clear that ClickHouse should do the same.
 - `hadoop_catalog/ice/iceberg_v2_delete_equality_partition_evolution`: equality deletes in a table with several
   partition specs. Impala refuses to read it, so there are no expected results.
+- `hadoop_catalog/ice/iceberg_lineitem_multiblock`: position deletes in a Parquet data file with several row
+  groups. The data file is 1.8 MB, which is too large to be added to the repository.

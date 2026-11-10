@@ -62,9 +62,4 @@ SELECT id FROM icebergLocal('hadoop_catalog/ice/iceberg_v2_partitioned_position_
 SELECT 'iceberg_spark_compaction_with_dangling_delete';
 SELECT * FROM icebergLocal('hadoop_catalog/ice/iceberg_spark_compaction_with_dangling_delete') ORDER BY ALL;
 SELECT count() FROM icebergLocal('hadoop_catalog/ice/iceberg_spark_compaction_with_dangling_delete') SETTINGS optimize_count_from_files = 0;
-
--- A data file with several row groups (TPC-H lineitem) where every fifth line number is deleted.
-SELECT 'iceberg_lineitem_multiblock';
-SELECT count(), countIf(l_linenumber % 5 = 0) FROM icebergLocal('hadoop_catalog/ice/iceberg_lineitem_multiblock') SETTINGS optimize_count_from_files = 0;
-SELECT count() FROM icebergLocal('hadoop_catalog/ice/iceberg_lineitem_multiblock') SETTINGS max_block_size = 2, optimize_count_from_files = 0;
 " 2>&1
