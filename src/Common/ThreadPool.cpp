@@ -740,7 +740,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         /// queued jobs, nobody would ever run it. That is how the startup could still hang with a slightly
         /// too small `max_thread_pool_size`: the loader of a table took the last worker not held by a
         /// long-lived thread and waited for the workers that load the parts of the table, queued behind it.
-        if (job_occupies_thread && !thread_job_takes_slot)
+        ///
+        /// The same holds for a job that takes a slot and may wait in the queue (`scheduleThreadOrQueueOrThrow`),
+        /// such as a worker of a local pool with long-lived jobs, when it is scheduled by a worker that holds no
+        /// slot: if it took the last slot, it would be queued behind the job of the scheduling worker, which may
+        /// wait for it. For example, the constructor of `CacheDictionaryUpdateQueue` runs in the thread that loads
+        /// the dictionary, and it joins the workers that it has already scheduled when it fails to schedule the
+        /// next one. Its slot is taken below, under the same lock.
+        bool nested_thread_job_may_queue = false;
+        if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+            nested_thread_job_may_queue = thread_job_may_queue && current_global_worker_holds_no_slot;
+
+        if (job_occupies_thread && (!thread_job_takes_slot || nested_thread_job_may_queue))
         {
             int64_t remaining_capacity = 0;
 

@@ -960,3 +960,78 @@ TEST(ThreadPool, IndependentFreeThreadPoolDoesNotEvictIdleWorkerOfSingleton)
     }
     EXPECT_FALSE(threw) << "the singleton must not lose the slot of its idle worker to an independent pool";
 }
+
+/// A worker of a local pool with long-lived jobs takes a slot and may wait in the queue. When it is scheduled
+/// by a worker of the global pool that holds no slot and it would take the last slot, it must be rejected:
+/// it could only run after the job of the scheduling worker, which may wait for it. The constructor of
+/// `CacheDictionaryUpdateQueue` runs in the thread that loads the dictionary (which holds no slot), schedules
+/// several workers, and joins the ones already scheduled when it fails to schedule the next one, so it would
+/// hang if the first worker was queued behind it.
+TEST(ThreadPool, NestedLongLivedWorkerOnLastFreeThreadIsRejected)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(2);
+    global_pool.setMaxFreeThreads(0);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    /// Takes one of the two slots until released.
+    std::atomic<bool> long_lived_started = false;
+    std::atomic<bool> release_long_lived = false;
+    ThreadFromGlobalPool long_lived_thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+    {
+        long_lived_started = true;
+        while (!release_long_lived.load())
+            std::this_thread::yield();
+    });
+    while (!long_lived_started)
+        ;
+
+    /// Like `CacheDictionaryUpdateQueue`: the workers return only when the pool is stopped.
+    std::atomic<bool> stop_inner = false;
+    std::atomic<int> error_code = 0;
+    std::atomic<bool> outer_finished = false;
+
+    /// Runs on the last thread of the global pool and holds no slot, like a thread that loads a dictionary.
+    ThreadFromGlobalPool outer_thread(ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker, [&]
+    {
+        ThreadPool inner_pool(
+            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+            /* max_threads = */ 2, /* max_free_threads = */ 0, /* queue_size = */ 0);
+        inner_pool.setJobsAreLongLived();
+        try
+        {
+            for (size_t i = 0; i < 2; ++i)
+                inner_pool.scheduleOrThrowOnError([&] { while (!stop_inner.load()) std::this_thread::yield(); });
+        }
+        catch (const DB::Exception & e)
+        {
+            error_code = e.code();
+        }
+        /// Joins the workers scheduled so far, like `CacheDictionaryUpdateQueue::stopAndWait`.
+        stop_inner = true;
+        inner_pool.wait();
+        outer_finished = true;
+    });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (!outer_finished && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    const bool finished_in_time = outer_finished;
+
+    /// If the worker of the inner pool was queued behind the outer thread, free a thread for it, so that the
+    /// test does not hang.
+    release_long_lived = true;
+    long_lived_thread.join();
+    outer_thread.join();
+
+    EXPECT_TRUE(finished_in_time) << "a worker of a local pool must not be queued behind the thread that waits for it";
+    EXPECT_EQ(error_code, DB::ErrorCodes::CANNOT_SCHEDULE_TASK);
+}
