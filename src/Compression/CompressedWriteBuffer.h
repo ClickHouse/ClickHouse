@@ -68,6 +68,7 @@ private:
 
     WriteBuffer & out;
     CompressionCodecPtr codec;
+    CompressionStatePtr codec_state;
     size_t min_bytes_to_compress = 0;
     /// Codec `NONE` if `storeIncompressibleBlocksUncompressed` was called.
     CompressionCodecPtr uncompressed_codec;

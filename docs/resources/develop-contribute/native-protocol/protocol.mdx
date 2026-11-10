@@ -1007,12 +1007,14 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 
 | # | Field | Type | Gate | Description |
 |---|---|---|---|---|
-| 1 | serialization_version | VarUInt | universal | Query-plan serialization version, no greater than the receiver's `query_plan_serialization_version` advertised in `ServerHello`. |
-| 2 | max_threads | VarUInt | serialization version ≥ `10` | Plan-level thread limit. `0` means no plan-specific limit. |
-| 3 | concurrency_control | Bool | serialization version ≥ `10` | Whether the plan participates in concurrency control. |
+| 1 | serialization_version | VarUInt | universal | Query-plan serialization version, no greater than the receiver's `query_plan_serialization_version` advertised in `ServerHello`, and at least `21`. |
+| 2 | max_threads | VarUInt | universal | Plan-level thread limit. `0` means no plan-specific limit. |
+| 3 | concurrency_control | Bool | universal | Whether the plan participates in concurrency control. |
 | 4 | plan | versioned query-plan stream | universal | Serialized plan tree, step settings, headers, and prepared sets. Its internal layout is owned by the query-plan serialization version. |
 
-Before version `10`, fields 2 and 3 are absent. An initiator with either non-default execution limit must not send that older layout: it ships the original SQL query instead, so the older receiver reconstructs the limits from the query settings.
+The oldest supported serialization version is `21`. A sender does not serialize a plan for a peer whose `query_plan_serialization_version` is below `21`: the query fails with `NOT_IMPLEMENTED` (code `48`). A receiver rejects a `QueryPlan` packet with a `serialization_version` below `21` with the same exception before it decodes the plan. Older versions encoded the step settings in a binary form that is no longer supported, and a peer at such a version cannot exchange plans with a peer at version `21` or above.
+
+Inside the plan stream, every step carries its settings as a settings list in the same encoding as the [Query packet's settings list](#setting) in the `STRINGS_WITH_FLAGS` form: zero or more `(String name, VarUInt flags, String value)` triples, terminated by an empty name. Only the settings that the step changed from their defaults are written. The writer sets only the `Important` flag (`0x01`), for a plan setting declared important. A receiver that does not know a setting name skips the entry with a warning if `Important` is not set, and rejects the plan with `UNKNOWN_SETTING` (code `115`) if it is set.
 
 ## Configuration {#configuration}
 
