@@ -83,12 +83,10 @@ private:
     size_t unique_id = 0; /// Unique id for tie breaking in ordering.
     ResourceCost fair_key = 0; /// Currently allocated plus pending increase minus outstanding spill requests (the fair-share component of the ordering key).
 
-    /// A single ordering of allocations, from most important (`begin()`) to least important (`rbegin()`):
-    /// a lower `eviction_score` is more important, ties break on a smaller `fair_key`, then `unique_id`.
-    /// Both actions read opposite ends of this one order:
-    ///   - `increasing_allocations`: the next increase to process is the most important allocation (`begin()`);
-    ///   - `running_allocations`: the eviction victim is the least important allocation (`rbegin()` — the
-    ///     highest `eviction_score`, then the largest `fair_key`), and so is the spill victim among reclaimable ones.
+    /// A single ordering of allocations by (`eviction_score`, `fair_key`, `unique_id`). Every decision reads one of its ends:
+    ///   - `increasing_allocations`: the next increase to process is the first allocation (`begin()`);
+    ///   - `running_allocations`: the eviction victim is the last allocation (`rbegin()` — the highest
+    ///     `eviction_score`, then the largest `fair_key`), and so is the spill victim among reclaimable ones.
     /// `fair_key` is a mutable key, so an allocation must be erased from the set before it changes and
     /// re-inserted afterwards. Pending and admitting allocations are structurally absent from
     /// `running_allocations`, so they are never selected as victims.

@@ -497,7 +497,7 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     // cross-workload least common ancestor. Nothing to decide from `limit` at the leaf.
     UNUSED(limit);
 
-    // The victim is the least important allocation — the greatest by `ByKey` (`rbegin()`): the highest
+    // The victim is the last allocation by `ByKey` (`rbegin()`): the highest
     // `eviction_score`, then the largest `fair_key`, then `unique_id`. Pending and admitting allocations are not
     // members of `running_allocations`, so they are never selected as victims.
     ResourceAllocation & victim = *running_allocations.rbegin();
@@ -519,7 +519,7 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
 ResourceAllocation * AllocationQueue::selectAllocationToSpill(ResourceCost at_least, String & details)
 {
     std::lock_guard lock(mutex);
-    // The least important reclaimable allocation, in the same `ByKey` order as the eviction victim.
+    // The last reclaimable allocation, in the same `ByKey` order as the eviction victim.
     auto it = std::find_if(running_allocations.rbegin(), running_allocations.rend(), [](const auto & allocation)
     {
         return getAvailableReclaimable(allocation) > 0;

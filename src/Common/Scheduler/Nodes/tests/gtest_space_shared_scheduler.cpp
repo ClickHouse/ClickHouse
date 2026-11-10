@@ -2267,12 +2267,11 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreZeroReserveRequesterSelfKillsBefor
 }
 
 
-/// Grow order follows the same single `ByKey` ordering as eviction: under contention the more important
-/// (lower `eviction_score`) allocation is served first, even when it has the larger `fair_key`. Here `lo`
-/// carries the lower score but the larger grow and `hi` the higher score but the smaller grow, so score and
-/// `fair_key` disagree. The unified order serves `lo` first; `hi`'s grow then cannot fit and, being the least
-/// important allocation, fails its own request without ever growing. Under a `fair_key`-only increase order
-/// `hi` (the smaller grow) would have been served first instead.
+/// Grow order follows the same `ByKey` order as eviction: under contention the allocation with the lower
+/// `eviction_score` is served first, even when it has the larger `fair_key`. Here `lo` has the lower score but the
+/// larger grow and `hi` the higher score but the smaller grow. `lo` is served first; `hi`'s grow then cannot fit
+/// and, being last in the order, fails its own request without ever growing. Ordering grows by `fair_key` alone
+/// would serve `hi` first instead.
 TEST(SchedulerSpaceShared, MemoryEvictionScoreLowerScoreGrowsFirst)
 {
     SpaceSharedTest t;
@@ -2331,6 +2330,48 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreSpillsHighestFirst)
     EXPECT_EQ(small_hi.spillCount(), 1);
     EXPECT_EQ(small_hi.lastSpillAtLeast(), 1000);
     EXPECT_EQ(big.spillCount(), 0);
+}
+
+
+/// An eviction selected for one request stays in flight when another request becomes current. The new request
+/// waits for that release, unless it cannot fit even then: here `b`'s grow alone exceeds the limit, so `b` must fail
+/// at once instead of waiting for `victim`, which was selected for `a` and has not released yet.
+TEST(SchedulerSpaceShared, ImpossibleGrowSelfKillsWhileEvictionForAnotherRequestIsInFlight)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 100);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    auto victim = std::make_unique<ManualAllocation>(queue, "victim", 40, /* eviction_score = */ 100);
+    ManualAllocation a(queue, "a", 50, /* eviction_score = */ 0);
+    auto b = std::make_unique<ManualAllocation>(queue, "b", 5, /* eviction_score = */ -10);
+
+    a.increaseAsync(20); // 95 + 20 > 100: `victim` (the highest score) is selected and keeps its memory for now
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (victim->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(victim->killCount(), 1u);
+
+    b->increaseAsync(200); // `b` has the lowest score, so its grow becomes the current one; 205 > 100 can never fit
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (b->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_EQ(b->killCount(), 1u) << "An impossible grow must not wait for an eviction selected for another request";
+    EXPECT_EQ(victim->killCount(), 1u);
+    EXPECT_EQ(a.killCount(), 0u);
+
+    // `victim` releases first; the limit then waits for `b`'s release instead of evicting anything else.
+    victim.reset();
+    r.sync();
+    EXPECT_EQ(b->killCount(), 1u);
+    EXPECT_EQ(a.killCount(), 0u);
+
+    b.reset();
+    a.waitSynced();
+    EXPECT_EQ(a.size(), 70);
+    EXPECT_EQ(a.killCount(), 0u);
 }
 
 
