@@ -14,4 +14,7 @@ function of a column	1
 limit by	0
 sub-join	0
 sub-join	0
+sub-join, null-supplying side	1
+written	0
+constant against a column with an NDV	0
 100000

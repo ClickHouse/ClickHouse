@@ -119,17 +119,22 @@ static std::optional<JoinActionRef> resolveInput(const JoinActionRef & ref)
     return resolved;
 }
 
+bool QueryGraph::isConstantColumn(const JoinActionRef & column) const
+{
+    auto resolved = resolveInput(column);
+    return resolved && is_constant_column && is_constant_column(*resolved->getSourceRelations().getSingleBit(), resolved->getColumnName());
+}
+
+size_t QueryGraph::constantSides(const JoinActionRef & edge) const
+{
+    auto [op, lhs, rhs] = edge.asBinaryPredicate();
+    if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+        return 0;
+    return size_t{isConstantColumn(lhs)} + size_t{isConstantColumn(rhs)};
+}
+
 void QueryGraph::buildColumnEquivalences()
 {
-    std::unordered_map<const ActionsDAG::Node *, bool> constant_columns;
-    auto is_constant = [&](size_t relation, const JoinActionRef & column)
-    {
-        auto [it, inserted] = constant_columns.try_emplace(column.getNode(), false);
-        if (inserted && is_constant_column)
-            it->second = is_constant_column(relation, column.getColumnName());
-        return it->second;
-    };
-
     for (const auto & edge : edges)
     {
         if (!edge)
@@ -161,7 +166,7 @@ void QueryGraph::buildColumnEquivalences()
         if (outer_join_conditions.contains(edge))
             continue;
 
-        if (is_constant(*lhs_rel, *lhs_resolved) || is_constant(*rhs_rel, *rhs_resolved))
+        if (constantSides(edge))
             continue;
 
         column_equivalences.add(*lhs_resolved, *rhs_resolved);

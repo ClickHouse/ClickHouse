@@ -689,9 +689,12 @@ ConstantValue ConstantColumnFinder::findStepConstant(const QueryPlan::Node & nod
 
 }
 
-bool isConstantColumn(const QueryPlan::Node & node, const String & column_name)
+ConstantColumnLookup makeConstantColumnLookup()
 {
-    return ConstantColumnFinder().findConstantValue(node, column_name).has_value();
+    return [finder = std::make_shared<ConstantColumnFinder>()](const QueryPlan::Node & node, const String & column_name)
+    {
+        return finder->findConstantValue(node, column_name).has_value();
+    };
 }
 
 }

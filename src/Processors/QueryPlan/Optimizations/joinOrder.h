@@ -167,7 +167,6 @@ struct QueryGraph
     BitSet prepared_storage_relations;
 
     /// Whether an output column of a relation holds one value in every row.
-    /// An equality with such a column links no two relations, so it gives no column equivalence.
     std::function<bool(size_t relation, const String & column_name)> is_constant_column;
 
     /// DPsub chooses between hash and sort-merge joins by the sort order of their inputs; set from the graph's join settings.
@@ -188,6 +187,12 @@ struct QueryGraph
     };
     /// Per relation. Called by DPsub only when it uses interesting orders, since it probes the storage order of every input.
     std::function<std::vector<ReadInOrder>(const std::vector<NameSet> & candidates)> find_read_in_order_prefixes;
+
+    /// Whether a column of one relation holds one value in every row (`is_constant_column`).
+    bool isConstantColumn(const JoinActionRef & column) const;
+    /// How many sides of the equality `edge` are such columns. With one, the equality is no join key: a row of the other
+    /// side matches every row or none, so it gives no column equivalence.
+    size_t constantSides(const JoinActionRef & edge) const;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();

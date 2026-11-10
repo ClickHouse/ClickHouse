@@ -115,6 +115,25 @@ SELECT 'sub-join', count() FROM (EXPLAIN PLAN
     SETTINGS query_plan_optimize_join_order_randomize = 14)
 WHERE explain ILIKE '%Join conditions: src = src';
 
+-- The null-supplying side of such a join gives no constant column, so `w.src = r.src` is still inferred and used.
+SELECT 'sub-join, null-supplying side', count() FROM (EXPLAIN PLAN
+    SELECT count() FROM (SELECT s.src AS src, p.id AS id, p.k AS k FROM tp AS p ANY LEFT JOIN r AS s ON p.id = s.id) AS p
+    JOIN tw AS w ON w.src = p.src AND w.k = p.k JOIN tc AS r ON r.src = p.src AND r.id = p.id
+    SETTINGS query_plan_optimize_join_order_randomize = 3)
+WHERE explain ILIKE '%Join conditions: src = src';
+
+-- A written equality with a constant side is no join key either: `r.src = w.src` alone is a cross product.
+SELECT 'written', count() FROM (EXPLAIN PLAN
+    SELECT count() FROM p JOIN w ON w.src = p.src AND w.k = p.k JOIN r ON r.src = w.src AND r.id = p.id
+    SETTINGS enable_join_transitive_predicates = 0)
+WHERE explain ILIKE '%Join conditions: materialize(\'wlr\') = materialize(\'wlr\')';
+
+-- An NDV of the other side still gives the selectivity of an equality with a constant.
+SELECT 'constant against a column with an NDV', count() FROM (EXPLAIN PLAN
+    SELECT count() FROM (SELECT materialize(toUInt64(7)) AS c FROM tp) AS s JOIN tc ON tc.id = s.c
+    SETTINGS query_plan_optimize_join_order_randomize = 3)
+WHERE explain ILIKE '%Selectivity: estimated (NDV) 1';
+
 SELECT count() FROM p JOIN w ON w.src = p.src AND w.k = p.k JOIN r ON r.src = p.src AND r.id = p.id;
 
 DROP VIEW p_limit_by;
