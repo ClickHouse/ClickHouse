@@ -641,7 +641,7 @@ The optional `USING KEY (<key columns>)` modifier switches the `CTE` to keyed (s
 - The result of the `CTE` is the accumulated keyed table at convergence, not the concatenation of the steps.
 - The accumulated state is additionally exposed to the recursive members under the name `<cte_name>_settled`, so a recursive member can compare a candidate row against the currently accumulated one and refute rows that are not an improvement.
 
-The key columns must be a subset of the projection columns of the non-recursive term, and the `CTE` must actually be recursive; otherwise `BAD_ARGUMENTS` is raised.
+The key columns must be a subset of the projection columns of the non-recursive term, and the `CTE` must actually be recursive; otherwise `BAD_ARGUMENTS` is raised. All columns of the `CTE` must have types whose values can be compared for equality, because a produced row is propagated only when it differs from the accumulated one: aggregate function states, also inside `Tuple`, `Array`, `Map` or `Variant`, are rejected with `ILLEGAL_TYPE_OF_ARGUMENT`; keep the result of `finalizeAggregation` instead.
 
 Two further points to keep in mind:
 

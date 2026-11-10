@@ -53,6 +53,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -161,6 +162,19 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// `IDataType::isComparableForEquality` follows the nested types of the container types, but `Variant`
+/// reports itself comparable regardless of its variants.
+bool canCompareValuesForEquality(const DataTypePtr & type)
+{
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        const auto & variants = variant_type->getVariants();
+        return std::all_of(variants.begin(), variants.end(), [](const DataTypePtr & variant) { return canCompareValuesForEquality(variant); });
+    }
+
+    return type->isComparableForEquality();
+}
 
 /// A `MATERIALIZED` CTE is materialized once, so its body cannot be correlated.
 /// Must run for every reference: clones of one body can resolve differently.
@@ -8391,6 +8405,27 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                 if (table_node && table_node->isMaterializedCTE())
                     table_node->getMaterializedCTE()->is_referenced_from_recursive_cte_member = true;
             });
+        }
+
+        /// With USING KEY, a produced row is propagated only when it differs from the accumulated row of its
+        /// key, and the comparison is `IColumn::compareAt`, which cannot establish equality for every type:
+        /// `ColumnAggregateFunction::compareAt` reports every pair of states as equal, so a row whose aggregate
+        /// state changed would be dropped and the recursion would stop early with a wrong result. Reject such
+        /// column types, including when nested in a container type.
+        if (!recursive_cte_table->key_columns.empty())
+        {
+            for (const auto & column : recursive_cte_table->columns)
+            {
+                if (!canCompareValuesForEquality(column.type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Column {} of recursive CTE {} with USING KEY has type {}, whose values cannot be compared for "
+                        "equality, so changes to them would not be detected. Keep a comparable value instead, "
+                        "for example the result of `finalizeAggregation`. In scope {}",
+                        column.name,
+                        union_node_typed.getCTEName(),
+                        column.type->getName(),
+                        scope.scope_node->formatASTForErrorMessage());
+            }
         }
 
         union_node_typed.setRecursiveCTETable(std::move(*recursive_cte_table));
