@@ -2044,14 +2044,14 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         }
 
         /// The sliced pool buffers and reads ahead on the reading side; buffering or a read-ahead window
-        /// here would only make it read further ahead than the merge needs.
-        for (const auto * reader : virtual_row_readers)
+        /// here would only make it read further ahead than the merge needs. An input read any other way
+        /// still needs them, so they stay unless every input of the union reads through the pool.
+        const bool all_inputs_sliced = virtual_row_readers.size() == union_node->children.size()
+            && std::ranges::all_of(virtual_row_readers, [](const ReadFromMergeTree * reader) { return reader->usesSlicedPool(); });
+        if (all_inputs_sliced)
         {
-            if (reader->usesSlicedPool())
-            {
-                use_buffering = false;
-                sorting->disableDefaultReadAheadWindow();
-            }
+            use_buffering = false;
+            sorting->disableDefaultReadAheadWindow();
         }
 
         /// FinishSorting's `MergingSortedTransform` requires every input stream of the union
