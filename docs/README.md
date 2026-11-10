@@ -79,7 +79,6 @@ which walks you through how to make your first contribution.
 | `_templates/` | Templates for writing new documentation pages (functions, settings, engines, etc.) |
 | `_includes/` | Shared content included across multiple pages |
 | `_site/` | Site customizations: styles, scripts, logos, and redirects |
-| `_migration/` | Tooling used for the migration from the previous documentation site |
 
 Top-level site tabs and languages are configured in `docs.json`, while each section's sidebar entries are defined in its own `navigation.json` file.
 
