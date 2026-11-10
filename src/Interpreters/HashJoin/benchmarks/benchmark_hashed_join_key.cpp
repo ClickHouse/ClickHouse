@@ -4,6 +4,8 @@
 ///                         `PreparedJoinKeys::buildNextKeys` builds them for a join loop;
 ///   hash128/<keys>        `ColumnsHashing::hash128` per row, as `HashedJoinKey::build` builds them.
 /// `items_per_second` is the rows per second.
+/// The cases `String<min>-<max>` are one `String` column of long keys. Each holds about 16 MiB, so the longer the
+/// keys are, the fewer rows it has, and the fewer rows fit in a chunk of the key builder.
 ///
 /// Run with:
 ///   ./benchmark_hashed_join_key --benchmark_filter=String
@@ -18,6 +20,7 @@
 
 #include <benchmark/benchmark.h>
 
+#include <algorithm>
 #include <functional>
 #include <random>
 #include <string>
@@ -57,11 +60,11 @@ MutableColumnPtr fixedStrings(Rng & rng, size_t n)
     return column;
 }
 
-MutableColumnPtr strings(Rng & rng, size_t min_length, size_t max_length)
+MutableColumnPtr strings(Rng & rng, size_t min_length, size_t max_length, size_t rows = num_rows)
 {
     auto column = ColumnString::create();
     std::string value;
-    for (size_t row = 0; row < num_rows; ++row)
+    for (size_t row = 0; row < rows; ++row)
     {
         value.resize(std::uniform_int_distribution<size_t>(min_length, max_length)(rng));
         for (auto & c : value)
@@ -95,9 +98,22 @@ MutableColumnPtr nullable(MutableColumnPtr nested, Rng & rng)
 
 struct Keys
 {
-    const char * name;
+    std::string name;
     std::function<MutableColumns(Rng &)> columns;
+    size_t rows = num_rows;
 };
+
+/// One `String` column of keys of 3/4 to 5/4 of `length` bytes, 16 MiB in all.
+Keys longStrings(size_t length)
+{
+    const size_t min_length = length * 3 / 4;
+    const size_t max_length = length * 5 / 4;
+    const size_t rows = std::clamp<size_t>((16UL << 20) / length, 128, num_rows);
+    return {
+        "String" + std::to_string(min_length) + "-" + std::to_string(max_length),
+        [=](Rng & rng) { return columns(strings(rng, min_length, max_length, rows)); },
+        rows};
+}
 
 const std::vector<Keys> & allKeys()
 {
@@ -132,15 +148,15 @@ void buildRange(benchmark::State & state, const Keys & keys)
     Rng rng(std::hash<std::string_view>{}(keys.name));
     const auto key_columns = keys.columns(rng);
     HashedJoinKey key(rawPtrs(key_columns));
-    PaddedPODArray<UInt128> result(num_rows);
-    const PaddedPODArray<UInt8> no_skip(num_rows, 0);
+    PaddedPODArray<UInt128> result(keys.rows);
+    const PaddedPODArray<UInt8> no_skip(keys.rows, 0);
     for (auto _ [[maybe_unused]] : state)
     {
-        key.buildRange(0, num_rows, result.data(), no_skip.data());
+        key.buildRange(0, keys.rows, result.data(), no_skip.data());
         benchmark::DoNotOptimize(result.data());
         benchmark::ClobberMemory();
     }
-    state.SetItemsProcessed(state.iterations() * num_rows);
+    state.SetItemsProcessed(state.iterations() * keys.rows);
 }
 
 void buildRange256(benchmark::State & state, const Keys & keys)
@@ -149,17 +165,17 @@ void buildRange256(benchmark::State & state, const Keys & keys)
     const auto key_columns = keys.columns(rng);
     HashedJoinKey key(rawPtrs(key_columns));
     PaddedPODArray<UInt128> result(join_loop_rows);
-    const PaddedPODArray<UInt8> no_skip(num_rows, 0);
+    const PaddedPODArray<UInt8> no_skip(keys.rows, 0);
     for (auto _ [[maybe_unused]] : state)
     {
-        for (size_t begin = join_loop_first_row; begin < num_rows; begin += join_loop_rows)
+        for (size_t begin = join_loop_first_row; begin < keys.rows; begin += join_loop_rows)
         {
-            key.buildRange(begin, std::min(num_rows, begin + join_loop_rows), result.data(), no_skip.data());
+            key.buildRange(begin, std::min(keys.rows, begin + join_loop_rows), result.data(), no_skip.data());
             benchmark::DoNotOptimize(result.data());
             benchmark::ClobberMemory();
         }
     }
-    state.SetItemsProcessed(state.iterations() * (num_rows - join_loop_first_row));
+    state.SetItemsProcessed(state.iterations() * (keys.rows - join_loop_first_row));
 }
 
 void hash128(benchmark::State & state, const Keys & keys)
@@ -167,20 +183,23 @@ void hash128(benchmark::State & state, const Keys & keys)
     Rng rng(std::hash<std::string_view>{}(keys.name));
     const auto key_columns = keys.columns(rng);
     HashedJoinKey key(rawPtrs(key_columns));
-    PaddedPODArray<UInt128> result(num_rows);
+    PaddedPODArray<UInt128> result(keys.rows);
     for (auto _ [[maybe_unused]] : state)
     {
-        for (size_t row = 0; row < num_rows; ++row)
+        for (size_t row = 0; row < keys.rows; ++row)
             result[row] = key.build(row);
         benchmark::DoNotOptimize(result.data());
         benchmark::ClobberMemory();
     }
-    state.SetItemsProcessed(state.iterations() * num_rows);
+    state.SetItemsProcessed(state.iterations() * keys.rows);
 }
 
 [[maybe_unused]] const bool registered = []
 {
-    for (const auto & keys : allKeys())
+    auto all_keys = allKeys();
+    for (const size_t length : {256, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072})
+        all_keys.push_back(longStrings(length));
+    for (const auto & keys : all_keys)
     {
         benchmark::RegisterBenchmark(std::string("buildRange/") + keys.name, buildRange, keys);
         benchmark::RegisterBenchmark(std::string("buildRange256/") + keys.name, buildRange256, keys);
