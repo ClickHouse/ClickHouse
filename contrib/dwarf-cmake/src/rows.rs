@@ -8,7 +8,6 @@
 //! not one per value.
 
 use crate::error::Result;
-use crate::line::FilenameTable;
 use crate::outbuf::{
     BatchSinkAccess, SinkId, COL_ANCESTOR_OFFSETS, COL_ANCESTOR_TAGS, COL_ATTR_FORM, COL_ATTR_INT,
     COL_ATTR_NAME, COL_ATTR_STR, COL_DECL_FILE, COL_DECL_LINE, COL_LINKAGE_NAME, COL_NAME,
@@ -28,7 +27,6 @@ pub struct StackEntry {
 pub enum StrSrc<'a> {
     Empty,
     Bytes(&'a [u8]),
-    Table(u64),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -65,11 +63,10 @@ pub struct Counters {
 }
 
 #[inline]
-fn resolve<'x>(src: StrSrc<'x>, table: Option<&'x FilenameTable>) -> &'x [u8] {
+fn resolve<'x>(src: StrSrc<'x>) -> &'x [u8] {
     match src {
         StrSrc::Empty => b"",
         StrSrc::Bytes(b) => b,
-        StrSrc::Table(i) => table.map_or(&b""[..], |t| t.get(i)),
     }
 }
 
@@ -122,12 +119,11 @@ fn ensure_row_slow<S: BatchSinkAccess>(
 pub fn write_row<S: BatchSinkAccess>(
     sink: &mut S,
     row: &Row<'_, '_>,
-    table: Option<&FilenameTable>,
     cnt: &mut Counters,
 ) -> Result<()> {
     let plan = sink.plan();
     let decl_file = if plan.has(COL_DECL_FILE) {
-        resolve(row.decl_file, table)
+        resolve(row.decl_file)
     } else {
         b""
     };
@@ -214,7 +210,7 @@ pub fn write_row<S: BatchSinkAccess>(
                 sink.push_string(
                     SinkId::AttrStrChars,
                     SinkId::AttrStrOffsets,
-                    resolve(a.str_, table),
+                    resolve(a.str_),
                 )?;
             }
         } else {
@@ -238,7 +234,7 @@ pub fn write_row<S: BatchSinkAccess>(
                     sink.push_string(
                         SinkId::AttrStrChars,
                         SinkId::AttrStrOffsets,
-                        resolve(a.str_, table),
+                        resolve(a.str_),
                     )?;
                 }
             }

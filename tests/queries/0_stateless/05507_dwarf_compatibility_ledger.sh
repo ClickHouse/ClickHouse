@@ -235,6 +235,27 @@ open(os.path.join(work, 'valid_v4.elf'), 'wb').write(make_elf({
     '.debug_line': debug_line_v4,
 }))
 
+# 1c. DWARF5 line table with 4096 DW_FORM_line_strp entries all pointing to one 1 MiB string in
+#     .debug_line_str: SELECT offset stays well within a 32 MiB memory limit (zero-copy filename
+#     table), while materializing 64 copies of that 1 MiB decl_file hits MEMORY_LIMIT_EXCEEDED.
+prose_rep = bytearray([1, 1, 1, 0xfb, 14, 13] + [0] * 12 + [1, 0x01, 0x08, 1]) + b'dir\x00' + bytes([1, 0x01, 0x1f]) + uleb(4096) + (struct.pack('<I', 0) * 4096)
+line_body_rep = struct.pack('<HBBI', 5, 8, 0, len(prose_rep)) + prose_rep
+debug_line_rep = struct.pack('<I', len(line_body_rep)) + line_body_rep
+big_line_str = (b'a' * (1024 * 1024)) + b'\x00'
+abbrev_rep = (
+    uleb(1) + uleb(0x11) + bytes([1]) + uleb(0x10) + uleb(0x17) + bytes([0, 0]) +
+    uleb(2) + uleb(0x2e) + bytes([0]) + uleb(0x3a) + uleb(0x0f) + bytes([0, 0, 0])
+)
+dies_rep = bytes([1]) + struct.pack('<I', 0) + (bytes([2]) + uleb(4095)) * 64 + bytes([0])
+info_rep_body = struct.pack('<HBBI', 5, 1, 8, 0) + dies_rep
+info_rep = struct.pack('<I', len(info_rep_body)) + info_rep_body
+open(os.path.join(work, 'repeated_line_strp.elf'), 'wb').write(make_elf({
+    '.debug_abbrev': abbrev_rep,
+    '.debug_info': info_rep,
+    '.debug_line': debug_line_rep,
+    '.debug_line_str': big_line_str,
+}))
+
 # 2. Malformed DWARF cases that must fail with CANNOT_PARSE_DWARF:
 # a) addr_size = 1
 bad_addr1_body = struct.pack('<IHIB', 2 + 4 + 1 + 2, 4, 0, 1) + bytes([1, 0])
@@ -288,6 +309,18 @@ ORDER BY offset
 ${CLICKHOUSE_LOCAL} -q "SELECT ancestor_offsets FROM file('${WORK_DIR}/valid_v5.elf', DWARF) ORDER BY ancestor_offsets"
 ${CLICKHOUSE_LOCAL} -q "SELECT attr_int FROM file('${WORK_DIR}/valid_v5.elf', DWARF) WHERE length(attr_int) > 0"
 cat "${WORK_DIR}/valid_v5.elf" | ${CLICKHOUSE_LOCAL} --input-format DWARF -q "SELECT count(), sum(cityHash64(*)) FROM table"
+
+${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('${WORK_DIR}/repeated_line_strp.elf', DWARF) SETTINGS max_memory_usage = 33554432"
+if ${CLICKHOUSE_LOCAL} -q "SELECT sum(length(decl_file)) FROM file('${WORK_DIR}/repeated_line_strp.elf', DWARF) SETTINGS max_memory_usage = 33554432" >/dev/null 2>"${WORK_DIR}/err_mem"
+then
+    echo "repeated_line_strp: UNEXPECTED SUCCESS"
+elif grep -q "MEMORY_LIMIT_EXCEEDED" "${WORK_DIR}/err_mem"
+then
+    echo "repeated_line_strp: memory limit enforced"
+else
+    echo "repeated_line_strp: UNEXPECTED ERROR"
+    cat "${WORK_DIR}/err_mem"
+fi
 
 for bad in bad_addr_size_1 dup_abbrev bad_children_byte unknown_form truncated_second_unit
 do

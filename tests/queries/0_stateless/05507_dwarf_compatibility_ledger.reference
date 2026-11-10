@@ -10,6 +10,8 @@
 [0,8,0,0,0]
 [8277,16,0,0,0,0,0,77,42,0,1,0]
 3	4089888941241388008
+66
+repeated_line_strp: memory limit enforced
 bad_addr_size_1: rejected DWARF
 dup_abbrev: rejected DWARF
 bad_children_byte: rejected DWARF

@@ -828,3 +828,56 @@ fn invalid_projections_are_rejected_without_touching_the_sinks() {
         UNIT_DONE
     );
 }
+
+#[test]
+fn filename_table_with_4096_repeated_line_strp_entries_is_zero_copy_and_polls_control() {
+    let mut prose = Vec::new();
+    prose.extend([1u8, 1, 1, 0xfb, 14, 13]);
+    prose.extend([0u8; 12]);
+    prose.extend([1u8, 0x01, 0x08, 1]);
+    prose.extend(b"dir\0");
+    prose.extend([1u8, 0x01, 0x1f]); // 1 file format: DW_LNCT_path / DW_FORM_line_strp
+    prose.extend(uleb(4096));
+    for _ in 0..4096 {
+        prose.extend(0u32.to_le_bytes());
+    }
+    let mut line_body = Vec::new();
+    line_body.extend(5u16.to_le_bytes());
+    line_body.extend([8u8, 0]);
+    line_body.extend((prose.len() as u32).to_le_bytes());
+    line_body.extend(&prose);
+    let mut debug_line = (line_body.len() as u32).to_le_bytes().to_vec();
+    debug_line.extend(&line_body);
+
+    let mut big_str = vec![b'a'; 1024 * 1024];
+    big_str.push(0);
+
+    let decls = [
+        abbrev(
+            1,
+            CU,
+            true,
+            &[(at(DW_AT_stmt_list), form(DW_FORM_sec_offset), None)],
+        ),
+        abbrev(
+            2,
+            SUB,
+            false,
+            &[(at(DW_AT_decl_file), form(DW_FORM_udata), None)],
+        ),
+    ];
+    let dies = [die(1, &[&le32(0)]), die(2, &[&uleb(4095)]), vec![0]].concat();
+    let file = one_unit(
+        5,
+        8,
+        &decls,
+        &dies,
+        vec![(".debug_line", debug_line), (".debug_line_str", big_str)],
+    );
+    let mut st = Collector::new();
+    let (d, _) = read_unit(&file, 0, COL_OFFSET | COL_DECL_FILE, 65536, &mut st).unwrap();
+    assert_eq!(d.rows, 3);
+    assert_eq!(d.decl_file.as_ref().unwrap()[1].len(), 1024 * 1024);
+    // 4096 file entries + 1 directory tick + 2 DIEs + 2 attributes >= 4096 work items -> polled at least once.
+    assert!(st.polls >= 1);
+}

@@ -392,6 +392,29 @@ impl<'a> Ctx<'a> {
         })
     }
 
+    /// Resolves a string-class `FormValue` in `.debug_str` or `.debug_line_str` to its checked
+    /// `(offset, len)` span without copying bytes.
+    pub fn resolve_pool_string(&self, v: &FormValue<'a>) -> Result<(bool, usize, usize)> {
+        let (is_line_str, offset) = match v.form {
+            DW_FORM_GNU_strp_alt => {
+                return Err(DwarfError::dwarf("Unsupported form for string attribute"));
+            }
+            DW_FORM_strx
+            | DW_FORM_strx1
+            | DW_FORM_strx2
+            | DW_FORM_strx3
+            | DW_FORM_strx4
+            | DW_FORM_GNU_str_index => (false, self.str_offset_item(v.uval)?),
+            DW_FORM_strp | DW_FORM_strp_sup => (false, v.uval),
+            DW_FORM_line_strp => (true, v.uval),
+            _ => return Err(DwarfError::dwarf("Invalid form for string attribute")),
+        };
+        let s = self.resolve_string(v)?;
+        let off = usize::try_from(offset)
+            .map_err(|_| DwarfError::dwarf("string offset overflows usize"))?;
+        Ok((is_line_str, off, s.len()))
+    }
+
     /// `DWARFUnit::getAddrOffsetSectionItem`, without the DWO fallback (units are never DWO).
     fn addr_item(&self, index: u32) -> Option<u64> {
         let base = self.addr_base?;

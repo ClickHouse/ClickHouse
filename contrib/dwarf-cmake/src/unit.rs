@@ -385,7 +385,7 @@ impl UnitState {
                     attr_str_chars: 0,
                     ancestors: &w.stack,
                 };
-                write_row(sink, &row, w.filename_table.as_ref(), &mut counters)?;
+                write_row(sink, &row, &mut counters)?;
                 if w.stack.pop().is_none() {
                     return Err(DwarfError::dwarf("Stack underflow"));
                 }
@@ -399,7 +399,7 @@ impl UnitState {
                 let tag = abbrev.tag();
                 let is_cu = tag == DW_TAG_compile_unit;
                 if is_cu {
-                    prepass(w, abbrev, cur, &ctx)?;
+                    prepass(w, abbrev, cur, &ctx, &mut work)?;
                 }
 
                 attrs.clear();
@@ -428,7 +428,7 @@ impl UnitState {
                     if aname == DW_AT_stmt_list && w.filename_table.is_none() {
                         // Expected before any attribute that points into the table; parsed once.
                         if let Some(offset) = as_section_offset(&v, params.version) {
-                            w.filename_table = Some(parse_filename_table(&ctx, offset)?);
+                            w.filename_table = Some(parse_filename_table(&ctx, offset, &mut work)?);
                         }
                     }
 
@@ -451,20 +451,22 @@ impl UnitState {
                                 ranges_rnglistx = v.form == DW_FORM_rnglistx;
                             }
                             // Some values index lookup tables that can be stringified.
-                            let table_size = w.filename_table.as_ref().map_or(0, |t| t.size());
-                            if (aname == DW_AT_decl_file || aname == DW_AT_call_file)
-                                && v.uval < table_size
-                            {
-                                let idx = v.uval + 1;
-                                if aname == DW_AT_decl_file
-                                    && core::mem::replace(&mut need_decl_file, false)
+                            if let Some(table) = w.filename_table.as_ref() {
+                                if (aname == DW_AT_decl_file || aname == DW_AT_call_file)
+                                    && v.uval < table.size()
                                 {
-                                    decl_file = StrSrc::Table(idx);
+                                    let resolved = table.get(v.uval + 1, &ctx.sections);
+                                    if aname == DW_AT_decl_file
+                                        && core::mem::replace(&mut need_decl_file, false)
+                                    {
+                                        decl_file = StrSrc::Bytes(resolved);
+                                    }
+                                    if want_attr_str {
+                                        str_ = StrSrc::Bytes(resolved);
+                                    }
                                 }
-                                if want_attr_str {
-                                    str_ = StrSrc::Table(idx);
-                                }
-                            } else if want_attr_str {
+                            }
+                            if matches!(str_, StrSrc::Empty) && want_attr_str {
                                 if aname == DW_AT_language {
                                     str_ = StrSrc::Bytes(
                                         lookup_language_name(v.uval as u32).as_bytes(),
@@ -500,6 +502,7 @@ impl UnitState {
                                     name = res;
                                 }
                                 if is_cu {
+                                    work.tick(res.len() / 4096)?;
                                     w.unit_name.clear();
                                     w.unit_name.extend_from_slice(res);
                                 }
@@ -522,9 +525,6 @@ impl UnitState {
                             attr_str_chars += match str_ {
                                 StrSrc::Empty => 0,
                                 StrSrc::Bytes(b) => b.len(),
-                                StrSrc::Table(i) => {
-                                    w.filename_table.as_ref().map_or(0, |t| t.get(i).len())
-                                }
                             };
                         }
                         attrs.push(AttrOut {
@@ -577,7 +577,7 @@ impl UnitState {
                     attr_str_chars,
                     ancestors: &w.stack,
                 };
-                write_row(sink, &row, w.filename_table.as_ref(), &mut counters)?;
+                write_row(sink, &row, &mut counters)?;
 
                 if abbrev.has_children() {
                     w.stack.push(StackEntry {
@@ -617,9 +617,16 @@ impl UnitState {
 ///
 /// The old code skipped the other attributes with `skipValue`; decoding them strictly can only
 /// fail where the walk that follows fails anyway.
-fn prepass(w: &mut Walk, abbrev: &Abbreviation, mut cur: Cursor<'_>, ctx: &Ctx<'_>) -> Result<()> {
+fn prepass(
+    w: &mut Walk,
+    abbrev: &Abbreviation,
+    mut cur: Cursor<'_>,
+    ctx: &Ctx<'_>,
+    work: &mut Work<'_>,
+) -> Result<()> {
     let mut low_pc: Option<FormValue<'_>> = None;
     for spec in abbrev.attributes() {
+        work.tick(1)?;
         let v = extract_value(
             spec.form(),
             spec.implicit_const_value(),
