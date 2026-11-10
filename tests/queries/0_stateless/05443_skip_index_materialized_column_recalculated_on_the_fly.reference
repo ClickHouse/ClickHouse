@@ -1,0 +1,10 @@
+-- plain MATERIALIZED column
+1
+1
+-- lazily hinted JSON MATERIALIZED column, minmax index
+1
+1
+-- lazily hinted JSON MATERIALIZED column, text index
+1
+1
+1
