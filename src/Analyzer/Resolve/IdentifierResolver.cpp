@@ -722,6 +722,29 @@ bool readingIsUsableForLookup(const DataTypePtr & type, const IdentifierLookup &
     return type && (identifier_lookup.isExpressionLookup() || qualifiedMatcherCanExpandType(type));
 }
 
+/// How a carrier of an enclosing scope (an expression alias, a lambda argument, a column or an `ARRAY JOIN` output)
+/// binds the identifier of a lookup.
+enum class OuterReading : uint8_t
+{
+    /// The carrier does not bind the identifier: the lookup continues with other carriers and enclosing scopes.
+    ABSENT,
+    /// The carrier binds the identifier and provides it, see `readingIsUsableForLookup`.
+    READABLE,
+    /// The carrier binds the identifier but cannot provide it: a lambda argument without the rest of the identifier,
+    /// or, for the qualifier of a matcher, an expression the matcher cannot expand. The lookup stops there - the
+    /// expression lookup throws `UNKNOWN_IDENTIFIER`, or `resolveQualifiedMatcher` finds a non-compound expression -
+    /// so the scopes farther out are not searched and cannot give the identifier a reading.
+    BLOCKS,
+};
+
+/// The reading that an expression of type `type`, or no expression if it is nullptr, gives the identifier of `identifier_lookup`.
+OuterReading outerReadingOfType(const DataTypePtr & type, const IdentifierLookup & identifier_lookup)
+{
+    if (!type)
+        return OuterReading::ABSENT;
+    return readingIsUsableForLookup(type, identifier_lookup) ? OuterReading::READABLE : OuterReading::BLOCKS;
+}
+
 /// Returns the declared type of a column or a subcolumn of a column of the table expression named `full_name`,
 /// or nullptr if there is none. Unlike `tryGetColumnNode` and `tryGetSubcolumnInfo`, it does not resolve the
 /// expression of an `ALIAS` column: only checking whether a competing reading exists must not evaluate a
@@ -793,10 +816,11 @@ bool tableExpressionDataCanReconstructNestedPrefix(
     return false;
 }
 
-/// Returns true if `identifier_view` names a column or a subcolumn of a column of the table expression, or
-/// a `Nested` value reconstructed from its columns (only when there is no such column or subcolumn), that gives
-/// the identifier of `identifier_lookup` a reading, see `readingIsUsableForLookup`. Only declared types are inspected, so no `ALIAS` column is resolved.
-bool tableExpressionDataCanReadIdentifier(
+/// Returns the reading that a column or a subcolumn of a column of the table expression named `identifier_view`,
+/// or a `Nested` value reconstructed from its columns (only when there is no such column or subcolumn), gives the
+/// identifier of `identifier_lookup`, see `outerReadingOfType`. Only declared types are inspected, so no `ALIAS`
+/// column is resolved.
+OuterReading tableExpressionDataReadingOfIdentifier(
     const AnalysisTableExpressionData & table_expression_data,
     IdentifierView identifier_view,
     const IdentifierLookup & identifier_lookup,
@@ -805,39 +829,23 @@ bool tableExpressionDataCanReadIdentifier(
     /// As in `tryResolveIdentifierFromStorage`, a column or a subcolumn takes precedence over a reconstructed
     /// `Nested` prefix: if one exists, it alone decides whether there is a reading.
     if (auto type = tryGetDeclaredColumnOrSubcolumnType(table_expression_data, identifier_view.getFullName()))
-        return readingIsUsableForLookup(type, identifier_lookup);
+        return outerReadingOfType(type, identifier_lookup);
 
-    return tableExpressionDataCanReconstructNestedPrefix(table_expression_data, identifier_view, context);
+    return tableExpressionDataCanReconstructNestedPrefix(table_expression_data, identifier_view, context)
+        ? OuterReading::READABLE
+        : OuterReading::ABSENT;
 }
-
-}
-
-namespace
-{
-
-/// How a visible expression argument of a scope (a lambda argument) binds the identifier of a lookup.
-enum class ExpressionArgumentReading : uint8_t
-{
-    /// No visible argument binds the identifier: the lookup continues in the enclosing scopes.
-    ABSENT,
-    /// An argument binds the identifier and provides it, see `readingIsUsableForLookup`.
-    READABLE,
-    /// An argument binds the first part of the identifier but cannot provide the rest. The lookup stops there
-    /// with `UNKNOWN_IDENTIFIER`, as `tryResolveIdentifierFromCompoundExpression` throws, so the enclosing scopes
-    /// are not searched and cannot give the identifier a reading.
-    BLOCKS,
-};
 
 }
 
 /// Returns how a visible expression argument of `scope` binds the identifier of `identifier_lookup`, matched the
 /// same way `tryResolveIdentifierFromExpressionArguments` binds it.
-static ExpressionArgumentReading expressionArgumentReadingOfIdentifier(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
+static OuterReading expressionArgumentReadingOfIdentifier(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
     const auto & identifier = identifier_lookup.identifier;
 
     if (scope.expression_argument_name_to_node.empty())
-        return ExpressionArgumentReading::ABSENT;
+        return OuterReading::ABSENT;
 
     auto it = scope.expression_argument_name_to_node.find(identifier.getFullName());
     bool full_identifier = it != scope.expression_argument_name_to_node.end();
@@ -845,14 +853,14 @@ static ExpressionArgumentReading expressionArgumentReadingOfIdentifier(const Ide
     {
         it = scope.expression_argument_name_to_node.find(identifier.front());
         if (it == scope.expression_argument_name_to_node.end())
-            return ExpressionArgumentReading::ABSENT;
+            return OuterReading::ABSENT;
     }
 
     if (scope.hidden_expression_arguments.contains(it->first))
-        return ExpressionArgumentReading::ABSENT;
+        return OuterReading::ABSENT;
 
     if (!isExpressionNodeType(it->second->getNodeType()))
-        return ExpressionArgumentReading::ABSENT;
+        return OuterReading::ABSENT;
 
     DataTypePtr type = it->second->getResultType();
     if (!full_identifier && identifier.isCompound())
@@ -860,14 +868,12 @@ static ExpressionArgumentReading expressionArgumentReadingOfIdentifier(const Ide
         IdentifierView rest(identifier);
         rest.popFirst();
         type = type->tryGetSubcolumnType(rest.getFullName());
-
-        /// An expression lookup binds the argument by its first part and throws when the rest is not a subcolumn
-        /// of it, instead of searching the enclosing scopes.
-        if (!type && identifier_lookup.isExpressionLookup())
-            return ExpressionArgumentReading::BLOCKS;
     }
 
-    return readingIsUsableForLookup(type, identifier_lookup) ? ExpressionArgumentReading::READABLE : ExpressionArgumentReading::ABSENT;
+    /// The argument is bound, so the lookup stops here whether or not it provides the identifier: the expression lookup
+    /// throws when the rest is not a subcolumn of the argument (`tryResolveIdentifierFromCompoundExpression`), and the
+    /// qualifier of a matcher resolved to an argument it cannot expand finds a non-compound expression.
+    return readingIsUsableForLookup(type, identifier_lookup) ? OuterReading::READABLE : OuterReading::BLOCKS;
 }
 
 /// Returns true if `target` is `root` itself or is nested below `root` in a join tree.
@@ -956,7 +962,9 @@ static const JoinNode * findLateralJoinWithRightSideContaining(const IQueryTreeN
   * `analyzer_compatibility_prefer_alias_over_subcolumn` it prefers a table expression of that name, so the inner name
   * must be hidden on the table expression lookup as well, or the matcher would expand the inner table instead.
   * There a carrier counts only when the matcher can expand it, i.e. when it is a `Tuple`; a constant alias, a lambda
-  * argument, a column or an `ARRAY JOIN` output of another type does not hide the name.
+  * argument, a column or an `ARRAY JOIN` output of another type does not hide the name. Such a carrier is still the
+  * nearest expression binding of the qualifier, where `resolveQualifiedMatcher` stops, so it also keeps a table of that
+  * name farther out from hiding it.
   *
   * The rule is about the qualifier, not about the shape of the lookup, so it applies to the qualifier of a
   * matcher (`t.*`, `t.COLUMNS(...)`, `db.t.*`) as well. That qualifier is resolved as an expression first
@@ -1017,6 +1025,13 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
     const IdentifierResolveScope * inner_scope = &scope;
     for (const auto * outer_scope = scope.parent_scope; outer_scope; inner_scope = outer_scope, outer_scope = outer_scope->parent_scope)
     {
+        /** Whether a carrier of this scope binds the identifier without providing it, see `OuterReading::BLOCKS`.
+          * Another carrier of the same scope can still provide it; otherwise the scan stops at this scope with
+          * "not hidden", because the lookup does not reach the scopes farther out. For example, a scalar lambda
+          * argument `t` stops the qualifier of `t.*` before a farther table `t`.
+          */
+        bool blocked = false;
+
         /** An expression alias of the enclosing query, such as `CAST(...) AS t` in its projection or
           * `WITH ... AS t`, gives the identifier a reading there too: the parent lookup searches the aliases
           * of the enclosing scopes by the first part of the identifier, as `tryResolveIdentifierFromAliases`
@@ -1051,8 +1066,16 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                 DataTypePtr type = constant_node->getResultType();
                 if (!rest.empty())
                     type = type->tryGetSubcolumnType(rest.getFullName());
-                if (readingIsUsableForLookup(type, identifier_lookup))
-                    return true;
+                switch (outerReadingOfType(type, identifier_lookup))
+                {
+                    case OuterReading::READABLE:
+                        return true;
+                    case OuterReading::BLOCKS:
+                        blocked = true;
+                        break;
+                    case OuterReading::ABSENT:
+                        break;
+                }
             }
         }
 
@@ -1067,11 +1090,11 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
           */
         switch (expressionArgumentReadingOfIdentifier(identifier_lookup, *outer_scope))
         {
-            case ExpressionArgumentReading::READABLE:
+            case OuterReading::READABLE:
                 return true;
-            case ExpressionArgumentReading::BLOCKS:
+            case OuterReading::BLOCKS:
                 return false;
-            case ExpressionArgumentReading::ABSENT:
+            case OuterReading::ABSENT:
                 break;
         }
 
@@ -1096,7 +1119,11 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
               */
             const auto * outer_query_node = outer_scope->scope_node->as<QueryNode>();
             if (!outer_query_node)
+            {
+                if (blocked)
+                    return false;
                 continue;
+            }
 
             const auto * outer_join_tree = outer_query_node->getJoinTreeNode().get();
             if (outer_scope->resolving_join_on_expression
@@ -1113,6 +1140,8 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             }
             else
             {
+                if (blocked)
+                    return false;
                 continue;
             }
         }
@@ -1130,8 +1159,16 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             /// The whole identifier can name a column of the enclosing query, e.g. a `Tuple` column `t` with an
             /// element `val` gives `t.val` a reading there. Only a column the identifier can be read from
             /// counts, so an unrelated column with the same name as the table does not hide it.
-            if (tableExpressionDataCanReadIdentifier(outer_table_expression_data, identifier, identifier_lookup, outer_scope->context))
-                return true;
+            switch (tableExpressionDataReadingOfIdentifier(outer_table_expression_data, identifier, identifier_lookup, outer_scope->context))
+            {
+                case OuterReading::READABLE:
+                    return true;
+                case OuterReading::BLOCKS:
+                    blocked = true;
+                    break;
+                case OuterReading::ABSENT:
+                    break;
+            }
 
             /// The name a table expression is addressed by in the enclosing query. The name of an aliased
             /// table expression is hidden there as well, so only its alias counts then.
@@ -1170,8 +1207,16 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             {
                 IdentifierView rest(identifier);
                 rest.popFirst();
-                if (tableExpressionDataCanReadIdentifier(outer_table_expression_data, rest, identifier_lookup, outer_scope->context))
-                    return true;
+                switch (tableExpressionDataReadingOfIdentifier(outer_table_expression_data, rest, identifier_lookup, outer_scope->context))
+                {
+                    case OuterReading::READABLE:
+                        return true;
+                    case OuterReading::BLOCKS:
+                        blocked = true;
+                        break;
+                    case OuterReading::ABSENT:
+                        break;
+                }
             }
         }
 
@@ -1205,10 +1250,21 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                 DataTypePtr type = array_join_column->getResultType();
                 if (!rest.empty())
                     type = type->tryGetSubcolumnType(rest.getFullName());
-                if (readingIsUsableForLookup(type, identifier_lookup))
-                    return true;
+                switch (outerReadingOfType(type, identifier_lookup))
+                {
+                    case OuterReading::READABLE:
+                        return true;
+                    case OuterReading::BLOCKS:
+                        blocked = true;
+                        break;
+                    case OuterReading::ABSENT:
+                        break;
+                }
             }
         }
+
+        if (blocked)
+            return false;
     }
 
     return false;
