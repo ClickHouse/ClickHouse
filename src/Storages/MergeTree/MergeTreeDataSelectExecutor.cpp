@@ -1501,7 +1501,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
                 pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
                 /// with `use_primary_key = 0` the search runs only for `_part_offset` conditions
-                if (!part_key_condition.alwaysUnknownOrTrue())
+                if (filter_context.report_index_usage && !part_key_condition.alwaysUnknownOrTrue())
                     ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, total_marks_count - ranges.getMarksCount());
                 if (ranges.ranges.empty())
                     pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
@@ -1769,9 +1769,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, sum_marks_pk.load() - parts_with_ranges.getMarksCountAllParts());
+    if (filter_context.report_index_usage)
+        ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, sum_marks_pk.load() - parts_with_ranges.getMarksCountAllParts());
 
-    if (!query_info.is_internal && context->hasQueryContext())
+    if (filter_context.report_index_usage && !query_info.is_internal && context->hasQueryContext())
     {
         auto add_used_index = [&](const auto & index)
         {
@@ -2430,7 +2431,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         use_query_condition_cache,
         allow_top_k_prewhere_query_condition_cache,
         /*supports_skip_indexes_on_data_read*/false,
-        /*check_row_limits=*/true);
+        /*check_row_limits=*/true,
+        /*report_index_usage=*/true);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(

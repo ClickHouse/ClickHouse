@@ -313,6 +313,8 @@ public:
         bool is_parallel_reading_from_replicas;
         bool has_projections;
         bool check_row_limits;
+        /// an estimation-only analysis is discarded and done again by the read, it must not be counted twice
+        bool report_index_usage = true;
         bool use_primary_key = true;
         ReadFromMergeTree::AnalysisResult & result;
     };
