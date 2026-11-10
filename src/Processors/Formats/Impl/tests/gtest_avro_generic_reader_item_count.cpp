@@ -122,8 +122,8 @@ std::string arrayOfRecordsOfNulls(size_t fields_count)
 /// resizing a container by the declared count throws `std::length_error` instead of `avro::Exception`.
 constexpr int64_t huge_item_count = int64_t(1) << 62;
 
-/// The number of datums that items taking no bytes may create in a single datum, as set in `contrib/avro`.
-/// 65536 `GenericDatum` objects of 32 bytes are 2 MiB.
+/// Zero-input expansion is capped at this many datum nodes. Actual storage is larger because containers and
+/// schema/value representations also allocate; this is a construction budget, not an exact byte limit.
 constexpr int64_t max_zero_size_items = int64_t(1) << 16;
 
 constexpr const char * array_of_null = R"({"type":"array","items":"null"})";
