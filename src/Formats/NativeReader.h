@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Formats/FormatSettings.h>
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Core/Block.h>
@@ -8,6 +7,8 @@
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <map>
+#include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -15,6 +16,7 @@ namespace DB
 using ValueSizeMap = std::map<std::string, double>;
 
 class CompressedReadBufferFromFile;
+struct FormatSettings;
 
 /** Deserializes the stream of blocks from the native binary format (with names and column types).
   * Designed for communication between servers.
@@ -31,19 +33,22 @@ public:
         = ISerialization::KindSet::all().without(ISerialization::Kind::DETACHED);
 
     /// If a non-zero server_revision is specified, additional block information may be expected and read.
+    /// The overloads without FormatSettings exist so that this header does not need its definition.
+    NativeReader(ReadBuffer & istr_, UInt64 server_revision_);
     NativeReader(
         ReadBuffer & istr_,
         UInt64 server_revision_,
-        std::optional<FormatSettings> format_settings_ = std::nullopt,
+        std::optional<FormatSettings> format_settings_,
         ISerialization::KindSet allowed_kinds_ = default_allowed_kinds);
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
+    NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_);
     NativeReader(
         ReadBuffer & istr_,
         const Block & header_,
         UInt64 server_revision_,
-        std::optional<FormatSettings> format_settings_ = std::nullopt,
+        std::optional<FormatSettings> format_settings_,
         BlockMissingValues * block_missing_values_ = nullptr);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
@@ -70,7 +75,7 @@ private:
     ReadBuffer & istr;
     Block header;
     UInt64 server_revision;
-    std::optional<FormatSettings> format_settings = std::nullopt;
+    std::shared_ptr<const FormatSettings> format_settings;
     BlockMissingValues * block_missing_values = nullptr;
     ISerialization::KindSet allowed_kinds = default_allowed_kinds;
 
