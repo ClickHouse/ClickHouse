@@ -938,7 +938,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// values of the surviving rows and their relative order within one part are preserved.
     /// Excluded: modes that synthesize rows (Summing, Aggregating, etc.), patch parts (rewrite values),
     /// GROUP BY TTL (aggregates rows) and column TTL (rewrites expired values).
-    /// Also excluded: a column named `_part_offset` or `_part_index` in the table or stored in a source part, which shadows the virtual column the mapping reads.
+    /// Also excluded: a `_part_offset` or `_part_index` column in the table or a source part shadows the virtual column the mapping reads.
     const auto merging_mode = global_ctx->merging_params.mode;
     bool merging_mode_only_drops_rows =
         merging_mode == MergeTreeData::MergingParams::Ordinary ||
