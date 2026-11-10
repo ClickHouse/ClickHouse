@@ -1858,6 +1858,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     new_create_query->uuid = db_uuid;
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
         new_create_query->set(new_create_query->comment, make_intrusive<ASTLiteral>(database_comment));
+    auto new_engine_definition_text = new_engine_definition->formatWithSecretsOneLine<SecretString>();
     DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query);
 
     /// Publish. Nothing below throws.
@@ -1866,7 +1867,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     database_settings.set(std::move(new_settings));
     {
         std::lock_guard lock(mutex);
-        database_engine_definition = new_engine_definition->formatWithSecretsOneLine<SecretString>();
+        database_engine_definition = std::move(new_engine_definition_text);
     }
     if (!local_catalog_snapshot)
     {
