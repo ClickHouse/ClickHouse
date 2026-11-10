@@ -337,7 +337,8 @@ private:
     /// queries, before the group write writes anything - instead of being dropped in favour of a decision
     /// made for another query. The checks of the sinks of the group write itself are not run again: they
     /// observe the decision of `lent_from`, as they would if no pending gate had been merged.
-    /// Set before the gate is published and never changed, so it is read without the lock.
+    /// Set before the gate is published and never changed, so it is read without the lock. Never a lent gate
+    /// itself: a decision borrowed from a lent gate is borrowed from the root of its chain, see `InsertStartGates::get`.
     std::shared_ptr<InsertStartGate> lent_from;
 
     /// For a gate with `lent_from`: the storage whose flush the group write is (see `InsertStartGates::flushed_by`),
@@ -592,8 +593,15 @@ public:
                 /// was made for, and handing `chosen` itself to this group write would make it rethrow that
                 /// rejection, while the participants' checks enforced by the storage flushed here have passed
                 /// (otherwise `chosen` would not have been chosen).
+                ///
+                /// `chosen` may itself be a lent gate that has made its decision: then the decision borrowed is that of
+                /// its own `lent_from`, the root of the chain. A late check made on a lent gate is handed straight to
+                /// `lent_from` (see `addCheck`), and nothing else of `lent_from` but its presence is consulted, so
+                /// borrowing from the root makes the same decision - while not retaining every historical gate of
+                /// the chain, which repeated flushes alternating between two buffers would otherwise grow without
+                /// bound. So `lent_from` never points to a lent gate.
                 gate = std::make_shared<InsertStartGate>();
-                gate->lent_from = chosen;
+                gate->lent_from = chosen->lent_from ? chosen->lent_from : chosen;
                 gate->lent_to_flush_of = flushed_by;
             }
             else
