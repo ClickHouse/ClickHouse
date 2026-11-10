@@ -607,7 +607,7 @@ private:
         data_ref.source_bytes += rows_bytes;
         converted.reset();
         rows.reset();
-        data_ref.pending = source_type->createColumn();
+        data_ref.pending.reset();
         data_ref.broken = false;
     }
 

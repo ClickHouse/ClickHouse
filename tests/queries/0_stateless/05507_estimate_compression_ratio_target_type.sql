@@ -152,6 +152,15 @@ SELECT estimateCompressionRatioMerge('LZ4', 'String')(st) = (
     ))
 FROM states;
 
+-- A state kept in a `Memory` table is read by later queries, also at once: the first read finishes it, the others see the
+-- same sizes.
+DROP TABLE IF EXISTS memory_states;
+CREATE TABLE memory_states (st AggregateFunction(estimateCompressionRatio('LZ4', 'String'), String)) ENGINE = Memory;
+INSERT INTO memory_states SELECT estimateCompressionRatioState('LZ4', 'String')(s) FROM src;
+SELECT finalizeAggregation(st) = (SELECT estimateCompressionRatio('LZ4', 'String')(s) FROM src) FROM memory_states;
+SELECT finalizeAggregation(st) = (SELECT estimateCompressionRatio('LZ4', 'String')(s) FROM src) FROM memory_states;
+DROP TABLE memory_states;
+
 SELECT 'sparse';
 -- A column read in sparse form is estimated as the same rows read dense.
 DROP TABLE IF EXISTS sparse;

@@ -29,6 +29,8 @@ states
 1	AggregateFunction(estimateCompressionRatio(\'LZ4\', \'String\'), String)
 1
 1
+1
+1
 sparse
 Sparse
 1
