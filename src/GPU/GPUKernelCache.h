@@ -11,9 +11,12 @@
 
 #include <cuda_runtime_api.h>
 
+#include <base/defines.h>
+
 #include <boost/noncopyable.hpp>
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -33,9 +36,8 @@ struct GPUKernel : private boost::noncopyable
 
     /// Unloads the library without waiting for the device. Whoever launches the kernel holds it (through
     /// `CompiledGPUExpression::kernel`) until the stream it was launched on is synchronized, so when the last
-    /// reference goes, no launch of the kernel can be queued or running. The destructor runs also under the mutex of
-    /// the cache, when an eviction drops the last reference, and a wait for the device there would stall every
-    /// compilation of the server behind the work of all queries.
+    /// reference goes, no launch of the kernel can be queued or running. `cudaLibraryUnload` can still wait for the
+    /// device to free the code, so `GPUKernelCache` never drops a kernel under its mutex.
     ~GPUKernel();
 };
 
@@ -47,10 +49,36 @@ struct GPUKernelWeight
 /// The kernels compiled for expressions, by the hash of the expression and of the device. The limits are the server
 /// settings `gpu_expression_kernel_cache_size` and `gpu_expression_kernel_cache_elements_size`, which are applied again
 /// when the configuration is reloaded.
+/// The evicted kernels are unloaded after the mutex of the cache is released: an unload under it would stall every
+/// lookup and compilation of the server behind the work queued on the device. The methods of `CacheBase` that can
+/// evict are hidden here by ones that unload what they evicted on return.
 class GPUKernelCache : public CacheBase<UInt128, GPUKernel, UInt128Hash, GPUKernelWeight>
 {
+    using Base = CacheBase<UInt128, GPUKernel, UInt128Hash, GPUKernelWeight>;
+
 public:
     GPUKernelCache(size_t max_size_in_bytes, size_t max_count);
+
+    template <typename LoadFunc>
+    std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
+    {
+        auto result = Base::getOrSet(key, std::forward<LoadFunc>(load_func));
+        unloadEvicted();
+        return result;
+    }
+
+    void set(const Key & key, const MappedPtr & mapped);
+    void setMaxSizeInBytes(size_t max_size_in_bytes);
+    void setMaxCount(size_t max_count);
+
+private:
+    /// Runs under the mutex of the cache, so it only keeps the kernel for `unloadEvicted`.
+    void onEntryRemoval(size_t weight_loss, const MappedPtr & kernel) override;
+
+    void unloadEvicted();
+
+    std::mutex evicted_mutex;
+    std::vector<MappedPtr> evicted TSA_GUARDED_BY(evicted_mutex);
 };
 
 }

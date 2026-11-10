@@ -87,6 +87,40 @@ GPUKernelCache::GPUKernelCache(size_t max_size_in_bytes, size_t max_count)
 {
 }
 
+void GPUKernelCache::set(const Key & key, const MappedPtr & mapped)
+{
+    Base::set(key, mapped);
+    unloadEvicted();
+}
+
+void GPUKernelCache::setMaxSizeInBytes(size_t max_size_in_bytes)
+{
+    Base::setMaxSizeInBytes(max_size_in_bytes);
+    unloadEvicted();
+}
+
+void GPUKernelCache::setMaxCount(size_t max_count)
+{
+    Base::setMaxCount(max_count);
+    unloadEvicted();
+}
+
+void GPUKernelCache::onEntryRemoval(size_t /*weight_loss*/, const MappedPtr & kernel)
+{
+    std::lock_guard lock(evicted_mutex);
+    evicted.push_back(kernel);
+}
+
+void GPUKernelCache::unloadEvicted()
+{
+    std::vector<MappedPtr> unloaded;
+    {
+        std::lock_guard lock(evicted_mutex);
+        unloaded.swap(evicted);
+    }
+    /// The kernels whose last reference was here are unloaded as `unloaded` goes, outside both mutexes.
+}
+
 }
 
 #endif
