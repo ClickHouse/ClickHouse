@@ -569,7 +569,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (if_exists)
                 print_keyword(" IF EXISTS");
-            ostr << ' ' << quoteString(amber_node_name);
+            ostr << ' ' << quoteString(amber_params->node_name);
             break;
         }
 
@@ -577,27 +577,27 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << ' ';
             print_keyword("IN CLUSTER");
-            ostr << ' ' << amber_cluster_id;
+            ostr << ' ' << amber_params->cluster_id;
             break;
         }
 
         case Type::CREATE_AMBER_VOLUME:
         {
-            ostr << ' ' << amber_volume_id << ' ';
+            ostr << ' ' << amber_params->volume_id << ' ';
             print_keyword("IN CLUSTER");
-            ostr << ' ' << amber_cluster_id << ' ';
+            ostr << ' ' << amber_params->cluster_id << ' ';
             print_keyword("SHARDS");
-            ostr << ' ' << amber_shard_count << ' ';
+            ostr << ' ' << amber_params->shard_count << ' ';
             print_keyword("SEGMENTS");
-            ostr << ' ' << amber_segment_count;
+            ostr << ' ' << amber_params->segment_count;
             break;
         }
 
         case Type::DROP_AMBER_VOLUME:
         {
-            ostr << ' ' << amber_volume_id << ' ';
+            ostr << ' ' << amber_params->volume_id << ' ';
             print_keyword("FROM CLUSTER");
-            ostr << ' ' << amber_cluster_id;
+            ostr << ' ' << amber_params->cluster_id;
             break;
         }
 
@@ -771,16 +771,19 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeUInt("seconds", seconds);
     if (untracked_memory_size != 0)
         w.writeUInt("untracked_memory_size", untracked_memory_size);
-    if (!amber_node_name.empty())
-        w.writeString("amber_node_name", amber_node_name);
-    if (amber_cluster_id != 0)
-        w.writeUInt("amber_cluster_id", amber_cluster_id);
-    if (amber_volume_id != 0)
-        w.writeUInt("amber_volume_id", amber_volume_id);
-    if (amber_shard_count != 0)
-        w.writeUInt("amber_shard_count", amber_shard_count);
-    if (amber_segment_count != 0)
-        w.writeUInt("amber_segment_count", amber_segment_count);
+    if (amber_params)
+    {
+        if (!amber_params->node_name.empty())
+            w.writeString("amber_node_name", amber_params->node_name);
+        if (amber_params->cluster_id != 0)
+            w.writeUInt("amber_cluster_id", amber_params->cluster_id);
+        if (amber_params->volume_id != 0)
+            w.writeUInt("amber_volume_id", amber_params->volume_id);
+        if (amber_params->shard_count != 0)
+            w.writeUInt("amber_shard_count", amber_params->shard_count);
+        if (amber_params->segment_count != 0)
+            w.writeUInt("amber_segment_count", amber_params->segment_count);
+    }
     if (query_result_cache_tag.has_value())
         w.writeString("query_result_cache_tag", *query_result_cache_tag);
     if (!filesystem_cache_name.empty())
@@ -962,11 +965,17 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     disk = r.getString("disk");
     seconds = r.getUInt("seconds");
     untracked_memory_size = r.getUInt("untracked_memory_size");
-    amber_node_name = r.getString("amber_node_name");
-    amber_cluster_id = r.getUInt("amber_cluster_id");
-    amber_volume_id = r.getUInt("amber_volume_id");
-    amber_shard_count = r.getUInt("amber_shard_count");
-    amber_segment_count = r.getUInt("amber_segment_count");
+    if (type == Type::DROP_AMBER_NODE || type == Type::ALLOCATE_AMBER_VOLUME || type == Type::CREATE_AMBER_VOLUME
+        || type == Type::DROP_AMBER_VOLUME)
+    {
+        AmberParams params;
+        params.node_name = r.getString("amber_node_name");
+        params.cluster_id = r.getUInt("amber_cluster_id");
+        params.volume_id = r.getUInt("amber_volume_id");
+        params.shard_count = r.getUInt("amber_shard_count");
+        params.segment_count = r.getUInt("amber_segment_count");
+        amber_params = std::make_shared<const AmberParams>(std::move(params));
+    }
     if (r.has("query_result_cache_tag"))
         query_result_cache_tag = r.getString("query_result_cache_tag");
     filesystem_cache_name = r.getString("filesystem_cache_name");

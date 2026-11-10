@@ -383,7 +383,7 @@ protected:
     mutable TLocker mutex;
 
 private:
-    std::unique_ptr<CachePolicy> cache_policy;
+    std::unique_ptr<CachePolicy> cache_policy TSA_GUARDED_BY(mutex);
 
     typename CachePolicy::OnRemoveEntryFunction makeOnRemoveEntryFunction()
     {
@@ -402,8 +402,8 @@ private:
         explicit InsertToken(CacheBase & cache_) : cache(cache_) {}
 
         TLocker mutex;
-        bool cleaned_up = false;
-        MappedPtr value;
+        bool cleaned_up TSA_GUARDED_BY(mutex) = false;
+        MappedPtr value TSA_GUARDED_BY(mutex);
 
         CacheBase & cache;
         size_t refcount = 0; /// Protected by the cache mutex
@@ -461,7 +461,7 @@ private:
 
     friend struct InsertTokenHolder;
 
-    InsertTokenById insert_tokens;
+    InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
 
     /// This is called when an entry is being evicted from the cache.
     /// Override this method if you want to handle individual entry removals from cache
