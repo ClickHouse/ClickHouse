@@ -836,6 +836,8 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     auto parser_shared_resources
         = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), /*num_streams_=*/processing_threads_num);
     auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
+    /// The action and its settings are captured together, see `after_processing_publication_mutex`.
+    std::shared_lock after_processing_lock(storage->after_processing_publication_mutex);
     const auto after_processing = metadata->getTableMetadata().after_processing.load();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
@@ -850,6 +852,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
             commit_once_processed,
             /*is_direct_select=*/true,
             after_processing));
+    after_processing_lock.unlock();
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -884,8 +887,9 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         after_processing_settings_copy = after_processing_settings;
         add_deduplication_info = deduplication_v2;
     }
-    /// `alter` publishes the destination settings before the action, so a batch should never capture `MOVE` without a
-    /// destination. If it does, it would read and insert its files and then fail to move them, so it is not started.
+    /// `alter` publishes the action together with its destination settings, so a batch should never capture `MOVE`
+    /// without a destination. If it does, it would read and insert its files and then fail to move them, so it is not
+    /// started.
     if (after_processing == ObjectStorageQueueAction::MOVE
         && after_processing_settings_copy.after_processing_move_uri.empty()
         && after_processing_settings_copy.after_processing_move_prefix.empty()
@@ -1159,7 +1163,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             = std::make_shared<FormatParserSharedResources>(queue_context->getSettingsRef(), /*num_streams_=*/threads);
 
         auto processing_progress = std::make_shared<ProcessingProgress>();
-        /// One value for the whole batch, so an `ALTER` applies from the next batch on.
+        /// One value for the whole batch, so an `ALTER` applies from the next batch on. The action and its settings are
+        /// captured together, see `after_processing_publication_mutex`.
+        std::shared_lock after_processing_lock(after_processing_publication_mutex);
         const auto after_processing = table_metadata.after_processing.load();
         for (size_t i = 0; i < threads; ++i)
         {
@@ -1183,6 +1189,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             pipes.emplace_back(source);
             sources.emplace_back(source);
         }
+        after_processing_lock.unlock();
         auto pipe = Pipe::unitePipes(std::move(pipes));
 
         block_io.pipeline.complete(std::move(pipe));
@@ -1963,11 +1970,12 @@ void StorageObjectStorageQueue::alter(
             new_metadata.settings_changes->formatForLogging(),
             requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
-        /// The companion settings of `after_processing` are published all at once, under one lock, and before the action
-        /// itself is published in Keeper metadata. A batch that captures the new `MOVE` then also captures its whole new
-        /// destination (uri, prefix, container and credentials), never a part of it. The reverse interval, the old action
-        /// with the new destination, is what the `ALTER` asks for anyway.
+        /// The companion settings of `after_processing` are published all at once, under one lock, and the action itself
+        /// is published in Keeper metadata while `after_processing_publication_mutex` is still held exclusively. A batch
+        /// captures both under the shared lock, so it gets either the old action with the old destination or the new action
+        /// with the new destination, never a mix (e.g. the old `MOVE` with the credentials that this `ALTER` clears).
         AfterProcessingSettings previous_after_processing_settings;
+        std::unique_lock after_processing_publication_lock(after_processing_publication_mutex);
         {
             std::lock_guard lock(mutex);
             previous_after_processing_settings = after_processing_settings;
@@ -2015,6 +2023,7 @@ void StorageObjectStorageQueue::alter(
             after_processing_settings = std::move(previous_after_processing_settings);
             throw;
         }
+        after_processing_publication_lock.unlock();
 
         /// Alter settings which are not stored in keeper.
         for (const auto & change : changed_settings)

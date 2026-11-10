@@ -3,6 +3,7 @@
 #include <chrono>
 #include <optional>
 #include <Common/Macros.h>
+#include <Common/SharedMutex.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -154,6 +155,10 @@ private:
     /// it needs to be available in Keeper metadata for older server versions.
     /// Therefore it is not in AfterProcessingSettings.
     AfterProcessingSettings after_processing_settings TSA_GUARDED_BY(mutex);
+    /// The action lives in Keeper metadata and its companion settings in `after_processing_settings`, so they cannot be
+    /// swapped in one step. `alter` holds this exclusively while it publishes both, and a batch holds it shared while it
+    /// captures both, so a batch always gets the action together with the destination that belongs to it.
+    mutable SharedMutex after_processing_publication_mutex;
     bool commit_on_select TSA_GUARDED_BY(mutex);
     bool deduplication_v2 TSA_GUARDED_BY(mutex);
 
