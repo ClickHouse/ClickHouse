@@ -1,6 +1,6 @@
 #!/bin/bash
 # Verify that the temporary server of the initialization accepts only local connections, even when the server
-# arguments override `listen_host` or add a protocol with its own `host`: an init script may be what sets the password, as here with
+# arguments override `listen_host`, add a repeated `listen_host[1]` or a protocol with its own `host`: an init script may be what sets the password, as here with
 # `CLICKHOUSE_SKIP_USER_SETUP=1`, and until it is done the server must not be reachable from the network.
 set -eo pipefail
 
@@ -8,14 +8,16 @@ dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 source "$dir/../lib.sh"
 
 image="$1"
+name="$(cname)"
 
 cid="$(
   docker run -d \
     -e CLICKHOUSE_SKIP_USER_SETUP=1 \
     -v "$dir/initdb.sql":/docker-entrypoint-initdb.d/initdb.sql:ro \
-    --name "$(cname)" \
+    --name "$name" \
+    --hostname "$name" \
     "$image" \
-    -- --listen_host=0.0.0.0 \
+    -- --listen_host=0.0.0.0 --listen_host[1]="$name" \
     --protocols.bootstrap.type=tcp --protocols.bootstrap.host=0.0.0.0 --protocols.bootstrap.port=19002
 )"
 trap '[ $? -eq 0 ] || dumpServerLogs "$cid"; docker rm -vf "$cid" > /dev/null' EXIT

@@ -17,6 +17,7 @@
 #include <csignal>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -280,6 +281,32 @@ std::vector<std::string> getOverriddenConfigChildren(const std::vector<std::stri
     Poco::Util::AbstractConfiguration::Keys children;
     config->keys(key, children);
     return children;
+}
+
+/// Whether `key` is `name` or one of its repeated entries (e.g. `listen_host[1]`), as `getMultipleKeysFromConfig` matches them.
+bool isMultipleConfigKey(const std::string & key, const std::string & name)
+{
+    return key == name || (key.starts_with(name + "[") && key.ends_with("]"));
+}
+
+/// Append every property of `config` under `prefix` to `out` as `--key=value`, except the top-level keys rejected by `keep`.
+void appendConfigProperties(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & prefix,
+    const std::function<bool(const std::string &)> & keep,
+    std::vector<std::string> & out)
+{
+    Poco::Util::AbstractConfiguration::Keys children;
+    config.keys(prefix, children);
+    for (const auto & child : children)
+    {
+        if (prefix.empty() && !keep(child))
+            continue;
+        std::string key = prefix.empty() ? child : prefix + "." + child;
+        if (config.has(key))
+            out.push_back("--" + key + "=" + config.getRawString(key));
+        appendConfigProperties(config, key, keep, out);
+    }
 }
 
 /// Extract a single value from a ClickHouse config key via `clickhouse extract-from-config`.
@@ -746,12 +773,22 @@ bool initClickHouseDB(
         g_clickhouse_binary, "su", run_as, "clickhouse-server",
         "--config-file=" + config_file,
     };
-    for (const auto & arg : extra_server_args)
-        server_args.push_back(arg);
-    if (std::find(extra_server_args.begin(), extra_server_args.end(), "--") == extra_server_args.end())
-        server_args.emplace_back("--");
-    /// After the user's arguments, because the last value of a property wins: the server must not accept remote
-    /// connections until the initialization (e.g. setting the password) is done, even with `-- --listen_host=0.0.0.0`.
+    /// The options before "--" are passed as is, the properties after it are passed parsed the same way the server
+    /// parses them, without any listen address: the server must not accept remote connections until the initialization
+    /// (e.g. setting the password) is done, even with `-- --listen_host=0.0.0.0` or `-- --listen_host[1]=0.0.0.0`.
+    auto properties_begin = std::find(extra_server_args.begin(), extra_server_args.end(), "--");
+    server_args.insert(server_args.end(), extra_server_args.begin(), properties_begin);
+    server_args.emplace_back("--");
+    if (properties_begin != extra_server_args.end())
+    {
+        Poco::AutoPtr<Poco::Util::LayeredConfiguration> properties = new Poco::Util::LayeredConfiguration;
+        argsToConfig(Poco::Util::Application::ArgVec(std::next(properties_begin), extra_server_args.end()), *properties, 0);
+        appendConfigProperties(*properties, "", [](const std::string & key)
+        {
+            return !isMultipleConfigKey(key, "listen_host") && !isMultipleConfigKey(key, "interserver_listen_host");
+        }, server_args);
+    }
+    /// A single `listen_host` from the command line replaces all of them from the configuration files.
     server_args.emplace_back("--listen_host=127.0.0.1");
     server_args.emplace_back("--interserver_listen_host=127.0.0.1");
     /// A protocol with its own `host` does not use `listen_host`, e.g. `-- --protocols.bootstrap.host=0.0.0.0`.

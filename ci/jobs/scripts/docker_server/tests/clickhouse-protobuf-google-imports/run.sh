@@ -29,8 +29,9 @@ cid="$(
 )"
 trap '[ $? -eq 0 ] || dumpServerLogs "$cid"; docker rm -vf "$cid" > /dev/null; rm -rf "$schemas"' EXIT
 
+# From inside the container, because the `default` user is restricted to localhost without a password.
 chCli() {
-  docker run --rm -i --link "$cid":clickhouse "$image" clickhouse-client --host clickhouse --query "$*"
+  docker exec "$cid" clickhouse-client --query "$*"
 }
 
 # shellcheck source=../../../../../tmp/docker-library/official-images/test/retry.sh
