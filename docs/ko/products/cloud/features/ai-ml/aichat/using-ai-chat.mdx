@@ -1,8 +1,8 @@
 ---
 slug: /use-cases/AI_ML/AIChat
-sidebarTitle: 'ClickHouse Cloud에서 ClickHouse Assistant chat 사용'
-title: 'ClickHouse Cloud에서 ClickHouse Assistant chat 사용'
-description: 'ClickHouse Cloud 콘솔에서 AI Chat 기능을 활성화하고 사용하는 가이드'
+sidebarTitle: 'ClickHouse Assistant'
+title: 'ClickHouse Cloud의 ClickHouse Assistant'
+description: 'ClickHouse Cloud 콘솔에서 ClickHouse Assistant를 알아보고, 활성화하고, 사용하는 방법'
 keywords: ['AI', 'ClickHouse Cloud', '채팅', 'SQL 콘솔', 'Agent', 'Docs AI']
 show_related_blogs: true
 doc_type: 'guide'
@@ -10,7 +10,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-> 이 가이드는 ClickHouse Cloud 콘솔에서 AI Chat 기능을 사용 설정하고 사용하는 방법을 설명합니다.
+ClickHouse Assistant를 사용하면 자연어로 ClickHouse Cloud 서비스의 데이터를 분석할 수 있습니다. 활성 탭, 저장된 쿼리, 스키마(schema), 대시보드 등의 맥락을 바탕으로 쿼리, 시각화 및 요약을 생성할 수 있습니다.
+
+Assistant에는 ClickHouse 문서를 기반으로 질문에 답하는 Docs AI 모드도 포함되어 있습니다. 이 가이드를 따라 Assistant를 활성화하고 ClickHouse Cloud 콘솔에서 두 모드를 모두 사용하십시오.
 
 <Steps>
   <Step title="사전 요구 사항" id="prerequisites">
@@ -35,7 +37,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   <Step title="채팅 모드 선택" id="modes">
     AI Chat는 현재 다음 모드를 지원합니다:
 
-    * **Agent**: schema와 metadata를 기반으로 여러 단계를 거쳐 추론합니다(서비스가 실행 중이어야 함).
+    * **Agent**: 스키마와 metadata를 기반으로 여러 단계를 거쳐 추론합니다(서비스가 실행 중이어야 함).
     * **Docs AI (Ask)**: 공식 ClickHouse 문서와 모범 사례 참고 자료를 기반으로 질문에 답합니다.
 
     전환하려면 플라이아웃 왼쪽 하단의 모드 셀렉터를 사용하십시오.

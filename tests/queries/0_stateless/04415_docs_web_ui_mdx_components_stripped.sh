@@ -31,7 +31,7 @@ echo "$PAGE" | grep -oF "out.replace(new RegExp('</?' + name" | head -n1
 
 # The regression target exists in the corpus: an experimental entity whose embedded documentation
 # both imports an MDX component and uses it as a self-closing tag (so the empty-page bug could occur;
-# its `<ExperimentalBadge/>` now renders as a label rather than being dropped). We pick the
+# its `<PrivatePreviewBadge/>` now renders as a label rather than being dropped). We pick the
 # `TimeSeries` table engine because it is registered unconditionally, so it is present even in the
 # minimal `Fast test` build (`ENABLE_LIBRARIES=0`); a library-gated entity such as the
 # `MaterializedPostgreSQL` database engine would be absent there and the check would never run.
@@ -39,5 +39,5 @@ $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0
     FROM system.documentation
     WHERE type = 'Table Engine' AND name = 'TimeSeries'
-      AND match(description, 'import\\s+ExperimentalBadge')
-      AND match(description, '<ExperimentalBadge\\s*/>')"
+      AND match(description, 'import\\s+PrivatePreviewBadge')
+      AND match(description, '<PrivatePreviewBadge\\s*/>')"

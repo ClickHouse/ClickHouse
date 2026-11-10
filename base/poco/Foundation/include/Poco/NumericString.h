@@ -30,6 +30,7 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <type_traits>
 
 
 // binary numbers are supported, thus 64 (bits) + 1 (string terminating zero)
@@ -97,7 +98,26 @@ bool strToInt(const char * pStr, I & result, short base, char thSep = ',')
     char state = 0;
 
     result = 0;
-    I limitCheck = std::numeric_limits<I>::max() / base;
+
+    // The magnitude is accumulated in the unsigned counterpart of I, because the magnitude of the
+    // most negative value of a signed type does not fit into that type.
+    // Checking `magnitude > max / base` alone is not enough: with `magnitude == max / base` there is
+    // still room for only `max % base` in the last digit, so appending a larger digit overflows the
+    // accumulator. For a signed type that is undefined behavior, and in practice the wrapped-around
+    // value was returned as a successfully parsed number (Poco::JSON parsed 18446744073709551617 as 1).
+    using U = typename std::make_unsigned<I>::type;
+    const U magnitudeMax
+        = (sign < 0) ? static_cast<U>(static_cast<U>(std::numeric_limits<I>::max()) + 1) : static_cast<U>(std::numeric_limits<I>::max());
+    const U limitCheck = static_cast<U>(magnitudeMax / base);
+    const U digitLimitCheck = static_cast<U>(magnitudeMax % base);
+    U magnitude = 0;
+    auto appendDigit = [&magnitude, base, limitCheck, digitLimitCheck](U digit) -> bool
+    {
+        if ((magnitude > limitCheck) || ((magnitude == limitCheck) && (digit > digitLimitCheck)))
+            return false;
+        magnitude = static_cast<U>(magnitude * base + digit);
+        return true;
+    };
     for (; *pStr != '\0'; ++pStr)
     {
         switch (*pStr)
@@ -115,9 +135,8 @@ bool strToInt(const char * pStr, I & result, short base, char thSep = ',')
             case '7':
                 if (state < STATE_SIGNIFICANT_DIGITS)
                     state = STATE_SIGNIFICANT_DIGITS;
-                if (result > limitCheck)
+                if (!appendDigit(static_cast<U>(*pStr - '0')))
                     return false;
-                result = result * base + (*pStr - '0');
 
                 break;
 
@@ -127,9 +146,8 @@ bool strToInt(const char * pStr, I & result, short base, char thSep = ',')
                 {
                     if (state < STATE_SIGNIFICANT_DIGITS)
                         state = STATE_SIGNIFICANT_DIGITS;
-                    if (result > limitCheck)
+                    if (!appendDigit(static_cast<U>(*pStr - '0')))
                         return false;
-                    result = result * base + (*pStr - '0');
                 }
                 else
                     return false;
@@ -146,9 +164,8 @@ bool strToInt(const char * pStr, I & result, short base, char thSep = ',')
                     return false;
                 if (state < STATE_SIGNIFICANT_DIGITS)
                     state = STATE_SIGNIFICANT_DIGITS;
-                if (result > limitCheck)
+                if (!appendDigit(static_cast<U>(10 + *pStr - 'a')))
                     return false;
-                result = result * base + (10 + *pStr - 'a');
 
                 break;
 
@@ -162,9 +179,8 @@ bool strToInt(const char * pStr, I & result, short base, char thSep = ',')
                     return false;
                 if (state < STATE_SIGNIFICANT_DIGITS)
                     state = STATE_SIGNIFICANT_DIGITS;
-                if (result > limitCheck)
+                if (!appendDigit(static_cast<U>(10 + *pStr - 'A')))
                     return false;
-                result = result * base + (10 + *pStr - 'A');
 
                 break;
 
@@ -191,7 +207,14 @@ bool strToInt(const char * pStr, I & result, short base, char thSep = ',')
     }
 
     if ((sign < 0) && (base == 10))
-        result *= sign;
+    {
+        // Two's complement negation in unsigned arithmetic, so that the most negative value
+        // of a signed type is representable.
+        const U negated = static_cast<U>(static_cast<U>(~magnitude) + 1);
+        result = static_cast<I>(negated);
+    }
+    else
+        result = static_cast<I>(magnitude);
 
     return true;
 }

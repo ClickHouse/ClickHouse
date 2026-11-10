@@ -191,7 +191,7 @@ Sur un nœud unique, les voies d’exécution divisent les données en plages in
 L’exécution des requêtes est davantage parallélisée grâce à :
 
 1. **Vectorisation SIMD** : les opérations sur des données en colonnes utilisent des [instructions SIMD du CPU](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (par ex. [AVX512](https://en.wikipedia.org/wiki/AVX-512)), ce qui permet de traiter des lots de valeurs.
-2. **Parallélisme au niveau du cluster** : dans les déploiements distribués, chaque nœud effectue le traitement des requêtes localement. Les [états d’agrégation partiels](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) sont transmis en flux au nœud initiateur, puis fusionnés. Si les clés `GROUP BY` de la requête correspondent aux clés de partitionnement, la fusion peut être [réduite au minimum, voire complètement évitée](/fr/reference/settings/session-settings#distributed_group_by_no_merge).
+2. **Parallélisme au niveau du cluster** : dans les déploiements distribués, chaque nœud effectue le traitement des requêtes localement. Les [états d’agrégation partiels](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) sont transmis en flux au nœud initiateur, puis fusionnés. Si les clés `GROUP BY` de la requête correspondent aux clés de partitionnement, la fusion peut être [réduite au minimum, voire complètement évitée](/fr/reference/settings/session-settings/distributed#distributed_group_by_no_merge).
 
 <br />
 

@@ -79,6 +79,10 @@ private:
 public:
     static UInt128 getHash(const VariantSerializations & variant_serializations_, const String & variant_name_);
     static SerializationPtr create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
+
+    /// Whether a resolved subcolumn is really this variant, which its name alone cannot tell: a
+    /// sibling element can flatten to the same name.
+    static bool isElementSubcolumn(const SubstreamPath & path, const String & element_name);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
 
@@ -118,8 +122,7 @@ public:
         size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -172,6 +175,22 @@ private:
 
     void addVariantElementToPath(SubstreamPath & path, size_t i) const;
 
+    /// For each variant: true if the discriminators of the Variant at `path` are in storage but no stream of the variant is,
+    /// e.g. the part was written before the variant was added to the type. Such a variant is read as empty.
+    std::vector<bool> getVariantsAbsentInStorage(
+        const std::function<bool(const SubstreamPath &)> & check_stream_exists,
+        const SubstreamPath & path,
+        const SerializationInfoPtr & serialization_info,
+        bool use_specialized_prefixes_and_suffixes_substreams) const;
+
+    /// The same for one variant.
+    static bool isVariantAbsentInStorage(
+        const std::function<bool(const SubstreamPath &)> & check_stream_exists,
+        const SubstreamPath & path,
+        const String & variant_element_name,
+        const SubstreamData & variant_data,
+        bool use_specialized_prefixes_and_suffixes_substreams);
+
     enum CompactDiscriminatorsGranuleFormat
     {
         PLAIN = 0,   /// Granule has different discriminators and they are serialized as is row by row.
@@ -191,7 +210,7 @@ private:
         size_t remaining_rows_in_granule = 0;
         ColumnVariant::Discriminator compact_discr = 0;
 
-        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
         {
             return std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(*this);
         }
@@ -201,9 +220,8 @@ private:
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);
 
-    std::pair<std::vector<size_t>, std::vector<size_t>> deserializeCompactDiscriminators(
-        ColumnPtr & discriminators_column,
-        size_t rows_offset,
+    std::vector<size_t> deserializeCompactDiscriminators(
+        IColumn & discriminators_column,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,

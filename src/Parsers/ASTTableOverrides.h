@@ -4,6 +4,7 @@
 
 #include <map>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -26,6 +27,8 @@ public:
     bool is_standalone = true;
     String getID(char) const override { return "TableOverride " + table_name; }
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
@@ -47,6 +50,8 @@ class ASTTableOverrideList : public IAST
 public:
     String getID(char) const override { return "TableOverrideList"; }
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
     void setTableOverride(const String & name, ASTPtr ast);
     void removeTableOverride(const String & name);
     ASTPtr tryGetTableOverride(const String & name) const;

@@ -2,6 +2,17 @@ from enum import Enum
 from pyspark.sql.types import DataType, StructType
 
 
+def quote_ch_identifier(name: str) -> str:
+    """Backtick-quote a ClickHouse identifier, doubling embedded backticks like
+    `SQLIdentifier` does on the BuzzHouse side. With `allow_nasty_identifiers` a name may
+    hold spaces, dots, keywords or backticks, and unquoted it is a SYNTAX_ERROR."""
+    return "`" + name.replace("`", "``") + "`"
+
+
+def quote_ch_table_path(database_name: str, table_name: str) -> str:
+    return f"{quote_ch_identifier(database_name)}.{quote_ch_identifier(table_name)}"
+
+
 class TableStorage(Enum):
     Unkown = 0
     S3 = 1

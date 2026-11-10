@@ -36,14 +36,17 @@ public:
         ContextPtr context_,
         SharedHeader sample_block_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatFilterInfoPtr format_filter_info_,
         const String & write_format_,
         const String & write_compression_method_);
 
-    ~DeltaLakePartitionedSink() override = default;
+    ~DeltaLakePartitionedSink() override;
 
     String getName() const override { return "DeltaLakePartitionedSink"; }
 
     void consume(Chunk & chunk) override;
+
+    void onException(std::exception_ptr exception) override;
 
     void onFinish() override;
 
@@ -87,10 +90,14 @@ private:
     const Names partition_columns;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
+    const FormatFilterInfoPtr format_filter_info;
     const size_t data_file_max_rows;
     const size_t data_file_max_bytes;
+    const bool accurate_write_cast;
     const std::unique_ptr<IPartitionStrategy> partition_strategy;
     const DeltaLake::WriteTransactionPtr delta_transaction;
+    const Block format_header;
+    const SharedHeader write_format_header;
     const String write_format;
     const String write_compression_method;
 
@@ -114,6 +121,9 @@ private:
 
     StorageSinkPtr createSinkForPartition(std::string_view partition_key);
     PartitionInfoPtr getPartitionDataForPartitionKey(std::string_view partition_key, const PartitionValues & partition_values);
+
+    /// Cancel every inner sink so its WriteBuffer is not left unfinalized on failure.
+    void cancelBuffers();
 };
 
 }

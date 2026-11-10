@@ -1,0 +1,14 @@
+every algorithm sees the same rows
+hash	2
+parallel_hash	2
+grace_hash	2
+full_sorting_merge	2
+partial_merge	2
+a top-level Nullable wrap of a key that is never NULL changes nothing
+unwrapped	2
+wrapped	2
+a NULL key still joins nothing, and is not the same key as a tuple of NULL
+null key	0
+in a set	0
+in a set	1
+in a set	\N

@@ -10,7 +10,7 @@ bool isHistogramQuantile(std::string_view function_name);
 
 /// Applies the histogram_quantile function to its arguments.
 SQLQueryPiece applyHistogramQuantile(
-    const PQT::Function * function_node,
+    const PrometheusQueryTree::Function * function_node,
     std::vector<SQLQueryPiece> && arguments,
     ConverterContext & context);
 

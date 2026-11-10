@@ -2,6 +2,8 @@
 
 #include <Core/Types.h>
 
+/// `fiu.h` includes `<stdatomic.h>` inside `extern "C"`, which compiles only if `<atomic>` comes first.
+#include <atomic>
 #include <mutex>
 
 #include "config.h"
@@ -107,6 +109,13 @@ public:
       * No-op if the failpoint is not currently enabled.
       */
     static void disableFailPoint(const String & fail_point_name);
+
+    /** Deactivate every failpoint and resume any threads currently blocked on one.
+      * The state a `SYSTEM ENABLE FAILPOINT` leaves behind is server-wide, so this is what
+      * a test harness needs to hand the next test a server that injects nothing - without
+      * having to know which failpoints the previous test armed.
+      */
+    static void disableAllFailPoints();
 
     /** Resume all threads currently blocked on a pauseable failpoint without
       * disabling it. For Pauseable failpoints the next hit will block again;

@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int HDFS_ERROR;
     extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
+    extern const int READONLY;
 }
 
 /// HDFS has no native ETag, so we synthesise a version identifier from the
@@ -144,6 +145,25 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    throwIfReadonly();
+
+    /// A conditional write is a compare-and-swap request. HDFS can express only its If-None-Match
+    /// half: `O_CREAT` maps to `Hdfs::Create` alone, which the NameNode rejects when the file exists,
+    /// whereas the bare `O_WRONLY` used below maps to `Hdfs::Create | Hdfs::Overwrite` and truncates
+    /// (`contrib/libhdfs3/src/client/Hdfs.cpp:663-674`). If-Match has no equivalent at all: renames
+    /// are unconditional and the only synthesisable etag is weak. Writing anyway would downgrade the
+    /// CAS to a plain overwrite, so two concurrent writers would both be acknowledged while one of
+    /// them, and all of its rows, is silently discarded; honouring only the expressible half would
+    /// leave the other silently degraded. So both are refused, and exclusive create is the sanctioned
+    /// way to support the If-None-Match half later. Checked before `initializeHDFSFS` so no NameNode
+    /// contact is needed to reject a request that cannot be satisfied.
+    if (!write_settings.object_storage_write_if_none_match.empty() || !write_settings.object_storage_write_if_match.empty())
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "HDFSObjectStorage does not support conditional writes (If-None-Match / If-Match), so the "
+            "requested compare-and-swap on {} cannot be performed atomically",
+            object.remote_path);
+
     initializeHDFSFS();
     if (attributes.has_value())
         throw Exception(
@@ -156,10 +176,25 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     if (blob_storage_log)
         blob_storage_log->local_path = object.local_path;
 
+    const auto file_path = fs::path(data_directory) / path;
+
+    /// Unlike blob storages, HDFS has real directories, and a file cannot be created in a
+    /// directory that does not exist. The generated object keys contain a nested prefix
+    /// (e.g. `abc/xyzxyzxyz...`), so create the parent first; `hdfsCreateDirectory` creates all
+    /// missing path components and is a no-op if the directory already exists.
+    const auto parent_path = file_path.parent_path();
+    if (!parent_path.empty() && parent_path != "/")
+    {
+        int res = wrapErr<int>(hdfsCreateDirectory, hdfs_fs.get(), parent_path.string().c_str());
+        if (res == -1)
+            throw Exception(ErrorCodes::HDFS_ERROR,
+                "Cannot create directory: {} error: {}", parent_path.string(), std::string(hdfsGetLastError()));
+    }
+
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     return std::make_unique<WriteBufferFromHDFS>(
         url_without_path,
-        fs::path(data_directory) / path,
+        file_path,
         config,
         settings->replication,
         patchSettings(write_settings),
@@ -172,6 +207,7 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {
+    throwIfReadonly();
     initializeHDFSFS();
     auto path = object.remote_path;
     if (path.starts_with(url_without_path))
@@ -222,11 +258,18 @@ void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
         removeObject(object);
 }
 
-void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void HDFSObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     initializeHDFSFS();
     for (const auto & object : objects)
+    {
         removeObjectIfExists(object);
+
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bool) const
@@ -302,6 +345,12 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
         if (max_keys && children.size() >= max_keys)
             break;
     }
+}
+
+void HDFSObjectStorage::throwIfReadonly() const
+{
+    if (settings->read_only)
+        throw Exception(ErrorCodes::READONLY, "Cannot write to HDFS `{}`: tables of a DataLakeCatalog database located on HDFS are read-only", url);
 }
 
 void HDFSObjectStorage::copyObject( /// NOLINT

@@ -83,7 +83,6 @@ void setUpConfig(const std::string & file_name)
                 <path>local_blob_storage_dir/</path>
                 <metadata_path>metadata_storage_dir</metadata_path>
                 <metadata_type>local</metadata_type>
-                <use_fake_transaction>false</use_fake_transaction>
                 <persistent_removal_log>true</persistent_removal_log>
                 <data_background_cleanup>
                     <enabled>true</enabled>
@@ -96,7 +95,6 @@ void setUpConfig(const std::string & file_name)
                 <object_storage_type>local_blob_storage</object_storage_type>
                 <path>local_plain_rewritable_dir/</path>
                 <metadata_type>plain_rewritable</metadata_type>
-                <use_fake_transaction>false</use_fake_transaction>
             </local_plain_rewritable_disk>
         </disks>
     </storage_configuration>
@@ -239,7 +237,7 @@ public:
             getContext().context,
             initialized_disks,
             /*attach*/ false,
-            /*custom_disk*/ true,
+            /*custom_disk*/ false,
             /*skip_types*/ {});
 
         initialized_disks.emplace(name, disk);
@@ -483,8 +481,7 @@ TEST_F(DiskObjectStorageTest, AppendFileTxReadFailDoesNotDeleteFile)
     // Commit fails because the failpoint fires during WriteFileOperation::execute()
     EXPECT_THROW(tx->commit(), DB::Exception);
 
-    // Without the fix: WriteFileOperation::undo() sees !prev_data and deletes the file.
-    // With the fix: undo() sees file_existed==true and preserves the file.
+    // The read fails before the write, so WriteFileOperation::undo() has nothing to revert and keeps the file.
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
     waitBlobsCount(disk, 1);

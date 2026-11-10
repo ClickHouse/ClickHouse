@@ -64,20 +64,7 @@ Yes, partitioned tables are supported out of the box, as long as they have a PRI
 
 ### Can I connect Postgres databases that don't have a public IP or are in private networks? {#can-i-connect-postgres-databases-that-dont-have-a-public-ip-or-are-in-private-networks}
 
-Yes! ClickPipes for Postgres offers two ways to connect to databases in private networks:
-
-1. **SSH Tunneling**
-   - Works well for most use cases
-   - See the setup instructions [here](/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)
-   - Works across all regions
-
-2. **AWS PrivateLink**
-   - Available in three AWS regions:
-     - us-east-1
-     - us-east-2
-     - eu-central-1
-   - For detailed setup instructions, see our [PrivateLink documentation](/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-   - For regions where PrivateLink isn't available, please use SSH tunneling
+Yes. See [ClickPipes networking](/integrations/clickpipes/networking) for the ways ClickPipes can reach a data source that isn't exposed to the public internet.
 
 ### How do you handle UPDATEs and DELETEs? {#how-do-you-handle-updates-and-deletes}
 
@@ -332,6 +319,17 @@ WITH (publish_via_partition_root = true);
 
 This error typically occurs when the source Postgres database has a datatype which can't be mapped during ingestion.
 For more specific issue, refer to the possibilities below.
+
+### I got a notification that a NUMERIC value was truncated or out of range. What does it mean? {#numeric-truncated-or-out-of-range}
+
+Postgres `NUMERIC` columns declared without a precision and scale can hold up to 131072 digits before the decimal point and 16383 digits after it. ClickHouse `Decimal` holds at most 76 digits in total, and ClickPipes maps these unbounded `NUMERIC` columns to `Decimal(76, 38)`. When a value does not fit, the ClickPipe keeps running and adjusts the value:
+
+- More than 38 digits after the decimal point: the extra digits are dropped.
+- More than 38 digits before the decimal point: the value cannot be represented and is written as `0`. During the initial load, if the destination column is `Nullable`, it is written as `NULL` instead.
+
+Both cases are recorded in the ClickPipe's **Logs** tab and sent as a notification, at most once per day for each case while they keep happening.
+
+If you need the full precision for unbounded `NUMERIC` columns, ClickPipes can map them to `String` instead. Open a support case to have this enabled for your ClickPipe.
 
 ### I'm seeing errors like `invalid memory alloc request size <XXX>` during replication/slot creation {#postgres-invalid-memalloc-bug}
 

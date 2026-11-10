@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types_fwd.h>
 #include <Loggers/OwnSplitChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
@@ -24,7 +25,12 @@ namespace Poco::Util
 class Loggers
 {
 public:
-    void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger, const std::string & cmd_name = "");
+    /// Loggers named in `keep_loggers` keep their channel, and their level unless `logger.levels` sets it.
+    void buildLoggers(
+        Poco::Util::AbstractConfiguration & config,
+        Poco::Logger & logger,
+        const std::string & cmd_name = "",
+        const DB::Strings & keep_loggers = {});
 
     void updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger);
 
@@ -33,6 +39,18 @@ public:
 
     DB::AsyncLogQueueSizes getAsynchronousMetricsFromAsyncLogs();
     void flushTextLogs();
+
+    /// Stop/restart the background logging threads. Used around remapExecutable, which rewrites the whole
+    /// code segment and requires that no other thread runs code meanwhile (the async threads poll, so they
+    /// must be joined for the duration). No-op for synchronous logging.
+    void stopAsyncLoggingThreads();
+    void startAsyncLoggingThreads();
+
+    /// Best-effort variant for destructors: stop and join only the asynchronous logging threads,
+    /// without shutting logging down for the synchronous path. Later destructors may still log,
+    /// and a closed asynchronous channel delivers their messages synchronously.
+    /// No-op for synchronous logging.
+    void closeAsyncLogging();
 
     virtual ~Loggers() = default;
 

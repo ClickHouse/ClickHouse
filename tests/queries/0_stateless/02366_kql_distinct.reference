@@ -16,11 +16,6 @@ Skilled Manual	Graduate Degree
 Professional	Graduate Degree
 Professional	Partial College
 --  distinct with where --
-Skilled Manual	Bachelors
-Management abcd defg	Bachelors
-Skilled Manual	Graduate Degree
-Professional	Graduate Degree
-Professional	Partial College
 --  distinct with where, order --
 Skilled Manual	Bachelors
 Skilled Manual	Graduate Degree

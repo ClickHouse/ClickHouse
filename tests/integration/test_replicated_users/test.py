@@ -29,6 +29,15 @@ node2 = cluster.add_instance(
     stay_alive=True,
 )
 
+# A node in a different time zone; used only by `test_valid_for_replicated_mixed_timezone`
+# and deliberately kept out of `all_nodes`.
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/config.xml", "configs/timezone.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+)
+
 all_nodes = [node1, node2]
 
 
@@ -160,28 +169,36 @@ def test_grant_revoke_replicated(started_cluster, use_on_cluster: bool):
     node1.query("SYSTEM RELOAD CONFIG")
     on_cluster = "ON CLUSTER default" if use_on_cluster else ""
 
-    node1.query(f"CREATE USER theuser2 {on_cluster}")
+    try:
+        node1.query(f"CREATE USER theuser2 {on_cluster}")
 
-    assert node1.query(f"GRANT {on_cluster} SELECT ON *.* to theuser2") == ""
+        assert node1.query(f"GRANT {on_cluster} SELECT ON *.* to theuser2") == ""
 
-    assert node2.query("SHOW GRANTS FOR theuser2") == "GRANT SELECT ON *.* TO theuser2\n"
+        # The grant is replicated to node2 asynchronously, so read it back with a
+        # retry: a bare read here races the replication and can observe empty grants.
+        assert_eq_with_retry(
+            node2, "SHOW GRANTS FOR theuser2", "GRANT SELECT ON *.* TO theuser2"
+        )
 
-    assert node1.query(f"REVOKE {on_cluster} SELECT ON *.* from theuser2") == ""
-    node1.query(f"DROP USER theuser2 {on_cluster}")
+        assert node1.query(f"REVOKE {on_cluster} SELECT ON *.* from theuser2") == ""
+    finally:
+        # Always drop theuser2 and restore the default profile, even if an assert
+        # above fails, so the leftover user/config cannot leak into later tests.
+        node1.query(f"DROP USER IF EXISTS theuser2 {on_cluster}")
 
-    node1.replace_config(
-        "/etc/clickhouse-server/users.d/users.xml",
-        inspect.cleandoc(
-            """
-            <clickhouse>
-                <profiles>
-                    <default/>
-                </profiles>
-            </clickhouse>
-            """
-        ),
-    )
-    node1.query("SYSTEM RELOAD CONFIG")
+        node1.replace_config(
+            "/etc/clickhouse-server/users.d/users.xml",
+            inspect.cleandoc(
+                """
+                <clickhouse>
+                    <profiles>
+                        <default/>
+                    </profiles>
+                </clickhouse>
+                """
+            ),
+        )
+        node1.query("SYSTEM RELOAD CONFIG")
 
 
 
@@ -204,6 +221,67 @@ def test_rename_replicated(started_cluster, entity):
 
 
 # ReplicatedAccessStorage must be able to continue working after reloading ZooKeeper.
+def test_valid_for_replicated_mixed_timezone(started_cluster):
+    # `node3` runs in a different time zone than `node1`/`node2`. A deadline coming from
+    # `VALID FOR <interval>` (or `VALID UNTIL`) must denote the same instant on every replica:
+    # the entity is replicated through ZooKeeper as an `ATTACH USER ... VALID UNTIL '...'` string,
+    # which serializes the deadline as a Unix timestamp, so a replica in another time zone parses
+    # it back to the same epoch instead of reinterpreting a bare local-time string in its own zone.
+    assert node3.query("SELECT timezone()") != node1.query("SELECT timezone()")
+
+    # Use the mode from the report: `ON CLUSTER` is stripped by
+    # `ignore_on_cluster_for_replicated_access_entities_queries`, the query executes locally and
+    # the entity propagates through the replicated access storage.
+    node3.replace_config(
+        "/etc/clickhouse-server/users.d/users.xml",
+        inspect.cleandoc(
+            """
+            <clickhouse>
+                <profiles>
+                    <default>
+                        <ignore_on_cluster_for_replicated_access_entities_queries>true</ignore_on_cluster_for_replicated_access_entities_queries>
+                    </default>
+                </profiles>
+            </clickhouse>
+            """
+        ),
+    )
+    node3.query("SYSTEM RELOAD CONFIG")
+
+    try:
+        node3.query("DROP USER IF EXISTS user_valid_for_tz")
+        node3.query(
+            "CREATE USER user_valid_for_tz ON CLUSTER default VALID FOR INTERVAL 30 DAY"
+        )
+
+        epoch_query = "SELECT toUInt32(valid_until[1]) FROM system.users WHERE name = 'user_valid_for_tz'"
+        expected = node3.query(epoch_query).strip()
+        assert expected != "0"
+        assert_eq_with_retry(node1, epoch_query, expected)
+        assert_eq_with_retry(node2, epoch_query, expected)
+
+        # `ALTER` takes the same replicated serialization path.
+        node3.query("ALTER USER user_valid_for_tz VALID FOR INTERVAL 60 DAY")
+        expected = node3.query(epoch_query).strip()
+        assert_eq_with_retry(node1, epoch_query, expected)
+        assert_eq_with_retry(node2, epoch_query, expected)
+    finally:
+        node3.query("DROP USER IF EXISTS user_valid_for_tz")
+        node3.replace_config(
+            "/etc/clickhouse-server/users.d/users.xml",
+            inspect.cleandoc(
+                """
+                <clickhouse>
+                    <profiles>
+                        <default/>
+                    </profiles>
+                </clickhouse>
+                """
+            ),
+        )
+        node3.query("SYSTEM RELOAD CONFIG")
+
+
 def test_reload_zookeeper(started_cluster):
     node1.query("CREATE USER u1")
     assert_eq_with_retry(

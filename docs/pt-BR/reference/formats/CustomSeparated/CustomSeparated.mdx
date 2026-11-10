@@ -19,14 +19,14 @@ doc_type: 'reference'
   ## Descrição
 </div>
 
-Semelhante a [Template](/pt-BR/reference/formats/Template/Template), mas imprime ou lê todos os nomes e tipos de colunas e usa a regra de escape da configuração [format&#95;custom&#95;escaping&#95;rule](/pt-BR/reference/settings/formats#format_custom_escaping_rule), além dos delimitadores das seguintes configurações:
+Semelhante a [Template](/pt-BR/reference/formats/Template/Template), mas imprime ou lê todos os nomes e tipos de colunas e usa a regra de escape da configuração [format&#95;custom&#95;escaping&#95;rule](/pt-BR/reference/settings/formats/format-custom#format_custom_escaping_rule), além dos delimitadores das seguintes configurações:
 
-* [format&#95;custom&#95;field&#95;delimiter](/pt-BR/reference/settings/formats#format_custom_field_delimiter)
-* [format&#95;custom&#95;row&#95;before&#95;delimiter](/pt-BR/reference/settings/formats#format_custom_row_before_delimiter)
-* [format&#95;custom&#95;row&#95;after&#95;delimiter](/pt-BR/reference/settings/formats#format_custom_row_after_delimiter)
-* [format&#95;custom&#95;row&#95;between&#95;delimiter](/pt-BR/reference/settings/formats#format_custom_row_between_delimiter)
-* [format&#95;custom&#95;result&#95;before&#95;delimiter](/pt-BR/reference/settings/formats#format_custom_result_before_delimiter)
-* [format&#95;custom&#95;result&#95;after&#95;delimiter](/pt-BR/reference/settings/formats#format_custom_result_after_delimiter)
+* [format&#95;custom&#95;field&#95;delimiter](/pt-BR/reference/settings/formats/format-custom#format_custom_field_delimiter)
+* [format&#95;custom&#95;row&#95;before&#95;delimiter](/pt-BR/reference/settings/formats/format-custom#format_custom_row_before_delimiter)
+* [format&#95;custom&#95;row&#95;after&#95;delimiter](/pt-BR/reference/settings/formats/format-custom#format_custom_row_after_delimiter)
+* [format&#95;custom&#95;row&#95;between&#95;delimiter](/pt-BR/reference/settings/formats/format-custom#format_custom_row_between_delimiter)
+* [format&#95;custom&#95;result&#95;before&#95;delimiter](/pt-BR/reference/settings/formats/format-custom#format_custom_result_before_delimiter)
+* [format&#95;custom&#95;result&#95;after&#95;delimiter](/pt-BR/reference/settings/formats/format-custom#format_custom_result_after_delimiter)
 
 <Note>
   Ele não usa as configurações de regras de escape nem os delimitadores das strings de formato.
@@ -98,10 +98,10 @@ row('2022-04-30';2021;'Sutton United';'Bradford City';1;4),row('2022-04-30';2021
 
 Configurações adicionais:
 
-| Configuração                                                                                                                                                         | Descrição                                                                                                                                 | Padrão  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| [input&#95;format&#95;custom&#95;detect&#95;header](/pt-BR/reference/settings/formats#input_format_custom_detect_header)                                                   | habilita a detecção automática de cabeçalho com nomes e tipos, quando houver.                                                             | `true`  |
-| [input&#95;format&#95;custom&#95;skip&#95;trailing&#95;empty&#95;lines](/pt-BR/reference/settings/formats#input_format_custom_skip_trailing_empty_lines)                   | ignora linhas vazias no final do arquivo.                                                                                                 | `false` |
-| [input&#95;format&#95;custom&#95;allow&#95;variable&#95;number&#95;of&#95;columns](/pt-BR/reference/settings/formats#input_format_custom_allow_variable_number_of_columns) | permite um número variável de colunas no formato CustomSeparated, ignorando colunas extras e usando valores padrão para colunas ausentes. | `false` |
+| Configuração                                                                                                                                                                      | Descrição                                                                                                                                 | Padrão  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| [input&#95;format&#95;custom&#95;detect&#95;header](/pt-BR/reference/settings/formats/input-format#input_format_custom_detect_header)                                                   | habilita a detecção automática de cabeçalho com nomes e tipos, quando houver.                                                             | `true`  |
+| [input&#95;format&#95;custom&#95;skip&#95;trailing&#95;empty&#95;lines](/pt-BR/reference/settings/formats/input-format#input_format_custom_skip_trailing_empty_lines)                   | ignora linhas vazias no final do arquivo.                                                                                                 | `false` |
+| [input&#95;format&#95;custom&#95;allow&#95;variable&#95;number&#95;of&#95;columns](/pt-BR/reference/settings/formats/input-format#input_format_custom_allow_variable_number_of_columns) | permite um número variável de colunas no formato CustomSeparated, ignorando colunas extras e usando valores padrão para colunas ausentes. | `false` |
 
 {/*AUTOGENERATED_END*/}

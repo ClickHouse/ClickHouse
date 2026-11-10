@@ -21,7 +21,9 @@ create table mt (key Int, value String) engine=MergeTree() order by key settings
   -- causing checksum mismatches that are not actual data corruption.
   serialization_info_version='basic',
   -- This uncovers the bug
-  auto_statistics_types='uniq,basic,countmin,tdigest'
+  auto_statistics_types='uniq,basic,countmin,tdigest',
+  enable_block_number_column=0,
+  enable_block_offset_column=0
 ;
 SET materialize_statistics_on_insert = 1;
 insert into mt select number, repeat('a', number) from numbers(10e3) settings max_block_size=1e6;

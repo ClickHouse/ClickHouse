@@ -1,0 +1,22 @@
+-- witness: `.null` alone on an unrewritten Compact part
+[0,0]
+-- order matrix: subcolumn first, then parent
+[0,0]	['a','b']
+-- order matrix: parent first, then subcolumn
+['a','b']	[0,0]
+-- order matrix: subcolumn first, then an unrelated column
+[0,0]	1
+-- a declared Nested type, not the flattened spelling
+[0,0]
+-- a sibling member alongside the subcolumn
+[0,0]	[10,20]
+-- a non-Nullable wrapper: Array(String) -> Array(Tuple(x String))
+['p','q']
+-- control: a Wide part stores the member separately
+[0,0]
+-- control: a rewritten part already carries the new type (ground truth)
+[0,0]
+-- control: shared Nested offsets disabled, so the group is never synthesized
+[0,0]
+-- control: a dotted column that is not an Array never joins a group
+0

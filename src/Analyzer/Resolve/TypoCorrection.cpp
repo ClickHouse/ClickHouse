@@ -37,7 +37,7 @@ void TypoCorrection::collectCompoundExpressionValidIdentifiers(
 /// Get valid identifiers for typo correction from table expression
 void TypoCorrection::collectTableExpressionValidIdentifiers(
     const Identifier & unresolved_identifier,
-    const QueryTreeNodePtr & table_expression,
+    const ITableExpressionNode & table_expression,
     const AnalysisTableExpressionData & table_expression_data,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
@@ -53,9 +53,9 @@ void TypoCorrection::collectTableExpressionValidIdentifiers(
             column_identifier,
             valid_identifiers_result);
 
-        if (table_expression->hasAlias())
+        if (table_expression.hasAlias())
         {
-            Identifier column_identifier_with_alias({table_expression->getAlias()});
+            Identifier column_identifier_with_alias({table_expression.getAlias()});
             for (const auto & column_identifier_part : column_identifier)
                 column_identifier_with_alias.push_back(column_identifier_part);
 
@@ -138,7 +138,7 @@ void TypoCorrection::collectScopeValidIdentifiers(
         for (const auto & [table_expression, table_expression_data] : scope.table_expression_node_to_data)
         {
             collectTableExpressionValidIdentifiers(unresolved_identifier,
-                table_expression,
+                *table_expression,
                 table_expression_data,
                 valid_identifiers_result);
         }

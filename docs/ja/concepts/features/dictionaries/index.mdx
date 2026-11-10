@@ -17,9 +17,7 @@ Dictionary は、次のような用途で役立ちます。
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse における Dictionary のユースケース" />
 
-<div id="speeding-up-joins-using-a-dictionary">
-  ## Dictionary を使用した JOIN の高速化
-</div>
+## Dictionary を使用した JOIN の高速化 {#speeding-up-joins-using-a-dictionary}
 
 Dictionary は、特定の種類の `JOIN` を高速化するために使用できます。具体的には、結合キーが基盤となるキー・バリュー ストレージのキー属性と一致している必要がある [`LEFT ANY` 型](/ja/reference/statements/select/join#supported-types-of-join) です。
 
@@ -266,11 +264,13 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-<div id="index-time-enrichment">
-  ## インデックス時のエンリッチメント
-</div>
+## インデックス時のエンリッチメント {#index-time-enrichment}
 
-上の例では、クエリ時に Dictionary を使って join を不要にしました。Dictionary は、insert 時に行をエンリッチするためにも使用できます。これは通常、エンリッチメントに使う値が変化せず、かつ Dictionary の投入元として使える外部ソースに存在する場合に適しています。この場合、insert 時に行をエンリッチしておけば、クエリ時に Dictionary へのルックアップを行う必要がなくなります。
+上の例では、クエリ時に Dictionary を使って 結合 を不要にしました。Dictionary は、挿入 時に行をエンリッチするためにも使用できます。これは通常、エンリッチメントに使う値が変化せず、かつ Dictionary の投入元として使える外部ソースに存在する場合に適しています。この場合、挿入 時に行をエンリッチしておけば、クエリ時に Dictionary へのルックアップを行う必要がなくなります。
+
+<Note>
+  レイテンシの予測可能性やソースの可用性が重要な場合は、挿入 時のエンリッチメントに cache ベースの Dictionary レイアウトを使用しないでください。各サーバーはそれぞれ独立したローカルキャッシュを保持しており、再起動や置き換えが発生するとキャッシュは空になります。その結果、挿入処理はコールドキャッシュ状態での Dictionary ソースへのルックアップに依存することになります。ClickHouse Cloud では、オートスケーリングやマネージドなノードの置き換えによって、こうした状況がより発生しやすくなります。各サーバー上に Dictionary 全体を読み込むレイアウトを選択してください。詳しくは [インジェスト経路における cache Dictionary](/ja/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) を参照してください。
+</Note>
 
 Stack Overflow のユーザーの `Location` は変わらないと仮定しましょう (実際には変わります) 。具体的には、`users` テーブルの `Location` カラムです。location ごとに `posts` テーブルを分析するクエリを実行したいとします。このテーブルには `UserId` が含まれています。
 
@@ -290,7 +290,7 @@ LAYOUT(HASHED())
 
 > `Id < 0` のユーザーは除外します。これにより、`Hashed` Dictionary 型を使用できます。`Id < 0` のユーザーはシステムユーザーです。
 
-posts テーブルでこの辞書をデータ挿入時に利用するには、スキーマを変更する必要があります。
+posts テーブルでこのDictionaryをデータ挿入時に利用するには、スキーマを変更する必要があります。
 
 ```sql
 CREATE TABLE posts_with_location
@@ -306,7 +306,7 @@ ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
 
 上記の例では、`Location` は `MATERIALIZED` カラムとして宣言されています。これは、値を `INSERT` クエリの一部として指定でき、その場合でも常に計算されることを意味します。
 
-> ClickHouse は [`DEFAULT` columns](/ja/reference/statements/create/table#default_values) もサポートしています (この場合、値は挿入することも、指定されていない場合は計算させることもできます) 。
+> ClickHouse は [`DEFAULT` カラム](/ja/reference/statements/create/table#default_values) もサポートしています (この場合、値は挿入することも、指定されていない場合は計算させることもできます) 。
 
 テーブルにデータを投入するには、通常どおり S3 からの `INSERT INTO SELECT` を使用できます:
 
@@ -362,9 +362,7 @@ ClickHouse や Postgres などのデータベースソースでは、一定間�
 
 ClickHouse は、[Hierarchical](/ja/reference/statements/create/dictionary/layouts/hierarchical)、[Polygon](/ja/reference/statements/create/dictionary/layouts/polygon)、[Regular Expression](/ja/reference/statements/create/dictionary/layouts/regexp-tree) の Dictionary にも対応しています。
 
-<div id="more-reading">
-  ### 参考資料
-</div>
+### 参考資料 {#more-reading}
 
 * [Dictionaryのベストプラクティス](/ja/concepts/features/dictionaries/best-practices) — レイアウトの選択、DictionaryとJOINの比較、監視
 * [Dictionaryを使ってクエリを高速化する](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

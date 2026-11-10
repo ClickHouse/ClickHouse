@@ -1,0 +1,13 @@
+-- a session SET limit shapes a plain SELECT (2 rows returned)
+0
+1
+-- but a session SET limit does not propagate into INSERT ... SELECT (all 10 rows)
+10
+-- a session SET filter does not propagate into INSERT ... SELECT (all 10 rows)
+10
+-- a session SET sort does not block CREATE ... AS SELECT (table created, all 10 rows)
+10
+-- a repair SET is not rejected by construction-setting validation (page without limit)
+page repaired
+-- a repair SET clears a stored order/sort conflict without being rejected first
+order/sort repaired

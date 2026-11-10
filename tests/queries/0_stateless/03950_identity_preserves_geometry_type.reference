@@ -1,0 +1,7 @@
+Geometry
+-12
+Geometry	POINT(1 2)
+Geometry	POLYGON((0 0,4 0,4 3,0 3,0 0))
+Variant(String, UInt64)	1
+Variant(String, UInt64)	a
+UInt8	42

@@ -48,6 +48,9 @@ FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
 FILES_OVERHEAD_METADATA_VERSION = 1
 FILES_OVERHEAD_COLUMNS_SUBSTREAMS = 1
+# The minmax skip index goes into a single skp_idx.packed archive instead of a
+# separate .idx2 + .mrk2 pair, because packed_skip_index_max_bytes is 1 MiB by default.
+FILES_SAVED_BY_PACKED_SKIP_INDEX = 1
 FILES_OVERHEAD_PER_PART_WIDE = (
     FILES_OVERHEAD_PER_COLUMN * 3
     + 2
@@ -55,12 +58,14 @@ FILES_OVERHEAD_PER_PART_WIDE = (
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
     + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
+    - FILES_SAVED_BY_PACKED_SKIP_INDEX
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
     10
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
     + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
+    - FILES_SAVED_BY_PACKED_SKIP_INDEX
 )
 
 
@@ -78,6 +83,9 @@ def generate_values(date_str, count, sign=1):
 def create_table(cluster, additional_settings=None):
     settings = {
         "storage_policy": "s3",
+        # Otherwise the new materialize_statistics_on_insert default writes an extra
+        # statistics.packed file per part, breaking the exact S3 object count this test asserts.
+        "auto_statistics_types": "",
     }
     settings.update(additional_settings)
 

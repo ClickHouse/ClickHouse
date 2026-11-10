@@ -7,7 +7,6 @@
 -- optimize_prewhere_after_pushdown = 1: the second PREWHERE promotion pass invoked
 -- updatePrewhereInfo() a second time on a format reader that can only accept one update.
 
-SET enable_analyzer = 1;
 SET engine_file_truncate_on_insert = 1;
 
 INSERT INTO FUNCTION file('04338_prewhere_after_pushdown_' || currentDatabase() || '.parquet', Parquet)

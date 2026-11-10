@@ -1,0 +1,4 @@
+create failed: 1
+view left behind:	0
+retry succeeded, rows backfilled:	10	10
+retried view subscribed to the source:	1

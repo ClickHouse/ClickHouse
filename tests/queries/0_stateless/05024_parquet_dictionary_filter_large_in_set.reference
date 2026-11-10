@@ -1,0 +1,12 @@
+a set of 5000 values that no row group holds: every row group is pruned
+{"result":[{"count()":0,"sum(n)":0,"min(category)":0,"max(category)":0}],"parquet_rows_read":0}
+same result without the dictionary filter
+a set of 5000 values of which one is in row group 2 only: only that row group is read
+{"result":[{"count()":1,"sum(n)":16461,"min(category)":200077,"max(category)":200077}],"parquet_rows_read":8192}
+same result without the dictionary filter
+a set of 5000 values interleaved with every row group: nothing is pruned
+{"result":[{"count()":5000,"sum(n)":67685000,"min(category)":0,"max(category)":302498}],"parquet_rows_read":32768}
+same result without the dictionary filter
+a set of 5000 values matching only the last value of the last row group
+{"result":[{"count()":1,"sum(n)":32767,"min(category)":308191,"max(category)":308191}],"parquet_rows_read":8192}
+same result without the dictionary filter

@@ -41,7 +41,13 @@ set stty_init "rows 40 cols 120"
 
 log_user 0
 set timeout 120
-match_max 100000
+# `match_max` without `-d` sets the buffer of the *current* spawn id only, and there
+# is none yet at this point, so every process spawned below silently keeps expect's
+# 2000-byte default instead of the 100000 asked for here. 2000 bytes is less than a
+# single rendering of the live progress table, so expect keeps discarding the oldest
+# part of its buffer while this test streams tens of kilobytes of continuously
+# redrawn table through the pty. Set the default that later `spawn` commands inherit.
+match_max -d 100000
 expect_after {
     # Do not ignore eof from expect
     -i $any_spawn_id eof { exp_continue }

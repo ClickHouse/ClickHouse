@@ -1,0 +1,290 @@
+---
+title: Postgres ClickPipe CLI
+---
+
+このページでは、Postgres CDC ClickPipe の作成、レプリケーションが開始されるまでの監視、ClickHouse 上のデータの検証を、すべて [ClickHouse CLI](/ja/products/cloud/features/cli) (`clickhousectl`) によるコマンドラインから行う方法を説明します。コマンドは非対話型で、`clickhousectl` は `--json` を指定すると JSON を出力します。
+
+## 前提条件 {#cli-prerequisites}
+
+ClickHouse CLI をインストールします。
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+検証ステップでは `jq` と `psql` も必要です。
+
+書き込み操作 (作成、削除) には [API key 認証](/ja/products/cloud/features/admin-features/api/openapi)が必要です。OAuth ログインは読み取り専用です:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+あるいは、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定します。`clickhousectl cloud auth status` で確認し、スコープが `read/write` のエントリが表示されることを確認してください。
+
+ソースとなる Postgres データベースは、あらかじめ CDC (変更データキャプチャ) 向けに準備しておく必要があります。具体的には、logical replication の有効化、レプリケーション用 USER の作成、そして ClickPipes の IP アドレスをファイアウォールで許可することです。ご利用のプロバイダに応じたセットアップガイドに従ってください。たとえば [Amazon RDS](/ja/integrations/clickpipes/postgres/source/rds)、[Supabase](/ja/integrations/clickpipes/postgres/source/supabase)、[Neon](/ja/integrations/clickpipes/postgres/source/neon-postgres)、セルフホストやその他のプロバイダの場合は [汎用 Postgres ソースガイド](/ja/integrations/clickpipes/postgres/source/generic) を参照してください。接続先には実際の Postgres ホストを指定してください。PgBouncer、RDS Proxy、Supabase Pooler などのプロキシやプーラーは CDC ではサポートされていません。
+
+さらに、宛先となる稼働中の ClickHouse Cloud サービスも必要です。その ID は `clickhousectl cloud service list --json` で取得できます。まだない場合は、[Cloud クイックスタート](/ja/getting-started/quick-start/cloud) に従って先に作成してください。
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="my-service") | .id')
+```
+
+前提条件のステップで確認したソース接続情報を変数に設定します。このチュートリアルでは、単一のテーブル `public.orders` をレプリケーションします。このテーブル名と、それ以降のすべての参照箇所 (検証ステップのカラム名を含む) は、ご自身のテーブルに合わせて置き換えてください:
+
+```bash
+PG_HOST=postgres.example.com
+PG_PORT=5432
+PG_DATABASE=postgres
+PG_USERNAME=clickpipes_user
+PG_PASSWORD='<your-password>'
+```
+
+## ClickPipe を作成する {#create-the-clickpipe}
+
+宛先サービスでパイプを作成し、レスポンスを保存します:
+
+```bash
+clickhousectl cloud clickpipe create postgres "$CH_ID" \
+  --name orders-sync \
+  --host "$PG_HOST" \
+  --port "$PG_PORT" \
+  --pg-database "$PG_DATABASE" \
+  --username "$PG_USERNAME" \
+  --password "$PG_PASSWORD" \
+  --table-mapping public.orders:orders \
+  --json > pipe.json
+
+PIPE_ID=$(jq -r .id pipe.json)
+```
+
+このコマンドはパイプを作成する前にソースへの接続を検証するため、接続性、認証情報、TLS に関する問題は直ちに `BAD_REQUEST` エラーとして表面化します。レスポンスにはパイプの設定がそのまま返されます (ここでは一部を省略しています。完全なレスポンスにはすべてのレプリケーション設定が含まれます) :
+
+```json
+{
+  "id": "e3d9a1f4-7b2c-4c58-9f6a-0d8b4e2c7a19",
+  "name": "orders-sync",
+  "serviceId": "7a1c04e2-9b3f-4a86-b21d-6f3e9d5c8a41",
+  "state": "Provisioning",
+  "destination": {
+    "database": "default"
+  },
+  "source": {
+    "postgres": {
+      "host": "postgres.example.com",
+      "port": 5432,
+      "database": "postgres",
+      "type": "postgres",
+      "settings": {
+        "replicationMode": "cdc",
+        "syncIntervalSeconds": 60,
+        "pullBatchSize": 100000,
+        "initialLoadParallelism": 4
+      },
+      "tableMappings": [
+        {
+          "sourceSchemaName": "public",
+          "sourceTable": "orders",
+          "targetTable": "orders",
+          "tableEngine": "MergeTree"
+        }
+      ]
+    }
+  }
+}
+```
+
+補足事項:
+
+* `--table-mapping` または `--table-mapping-json` のいずれかが必須です。`--table-mapping` は繰り返し指定でき、ソーステーブルごとに `schema.table:target_table` を 1 つずつ指定します。この場合、テーブル単位のその他のオプションはすべてデフォルト値のままになります。レプリケートテーブルは ClickHouse service 上の `default` データベースに作成され、マッピングで指定したターゲット名が付けられます。別のターゲット名にマッピングすることで、レプリケーション中にテーブルをリネームできます
+* 1 つのコマンドで Postgres ファミリー全体に対応します。マネージドプロバイダーの場合は `--postgres-type` を指定してください (`supabase`、`neon`、`alloydb`、`planetscale`、`rdspostgres`、`aurorapostgres`、`cloudsqlpostgres`、`azurepostgres`、`crunchybridge`、`tigerdata`) 。デフォルトは `postgres` です
+* publication と replication slot は自動的に作成され、publication の対象はマッピングされたテーブルに限定されます。前提条件の手順で自分で作成した publication を使用する場合は、`--publication-name` を指定してください
+* `--replication-slot-name` は自分で作成した slot を再利用するためのオプションで、`--replication-mode cdc_only` と併せて指定した場合にのみ受け付けられます
+* `--replication-mode` では、`cdc` (初期スナップショットに続いて継続的なレプリケーションを行う、デフォルト) 、`snapshot` (一回限りのコピー) 、`cdc_only` (初期スナップショットをスキップ) のいずれかを選択します
+
+### 宛先テーブルの整形 {#shaping-the-destination-tables}
+
+`--table-mapping` はリネームのみを行います。宛先テーブルの構成を制御するテーブルごとのオプションを指定するには、`--table-mapping-json` でマッピングを JSON オブジェクトとして渡します。このオプションは API のテーブルマッピングオブジェクトをそのまま受け取ります。`sourceSchemaName`、`sourceTable`、`targetTable` は必須で、`excludedColumns`、`sortingKeys`、`useCustomSortingKey`、`partitionByExpr`、`partitionKey`、`tableEngine` は任意です。どちらのフラグも繰り返し指定でき、1 つのコマンド内で組み合わせることもできます:
+
+```bash
+clickhousectl cloud clickpipe create postgres "$CH_ID" \
+  --name orders-sync \
+  --host "$PG_HOST" \
+  --port "$PG_PORT" \
+  --pg-database "$PG_DATABASE" \
+  --username "$PG_USERNAME" \
+  --password "$PG_PASSWORD" \
+  --table-mapping public.orders:orders \
+  --table-mapping-json '{"sourceSchemaName":"public","sourceTable":"customers","targetTable":"customers","excludedColumns":["ssn"],"sortingKeys":["created_at","customer_id"]}' \
+  --sync-interval-seconds 30 \
+  --json
+```
+
+このマッピングでは、`ssn` を宛先から完全に除外し、`customers` をソースの主キーではなく `(created_at, customer_id)` で並べ替えます:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SHOW CREATE TABLE customers" --format TSVRaw
+```
+
+```text
+CREATE TABLE default.customers
+(
+    `customer_id` Int32,
+    `name` String,
+    `created_at` DateTime64(6),
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` UInt8,
+    `_peerdb_version` UInt64
+)
+ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+PRIMARY KEY (created_at, customer_id)
+ORDER BY (created_at, customer_id)
+SETTINGS index_granularity = 8192
+```
+
+Notes:
+
+* `sortingKeys` を指定すると `useCustomSortingKey` が自動的に設定されます。これがないと API はキーを無視するためです。認識できないフィールドは暗黙のうちに破棄されるのではなく、クライアント側で終了コード 2 として拒否されます。そのため `excludeColumns` のようなタイプミスは無視されずにエラーになります
+* `partitionKey` は並列度を高めるために初期スナップショットを分割するためのもので、宛先テーブルの `PARTITION BY` (こちらは `partitionByExpr`) とは無関係です
+* `tableEngine` には `MergeTree` (デフォルトであり、簡易フォームが送信する値) 、`ReplacingMergeTree`、`Null` のいずれかを指定します
+
+### CDC settings {#cdc-settings}
+
+レプリケーション設定は作成時に指定するフラグです。`--sync-interval-seconds`、`--pull-batch-size`、`--initial-load-parallelism`、`--snapshot-rows-per-partition`、`--snapshot-parallel-tables`、`--allow-nullable-columns`、`--enable-failover-slots`、`--delete-on-merge` の8つです。パイプの作成後に変更できるのは `syncIntervalSeconds` と `pullBatchSize` のみで、snapshot および初期ロードに関する設定は作成時に固定されるため、この時点で決めておいてください。
+
+Postgres CDC (変更データキャプチャ) のパイプは設定をパイプ自体に保持しているため、`clickpipe get` で読み出せます。
+
+```bash
+clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json \
+  | jq .source.postgres.settings
+```
+
+```json
+{
+  "allowNullableColumns": false,
+  "deleteOnMerge": false,
+  "enableFailoverSlots": false,
+  "initialLoadParallelism": 4,
+  "publicationName": "",
+  "pullBatchSize": 100000,
+  "replicationMode": "cdc",
+  "replicationSlotName": "",
+  "snapshotNumRowsPerPartition": 100000,
+  "snapshotNumberOfParallelTables": 1,
+  "syncIntervalSeconds": 30
+}
+```
+
+`clickhousectl cloud clickpipe settings get` は別のエンドポイントで、ストリーミングおよびオブジェクトストレージのパイプのインジェスト設定のみを対象とします。Postgres のパイプに対して実行すると終了コード 1 で終了し、`clickpipe get` を使うよう案内されます。
+
+### 宛先の権限 {#destination-permissions}
+
+ClickPipes は、専用のユーザーとして service に書き込みます。デフォルトでは、そのユーザーにフルアクセス権を持つ `default_role` が付与されますが、`--role <role-name>` (繰り返し指定可能) を指定すると、代わりに既存の別の ClickHouse ロールを選択できます。これは console の権限ロール設定ステップに相当する CLI の機能です。指定したロールは `default_role` を置き換えるため、指定したロール全体で、パイプが行うすべての操作 (宛先テーブルの作成と書き込み) を許可する必要があります。閲覧専用のロールでは、作成の時点で失敗します:
+
+```text
+Error: BAD_REQUEST: ClickHouse validation failed: failed to create validation table peerdb_validation_tOgS: code: 497, message: clickpipe:...: Not enough privileges. To execute this query, it's necessary to have the grant CREATE TABLE ON default.peerdb_validation_tOgS
+```
+
+`clickpipes` および `clickpipes_system` という名前は予約されており、クライアント側で拒否されます。
+
+### ソースの TLS と認証局 {#source-tls}
+
+TLS と証明書検証はデフォルトで有効になっており、証明書チェーンが公的に信頼されているソースであれば追加のフラグは不要です。ソースが公的に信頼されていない CA によって署名された証明書を提示する場合 ([ClickHouse Managed Postgres](/ja/cloud/managed-postgres) もこれに該当します) 、パイプの作成前に接続チェックが失敗し、エラーメッセージに問題を解決するためのフラグが示されます。
+
+```text
+Error: BAD_REQUEST: failed to establish connection: failed to connect to `user=postgres database=postgres`: 203.0.113.10:5432 (postgres.example.com): failed to write startup message: write failed: tls: failed to verify certificate: x509: certificate signed by unknown authority
+
+Hint: The source certificate chain is not publicly trusted. For a private or self-signed source CA, pass its PEM CA bundle with `--ca-certificate <PATH>`.
+```
+
+ソースの CA bundle は PEM 形式で `--ca-certificate` に渡します。ClickHouse Managed Postgres の場合は、`clickhousectl` が bundle を自動で取得します:
+
+```bash
+clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
+```
+
+その後、`--ca-certificate pg-ca.pem` を追加して create コマンドを再実行してください。
+
+一方、証明書自体は有効でも、接続先とは異なる名前に対して発行されている場合は、エラーに別のヒントが表示され、証明書検証で使用するホスト名を指定する `--tls-host <hostname>` が案内されます。
+
+## パイプが Running になるまで待つ {#wait-for-running}
+
+パイプは `Provisioning`、`Setup`、 (大きなテーブルの場合は) `Snapshot` を経て `Running` に到達します。service 上で最初のパイプの場合は数分かかると考えてください。`Failed` と `InternalError` は終了状態です:
+
+```bash
+while :; do
+  STATE=$(clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json | jq -r .state)
+  case "$STATE" in
+    Running) break ;;
+    Failed|InternalError) echo "ClickPipe entered terminal state: $STATE" >&2; exit 1 ;;
+  esac
+  sleep 15
+done
+```
+
+## パイプのステータスを確認する {#check-pipe-status}
+
+`clickpipe list` はサービス上のすべてのパイプを一覧表示し、`clickpipe get` は指定した 1 つのパイプを完全な設定とともに返します。
+
+```bash
+clickhousectl cloud clickpipe list "$CH_ID" --json \
+  | jq -r '.[] | [.id, .name, .state] | @tsv'
+```
+
+```text
+e3d9a1f4-7b2c-4c58-9f6a-0d8b4e2c7a19	orders-sync	Running
+```
+
+## ClickHouse でデータを検証する {#verify-the-data-in-clickhouse}
+
+CLI から宛先サービスに直接クエリを実行します。最初の呼び出し時に、Query API endpoint と service スコープの API key が自動的にプロビジョニングされます。
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT order_id, customer, amount FROM orders ORDER BY order_id" --json
+```
+
+```text
+Provisioning Query API endpoint + key for service 'my-service'...
+{"order_id":1,"customer":"Alice","amount":42.5}
+{"order_id":2,"customer":"Bob","amount":17.99}
+{"order_id":3,"customer":"Charlie","amount":99}
+{"order_id":4,"customer":"Diana","amount":5.25}
+{"order_id":5,"customer":"Eve","amount":250}
+```
+
+ソース側の変更は、同期間隔ごとに継続的にレプリケートされます。デフォルトは60秒で、作成時に `--sync-interval-seconds` を指定した場合はその値が使用されます。ソースに行を挿入し、データが到着するまでポーリングしてください:
+
+パスワードは接続URIではなく `PGPASSWORD` 経由で渡します。そのため、パスワードに含まれる特殊文字をエスケープする必要はありません:
+
+```bash
+PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USERNAME" -d "$PG_DATABASE" \
+  -c "INSERT INTO orders (customer, amount) VALUES ('Frank', 12.34);"
+
+while [ "$(clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT count() FROM orders" --format TSV)" != "6" ]; do
+  sleep 10
+done
+```
+
+## パイプを管理する {#manage-the-pipe}
+
+パイプのライフサイクルは `clickhousectl cloud clickpipe stop`、`clickhousectl cloud clickpipe start`、`clickhousectl cloud clickpipe resync` (宛先テーブルをドロップして再スナップショットします) で管理し、いずれも同じ `"$CH_ID" "$PIPE_ID"` 引数を取ります。ソースにプライベートネットワーク経由でしか到達できない場合は、`clickhousectl cloud clickpipe reverse-private-endpoint` で AWS PrivateLink または Google Private Service Connect のエンドポイントを管理します。パイプを作成する際は、このコマンドが出力する DNS 名のいずれかを `--host` に指定してください。SSH トンネル経由の Postgres ソースは現時点では UI からのみ設定できます。CLI は直接接続とリバースプライベートエンドポイントに対応していますが、SSH トンネリングは設定できません。サブコマンドの一覧については `clickhousectl cloud clickpipe --help` を参照してください。
+
+## クリーンアップ {#cleanup}
+
+パイプを削除すると、レプリケーションが停止します:
+
+```bash
+clickhousectl cloud clickpipe delete "$CH_ID" "$PIPE_ID"
+```
+
+```text
+{"deleted":"e3d9a1f4-7b2c-4c58-9f6a-0d8b4e2c7a19"}
+```
+
+## 次のステップ {#cli-whats-next}
+
+要件に最も適した戦略を検討するには、[移行ガイド](/ja/get-started/migrate/postgres/overview)を参照してください。また、CDC (変更データキャプチャ) ワークロードのベストプラクティスについては、[重複排除戦略 (CDC 使用) ](/ja/integrations/clickpipes/postgres/deduplication)および[Ordering Keys](/ja/integrations/clickpipes/postgres/ordering-keys)のページをご覧ください。PostgreSQL の CDC に関するよくある質問やトラブルシューティングについては、[Postgres のよくある質問ページ](/ja/integrations/clickpipes/postgres/faq)を参照してください。

@@ -9,10 +9,10 @@
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Formats/NativeWriter.h>
+#include <Formats/FormatSettings.h>
 
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -28,6 +28,11 @@ namespace ErrorCodes
 }
 
 
+NativeWriter::NativeWriter(WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_)
+    : NativeWriter(ostr_, client_revision_, std::move(header_), std::nullopt)
+{
+}
+
 NativeWriter::NativeWriter(
     WriteBuffer & ostr_,
     UInt64 client_revision_,
@@ -42,7 +47,7 @@ NativeWriter::NativeWriter(
     , index(index_)
     , initial_size_of_file(initial_size_of_file_)
     , remove_low_cardinality(remove_low_cardinality_)
-    , format_settings(std::move(format_settings_))
+    , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
 {
     if (index)
     {
@@ -62,7 +67,7 @@ void NativeWriter::flush()
     const ISerialization & serialization,
     const ColumnPtr & column,
     WriteBuffer & ostr,
-    const std::optional<FormatSettings> & format_settings,
+    const FormatSettings * format_settings,
     UInt64 offset,
     UInt64 limit,
     UInt64 client_revision)
@@ -78,7 +83,7 @@ void NativeWriter::flush()
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0;
     settings.native_format = true;
-    settings.format_settings = format_settings ? &*format_settings : nullptr;
+    settings.format_settings = format_settings;
     if (client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION)
     {
         settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V1;
@@ -111,11 +116,21 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
-        auto info = column.type->getSerializationInfo(*result_column);
+        /// The size-stream String layout follows the peer revision and needs no per-column wire marker.
+        auto info = column.type->getSerializationInfo(
+            *result_column,
+            SerializationInfoSettings::enableAllSupportedSerializations(
+                client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
+    return {column.type->getDefaultSerialization(), nullptr, removeSpecialRepresentations(column.column)};
+}
+
+void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision)
+{
+    bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
+    setVersionToAggregateFunctions(type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 }
 
 size_t NativeWriter::write(const Block & block)
@@ -175,8 +190,20 @@ size_t NativeWriter::write(const Block & block)
         /// Name
         writeStringBinary(column.name, ostr);
 
-        bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        setVersionToAggregateFunctions(column.type, include_version, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+        /// The state version of a versioned aggregate function on the wire is derived from the
+        /// negotiated revision, and the receiver derives it the same way. It must not be taken from a
+        /// version pinned on the local type - a table attached from metadata that predates versioning
+        /// has its columns pinned to version 0, and version 0 is not printed in the type name, so the
+        /// receiver would see no version at all and read the payload with its own, higher version.
+        /// Re-serializing loses nothing: the states are kept in memory in a version-independent form.
+        ///
+        /// Revision 0 means there is no peer to negotiate with: the block goes to a self-describing
+        /// stream that is read back by whoever wrote it (`StripeLog` data, `Set`/`Join` backups, a
+        /// `Native` format file). Here the version must be taken from the type: the reader derives
+        /// nothing from a revision and trusts the type name in the stream, so a version pinned on a
+        /// stored column (`pinCurrentStateVersionToAggregateFunctions`) has to survive, or the state
+        /// would silently degrade to version 0 on every round trip through local persistence.
+        setAggregateFunctionStateVersions(column.type, client_revision);
 
         /// Type
         if (format_settings && format_settings->native.encode_types_in_binary_format)
@@ -211,7 +238,7 @@ size_t NativeWriter::write(const Block & block)
 
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.
-            writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
+            writeData(*serialization, column.column, ostr, format_settings.get(), 0, 0, client_revision);
 
         if (index)
         {

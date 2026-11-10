@@ -33,7 +33,7 @@ import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
 <Warning>
   **`ttl_only_drop_parts`**
 
-  نوصي دائمًا باستخدام الإعداد [`ttl_only_drop_parts=1`](/ar/reference/settings/merge-tree-settings#ttl_only_drop_parts). عند تمكين هذا الإعداد، يحذف ClickHouse part كاملًا عندما تكون جميع rows الموجودة فيه منتهية الصلاحية. إن حذف parts كاملة بدلًا من تنظيف rows المنتهية صلاحيتها وفق TTL بشكل جزئي (وهو ما يتحقق عبر mutations كثيفة الموارد عندما يكون `ttl_only_drop_parts=0`) يتيح استخدام قيم `merge_with_ttl_timeout` أقصر وتأثيرًا أقل على أداء النظام. وإذا كانت البيانات مقسّمة وفق نفس الوحدة التي تُطبَّق عندها صلاحية TTL، مثل اليوم، فستحتوي parts بطبيعتها على بيانات من interval المحدد فقط. وهذا يضمن إمكانية تطبيق `ttl_only_drop_parts=1` بكفاءة.
+  نوصي دائمًا باستخدام الإعداد [`ttl_only_drop_parts=1`](/ar/reference/settings/merge-tree-settings/other#ttl_only_drop_parts). عند تمكين هذا الإعداد، يحذف ClickHouse part كاملًا عندما تكون جميع rows الموجودة فيه منتهية الصلاحية. إن حذف parts كاملة بدلًا من تنظيف rows المنتهية صلاحيتها وفق TTL بشكل جزئي (وهو ما يتحقق عبر mutations كثيفة الموارد عندما يكون `ttl_only_drop_parts=0`) يتيح استخدام قيم `merge_with_ttl_timeout` أقصر وتأثيرًا أقل على أداء النظام. وإذا كانت البيانات مقسّمة وفق نفس الوحدة التي تُطبَّق عندها صلاحية TTL، مثل اليوم، فستحتوي parts بطبيعتها على بيانات من interval المحدد فقط. وهذا يضمن إمكانية تطبيق `ttl_only_drop_parts=1` بكفاءة.
 </Warning>
 
 بشكل افتراضي، تُزال البيانات ذات TTL المنتهية عندما يقوم ClickHouse [بدمج أجزاء البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage). وعندما يكتشف ClickHouse أن البيانات منتهية الصلاحية، فإنه ينفّذ عملية دمج خارج الجدول الزمني.
@@ -50,7 +50,7 @@ import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
 
 لتعديل TTL، يمكنك اختيار أحد الخيارين التاليين:
 
-1. **تعديل مخططات الجداول (موصى به)**. يتطلب ذلك الاتصال بمثيل ClickHouse، على سبيل المثال باستخدام [clickhouse-client](/ar/concepts/features/interfaces/cli) أو [Cloud SQL Console](/ar/products/cloud/features/sql-console-features/sql-console). على سبيل المثال، يمكن تعديل TTL للجدول `otel_logs` باستخدام عبارة DDL التالية:
+1. **تعديل مخططات الجداول (موصى به)**. يتطلب ذلك الاتصال بمثيل ClickHouse، على سبيل المثال باستخدام [clickhouse-client](/ar/concepts/features/interfaces/client) أو [Cloud SQL Console](/ar/products/cloud/features/sql-console-features/sql-console). على سبيل المثال، يمكن تعديل TTL للجدول `otel_logs` باستخدام عبارة DDL التالية:
 
 ```sql
 ALTER TABLE default.otel_logs

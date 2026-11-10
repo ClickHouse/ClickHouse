@@ -1,11 +1,16 @@
 #include <cstddef>
+#include <limits>
+#include <utility>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ThreadStatus.h>
 #include <Common/quoteString.h>
 #include <Common/WeightedRandomSampling.h>
+#include <Common/formatReadable.h>
 
 #include <Interpreters/Context.h>
 
@@ -175,6 +180,19 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
 {
 }
 
+namespace
+{
+
+std::optional<time_t> getTTLMergeTime(const PartitionIdToTTLs & times, const String & partition_id)
+{
+    auto it = times.find(partition_id);
+    if (it == times.end())
+        return {};
+    return it->second;
+}
+
+}
+
 void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices & choices, const MergeTreeSettingsPtr & settings, time_t current_time)
 {
     for (const auto & choice : choices)
@@ -192,7 +210,10 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
             }
             case MergeType::TTLDelete:
             {
-                next_delete_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_ttl_timeout];
+                const time_t next_time = current_time + (*settings)[MergeTreeSetting::merge_with_ttl_timeout];
+                last_delete_ttl_merge_time_advance[partition_id]
+                    = {.installed = next_time, .previous = getTTLMergeTime(next_delete_ttl_merge_times_by_partition, partition_id)};
+                next_delete_ttl_merge_times_by_partition[partition_id] = next_time;
 
                 const auto & storage = data.getStorageID();
                 LOG_TRACE(log, "For table {} under database {}, the next scheduled execution time of TTLDelete task "
@@ -205,10 +226,47 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
             }
             case MergeType::TTLRecompress:
             {
-                next_recompress_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout];
+                const time_t next_time = current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout];
+                last_recompress_ttl_merge_time_advance[partition_id]
+                    = {.installed = next_time, .previous = getTTLMergeTime(next_recompress_ttl_merge_times_by_partition, partition_id)};
+                next_recompress_ttl_merge_times_by_partition[partition_id] = next_time;
                 break;
             }
         }
+    }
+}
+
+void MergeTreeDataMergerMutator::rollbackTTLMergeTime(const String & partition_id, MergeType merge_type)
+{
+    const auto restore = [&partition_id](PartitionIdToTTLs & times, std::unordered_map<String, TTLMergeTimeAdvance> & advances)
+    {
+        auto advance = advances.find(partition_id);
+        if (advance == advances.end())
+            return;
+
+        /// A later selection of the same partition advanced the due time further; it owns the value now.
+        if (getTTLMergeTime(times, partition_id) != std::optional<time_t>(advance->second.installed))
+            return;
+
+        if (advance->second.previous.has_value())
+            times[partition_id] = *advance->second.previous;
+        else
+            times.erase(partition_id);
+
+        advances.erase(advance);
+    };
+
+    switch (merge_type)
+    {
+        case MergeType::Regular:
+        case MergeType::TTLDrop:
+            break;
+        case MergeType::TTLDelete:
+            restore(next_delete_ttl_merge_times_by_partition, last_delete_ttl_merge_time_advance);
+            break;
+        case MergeType::TTLRecompress:
+            restore(next_recompress_ttl_merge_times_by_partition, last_recompress_ttl_merge_time_advance);
+            break;
     }
 }
 
@@ -445,7 +503,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     bool cleanup,
     MergeTreeData::MergingParams merging_params,
     MergeTreeTransactionPtr txn,
-    bool need_prefix,
     ProjectionDescriptionRawPtr projection,
     IMergeTreeDataPart * parent_part,
     const String & suffix)
@@ -453,7 +510,80 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     if (future_part->isResultPatch())
     {
         merging_params = MergeTreeData::getMergingParamsForPatchParts();
-        metadata_snapshot = future_part->parts.front()->getMetadataSnapshot();
+
+        /** The synthetic metadata of a patch part describes only the patch's own structure and is shared by every
+          * patch of that structure, so it carries no metadata version, and the merged patch would be written at
+          * version 0: behind every metadata mutation there has ever been. `ReplicatedMergeTree` applies a pending
+          * `RENAME COLUMN` on read to every part whose metadata version predates it, so the merged patch would be
+          * looked up under the column's old name and the updates it carries would become invisible again until the
+          * rename materialized, which is the bug `updateLightweightImpl` avoids for a freshly written patch by
+          * stamping it with the table's version.
+          *
+          * The merged patch keeps the structure of its sources: a rename of a column that the patch stores puts
+          * patches written before and after it in different partitions, so all the sources are on the same side of
+          * every such rename, and so is any version between theirs. The lowest one is what the mutations snapshot
+          * of this merge takes for `min_part_metadata_version`, so the result carries exactly what its sources did.
+          *
+          * The exception is a name reused by `RENAME COLUMN a TO b, ADD COLUMN a`: patches of the old and of the new
+          * `a` of the same type share a partition. That case is already wrong for ordinary parts, because a pending
+          * rename does not fence its source name the way `DROP COLUMN` does in `AlterConversions`, and it is no worse
+          * here than with the version 0 the merged patch had before.
+          */
+        int32_t metadata_version = std::numeric_limits<int32_t>::max();
+        for (const auto & part : future_part->parts)
+            metadata_version = std::min(metadata_version, part->getMetadataVersion());
+
+        auto patch_metadata = std::make_shared<StorageInMemoryMetadata>(*future_part->parts.front()->getMetadataSnapshot());
+        patch_metadata->setMetadataVersion(metadata_version);
+        metadata_snapshot = std::move(patch_metadata);
+    }
+
+    /// Root merges only: a projection sub-merge re-enters this under a running merge whose group is already
+    /// attached, and an attach copies `shared_data` once, so a write here would not reach its threads.
+    if (!projection_merge_list_element)
+    {
+        auto entry_context = (*merge_entry)->thread_group->query_context.lock();
+        if (!entry_context)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Merge list entry for part {} has no query context: every caller keeps it alive for the "
+                "whole merge",
+                future_part->name);
+
+        /// `optimizeDryRun` runs the task inline under a user query's group, whose cancellation already applies.
+        if (entry_context->isBackgroundContext())
+        {
+            /// Latched, because a blocker released between two independent polls must not resurrect the read.
+            auto merge_cancelled = [&blocker = merges_blocker,
+                                 &ttl_blocker = ttl_merges_blocker,
+                                 is_ttl_merge = isTTLMergeType(future_part->merge_type),
+                                 merge_entry,
+                                 partition_id = future_part->part_info.getPartitionId()]
+            {
+                if ((*merge_entry)->is_cancelled.load(std::memory_order_relaxed))
+                    return true;
+
+                const bool removes_expired_values
+                    = is_ttl_merge || (*merge_entry)->is_removing_expired_values.load(std::memory_order_relaxed);
+
+                if (blocker.isCancelledForPartition(partition_id) || (removes_expired_values && ttl_blocker.isCancelled()))
+                {
+                    (*merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+                    return true;
+                }
+
+                return false;
+            };
+
+            /// Installed before the first attach: `MergeTask::prepare` replaces it only at its end, after its first reads.
+            (*merge_entry)->thread_group->setQueryCancellationPredicates(
+                merge_cancelled,
+                [merge_cancelled]
+                {
+                    if (merge_cancelled())
+                        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+                });
+        }
     }
 
     return std::make_shared<MergeTask>(
@@ -469,7 +599,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         cleanup,
         std::move(merging_params),
-        need_prefix,
         projection,
         parent_part,
         nullptr,
@@ -490,8 +619,7 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     ContextMutablePtr context,
     const MergeTreeTransactionPtr & txn,
     ReservationSharedPtr space_reservation,
-    TableLockHolder & holder,
-    bool need_prefix)
+    TableLockHolder & holder)
 {
     /// Building the mutation pipeline can run nested blocking pipelines via `CompletedPipelineExecutor` -
     /// most notably `KeyCondition::buildOrderedSetInplace` materializing the right side of `x IN (subquery)`
@@ -499,11 +627,19 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     /// query context's interactive-cancel callback, so without one it blocks server shutdown and
     /// `KILL MUTATION` until the subquery finishes (issue #51586). `context` is this mutation's query context
     /// (`makeQueryContextForMutate`), which the reading context resolves via `getQueryContext`.
+    /// A nested pipeline that is only stopped returns without an exception, so its caller cannot
+    /// distinguish a cancelled build from a completed one.
     const String partition_id = future_part->part_info.getPartitionId();
     context->setInteractiveCancelCallback(
         [&blocker = merges_blocker, merge_entry, partition_id]()
         {
-            return blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled;
+            /// Persisted for the IO layer, which polls rarely and may miss a short-lived blocker.
+            if (blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled)
+            {
+                (*merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+            }
+            return false;
         });
 
     return std::make_shared<MutateTask>(
@@ -518,8 +654,7 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
         txn,
         data,
         *this,
-        merges_blocker,
-        need_prefix);
+        merges_blocker);
 }
 
 MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart(
@@ -531,7 +666,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     /// Some of source parts was possibly created in transaction, so non-transactional merge may break isolation.
     if (data.transactions_enabled.load(std::memory_order_relaxed) && !txn)
         throw Exception(ErrorCodes::ABORTED,
-            "Cancelling merge, because it was done without starting transaction,"
+            "Cancelling merge, because it was done without starting transaction, "
             "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.
@@ -674,8 +809,8 @@ String getBestPartitionToOptimizeEntire(
 
     chassert(best_partition_it != stats.end());
 
-    const size_t best_partition_min_age = static_cast<size_t>(best_partition_it->second.min_age);
-    if (best_partition_min_age < (*settings)[MergeTreeSetting::min_age_to_force_merge_seconds] || is_partition_invalid(best_partition_it->second))
+    if (std::cmp_less(best_partition_it->second.min_age, (*settings)[MergeTreeSetting::min_age_to_force_merge_seconds].value)
+        || is_partition_invalid(best_partition_it->second))
         return {};
 
     return best_partition_it->first;

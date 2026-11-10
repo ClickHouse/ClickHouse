@@ -6,6 +6,8 @@
 namespace DB
 {
 
+thread_local EventQueue * EventQueue::current_thread_queue = nullptr;
+
 EventId EventQueue::postpone(TimePoint until, Task && task)
 {
     std::unique_lock lock{mutex};

@@ -1,0 +1,29 @@
+<clickhouse>
+    <!-- Users configuration the documented examples assume, on top of `programs/server/users.xml`
+         and the fragments in `programs/server/users.d`. See tests/docs_examples/runner.py. -->
+
+    <users>
+        <default>
+            <!-- The `queryID`, `initialQueryID` and `initialQueryStartTime` examples read from three
+                 shards at `127.0.0.{1..3}`, which all address the same server, and the server
+                 connects to those addresses as the `default` user. `users.d/allow_only_from_localhost.xml`
+                 lets that user in from `127.0.0.1` only, so allow the whole loopback network here.
+                 This is an addition of the examples, not of the shipped configuration: it is what
+                 makes their three shards reachable at all. -->
+            <networks replace="replace">
+                <ip>::1</ip>
+                <ip>127.0.0.0/8</ip>
+            </networks>
+        </default>
+    </users>
+
+    <profiles>
+        <default>
+            <!-- The `ai*` examples that do not pass `credentials` in their parameter map read the
+                 collection to use from these settings. See the named collections in
+                 `config.d/documentation_examples.xml` for what they point at. -->
+            <ai_function_text_default_credentials>ai_text_credentials</ai_function_text_default_credentials>
+            <ai_function_embedding_default_credentials>ai_embedding_credentials</ai_function_embedding_default_credentials>
+        </default>
+    </profiles>
+</clickhouse>

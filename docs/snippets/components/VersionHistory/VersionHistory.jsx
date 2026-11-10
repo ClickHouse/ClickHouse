@@ -1,5 +1,5 @@
 /**
- * VersionHistory — a collapsible 3-column table of when the default value of a
+ * `VersionHistory` — a collapsible 3-column table of when the default value of a
  * setting changed across ClickHouse versions.
  *
  * Mintlify equivalent of clickhouse-docs's `src/theme/VersionHistory`.

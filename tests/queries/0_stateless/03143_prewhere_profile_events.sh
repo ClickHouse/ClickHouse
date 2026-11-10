@@ -11,15 +11,19 @@ ${CLICKHOUSE_CLIENT} -q "
 
   CREATE TABLE t(a UInt32, b UInt32, c UInt32, d UInt32) ENGINE=MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0, add_minmax_index_for_numeric_columns=0;
 
-  INSERT INTO t SELECT number, number, number, number FROM numbers_mt(1e7);
+  -- The reference counters are those of a single part whose granules are 8192-aligned in b, so squash
+  -- the whole input into one block: the insert then writes exactly that part.
+  INSERT INTO t SELECT number, number, number, number FROM numbers(1e7)
+    SETTINGS min_insert_block_size_rows = 10000001, min_insert_block_size_bytes = 0;
 
-  OPTIMIZE TABLE t FINAL;
+  SELECT throwIf(count() != 1, 'the insert must produce exactly one part') FROM system.parts
+   WHERE active AND database = currentDatabase() AND table = 't' FORMAT Null;
 "
 
-query_id_1=$RANDOM$RANDOM
-query_id_2=$RANDOM$RANDOM
-query_id_3=$RANDOM$RANDOM
-query_id_4=$RANDOM$RANDOM
+query_id_1="${CLICKHOUSE_DATABASE}_$RANDOM$RANDOM"
+query_id_2="${CLICKHOUSE_DATABASE}_$RANDOM$RANDOM"
+query_id_3="${CLICKHOUSE_DATABASE}_$RANDOM$RANDOM"
+query_id_4="${CLICKHOUSE_DATABASE}_$RANDOM$RANDOM"
 
 client_opts=(
   --max_block_size 65409
@@ -63,23 +67,26 @@ settings enable_multiple_prewhere_read_steps=1;
 ${CLICKHOUSE_CLIENT} -q "
   SYSTEM FLUSH LOGS query_log;
 
+  -- With parallel replicas the rows are read by the queries on the replicas, so sum over all of them.
+  -- They run in the default database of the cluster, so they are selected by the database they read.
+
   -- 52503 which is 43 * number of granules, 10000000
-  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']
+  SELECT sum(ProfileEvents['RowsReadByMainReader']), sum(ProfileEvents['RowsReadByPrewhereReaders'])
     FROM system.query_log
-   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() AND query_id = '$query_id_1' and type = 'QueryFinish';
+   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND has(databases, currentDatabase()) AND initial_query_id = '$query_id_1' and type = 'QueryFinish';
 
   -- 52503, 10052503 which is the sum of 10000000 from the first prewhere step plus 52503 from the second
-  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']
+  SELECT sum(ProfileEvents['RowsReadByMainReader']), sum(ProfileEvents['RowsReadByPrewhereReaders'])
     FROM system.query_log
-   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() AND query_id = '$query_id_2' and type = 'QueryFinish';
+   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND has(databases, currentDatabase()) AND initial_query_id = '$query_id_2' and type = 'QueryFinish';
 
   -- 26273 the same as query #1 but twice less data (43 * ceil((52503 / 43) / 2)), 10000000
-  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']
+  SELECT sum(ProfileEvents['RowsReadByMainReader']), sum(ProfileEvents['RowsReadByPrewhereReaders'])
     FROM system.query_log
-   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() AND query_id = '$query_id_3' and type = 'QueryFinish';
+   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND has(databases, currentDatabase()) AND initial_query_id = '$query_id_3' and type = 'QueryFinish';
 
   -- 0, 10052503
-  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']
+  SELECT sum(ProfileEvents['RowsReadByMainReader']), sum(ProfileEvents['RowsReadByPrewhereReaders'])
     FROM system.query_log
-   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() AND query_id = '$query_id_4' and type = 'QueryFinish';
+   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND has(databases, currentDatabase()) AND initial_query_id = '$query_id_4' and type = 'QueryFinish';
 "

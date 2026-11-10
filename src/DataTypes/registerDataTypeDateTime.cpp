@@ -39,10 +39,10 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
     using NearestResultType = NearestFieldType<T>;
     const auto field_type = Field::TypeToEnum<NearestResultType>::value;
     const ASTLiteral * argument = nullptr;
+    if (arguments && arguments->children.size() > argument_index)
+        argument = arguments->children[argument_index]->as<ASTLiteral>();
 
-    if (!arguments || arguments->children.size() <= argument_index
-        || !(argument = arguments->children[argument_index]->as<ASTLiteral>())
-        || argument->value.getType() != field_type)
+    if (!argument || argument->value.getType() != field_type)
     {
         if constexpr (Kind == ArgumentKind::Optional)
             return {};
@@ -137,7 +137,7 @@ The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/U
 
 Timezone agnostic Unix timestamp is stored in tables, and the timezone is used to transform it to text format or back during data import/export or to make calendar calculations on the values (example: `toDate`, `toHour` functions etc.). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata.
 
-A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones) and also can be queried by `SELECT * FROM system.time_zones`. [The list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) is also available at Wikipedia.
+The supported time zone names are exactly the ones that `SELECT * FROM system.time_zones` lists: the [IANA Time Zone Database](https://www.iana.org/time-zones) that is shipped with the server, so that results do not depend on the host's own database. [The list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) is also available at Wikipedia. A fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, e.g. `Fixed/UTC+05:30:00`, is accepted as well; such a name is what reading an Arrow or ORC timestamp column with a fixed-offset time zone produces. Any other name is rejected.
 
 You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn't set, ClickHouse uses the value of the [timezone](/reference/settings/server-settings/settings/other#timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
@@ -162,8 +162,8 @@ ENGINE = TinyLog;
 
 ```sql
 -- Parse DateTime
--- - from string,
--- - from integer interpreted as number of seconds since 1970-01-01.
+-- - from a string,
+-- - from a number interpreted as the number of seconds since 1970-01-01 (a fractional part is truncated to whole seconds).
 INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
 
 SELECT * FROM dt;
@@ -176,7 +176,7 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
-- When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
+- When inserting datetime as a number, it is treated as a Unix Timestamp (UTC) in seconds. `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`. A number with a fractional or exponent part is accepted as well and truncated to whole seconds, consistent with `CAST`, `toDateTime` and the `Values` format. (Before version 26.8, such a fractional or exponent number in the `JSON` and `Values`/`Quoted` input paths — the latter covering every format that parses fields with the `Quoted` escaping rule: `Values`, `MySQLDump`, and `Template`/`CustomSeparated`/`Regexp` configured with `Quoted` field escaping — was not accepted by the streaming parser; set `input_format_read_datetime_number_as_raw_value = 1` to restore that. In the `Values` format itself such a literal still worked — and keeps working in compatibility mode — through the SQL-expression fallback, which reads it as a number of seconds. In `JSONExtract` and the `JSON` data type a fractional value is parsed through `Float64`, so a value near a whole-second boundary can round to the adjacent second, unlike the row input formats which truncate the original text exactly. The tab-separated, CSV and other escaped text formats are not governed by this setting.)
 - When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
 
 **2.** Filtering on `DateTime` values
@@ -349,14 +349,14 @@ ENGINE = MergeTree;
 ```
 
 ```sql
--- Parse DateTime
--- - from an integer interpreted as the number of milliseconds (because of precision 3) since 1970-01-01,
--- - from a decimal interpreted as the number of seconds before the decimal part, and based on the precision after the decimal point,
+-- Parse DateTime64
+-- - from an integer interpreted as the number of seconds since 1970-01-01 (like DateTime),
+-- - from a decimal interpreted as the number of seconds, the fractional part giving sub-second precision,
 -- - from a string.
 
 INSERT INTO dt64
 VALUES
-(1546300800123, 1),
+(1546300800, 1),
 (1546300800.123, 2),
 ('2019-01-01 00:00:00', 3);
 
@@ -365,13 +365,13 @@ SELECT * FROM dt64;
 
 ```text
 ┌───────────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.000 │        1 │
 │ 2019-01-01 03:00:00.123 │        2 │
 │ 2019-01-01 00:00:00.000 │        3 │
 └─────────────────────────┴──────────┘
 ```
 
-- When inserting datetime as an integer, it is treated as an appropriately scaled Unix Timestamp (UTC). `1546300800000` (with precision 3) represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as a string the value will be shown as `'2019-01-01 03:00:00'`. Inserting datetime as a decimal will treat it similarly as an integer, except the value before the decimal point is the Unix Timestamp up to and including the seconds, and after the decimal point will be treated as the precision.
+- When inserting datetime as a number, it is treated as a Unix Timestamp (UTC) in seconds, like `DateTime`. `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as a string the value will be shown as `'2019-01-01 03:00:00'`. Inserting a number with a fractional part works the same way: the part before the decimal point is the Unix Timestamp in seconds and the part after it provides sub-second precision according to the column's precision. (Before version 26.8, a bare unquoted integer in the `JSON` and `Values`/`Quoted` input paths — the latter covering every format that parses fields with the `Quoted` escaping rule: `Values`, `MySQLDump`, and `Template`/`CustomSeparated`/`Regexp` configured with `Quoted` field escaping — was instead interpreted as the raw underlying value at the column precision, so `1546300800000` at precision 3 meant `'2019-01-01 00:00:00'`. To restore the previous behavior in these paths, set `input_format_read_datetime_number_as_raw_value = 1` (or `SET compatibility = '26.7'`); this also affects the `JSONExtract` function and the `JSON` data type. The compatibility setting governs only a bare integer: in the `Values` format a fractional number, which the legacy streaming parser rejects, falls back to SQL expression evaluation and is read as seconds — the same as in versions before 26.8. In `JSONExtract` and the `JSON` data type a fractional value is parsed through `Float64`, so a timestamp with more digits than `Float64` preserves can round to the adjacent value, unlike the row input formats which parse the original text exactly. The tab-separated, CSV and other escaped text input formats are not governed by this setting and keep their existing interpretation of an unquoted number: a large value is read as ticks.)
 - When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and stored as `1546290000000`.
 
 2. Filtering on `DateTime64` values
@@ -399,8 +399,8 @@ SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
 └─────────────────────────┴──────────┘
 ```
 
-Contrary to inserting, the `toDateTime64` function will treat all values as the decimal variant, so precision needs to
-be given after the decimal point.
+As with inserting a number, the `toDateTime64` function treats a numeric argument as a number of seconds, so sub-second
+precision needs to be given after the decimal point.
 
 3. Getting a time zone for a `DateTime64`-type value:
 

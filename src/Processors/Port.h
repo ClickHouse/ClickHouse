@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -32,7 +33,7 @@ class Port
 public:
     struct UpdateInfo
     {
-        using UpdateList = std::vector<void *>;
+        using UpdateList = VectorWithMemoryTracking<void *>;
 
         UpdateList * update_list = nullptr;
         void * id = nullptr;
@@ -229,6 +230,12 @@ public:
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
     bool ALWAYS_INLINE isConnected() const { return state != nullptr; }
+
+    /// Identity of the shared state of two connected ports (both sides return the same value).
+    /// Lets diagnostics match an output port to its peer input port without dereferencing the
+    /// peer processor, whose lifetime is not guaranteed during pipeline teardown. Opaque on
+    /// purpose: only pointer identity is meaningful.
+    const void * getConnectionId() const { return state.get(); }
 
     void ALWAYS_INLINE assumeConnected() const
     {

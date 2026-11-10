@@ -1,0 +1,3 @@
+-- config <input-format>CSV</input-format> is honored by the native client INSERT reader (data is CSV, FORMAT clause says TabSeparated)
+1	2
+3	4

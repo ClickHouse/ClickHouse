@@ -45,9 +45,9 @@ SELECT
     formatReadableSize(192851925, 4) AS four_decimals
         )",
         R"(
-┌─no_decimals─┬─four_decimals──┐
-│ 184 MiB     │ 183.9179 MiB   │
-└─────────────┴────────────────┘
+┌─no_decimals─┬─four_decimals─┐
+│ 184 MiB     │ 183.9179 MiB  │
+└─────────────┴───────────────┘
         )"
     }
     };

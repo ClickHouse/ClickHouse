@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/PartDirIntent.h>
 #include <optional>
 
 namespace DB
@@ -31,17 +32,15 @@ public:
         VolumePtr volume_,
         String root_path_,
         String part_dir_,
-        const ReadSettings & read_settings_
-        , bool part_may_exist_on_disk = true
-        );
+        const ReadSettings & read_settings_,
+        PartDirIntent intent_);
 
     MergeTreeDataPartBuilder(
         const MergeTreeData & data_,
         String name_,
         MutableDataPartStoragePtr part_storage_,
-        const ReadSettings & read_settings_
-        , bool part_may_exist_on_disk_ = true
-        );
+        const ReadSettings & read_settings_,
+        PartDirIntent intent_);
 
     std::shared_ptr<IMergeTreeDataPart> build();
 
@@ -64,6 +63,13 @@ public:
         const String & part_dir_,
         const ReadSettings & read_settings);
 
+    /// The storage of an existing part directory for its removal. Loads only the manifests of a blob-list part and its projections.
+    static MutableDataPartStoragePtr getPartStorageForRemoval(
+        const VolumePtr & volume_,
+        const String & root_path_,
+        const String & part_dir_,
+        const ReadSettings & read_settings);
+
 private:
     Self & withPartFormatFromVolume();
     Self & withPartFormatFromStorage();
@@ -73,7 +79,7 @@ private:
         const VolumePtr & volume_,
         const String & root_path_,
         const String & part_dir_,
-        bool part_may_exist_on_disk,
+        bool initialize,
         const ReadSettings & read_settings);
 
     const MergeTreeData & data;
@@ -88,7 +94,7 @@ private:
     const IMergeTreeDataPart * parent_part = nullptr;
     ProjectionDescriptionRawPtr projection = nullptr;
 
-    const bool part_may_exist_on_disk;
+    const PartDirIntent intent;
     const ReadSettings read_settings;
 };
 

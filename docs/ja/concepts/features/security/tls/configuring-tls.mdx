@@ -118,7 +118,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Step>
 
   <Step title="ClickHouse Keeperを使用した基本クラスターによる環境の構成" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
-    このデプロイメント環境では、各ノードで以下の ClickHouse Keeper 設定を使用します。各サーバーにはそれぞれ固有の `<server_id>` が設定されます (例：ノード `chnode1` には `<server_id>1</server_id>`、以降も同様) 。
+    このデプロイ環境では、各ノードで以下の ClickHouse Keeper 設定が使用されます。各サーバーはそれぞれ固有の `<server_id>` を持ちます (例：ノード `chnode1` の場合は `<server_id>1</server_id>`) 。
 
     <Note>
       ClickHouse Keeper の推奨ポートは `9281` です。ただし、ポートは設定可能であり、このポートが環境内の別のアプリケーションですでに使用されている場合は、別のポートに設定できます。
@@ -305,7 +305,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     </openSSL>
     ```
 
-    詳細については、[このページ](/ja/reference/settings/server-settings/settings#openssl)を参照してください。
+    詳細については、[このページ](/ja/reference/settings/server-settings/settings/other#openssl)を参照してください。
 
     7. すべてのノードで gRPC 用の TLS を設定します。
 
@@ -666,6 +666,12 @@ ClickHouse Keeper をスタンドアロンのプロセスとして実行する�
     </client>
 </openSSL>
 ```
+
+## 再起動なしでの証明書および CA 証明書のローテーション {#rotating-certificates-without-restart}
+
+ClickHouse server と ClickHouse Keeper は、`openSSL.server` および `openSSL.client` セクション (コンポーザブルプロトコルの場合は `protocols.*`) 内の `certificateFile`、`privateKeyFile`、`caConfig` が参照するファイルを監視します。`caConfig` がディレクトリを指す場合は、そのディレクトリ内のファイルが監視対象となります。これらのファイルのいずれかが変更された場合、または `SYSTEM RELOAD CONFIG` が実行された場合、証明書は再読み込みされ、HTTPS、セキュアなネイティブプロトコル、interserver 接続、Keeper への接続、Keeper ノード間の Raft 接続を含む、以降のすべての新規 TLS 接続で使用されます。確立済みの接続では、接続時に使用された証明書がそのまま使われ続けます。
+
+ダウンタイムなしで CA をローテーションするには、まず `caConfig` ファイルを、古い CA 証明書と新しい CA 証明書の両方を含むバンドルに置き換えます。次にノード証明書とクライアント証明書を新しい CA が発行したものに切り替え、最後にそのバンドルを新しい CA 証明書のみに置き換えます。
 
 <div id="summary">
   ## まとめ

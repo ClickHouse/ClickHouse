@@ -26,6 +26,9 @@ public:
 
     ASTPtr clone() const override;
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
         return removeOnCluster<ASTDropIndexQuery>(clone(), params.default_database);

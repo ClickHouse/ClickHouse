@@ -1,10 +1,10 @@
 ---
-description: 'El conjunto de datos y las consultas de Join Order Benchmark (JOB).'
-sidebarTitle: 'JOB'
-slug: /getting-started/example-datasets/job
-title: 'Join Order Benchmark (JOB)'
-doc_type: 'guide'
-keywords: ['conjunto de datos de ejemplo', 'job', 'join order benchmark', 'benchmark', 'pruebas de rendimiento', 'optimizador de consultas', 'orden de joins']
+title: "Join Order Benchmark (JOB)"
+description: "El conjunto de datos y las consultas de Join Order Benchmark (JOB)."
+sidebarTitle: "JOB"
+slug: "/getting-started/example-datasets/job"
+doc_type: "guide"
+keywords: ["conjunto de datos de ejemplo", "job", "join order benchmark", "benchmark", "pruebas de rendimiento", "optimizador de consultas", "orden de joins"]
 ---
 
 Join Order Benchmark (JOB) pone a prueba el optimizador de consultas con 113 consultas analíticas sobre un conjunto de datos real y altamente correlacionado (una instantánea de IMDb). Desde su introducción, el benchmark JOB se ha convertido en el estándar de facto para evaluar el rendimiento de los optimizadores de consultas de bases de datos relacionales, incluida la estimación de cardinalidad y la optimización del orden de los joins. A diferencia de los benchmarks sintéticos, que asumen datos uniformes e independientes, JOB utiliza datos reales con sesgos y correlaciones, lo que lo convierte en una prueba exigente para el orden de los joins y la estimación de cardinalidad.
@@ -38,17 +38,14 @@ clickhouse client --database job --queries-file init_cloud.sql
   ## Carga de los datos
 </div>
 
-Los datos provienen de la instantánea original de IMDb utilizado por JOB, distribuido como un archivo CSV por tabla (`aka_name.csv`, `title.csv`, ...).
-Estos CSV usan la semántica de `COPY` de PostgreSQL con `ESCAPE '\'`: una barra invertida solo escapa el carácter de comillas dentro de un campo entrecomillado, mientras que fuera de las comillas la barra invertida es un carácter literal.
-ClickHouse espera archivos CSV conformes con RFC 4180 (comillas duplicadas, sin escapes con barra invertida), por lo que primero hay que volver a codificar los archivos.
+Los datos provienen de la instantánea original de IMDb utilizado por JOB, distribuido como un archivo CSV por tabla (`aka_name.csv`, `title.csv`, ...). Estos CSV usan la semántica de `COPY` de PostgreSQL con `ESCAPE '\'`: una barra invertida solo escapa el carácter de comillas dentro de un campo entrecomillado, mientras que fuera de las comillas la barra invertida es un carácter literal. ClickHouse espera archivos CSV conformes con RFC 4180 (comillas duplicadas, sin escapes con barra invertida), por lo que primero hay que volver a codificar los archivos.
 
-[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) realiza esa recodificación.
-Lee el CSV original desde stdin y escribe un CSV estándar en stdout, duplicando las comillas incrustadas y conservando los campos vacíos sin comillas (que ClickHouse asigna a `NULL` en las columnas `Nullable`).
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) realiza esa recodificación. Lee el CSV original desde stdin y escribe un CSV estándar en stdout, duplicando las comillas incrustadas y conservando los campos vacíos sin comillas (que ClickHouse asigna a `NULL` en las columnas `Nullable`).
 
 Para crear las tablas a partir de los CSV originales:
 
 * Cree las tablas (consulte más arriba).
-* Descargue el data set de IMDb como un archivo `imdb.tgz`, siguiendo las instrucciones del repositorio Join Order Benchmark.
+* Descargue el conjunto de datos de IMDb como un archivo `imdb.tgz`, siguiendo las instrucciones del repositorio Join Order Benchmark.
 * Convierta e importe los datos:
 
 ```bash
@@ -64,8 +61,7 @@ for table in aka_name aka_title cast_info char_name comp_cast_type company_name 
 done
 ```
 
-Una vez pobladas las tablas, pueden exportarse a Parquet para volver a importarlas más rápidamente más adelante; p. ej.
-`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+Una vez pobladas las tablas, pueden exportarse a Parquet para volver a importarlas más rápidamente más adelante; p. ej. `clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
 
 Tamaños detallados de las tablas:
 
@@ -100,9 +96,7 @@ Tamaños detallados de las tablas:
   ## Consultas
 </div>
 
-Las 113 consultas de JOB se pueden encontrar [aquí](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) en el repositorio de ClickHouse.
-Los ajustes utilizados para ejecutarlas están en [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
-Consulta el [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) para ver los problemas conocidos y las notas sobre consultas concretas.
+Las 113 consultas de JOB se pueden encontrar [aquí](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) en el repositorio de ClickHouse. Los ajustes utilizados para ejecutarlas están en [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json). Consulta el [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) para ver los problemas conocidos y las notas sobre consultas concretas.
 
 Las consultas hacen referencia a las tablas por su nombre, así que ejecútalas en la base de datos `job` (por ejemplo, con `clickhouse client --database job`).
 
@@ -128,3 +122,9 @@ WHERE ct.kind = 'production companies'
   AND mc.movie_id = mi_idx.movie_id
   AND it.id = mi_idx.info_type_id;
 ```
+
+<div id="performance-benchmark">
+  ## Benchmark de rendimiento
+</div>
+
+ClickHouse realiza un seguimiento del rendimiento de las consultas JOB en todas las versiones publicadas. Puede consultar los tiempos de ejecución de las 113 consultas JOB en la página de [benchmark de versiones de ClickHouse](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ob\&metric=hot\&queries=-) para ver cómo ha evolucionado el rendimiento a lo largo del tiempo.

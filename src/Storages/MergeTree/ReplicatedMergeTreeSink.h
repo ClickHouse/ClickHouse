@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <optional>
 #include <string>
 #include <base/types.h>
@@ -10,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
+#include <Storages/MergeTree/DeferredPartsSync.h>
 
 
 namespace Poco { class Logger; }
@@ -88,19 +90,31 @@ protected:
 
     ZooKeeperWithFaultInjectionPtr createKeeper(String name);
 
-    std::vector<DeduplicationHash> detectConflictsInCache(const std::vector<DeduplicationHash> & deduplication_hashes);
-
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
 
+    /// See `DeferredPartsSync`.
+    bool defer_fsync = false;
+    bool sync_existing_parts = false;
+    /// The parts that failed to sync are not detached: the deduplication record of a part is in Keeper, and the
+    /// part may already be fetched by other replicas. So a retry that relies on such a part fails only until the
+    /// server restarts. It is one of the reasons why `group_fsync_before_insert_finish = 'auto'` is disabled here.
+    DeferredPartsSync parts_to_sync;
+
+    struct CommitPartResult
+    {
+        std::vector<DeduplicationHash> conflicts;
+        /// The next attempt waits for a cache snapshot of at least this version, 0 means no wait.
+        UInt64 deduplication_cache_min_version = 0;
+    };
 
     /// Rename temporary part and commit to ZooKeeper.
-    /// Returns a map of conflicting blocks and its actual part names if block has to be deduplicated.
-    std::vector<DeduplicationHash> commitPart(
+    CommitPartResult commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const std::vector<DeduplicationHash> & deduplication_hashes,
-        const std::vector<String> & deduplication_block_ids);
+        const std::vector<String> & deduplication_block_ids,
+        UInt64 deduplication_cache_min_version = 0);
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -139,7 +153,9 @@ protected:
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
 
-    UInt64 deduplication_cache_version = 0;
+    /// The result of the "too many parts" check, evaluated on the query thread at sink
+    /// construction and thrown from onStart, when the sink starts executing.
+    std::exception_ptr too_many_parts_exception;
 
     bool is_attach = false;
     bool allow_attach_while_readonly = false;

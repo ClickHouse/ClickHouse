@@ -6,6 +6,7 @@
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
         <four_letter_word_allow_list>*</four_letter_word_allow_list>
         <enable_reconfiguration>true</enable_reconfiguration>
 

@@ -34,8 +34,8 @@ expect "Syntax error: failed at position 93 (UInt64):*"
 
 # Make a query with unmatched parentheses
 send -- "select (1, 2\r"
-expect "Syntax error: failed at position 8 (():"
-expect "Unmatched parentheses: ("
+expect "Syntax error: failed at position 13 (end of query):"
+expect "Unmatched parentheses: '(' at position 8 is never closed."
 expect ":) "
 
 send -- "\4"
