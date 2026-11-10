@@ -50,6 +50,23 @@ struct ExpressionUsage
 
     bool hasNested() const { return !nested_subcolumn_names.empty(); }
 
+    /// 'x' and 'x.size0' use the subcolumn `x`. Several names can match, because a name can contain dots. No match keeps all subcolumns.
+    void markUsedByPath(const String & path)
+    {
+        bool matched = false;
+        for (const auto & name : nested_subcolumn_names)
+        {
+            if (path == name || path.starts_with(name + '.'))
+            {
+                used_subcolumns.insert(name);
+                matched = true;
+            }
+        }
+
+        if (!matched)
+            fully_used = true;
+    }
+
     bool isUsed() const { return fully_used || !used_subcolumns.empty(); }
 };
 
@@ -210,20 +227,7 @@ public:
                 const auto & value = constant_node->getValue();
                 if (value.getType() == Field::Types::String)
                 {
-                    /// `getSubcolumn(array_join_col, 'x.size0')` uses the subcolumn `x`.
-                    const auto & path = value.safeGet<String>();
-                    bool matched = false;
-                    for (const auto & name : expr_usage->nested_subcolumn_names)
-                    {
-                        if (path == name || path.starts_with(name + '.'))
-                        {
-                            expr_usage->used_subcolumns.insert(name);
-                            matched = true;
-                        }
-                    }
-
-                    if (!matched)
-                        expr_usage->fully_used = true;
+                    expr_usage->markUsedByPath(value.safeGet<String>());
                 }
                 else if (value.getType() == Field::Types::UInt64)
                 {
