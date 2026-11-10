@@ -13,10 +13,12 @@
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
 #include <Core/UUID.h>
+#include <Core/Defines.h>
+#include <Core/Names.h>
+#include <base/unit.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <Formats/FormatSettings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -67,6 +69,7 @@ struct OvercommitTracker;
 namespace DB
 {
 
+struct FormatSettings;
 class ASTSelectQuery;
 
 class SystemLogs;
@@ -660,10 +663,17 @@ protected:
     /// Set for CREATE queries a Replicated database replays from a definition it already stored.
     /// Such a definition describes existing state, so validation that may reject a new one must not run.
     bool is_recovery_from_stored_metadata = false;
+    /// Set while analyzing expressions that are executed later in the background, without a user:
+    /// mutations and the expressions stored in a table definition.
+    bool is_analyzing_background_expressions = false;
     /// `EXPLAIN WHATIF` plans the query without the projections that it weighs, so its plans skip the forced projection check
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
     bool is_view_inner_query = false;
+    /// Set for the query of a `SQL SECURITY DEFINER` / `NONE` view or materialized view. It must not hand its reads to parallel
+    /// replicas (including the replicas of a `Distributed` shard) or a `-Cluster` storage: a replica cannot run them with its
+    /// privileges. Plan-based local reads stay allowed.
+    bool is_sql_security_overridden_body = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
@@ -877,6 +887,7 @@ public:
     /// present to be able to add, remove or update warnings from the table
     enum class WarningType
     {
+        AI_FUNCTION_IN_BACKGROUND_OPERATION,
         AST_FUZZER_IS_ENABLED,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
@@ -1367,6 +1378,7 @@ public:
     /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
@@ -1436,18 +1448,22 @@ public:
     std::shared_ptr<StreamingCursor> getStreamingCursor() const;
 
     /// I/O formats.
+    /// The overloads without FormatSettings exist so that this header does not need its definition.
+    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
     InputFormatPtr getInputFormat(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        const std::optional<FormatSettings> & format_settings,
         const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
         const std::optional<UInt64> & min_block_size_rows = std::nullopt,
         const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
-    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const;
+    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
+    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const;
 
     InterserverIOHandler & getInterserverIOHandler();
     const InterserverIOHandler & getInterserverIOHandler() const;
@@ -1517,6 +1533,11 @@ public:
 
     bool getMessageQueueDisableInsertion() const;
 
+    /// How many extra poll cycles a Keeper-backed Kafka consumer keeps its assignment before
+    /// refreshing its Keeper locks. Mutated at runtime by the config reloader, so read it per use.
+    UInt64 getKafkaLocksRefreshPolls() const;
+    void setKafkaLocksRefreshPolls(UInt64 stream_kafka_locks_refresh_polls) const;
+
     /// The server-level distributed cache switches. They live in `shared`, which is common to every context
     /// (including the background and buffer contexts created once at startup), so a config reload is observed
     /// by background operations as well. A query may deviate from them with the `force_*` settings.
@@ -1525,6 +1546,13 @@ public:
 
     bool getWriteThroughDistributedCache() const;
     void setWriteThroughDistributedCache(bool write_through_distributed_cache) const;
+
+    /// Settings of the distributed cache connections for temporary data, applied without a restart.
+    DistributedCachePoolBehaviourOnLimit getDistributedCacheTemporaryDataPoolBehaviourOnLimit() const;
+    void setDistributedCacheTemporaryDataPoolBehaviourOnLimit(DistributedCachePoolBehaviourOnLimit value) const;
+
+    UInt64 getDistributedCacheTemporaryDataMaxConnectionsBypassingPool() const;
+    void setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(UInt64 value) const;
 
     /// The switches with this context's `force_*` setting applied. The global context ignores that setting:
     /// it is the startup snapshot serving operations without a query context, which follow the server switch.
@@ -1704,6 +1732,11 @@ public:
     void setGPU(const ServerSettings & server_settings);
     /// Throws when `enable_gpu` is not set.
     GPU::GPUDevice & getGPU() const;
+    /// Applies the limits of the cache of the kernels compiled for expressions from the reloaded `server_settings`.
+    /// Without a GPU there is no cache to resize, as `enable_gpu` takes effect only at the start of the server.
+    void updateGPUKernelCacheConfiguration(const ServerSettings & server_settings);
+    /// The limits of that cache, in bytes and in kernels, or zeros without a GPU.
+    std::pair<size_t, size_t> getGPUKernelCacheLimits() const;
 #endif
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
@@ -2021,6 +2054,7 @@ public:
     void setStopIntrospectionServersCallback(StopIntrospectionServersCallback && callback);
 
     void shutdown();
+    bool isShutdownCalled() const;
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
@@ -2037,8 +2071,20 @@ public:
     void setSkipForcedProjectionCheck() { skip_forced_projection_check = true; }
     void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
+    bool isAnalyzingBackgroundExpressions() const { return is_analyzing_background_expressions; }
+    void setAnalyzingBackgroundExpressions(bool value) { is_analyzing_background_expressions = value; }
+
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
+
+    bool isSQLSecurityOverriddenBody() const { return is_sql_security_overridden_body; }
+    void setSQLSecurityOverriddenBody(bool value) { is_sql_security_overridden_body = value; }
+    /// Turns off in the body of a `SQL SECURITY DEFINER` / `NONE` view the parallel replicas modes that would hand its reads
+    /// to other replicas. Called once the settings of the body are applied, and again after each `SETTINGS` clause inside it.
+    void restrictParallelReplicasInSQLSecurityOverriddenBody();
+    /// True for a secondary query that reads the slice of a `sampling_key` parallel replicas query
+    /// assigned to it by `parallel_replicas_count` / `parallel_replica_offset`.
+    bool isSamplingKeyParallelReplicasFollower() const;
 
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
@@ -2114,7 +2160,7 @@ public:
 
     /// Tells DatabaseReplicated to make this query conditional: it'll only succeed if table with the given UUID exists.
     /// Used by refreshable materialized views to prevent creating inner tables after the MV is dropped.
-    /// Doesn't do anything if not in DatabaseReplicated.
+    /// A CREATE with a parent table re-creates the view's inner table from its stored definition.
     void setParentTable(UUID uuid);
     std::optional<UUID> getParentTable() const;
     /// Allows cancelling DDL query in DatabaseReplicated. Usage:
@@ -2305,6 +2351,7 @@ private:
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChangesWithLock(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
