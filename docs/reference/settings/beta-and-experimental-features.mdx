@@ -65,7 +65,9 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 
 | Name | Default |
 |------|--------|
+| [adaptive_codec_selection_period](/reference/settings/merge-tree-settings/other#adaptive_codec_selection_period) | `8` |
 | [compute_exact_num_defaults_for_sparse_columns](/reference/settings/merge-tree-settings/other#compute_exact_num_defaults_for_sparse_columns) | `1` |
+| [enable_adaptive_codec_selection](/reference/settings/merge-tree-settings/enable#enable_adaptive_codec_selection) | `0` |
 | [packed_skip_index_max_bytes](/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes) | `1048576` |
 | [enable_reads_from_columns_cache](/reference/settings/session-settings/enable#enable_reads_from_columns_cache) | `1` |
 | [enable_writes_to_columns_cache](/reference/settings/session-settings/enable#enable_writes_to_columns_cache) | `1` |
@@ -117,14 +119,12 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 
 | Name | Default |
 |------|--------|
-| [adaptive_codec_selection_period](/reference/settings/merge-tree-settings/other#adaptive_codec_selection_period) | `8` |
 | [allow_commit_order_projection](/reference/settings/merge-tree-settings/allow#allow_commit_order_projection) | `0` |
 | [allow_experimental_replacing_merge_with_cleanup](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_replacing_merge_with_cleanup) | `0` |
 | [allow_experimental_text_index_phrase_search](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) | `0` |
 | [allow_remote_fs_zero_copy_replication](/reference/settings/merge-tree-settings/allow#allow_remote_fs_zero_copy_replication) | `0` |
 | [distributed_index_analysis_min_indexes_bytes_to_activate](/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_indexes_bytes_to_activate) | `1073741824` |
 | [distributed_index_analysis_min_parts_to_activate](/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_parts_to_activate) | `10` |
-| [enable_adaptive_codec_selection](/reference/settings/merge-tree-settings/enable#enable_adaptive_codec_selection) | `0` |
 | [enable_replacing_merge_with_cleanup_for_min_age_to_force_merge](/reference/settings/merge-tree-settings/enable#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge) | `0` |
 | [force_read_through_cache_for_merges](/reference/settings/merge-tree-settings/other#force_read_through_cache_for_merges) | `0` |
 | [merge_selector_algorithm](/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm) | `Simple` |
