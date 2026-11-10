@@ -19,10 +19,10 @@ SELECT count() FROM (SELECT DISTINCT a, b FROM t_pr_preliminary_distinct) SETTIN
 SYSTEM FLUSH LOGS query_log;
 
 -- Rows sent by each replica.
-SELECT max(replica.result_rows) < 10000
-FROM system.query_log AS replica
-WHERE replica.event_date >= yesterday() AND NOT replica.is_initial_query AND replica.type = 'QueryFinish'
-    AND replica.initial_query_id IN
+SELECT max(result_rows) < 10000
+FROM system.query_log
+WHERE event_date >= yesterday() AND NOT is_initial_query AND type = 'QueryFinish'
+    AND initial_query_id IN
     (
         SELECT query_id
         FROM system.query_log
