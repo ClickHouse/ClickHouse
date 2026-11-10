@@ -1621,6 +1621,7 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     if (download_state == State::DETACHED)
         return;
 
+    onRemovedFromCache(lock);
     if (!getDownloaderUnlocked(lock).empty())
         resetDownloaderUnlocked(lock);
     setDetachedState(lock);
