@@ -2,6 +2,7 @@
 #include <Common/Scheduler/Workload/WorkloadEntityDiskStorage.h>
 #include <Common/Scheduler/Workload/WorkloadEntityKeeperStorage.h>
 #include <Common/Scheduler/Workload/WorkloadEntityConfigStorage.h>
+#include <Common/Scheduler/Workload/WorkloadEntityImplicitStorage.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -16,7 +17,11 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-std::unique_ptr<IWorkloadEntityStorage> createWorkloadEntityStorage(const ContextMutablePtr & global_context)
+namespace
+{
+
+/// Creates the SQL layer over the configuration layer
+std::unique_ptr<IWorkloadEntityStorage> createPersistedWorkloadEntityStorage(const ContextMutablePtr & global_context)
 {
     auto config_storage = std::make_unique<WorkloadEntityConfigStorage>(global_context);
 
@@ -42,6 +47,13 @@ std::unique_ptr<IWorkloadEntityStorage> createWorkloadEntityStorage(const Contex
         String path = config.getString(disk_path_key, default_path);
         return std::make_unique<WorkloadEntityDiskStorage>(global_context, path, std::move(config_storage));
     }
+}
+
+}
+
+std::unique_ptr<IWorkloadEntityStorage> createWorkloadEntityStorage(const ContextMutablePtr & global_context)
+{
+    return std::make_unique<WorkloadEntityImplicitStorage>(global_context, createPersistedWorkloadEntityStorage(global_context));
 }
 
 }

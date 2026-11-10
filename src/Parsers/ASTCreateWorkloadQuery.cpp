@@ -13,8 +13,11 @@ ASTPtr ASTCreateWorkloadQuery::clone() const
     auto res = make_intrusive<ASTCreateWorkloadQuery>(*this);
     res->children.clear();
 
-    res->workload_name = workload_name->clone();
-    res->children.push_back(res->workload_name);
+    if (workload_name)
+    {
+        res->workload_name = workload_name->clone();
+        res->children.push_back(res->workload_name);
+    }
 
     if (workload_parent)
     {
