@@ -61,6 +61,14 @@ namespace ProfileEvents
 
     class Counters
     {
+    public:
+        /// `Current` uses the active query/user trackers. `Global` is for backing retained across queries.
+        enum class MemoryTracking : UInt8
+        {
+            Current,
+            Global,
+        };
+
     private:
         struct CounterRow;
         /// Every level uses the same hot/cold row. User/global counters shard rows by CPU.
@@ -69,7 +77,7 @@ namespace ProfileEvents
         std::unique_ptr<CounterRow[]> counters_holder;
         /// Borrowed, process-lifetime backing, usable before dynamic initialization.
         static CounterRow global_storage[];
-        static std::unique_ptr<CounterRow[]> allocateRows(uint32_t rows, VariableContext allocation_level);
+        static std::unique_ptr<CounterRow[]> allocateRows(uint32_t rows, MemoryTracking tracking);
 
         /// Used to propagate increments.
         /// Requires acquire-release:
@@ -90,6 +98,7 @@ namespace ProfileEvents
         std::atomic<std::atomic_bool *> should_trace_array = nullptr;
         std::unique_ptr<std::atomic_bool[]> should_trace_holder;
         std::atomic_bool trace_all_profile_events = false;
+        MemoryTracking memory_tracking = MemoryTracking::Current;
 
         Count load(Event event) const;
         template <bool allow_allocation>
@@ -102,8 +111,11 @@ namespace ProfileEvents
 
         VariableContext level = VariableContext::Thread;
 
-        /// By default, any instance have to increment global counters
+        /// By default, increments propagate to the global counters.
+        /// User/global rows are persistent; thread/process rows normally belong to the current query or task.
         explicit Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
+        /// Persistent workers opt out of query charging without changing their aggregation level.
+        Counters(VariableContext level_, Counters * parent_, MemoryTracking memory_tracking_);
 
         /// constexpr so `global_counters` can be `constinit` — usable before any dynamic init.
         struct GlobalTag {};

@@ -204,7 +204,9 @@ public:
     const UInt64 thread_id = NO_OS_THREAD;
 
     /// TODO: merge them into common entity
-    ProfileEvents::Counters performance_counters{VariableContext::Thread};
+    /// A worker keeps its backing across queries; temporary `Thread`-level scopes use query accounting.
+    ProfileEvents::Counters performance_counters{
+        VariableContext::Thread, &ProfileEvents::global_counters, ProfileEvents::Counters::MemoryTracking::Global};
     /// Points to performance_counters by default.
     /// Could be changed to point to another object to calculate performance counters for some narrow scope.
     ProfileEvents::Counters * current_performance_counters{&performance_counters};

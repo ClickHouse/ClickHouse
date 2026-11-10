@@ -11,6 +11,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsScope.h>
 #include <Common/ThreadStatus.h>
 #include <Common/memory.h>
 #include <base/getPageSize.h>
@@ -23,6 +24,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -108,35 +110,101 @@ TEST(AllocationInterceptors, NewDeleteIncreasesTheMemoryTracker)
 }
 
 /// Counter backing uses intercepted `new`, which is unavailable in sanitizer builds.
-TEST(AllocationInterceptors, SharedColdBackingDoesNotChargeTheTriggeringQuery)
+void checkCounterMemoryTracking(auto && check)
 {
-    std::thread worker([]
+    std::thread worker([&]
     {
-        DB::ThreadStatus status;
-        MemoryTracker query(VariableContext::Process);
+        ThreadStatus status;
+        status.flushUntrackedMemory();
+        MemoryTracker user(&total_memory_tracker, VariableContext::User, false);
+        MemoryTracker query(&user, VariableContext::Process, false);
         status.memory_tracker.setParent(&query);
         status.untracked_memory_limit = 0;
-        const auto before = query.get();
-        {
-            ProfileEvents::Counters user(VariableContext::User, nullptr);
-            ProfileEvents::Counters thread(VariableContext::Thread, &user);
-            thread.preallocate(ProfileEvents::ZooKeeperWatchResponse);
+        SCOPE_EXIT({
             status.flushUntrackedMemory();
-            EXPECT_EQ(query.get(), before);
-        }
-        status.flushUntrackedMemory();
-        EXPECT_EQ(query.get(), before);
+            status.memory_tracker.setParent(&total_memory_tracker);
+        });
+        auto usage = [&]
         {
-            ProfileEvents::Counters process(VariableContext::Process, nullptr);
-            process.preallocate(ProfileEvents::ZooKeeperWatchResponse);
             status.flushUntrackedMemory();
-            EXPECT_GT(query.get(), before);
-        }
-        status.flushUntrackedMemory();
-        EXPECT_EQ(query.get(), before);
-        status.memory_tracker.setParent(&total_memory_tracker);
+            return std::pair{query.get(), user.get()};
+        };
+        check(usage);
     });
     worker.join();
+}
+
+TEST(AllocationInterceptors, SharedColdBackingDoesNotChargeTheTriggeringQuery)
+{
+    checkCounterMemoryTracking([](auto & usage)
+    {
+        const auto before = usage();
+        std::pair<Int64, Int64> live;
+        {
+            ProfileEvents::Counters user(VariableContext::User, nullptr);
+            ProfileEvents::Counters worker(
+                VariableContext::Thread, &user, ProfileEvents::Counters::MemoryTracking::Global);
+            ProfileEvents::Counters moved_worker(std::move(worker));
+            moved_worker.preallocate(ProfileEvents::ZooKeeperWatchResponse);
+            live = usage();
+        }
+        const auto after = usage();
+        EXPECT_EQ(live, before);
+        EXPECT_EQ(after, before);
+    });
+}
+
+TEST(AllocationInterceptors, ProfileEventsScopeChargesRowsAndColdPagesToQuery)
+{
+    checkCounterMemoryTracking([](auto & usage)
+    {
+        const auto before = usage();
+        std::pair<Int64, Int64> row_usage;
+        std::pair<Int64, Int64> page_usage;
+        {
+            ProfileEventsScope scope;
+            row_usage = usage();
+            CurrentThread::getProfileEvents().preallocate(ProfileEvents::ZooKeeperWatchResponse);
+            page_usage = usage();
+        }
+        const auto after = usage();
+        EXPECT_GT(row_usage.first, before.first);
+        EXPECT_EQ(row_usage.first - before.first, row_usage.second - before.second);
+        /// The scope's holder was query-accounted even when its backing incorrectly was not.
+        EXPECT_GT(page_usage.first, row_usage.first);
+        EXPECT_EQ(page_usage.first - row_usage.first, page_usage.second - row_usage.second);
+        EXPECT_EQ(after, before);
+    });
+}
+
+TEST(AllocationInterceptors, MovedPartCountersRetainQueryMemoryAccounting)
+{
+    checkCounterMemoryTracking([](auto & usage)
+    {
+        const auto before = usage();
+        std::pair<Int64, Int64> row_usage;
+        std::pair<Int64, Int64> page_usage;
+        std::optional<ProfileEvents::Counters> delayed_part;
+        {
+            ProfileEvents::Counters part;
+            row_usage = usage();
+            {
+                ProfileEventsScope part_scope(&part);
+                part.preallocate(ProfileEvents::ZooKeeperWatchResponse);
+                page_usage = usage();
+            }
+            delayed_part.emplace(std::move(part));
+        }
+        const auto retained = usage();
+        delayed_part.reset();
+        const auto after = usage();
+        EXPECT_GT(row_usage.first, before.first);
+        EXPECT_EQ(row_usage.first - before.first, row_usage.second - before.second);
+        EXPECT_GT(page_usage.first, row_usage.first);
+        EXPECT_EQ(page_usage.first - row_usage.first, page_usage.second - row_usage.second);
+        EXPECT_EQ(retained, page_usage);
+        EXPECT_EQ(after, before);
+    });
 }
 
 TEST(AllocationInterceptors, FailedReallocPreservesOldAllocationAccounting)

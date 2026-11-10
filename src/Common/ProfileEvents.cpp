@@ -2099,7 +2099,7 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
             delete[] page.load(std::memory_order_relaxed);
     }
 
-    Count * ensurePage(size_t index, VariableContext allocation_level)
+    Count * ensurePage(size_t index, MemoryTracking tracking)
     {
         auto & page_pointer = pages[index];
         auto * page = page_pointer.load(std::memory_order_acquire);
@@ -2116,10 +2116,10 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
             /// Counter publication must not introduce memory-limit exceptions or overcommit
             /// waits. Allocator-hook events have inline hot backing to prevent recursion.
             LockMemoryExceptionInThread lock(VariableContext::Global);
-            /// Non-query rows are retained across queries. Charge their backing to total
-            /// memory, including a losing CAS allocation, rather than the first caller.
+            /// Persistent backing, including a losing CAS allocation, belongs to total memory.
+            /// Query/task-owned rows use the active trackers regardless of their aggregation level.
             std::optional<MemoryTrackerBlockerInThread> blocker;
-            if (allocation_level != VariableContext::Process)
+            if (tracking == MemoryTracking::Global)
                 blocker.emplace(VariableContext::Global);
             auto fresh = std::make_unique<Count[]>(cold_page_size);
             Count * expected = nullptr;
@@ -2132,11 +2132,11 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
         return page;
     }
 
-    void preallocate(Event event, VariableContext allocation_level)
+    void preallocate(Event event, MemoryTracking tracking)
     {
         const size_t slot = counter_layout.slot_of[event];
         if (slot >= hot_counter_count)
-            ensurePage((slot - hot_counter_count) / cold_page_size, allocation_level);
+            ensurePage((slot - hot_counter_count) / cold_page_size, tracking);
     }
 
     void incrementHot(Event event, Count amount) noexcept
@@ -2147,7 +2147,7 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
     }
 
     template <bool allow_allocation>
-    void increment(Event event, Count amount, VariableContext allocation_level)
+    void increment(Event event, Count amount, MemoryTracking tracking)
     {
         if (!amount)
             return;
@@ -2160,7 +2160,7 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
         const size_t cold_slot = slot - hot_counter_count;
         Count * page = nullptr;
         if constexpr (allow_allocation)
-            page = ensurePage(cold_slot / cold_page_size, allocation_level);
+            page = ensurePage(cold_slot / cold_page_size, tracking);
         else
         {
             page = pages[cold_slot / cold_page_size].load(std::memory_order_acquire);
@@ -2227,6 +2227,7 @@ constinit Counters::CounterRow Counters::global_storage[PerCPU::MAX_CPUS]{};
 constexpr Counters::Counters(GlobalTag) noexcept
     : counters(global_storage)
     , parent(nullptr)
+    , memory_tracking(MemoryTracking::Global)
     , level(VariableContext::Global)
 {}
 
@@ -2285,18 +2286,26 @@ void Timer::end()
     watch.reset();
 }
 
-std::unique_ptr<Counters::CounterRow[]> Counters::allocateRows(uint32_t rows, VariableContext allocation_level)
+std::unique_ptr<Counters::CounterRow[]> Counters::allocateRows(uint32_t rows, MemoryTracking tracking)
 {
     std::optional<MemoryTrackerBlockerInThread> blocker;
-    if (allocation_level != VariableContext::Process)
+    if (tracking == MemoryTracking::Global)
         blocker.emplace(VariableContext::Global);
     return std::make_unique<CounterRow[]>(std::max(1U, rows));
 }
 
 Counters::Counters(VariableContext level_, Counters * parent_)
+    : Counters(
+        level_, parent_,
+        level_ == VariableContext::User || level_ == VariableContext::Global ? MemoryTracking::Global : MemoryTracking::Current)
+{
+}
+
+Counters::Counters(VariableContext level_, Counters * parent_, MemoryTracking memory_tracking_)
     : cpus(level_ == VariableContext::User ? user_counters_cpus.load(std::memory_order_relaxed) : 0)
-    , counters_holder(allocateRows(cpus.load(std::memory_order_relaxed), level_))
+    , counters_holder(allocateRows(cpus.load(std::memory_order_relaxed), memory_tracking_))
     , parent(parent_)
+    , memory_tracking(memory_tracking_)
     , level(level_)
 {
     counters = counters_holder.get();
@@ -2310,6 +2319,7 @@ Counters::Counters(Counters && src) noexcept
     , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_acquire))
     , should_trace_holder(std::move(src.should_trace_holder))
     , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
+    , memory_tracking(src.memory_tracking)
     , level(src.level)
 {
 }
@@ -2319,7 +2329,7 @@ Counters::~Counters()
     if (counters_holder)
     {
         std::optional<MemoryTrackerBlockerInThread> blocker;
-        if (level != VariableContext::Process)
+        if (memory_tracking == MemoryTracking::Global)
             blocker.emplace(VariableContext::Global);
         for (uint32_t row = 0; row < std::max(1U, cpus.load(std::memory_order_relaxed)); ++row)
             counters[row].destroy();
@@ -2356,7 +2366,7 @@ void Counters::preallocate(Event event)
         if (!rows && current == &global_counters)
             rows = PerCPU::MAX_CPUS;
         for (uint32_t row = 0; row < std::max(1U, rows); ++row)
-            current->counters[row].preallocate(event, current->level);
+            current->counters[row].preallocate(event, current->memory_tracking);
     }
 }
 
@@ -2390,7 +2400,7 @@ void Counters::fetchAdd(Event event, Count amount, int32_t cpu)
     const uint32_t rows = cpus.load(std::memory_order_relaxed);
     /// Out-of-range CPUs use row zero, including the unsharded case.
     const size_t row = (cpu >= 0 && static_cast<uint32_t>(cpu) < rows) ? static_cast<size_t>(cpu) : 0;
-    counters[row].increment<allow_allocation>(event, amount, level);
+    counters[row].increment<allow_allocation>(event, amount, memory_tracking);
 }
 
 void Counters::reset()
