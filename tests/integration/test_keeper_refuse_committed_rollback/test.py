@@ -18,9 +18,15 @@ term that does conflict. Recovery completes as soon as the peers answer
 heartbeats, even when they deny node3's log, so node3 being leader does not
 mean that no conflict occurred.
 
-node3 stays running afterwards. node1/node2 deny all its requests of that
-term, including heartbeats, so they must still elect a valid leader and
-accept new writes.
+node3 stays running afterwards and node1/node2 deny all its requests of that
+term, including heartbeats. Denying is not enough for the pair to keep serving
+though: `force_recovery` lets node3 win every election on its own, so every
+term it manages to deliver steps the pair's leader down again. A leader that
+lives for less than the session timeout cannot serve a client, so the pair can
+never keep a leader while it hears node3. The test therefore checks the
+denials while node3 is still connected, then cuts node3 off from the pair,
+keeping its process running, and only then checks that the pair elects a
+leader and serves the old data and a new write.
 """
 
 import os
@@ -28,6 +34,7 @@ import time
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
@@ -89,6 +96,41 @@ def retry_until_success(action, nodename, timeout=120.0):
             if time.time() > deadline:
                 raise
             time.sleep(0.5)
+
+
+def wait_for_leader(nodes, timeout=60.0, settle=2.0):
+    """Wait until one node of `nodes` is leader and still is `settle` seconds later.
+
+    One sample is not enough: a leader seen right before node3 delivers another
+    term is gone a moment later, and `settle` is longer than node3's election
+    timeout, so it rejects such a transient leader.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            leader = keeper_utils.get_leader(cluster, nodes)
+        except Exception:
+            time.sleep(0.2)
+            continue
+        time.sleep(settle)
+        if keeper_utils.is_leader(cluster, leader):
+            return leader
+    raise Exception(f"node1/node2 did not elect a stable leader in {timeout} seconds")
+
+
+def isolate_node3():
+    """Cut node3 off from node1/node2, keeping its process running.
+
+    A one-way drop is not enough: TCP needs both directions, so node1/node2
+    would stop receiving node3's requests as well. Cutting node3 off is also
+    what makes the pair's liveness deterministic, because every term node3
+    manages to deliver steps the pair's leader down again. Returns the rules to
+    heal on exit.
+    """
+    partition = PartitionManager()
+    for node in (node1, node2):
+        partition.partition_instances(node3, node)
+    return partition
 
 
 def get_rejecting_node():
@@ -169,28 +211,40 @@ def test_refuse_committed_log_rollback():
 
         assert_healthy_nodes_running()
 
-        # node3 keeps running and keeps sending requests from its invalid term.
-        # node1/node2 must deny all of them, so they time out, elect a valid
-        # leader and keep serving. Previously written data stays readable.
-        def read_test_znodes(zk):
-            for path, data in TEST_ZNODES:
-                assert zk.get(path)[0] == data
+        # node3 keeps running. Cut it off from node1/node2 first: while it can
+        # still reach them, every term it wins on its own steps the pair's
+        # leader down again and no client session survives. See the module
+        # docstring.
+        partition = isolate_node3()
+        try:
+            wait_for_leader((node1, node2))
 
-        for nodename in ("node1", "node2"):
-            retry_until_success(read_test_znodes, nodename)
+            # Previously written data stays readable on both remaining nodes.
+            def read_test_znodes(zk):
+                for path, data in TEST_ZNODES:
+                    assert zk.get(path)[0] == data
 
-        # {node1, node2} must still form a quorum and accept new writes.
-        # A retry can follow a create that already went through.
-        retry_until_success(
-            lambda zk: zk.exists(NEW_ZNODE) or zk.create(NEW_ZNODE, b"still-alive"),
-            "node1",
-        )
-        assert (
-            retry_until_success(lambda zk: zk.get(NEW_ZNODE)[0], "node2")
-            == b"still-alive"
-        )
+            for nodename in ("node1", "node2"):
+                retry_until_success(read_test_znodes, nodename)
 
-        assert_healthy_nodes_running()
+            # {node1, node2} must still form a quorum and accept new writes.
+            # A retry can follow a create that already went through.
+            retry_until_success(
+                lambda zk: zk.exists(NEW_ZNODE) or zk.create(NEW_ZNODE, b"still-alive"),
+                "node1",
+            )
+            assert (
+                retry_until_success(lambda zk: zk.get(NEW_ZNODE)[0], "node2")
+                == b"still-alive"
+            )
+
+            assert_healthy_nodes_running()
+            assert node3.get_process_pid("clickhouse") is not None, (
+                "node3 must keep running: only its network link to node1/node2 is "
+                "cut off, the process itself is not stopped"
+            )
+        finally:
+            partition.heal_all()
 
     finally:
         cluster.shutdown()
