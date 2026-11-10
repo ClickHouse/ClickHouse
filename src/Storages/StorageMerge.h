@@ -398,7 +398,7 @@ private:
         ContextPtr query_context) const;
 
     /// The metadata snapshot of a child table to read with. It may refresh the metadata of a data lake child, which can be slow.
-    StorageMetadataPtr getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const;
+    [[nodiscard]] StorageMetadataPtr getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const;
 };
 
 }

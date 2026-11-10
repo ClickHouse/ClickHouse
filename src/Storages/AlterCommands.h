@@ -268,7 +268,7 @@ public:
         const MergeTreeSettings * settings_defaults = nullptr) const;
 
     /// Indices the commands actually add: `ADD INDEX IF NOT EXISTS` of an existing name adds nothing.
-    NameSet getAddedIndexNames(const IndicesDescription & existing) const;
+    [[nodiscard]] NameSet getAddedIndexNames(const IndicesDescription & existing) const;
 
     /// At least one command modify settings or comments.
     [[nodiscard]] bool hasNonReplicatedAlterCommand() const;

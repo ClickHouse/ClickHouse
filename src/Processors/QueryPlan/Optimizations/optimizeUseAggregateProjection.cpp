@@ -609,7 +609,7 @@ struct StatisticsAggregate
 
     const AggregateDescription * aggregate = nullptr;
 
-    bool isSum() const { return kind == Kind::Sum || kind == Kind::SumAndCount; }
+    [[nodiscard]] bool isSum() const { return kind == Kind::Sum || kind == Kind::SumAndCount; }
 };
 
 struct AggregateProjectionCandidates

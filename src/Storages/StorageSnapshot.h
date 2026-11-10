@@ -61,7 +61,7 @@ struct StorageSnapshot
     [[nodiscard]] NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
 
     /// See `ColumnsDescription::getColumnNamesForSelectAccessCheck`.
-    Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
+    [[nodiscard]] Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     [[nodiscard]] Block getSampleBlockForColumns(const Names & column_names) const;

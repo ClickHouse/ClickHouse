@@ -78,7 +78,7 @@ protected:
     }
 
     /// The position of the disk of `reservation` in the volume, or nothing without a reservation.
-    std::optional<size_t> diskOf(const ReservationPtr & reservation) const
+    [[nodiscard]] std::optional<size_t> diskOf(const ReservationPtr & reservation) const
     {
         if (!reservation)
             return {};

@@ -545,7 +545,7 @@ public:
     /// a grant or revoke made on this exact name. A grant or revoke on a name changes only its leaf, while the parent
     /// node of the leaf keeps the inherited flags.
     template <typename... Args>
-    bool isGrantedInherited(const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
+    [[nodiscard]] bool isGrantedInherited(const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
     {
         const auto next_level = static_cast<Level>(level + 1);
         if constexpr (sizeof...(Args) == 0)
