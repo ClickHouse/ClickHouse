@@ -327,6 +327,10 @@ private:
 
             bool found = group_by_keys.keys.contains(candidate);
 
+            /// For example, `arrayJoin` of a key has several values in a group.
+            if (found && !parents_are_only_deterministic)
+                return false;
+
             switch (candidate->getNodeType())
             {
                 case QueryTreeNodeType::FUNCTION:
