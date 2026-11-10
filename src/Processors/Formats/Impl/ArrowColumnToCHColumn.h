@@ -1,13 +1,14 @@
 #pragma once
 
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 
 #include "config.h"
 
 #if USE_ARROW || USE_PARQUET
 
+#include <Formats/ColumnNameMaps.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <arrow/table.h>
@@ -26,8 +27,8 @@ public:
         const Block & header_,
         const std::string & format_name_,
         const FormatSettings & format_settings_,
-        const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse_,
-        const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet_,
+        const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse_,
+        const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet_,
         bool allow_missing_columns_,
         bool null_as_default_,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -68,8 +69,8 @@ public:
         bool case_insensitive_matching = false,
         bool allow_geoparquet_parser = true,
         bool enable_json_parsing = true,
-        const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse = std::nullopt,
-        const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet = std::nullopt);
+        const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse = std::nullopt,
+        const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet = std::nullopt);
 
     struct DictionaryInfo
     {
@@ -91,7 +92,7 @@ private:
         std::string column_name;
     };
 
-    using NameToArrowColumn = std::unordered_map<std::string, ArrowColumn>;
+    using NameToArrowColumn = UnorderedMapWithMemoryTracking<std::string, ArrowColumn>;
 
     std::vector<RecordBatchFieldMapping> buildRecordBatchFieldMapping(const arrow::Schema & schema) const;
     NameToArrowColumn mapRecordBatchColumns(
@@ -120,14 +121,14 @@ private:
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
-    std::unordered_map<std::string, DictionaryInfo> dictionary_infos;
+    UnorderedMapWithMemoryTracking<std::string, DictionaryInfo> dictionary_infos;
 
     std::shared_ptr<arrow::Schema> record_batch_schema;
     std::vector<RecordBatchFieldMapping> record_batch_field_mapping;
     NamesAndTypesList record_batch_header;
 
-    std::optional<std::unordered_map<String, String>> parquet_columns_to_clickhouse;
-    std::optional<std::unordered_map<String, String>> clickhouse_columns_to_parquet;
+    std::optional<ColumnNameMap> parquet_columns_to_clickhouse;
+    std::optional<ColumnNameMap> clickhouse_columns_to_parquet;
 };
 
 }
