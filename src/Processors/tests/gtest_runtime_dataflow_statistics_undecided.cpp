@@ -33,23 +33,9 @@ using Reason = RuntimeDataflowStatisticsCache::UndecidedReason;
 
 }
 
-/// A collection that a step could not take part in is remembered, so the plan is not built again for it.
-TEST(RuntimeDataflowStatisticsUndecided, CollectorUnsupportedIsRemembered)
-{
-    const UInt64 undecided_key = freshKey();
-    const UInt64 statistics_key = freshKey();
-    {
-        RuntimeDataflowStatisticsBlock failed(statistics_key, /*total_rows_to_read_=*/100, undecided_key);
-        failed.unsupported_case = true;
-    }
-
-    const auto undecided = getRuntimeDataflowStatisticsCache().getUndecided(undecided_key);
-    ASSERT_NE(undecided, nullptr);
-    EXPECT_EQ(undecided->reason, Reason::CollectorUnsupported);
-}
-
-/// A collection that succeeds forgets what an earlier one could not collect.
-TEST(RuntimeDataflowStatisticsUndecided, SuccessfulCollectionForgetsFailure)
+/// A collection that a step could not take part in is remembered, so that the plan is not built again for it, and a
+/// collection that succeeds later forgets it. Both are recorded from the destructor of the block.
+TEST(RuntimeDataflowStatisticsUndecided, FailedCollectionIsRememberedUntilOneSucceeds)
 {
     const UInt64 undecided_key = freshKey();
     const UInt64 statistics_key = freshKey();
@@ -58,7 +44,9 @@ TEST(RuntimeDataflowStatisticsUndecided, SuccessfulCollectionForgetsFailure)
         RuntimeDataflowStatisticsBlock failed(statistics_key, /*total_rows_to_read_=*/100, undecided_key);
         failed.unsupported_case = true;
     }
-    ASSERT_NE(cache.getUndecided(undecided_key), nullptr);
+    const auto undecided = cache.getUndecided(undecided_key);
+    ASSERT_NE(undecided, nullptr);
+    EXPECT_EQ(undecided->reason, Reason::CollectorUnsupported);
 
     {
         RuntimeDataflowStatisticsBlock succeeded(statistics_key, /*total_rows_to_read_=*/100, undecided_key);

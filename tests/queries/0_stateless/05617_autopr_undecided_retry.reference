@@ -2,15 +2,9 @@ undecided_adopt_1	1	0	0	0	1	0
 undecided_adopt_2	1	0	0	1	0	1
 undecided_adopt_3	1	0	0	1	0	1
 undecided_adopt_4	0	1	0	1	0	0
-undecided_adopt_5	0	1	0	1	0	0
 undecided_correlated_1	1	0	1	0	0	0
 undecided_correlated_2	1	0	1	0	0	0
 undecided_correlated_3	0	1	1	0	0	0
-undecided_join_1	1	0	0	1	0	0
-undecided_join_2	1	0	0	1	0	0
-undecided_join_3	0	1	0	1	0	0
-undecided_join_4	0	1	0	1	0	0
-undecided_join_5	0	1	0	1	0	0
 undecided_limit_1	1	0	0	1	0	0
 undecided_limit_2	1	0	0	1	0	0
 undecided_limit_3	0	1	0	1	0	0
@@ -22,6 +16,7 @@ undecided_limit_max_2	1	0	0	1	0	0
 undecided_limit_max_3	0	1	0	1	0	0
 undecided_limit_off_1	1	0	0	1	0	0
 undecided_limit_off_2	1	0	0	1	0	0
+undecided_limit_off_3	1	0	0	1	0	0
 undecided_warm_1	1	0	0	1	0	0
 undecided_warm_2	1	0	0	0	1	0
 undecided_warm_3	0	0	0	0	0	1

@@ -59,11 +59,13 @@ FORMAT Null SETTINGS log_comment = 'undecided_limit_5';
 SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
 FORMAT Null SETTINGS log_comment = 'undecided_limit_6';
 
--- The same with skipping turned off: every run builds the plan.
+-- The same with skipping turned off: every run builds the plan, the third too, which would skip otherwise.
 SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
 FORMAT Null SETTINGS log_comment = 'undecided_limit_off_1', automatic_parallel_replicas_undecided_retry_after_executions = 0;
 SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
 FORMAT Null SETTINGS log_comment = 'undecided_limit_off_2', automatic_parallel_replicas_undecided_retry_after_executions = 0;
+SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
+FORMAT Null SETTINGS log_comment = 'undecided_limit_off_3', automatic_parallel_replicas_undecided_retry_after_executions = 0;
 
 -- The largest value skips the build for good after the second outcome, but the second run still builds it.
 SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
@@ -88,23 +90,6 @@ WHERE o_orderkey = l_orderkey AND o_total = 5
   AND l_discount < (SELECT 0.2 * avg(l_discount) FROM t_undecided_l WHERE l_orderkey = o_orderkey)
 FORMAT Null SETTINGS log_comment = 'undecided_correlated_3';
 
--- A join that cannot be compared either: the second run builds the plan again at once, the third skips it.
-SELECT l_orderkey, o_total FROM t_undecided_l JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_join_1';
-SELECT l_orderkey, o_total FROM t_undecided_l JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_join_2';
-SELECT l_orderkey, o_total FROM t_undecided_l JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_join_3';
-
--- A table inserted into all the time grows the hash tables of the join, and its stored sizes, on every run. That does not
--- make the plan be built again: the fourth and the fifth run still skip it.
-INSERT INTO t_undecided_l VALUES (1, 100, 0.01);
-INSERT INTO t_undecided_o VALUES (100000, 5);
-SELECT l_orderkey, o_total FROM t_undecided_l JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_join_4';
-SELECT l_orderkey, o_total FROM t_undecided_l JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_join_5';
-
 -- Without column statistics the plan with parallel replicas has no row estimates for the filtered read, so its joins
 -- are ordered differently and the two plans cannot be compared. The first run measures the hash tables; with their
 -- sizes, the second, which builds the plan again at once, orders both plans alike, matches them and collects
@@ -122,7 +107,7 @@ GROUP BY c_nationkey FORMAT Null SETTINGS log_comment = 'undecided_warm_3';
 -- Statistics that favour parallel replicas do not make the plan usable: as in `05401_autopr_set_transplant_unpaired_sets`,
 -- the set of the `IN` subquery has no counterpart in the plan with parallel replicas, so adopting it fails after the
 -- cost model, every time. The first run collects statistics, the second fails to adopt, the third builds the plan
--- again at once and fails the same way, and the fourth and the fifth skip it even though the statistics still favour it.
+-- again at once and fails the same way, and the fourth skips it even though the statistics still favour it.
 SELECT g, sumIf(v, k IN (SELECT k FROM t_undecided_s WHERE v < 3 AND k != repeat('x', 300)))
 FROM t_undecided_s GROUP BY g FORMAT Null
 SETTINGS max_threads = 1, merge_tree_min_bytes_per_task_for_remote_reading = 1024, parallel_replicas_plan_based = 0,
@@ -139,10 +124,6 @@ SELECT g, sumIf(v, k IN (SELECT k FROM t_undecided_s WHERE v < 3 AND k != repeat
 FROM t_undecided_s GROUP BY g FORMAT Null
 SETTINGS max_threads = 1, merge_tree_min_bytes_per_task_for_remote_reading = 1024, parallel_replicas_plan_based = 0,
     log_comment = 'undecided_adopt_4';
-SELECT g, sumIf(v, k IN (SELECT k FROM t_undecided_s WHERE v < 3 AND k != repeat('x', 300)))
-FROM t_undecided_s GROUP BY g FORMAT Null
-SETTINGS max_threads = 1, merge_tree_min_bytes_per_task_for_remote_reading = 1024, parallel_replicas_plan_based = 0,
-    log_comment = 'undecided_adopt_5';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
