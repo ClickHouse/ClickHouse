@@ -20,6 +20,7 @@ from ci.jobs.scripts.integration_coverage_export import IntegrationCoverageExpor
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
+    PER_TEST_COVERAGE_KEEP_PREFIXES,
     PER_TEST_COVERAGE_SKIP_PREFIXES,
     force_exclusive_modules_sequential,
     get_optimal_test_batch,
@@ -1351,11 +1352,18 @@ def get_parallel_sequential_tests_to_run(
     ]
 
     if "amd_llvm_coverage" in (job_options or ""):
+        skip_prefixes = LLVM_COVERAGE_SKIP_PREFIXES
+        if "per_test_coverage" in (job_options or ""):
+            # The targeted jobs need the per-module coverage of these modules, see
+            # `PER_TEST_COVERAGE_KEEP_PREFIXES`.
+            skip_prefixes = [
+                p for p in skip_prefixes if p not in PER_TEST_COVERAGE_KEEP_PREFIXES
+            ]
         before = len(test_files)
         test_files = [
             f
             for f in test_files
-            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            if not any(f.startswith(prefix) for prefix in skip_prefixes)
         ]
         print(
             f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
@@ -1989,7 +1997,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # cluster.add_instance() inside the fixture.
         # For regular jobs, preserve the duration-aware ordering from get_optimal_test_batch.
         #
-        # The merge-queue targeted check runs under a 20-minute cap that ends the run
+        # The merge-queue targeted check runs under a 30-minute cap that ends the run
         # without failing it, so the order decides what is cut off. Keep the priority
         # order of the selection there (the changed modules, the modules owning changed
         # files, the modules `master` changed since the PR CI, then the coverage
@@ -2064,7 +2072,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         test_env["CLICKHOUSE_TESTS_PER_TEST_COVERAGE_DIR"] = per_test_coverage_dir
         # No continuous mode (see cluster.py) and no profile merge: the coverage is
         # taken from the servers' `system.coverage_log`, not from .profraw files.
-        test_env["LLVM_PROFILE_FILE"] = "it-%4m.profraw"
+        test_env["LLVM_PROFILE_FILE"] = os.devnull
     elif is_llvm_coverage:
         # %c enables continuous mode: the counters are memory-mapped into the
         # file and updated as the code runs, so the file is structurally valid
@@ -2128,11 +2136,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
     FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min - kept below the external job-cancellation ceiling
     # The merge-queue targeted check delays merges directly, and the queue is meant to
     # fail fast, so it gets a tight soft budget, counted from the job start like the
-    # flaky one and equal to the one of the merge-queue stateless checks. It runs the
-    # selection once, and a session-timeout of a targeted check is not a job failure
-    # (see below), so a selection that does not fit is cut short rather than holding
-    # the queue.
-    MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT = 20 * 60
+    # flaky one and equal to the one of the merge-queue stateless targeted check. It
+    # runs the selection once, and a session-timeout of a targeted check is not a job
+    # failure (see below), so a selection that does not fit is cut short rather than
+    # holding the queue.
+    MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT = 30 * 60
     check_time_limit = 0
     if is_flaky_check:
         check_time_limit = FLAKY_CHECK_TIME_LIMIT

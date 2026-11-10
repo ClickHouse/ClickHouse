@@ -136,6 +136,7 @@ DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
 DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
+DECLARE_SETTING_ENUM(HashJoinLayout)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -500,6 +501,15 @@ enum class DatabaseDataLakeCatalogType : uint8_t
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
+
+enum class DatabaseDataLakeSnapshotLoadingMode : uint8_t
+{
+    AUTO,
+    ALL,
+    REFS,
+};
+
+DECLARE_SETTING_ENUM(DatabaseDataLakeSnapshotLoadingMode)
 
 enum class FileCachePolicy : uint8_t
 {

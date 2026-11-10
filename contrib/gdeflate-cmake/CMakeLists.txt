@@ -1,7 +1,8 @@
 # GDeflate - a variant of DEFLATE whose bit stream is split into 32 interleaved sub-streams, so that a GPU can
 # expand it in parallel, while the CPU compresses and expands it as fast as DEFLATE. It is the format of nvcomp's
 # GDeflate and of DirectStorage.
-# Upstream: https://github.com/NVIDIA/libdeflate (branch `gdeflate`), a fork of libdeflate.
+# Upstream: https://github.com/NVIDIA/libdeflate (branch `gdeflate`), a fork of libdeflate; ClickHouse builds its fork
+# https://github.com/ClickHouse/libdeflate (branch `gdeflate`), which bounds every read and write by its buffer.
 #
 # Only the parts of the fork that GDeflate needs are built. The fork exports the same symbols as libdeflate, which
 # ClickHouse also links (contrib/libdeflate-cmake), so each of them is renamed by a header that every translation
@@ -15,8 +16,6 @@ set(SRCS
     "${LIBRARY_DIR}/lib/utils.c"
     "${LIBRARY_DIR}/lib/arm/cpu_features.c"
     "${LIBRARY_DIR}/lib/x86/cpu_features.c"
-    # For `libdeflate_deflate_compress_bound`, which the bound of a GDeflate page is computed from.
-    "${LIBRARY_DIR}/lib/deflate_compress.c"
     "${LIBRARY_DIR}/lib/gdeflate_compress.c"
     "${LIBRARY_DIR}/lib/gdeflate_decompress.c"
 )
