@@ -23,7 +23,8 @@ $CLICKHOUSE_CLIENT -q "
     SYSTEM STOP MERGES t;
 "
 # An insert in a transaction enables transactions on the table, so background merges run in their own transaction.
-$CLICKHOUSE_CLIENT --implicit_transaction 1 -q "INSERT INTO t VALUES (1, 0)"
+# async_insert is disabled because it is incompatible with implicit_transaction.
+$CLICKHOUSE_CLIENT --implicit_transaction 1 --async_insert 0 -q "INSERT INTO t VALUES (1, 0)"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t SELECT 1, number FROM numbers(10) SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT mt_merge_task_pause_before_transaction_commit"
