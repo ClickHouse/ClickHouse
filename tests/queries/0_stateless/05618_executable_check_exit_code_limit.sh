@@ -62,14 +62,15 @@ SELECT request FROM t_pool LIMIT 1 SETTINGS input_format_max_block_size_bytes = 
 SELECT count(), any(request) FROM t_pool;
 " < /dev/null || echo "pool: rc=$?"
 
-# A command that ends its output with a non-zero exit is still reported.
+# A non-zero exit is reported when the output is read to the end, not when the query stops reading early.
 cat > "${WORK_DIR}/fail.sql" <<'EOF'
 CREATE TABLE t_fail (x UInt64) ENGINE = Executable('fail.sh', 'TSV') SETTINGS check_exit_code = 1;
 SELECT count() FROM t_fail; -- { serverError CHILD_WAS_NOT_EXITED_NORMALLY }
+SELECT x FROM t_fail LIMIT 1;
 CREATE TABLE t_crash (x UInt64, request UInt64)
 ENGINE = ExecutablePool('crash_pool.sh', 'TSV', (SELECT number FROM numbers(3)))
 SETTINGS send_chunk_header = 1, pool_size = 1, check_exit_code = 1;
 SELECT count() FROM t_crash; -- { serverError CHILD_WAS_NOT_EXITED_NORMALLY }
-SELECT 'errors reported';
+SELECT request FROM t_crash LIMIT 1;
 EOF
 $CLICKHOUSE_LOCAL --config-file="${WORK_DIR}/config.xml" --queries-file="${WORK_DIR}/fail.sql" < /dev/null
