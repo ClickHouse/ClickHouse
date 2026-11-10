@@ -319,6 +319,22 @@ void NamedCollectionFactory::createFromSQL(const ASTCreateNamedCollectionQuery &
         return;
     }
 
+    /// An entry which is in the storage but not loaded, because it is encrypted with a key which is
+    /// not configured (see `NamedCollectionsMetadataStorage::getAll`). It is a named collection all
+    /// the same, so it is not created again, and it is not overwritten: it cannot be read back, so
+    /// nothing but the key it was encrypted with tells what would be lost.
+    if (metadata_storage->exists(query.collection_name))
+    {
+        if (query.if_not_exists)
+            return;
+
+        throw Exception(
+            ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
+            "A named collection `{}` already exists in the storage, but could not be loaded, see the server log. "
+            "Configure the encryption key it was written with to load it",
+            query.collection_name);
+    }
+
     /// `max_named_collection_num_to_throw` is enforced here, under the mutex, rather than in
     /// `InterpreterCreateNamedCollectionQuery`, so that every path adding a new collection is
     /// covered - in particular RESTORE, which calls this function directly. Only this branch adds

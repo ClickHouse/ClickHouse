@@ -46,6 +46,9 @@ public:
 
     bool removeIfExists(const std::string & collection_name);
 
+    /// Whether the storage holds an entry for the collection, loadable or not.
+    bool exists(const std::string & collection_name) const;
+
     MutableNamedCollectionPtr update(const ASTAlterNamedCollectionQuery & query);
 
     void shutdown();

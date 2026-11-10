@@ -51,10 +51,12 @@ def cluster():
             "node_with_keeper_2_encrypted",
             main_configs=[
                 "configs/config.d/named_collections_with_zookeeper_encrypted.xml",
+                "configs/config.d/backups.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
             ],
+            external_dirs=["/backups/"],
             stay_alive=True,
             with_zookeeper=True,
         )
@@ -266,7 +268,20 @@ def test_local_storage_key_rotation(cluster):
 def test_local_storage_missing_key(cluster):
     node = cluster.instances["node_encrypted"]
 
-    # Encrypted with key A, the key of the module's configuration.
+    # A backup holding `locked` encrypted with key B, with a value other than the one stored below.
+    set_local_storage_keys(
+        node,
+        f'<key_hex id="0">{KEY_A}</key_hex><key_hex id="1">{KEY_B}</key_hex>'
+        "<current_key_id>1</current_key_id>",
+    )
+    node.restart_clickhouse()
+    node.query("CREATE NAMED COLLECTION locked AS key1=2")
+    node.query("BACKUP TABLE system.named_collections TO File('/backups/missing_key')")
+    node.query("DROP NAMED COLLECTION locked")
+
+    # The stored `locked` is encrypted with key A.
+    set_local_storage_keys(node, f"<key_hex>{KEY_A}</key_hex>")
+    node.restart_clickhouse()
     node.query("CREATE NAMED COLLECTION locked AS key1=1")
 
     # Key A is removed from the configuration before `locked` is rewritten with another key. The
@@ -281,9 +296,26 @@ def test_local_storage_missing_key(cluster):
         == "collection1\n"
     )
     assert node.contains_in_log("Cannot read named collection 'locked', skipping it")
-    node.query("CREATE NAMED COLLECTION fresh AS key1=2")
+    node.query("CREATE NAMED COLLECTION fresh AS key1=3")
 
-    # Once key A is configured again, `locked` is back.
+    # The retained entry is still a named collection: it is not created again, not replaced, and
+    # `IF NOT EXISTS` keeps it. A restore keeps it in the default mode and refuses to replace it.
+    assert "already exists" in node.query_and_get_error("CREATE NAMED COLLECTION locked AS key1=2")
+    assert "already exists" in node.query_and_get_error(
+        "CREATE OR REPLACE NAMED COLLECTION locked AS key1=2"
+    )
+    node.query("CREATE NAMED COLLECTION IF NOT EXISTS locked AS key1=2")
+    node.query("RESTORE TABLE system.named_collections FROM File('/backups/missing_key')")
+    assert "NAMED_COLLECTION_ALREADY_EXISTS" in node.query_and_get_error(
+        "RESTORE TABLE system.named_collections FROM File('/backups/missing_key') "
+        "SETTINGS create_named_collection = 'replace'"
+    )
+    assert (
+        node.query("SELECT count() FROM system.named_collections WHERE name = 'locked'")
+        == "0\n"
+    )
+
+    # Once key A is configured again, `locked` is back with its original value.
     set_local_storage_keys(
         node,
         f'<key_hex id="0">{KEY_A}</key_hex><key_hex id="1">{KEY_B}</key_hex>'
@@ -295,7 +327,7 @@ def test_local_storage_missing_key(cluster):
             "SELECT name, collection['key1'] FROM system.named_collections "
             "WHERE name IN ('locked', 'fresh') ORDER BY name"
         )
-        == "fresh\t2\nlocked\t1\n"
+        == "fresh\t3\nlocked\t1\n"
     )
 
     # Back to the module's configuration for the other tests.
@@ -303,3 +335,107 @@ def test_local_storage_missing_key(cluster):
     node.query("DROP NAMED COLLECTION fresh")
     set_local_storage_keys(node, f"<key_hex>{KEY_A}</key_hex>")
     node.restart_clickhouse()
+
+
+ZOOKEEPER_ENCRYPTED_CONFIG = (
+    "/etc/clickhouse-server/config.d/named_collections_with_zookeeper_encrypted.xml"
+)
+
+
+def set_zookeeper_storage_keys(node, keys_xml):
+    # Rewrites the config of a Keeper node with the given keys; the rest of the file stays as in
+    # configs/config.d/named_collections_with_zookeeper_encrypted.xml.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""cat > {ZOOKEEPER_ENCRYPTED_CONFIG} << 'EOF'
+<clickhouse>
+  <named_collections_storage>
+    <type>zookeeper_encrypted</type>
+    {keys_xml}
+    <path>/named_collections_path/</path>
+    <update_timeout_ms>5000</update_timeout_ms>
+  </named_collections_storage>
+
+  <named_collections>
+    <collection1>
+      <key1>value1</key1>
+    </collection1>
+  </named_collections>
+
+  <remote_servers>
+      <replicated_nc_nodes_cluster>
+          <shard>
+              <internal_replication>true</internal_replication>
+              <replica>
+                  <host>node_with_keeper</host>
+                  <port>9000</port>
+              </replica>
+              <replica>
+                  <host>node_with_keeper_2</host>
+                  <port>9000</port>
+              </replica>
+          </shard>
+          <allow_distributed_ddl_queries>true</allow_distributed_ddl_queries>
+      </replicated_nc_nodes_cluster>
+  </remote_servers>
+
+  <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
+</clickhouse>
+EOF""",
+        ]
+    )
+
+
+def test_zookeeper_storage_missing_key(cluster):
+    node1 = cluster.instances["node_with_keeper_encrypted"]
+    node2 = cluster.instances["node_with_keeper_2_encrypted"]
+
+    # node1 writes with key A. A backup holding `visible` encrypted with key B, taken while node2
+    # holds both keys.
+    set_zookeeper_storage_keys(node1, f"<key_hex>{KEY_A}</key_hex>")
+    node1.restart_clickhouse()
+    set_zookeeper_storage_keys(
+        node2,
+        f'<key_hex id="0">{KEY_A}</key_hex><key_hex id="1">{KEY_B}</key_hex>'
+        "<current_key_id>1</current_key_id>",
+    )
+    node2.restart_clickhouse()
+    node2.query("CREATE NAMED COLLECTION visible AS key1=1")
+    node2.query("BACKUP TABLE system.named_collections TO File('/backups/disclosure')")
+    node2.query("DROP NAMED COLLECTION visible")
+
+    # An entry encrypted with key A written into the shared storage by node1 while node2 holds
+    # key B only: node2 skips it.
+    set_zookeeper_storage_keys(node2, f"<key_hex>{KEY_B}</key_hex>")
+    node2.restart_clickhouse()
+    node1.query("CREATE NAMED COLLECTION locked AS key1=1")
+
+    # A user who may restore named collections, but not see their names, restores the backup on
+    # node2 and receives the log records of the query. The restore reloads the shared storage,
+    # which skips `locked` again; its name reaches the server log only.
+    node2.query("CREATE USER restorer NOT IDENTIFIED")
+    node2.query("GRANT CREATE NAMED COLLECTION ON * TO restorer")
+    node2.query("GRANT READ ON FILE TO restorer")  # the right reading a File() backup needs
+    out, err = node2.query_and_get_answer_with_error(
+        "RESTORE TABLE system.named_collections FROM File('/backups/disclosure')",
+        user="restorer",
+        settings={"send_logs_level": "error"},
+    )
+    assert "RESTORED" in out
+    assert "locked" not in err
+    assert node2.contains_in_log("Cannot read named collection 'locked', skipping it")
+    assert (
+        node2.query(
+            "SELECT collection['key1'] FROM system.named_collections WHERE name = 'visible'"
+        )
+        == "1\n"
+    )
+
+    # Back to the module's configuration for the other tests.
+    node2.query("DROP USER restorer")
+    node2.query("DROP NAMED COLLECTION visible")
+    node1.query("DROP NAMED COLLECTION locked")
+    set_zookeeper_storage_keys(node2, f"<key_hex>{KEY_A}</key_hex>")
+    node2.restart_clickhouse()

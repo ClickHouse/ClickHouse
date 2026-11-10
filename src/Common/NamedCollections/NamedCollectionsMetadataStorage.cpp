@@ -22,6 +22,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #if CLICKHOUSE_CLOUD
 #include <Core/KMS.h>
@@ -180,7 +181,7 @@ public:
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
-        if (!replace && fs::exists(file_name))
+        if (!replace && fs::exists(getPath(file_name)))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
@@ -631,6 +632,9 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
             /// the entry is kept in the storage and loads again once its key is configured.
             if (e.code() == ErrorCodes::DATA_ENCRYPTION_ERROR)
             {
+                /// The name is for the server log only: this may run in the thread of a query (a reload
+                /// during a restore) whose user has no right to see the names of the collections.
+                CurrentThread::HideLogsFromClientScope hide_logs_from_client;
                 LOG_ERROR(getLogger("NamedCollectionsMetadataStorage"),
                     "Cannot read named collection '{}', skipping it: {}", collection_name, e.message());
                 continue;
@@ -700,6 +704,11 @@ void NamedCollectionsMetadataStorage::remove(const std::string & collection_name
 bool NamedCollectionsMetadataStorage::removeIfExists(const std::string & collection_name)
 {
     return storage->removeIfExists(getFileName(collection_name));
+}
+
+bool NamedCollectionsMetadataStorage::exists(const std::string & collection_name) const
+{
+    return storage->exists(getFileName(collection_name));
 }
 
 MutableNamedCollectionPtr NamedCollectionsMetadataStorage::update(const ASTAlterNamedCollectionQuery & query)
