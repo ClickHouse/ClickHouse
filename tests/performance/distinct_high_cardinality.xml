@@ -8,4 +8,7 @@
     <query>SELECT DISTINCT toFixedString(leftPad(toString(number), 128, '0'), 128) FROM numbers_mt(8000000) FORMAT Null</query>
     <query>SELECT DISTINCT arrayWithConstant(30, number) FROM numbers_mt(3000000) FORMAT Null</query>
     <query>SELECT DISTINCT number FROM numbers_mt(40000000) FORMAT Null</query>
+    <!-- Keys hashed as a whole: several columns with a String, and 40 bytes of fixed-width columns. -->
+    <query>SELECT DISTINCT number, toString(number) FROM numbers_mt(4000000) FORMAT Null</query>
+    <query>SELECT DISTINCT number, number + 1, number + 2, number + 3, toUInt64(number % 7) FROM numbers_mt(4000000) FORMAT Null</query>
 </test>

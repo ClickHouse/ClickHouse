@@ -79,7 +79,7 @@ SELECT 'functions',
        naiveBayesClassifier('nb_pipe_codepoint', s) = 6,
        naiveBayesClassifierWithProb('nb_pipe_codepoint', s).1 = 6,
        round(arraySum(arrayMap(p -> p.2, naiveBayesClassifierWithAllProbs('nb_pipe_codepoint', s))), 4) = 1
-SETTINGS enable_analyzer = 1"
+"
 
 $CLICKHOUSE_CLIENT -q "DROP DICTIONARY nb_pipe_byte"
 $CLICKHOUSE_CLIENT -q "DROP DICTIONARY nb_pipe_codepoint"

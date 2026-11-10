@@ -39,7 +39,7 @@
 <!-- Q1 -->  <query file="../benchmarks/tpc-h/queries/query_01.sql"/>
 <!-- Q2 -->  <query file="../benchmarks/tpc-h/queries/query_02.sql"/>
 <!-- Q3 -->  <query file="../benchmarks/tpc-h/queries/query_03.sql"/>
-<!-- Q4 -->  <query file="../benchmarks/tpc-h/queries/query_04.sql"/>
+<!-- Q4: `partial_merge` cannot run the `SEMI RIGHT JOIN` from `EXISTS`. <query file="../benchmarks/tpc-h/queries/query_04.sql"/> -->
 <!-- Q5 -->  <query file="../benchmarks/tpc-h/queries/query_05.sql"/>
 <!-- Q6 -->  <query file="../benchmarks/tpc-h/queries/query_06.sql"/>
 <!-- Q7 -->  <query file="../benchmarks/tpc-h/queries/query_07.sql"/>
@@ -57,6 +57,6 @@
 <!-- Q19 --> <query file="../benchmarks/tpc-h/queries/query_19.sql"/>
 <!-- Q20 --> <query file="../benchmarks/tpc-h/queries/query_20.sql"/>
 <!-- Q21 --> <query file="../benchmarks/tpc-h/queries/query_21.sql"/>
-<!-- Q22 --> <query file="../benchmarks/tpc-h/queries/query_22.sql"/>
+<!-- Q22: `partial_merge` cannot run the `ANTI RIGHT JOIN` from `NOT EXISTS`. <query file="../benchmarks/tpc-h/queries/query_22.sql"/> -->
 
 </test>

@@ -104,14 +104,14 @@ protected:
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
-    virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
+    virtual void addStreams(const NameAndTypePair & name_and_type) = 0;
 
     /// Per-column min_compress_block_size override if set, otherwise the table default.
     UInt64 getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const;
 
-    /// Codec for one substream of a column whose codec is `effective_codec_desc`.
-    CompressionCodecPtr getSubstreamCodec(
-        const ASTPtr & effective_codec_desc, const ISerialization::SubstreamPath & substream_path, bool column_uses_default_codec) const;
+    /// Codec for one substream of a column: the codec declared for the column or for the subcolumn the substream
+    /// belongs to, otherwise the default codec of the part.
+    CompressionCodecPtr getSubstreamCodec(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path) const;
 
     /// For some columns the set of streams may depend on the dynamic structure/statistics of the actual column.
     /// Before writing a block we need to prepare its columns, so they will always be serialized in the same
@@ -180,6 +180,10 @@ protected:
     Block block_sample;
 
     bool streams_initialized = false;
+
+    /// Cleared before the finalize path initializes streams: that path runs only when no block was
+    /// ever written, and such a part has no marks for a column to share with a skip index.
+    bool claim_column_stream_bases = true;
 
     /// List of substreams for each column in order of serialization.
     ColumnsSubstreams columns_substreams;
