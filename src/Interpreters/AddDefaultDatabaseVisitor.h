@@ -144,9 +144,6 @@ private:
     /// The declarations of the common table expressions of the enclosing select queries by name,
     /// the nearest last.
     mutable std::unordered_map<String, std::vector<WithDeclaration>> with_aliases;
-    /// The aliases of the expressions of the `WITH` clauses of the enclosing select queries,
-    /// e.g. `WITH [1, 2] AS s`. Unlike other aliases, they are visible in the nested select queries.
-    mutable std::unordered_set<String> with_expression_aliases;
     /// The aliases of the expressions of the current select query.
     mutable std::unordered_set<String> expression_aliases;
 
@@ -173,7 +170,7 @@ private:
         /// and are forgotten when the walk leaves it: another select query of the same `UNION`, or
         /// a sibling subquery, may use the same name for a table, which has to be qualified.
         auto enclosing_with_aliases = with_aliases;
-        addWithAliases(select, /* only_recursive_with_hides_table = */ true);
+        addWithAliases(select);
 
         /// The right argument of IN may refer to an alias of an expression defined elsewhere
         /// in the query, possibly after the point of use - then it is not a table name.
@@ -200,12 +197,8 @@ private:
         with_aliases = std::move(enclosing_with_aliases);
     }
 
-    /// Add the names declared by the `WITH` clause of the select query: the names of the common
-    /// table expressions, and the aliases of the expressions, which the analyzer also makes visible
-    /// in the nested select queries. With `only_recursive_with_hides_table`, only the names of
-    /// a `WITH RECURSIVE` list hide a table, for the full traversal, which runs after the others are
-    /// expanded, and the aliases of the expressions are not collected.
-    void addWithAliases(const ASTSelectQuery & select, bool only_recursive_with_hides_table) const
+    /// Add the names of the common table expressions declared by the `WITH` clause of the select query.
+    void addWithAliases(const ASTSelectQuery & select) const
     {
         if (!select.with())
             return;
@@ -216,37 +209,11 @@ private:
             {
                 with_aliases[with_element->name].push_back(
                 {
-                    .hides_table = select.recursive_with || !only_recursive_with_hides_table,
+                    .hides_table = select.recursive_with,
                     .is_recursive = select.recursive_with && getRecursiveBodyBranches(with_element->subquery),
                 });
             }
-            else if (!only_recursive_with_hides_table)
-            {
-                collectWithExpressionAliases(*child);
-            }
         }
-    }
-
-    /// Like the analyzer, take the aliases at any depth of a `WITH` expression, but not inside
-    /// a lambda or a subquery: those aliases are their own.
-    void collectWithExpressionAliases(const IAST & ast) const
-    {
-        String alias = ast.tryGetAlias();
-        if (!alias.empty())
-            with_expression_aliases.insert(alias);
-
-        if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
-            return;
-        if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
-            return;
-
-        for (const auto & child : ast.children)
-            collectWithExpressionAliases(*child);
-    }
-
-    bool isExpressionAlias(const String & name) const
-    {
-        return expression_aliases.contains(name) || with_expression_aliases.contains(name);
     }
 
     bool isWithAlias(const String & name) const
@@ -523,7 +490,7 @@ private:
                             /// e.g. `SELECT 'foo' AS object WHERE (object IN (('foo', 'bar') AS objects)) AND object IN objects`.
                             /// Then it is not a table name and must not be qualified with the database
                             /// (the similar code in `MarkTableIdentifiersVisitor` also checks the aliases).
-                            if (!identifier->as<ASTTableIdentifier>() && isExpressionAlias(identifier->name()))
+                            if (!identifier->as<ASTTableIdentifier>() && expression_aliases.contains(identifier->name()))
                                 continue;
 
                             /// If identifier is broken then we can do nothing and get an exception
