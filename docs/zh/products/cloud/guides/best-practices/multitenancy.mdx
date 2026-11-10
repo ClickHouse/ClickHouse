@@ -11,7 +11,9 @@ keywords: ['multitenancy', 'isolation', 'best practices', 'architecture', 'multi
 
 根据具体需求，多租户有多种实现方式。下面将介绍如何在 ClickHouse Cloud 中实现这些方案。
 
-## 共享表 {#shared-table}
+<div id="shared-table">
+  ## 共享表
+</div>
 
 在这种方案中，所有租户的数据都存储在同一个共享表中，并使用一个字段 (或一组字段) 来标识每个租户的数据。为最大限度提升性能，应将该字段纳入[主键](/zh/reference/statements/create/table#primary-key)。为了确保你只能访问各自租户的数据，我们使用[基于角色的访问控制](/zh/concepts/features/security/access-rights)，并通过[行策略](/zh/concepts/features/security/access-rights#row-policy-management)来实现。
 
@@ -25,7 +27,9 @@ keywords: ['multitenancy', 'isolation', 'best practices', 'architecture', 'multi
 
 如果租户之间的数据量差距很大，较小租户的查询性能可能会受到不必要的影响。需要注意的是，将租户字段纳入主键后，这一问题在很大程度上可以得到缓解。
 
-### 示例 {#shared-table-example}
+<div id="shared-table-example">
+  ### 示例
+</div>
 
 这是共享表多租户模型实现的一个示例。
 
@@ -109,7 +113,9 @@ FROM events
    └───────────┴──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## 独立表 {#separate-tables}
+<div id="separate-tables">
+  ## 独立表
+</div>
 
 在这种方法中，每个租户的数据都存储在同一数据库中的单独表里，因此无需使用特定字段来标识租户。通过 [GRANT 语句](/zh/reference/statements/grant) 实施用户访问控制，可确保每个用户只能访问包含其租户数据的表。
 
@@ -119,7 +125,9 @@ FROM events
 
 请注意，这种方法无法扩展到数千个租户的规模。请参阅 [使用限制](/zh/products/cloud/guides/best-practices/usagelimits)。
 
-### 示例 {#separate-tables-example}
+<div id="shared-table-example">
+  ### 示例
+</div>
 
 以下是独立表多租户模型实现的示例。
 
@@ -203,7 +211,9 @@ FROM default.events_tenant_1
    └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## 独立数据库 {#separate-databases}
+<div id="separate-databases">
+  ## 独立数据库
+</div>
 
 每个租户的数据都存储在同一个 ClickHouse 服务中的独立 database 内。
 
@@ -213,7 +223,9 @@ FROM default.events_tenant_1
 
 请注意，这种方法不适用于成千上万个租户的扩展。参见[使用限制](/zh/products/cloud/guides/best-practices/usagelimits)。
 
-### 示例 {#separate-databases-example}
+<div id="shared-table-example">
+  ### 示例
+</div>
 
 这是独立数据库多租户模型实现的一个示例。
 
@@ -305,15 +317,19 @@ FROM tenant_1.events
    └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## 计算与计算分离 {#compute-compute-separation}
+<div id="compute-compute-separation">
+  ## 计算与计算分离
+</div>
 
 上文介绍的三种方法也可以通过使用[仓库](/zh/products/cloud/features/infrastructure/warehouses#what-is-a-warehouse)来进一步隔离。数据通过统一的对象存储共享，但借助具有不同 CPU/Memory 配比的[计算与计算分离](/zh/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation)，每个租户都可以拥有自己的计算服务。
 
 用户管理与前文所述的方法类似，因为同一仓库中的所有服务都[共享访问控制](/zh/products/cloud/features/infrastructure/warehouses#database-credentials)。
 
-请注意，一个仓库中的服务数量本身没有单独的上限，但该仓库中所有服务的副本总数是受限的。请参阅[使用限制](/zh/cloud/bestpractices/usage-limits)和[仓库扩缩容](/zh/products/cloud/features/infrastructure/warehouses#scaling)。
+请注意，一个仓库中的子服务数量上限较低。请参阅[仓库限制](/zh/products/cloud/features/infrastructure/warehouses#limitations)。
 
-## 独立的云服务 {#separate-service}
+<div id="separate-service">
+  ## 独立的云服务
+</div>
 
 最彻底的方法是为每个租户使用单独的 ClickHouse 服务。
 
@@ -323,7 +339,9 @@ FROM tenant_1.events
 
 这种方法更难管理，而且每个服务都会带来额外开销，因为每个服务都需要各自的基础设施来运行。服务可通过 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 进行管理，也可以通过 [官方 Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 进行编排。
 
-### 示例 {#separate-service-example}
+<div id="shared-table-example">
+  ### 示例
+</div>
 
 这是独立服务多租户模型实现的一个示例。请注意，此示例展示了如何在一个 ClickHouse 服务上创建表和用户，而相同的操作也需要在所有服务上进行。
 

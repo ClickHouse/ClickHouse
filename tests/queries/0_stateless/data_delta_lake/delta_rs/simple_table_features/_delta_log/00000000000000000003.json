@@ -1,5 +1,0 @@
-{"commitInfo":{"timestamp":1587968614187,"operation":"UPDATE","operationParameters":{"predicate":"((id#697L % cast(2 as bigint)) = cast(0 as bigint))"},"readVersion":2,"isBlindAppend":false}}
-{"remove":{"path":"part-00003-53f42606-6cda-4f13-8d07-599a21197296-c000.snappy.parquet","deletionTimestamp":1587968614096,"dataChange":true}}
-{"remove":{"path":"part-00006-46f2ff20-eb5d-4dda-8498-7bfb2940713b-c000.snappy.parquet","deletionTimestamp":1587968614096,"dataChange":true}}
-{"add":{"path":"part-00000-f17fcbf5-e0dc-40ba-adae-ce66d1fcaef6-c000.snappy.parquet","partitionValues":{},"size":429,"modificationTime":1587968614000,"dataChange":true}}
-{"add":{"path":"part-00001-bb70d2ba-c196-4df2-9c85-f34969ad3aa9-c000.snappy.parquet","partitionValues":{},"size":429,"modificationTime":1587968614000,"dataChange":true}}

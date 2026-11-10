@@ -18,4 +18,5 @@ SELECT quantileExact(1)(number), quantileExact(0.5)(number), quantileExact(0)(nu
 SELECT quantile(toDecimal32(0.5, 2))(number), quantile(1)(number) FROM numbers(100);
 
 -- The fusion still happens: one `quantiles` call feeds both results.
+SET enable_analyzer = 1;
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT quantile(1)(number), quantile(0.5)(number) FROM numbers(100)) WHERE explain LIKE '%quantiles%';
