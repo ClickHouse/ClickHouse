@@ -196,16 +196,21 @@ ManifestFilesPruner::ManifestFilesPruner(
             = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
-        min_max_key_conditions.emplace(
-            used_column_id,
-            KeyCondition(
-                inverted_dag,
-                context,
-                {name_and_type->name},
-                expression,
-                /* single_point_ */ false,
-                /* skip_analysis_ */ false,
-                require_ready_sets));
+        KeyCondition condition(
+            inverted_dag,
+            context,
+            {name_and_type->name},
+            expression,
+            /* single_point_ */ false,
+            /* skip_analysis_ */ false,
+            require_ready_sets);
+        if (KeyCondition::typeMayHideNaN(name_and_type->type))
+        {
+            KeyCondition relaxed = condition;
+            relaxed.relaxAtomsOverNaNHidingColumns({name_and_type->type});
+            nan_relaxed_min_max_key_conditions.emplace(used_column_id, std::move(relaxed));
+        }
+        min_max_key_conditions.emplace(used_column_id, std::move(condition));
     }
 }
 
@@ -213,7 +218,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const Poco::JSON::Array::Ptr & partition_specification_json,
     Int32 schema_id,
     const IcebergSchemaProcessor & schema_processor,
-    DB::ContextPtr context)
+    DB::ContextPtr context,
+    bool keep_nullable)
 {
     PartitionKeyFromSpec result;
 
@@ -248,7 +254,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
         /// against these input columns, which must contain each source column at most once.
         if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(column_characteristics->type));
+            partition_columns_description.emplace_back(
+                numeric_column_name, keep_nullable ? column_characteristics->type : removeNullable(column_characteristics->type));
     }
 
     if (!partition_columns_description.empty())
@@ -475,6 +482,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
     {
         DataTypePtr column_type;
         bool has_no_nulls = true;
+        bool has_no_nans = true;
 
         if (auto lineage_column = row_lineage_columns.find(column_id); lineage_column != row_lineage_columns.end())
         {
@@ -490,6 +498,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
             auto info_it = entry->parsed_entry->columns_infos.find(column_id);
             has_no_nulls = info_it != entry->parsed_entry->columns_infos.end() && info_it->second.nulls_count.has_value()
                 && *info_it->second.nulls_count == 0;
+            has_no_nans = info_it != entry->parsed_entry->columns_infos.end() && info_it->second.nans_count.has_value()
+                && *info_it->second.nans_count == 0;
         }
 
         const DataTypes data_types{column_type};
@@ -512,9 +522,16 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
             }
         }
 
+        const KeyCondition * min_max_condition = &key_condition;
+        if (!has_no_nans)
+        {
+            if (auto relaxed_it = nan_relaxed_min_max_key_conditions.find(column_id); relaxed_it != nan_relaxed_min_max_key_conditions.end())
+                min_max_condition = &relaxed_it->second;
+        }
+
         auto rect_it = entry_hyperrectangles.find(column_id);
         if (has_no_nulls && rect_it != entry_hyperrectangles.end()
-            && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, data_types))
+            && !min_max_condition->mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, data_types))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }
