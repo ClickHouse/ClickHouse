@@ -1,0 +1,3 @@
+GRANT SELECT(a) ON db_05513.t TO user_05513
+---
+GRANT SELECT ON db_05513.* TO user_05513
