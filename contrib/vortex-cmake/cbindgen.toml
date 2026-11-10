@@ -22,7 +22,7 @@ header = """
 #include <stdint.h>
 
 /// C bindings for reading and writing Vortex files, implemented in Rust on top of the `vortex`
-/// crate; the other half lives in `rust/workspace/vortex/src/lib.rs`. Arrays cross the boundary as
+/// crate; the other half lives in `contrib/vortex-cmake/src/lib.rs`. Arrays cross the boundary as
 /// Arrow C Data Interface structs, and IO is delegated back through callbacks.
 ///
 /// THIS FILE IS GENERATED FROM `src/lib.rs` BY `build.rs`. DO NOT EDIT IT BY HAND: change the Rust
