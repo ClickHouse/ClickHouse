@@ -26,8 +26,9 @@
 #include <Functions/IFunction.h>
 #include <Common/CurrentThread.h>
 #include <Common/assert_cast.h>
-#include <stack>
-#include <unordered_set>
+#include <Common/StackWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace ProfileEvents
 {
@@ -213,7 +214,7 @@ bool canReplaceColumnWithConstantAfterFilter(
     return true;
 }
 
-std::vector<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
+VectorWithMemoryTracking<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
     const ActionsDAG::Node * column_node,
     const ActionsDAG::Node * constant_node,
     const ActionsDAG & dag,
@@ -226,7 +227,7 @@ std::vector<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
     if (!hasConstantColumn(constant_node))
         return {};
 
-    std::vector<ConstantColumnPosition> positions;
+    VectorWithMemoryTracking<ConstantColumnPosition> positions;
     const auto & outputs = dag.getOutputs();
     for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
     {
@@ -244,16 +245,16 @@ std::vector<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
     return positions;
 }
 
-std::vector<ConstantColumnPosition> collectConstantColumnsAfterFilter(
+VectorWithMemoryTracking<ConstantColumnPosition> collectConstantColumnsAfterFilter(
     const ActionsDAG & dag,
     const String & filter_column_name,
     const Block & transformed_header)
 {
-    std::vector<ConstantColumnPosition> result;
-    std::unordered_set<size_t> added_positions;
+    VectorWithMemoryTracking<ConstantColumnPosition> result;
+    UnorderedSetWithMemoryTracking<size_t> added_positions;
 
     const auto * filter = &dag.findInOutputs(filter_column_name);
-    std::stack<const ActionsDAG::Node *> nodes;
+    StackWithMemoryTracking<const ActionsDAG::Node *> nodes;
     nodes.push(filter);
 
     while (!nodes.empty())
@@ -275,7 +276,7 @@ std::vector<ConstantColumnPosition> collectConstantColumnsAfterFilter(
         if (function_name != "equals" || node->children.size() != 2)
             continue;
 
-        std::vector<ConstantColumnPosition> constant_columns;
+        VectorWithMemoryTracking<ConstantColumnPosition> constant_columns;
         if (hasConstantColumn(node->children[1]))
             constant_columns = getConstantColumnPositionsAfterFilter(node->children[0], node->children[1], dag, transformed_header);
         if (constant_columns.empty() && hasConstantColumn(node->children[0]))

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Formats/FormatSettings.h>
 
 #include <Poco/ConsoleChannel.h>
 #include <absl/log/globals.h>
@@ -2387,7 +2388,7 @@ String formatStackTrace(const StackTrace & stack_trace)
     {
         const void * frame = stack_trace.getFramePointers()[i];
         const auto resolved = StackTrace::tryResolveAddress(frame);
-        const SymbolIndex::Symbol * symbol = symbol_index ? symbol_index->findSymbol(frame) : nullptr;
+        const SymbolIndex::Symbol * symbol = symbol_index ? symbol_index->findSymbolByAddress(frame) : nullptr;
         String address = resolved.address ? fmt::format("{}", resolved.address) : "<unknown>";
         if (resolved.kind == StackTrace::AddressKind::OtherObject)
             address += fmt::format(" in {}", resolved.object);

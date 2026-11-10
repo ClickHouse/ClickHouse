@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/IFunction.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -157,18 +158,19 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
 
     QueryPlan::Node * node = parent_node;
 
+    /// `topKThroughArrayJoin` moves the sort below `ARRAY JOIN` without a `LIMIT` step, after it checked the `LIMIT`
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
-    if (!limit_step)
+    if (!limit_step && !typeid_cast<ArrayJoinStep *>(node->step.get()))
         return 0;
     if (node->children.size() != 1)
         return 0;
 
     /// Cannot support LIMIT 10 WITH TIES because we don't know how many rows will be output
-    if (limit_step->withTies())
+    if (limit_step && limit_step->withTies())
         return 0;
 
     /// TopK filtering can skip source rows, so it is incompatible with exact rows_before_limit_at_least.
-    if (limit_step->alwaysReadTillEnd())
+    if (limit_step && limit_step->alwaysReadTillEnd())
         return 0;
 
     node = node->children.front();
@@ -222,7 +224,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     if (read_from_mergetree_step && read_from_mergetree_step->isQueryWithFinal())
         return 0;
 
-    size_t n = limit_step->getLimitForSorting();
+    size_t n = limit_step ? limit_step->getLimitForSorting() : sorting_step->getLimit();
     if (!n || (settings.max_limit_for_top_k_optimization && n > settings.max_limit_for_top_k_optimization))
         return 0;
 
