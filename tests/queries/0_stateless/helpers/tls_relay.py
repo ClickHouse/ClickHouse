@@ -16,10 +16,11 @@ The port the relay listens on is chosen by the OS and written to the port file a
 """
 
 import os
+import select
 import socket
 import ssl
 import sys
-import threading
+import time
 
 front, backend_host, backend_port, back, cert_file, key_file, port_file = sys.argv[1:]
 backend_port = int(backend_port)
@@ -52,25 +53,54 @@ if back == "tls":
     backend = client_context.wrap_socket(backend, server_hostname=backend_host)
 
 
-def pump(src, dst, done):
-    try:
-        while True:
+# Both directions are forwarded by this one thread. An `ssl.SSLSocket` must not be read and written
+# from two threads at the same time: the underlying OpenSSL object is not thread-safe, and doing so
+# loses data or crashes. The sockets are non-blocking, because a TLS socket can be readable
+# without having application data (e.g. a TLS 1.3 session ticket), and a blocking `recv` would then
+# wait while the other direction has data to forward.
+WANT = (ssl.SSLWantReadError, ssl.SSLWantWriteError, BlockingIOError)
+deadline = time.monotonic() + 60
+peer = {client: backend, backend: client}
+for s in peer:
+    s.setblocking(False)
+
+
+def send_all(dst, data):
+    while data:
+        try:
+            data = data[dst.send(data) :]
+        except WANT:
+            select.select([dst], [dst], [], max(0, deadline - time.monotonic()))
+            if time.monotonic() > deadline:
+                raise TimeoutError("timed out sending")
+
+
+def forward(src):
+    """Forwards what `src` has. Returns False at the end of the stream."""
+    while True:
+        try:
             data = src.recv(65536)
-            if not data:
-                break
-            dst.sendall(data)
-    except OSError:
-        pass
-    done.set()
+        except WANT:
+            return True
+        except OSError:
+            return False
+        if not data:
+            return False
+        send_all(peer[src], data)
+        # Decrypted bytes buffered inside an SSL socket are not visible to `select`, drain them now.
+        if not (isinstance(src, ssl.SSLSocket) and src.pending()):
+            return True
 
 
-done = threading.Event()
-threading.Thread(target=pump, args=(client, backend, done), daemon=True).start()
-threading.Thread(target=pump, args=(backend, client, done), daemon=True).start()
 # One direction ending is enough: after an authentication failure the server closes the connection.
-done.wait(60)
-for s in (client, backend):
-    try:
-        s.close()
-    except OSError:
-        pass
+try:
+    while time.monotonic() < deadline:
+        readable, _, _ = select.select(list(peer), [], [], deadline - time.monotonic())
+        if not all(forward(s) for s in readable):
+            break
+finally:
+    for s in peer:
+        try:
+            s.close()
+        except OSError:
+            pass
