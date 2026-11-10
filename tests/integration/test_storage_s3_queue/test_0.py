@@ -2442,6 +2442,65 @@ def test_null_version_in_the_url_reads_the_listed_generation(started_cluster):
     assert client.get_object(Bucket=bucket, Key=source_key, VersionId="null")["Body"].read() == b"1,2,3\n"
 
 
+def test_explicit_version_in_the_url_moves_the_selected_version(started_cluster):
+    """An explicit `versionId` selects an older version than the one the listing describes. The `ETag` that
+    post-processing checks must be the one of the version that was read, not the listed one, otherwise every
+    move to another bucket is refused after the rows were inserted, and the file is ingested again and again."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    destination_bucket = f"sink-{token}"
+    table_name = f"explicit_version_url_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    recreate_minio_bucket(started_cluster, destination_bucket)
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    # Equal lengths, so that only the `ETag` tells the selected version from the listed one.
+    selected_version = client.put_object(Bucket=bucket, Key=source_key, Body=b"1,2,3\n")["VersionId"]
+    latest_version = client.put_object(Bucket=bucket, Key=source_key, Body=b"4,5,6\n")["VersionId"]
+
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*?versionId={selected_version}"
+    move_uri = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{destination_bucket}"
+    node.query(
+        f"""
+        CREATE TABLE {table_name} (column1 UInt32, column2 UInt32, column3 UInt32)
+        ENGINE = S3Queue('{url}', '{started_cluster.minio_access_key}', '{started_cluster.minio_secret_key}', CSV)
+        SETTINGS mode = 'unordered', after_processing = 'move', keeper_path = '/clickhouse/test_{table_name}',
+            s3queue_loading_retries = 0,
+            after_processing_move_uri = '{move_uri}',
+            after_processing_move_access_key_id = '{started_cluster.minio_access_key}',
+            after_processing_move_secret_access_key = '{started_cluster.minio_secret_key}',
+            after_processing_move_prefix = '{processed_prefix}',
+            after_processing_move_preserve_path = 1
+        """
+    )
+    moved_before = moved_objects(node)
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(lambda: moved_objects(node) > moved_before)
+    wait_until(lambda: count_minio_objects(started_cluster, destination_bucket, processed_prefix) == 1)
+    # The selected version was archived and removed; the latest one stays the object.
+    wait_until(
+        lambda: {
+            version["VersionId"]
+            for version in client.list_object_versions(Bucket=bucket, Prefix=source_key).get("Versions", [])
+        }
+        == {latest_version}
+    )
+    assert read_s3_object(started_cluster, bucket, source_key) == b"4,5,6\n"
+    # Ingested once: the move succeeded, so the file was committed and is not read again.
+    assert node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst") == "1\t2\t3\n"
+
+
 @pytest.mark.parametrize("after_processing", ["move", "delete"])
 def test_same_byte_reupload_between_listing_and_read(started_cluster, after_processing):
     """The listing has no versions, so the read is pinned by `ETag` only. A same-byte re-upload

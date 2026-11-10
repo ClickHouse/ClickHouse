@@ -719,6 +719,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
         {
             std::lock_guard lock(response_version_id_mutex);
             response_version_id = S3::pinnableVersionId(result.GetVersionId());
+            last_response_etag = result.GetETag();
         }
         return result;
     }
@@ -768,6 +769,21 @@ std::optional<Field> ReadBufferFromS3::getMetadata(const String & name) const
         if (!response_version_id.empty())
             return response_version_id;
         return S3::pinnableVersionId(version_id);
+    }
+    /// The `ETag` of the same response as `version_id`, so that the two describe one generation, also when an explicit
+    /// `versionId` selects an older version than the one the caller listed.
+    if (name == "etag")
+    {
+        if (impl)
+        {
+            if (auto etag = impl->getObjectMetadata().etag; !etag.empty())
+                return etag;
+            return std::nullopt;
+        }
+        std::lock_guard lock(response_version_id_mutex);
+        if (!last_response_etag.empty())
+            return last_response_etag;
+        return std::nullopt;
     }
     return std::nullopt;
 }

@@ -1658,6 +1658,12 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 /// Post-processing then acts on it and leaves the listed version at the key.
                 if (auto val = provider->getMetadata("version_id"); val.has_value())
                     processed_files.back().version_id = val->safeGet<String>();
+                /// The `ETag` must describe the same version. It differs from the listed one when the URL selects an older
+                /// version with an explicit `versionId`: the listing describes the latest version, the read the selected one.
+                /// An unpinned read is not validated against the listed `ETag`, so without this post-processing would compare
+                /// the selected version with the listed `ETag` and never succeed.
+                if (auto val = provider->getMetadata("etag"); val.has_value())
+                    processed_files.back().etag = val->safeGet<String>();
             }
         }
         reader = {};

@@ -51,9 +51,10 @@ private:
 
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
-    /// The version of the object in the last successful response, also for `readBigAt`.
+    /// The version and the `ETag` of the object in the last successful response, also for `readBigAt`.
     mutable std::mutex response_version_id_mutex;
     mutable String response_version_id;
+    mutable String last_response_etag;
 
     /// Exclusive end of the range requested for the current `impl` when the request was cut to one
     /// buffer fill, or 0 when the request covers the whole range this buffer has to deliver.
