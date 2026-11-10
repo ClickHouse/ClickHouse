@@ -1,4 +1,5 @@
 #include <Interpreters/convertColumnToType.h>
+#include <Formats/FormatSettings.h>
 
 #include <Interpreters/convertFieldToType.h>
 #include <Columns/IColumn.h>
@@ -569,6 +570,21 @@ ColumnPtr convertColumnToTypeOrThrow(
     }
 
     return result;
+}
+
+ColumnPtr convertColumnToTypeOrNull(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    return convertColumnToTypeOrNull(value, from, to, FormatSettings{});
+}
+
+ColumnPtr tryConvertColumnToTypeOrNull(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    return tryConvertColumnToTypeOrNull(value, from, to, FormatSettings{});
+}
+
+ColumnPtr convertColumnToTypeOrThrow(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    return convertColumnToTypeOrThrow(value, from, to, FormatSettings{});
 }
 
 }

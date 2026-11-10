@@ -121,9 +121,6 @@ public:
     /// 0 if there are no defaults.
     UInt64 getIcebergInitialDefaultsHash() const;
 
-    void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
-    std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
-
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
@@ -137,7 +134,6 @@ private:
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
     std::unordered_map<String, Field> iceberg_initial_defaults;
-    std::optional<Int64> last_assigned_field_id;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
