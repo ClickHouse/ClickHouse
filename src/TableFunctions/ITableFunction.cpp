@@ -45,11 +45,14 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
     }
 }
 
+void ITableFunction::checkEngineAccessIfRequired(ContextPtr context) const
+{
+    if (requiresTableEngineGrant())
+        checkEngineAccess(context);
+}
+
 void ITableFunction::checkEngineAccess(ContextPtr context) const
 {
-    if (!requiresTableEngineGrant())
-        return;
-
     const char * engine = isClusterFunction() ? getNonClusteredStorageEngineName() : getStorageEngineName();
     if (engine && *engine)
         context->checkAccess(AccessType::TABLE_ENGINE, engine);
@@ -59,7 +62,7 @@ ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr 
 {
     /// Resolving table structure is always a read operation.
     checkSourceAccess(context, /*is_insert_query*/ false);
-    checkEngineAccess(context);
+    checkEngineAccessIfRequired(context);
     return getActualTableStructure(context, is_insert_query);
 }
 
@@ -72,7 +75,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
         checkSourceAccess(context, is_insert_query);
 
     /// Deliberately not under `check_source_access`: no caller takes over the engine check.
-    checkEngineAccess(context);
+    checkEngineAccessIfRequired(context);
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (check_create_temporary_table && (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly)))
@@ -80,7 +83,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 
-    if (cached_columns.empty())
+    if (!isTableDefinition(cached_columns))
         return executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
 
     if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))

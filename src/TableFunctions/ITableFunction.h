@@ -104,6 +104,10 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    /// The grants to persist a definition `CREATE TABLE ... AS f(...)`, on top of the ones `execute` checks for a
+    /// call in a query. Not called when a stored definition is replayed, see `isReplayedTableDefinition`.
+    virtual void checkAccessToCreateTable(ContextPtr /*context*/) const {}
+
     /// Whether the storage this table function returns is chosen by the current user's grants
     /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
     /// definition, not even nested in an argument of another table function such as `remote`:
@@ -155,12 +159,19 @@ public:
     }
 
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
-    void checkEngineAccess(ContextPtr context) const;
+    void checkEngineAccessIfRequired(ContextPtr context) const;
 
     virtual ~ITableFunction() = default;
 
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
+
+    /// `cached_columns` come from the metadata of a table created `AS` this function, so `executeImpl` receives
+    /// them only for such a table definition, including its replay, and never for a call in a query.
+    static bool isTableDefinition(const ColumnsDescription & cached_columns) { return !cached_columns.empty(); }
+
+    /// Check `TABLE ENGINE` for the engine the function stands for.
+    void checkEngineAccess(ContextPtr context) const;
 
     /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
     /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.

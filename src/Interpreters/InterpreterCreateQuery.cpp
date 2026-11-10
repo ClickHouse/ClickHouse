@@ -1335,6 +1335,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
+        if (!isReplayedTableDefinition(mode, create, getContext()))
+            table_function->checkAccessToCreateTable(getContext());
 
         /// Classify the table function before inferring the structure from it: the inference opens and
         /// reads the source, which would turn a deterministic rejection into a file or access error.
@@ -2932,10 +2934,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
-        /// Already checked in `getTablePropertiesAndNormalizeCreateQuery` when the structure was inferred
-        /// from the function; a definition with an explicit column list skips that inference and is
-        /// checked here.
+        /// Both checks already ran in `getTablePropertiesAndNormalizeCreateQuery` when the structure was
+        /// inferred from the function; a definition with an explicit column list skips that inference and
+        /// is checked here.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
+        if (!isReplayedTableDefinition(mode, create, getContext()))
+            table_function->checkAccessToCreateTable(getContext());
 
         /// Classify the table function before executing it: with a static structure it returns the final storage
         /// directly, which may not have enough information to decide (e.g. `url` with a relative URL resolved
@@ -4085,6 +4089,14 @@ BlockIO InterpreterCreateQuery::execute()
             if (is_create_database && create.storage && create.storage->engine
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+
+            /// The worker executes the table function with no user, so the grants to persist its definition
+            /// are checked here. A short `ATTACH` replays stored metadata and is not checked, as in `doCreateTable`.
+            if (create.as_table_function && !create.attach_short_syntax)
+            {
+                auto table_function = TableFunctionFactory::instance().get(create.as_table_function->ptr(), getContext());
+                table_function->checkAccessToCreateTable(getContext());
+            }
 
             /// this branch returns before setEngine, and the worker builds AS src with no user, so
             /// check the inherited definition here, on a copy of the query
