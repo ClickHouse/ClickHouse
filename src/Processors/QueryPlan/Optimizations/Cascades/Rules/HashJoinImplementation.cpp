@@ -289,6 +289,12 @@ void HashJoinImplementation::StrategyEnumerator::addBroadcastJoins(size_t node_c
             return;
     }
 
+    /// The left rows stay where they are, so the left input may be hashed at any type: it takes the types the
+    /// parent requires, positionally as the column sets above. Otherwise a parent that needs a cast before hashing,
+    /// as for a join of `Nullable(Int32)` with `Int32`, could never get its partitioning through a broadcast join.
+    keyed_left_dist.hash_type_names = required_properties.distribution.hash_type_names;
+    keyed_output_dist.hash_type_names = required_properties.distribution.hash_type_names;
+
     addAlternative(strategySingleton<BroadcastJoinStrategy>(), keyed_left_dist, right_dist, keyed_output_dist);
 }
 
