@@ -26,6 +26,15 @@ SELECT arrayMap(x -> dynamicType(x), l), l FROM (SELECT JSONExtract('{"l": ["202
 SELECT 'Date first';
 SELECT arrayMap(x -> dynamicType(x), l), l FROM (SELECT JSONExtract('{"l": ["2024-12-22", "1", "31"]}', 'l', 'Array(Dynamic)') AS l);
 
+-- An all-numeric string like "20241223" is inferred as String on its own, so it must not enter an existing Date variant.
+SELECT 'Date first, all-numeric string';
+SELECT arrayMap(x -> dynamicType(x), l), l FROM (SELECT JSONExtract('{"l": ["2024-12-22", "20241223", "1"]}', 'l', 'Array(Dynamic)') AS l);
+
 SELECT 'Reversed order';
 SELECT arrayMap(x -> dynamicType(x), l), l FROM (SELECT JSONExtract('{"l": ["1", "31", "32", "2024-12-22 16:18:16"]}', 'l', 'Array(Dynamic)') AS l);
 SELECT arrayMap(x -> dynamicType(x), l), l FROM (SELECT JSONExtract('{"l": ["1", "1.5", "2024-12-22 16:18:16.123"]}', 'l', 'Array(Dynamic)') AS l);
+
+-- With the default inference of numbers from strings, "1" after a DateTime becomes a number, not a date.
+SELECT 'Numbers inferred from strings';
+SET input_format_json_try_infer_numbers_from_strings = 1;
+SELECT arrayMap(x -> dynamicType(x), l), l FROM (SELECT JSONExtract('{"l": ["2024-12-22 16:18:16", "1", "1.5"]}', 'l', 'Array(Dynamic)') AS l);

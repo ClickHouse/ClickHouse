@@ -14,6 +14,10 @@ Date and date time strings still go to an existing DateTime
 ['DateTime','String','DateTime','DateTime','DateTime']	['2024-12-22 16:18:16','32','2024-12-23 10:00:00','2024-12-23 10:00:00','2024-12-23 00:00:00']
 Date first
 ['Date','String','String']	['2024-12-22','1','31']
+Date first, all-numeric string
+['Date','String','String']	['2024-12-22','20241223','1']
 Reversed order
 ['String','String','String','String']	['1','31','32','2024-12-22 16:18:16']
 ['String','String','String']	['1','1.5','2024-12-22 16:18:16.123']
+Numbers inferred from strings
+['DateTime','Int64','Float64']	['2024-12-22 16:18:16',1,1.5]
