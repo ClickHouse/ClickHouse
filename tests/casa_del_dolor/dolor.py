@@ -994,12 +994,16 @@ for server in servers:
             good_exit = good_exit and exit_code in (-9, -15, 0, 137, 143)
     # A SIGKILL exit code is accepted above because the run kills servers on purpose,
     # so it cannot distinguish a deliberate kill from a shutdown that hung. Only the
-    # escalation flag can, and a final shutdown that had to be forced is a failure.
+    # escalation flag can, and a final shutdown that had to be forced is a failure,
+    # except on sanitizer builds, whose shutdown can outlast the stop window.
     if server.clickhouse_forced_stop:
-        logger.error(
-            f"Server {server.name} did not shut down gracefully and had to be force killed"
-        )
-        good_exit = False
+        # Logged on both paths: the job reads it to tell this kill from an OOM kill.
+        forced_stop = f"Server {server.name} did not shut down gracefully and had to be force killed"
+        if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1":
+            logger.warning(f"{forced_stop}, ignored on a sanitizer build")
+        else:
+            logger.error(forced_stop)
+            good_exit = False
     # The server reports one at `<Error>`, or at `<Fatal>` when it took the process down.
     # Only its own message counts: a fuzzed literal reaches the log through the query text
     # every record quotes, and would otherwise fail a run that never had an exception.

@@ -13,7 +13,6 @@ class LazilyReadFromObjectStorage;
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
 struct ObjectStorageTopKQueryConditionCacheKey;
-using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
 
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
@@ -41,9 +40,9 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
     const StorageID & getStorageID() const { return storage_id; }
 
-    /// Rows of this read estimated from the data lake metadata, pruned by the step's filter. std::nullopt when the
-    /// storage gives no estimate and with distributed processing.
-    std::optional<DataLakeReadEstimate> estimateReadFromDataLakeMetadata() const;
+    /// Rows of this read estimated from the data lake metadata, pruned by the step's filter. nullptr when the storage gives
+    /// no estimate and with distributed processing.
+    std::shared_ptr<const DataLakeReadEstimate> getOrCreateDataLakeReadEstimate() const;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
@@ -104,12 +103,15 @@ private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
+    /// The metadata `iterator_wrapper` was created with: for a data lake, it always has the table state
+    /// (see `StorageObjectStorageSource::ensureDataLakeTableState`).
+    StorageMetadataPtr iterator_metadata;
 
     RuntimeFilterIndexAnalysisDescriptors join_runtime_filters_for_file_pruning;
 
-    /// Memoized `estimateReadFromDataLakeMetadata`, which walks the manifests; reset when the filter changes.
-    /// A storage without an estimate returns nullopt without any work, so nullopt is not memoized.
-    mutable std::optional<DataLakeReadEstimate> data_lake_read_estimate;
+    /// Memoized `getOrCreateDataLakeReadEstimate`, which walks the manifests; reset when the filter changes.
+    /// A storage without an estimate returns nullptr without any work, so nullptr is not memoized.
+    mutable std::shared_ptr<const DataLakeReadEstimate> data_lake_read_estimate;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry;
@@ -135,7 +137,10 @@ private:
 
     void createIterator();
 
-    ObjectStorageTopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
+    std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> makeTopKQueryConditionCacheKey() const;
+
+    /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
+    bool isReadPinnedToListedGeneration() const;
 };
 
 }

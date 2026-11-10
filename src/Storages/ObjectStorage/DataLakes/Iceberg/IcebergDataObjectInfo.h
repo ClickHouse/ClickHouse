@@ -88,7 +88,9 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
 
     std::optional<String> getFileFormat() const override { return info.file_format; }
 
-    std::vector<UInt64> getSplitOffsetsHint() const override { return split_offsets; }
+    VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const override { return split_offsets; }
+
+    std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<IcebergDataObjectInfo>(*this); }
 
     std::optional<size_t> getFileSizeHint() const override
     {
@@ -113,7 +115,7 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     void addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path);
     Iceberg::IcebergObjectSerializableInfo info;
 
-    std::vector<UInt64> split_offsets;
+    VectorWithMemoryTracking<UInt64> split_offsets;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
