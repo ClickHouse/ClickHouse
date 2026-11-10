@@ -109,14 +109,14 @@ Header: count() UInt64
   Header: count() UInt64
     Aggregating
     Header: count() UInt64
-      Expression
+      Expression ((Before GROUP BY + Post Join Actions))
       Header: 
         Join (JOIN FillRightFirst)
         Header: __join_result_dummy UInt8
           Expression (Left Pre Join Actions)
           Header: __table1.uid Int16
                   __join_result_dummy UInt8
-            Filter
+            Filter ((Apply runtime join filter + Change column names to column identifiers))
             Header: __table1.uid Int16
               ReadFromMemoryStorage
               Header: uid Int16

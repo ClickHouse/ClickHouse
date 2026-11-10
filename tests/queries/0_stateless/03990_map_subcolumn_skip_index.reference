@@ -14,7 +14,6 @@ Granules: 1/3
 2
 -- bloom_filter mapKeys: notEquals with existing key
 Granules: 3/3
-Granules: 3/3
 -- bloom_filter mapValues: equals with existing key
 Granules: 3/3
 Granules: 1/3

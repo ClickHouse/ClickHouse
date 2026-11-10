@@ -17,7 +17,6 @@ SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_local_plan = 0;  -- without a local plan every replica talks to the coordinator over the network
-SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 
 -- Default coordinator.
 SELECT count() FROM t_coordinator_log_volume WHERE b = 0 AND NOT ignore(*)

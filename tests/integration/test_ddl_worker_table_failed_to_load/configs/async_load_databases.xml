@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- The test needs the server to start with a table that fails to load, which only `async_load_databases` allows. -->
+    <async_load_databases>true</async_load_databases>
+</clickhouse>

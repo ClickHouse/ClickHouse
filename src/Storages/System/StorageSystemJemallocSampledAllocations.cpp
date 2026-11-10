@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
 #include <Storages/System/SystemTableSourceRegistry.h>
 
@@ -8,6 +9,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/System/StorageSystemJemallocSampledAllocations.h>
+#include <Interpreters/Context.h>
+#include <Access/Common/AccessFlags.h>
 
 #if USE_JEMALLOC
 #    include <Core/Field.h>
@@ -17,7 +20,9 @@
 #    include <Processors/ISource.h>
 #    include <Processors/Sources/JemallocProfileSource.h>
 #    include <Common/Jemalloc.h>
+#    include <Common/StackTrace.h>
 #    include <Common/StringUtils.h>
+#    include <Common/filesystemHelpers.h>
 #endif
 
 namespace DB
@@ -49,6 +54,8 @@ public:
         , max_block_size(max_block_size_)
     {
     }
+
+    ~JemallocSampledAllocationsSource() override { FS::tryDelete(filename, getLogger("JemallocSampledAllocations")); }
 
     String getName() const override { return "JemallocSampledAllocations"; }
 
@@ -95,6 +102,7 @@ protected:
                     throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
                         "Malformed backtrace line in heap profile '{}': '{}'", filename, line);
                 current_stack.clear();
+                seen_backtrace = true;
                 continue;
             }
 
@@ -104,8 +112,8 @@ protected:
                 continue;
             record.remove_prefix(std::string_view("f:").size());
 
-            /// Allocation records are emitted only under a backtrace block.
-            if (current_addresses.empty())
+            /// Allocation records are emitted only under a backtrace block; its stack is empty if jemalloc could not unwind.
+            if (!seen_backtrace)
                 throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
                     "Allocation record without a preceding backtrace in heap profile '{}'", filename);
 
@@ -135,7 +143,10 @@ protected:
             /// Materialize the stack as Fields lazily: most stacks carry only "t:" records
             /// and never produce a row.
             if (current_stack.empty())
-                current_stack.assign(current_addresses.begin(), current_addresses.end());
+            {
+                for (UInt64 address : current_addresses)
+                    current_stack.push_back(StackTrace::resolveAddressForStorage(reinterpret_cast<const void *>(address)));
+            }
 
             size_t col_num = 0;
             res_columns.at(col_num++)->insert(current_stack);
@@ -161,8 +172,9 @@ private:
     std::string filename;
     size_t max_block_size;
     std::unique_ptr<ReadBufferFromFile> file_input;
-    std::vector<UInt64> current_addresses;
+    VectorWithMemoryTracking<UInt64> current_addresses;
     Array current_stack;
+    bool seen_backtrace = false;
     UInt64 sample_interval = 0;
     bool is_finished = false;
 };
@@ -193,7 +205,9 @@ ColumnsDescription StorageSystemJemallocSampledAllocations::getColumnsDescriptio
     auto description = ColumnsDescription
     {
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
-            "Addresses of the allocating backtrace, leaf frame first (same convention as `system.trace_log.trace`). "
+            "Addresses of the allocating backtrace, leaf frame first. Addresses inside the main ClickHouse binary are stored as "
+            "offsets in it (same convention as `system.trace_log.trace`), and frames outside it are stored as 0. "
+            "Empty if jemalloc could not unwind the stack. "
             "Symbolize with `addressToSymbol` and `demangle` (requires `allow_introspection_functions`)."},
         {"age_ns", std::make_shared<DataTypeUInt64>(),
             "Time in nanoseconds the allocation has been alive, relative to the moment the profile was flushed."},
@@ -223,11 +237,13 @@ Pipe StorageSystemJemallocSampledAllocations::read(
     [[maybe_unused]] const Names & column_names,
     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     [[maybe_unused]] const size_t max_block_size,
     const size_t /*num_streams*/)
 {
+    context->checkAccess(AccessType::SYSTEM_JEMALLOC);
+
 #if USE_JEMALLOC
     storage_snapshot->check(column_names);
 

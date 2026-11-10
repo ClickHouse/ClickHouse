@@ -7,11 +7,11 @@ keywords: ['clickhousectl', 'CLI', 'управление облачными се
 doc_type: 'reference'
 ---
 
-ClickHouse CLI (`clickhousectl`) — это универсальный инструмент командной строки для управления ресурсами ClickHouse Cloud и локальной разработки на базе ClickHouse. Он также позволяет управлять сервисами [ClickHouse Cloud Postgres](/ru/products/managed-postgres/overview).
+ClickHouse CLI (`clickhousectl`) — это универсальный инструмент командной строки для управления ресурсами ClickHouse Cloud и локальной разработки на базе ClickHouse. Он также позволяет управлять сервисами [ClickHouse Cloud Postgres](/ru/products/managed-postgres/overview) и [ClickPipes](/ru/integrations/clickpipes).
 
-<div id="installation">
-  ## Установка
-</div>
+Эта страница представляет собой справочник по набору команд `clickhousectl` 0.4.2. Выполните `clickhousectl --version`, чтобы узнать установленную версию, и `clickhousectl <command> --help` для любой команды, чтобы получить полный список флагов.
+
+## Установка {#installation}
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -19,149 +19,386 @@ curl https://clickhouse.com/cli | sh
 
 Для удобства также автоматически создаётся алиас `chctl`.
 
-<div id="cloud-management">
-  ## Управление Cloud
-</div>
+Чтобы обновить существующую установку до последней версии:
+
+```bash
+clickhousectl update           # self-update
+clickhousectl update --check   # check for updates without installing
+```
+
+## Управление Cloud {#cloud-management}
 
 Войдите в ClickHouse Cloud и управляйте своими сервисами прямо из командной строки.
 
-<div id="authentication">
-  ### Аутентификация
-</div>
+### Аутентификация {#authentication}
 
 ```bash
-clickhousectl cloud auth
+# Log in with an API key (read/write access)
+clickhousectl cloud auth login --api-key <key> --api-secret <secret>
+
+# Log in with the OAuth device flow (interactive; read-only access)
+clickhousectl cloud auth login
+
+# Show which credential source is active
+clickhousectl cloud auth status
+
+# Log out and clear saved credentials
+clickhousectl cloud auth logout
+
+# Create a new ClickHouse Cloud account
+clickhousectl cloud auth signup
 ```
 
-Будет предложено ввести ваш ключ API и секрет; затем они будут сохранены в `.clickhouse/credentials.json` (локально для проекта, файл игнорируется Git).
-
-Также можно использовать переменные окружения:
+Ключи API сохраняются в `.clickhouse/credentials.json` (локально в проекте, файл игнорируется git). Также можно использовать переменные окружения:
 
 ```bash
 export CLICKHOUSE_CLOUD_API_KEY=your-key
 export CLICKHOUSE_CLOUD_API_SECRET=your-secret
 ```
 
-<div id="services">
-  ### Сервисы
-</div>
+Старшинство учётных данных, от высшего к низшему: флаги `--api-key`/`--api-secret`, учётные данные проекта в `.clickhouse/credentials.json`, переменные окружения (сначала shell, затем `.env`), токены OAuth, полученные через `cloud auth login`.
+
+Токены OAuth работают только для чтения; команды записи (create, delete, start, stop, update, scale) требуют аутентификации по ключу API.
+
+### Сервисы {#services}
 
 ```bash
-# Список сервисов
+# List services
 clickhousectl cloud service list
 
-# Создать сервис
+# Create a service
 clickhousectl cloud service create --name my-service \
   --provider aws \
   --region us-east-1
 
-# Получить сведения о сервисе
+# Get service details
 clickhousectl cloud service get <service-id>
 
-# Масштабировать сервис
+# Update service settings (name, IP allow list, tags, endpoints, ...)
+clickhousectl cloud service update <service-id> --add-ip-allow 0.0.0.0/0
+
+# Scale a service
 clickhousectl cloud service scale <service-id> \
   --min-replica-memory-gb 24 \
   --max-replica-memory-gb 48 \
   --num-replicas 3
 
-# Запустить/остановить сервис
+# Start/stop a service
 clickhousectl cloud service start <service-id>
 clickhousectl cloud service stop <service-id>
 
-# Удалить сервис
+# Reset the default user password
+clickhousectl cloud service reset-password <service-id>
+
+# Delete a service
 clickhousectl cloud service delete <service-id>
 ```
 
-<div id="postgres-services">
-  ### Сервисы Postgres (бета)
-</div>
+### Выполнение запросов {#running-queries}
 
-Создавайте сервисы [ClickHouse Cloud Postgres](/ru/products/managed-postgres/overview) и управляйте ими.
+Выполняйте SQL-запросы к сервису ClickHouse Cloud по HTTP через Query API — локальный бинарный файл `clickhouse` и пароль сервиса при этом не нужны. Необходимо указать ровно один из параметров `--id` или `--name`:
 
 ```bash
-# List Postgres services
-clickhousectl cloud postgres list
+# Query by service ID or by name
+clickhousectl cloud service query --id <service-id> -q 'SELECT 1'
+clickhousectl cloud service query --name my-service -q 'SELECT version()'
 
-# Create a Postgres service
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --region us-east-1 \
-  --size m6gd.xlarge \
-  --pg-version 18
+# Run a query from a SQL file (use "-" for stdin), choosing an output format.
+# The file must hold a single statement
+clickhousectl cloud service query --id <service-id> \
+  --queries-file report.sql --format JSONEachRow
 
-# Get service details
-clickhousectl cloud postgres get <pg-id>
+# With neither --query nor --queries-file, SQL is read from stdin
+echo 'SELECT 1' | clickhousectl cloud service query --id <service-id>
 
-# Update a service
-clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
-
-# Reset the password
-clickhousectl cloud postgres reset-password <pg-id> --generate
-
-# Read replicas and point-in-time restore
-clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
-clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
-
-# Delete a service
-clickhousectl cloud postgres delete <pg-id>
+# Replace a stored Query API key that the endpoint rejects
+clickhousectl cloud service repair-query-key <service-id>
 ```
 
-<div id="organizations">
-  ### Организации
-</div>
+При аутентификации по ключу API запросы выполняются с правами на чтение и запись. Аутентифицированный ключ используется напрямую, если эндпоинт запроса сервиса уже разрешает его; в противном случае первый запрос создаёт эндпоинт запроса и отдельный ключ на чтение/запись для этого сервиса и сохраняет его в `.clickhouse/credentials.json`. Передайте `--no-auto-enable`, чтобы команда завершалась с ошибкой вместо создания ресурсов. При использовании OAuth SQL выполняется от имени вашего облачного пользователя с доступом только для чтения (только `SELECT`), и ничего не создаётся.
+
+Что важно знать:
+
+* `service query` выполняет один оператор на запрос. SQL с несколькими операторами отклоняется Query API независимо от способа передачи — `--query`, `--queries-file` или stdin — с сообщением `Error: SQL error 62: Syntax error (Multi-statements are not allowed)`. Завершающая `;` у одиночного оператора допустима. Для скриптов выполните `clickhousectl local use latest` и подключайтесь к сервису через `clickhouse client`.
+* `--query` и `--queries-file` взаимоисключающи (код выхода 2). Stdin читается только в том случае, если не указан ни один из них. `--query` никогда не читает stdin, поэтому перенаправление или передача данных по конвейеру вместе с ним приводит к явной ошибке, а не молча превращается в no-op: `Error: --query cannot be combined with SQL or data on stdin.` Вместо этого отправляйте `INSERT` вместе с его данными единым потоком — `printf 'INSERT INTO t FORMAT CSV\n' | cat - data.csv | clickhousectl cloud service query --id <service-id>` — либо считывайте оператор целиком из stdin с помощью `--queries-file -`.
+* Формат вывода по умолчанию — `PrettyCompact` в терминале и `TabSeparated` при передаче по конвейеру. `--json` выбирает `JSONEachRow` и не может использоваться вместе с `--format` (код выхода 2).
+* Сохранённый ключ Query API, который эндпоинт отклоняет с HTTP 401/403, никогда не заменяется автоматически; CLI читает управляющую запись ключа лишь для того, чтобы сообщить причину. Замените именно этот credential командой `clickhousectl cloud service repair-query-key <service-id>` — она также удаляет заменённый ключ. На работающем сервисе она завершается с кодом 0 только после того, как пробный запрос с новым ключом выполнится успешно; результат отражается в поле `verification` вывода `--json`. Если по истечении окна готовности Query API по-прежнему отклоняет ключ, команда завершается с кодом 1, но исправление остаётся в силе: не запускайте её повторно, а выполните `cloud service query`.
+* Query API завершается по тайм-ауту примерно через 30 секунд; оператор продолжает выполняться на сервисе, но результат теряется. Для более длительных операций выполните `clickhousectl local use latest`, чтобы поместить стандартный бинарный файл `clickhouse` в `PATH`, и подключитесь с помощью `clickhouse client --host <host> --secure --port 9440 --user default --password <password>`.
+
+### Конечные точки сервиса и конфигурация {#service-endpoints-and-configuration}
 
 ```bash
-clickhousectl cloud org list
-clickhousectl cloud org get <org-id>
+# Query endpoints (used by the Query API)
+clickhousectl cloud service query-endpoint get <service-id>
+clickhousectl cloud service query-endpoint create <service-id> --role sql_console_admin
+clickhousectl cloud service query-endpoint delete <service-id>
+
+# Private endpoints. --endpoint-id takes an AWS VPC endpoint ID, a GCP PSC
+# connection ID, or an Azure private endpoint Resource ID / resourceGuid
+clickhousectl cloud service private-endpoint get-config <service-id>
+clickhousectl cloud service private-endpoint create <service-id> --endpoint-id <endpoint-id>
+
+# Backup configuration
+clickhousectl cloud service backup-config get <service-id>
+clickhousectl cloud service backup-config update <service-id> --backup-period-hours 24
+clickhousectl cloud service backup-config update <service-id> \
+  --backup-start-time 02:00 --backup-period-hours 24
+clickhousectl cloud service backup-config update <service-id> --clear-backup-start-time
+
+# Prometheus metrics for a service (always raw Prometheus exposition text)
+clickhousectl cloud service prometheus <service-id>
 ```
 
-<div id="api-keys">
-  ### Ключи API
-</div>
+`--backup-start-time` должен указывать ровно начало часа (`HH:00`); это проверяется в CLI до любого вызова API. Кроме того, период резервного копирования должен составлять `24` или `48` часов: передайте `--backup-period-hours 24` или `--backup-period-hours 48` в той же команде либо заранее сохраните одно из этих двух значений. При любом другом сохранённом периоде CLI откажет ещё до обращения к API, выдав `Error: the stored backup period is 12 hours, but --backup-start-time requires 24 or 48.`
 
-```bash
-clickhousectl cloud key list
-clickhousectl cloud key create --name ci-key --role-id <role-id>
-clickhousectl cloud key delete <key-id>
-```
+`--clear-backup-start-time` удаляет сохранённое время начала и снимает это ограничение. Используйте его вместе с `--backup-period-hours`, чтобы одним вызовом сбросить время начала и задать любой период. Этот параметр конфликтует с `--backup-start-time`.
 
-<div id="members-and-invitations">
-  ### Участники и приглашения
-</div>
-
-```bash
-clickhousectl cloud member list
-clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
-```
-
-<div id="backups">
-  ### Резервные копии
-</div>
+### Резервные копии {#backups}
 
 ```bash
 clickhousectl cloud backup list <service-id>
 clickhousectl cloud backup get <service-id> <backup-id>
 ```
 
-<div id="json-output">
-  ### Вывод JSON
-</div>
+Чтобы восстановить резервную копию, создайте на её основе новый сервис: `clickhousectl cloud service create --name restored-service --backup-id <backup-id>`.
+
+### ClickPipes {#clickpipes}
+
+Управление [ClickPipes](/ru/integrations/clickpipes) для ингестии данных в сервис ClickHouse Cloud. Большинство команд принимают ID сервиса первым аргументом.
+
+```bash
+# List pipes and get details
+clickhousectl cloud clickpipe list <service-id>
+clickhousectl cloud clickpipe get <service-id> <clickpipe-id>
+
+# Create a pipe. Sources: object-storage, kafka, kinesis, pubsub,
+# postgres, mysql, mongodb, bigquery
+clickhousectl cloud clickpipe create object-storage <service-id> \
+  --name my-pipe \
+  --source-url 'https://bucket.s3.us-east-1.amazonaws.com/data/*.json' \
+  --format JSONEachRow \
+  --database default \
+  --table events
+
+# A Postgres pipe needs at least one --table-mapping or --table-mapping-json
+clickhousectl cloud clickpipe create postgres <service-id> \
+  --name my-cdc-pipe \
+  --host pg.example.com \
+  --pg-database appdb \
+  --username replicator \
+  --password <password> \
+  --table-mapping public.orders:orders \
+  --sync-interval-seconds 30 \
+  --ca-certificate ./source-ca.pem
+
+# Lifecycle
+clickhousectl cloud clickpipe start <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe stop <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe resync <service-id> <clickpipe-id>   # CDC pipes only
+clickhousectl cloud clickpipe delete <service-id> <clickpipe-id>
+
+# Scaling and settings. scale requires at least one of
+# --replicas, --cpu-millicores, or --memory-gb
+clickhousectl cloud clickpipe scale <service-id> <clickpipe-id> --replicas 2
+clickhousectl cloud clickpipe settings get <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id>
+
+# Discover a source schema without creating a pipe (beta)
+clickhousectl cloud clickpipe schema-discover <service-id> kafka [options]
+clickhousectl cloud clickpipe schema-discover <service-id> kinesis [options]
+clickhousectl cloud clickpipe schema-discover <service-id> object-storage [options]
+clickhousectl cloud clickpipe schema-discover <service-id> pubsub [options]
+
+# Reverse private endpoints: AWS PrivateLink, Amazon MSK multi-VPC,
+# Google Private Service Connect
+clickhousectl cloud clickpipe reverse-private-endpoint list <service-id>
+clickhousectl cloud clickpipe reverse-private-endpoint get <service-id> <endpoint-id>
+clickhousectl cloud clickpipe reverse-private-endpoint create <service-id> \
+  --type VPC_ENDPOINT_SERVICE \
+  --description 'kafka source' \
+  --vpc-endpoint-service-name <vpc-endpoint-service-name>
+clickhousectl cloud clickpipe reverse-private-endpoint update <service-id> <endpoint-id> \
+  --custom-private-dns-mapping pg.internal.example.com
+clickhousectl cloud clickpipe reverse-private-endpoint delete <service-id> <endpoint-id>
+```
+
+Что нужно знать:
+
+* `clickpipe create postgres` требует указания одного из флагов: `--table-mapping <schema.table:target_table>` (можно указывать несколько раз, по одной таблице на флаг) или `--table-mapping-json <json>`; их можно сочетать. Форма JSON принимает объект сопоставления таблиц из API дословно и является единственным способом задать `excludedColumns`, `sortingKeys`, `partitionByExpr`, `partitionKey` и `tableEngine`. Обратите внимание: `partitionKey` разбивает начальный снимок на партиции для параллелизма и не имеет отношения к `PARTITION BY` целевой таблицы, за который отвечает `partitionByExpr`. Флаг `--iam-role` обязателен при `--auth IAM_ROLE` и отклоняется при базовой аутентификации, а `--replication-slot-name` допустим только вместе с `--replication-mode cdc_only`.
+* Настройки Postgres CDC применяются при создании пайпа: `--sync-interval-seconds`, `--pull-batch-size`, `--initial-load-parallelism`, `--snapshot-rows-per-partition`, `--snapshot-parallel-tables`, `--allow-nullable-columns`, `--enable-failover-slots` и `--delete-on-merge`. Впоследствии можно изменить только sync interval и pull batch size; настройки снимка и начальной загрузки изменению не подлежат.
+* Флаг `--role <role>` в любой подкоманде `clickpipe create` можно указывать несколько раз; он определяет роль ClickHouse, выдаваемую пользователю пункта назначения пайпа. Эта роль заменяет ту, которую пользователь получил бы по умолчанию: без `--role` пользователю назначаются `clickpipes_system` и `default_role`, а с `--role my_role` — `clickpipes_system` и `my_role`. Роль должна позволять создавать таблицы в целевой базе данных — с ролью только для чтения создание завершится ошибкой `Not enough privileges`. Зарезервированные в API имена `clickpipes` и `clickpipes_system` отклоняются.
+* Для источников Postgres TLS и проверка сертификата включены по умолчанию. Если цепочка сертификатов источника публично доверенная, файл CA не нужен; для частного или самоподписанного CA источника передайте его PEM-бандл через `--ca-certificate <path>`. Для источника ClickHouse Cloud Postgres получите этот бандл командой `clickhousectl cloud postgres certs get`. При проверке имени хоста используется значение `--host`, если оно не переопределено флагом `--tls-host <hostname>`.
+* Для пайпов Kafka и Kinesis значение `--auth` выводится из флагов учётных данных, если оно не указано; если флаги учётных данных не заданы, аутентификация не выполняется.
+* Команда `clickpipe settings` охватывает настройки ингестии только для потоковых пайпов (Kafka, Kinesis) и пайпов объектного хранилища, причём настройки, специфичные для Kafka, для остальных пайпов не выводятся. У пайпов CDC для баз данных (Postgres, MySQL, MongoDB, BigQuery) настроек ингестии нет: `settings get` для такого пайпа завершается с кодом 1 и отсылает к `clickhousectl cloud clickpipe get <service-id> <clickpipe-id>` — именно там показываются их sync interval и pull batch size.
+* Пайп может использовать только обратную частную конечную точку, достигшую статуса `Ready`; конечная точка AWS PrivateLink остаётся в состоянии `PendingAcceptance`, пока запрос на подключение не будет принят в аккаунте, которому принадлежит источник. Пайпы Kafka ссылаются на конечную точку по ID через `--reverse-private-endpoint-id` (можно указывать несколько раз); пайпы CDC для Postgres и MySQL передают одно из значений `dnsNames` конечной точки в `--host`.
+* Пайпы Google Cloud Pub/Sub доступны в режиме ограниченного предварительного доступа: прежде чем создавать такой пайп, обратитесь в службу поддержки, чтобы включить эту возможность для вашей организации. Флаг `--service-account-file` принимает путь к JSON-ключу сервисного аккаунта GCP либо `-` для чтения ключа из stdin; сам ключ передать в строке нельзя, поэтому он не попадает в списки процессов и историю командной оболочки.
+
+### Postgres services (бета) {#postgres-services}
+
+Создание сервисов [ClickHouse Cloud Postgres](/ru/products/managed-postgres/overview) и управление ими.
+
+```bash
+# List Postgres services, optionally filtering client-side.
+# Filter keys: state, region, name, provider, isPrimary
+clickhousectl cloud postgres list
+clickhousectl cloud postgres list --filter state=running --filter isPrimary=true
+
+# Create a Postgres service
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size m7i.2xlarge \
+  --pg-version 18
+
+# Get service details
+clickhousectl cloud postgres get <pg-id>
+
+# Update a service
+clickhousectl cloud postgres update <pg-id> --size m7i.4xlarge --add-tag env=prod
+
+# Reset the password (exactly one of --password or --generate)
+clickhousectl cloud postgres reset-password <pg-id> --generate
+
+# Runtime configuration (postgresql.conf + PgBouncer) and CA certificates.
+# config patch takes exactly one of --set (repeatable) or --file
+clickhousectl cloud postgres config get <pg-id>
+clickhousectl cloud postgres config patch <pg-id> --set max_connections=500
+clickhousectl cloud postgres config replace <pg-id> --file config.json
+clickhousectl cloud postgres certs get <pg-id>
+
+# Read replicas, failover, and point-in-time restore
+clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
+clickhousectl cloud postgres promote <replica-id> --wait
+clickhousectl cloud postgres switchover <pg-id> --wait
+clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+
+# Restart a service
+clickhousectl cloud postgres restart <pg-id>
+
+# Delete a service
+clickhousectl cloud postgres delete <pg-id>
+```
+
+Что следует знать:
+
+* Значение `--provider` по умолчанию — `aws`; также принимается `gcp` с размерами машин GCP, такими как `c4-standard-4`. Значение `--size` проверяется на стороне Cloud API, а не CLI, поэтому неподдерживаемый размер будет отклонён только сервером.
+* Изменения ролей применяются не мгновенно, и API подтверждает `promote` и `switchover` ещё до их фактического применения, поэтому код выхода 0 сам по себе не гарантирует, что роль изменилась. Обе команды принимают флаг `--wait`, который опрашивает состояние, пока целевой сервис не сообщит о новой роли; параметр `--wait-timeout <seconds>` (по умолчанию 300) ограничивает время опроса. Прежний основной сервис может ещё несколько минут сообщать `isPrimary=true`, поэтому с помощью `clickhousectl cloud postgres list --filter isPrimary=true` убедитесь, что основным является ровно один сервис.
+* `postgres delete` работает в любом состоянии, включая `running`, поэтому предварительно останавливать сервис не требуется.
+
+### Организации {#organizations}
+
+```bash
+clickhousectl cloud org list
+clickhousectl cloud org get <org-id>
+clickhousectl cloud org update <org-id> --name new-name
+clickhousectl cloud org prometheus
+clickhousectl cloud org usage --from-date 2026-08-01 --to-date 2026-08-31
+```
+
+### Ключи API {#api-keys}
+
+```bash
+clickhousectl cloud key list
+clickhousectl cloud key get <key-id>
+clickhousectl cloud key create --name ci-key --role-id <role-id>
+clickhousectl cloud key update <key-id>
+clickhousectl cloud key delete <key-id>
+```
+
+### Участники и приглашения {#members-and-invitations}
+
+```bash
+clickhousectl cloud member list
+clickhousectl cloud member get <user-id>
+clickhousectl cloud member update <user-id> --role-id <role-id>
+clickhousectl cloud member remove <user-id>
+
+clickhousectl cloud invitation list
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+clickhousectl cloud invitation get <invitation-id>
+clickhousectl cloud invitation delete <invitation-id>
+```
+
+### Журнал активности {#activity-log}
+
+```bash
+clickhousectl cloud activity list --from-date 2026-08-01 --to-date 2026-08-31
+clickhousectl cloud activity get <activity-id>
+```
+
+### Вывод JSON {#json-output}
 
 Используйте флаг `--json`, чтобы получать ответы в формате JSON при выполнении любой облачной команды:
 
 ```bash
-clickhousectl cloud --json service list
+clickhousectl cloud service list --json
 ```
 
-<div id="local-development">
-  ## Локальная разработка
-</div>
+Команды `org prometheus` и `service prometheus` — исключение: они всегда выводят необработанный текст экспозиции Prometheus и молча игнорируют `--json`.
 
-CLI также позволяет управлять локальными установками и серверами ClickHouse. Чтобы начать работу с локальной разработкой, см. страницу [clickhousectl (CLI)](/ru/get-started/setup/self-managed/clickhousectl).
+## Локальная разработка {#local-development}
 
-<div id="requirements">
-  ## Требования
-</div>
+CLI также управляет локальными установками ClickHouse, локальными серверами и локальными инстансами Postgres на базе Docker. Как начать работу с локальной разработкой, см. на странице [clickhousectl (CLI)](/ru/get-started/setup/self-managed/clickhousectl).
+
+```bash
+# Manage installed ClickHouse versions. install also accepts stable, lts,
+# a partial version like 25.12, an exact version, or a Postgres image
+# selector like postgres@18
+clickhousectl local install latest
+clickhousectl local list
+clickhousectl local use <version>
+clickhousectl local which
+clickhousectl local remove <exact-version>
+
+# Scaffold a project (.clickhouse/ plus clickhouse/ and postgres/ directories)
+clickhousectl local init
+
+# Manage local server instances (data persists in .clickhouse/servers/)
+clickhousectl local server start [name]
+clickhousectl local server list          # --global lists servers across projects
+clickhousectl local server stop [name]
+clickhousectl local server stop-all
+clickhousectl local server remove [name]
+clickhousectl local server configs       # named overlays for `server start --config`
+clickhousectl local server dotenv
+
+# Connect to a running server with clickhouse-client
+clickhousectl local client -q 'SELECT 1;'
+clickhousectl local client --host db.example.com --port 9000 --version 25.12
+
+# Local Postgres instances (requires Docker)
+clickhousectl local postgres start --name <name>
+clickhousectl local postgres client
+clickhousectl local postgres stop [name]
+clickhousectl local postgres stop-all
+clickhousectl local postgres remove [name]
+clickhousectl local postgres dotenv
+```
+
+Что нужно знать:
+
+* Команды `local` работают в пределах проекта: они используют каталог `.clickhouse` в текущем рабочем каталоге и никогда не ищут его в родительских каталогах. Перед их запуском перейдите в корень проекта.
+* `clickhousectl local use` также создаёт символическую ссылку `~/.local/bin/clickhouse`, благодаря чему стандартные подкоманды, такие как `clickhouse client`, `clickhouse benchmark` и `clickhouse format`, становятся доступны напрямую. Передайте `--no-global`, чтобы пропустить создание символической ссылки.
+* `local remove` принимает точную установленную версию. Команда откажется удалять версию, которую использует запущенный сервер в каком-либо проекте, а также версию, назначенную текущей по умолчанию; `--force` останавливает такие серверы и сбрасывает значение по умолчанию вместе с глобальной символической ссылкой.
+* Без указания имени `local server stop` останавливает `default`, если он существует, иначе — единственный известный сервер; при наличии нескольких серверов, отличных от `default`, команда запросит имя. `local server remove` без имени выбирает только существующий `default` — пользовательский сервер она никогда не угадывает.
+* `local client` принимает `-v`/`--version` для выбора установленной версии клиента в режиме прямого указания хоста и порта, допускает повторение `-q` для нескольких запросов и принимает несколько путей в `--queries-file`. Совмещение `--query` и `--queries-file` считается ошибкой использования.
+* `local postgres start` блокирует выполнение до тех пор, пока PostgreSQL не начнёт принимать подключения, но не дольше числа секунд, заданного в `--wait-timeout` (по умолчанию 60, максимум 600). Если `--port` не указан, используется порт 5432 при условии, что он свободен, иначе порт выбирается автоматически; явно запрошенный порт, который уже занят, отклоняется.
+
+## Другие команды {#other-commands}
+
+```bash
+# Install the ClickHouse agent skills into supported coding agents
+clickhousectl skills --agent claude
+
+# Manage anonymous usage telemetry: command name, flag and argument names
+# (never their values). Opt out with DO_NOT_TRACK=1
+clickhousectl telemetry status
+clickhousectl telemetry disable
+clickhousectl telemetry enable
+```
+
+## Требования {#requirements}
 
 * macOS (aarch64, x86&#95;64) или Linux (aarch64, x86&#95;64)
-* Для команд Cloud нужен [ключ API ClickHouse Cloud](/ru/products/cloud/features/admin-features/api/openapi)
+* Для команд Cloud нужен [ключ API ClickHouse Cloud](/ru/products/cloud/features/admin-features/api/openapi) для доступа на запись; вход через OAuth даёт доступ только для чтения
+* `clickhousectl local postgres` требует Docker

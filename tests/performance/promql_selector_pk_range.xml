@@ -5,29 +5,24 @@
     </settings>
 
     <!--
-        Benchmarks the primary-key index analysis of PromQL selectors over a TimeSeries table with a
-        metric-clustered id layout (id = Tuple(sipHash64(metric_name), hash of tags)).
+        Benchmarks the primary-key index analysis of PromQL selectors over the default layout of a
+        TimeSeries table (the id is Tuple(sipHash64(metric_name), hash of tags), so the series of a
+        metric are adjacent in the samples table).
 
-        The samples table is created with a small index granularity, so the part has many marks
-        (20000 series x 256 samples = 5.12M rows at granularity 64 -> 80K marks) and every selector
-        resolves to 20000 series ids. For a whole-metric selector the generated SQL carries a
-        continuous primary-key range on `id` and excludes the id set from index analysis, replacing
-        the generic exclusion search with the large set (single-threaded, the dominant cost of these
-        queries) by a continuous-range search. The label-filtered selector is the fallback control:
-        it keeps the id-set index analysis and must not regress.
+        The samples table is created with a tiny byte limit of a granule, below the size of a row with a
+        full bucket of samples, so every row is a granule and the part has as many marks as rows
+        (20000 series x 2 buckets = 40K marks). A whole-metric selector resolves to all 20000 series ids
+        of the metric, so the index analysis of the generated query is the dominant cost. The
+        label-filtered selector resolves to a sparse subset of the ids and is the control: it must not
+        regress.
     -->
 
-    <create_query>
-        CREATE TABLE promql_pk_range_ts ENGINE = TimeSeries
-        SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 64
-        TAGS INNER COLUMNS (id Tuple(UInt64, UUID))
-    </create_query>
+    <create_query do_not_check_in_pr="117344">CREATE TABLE promql_pk_range_ts ENGINE = TimeSeries SETTINGS samples_index_granularity_bytes = 1024</create_query>
 
     <!-- 20000 series of one metric, one sample every 15s over [1000000, 1003840): 256 samples per
-         series, so a series spans 4 granules and the 5m instant lookback selects about one granule
-         per series - index analysis dominates the query. -->
+         series in 2 buckets, and the 5m instant lookback selects one granule per series. -->
     <fill_query>
-        INSERT INTO promql_pk_range_ts (metric_name, tags, time_series)
+        INSERT INTO promql_pk_range_ts (metric_name, tags, samples)
         SELECT
             'pkr_metric',
             map('instance', toString(number), 'dc', toString(number % 8)),
@@ -35,12 +30,12 @@
         FROM numbers_mt(20000)
     </fill_query>
 
-    <!-- whole-metric selectors: the id range replaces the set in index analysis -->
+    <!-- whole-metric selectors: all series ids of the metric -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'pkr_metric', 1003830) FORMAT Null</query>
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{{dc=~".*"}})', 1003830) FORMAT Null</query>
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(rate(pkr_metric[30m]))', 1003830) FORMAT Null</query>
 
-    <!-- label-filtered selector: falls back to the id-set index analysis (regression control) -->
+    <!-- label-filtered selector: a subset of the ids (regression control) -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{{dc="0"}})', 1003830) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_pk_range_ts</drop_query>

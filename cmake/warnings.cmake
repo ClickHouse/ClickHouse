@@ -25,7 +25,7 @@ no_warning(c++98-compat-pedantic) # We don't care about C++98 compatibility (We 
 no_warning(c++20-compat) # Use C++20 features incompatible with older standards (consteval, constinit, implicit typename...)
 no_warning(sign-conversion) # TODO: Fix the code and enable it
 no_warning(deprecated-declarations) # TODO: Fix the code and enable it
-# -Wdisabled-macro-expansion is enabled
+# -Wdisabled-macro-expansion is enabled, except under musl (see below)
 no_warning(documentation-unknown-command) # Too many false positives from contrib headers (zstd) and backslashes in comments
 # -Wdouble-promotion is enabled: avoid implicit float-to-double conversions
 no_warning(exit-time-destructors) # We intentionally use global objects with non-trivial destructors (singletons, registries)
@@ -49,6 +49,14 @@ no_warning(missing-noreturn) # too aggressive with no clear benefit, see https:/
 # any "singleton" declared that way silently stops being one. It only has anything to report under
 # `-fvisibility=hidden`, which is why the default build never used to trip it - but see the CFI
 # block in the top-level CMakeLists.txt: hidden visibility made the binary SIGSEGV before main.
+
+# musl defines the standard streams as self-referential macros (`#define stderr (stderr)`,
+# see contrib/musl/include/stdio.h) so that their address can be taken; any use of a
+# stream inside another macro (gtest death tests, fmt, ...) then trips
+# -Wdisabled-macro-expansion. The expansion is valid C, so under musl the warning is noise.
+if (USE_MUSL)
+    no_warning(disabled-macro-expansion)
+endif ()
 # Hard-code knowledge of clang version-specific warnings rather than probing the compiler.
 # `lifetime-safety-*` were introduced in clang 23.
 if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
@@ -60,13 +68,12 @@ if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     # references to the container's elements would be invalidated.
     no_warning(lifetime-safety-invalidation)
 endif ()
-if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 24)
+if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     # Too many false positives: it flags the pervasive idiom of taking a raw pointer out
     # of a `unique_ptr`, moving the owner into a container and returning the pointer -
     # the storage is on the heap and outlives the local, and the diagnostic text itself
     # concedes it "could be a false positive as the storage may have been moved".
-    # Nothing links clang 24 today except the Emscripten build (its clang is ahead of the
-    # default toolchain); re-evaluate when the default toolchain catches up.
+    # Emitted from clang 23 on, alongside the three related diagnostics suppressed above.
     no_warning(lifetime-safety-return-stack-addr-moved)
 endif ()
 if (ARCH_E2K)

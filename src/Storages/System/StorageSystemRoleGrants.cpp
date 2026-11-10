@@ -34,7 +34,7 @@ ColumnsDescription StorageSystemRoleGrants::getColumnsDescription()
         },
         {"with_admin_option", std::make_shared<DataTypeUInt8>(),
             "Flag that shows whether `granted_role` is a role with `ADMIN OPTION` privilege. Possible values: "
-            "• 1 — The role has `ADMIN OPTION` privilege."
+            "• 1 — The role has `ADMIN OPTION` privilege. "
             "• 0 — The role without `ADMIN OPTION` privilege."
         },
     };

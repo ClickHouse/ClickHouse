@@ -21,11 +21,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 }
 
-/// Embedded timezones.
-std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
+/// Embedded timezones. The lookup is length-aware on purpose: a name is also the key of the
+/// `DateLUT` cache, so a name with an embedded `\0` must not match the zone that its prefix names.
+std::string_view getTimeZone(std::string_view name);  /// NOLINT(misc-use-internal-linkage)
 
 
 namespace
@@ -44,6 +46,13 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
     }
+}
+
+/// Number of days in the given calendar month.
+int daysInCivilMonth(Int64 year, int month)
+{
+    const cctz::civil_day first{static_cast<int>(year), month, 1};
+    return static_cast<int>(cctz::civil_day{cctz::civil_month{first} + 1} - first);
 }
 
 inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_time_zone, const cctz::civil_day & date)
@@ -69,47 +78,88 @@ __attribute__((__weak__)) extern bool inside_main;
 
 bool DateLUTImpl::isSupportedTimeZoneName(std::string_view time_zone_name)
 {
-    /// `cctz` synthesizes a zone for every name of the form `Fixed/UTC±HH:MM:SS` without consulting the
-    /// time zone database, and it accepts any offset up to 24 hours, which is 172801 distinct names.
-    /// Every name that gets loaded permanently costs ~4.6 MiB in the `DateLUT` cache, and that cache
-    /// never evicts anything because callers keep bare references into it. Accepting the whole family
-    /// therefore lets untrusted input - `toDateTime(x, '<name>')`, the `session_timezone` setting,
-    /// binary type decoding, the time zone of an Arrow or ORC timestamp column - make the server
-    /// allocate memory that it never gives back.
+    /// `cctz` resolves far more names than the time zone database has, and every name that gets loaded
+    /// permanently costs ~4.6 MiB in the `DateLUT` cache, which never evicts anything because callers
+    /// keep bare references into it. The names come from untrusted input - `toDateTime(x, '<name>')`,
+    /// the `session_timezone` setting, binary type decoding, the time zone of an Arrow or ORC timestamp
+    /// column - so accepting anything beyond the database lets one-line queries make the server
+    /// allocate memory that it never gives back. On top of the database, `cctz` accepts:
+    /// - `libc:<suffix>`, resolved through the C library. `libc:localtime` and `libc:UTC` are `cctz`'s
+    ///   own internal, test-only interfaces, and any other suffix is accepted just as well and silently
+    ///   behaves as UTC. The suffix is unrestricted, so this family has no bound at all.
+    /// - `file:<path>`, which takes the rest of the name as a path: also unbounded, and it makes the
+    ///   server open a file outside the time zone database directory, which is exactly what the
+    ///   `CheckTimeZoneName` guard vendored into `contrib/cctz` exists to prevent.
+    /// - every path spelling that the filesystem resolves to the same zone file: `Europe/./Amsterdam`,
+    ///   `Europe//Amsterdam`, and any number of repetitions of `./` and `/` - a separate cache entry
+    ///   each, for one and the same zone.
+    /// - `Fixed/UTC±HH:MM:SS`, synthesized without consulting the database for any offset up to
+    ///   24 hours, which is 172801 distinct names.
     ///
-    /// So accept only the offsets a time zone can actually have: a whole number of quarters of an hour,
-    /// no further from UTC than 14 hours. That covers every offset in the time zone database - the last
-    /// one that was not a multiple of 15 minutes ended in 1972 - and leaves 113 such names, which bounds
-    /// the cache. `Values::OffsetChangeFactor` already assumes the same granularity for the offset
-    /// changes within a zone.
+    /// A name also has to be matched by length, not as a C string. Names reach us from
+    /// length-prefixed carriers - a SQL literal, `readStringBinary` in binary type decoding - so they
+    /// can carry an embedded `\0`, while the `DateLUT` cache keys on the whole byte string. Matching
+    /// `UTC\0<anything>` as `UTC` would load one zone under unboundedly many keys, which is why
+    /// `::getTimeZone` takes a `std::string_view`.
+    ///
+    /// So accept only the names of the time zone database that is linked into the binary - which is
+    /// exactly what `system.time_zones` lists, and what the documentation of the `DateTime` type and of
+    /// `session_timezone` already tell users to use - plus the fixed offsets a time zone can really
+    /// have. A name that only the host's database has is no longer accepted: ClickHouse ships its own
+    /// tzdata so that results do not depend on the host, and such a name is absent from
+    /// `system.time_zones` anyway.
+
+    /// The `Fixed/` family cannot be rejected outright, because reading an Arrow or ORC timestamp
+    /// column with a fixed-offset time zone deliberately produces such a name. Accept only the offsets
+    /// a time zone can actually have: a whole number of quarters of an hour, no further from UTC than
+    /// 14 hours. That covers every offset in the time zone database - the last one that was not a
+    /// multiple of 15 minutes ended in 1972 - and leaves 114 such names (113 offsets, of which zero is
+    /// spelled both `+00:00:00` and `-00:00:00`), so together with the 598 names of the database the
+    /// cache can hold at most 712 entries.
+    /// `Values::OffsetChangeFactor` already assumes the same granularity for the offset changes within
+    /// a zone.
     static constexpr std::string_view fixed_zone_prefix = "Fixed/";
-    if (!time_zone_name.starts_with(fixed_zone_prefix))
-        return true;
-
-    /// The remainder has to be exactly `UTC±HH:MM:SS`, the only spelling `cctz` understands.
-    std::string_view offset_name = time_zone_name.substr(fixed_zone_prefix.size());
-    if (offset_name.size() != 12 || !offset_name.starts_with("UTC")
-        || (offset_name[3] != '+' && offset_name[3] != '-') || offset_name[6] != ':' || offset_name[9] != ':')
-        return false;
-
-    auto parse_two_digits = [&](size_t pos) -> int
+    if (time_zone_name.starts_with(fixed_zone_prefix))
     {
-        if (!isNumericASCII(offset_name[pos]) || !isNumericASCII(offset_name[pos + 1]))
-            return -1;
-        return (offset_name[pos] - '0') * 10 + (offset_name[pos + 1] - '0');
-    };
+        /// The remainder has to be exactly `UTC±HH:MM:SS`, the only spelling `cctz` understands.
+        std::string_view offset_name = time_zone_name.substr(fixed_zone_prefix.size());
+        if (offset_name.size() != 12 || !offset_name.starts_with("UTC")
+            || (offset_name[3] != '+' && offset_name[3] != '-') || offset_name[6] != ':' || offset_name[9] != ':')
+            return false;
 
-    const int hours = parse_two_digits(4);
-    const int minutes = parse_two_digits(7);
-    const int seconds = parse_two_digits(10);
-    if (hours < 0 || minutes < 0 || seconds < 0)
-        return false;
+        auto parse_two_digits = [&](size_t pos) -> int
+        {
+            if (!isNumericASCII(offset_name[pos]) || !isNumericASCII(offset_name[pos + 1]))
+                return -1;
+            return (offset_name[pos] - '0') * 10 + (offset_name[pos + 1] - '0');
+        };
 
-    const int offset = (hours * 60 + minutes) * 60 + seconds;
-    return offset % (15 * 60) == 0 && offset <= 14 * 3600;
+        const int hours = parse_two_digits(4);
+        const int minutes = parse_two_digits(7);
+        const int seconds = parse_two_digits(10);
+        if (hours < 0 || minutes < 0 || seconds < 0)
+            return false;
+
+        /// Every component has to be in range on its own, and not only the total offset: `cctz`
+        /// normalizes the components, so `Fixed/UTC+00:75:00` and `Fixed/UTC+01:14:60` load the very
+        /// same `+01:15` zone as `Fixed/UTC+01:15:00` does. Accepting them would give one offset up to
+        /// four names, and with it four entries of the `DateLUT` cache, which is exactly the aliasing
+        /// this predicate exists to prevent. Only the canonical spelling of an offset is a name here.
+        if (hours > 14 || minutes > 59 || seconds > 59)
+            return false;
+
+        const int offset = (hours * 60 + minutes) * 60 + seconds;
+        return offset % (15 * 60) == 0 && offset <= 14 * 3600;
+    }
+
+    /// `::getTimeZone` is also what loads the zone, so a name accepted here is one that can be loaded
+    /// without consulting the host at all, and one that cannot alias another name. It is qualified
+    /// because `DateLUTImpl` has a member with the same name that returns the time zone of this
+    /// instance.
+    return !::getTimeZone(time_zone_name).empty();
 }
 
-DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut and lut_saturated are fully assigned below
+DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut is fully assigned below
     : time_zone(time_zone_)
 {
     /// DateLUT should not be initialized in global constructors for the following reasons:
@@ -120,8 +170,9 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     if (!isSupportedTimeZoneName(time_zone))
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
-            "Time zone {} is not supported: a fixed UTC offset is spelled `Fixed/UTC±HH:MM:SS` and "
-            "has to be a whole number of quarters of an hour, no further from UTC than 14 hours",
+            "Time zone {} is not supported. Use a name from `system.time_zones`, or a fixed UTC offset "
+            "spelled `Fixed/UTC±HH:MM:SS`, which has to be a whole number of quarters of an hour, no "
+            "further from UTC than 14 hours",
             time_zone_);
 
     /// The loaded time zone is kept as a member, so the out-of-range escape paths can use cctz directly.
@@ -142,6 +193,8 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     offset_at_start_of_lut = tz.lookup(tz.lookup(lut_start).pre).offset;
     offset_is_whole_number_of_hours_during_epoch = true;
     offset_is_whole_number_of_minutes_during_epoch = true;
+    offset_is_whole_number_of_hours_in_lut_range = true;
+    offset_is_whole_number_of_minutes_in_lut_range = true;
     offset_is_fixed = true;
     offset_is_fixed_during_epoch = true;
     offset_minute_of_hour_is_constant_during_epoch = true;
@@ -152,14 +205,18 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     hour_of_day_offset_addend = 86400 - utc_time_of_day_at_local_midnight;
     minute_of_hour_offset_addend = 3600 - utc_time_of_day_at_local_midnight % 3600;
 
-    cctz::civil_day date = lut_start;
-    cctz::time_point<cctz::seconds> start_of_day_time_point_if_no_transitions = lookupTz(tz, date);
+    /// The calendar is walked with plain counters; `cctz` is consulted only at offset transitions.
+    int year = DATE_LUT_MIN_YEAR;
+    int month = 1;
+    int day_of_month = 1;
+    int days_in_month = daysInCivilMonth(year, month);
+    UInt8 day_of_week = getDayOfWeek(lut_start);
 
-    auto next_transition_date = date;
+    Int64 next_transition_index = 0;
 
     /// Fill the lookup table:
-    /// Adjustments only occur at the dates of transitions. We save next_transition_date and add 24h to the
-    /// previous value until we reach the it. Then we do the adjustment and get the new next_transition_date.
+    /// Adjustments only occur at the dates of transitions. We save next_transition_index and add 24h to the
+    /// previous value until we reach it. Then we do the adjustment and get the new next_transition_index.
     UInt32 i = 0;
     do
     {
@@ -168,14 +225,17 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         values.time_at_offset_change_value = 0;
         values.amount_of_offset_change_value = 0;
 
-        if (date >= next_transition_date)
+        if (i >= next_transition_index)
         {
-            start_of_day_time_point_if_no_transitions = lookupTz(tz, date);
+            const cctz::civil_day date = lut_start + i;
+            const cctz::time_point<cctz::seconds> start_of_day_time_point = lookupTz(tz, date);
+            start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point);
 
             /// If UTC offset was changed this day.
             /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST
             cctz::time_zone::civil_transition transition{};
-            if (tz.next_transition(start_of_day_time_point_if_no_transitions - std::chrono::seconds(1), &transition)
+            const bool has_next_transition = tz.next_transition(start_of_day_time_point - std::chrono::seconds(1), &transition);
+            if (has_next_transition
                 && (cctz::civil_day(transition.from) == date || cctz::civil_day(transition.to) == date)
                 && transition.from != transition.to)
             {
@@ -194,29 +254,23 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
                     values.time_at_offset_change_value = -values.amount_of_offset_change_value;
             }
 
-            next_transition_date = std::min(cctz::civil_day(transition.to), cctz::civil_day(transition.from));
+            /// After the last transition (all the time for UTC) the offset never changes, so stop looking up every day.
+            next_transition_index = has_next_transition
+                ? std::min(cctz::civil_day(transition.to), cctz::civil_day(transition.from)) - lut_start
+                : std::numeric_limits<Int64>::max();
         }
 
-        start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point_if_no_transitions);
-
-        values.year = static_cast<UInt16>(date.year());
-        values.month = static_cast<UInt8>(date.month());
-        values.day_of_month = static_cast<UInt8>(date.day());
-        values.day_of_week = getDayOfWeek(date);
+        values.year = static_cast<UInt16>(year);
+        values.month = static_cast<UInt8>(month);
+        values.day_of_month = static_cast<UInt8>(day_of_month);
+        values.day_of_week = day_of_week;
+        values.days_in_month = static_cast<UInt8>(days_in_month);
         values.date = start_of_day;
 
         chassert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR + 1);
         chassert(values.month >= 1 && values.month <= 12);
         chassert(values.day_of_month >= 1 && values.day_of_month <= 31);
         chassert(values.day_of_week >= 1 && values.day_of_week <= 7);
-
-        if (values.day_of_month == 1)
-        {
-            cctz::civil_month month(date);
-            values.days_in_month = static_cast<UInt8>(cctz::civil_day(month + 1) - cctz::civil_day(month));
-        }
-        else
-            values.days_in_month = i != 0 ? lut[i - 1].days_in_month : 31;
 
         if (offset_is_whole_number_of_hours_during_epoch && start_of_day > 0 && start_of_day % 3600)
             offset_is_whole_number_of_hours_during_epoch = false;
@@ -240,14 +294,38 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
                 offset_minute_of_hour_is_constant_during_epoch = false;
         }
 
+        /// The same over the whole LUT, including the days before the epoch: the in-tree tzdata keeps
+        /// sub-minute offsets well into the 20th century (`Europe/Amsterdam` +00:19:32 until 1937,
+        /// `Asia/Kolkata` +05:21:10 until 1906), so a property that holds during the epoch says nothing
+        /// about a pre-1970 `DateTime64`.
+        if (offset_is_whole_number_of_hours_in_lut_range && start_of_day % 3600)
+            offset_is_whole_number_of_hours_in_lut_range = false;
+
+        if (offset_is_whole_number_of_minutes_in_lut_range && start_of_day % 60)
+            offset_is_whole_number_of_minutes_in_lut_range = false;
+
         /// An offset change at midnight makes consecutive days start more or less than 86400 seconds apart;
         /// a change at any other time is recorded in amount_of_offset_change_value of the affected day.
         if (values.amount_of_offset_change_value != 0 || (i != 0 && values.date - lut[i - 1].date != 86400))
             offset_is_fixed = false;
 
         /// Going to next day.
-        start_of_day_time_point_if_no_transitions += std::chrono::hours(24);
-        ++date;
+        start_of_day += 86400;
+        day_of_week = day_of_week == 7 ? 1 : day_of_week + 1;
+        if (day_of_month == days_in_month)
+        {
+            day_of_month = 1;
+            if (month == 12)
+            {
+                month = 1;
+                ++year;
+            }
+            else
+                ++month;
+            days_in_month = daysInCivilMonth(year, month);
+        }
+        else
+            ++day_of_month;
         ++i;
     }
     while (i < DATE_LUT_SIZE && lut[i - 1].year <= DATE_LUT_MAX_YEAR);
@@ -284,19 +362,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         years_months_lut[year_months_lut_index] = first_day_of_last_month;
     }
 
-    /// Fill saturated LUT.
-    {
-        ssize_t day = DATE_LUT_SIZE - 1;
-        for (; day >= 0; --day)
-        {
-            if (lut[day].date >= 0)
-                lut_saturated[day] = lut[day];
-            else
-                break;
-        }
-        for (; day >= 0; --day)
-            lut_saturated[day] = lut_saturated[day + 1];
-    }
+    first_non_negative_date = std::partition_point(lut, lut + DATE_LUT_SIZE, [](const Values & values) { return values.date < 0; })->date;
 }
 
 DateLUTImpl::~DateLUTImpl() = default;
@@ -308,13 +374,6 @@ namespace
 Int64 dayIndexOfCivilDay(cctz::civil_day day)
 {
     return day - cctz::civil_day{DATE_LUT_MIN_YEAR, 1, 1};
-}
-
-/// Number of days in the given calendar month.
-int daysInCivilMonth(Int64 year, int month)
-{
-    const cctz::civil_day first{static_cast<int>(year), month, 1};
-    return static_cast<int>(cctz::civil_day{cctz::civil_month{first} + 1} - first);
 }
 
 }
@@ -519,75 +578,72 @@ ExtendedDayNum DateLUTImpl::makeDayNumOutOfRange(Int64 year, UInt8 month, UInt8 
     return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(dayIndexOfCivilDay(date) - daynum_offset_epoch)};
 }
 
+namespace
+{
+[[noreturn]] void throwUnexpectedScaleMultiplier(Int64 scale_multiplier)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected scale multiplier {}", scale_multiplier);
+}
+
+template <Int64 target_multiplier, Int64 scale_multiplier>
+ALWAYS_INLINE unsigned subsecondComponent(Int64 value)
+{
+    Int64 fractional = value % scale_multiplier;
+    if (fractional < 0)
+        fractional += scale_multiplier;
+    if constexpr (scale_multiplier > target_multiplier)
+        return static_cast<unsigned>(fractional / (scale_multiplier / target_multiplier));
+    else
+        return static_cast<unsigned>(fractional * (target_multiplier / scale_multiplier));
+}
+
+template <Int64 target_multiplier>
+unsigned subsecondComponentDispatch(Int64 value, Int64 scale_multiplier)
+{
+    /// The scale of `DateTime64` and `Time64` is 0..9; a compile-time multiplier turns the per-row divisions into multiplications.
+    switch (scale_multiplier)
+    {
+        case 1: return subsecondComponent<target_multiplier, 1>(value);
+        case 10: return subsecondComponent<target_multiplier, 10>(value);
+        case 100: return subsecondComponent<target_multiplier, 100>(value);
+        case 1'000: return subsecondComponent<target_multiplier, 1'000>(value);
+        case 10'000: return subsecondComponent<target_multiplier, 10'000>(value);
+        case 100'000: return subsecondComponent<target_multiplier, 100'000>(value);
+        case 1'000'000: return subsecondComponent<target_multiplier, 1'000'000>(value);
+        case 10'000'000: return subsecondComponent<target_multiplier, 10'000'000>(value);
+        case 100'000'000: return subsecondComponent<target_multiplier, 100'000'000>(value);
+        case 1'000'000'000: return subsecondComponent<target_multiplier, 1'000'000'000>(value);
+        default: throwUnexpectedScaleMultiplier(scale_multiplier);
+    }
+}
+}
+
+/// Called per row. `ALWAYS_INLINE`: ThinLTO would not inline the ten cases into the row loops otherwise. Without
+/// `xray_never_instrument` the ten cases can exceed the XRay instruction threshold, and an entry sled costs up to 20% per row.
+[[clang::xray_never_instrument]] ALWAYS_INLINE
 unsigned int DateLUTImpl::toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
 {
-    constexpr Int64 millisecond_multiplier = 1'000;
-    constexpr Int64 microsecond_multiplier = 1'000 * millisecond_multiplier;
-    constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
-
-    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
-
-    if (datetime.value < 0 && components.fractional)
-    {
-        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-        --components.whole;
-    }
-    Int64 fractional = components.fractional;
-    if (scale_multiplier > microsecond_multiplier)
-        fractional = fractional / (scale_multiplier / microsecond_multiplier);
-    else if (scale_multiplier < microsecond_multiplier)
-        fractional = fractional * (microsecond_multiplier / scale_multiplier);
-
-    UInt16 millisecond = static_cast<UInt16>(fractional / divider);
-    return millisecond;
+    return subsecondComponentDispatch<1'000>(datetime.value, scale_multiplier);
 }
 
 
+[[clang::xray_never_instrument]] ALWAYS_INLINE
 unsigned int DateLUTImpl::toMicrosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
 {
-    constexpr Int64 microsecond_multiplier = 1'000'000;
-
-    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
-
-    if (datetime.value < 0 && components.fractional)
-    {
-        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-        --components.whole;
-    }
-    Int64 fractional = components.fractional;
-    if (scale_multiplier > microsecond_multiplier)
-        fractional = fractional / (scale_multiplier / microsecond_multiplier);
-    else if (scale_multiplier < microsecond_multiplier)
-        fractional = fractional * (microsecond_multiplier / scale_multiplier);
-
-    return static_cast<unsigned>(fractional);
+    return subsecondComponentDispatch<1'000'000>(datetime.value, scale_multiplier);
 }
 
 
+[[clang::xray_never_instrument]] ALWAYS_INLINE
 unsigned int DateLUTImpl::toNanosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
 {
-    constexpr Int64 nanosecond_multiplier = 1'000'000'000;
-
-    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
-
-    if (datetime.value < 0 && components.fractional)
-    {
-        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-        --components.whole;
-    }
-    Int64 fractional = components.fractional;
-    if (scale_multiplier > nanosecond_multiplier)
-        fractional = fractional / (scale_multiplier / nanosecond_multiplier);
-    else if (scale_multiplier < nanosecond_multiplier)
-        fractional = fractional * (nanosecond_multiplier / scale_multiplier);
-
-    return static_cast<unsigned>(fractional);
+    return subsecondComponentDispatch<1'000'000'000>(datetime.value, scale_multiplier);
 }
 
 
-/// Prefer to load timezones from blobs linked to the binary.
+/// Load timezones only from blobs linked to the binary.
 /// The blobs are provided by "tzdata" library.
-/// This allows to avoid dependency on system tzdata.
+/// This avoids a dependency on system tzdata.
 namespace cctz_extension
 {
     namespace
@@ -625,14 +681,22 @@ namespace cctz_extension
 
         std::unique_ptr<cctz::ZoneInfoSource> custom_factory(
             const std::string & name,
-            const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback)
+            const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> &)
         {
-            std::string_view tz_file = getTimeZone(name.data());
+            /// `name`, not `name.data()`: the name can carry an embedded `\0` and must not match the
+            /// zone that its prefix names, see `isSupportedTimeZoneName`.
+            std::string_view tz_file = getTimeZone(name);
 
-            if (!tz_file.empty())
-                return std::make_unique<Source>(tz_file.data(), tz_file.size());
+            /// `cctz`'s own fallback is deliberately not used. It resolves a name as a path under the
+            /// time zone database directory - or, for a `file:` prefix, as an arbitrary path - so it
+            /// accepts unboundedly many spellings of the same zone, opens files outside that directory,
+            /// and does the open while `DateLUT::getImplementation` holds its global mutex, where a
+            /// FIFO or a hung network mount would block every time zone lookup server-wide. The
+            /// supported set is the database linked into the binary, see `isSupportedTimeZoneName`.
+            if (tz_file.empty())
+                return nullptr;
 
-            return fallback(name);
+            return std::make_unique<Source>(tz_file.data(), tz_file.size());
         }
     }
 

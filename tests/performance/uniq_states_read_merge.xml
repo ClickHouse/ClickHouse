@@ -1,0 +1,45 @@
+<test>
+    <create_query>
+        CREATE TABLE uniq_tiny_states
+        (
+            k UInt64,
+            s AggregateFunction(uniq, UInt64)
+        ) ENGINE = MergeTree ORDER BY k
+    </create_query>
+
+    <create_query>
+        CREATE TABLE uniq_big_states
+        (
+            g UInt64,
+            s AggregateFunction(uniq, UInt64)
+        ) ENGINE = MergeTree ORDER BY g
+    </create_query>
+
+    <drop_query>DROP TABLE IF EXISTS uniq_tiny_states</drop_query>
+    <drop_query>DROP TABLE IF EXISTS uniq_big_states</drop_query>
+
+    <!-- States of 2 and 9 elements: around the size boundaries of the state deserialization. -->
+    <fill_query>
+        INSERT INTO uniq_tiny_states
+        SELECT number, arrayReduce('uniqState', arrayMap(i -> number * 16 + i, range(2 + (number % 2) * 7)))
+        FROM numbers_mt(5000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE uniq_tiny_states FINAL</fill_query>
+
+    <!-- 500 states of ~60000 elements: merging them saturates the destination table. -->
+    <fill_query>
+        INSERT INTO uniq_big_states
+        SELECT intDiv(number, 60000) AS g, uniqState(number)
+        FROM numbers_mt(30000000)
+        GROUP BY g
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE uniq_big_states FINAL</fill_query>
+
+    <query>SELECT sum(finalizeAggregation(s)) FROM uniq_tiny_states FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT uniqMerge(s) FROM uniq_tiny_states FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT k % 1000, uniqMerge(s) FROM uniq_tiny_states GROUP BY k % 1000 FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT uniqMerge(s) FROM uniq_big_states FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT g % 4, uniqMerge(s) FROM uniq_big_states GROUP BY g % 4 FORMAT Null SETTINGS max_threads = 1</query>
+</test>

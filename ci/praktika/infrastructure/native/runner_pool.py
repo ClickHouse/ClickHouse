@@ -180,6 +180,12 @@ def _s3_grants(prefixes: List[str]):
     return _unique(object_resources), bucket_conditions
 
 
+# The only bucket-level S3 actions that carry an `s3:prefix` request context key
+# and can therefore be constrained by a StringLike s3:prefix condition. Any other
+# bucket action under that condition is silently denied.
+_S3_PREFIX_AWARE_ACTIONS = frozenset({"s3:ListBucket"})
+
+
 def _s3_statements(prefixes, sid_base, object_actions, list_actions):
     """Build split object-level and bucket-level (list) S3 policy statements.
 
@@ -199,18 +205,45 @@ def _s3_statements(prefixes, sid_base, object_actions, list_actions):
             }
         )
     for i, bucket_arn in enumerate(sorted(bucket_conditions)):
-        statement = {
-            "Sid": f"{sid_base}List{i}",
-            "Effect": "Allow",
-            "Action": list_actions,
-            "Resource": bucket_arn,
-        }
         prefixes_cond = bucket_conditions[bucket_arn]
-        if prefixes_cond is not None:
-            statement["Condition"] = {
-                "StringLike": {"s3:prefix": sorted(prefixes_cond)}
-            }
-        statements.append(statement)
+        if prefixes_cond is None:
+            # Whole-bucket grant: no prefix condition, so every list action is
+            # granted unconditionally.
+            statements.append(
+                {
+                    "Sid": f"{sid_base}List{i}",
+                    "Effect": "Allow",
+                    "Action": list_actions,
+                    "Resource": bucket_arn,
+                }
+            )
+            continue
+        # Prefix-scoped grant: only actions that send an `s3:prefix` request
+        # context key can carry the condition. Bucket-level actions like
+        # GetBucketLocation / ListBucketMultipartUploads don't, so under a
+        # StringLike s3:prefix condition they evaluate false and are silently
+        # denied. Split them into an unconditional bucket-resource statement.
+        prefix_aware = [a for a in list_actions if a in _S3_PREFIX_AWARE_ACTIONS]
+        unconditional = [a for a in list_actions if a not in _S3_PREFIX_AWARE_ACTIONS]
+        if prefix_aware:
+            statements.append(
+                {
+                    "Sid": f"{sid_base}List{i}",
+                    "Effect": "Allow",
+                    "Action": prefix_aware,
+                    "Resource": bucket_arn,
+                    "Condition": {"StringLike": {"s3:prefix": sorted(prefixes_cond)}},
+                }
+            )
+        if unconditional:
+            statements.append(
+                {
+                    "Sid": f"{sid_base}Bucket{i}",
+                    "Effect": "Allow",
+                    "Action": unconditional,
+                    "Resource": bucket_arn,
+                }
+            )
     return statements
 
 
@@ -246,6 +279,15 @@ class RunnerPool:
     praktika-system-logs streamer runs at boot, shipping kernel/OOM/systemd-kill
     evidence to the `/{slug}/praktika-system` CloudWatch log group. Off by
     default; see docs/logging.md.
+
+    `ext["runtime_source"]` (str) makes this pool install Praktika at runtime
+    instead of using the version baked into the AMI. It is surfaced as the
+    `praktika_runtime_source` instance tag; on every task the controller
+    reinstalls `<source>` into an overlay of the prebaked base venv, so the pool
+    always runs the current checkout. The value is a filesystem path: an absolute
+    path on the instance, or a path relative to the cloned repo (e.g. `.`
+    installs Praktika from the checkout). Off by default (AMI base venv is used
+    as-is).
 
     `ext["iam_statements"]` (list of IAM policy statement dicts) are appended to
     the runner instance role's RunnerAccess inline policy, so a project can grant
@@ -410,7 +452,6 @@ class RunnerPool:
                     object_actions=[
                         "s3:GetObject",
                         "s3:GetObjectTagging",
-                        "s3:HeadObject",
                         "s3:PutObject",
                         "s3:PutObjectTagging",
                         "s3:AbortMultipartUpload",
@@ -430,7 +471,6 @@ class RunnerPool:
                     object_actions=[
                         "s3:GetObject",
                         "s3:GetObjectTagging",
-                        "s3:HeadObject",
                     ],
                     list_actions=[
                         "s3:ListBucket",
@@ -500,6 +540,12 @@ class RunnerPool:
             # Activates the baked praktika-system-logs streamer at boot so
             # kernel/OOM/systemd-kill evidence is shipped to CloudWatch.
             runtime_tags["praktika_system_logs"] = "1"
+        runtime_source = str(self.ext.get("runtime_source", "") or "").strip()
+        if runtime_source:
+            # Install Praktika at runtime from this path instead of using the
+            # version baked into the AMI (see praktika_controller.venv_manager).
+            # The pool always runs whatever the source currently points at.
+            runtime_tags["praktika_runtime_source"] = runtime_source
         self.launch_template = LaunchTemplate.Config(
             name=launch_template_name,
             image_id=self.ami_id,

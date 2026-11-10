@@ -1,6 +1,6 @@
 -- { echoOn }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 -- Value of type Nullable(Tuple(...))
 SELECT

@@ -20,6 +20,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]
@@ -103,6 +104,18 @@ Reset authentication methods and keep the most recent added one:
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
 
+Change the default database for a user:
+
+```sql
+ALTER USER user1 DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` clears the user's default database. To use a database named `NONE`, quote its name with backticks:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
 ## VALID UNTIL Clause {#valid-until-clause}
 
 Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`. The accepted deadline range is `1900-01-01 00:00:00 UTC` through `9999-12-31 09:59:59 UTC` — the latest instant that stays within year 9999 in every time zone, so the stored instant is never clamped when it is rendered. A deadline in the past means the credentials are already expired. Deadlines before `1970-01-01 00:00:01 UTC` are accepted only as an "already expired" marker: they are canonicalized to the smallest expired instant, one second after the Unix epoch (`1970-01-01 00:00:01 UTC`), so `SHOW CREATE USER` reports that instant instead of the deadline you wrote. Deadlines from that instant onward are stored exactly.
@@ -121,6 +134,15 @@ Examples:
 - `ALTER USER name1 VALID UNTIL 'infinity'`
 - `ALTER USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
 - `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
+
+Expired authentication methods are removed automatically: every `ALTER USER` on a user drops the methods whose deadline has already passed - whether or not the statement itself mentions authentication - while the others, including the ones that never expire, are kept. An expired method can never accept a credential again, so keeping it would only occupy a slot in `max_authentication_methods_per_user`. This is what makes rotating short-lived credentials work: `ALTER USER ... ADD IDENTIFIED WITH ... VALID UNTIL ...` can be issued indefinitely without the dead credentials piling up against that limit, and without arranging a window in which only one credential is still valid so that `IDENTIFIED WITH` or `RESET AUTHENTICATION METHODS TO NEW` would not drop a credential still in use.
+
+Two things are deliberately left alone:
+
+- A method that the same statement adds. Writing an already expired credential (`VALID UNTIL` a past date, or `VALID FOR` a negative interval) stays possible.
+- A user whose every method is expired. Such a user keeps them and simply cannot authenticate, which is the state it is already in; the alternative would be a user with no authentication method at all, which is read back as `no_password` and would turn a lapsed credential into an unauthenticated one. Give it a new credential with `ALTER USER ... IDENTIFIED WITH ...` (or `ADD IDENTIFIED WITH ...`, which drops the expired ones in the same statement).
+
+Since the user-level clause is applied before the expired methods are dropped, extending the deadline of a user whose credentials have already lapsed keeps working, and only the methods that are still expired afterwards are removed.
 
 ## VALID FOR Clause {#valid-for-clause}
 

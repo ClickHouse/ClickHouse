@@ -7,6 +7,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StatisticsDescription.h>
+#include <Storages/SubcolumnCodecsDescription.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
@@ -27,6 +28,10 @@
 namespace DB
 {
 
+struct StorageID;
+class AccessRights;
+class AccessFlags;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -44,8 +49,7 @@ enum class VirtualsMaterializationPlace : UInt8
 {
     Reader = 1,
     Plan = 2,
-    Streaming = 4,
-    All = Reader | Plan | Streaming,
+    All = Reader | Plan,
 };
 
 struct GetColumnsOptions
@@ -101,6 +105,7 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
+    SubcolumnCodecsDescription subcolumn_codecs;
     SettingsChanges settings;
     ASTPtr ttl;
     ColumnStatisticsDescription statistics;
@@ -119,7 +124,7 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
+    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment, bool include_codec) const;
     void readText(ReadBuffer & buf);
 };
 
@@ -186,6 +191,9 @@ public:
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
+    /// Drops every column TTL, leaving the rest of each column as it is.
+    void clearColumnTTLs();
+    /// Drops every column TTL and puts each column back through the checks that `add` runs.
     void resetColumnTTLs();
 
     bool has(const String & column_name) const;
@@ -214,11 +222,36 @@ public:
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify ColumnDescription for column {}: column name cannot be changed", column_name);
 
-        addSubcolumns(it->name, it->type);
+        invalidateGetCache();
+        /// Aliases don't have real subcolumns, they are derived from the expression.
+        if (it->default_desc.kind != ColumnDefaultKind::Alias)
+            addSubcolumns(it->name, it->type);
         modifyColumnOrder(column_name, after_column, first);
     }
 
     Names getNamesOfPhysical() const;
+
+    /// Returns the column names to pass to the `SELECT` access check on `table_id` when a query reads `column_names`.
+    /// A subcolumn (e.g. `t.a` for a `Tuple` column `t`) inherits the grants of its column, so it is mapped to the
+    /// parent storage column and `GRANT SELECT(t)` covers `t.a`, `t.b`, etc. This includes dynamic subcolumns of
+    /// `Dynamic` / `JSON` / dynamic `Map` columns (e.g. `json.a.b`), which are resolved by the same type-aware,
+    /// first-matching-prefix logic as identifier resolution, so the check authorizes exactly the column the query
+    /// reads from. A grant or revoke on the exact subcolumn name takes precedence over its column, so such a
+    /// subcolumn is returned unchanged. Names that are not subcolumns (real columns, including columns literally
+    /// containing a dot, or unknown names such as virtual columns) are returned unchanged. The result is deduplicated
+    /// while preserving the order of first appearance.
+    Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
+
+    /// Returns the names of the real subcolumns of the column `column_name` that have a grant of `flags` on their exact
+    /// name which they do not inherit from the column (e.g. ``GRANT SELECT(`json.a`)`` without a grant on `json`).
+    /// Grants are matched by name only, so a granted name is returned only if it resolves, by the same type-aware
+    /// resolution as identifiers (including dynamic paths of `JSON` / `Dynamic` / `Map`), to a subcolumn of this column.
+    Names getSubcolumnsWithExplicitGrant(
+        const AccessRights & access_rights,
+        const AccessFlags & flags,
+        const String & database,
+        const String & table,
+        const String & column_name) const;
 
     bool hasPhysical(const String & column_name) const;
     bool hasNotAlias(const String & column_name) const;
@@ -236,6 +269,9 @@ public:
     std::optional<NameAndTypePair> tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
 
+    /// A subcolumn of any column by its full name (`payload.ts`). Nothing for the name of a column or for an unknown name.
+    std::optional<NameAndTypePair> tryGetSubcolumn(const String & subcolumn_name) const;
+
     std::optional<const ColumnDescription> tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<const ColumnDescription> tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const;
 
@@ -244,7 +280,7 @@ public:
     bool hasDefaults() const;
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
-    /// Does column has non default specified compression codec
+    /// Does column has non default specified compression codec, for the column itself or for any of its subcolumns
     bool hasCompressionCodec(const String & column_name) const;
 
     /// Does the column's compression codec pipeline contain a `Default` stage (`CODEC(Default)`,
@@ -254,7 +290,9 @@ public:
     /// non-default codec.
     bool hasExplicitDefaultCompressionCodec(const String & column_name) const;
 
-    String toString(bool include_comments) const;
+    /// Subcolumn codecs are written as `CODEC name (...)` lines after the columns.
+    /// `include_codecs = false` is for readers that need only names, types and defaults, such as older clients.
+    String toString(bool include_comments, bool include_codecs = true) const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const
@@ -338,6 +376,12 @@ struct DefaultExpressionsInfo
     NameSet insert_time_default_columns;
 };
 
+/// If the column carries a `Quantized(...)` codec, attaches the serialization that writes the quantized companion stream
+/// and exposes the `<column>.quantized` subcolumn. `ColumnsDescription::add` does this itself; it is needed when
+/// the codec is set on a column that is already added. The customization is attached to this column's own
+/// (freshly parsed, non-shared) type instance, so it does not affect any other column of the same type.
+void attachQuantizeSerializationIfNeeded(ColumnDescription & column);
+
 /// Restore the Quantized(...) subcolumns on columns parsed from a part's columns.txt.
 void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata);
 
@@ -359,5 +403,12 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
 /// (JSON paths) are open-ended, so the contract can only ever enumerate origins.
 bool prewhereSupportedColumnsContain(
     const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name);
+
+class IStorage;
+
+/// Whether the read of `storage` can evaluate a row policy over `required_columns` as its row-level filter.
+/// A remote storage ships only query text and would drop it. Wrappers (Merge, Buffer) re-derive it against
+/// their children's types, so every column must be in the PREWHERE contract.
+bool canPushDownRowPolicyFilter(const IStorage & storage, const ColumnsDescription & columns, const Names & required_columns);
 
 }

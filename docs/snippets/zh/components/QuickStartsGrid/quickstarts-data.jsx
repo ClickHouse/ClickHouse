@@ -77,8 +77,8 @@ export const quickStartsData = [
   },
   {
     "id": "insert-data-using-clickhouse-client",
-    "title": "使用 clickhouse-client 将数据插入到 ClickHouse Cloud",
-    "description": "了解如何通过命令行使用 clickhouse-client，将本地 CSV 和 Parquet 文件中的数据插入到 ClickHouse Cloud 服务中。",
+    "title": "使用 ClickHouse 客户端 将数据插入到 ClickHouse Cloud",
+    "description": "了解如何通过命令行使用 ClickHouse 客户端，将本地 CSV 和 Parquet 文件中的数据插入到 ClickHouse Cloud 服务中。",
     "href": "/zh/get-started/quickstarts/insert-data-using-clickhouse-client",
     "useCases": [
       "all"
@@ -109,20 +109,6 @@ export const quickStartsData = [
     ],
     "products": [
       "cloud"
-    ]
-  },
-  {
-    "id": "tutorial",
-    "title": "高级教程",
-    "description": "了解如何使用纽约市出租车示例数据集在 ClickHouse 中摄取和查询数据。",
-    "href": "/zh/get-started/quickstarts/tutorial",
-    "useCases": [
-      "real-time-analytics",
-      "data-warehousing"
-    ],
-    "products": [
-      "cloud",
-      "self-managed"
     ]
   },
   {

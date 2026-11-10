@@ -6,6 +6,9 @@
     <trace_log>
         <!-- jemalloc has too many events, which leads to slower testing with default value 1KK -->
         <max_size_rows>100000</max_size_rows>
+        <!-- The default config sets this key, so it does not follow max_size_rows/2; a threshold
+             above max_size_rows never triggers the size-based flush and the queue drops at the cap. -->
+        <buffer_size_rows_flush_threshold>50000</buffer_size_rows_flush_threshold>
         <symbolize>false</symbolize>
     </trace_log>
 

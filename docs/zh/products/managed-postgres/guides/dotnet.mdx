@@ -1,0 +1,291 @@
+---
+slug: /cloud/managed-postgres/guides/dotnet
+sidebarTitle: '.NET (EF Core)'
+title: '将 .NET 和 Entity Framework Core 与 ClickHouse Managed Postgres 搭配使用'
+description: '使用 Entity Framework Core 和 Npgsql 将 ASP.NET Core 最小 API 连接到 ClickHouse Managed Postgres，运行 EF Core 迁移，并通过经过证书验证的 TLS 连接执行查询'
+keywords: ['managed postgres', '.net', 'dotnet', 'c#', 'asp.net core', 'entity framework core', 'ef core', 'npgsql', 'migrations', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-dotnet-beta" />
+
+[Entity Framework Core](https://learn.microsoft.com/ef/core/) (EF Core) 是 .NET 平台的 ORM，而 [Npgsql](https://www.npgsql.org/efcore/) 是它的 PostgreSQL 提供程序。在本指南中，您将构建一个 ASP.NET Core 最小 API，通过 EF Core 迁移创建所需的表，并提供用于创建、读取、更新和删除数据的端点。所有连接均使用 TLS，并执行完整的证书验证。
+
+## 前置条件 {#prerequisites}
+
+* [.NET SDK](https://dotnet.microsoft.com/download) 10。本指南已在 .NET SDK 10.0.401、EF Core 10.0.12 和 `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3 (Npgsql 10.0.3) 环境下测试通过。
+* 一个 ClickHouse Cloud 账户
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库。您也可以在 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console)中运行 `CREATE DATABASE` 语句。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内就绪。详细操作步骤请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接信息 {#connection-details}
+
+在服务的左侧边栏中点击 **Connect**。保持选中 **Directly**，开启 **Use SSL**，然后复制密码和服务器主机名。接着点击 **Download CA certificate**。您也可以稍后在 **Settings → CA Certificate** 中下载该证书。该证书为您的实例所独有，因此 Npgsql 可以借此验证所连接的确实是您的服务器。
+
+在本指南中，应用和 EF Core 迁移均通过端口 `5432` **直接**连接到 Postgres。ASP.NET Core 应用是长期运行的进程，Npgsql 已在其中提供连接池 (默认每个连接字符串最多 100 个连接) ，因此无需再额外使用连接池器。如果您运行了大量应用实例，请参阅[使用 PgBouncer](#pgbouncer)。
+
+Connect 弹窗中没有 .NET 选项卡，而且 Npgsql 不接受 **url** 选项卡中的 `postgresql://` URL，而是使用 `Keyword=Value` 形式的连接字符串。请从 URL 中提取各项值，并将其对应到 Npgsql 关键字：
+
+| Connect 弹窗 (**url** 选项卡)                                 | Npgsql 关键字                               |
+| -------------------------------------------------------- | ---------------------------------------- |
+| Host，例如 `your-instance.pg.clickhouse.cloud`              | `Host=your-instance.pg.clickhouse.cloud` |
+| Port：`5432` (**Directly**) 或 `6432` (**via PgBouncer**)  | `Port=5432`                              |
+| Path，例如 `/postgres`                                      | `Database=postgres`                      |
+| 用户名和密码                                                   | `Username=postgres;Password=<PASSWORD>`  |
+| `sslmode=verify-full`                                    | `SSL Mode=VerifyFull`                    |
+| `sslrootcert=<service-name>-ca-certificate.pem`          | `Root Certificate=ca-certificate.pem`    |
+
+## 设置项目 {#project-setup}
+
+创建一个 ASP.NET Core 项目，添加 Npgsql EF Core 提供程序和 EF Core 设计时包，并安装 `dotnet ef` 命令行工具：
+
+```bash
+dotnet new web -o TodoApi
+cd TodoApi
+dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL
+dotnet add package Microsoft.EntityFrameworkCore.Design
+dotnet tool install --global dotnet-ef
+```
+
+<Tip>
+  **要添加到现有应用中？**
+
+  请跳过 `dotnet new web`。如果您的应用将 EF Core 与 SQLite 或其他提供程序搭配使用：
+
+  * 运行 `dotnet remove package Microsoft.EntityFrameworkCore.Sqlite` 和 `dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL`。如果尚未安装 `Microsoft.EntityFrameworkCore.Design` 和 `dotnet-ef` 工具，也请一并安装。
+  * 在 `Program.cs` 中，将 `UseSqlite` 替换为 `UseNpgsql`，并从 `appsettings.json` 中删除 SQLite 连接字符串。
+  * 迁移因提供程序而异，因此请删除 `Migrations` 文件夹。您将在[创建 schema](#migrations) 中重新创建初始迁移。
+
+  然后继续执行[配置连接](#configure-connection)，将其中的 `TodoDb` 替换为您应用的连接字符串名称，并跳过[定义模型](#model)。
+</Tip>
+
+<Warning>
+  **在 macOS 上启用 TLS 1.3**
+
+  ClickHouse Managed Postgres 仅接受 TLS 1.3。macOS 上的 .NET 默认不支持 TLS 1.3，因此所有连接都会失败，报错 `Exception while performing SSL handshake`，内部错误为 `bad protocol version`。.NET 10 可以改用 Apple 的 Network.framework，后者支持 TLS 1.3。请将以下内容添加到 `TodoApi.csproj` 的 `<Project>` 元素中：
+
+  ```xml
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Net.Security.UseNetworkFramework" Value="true" />
+  </ItemGroup>
+  ```
+
+  该设置对应用和 `dotnet ef` 均生效，在 Linux 或 Windows 上则不起作用。您也可以改为设置环境变量 `DOTNET_SYSTEM_NET_SECURITY_USENETWORKFRAMEWORK=1`。
+</Warning>
+
+## 配置连接 {#configure-connection}
+
+将下载的 CA 证书移动到项目目录中，并重命名为 `ca-certificate.pem`。
+
+为应用创建一个数据库。将 `<PASSWORD>` 和主机地址替换为 **Connect** 弹窗中显示的值：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_dotnet;"
+```
+
+```text
+CREATE DATABASE
+```
+
+使用 [Secret Manager](https://learn.microsoft.com/aspnet/core/security/app-secrets) 存储连接字符串，以免密码出现在 `appsettings.json` 中或被提交到源代码管理系统：
+
+```bash
+dotnet user-secrets init
+dotnet user-secrets set "ConnectionStrings:TodoDb" "Host=your-instance.pg.clickhouse.cloud;Port=5432;Database=guide_dotnet;Username=postgres;Password=<PASSWORD>;SSL Mode=VerifyFull;Root Certificate=ca-certificate.pem"
+```
+
+ASP.NET Core 会在 `Development` 环境中读取用户机密信息，而 `dotnet run` 和 `dotnet ef` 默认就使用该环境。在生产环境中，请改为设置环境变量 `ConnectionStrings__TodoDb`。
+
+设置 `SSL Mode=VerifyFull` 后，Npgsql 会检查服务器证书是否由 `Root Certificate` 中指定的 CA 签发，以及该证书是否与主机名匹配。对于相对形式的 `Root Certificate` 路径，Npgsql 会基于当前工作目录进行解析；使用 `dotnet run` 和 `dotnet ef` 时，当前工作目录即为项目目录。如果从其他位置启动应用，请使用绝对路径。
+
+<Note>
+  如果 CA 不正确或缺失，或者主机与证书不匹配 (例如通过 IP 地址连接时) ，连接将失败并报错 `Exception while performing SSL handshake`，内部错误为 `The remote certificate was rejected by the provided RemoteCertificateValidationCallback`。如果 `Root Certificate` 文件不存在，内部错误则为 `Could not find file`。另请注意：
+
+  * Npgsql 的默认值为 `SSL Mode=Prefer`，而 `SSL Mode=Require` 同样不会验证证书，即使设置了 `Root Certificate` 也是如此。请始终设置 `SSL Mode=VerifyFull`。
+  * Npgsql 会读取 `PGSSLROOTCERT` 和 `PGPASSWORD` 环境变量，但不会读取 `PGHOST` 或 `PGSSLMODE`。因此，仅靠 Connect 弹窗中 **env** 选项卡提供的变量是不够的。
+</Note>
+
+## 定义模型 {#model}
+
+创建 `Todo.cs`，并在其中定义实体类：
+
+```csharp title="Todo.cs"
+public class Todo
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public bool IsDone { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+```
+
+创建 `TodoDb.cs` 文件，并在其中定义 `DbContext`：
+
+```csharp title="TodoDb.cs"
+using Microsoft.EntityFrameworkCore;
+
+public class TodoDb(DbContextOptions<TodoDb> options) : DbContext(options)
+{
+    public DbSet<Todo> Todos => Set<Todo>();
+}
+```
+
+将 `Program.cs` 的内容替换为以下代码。这段代码通过 Npgsql 提供程序注册 `TodoDb`，并为每个操作映射一个端点。如果是现有应用，只需添加使用 `UseNpgsql` 的 `AddDbContext` 调用即可：
+
+```csharp title="Program.cs"
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddDbContext<TodoDb>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("TodoDb")));
+
+var app = builder.Build();
+
+app.MapGet("/todos", async (TodoDb db) =>
+    await db.Todos.OrderBy(t => t.Id).ToListAsync());
+
+app.MapGet("/todos/{id}", async (int id, TodoDb db) =>
+    await db.Todos.FindAsync(id) is Todo todo ? Results.Ok(todo) : Results.NotFound());
+
+app.MapPost("/todos", async (Todo todo, TodoDb db) =>
+{
+    db.Todos.Add(todo);
+    await db.SaveChangesAsync();
+    return Results.Created($"/todos/{todo.Id}", todo);
+});
+
+app.MapPut("/todos/{id}", async (int id, Todo input, TodoDb db) =>
+{
+    var todo = await db.Todos.FindAsync(id);
+    if (todo is null) return Results.NotFound();
+
+    todo.Title = input.Title;
+    todo.IsDone = input.IsDone;
+    await db.SaveChangesAsync();
+    return Results.Ok(todo);
+});
+
+app.MapDelete("/todos/{id}", async (int id, TodoDb db) =>
+    await db.Todos.Where(t => t.Id == id).ExecuteDeleteAsync() == 1
+        ? Results.NoContent()
+        : Results.NotFound());
+
+// Reports the TLS version of the app's own database session
+app.MapGet("/db/tls", async (TodoDb db) =>
+    await db.Database
+        .SqlQuery<string>($"SELECT coalesce(version, 'none') AS \"Value\" FROM pg_stat_ssl WHERE pid = pg_backend_pid()")
+        .SingleAsync());
+
+app.Run();
+```
+
+`/db/tls` 端点会查询应用自身数据库会话的 `pg_stat_ssl`，以便您确认该连接已加密。
+
+## 创建 schema {#migrations}
+
+根据模型生成迁移文件并执行：
+
+```bash
+dotnet ef migrations add InitialCreate
+dotnet ef database update
+```
+
+```text
+Build started...
+Build succeeded.
+Done. To undo this action, use 'ef migrations remove'
+Build started...
+Build succeeded.
+Failed executing DbCommand (53ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+Acquiring an exclusive lock for migration application. See https://aka.ms/efcore-docs-migrations-lock for more information if this takes too long.
+Applying migration '20261001144437_InitialCreate'.
+Done.
+```
+
+`dotnet ef migrations add` 会将迁移写入 `Migrations` 文件夹，`dotnet ef database update` 则会应用该迁移，并将其记录到 `__EFMigrationsHistory` 表中。首次运行时，EF Core 在创建该表之前，会记录一条从 `__EFMigrationsHistory` 执行 `SELECT` 失败的日志，可直接忽略。
+
+在应用迁移之前，EF Core 会先获取一个锁，以防两个部署同时迁移同一个数据库。使用 Npgsql 时，该锁是在迁移事务内对 `__EFMigrationsHistory` 执行的 `LOCK TABLE`，而非会话级的咨询锁，因此事务结束时锁即被释放。
+
+## 运行与验证 {#verify}
+
+在端口 `3115` 上启动应用：
+
+```bash
+dotnet run --urls http://localhost:3115
+```
+
+```text
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:3115
+```
+
+在另一个终端中，创建两个待办事项，将第一个标记为已完成，然后删除第二个：
+
+```bash
+curl -w "\n" -X POST localhost:3115/todos -H "Content-Type: application/json" -d '{"title": "Try EF Core"}'
+curl -w "\n" -X POST localhost:3115/todos -H "Content-Type: application/json" -d '{"title": "Write a migration"}'
+curl -w "\n" -X PUT localhost:3115/todos/1 -H "Content-Type: application/json" -d '{"title": "Try EF Core", "isDone": true}'
+curl -w "\n" -X DELETE localhost:3115/todos/2
+```
+
+```text
+{"id":1,"title":"Try EF Core","isDone":false,"createdAt":"2026-10-01T14:44:52.0478356Z"}
+{"id":2,"title":"Write a migration","isDone":false,"createdAt":"2026-10-01T14:44:52.8462161Z"}
+{"id":1,"title":"Try EF Core","isDone":true,"createdAt":"2026-10-01T14:44:52.047835Z"}
+
+```
+
+`DELETE` 请求返回 `204 No Content`，因此对应的行为空。
+
+检查应用的数据库会话是否使用 TLS：
+
+```bash
+curl localhost:3115/db/tls
+```
+
+```text
+TLSv1.3
+```
+
+在浏览器中打开 [http://localhost:3115/todos](http://localhost:3115/todos)，即可查看剩余的待办事项：
+
+```json
+[{"id":1,"title":"Try EF Core","isDone":true,"createdAt":"2026-10-01T14:44:52.047835Z"}]
+```
+
+要在控制台中查看数据，请在服务的左侧边栏中打开 **SQL 控制台**，依次展开 `guide_dotnet` 和 `public`，然后点击 `Todos` 表。EF Core 会将类名和属性名作为带引号的标识符，因此表名为 `"Todos"`，列名为 `"Id"`、`"Title"` 等。表中保留了剩下的这一行：
+
+| Id | Title       | IsDone | CreatedAt                     |
+| -- | ----------- | ------ | ----------------------------- |
+| 1  | Try EF Core | true   | 2026-10-01 14:44:52.047835+00 |
+
+## 使用 PgBouncer {#pgbouncer}
+
+Npgsql 为每个应用实例最多打开 100 个连接 (`Maximum Pool Size`) 。如果多个实例的连接总数接近 Postgres 的连接上限，请改为通过内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) 连接应用。在 **Connect** 弹窗中选择 **via PgBouncer**，并将连接字符串中的端口改为 `6432`：
+
+```bash
+dotnet user-secrets set "ConnectionStrings:TodoDb" "Host=your-instance.pg.clickhouse.cloud;Port=6432;Database=guide_dotnet;Username=postgres;Password=<PASSWORD>;SSL Mode=VerifyFull;Root Certificate=ca-certificate.pem"
+```
+
+同一个 CA 证书仍然适用。PgBouncer 以事务池化模式运行，因此每个事务都可能在不同的 Postgres 连接上执行。如果使用 EF Core 和 Npgsql 的默认设置，则无需做其他任何更改：
+
+* **预处理语句：** EF Core 不会预处理语句，而 Npgsql 的自动预处理默认处于关闭状态 (`Max Auto Prepare=0`) ，因此查询使用的是未命名语句，可以通过 PgBouncer 正常工作。请保持此配置。通过 PgBouncer 时，由 `Max Auto Prepare` 或 `NpgsqlCommand.Prepare` 创建的预处理语句会间歇性失败，并报错 `08P01: prepared statement did not exist` (设置 `No Reset On Close=true` 可避免此问题) ；而在迁移更改了某列的类型之后，即使使用新连接，它们也会持续报错 `cached plan must not change result type`。如需使用预处理语句，请直接连接。
+* **会话状态：** 通过 `SET` 进行的设置 (包括 `search_path`) 不会在事务之间保留，请改为在事务内使用 `SET LOCAL`。PgBouncer 会拒绝 `Search Path` 和 `Options` 连接字符串关键字，并报错 `unsupported startup parameter`；`Timezone` 和 `Application Name` 则可以正常使用。
+* **迁移：** `dotnet ef database update` 同样可以通过 PgBouncer 运行，因为迁移锁是表锁，会随所在事务的结束而释放。
+* **TLS 检查：** `pg_stat_ssl` 反映的是 PgBouncer 与 Postgres 之间的连接，因此 `/db/tls` 会返回 `none`。应用程序到 PgBouncer 的连接仍会经过验证：如果使用了错误的 CA 证书，连接同样会失败。
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS
+* [设置](/zh/products/managed-postgres/settings)：Postgres 和 PgBouncer 参数，例如 `max_connections`
+* [只读副本](/zh/products/managed-postgres/read-replicas)：将只读查询路由到副本
+* [安全](/zh/products/managed-postgres/security)：IP 访问列表和私有网络连接

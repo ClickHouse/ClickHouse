@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-old-analyzer
+# Tags: no-shared-merge-tree
 # no-shared-merge-tree: STREAM reads are only exercised on plain MergeTree here, like the other streaming .sh tests.
-# no-old-analyzer: SELECT ... STREAM throws NOT_IMPLEMENTED, so no subscription is held and the ALTER is accepted.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

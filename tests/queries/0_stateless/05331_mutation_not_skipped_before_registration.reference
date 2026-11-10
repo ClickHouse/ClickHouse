@@ -1,0 +1,6 @@
+-- the DROP COLUMN mutation is selected first
+1	1
+-- a merge materializes the DROP COLUMN first
+active parts	1
+1	1
+2	1

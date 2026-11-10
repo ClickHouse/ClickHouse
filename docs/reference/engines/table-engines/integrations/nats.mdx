@@ -72,6 +72,9 @@ Optional parameters:
 - `nats_token` - NATS auth token. When it is stored in a named collection defined in the server configuration file, the query cannot override the collection's `nats_url` or `nats_server_list`.
 - `nats_credential_file` - Path to a NATS credentials file. It is accepted only from a named collection defined in the server configuration file whose `nats_url` and `nats_server_list` are not overridden by the query, because the server opens the path with its own privileges. In a query, pass the contents of the file in `nats_credentials` instead.
 - `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed). Because it is the only spelling a query can use, it replaces a `nats_credential_file` inherited from a named collection instead of conflicting with it - unless the operator locked that path with `<nats_credential_file overridable="false">`. It cannot be assigned the empty string to drop the credentials a named collection carries.
+- `nats_ca_file` - Path to a file with the trusted CA certificates used to verify the NATS server certificate. Requires `nats_secure`. Like `nats_credential_file`, it is accepted only from a named collection defined in the server configuration file whose `nats_url` and `nats_server_list` are not overridden by the query, because the server opens the path with its own privileges.
+- `nats_client_cert_file` - Path to the client certificate presented to the NATS server. Requires `nats_secure` and `nats_client_key_file`. Accepted from the same sources as `nats_ca_file`.
+- `nats_client_key_file` - Path to the private key of `nats_client_cert_file`. Accepted from the same sources as `nats_ca_file`.
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
 - `nats_commit_on_select` - Commit messages when query is made. Applies to JetStream only; core NATS has no acknowledgements. Default: `0`.
@@ -82,6 +85,12 @@ SSL connection:
 For secure connection use `nats_secure = 1`.
 Certificate verification is controlled by the `CLICKHOUSE_NATS_TLS_SECURE` environment variable;
 If the certificate is expired, self-signed, missing, or otherwise invalid, disable verification by setting `CLICKHOUSE_NATS_TLS_SECURE=0`.
+
+A server certificate signed by a private CA is verified by pointing `nats_ca_file` at the CA certificate,
+which is preferable to turning verification off. When the server requires client certificates,
+supply them with `nats_client_cert_file` and `nats_client_key_file`. All three are operator settings:
+they come from a named collection defined in the server configuration file. Every file is read when
+the table connects, so an unreadable or malformed one fails the query instead of the handshake.
 
 Writing to NATS table:
 

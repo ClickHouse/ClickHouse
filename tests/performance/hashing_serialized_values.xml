@@ -1,0 +1,15 @@
+<test>
+    <create_query>CREATE TABLE states (st AggregateFunction(groupArray, String)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE json_values (j JSON) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO states SELECT groupArrayState(repeat('q', 200)) FROM numbers(2000000) GROUP BY number</fill_query>
+    <fill_query>INSERT INTO json_values SELECT concat('{{"a":', number::String, '}}')::JSON FROM numbers_mt(4000000)</fill_query>
+
+    <!-- Types with no contiguous in-memory representation are hashed by serializing every row. -->
+    <query>SELECT count() FROM numbers(20000000) WHERE NOT ignore(xxHash64(number::Variant(UInt64, String)))</query>
+    <query>SELECT count() FROM json_values WHERE NOT ignore(sipHash64(j)) SETTINGS max_threads = 1</query>
+    <!-- Aggregate states are hashed by serializing each state. -->
+    <query>SELECT uniqExact(st) FROM states SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS states</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_values</drop_query>
+</test>

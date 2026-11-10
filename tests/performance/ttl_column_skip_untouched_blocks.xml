@@ -1,0 +1,82 @@
+<test>
+    <create_query>
+        CREATE TABLE ttl_column_skip_untouched_blocks_src
+        (
+            ingested_at DateTime,
+            event_time DateTime,
+            tenant_id UInt32,
+            event_id UInt64,
+            request_body String
+        )
+        ENGINE = MergeTree
+        PARTITION BY tuple()
+        ORDER BY (event_time, tenant_id, event_id)
+        SETTINGS
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0,
+            merge_max_block_size = 8192,
+            vertical_merge_algorithm_min_rows_to_activate = 1000000000,
+            max_number_of_merges_with_ttl_in_pool = 0
+    </create_query>
+
+    <create_query>
+        CREATE TABLE ttl_column_skip_untouched_blocks
+        (
+            ingested_at DateTime,
+            event_time DateTime,
+            tenant_id UInt32,
+            event_id UInt64,
+            request_body String TTL event_time + INTERVAL 30 DAY
+        )
+        ENGINE = MergeTree
+        PARTITION BY tuple()
+        ORDER BY (event_time, tenant_id, event_id)
+        SETTINGS
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0,
+            merge_max_block_size = 8192,
+            vertical_merge_algorithm_min_rows_to_activate = 1000000000,
+            max_number_of_merges_with_ttl_in_pool = 0
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES ttl_column_skip_untouched_blocks_src</fill_query>
+
+    <fill_query>
+        INSERT INTO ttl_column_skip_untouched_blocks_src
+        SELECT
+            now(),
+            subtractDays(now(), 31 + number % 14),
+            number % 10000,
+            number,
+            concat(toString(number), repeat('x', 1024))
+        FROM numbers(200000)
+        SETTINGS max_threads = 1, max_insert_threads = 1
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO ttl_column_skip_untouched_blocks_src
+        SELECT
+            now(),
+            subtractDays(now(), 1 + number % 14),
+            number % 10000,
+            number + 200000,
+            concat(toString(number + 200000), repeat('x', 1024))
+        FROM numbers(200000)
+        SETTINGS max_threads = 1, max_insert_threads = 1
+    </fill_query>
+
+    <fill_query>SYSTEM START MERGES ttl_column_skip_untouched_blocks_src</fill_query>
+    <fill_query>OPTIMIZE TABLE ttl_column_skip_untouched_blocks_src FINAL</fill_query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "
+            TRUNCATE TABLE ttl_column_skip_untouched_blocks;
+            ALTER TABLE ttl_column_skip_untouched_blocks ATTACH PARTITION tuple() FROM ttl_column_skip_untouched_blocks_src;
+            OPTIMIZE TABLE ttl_column_skip_untouched_blocks FINAL;
+        "
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS ttl_column_skip_untouched_blocks</drop_query>
+    <drop_query>SYSTEM START MERGES ttl_column_skip_untouched_blocks_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ttl_column_skip_untouched_blocks_src</drop_query>
+</test>

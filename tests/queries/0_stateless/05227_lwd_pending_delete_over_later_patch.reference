@@ -1,0 +1,10 @@
+on the fly
+5	1
+without the patch
+5	2
+materialized
+5	1
+patch first, on the fly
+0
+patch first, materialized
+0

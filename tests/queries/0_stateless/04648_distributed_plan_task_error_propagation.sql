@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-old-analyzer, no-parallel
+-- Tags: no-fasttest, no-parallel
 -- no-fasttest: a remote distributed plan needs the stateless worker configuration.
--- no-old-analyzer: make_distributed_plan requires the analyzer.
 -- no-parallel: enables a global failpoint that would disrupt other distributed-plan queries.
 
 -- A failing worker task records its exception and cancels the query. The failure can land while the
@@ -27,6 +26,6 @@ SYSTEM DISABLE FAILPOINT distributed_plan_record_failure_while_starting_tasks;
 SELECT count() FROM (SELECT x, count() FROM t_task_error_propagation GROUP BY x)
 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 0,
     distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
-    distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0;
+    distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0, distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_task_error_propagation;

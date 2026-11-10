@@ -1,0 +1,93 @@
+-- 1. LEFT, key not selected, full_sorting_merge
+a	10
+b	\N
+c	30
+c	30
+c	31
+c	31
+-- 2. LEFT, key selected, swap 0, hash
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+-- 2. LEFT, key selected, swap 0, full_sorting_merge
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+-- 2. LEFT, key selected, swap 0, parallel_full_sorting_merge
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+-- 2b. parallel_full_sorting_merge is sharded, full_sorting_merge is not
+1
+1
+-- 3. LEFT, key selected, swap 1, full_sorting_merge
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+-- 4. FULL, key selected, swap 0, hash
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+\N	d	40
+-- 4. FULL, key selected, swap 0, full_sorting_merge
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+\N	d	40
+-- 4. FULL, key selected, swap 1, full_sorting_merge
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+\N	d	40
+-- 4. FULL, key selected, swap 0, parallel_full_sorting_merge
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+\N	d	40
+-- 5. LEFT, selected right key type, full_sorting_merge
+a	a	LowCardinality(Nullable(String))
+b	\N	LowCardinality(Nullable(String))
+c	c	LowCardinality(Nullable(String))
+c	c	LowCardinality(Nullable(String))
+c	c	LowCardinality(Nullable(String))
+c	c	LowCardinality(Nullable(String))
+-- 6. LEFT, LowCardinality(UInt16) key, hash
+1	1	10
+2	\N	\N
+3	3	30
+-- 6. LEFT, LowCardinality(UInt16) key, full_sorting_merge
+1	1	10
+2	\N	\N
+3	3	30
+-- 7. ASOF LEFT, LowCardinality key, hash
+a	a	140
+b	\N	\N
+c	c	200
+-- 7. ASOF LEFT, LowCardinality key, full_sorting_merge
+a	a	140
+b	\N	\N
+c	c	200
