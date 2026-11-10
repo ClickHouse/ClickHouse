@@ -58,8 +58,13 @@ namespace DataLakeStorageSetting
 template <typename Definition, typename Configuration, bool is_data_lake>
 ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
-    if (!object_storage)
+    /// A client created read-only does not create a missing Azure container, which a write needs. The container
+    /// is created only while a client is built, so a cached writable client can also serve a read-only request.
+    if (!object_storage || (object_storage_is_readonly && !create_readonly))
+    {
         object_storage = configuration->createObjectStorage(context, create_readonly, std::nullopt);
+        object_storage_is_readonly = create_readonly;
+    }
     return object_storage;
 }
 
@@ -196,12 +201,12 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
 
 template <typename Definition, typename Configuration, bool is_data_lake>
 ColumnsDescription TableFunctionObjectStorage<
-    Definition, Configuration, is_data_lake>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+    Definition, Configuration, is_data_lake>::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (configuration->structure == "auto")
     {
         configuration->check(context);
-        auto storage = getObjectStorage(context, !is_insert_query);
+        auto storage = getObjectStorage(context, /*create_readonly=*/ true);
         configuration->lazyInitializeIfNeeded(object_storage, context);
 
         std::string sample_path;
@@ -2300,9 +2305,11 @@ A table with the specified structure for reading data in the specified Paimon ta
 
 ## Limitations {#limitations}
 
-Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
-snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
-declares `primary-key` therefore throws.
+Merge-on-read is not implemented, so a primary-key table is read only where Paimon reads it without merging: a bucket is
+read when all its data files are above level 0, are known to have no retract rows, and are in one level. With
+`deletion-vectors.enabled` or `'merge-engine' = 'first-row'` the files may be in several levels, and, unless
+`batch-scan-mode` is set to a mode other than `none`, level-0 files are not read until they are compacted, as in Paimon.
+Reading any other bucket throws; a full compaction in Paimon (`compact_strategy => 'full'`) makes it readable.
 
 Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
 contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists

@@ -1,4 +1,5 @@
 #include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
 #include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 
