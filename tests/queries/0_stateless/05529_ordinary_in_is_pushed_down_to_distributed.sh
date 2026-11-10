@@ -89,6 +89,8 @@ Distributed, table may be cut|id in (select id from some_dist) settings max_rows
 Distributed, table may not be cut, the set is built|id in (select id from some_dist) settings max_rows_to_transfer = 4, max_bytes_to_transfer = 32, transfer_overflow_mode = 'break'|(select id from events_dist union all select id from some)
 Distributed, the set is built, with too many rows|id in (select id from some_dist) settings max_rows_to_transfer = 3|(select id from events_dist union all select id from some)
 Distributed, the set is built, with too many bytes|id in (select id from some_dist) settings max_bytes_to_transfer = 31|(select id from events_dist union all select id from some)
+Distributed, the set is built, with as many bytes of other types|id in (select toNullable(id) from some_dist) settings max_bytes_to_transfer = 36|(select id from events_dist union all select id from some)
+Distributed, the set is built, with too many bytes of other types|id in (select toNullable(id) from some_dist) settings max_bytes_to_transfer = 35|(select id from events_dist union all select id from some)
 Distributed, reading may be cut|id in (select id from some_dist) settings max_rows_to_read = 1000000, read_overflow_mode = 'break'
 Distributed, reading may be cut on the shards|id in (select id from some_dist) settings max_rows_to_read_leaf = 1000000, read_overflow_mode_leaf = 'break'
 Distributed, time may be cut|id in (select id from some_dist) settings max_execution_time = 1000, timeout_overflow_mode = 'break'

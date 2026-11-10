@@ -334,17 +334,8 @@ void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
     set_and_key->set->setHeader(source_header->getColumnsWithTypeAndName());
 }
 
-void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_)
+static Columns convertSetElements(const Set & set, const DataTypes & expected_types)
 {
-    const auto & set = *set_and_key->set;
-
-    LOG_TRACE(getLogger("FutureSetFromSubquery"), "Building external table from set of {} elements", set.getTotalRowCount());
-    if (set.empty())
-        return;
-
-    auto metadata = external_table_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    const auto & expected_columns = metadata->getColumns().getAllPhysical();
-
     Columns set_elements = set.getSetElements();
     const auto & set_types = set.getElementsTypes();
 
@@ -355,14 +346,13 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     converted_columns.reserve(set_elements.size());
 
     size_t idx = 0;
-    for (const auto & expected_col : expected_columns)
+    for (const auto & expected_type : expected_types)
     {
         if (idx >= set_elements.size())
             break;
 
         const auto & set_column = set_elements[idx];
         const auto & set_type = set_types[idx];
-        const auto & expected_type = expected_col.type;
 
         if (!set_type->equals(*expected_type))
             converted_columns.push_back(castColumn({set_column, set_type, ""}, expected_type));
@@ -372,7 +362,20 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
         ++idx;
     }
 
-    Chunk set_chunk(std::move(converted_columns), set.getTotalRowCount());
+    return converted_columns;
+}
+
+void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_)
+{
+    const auto & set = *set_and_key->set;
+
+    LOG_TRACE(getLogger("FutureSetFromSubquery"), "Building external table from set of {} elements", set.getTotalRowCount());
+    if (set.empty())
+        return;
+
+    auto metadata = external_table_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+
+    Chunk set_chunk(convertSetElements(set, metadata->getColumns().getAllPhysical().getTypes()), set.getTotalRowCount());
     auto pipeline = QueryPipeline(external_table_->write({}, metadata, nullptr, /*async_insert=*/false));
     PushingPipelineExecutor executor(pipeline);
     executor.push(std::move(set_chunk));
@@ -414,11 +417,23 @@ bool FutureSetFromSubquery::canFillTableForLocalIn(const ContextPtr & context) c
     if (!set.isCreated())
         return is_build_planned;
 
+    if (!set.hasExplicitSetElements())
+        return false;
+
     /// A build without a table does not check these limits.
-    const UInt64 max_rows = settings[Setting::max_rows_to_transfer];
-    const UInt64 max_bytes = settings[Setting::max_bytes_to_transfer];
-    return set.hasExplicitSetElements() && (!max_rows || set.getTotalRowCount() <= max_rows)
-        && (!max_bytes || set.getSetElementsBytes() <= max_bytes);
+    if (const UInt64 max_rows = settings[Setting::max_rows_to_transfer]; max_rows && set.getTotalRowCount() > max_rows)
+        return false;
+
+    if (const UInt64 max_bytes = settings[Setting::max_bytes_to_transfer]; max_bytes && !set.empty())
+    {
+        size_t bytes = 0;
+        for (const auto & column : convertSetElements(set, source_header->getDataTypes()))
+            bytes += column->byteSize();
+
+        return bytes <= max_bytes;
+    }
+
+    return true;
 }
 
 std::pair<String, StoragePtr> FutureSetFromSubquery::getTableForLocalIn(const ContextPtr & context)

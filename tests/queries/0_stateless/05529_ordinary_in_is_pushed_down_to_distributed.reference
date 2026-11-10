@@ -59,6 +59,8 @@ Distributed, table may be cut	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`
 Distributed, table may not be cut, the set is built	in(`id`, `_data_`)
 Distributed, the set is built, with too many rows	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
 Distributed, the set is built, with too many bytes	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, the set is built, with as many bytes of other types	in(`id`, `_data_`)
+Distributed, the set is built, with too many bytes of other types	in(`id`, (SELECT toNullable(`__table1`.`id`) AS `toNullable(id)` FROM `db`.`some_dist` AS `__table1`))
 Distributed, reading may be cut	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
 Distributed, reading may be cut on the shards	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
 Distributed, time may be cut	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
