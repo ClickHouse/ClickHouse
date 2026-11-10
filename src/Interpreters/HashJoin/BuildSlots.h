@@ -49,6 +49,9 @@ public:
     /// share of `reserve_keys_` keys at its first insert, under its own lock.
     void setReserve(size_t reserve_keys_) { reserve_keys = reserve_keys_; }
 
+    /// Whether `reserveOnFirstInsert` can reserve anything for `slot`. Call under the lock of `slot`.
+    bool mayReserve(size_t slot) const { return reserve_keys && !reserved[slot]; }
+
     /// Call under the lock of `slot`. On the first insert of `slot` into `map`, reserves the
     /// slot's share of `reserve_keys` over the slot's buckets. Returns that share, or 0 when nothing was reserved.
     /// The caller uses the returned share only for `HashJoinPreallocatedElementsInHashTables`.

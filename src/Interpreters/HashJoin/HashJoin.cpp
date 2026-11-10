@@ -1181,11 +1181,18 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                 maps_kind,
                 [&]<JoinKind kind_, JoinStrictness strictness_, typename Maps>()
                 {
-                    const BuildResult result = HashJoinMethods<kind_, strictness_, Maps>::insertFromBlockImpl(
-                        *this,
-                        *data->tables[onexpr_idx],
+                    static_assert((strictness_ == JoinStrictness::Asof) == std::is_same_v<Maps, HashJoin::MapsAsof>);
+                    const HashJoinTable::InsertSettings settings{
+                        .any_take_last_row = anyTakeLastRow(),
+                        .enable_software_prefetch = enableSoftwarePrefetch(),
+                        .must_keep_right_blocks = mustKeepRightBlocks(),
+                        .asof_type = getAsofType(),
+                        .asof_inequality = getAsofInequality()};
+                    const BuildResult result = data->tables[onexpr_idx]->insert<Maps>(
+                        settings,
                         {key_columns, stored_columns->selector, stored_columns->block_no, null_map, join_mask_col},
-                        context.getStream());
+                        context.getStream(),
+                        [&](size_t bytes) { data->addBytes(data->bucket_bytes, bytes); });
                     is_inserted = result.is_inserted;
                     if (!result.all_values_unique)
                         all_values_unique.store(false, std::memory_order_relaxed);
