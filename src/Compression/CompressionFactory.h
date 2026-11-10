@@ -215,6 +215,8 @@ private:
 
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;
+    /// The family name of each codec family code, for `FactoryRestrictions`.
+    UnorderedMapWithMemoryTracking<uint8_t, String> family_code_to_name;
     /// The source file where each codec family was registered, keyed by family name. See `getCodecDocumentations`.
     UnorderedMapWithMemoryTracking<String, const char *> family_name_with_source;
     /// The properties declared by each codec family at registration, keyed by family name.

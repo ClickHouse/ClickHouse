@@ -2,6 +2,7 @@
 #include <Disks/loadLocalDiskConfig.h>
 
 #include <Common/Config/ConfigurationWithUsageTracking.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Interpreters/Context.h>
 
@@ -83,6 +84,8 @@ DiskPtr DiskFactory::create(
     {
         return nullptr;
     }
+
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::Disks, disk_type);
 
     const auto & disk_creator = found->second;
     DiskPtr disk = disk_creator(name, *tracked_config, config_prefix, context, map, attach, custom_disk);

@@ -1742,6 +1742,79 @@ For example:
 </remote_url_allow_hosts>
 ```
 
+## factory_restrictions {#factory_restrictions}
+Allow or deny lists of the objects that the server can create: formats, table engines, functions and so on. Each list is a subsection named after the kind of objects. If there is no subsection for a kind, all objects of that kind are allowed.
+
+A subsection contains exactly one of the following:
+- `<allow>`: only the listed objects are allowed. An empty `<allow/>` disables every object of the kind.
+- `<deny>`: the listed objects are disallowed, and the rest are allowed.
+
+Each object is an empty element named after it, for example `<URL/>`. Names are case-insensitive. An object matches a list if either the name used in the query or the name it is an alias of is listed. For example, denying `lower` also denies its alias `lcase`.
+
+Supported subsections:
+
+| Subsection | Objects |
+|---|---|
+| `formats` | Input and output formats, for example `CSV` |
+| `table_engines` | Table engines, including `View`, `MaterializedView` and `Dictionary` |
+| `table_functions` | Table functions, for example `url` |
+| `database_engines` | Database engines, for example `MySQL` |
+| `dictionary_sources` | Dictionary sources, for example `executable` |
+| `dictionary_layouts` | Dictionary layouts, for example `flat` |
+| `disks` | Disk types, for example `s3` |
+| `backup_engines` | Backup engines, for example `S3` |
+| `functions` | Regular functions |
+| `aggregate_functions` | Aggregate functions |
+| `aggregate_function_combinators` | Aggregate function combinators, for example `If` |
+| `data_types` | Data type families |
+| `compression_codecs` | Compression codecs |
+| `skip_indexes` | Types of data skipping indexes, for example `bloom_filter` |
+| `statistics` | Types of column statistics, for example `tdigest` |
+
+Creating a disallowed object fails with the `SUPPORT_IS_DISABLED` error. This includes objects that already exist: for example, a table with a disallowed engine cannot be attached after a restart, and the data compressed with a disallowed codec cannot be read.
+
+Keep in mind that the server itself also creates some of these objects. For example, it uses the `Native` and `TabSeparated` formats and many functions and data types internally, and `MergeTree` tables use the `ZSTD` codec internally, so denying `ZSTD` breaks all `MergeTree` tables. Therefore, prefer `deny` lists for `formats`, `functions`, `aggregate_functions` and `data_types`.
+
+The section is reloaded without a restart. The new lists apply to the objects created after the reload. If the section is invalid, the server refuses to reload the configuration and keeps the previous lists.
+
+Note that table engines and table functions are restricted separately: to disable both the `URL` engine and the `url` table function, list each of them in its subsection.
+
+For example:
+
+```xml
+<factory_restrictions>
+    <table_engines>
+        <deny>
+            <URL/>
+            <Kafka/>
+        </deny>
+    </table_engines>
+    <table_functions>
+        <deny>
+            <url/>
+        </deny>
+    </table_functions>
+    <dictionary_sources>
+        <allow>
+            <clickhouse/>
+            <null/>
+        </allow>
+    </dictionary_sources>
+</factory_restrictions>
+```
+
+The same configuration in YAML:
+
+```yaml
+factory_restrictions:
+  table_engines:
+    deny: {URL: "", Kafka: ""}
+  table_functions:
+    deny: {url: ""}
+  dictionary_sources:
+    allow: {clickhouse: "", "null": ""}
+```
+
 ## timezone {#timezone}
 The server's time zone.
 

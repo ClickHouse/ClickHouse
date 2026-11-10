@@ -9,6 +9,7 @@
 #include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Common/StringUtils.h>
@@ -239,6 +240,9 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
     String family_name = getAliasToOrName(family_name_param);
 
     const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
+    if (creator)
+        FactoryRestrictions::instance().check(FactoryRestrictions::Kind::DataTypes, family_name_param, family_name);
+
     DataTypePtr data_type;
     if constexpr (nullptr_on_error)
     {
