@@ -7,6 +7,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/assert_cast.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -455,6 +456,12 @@ public:
             if (!done)
             {
                 /// Rollback partial writes.
+                /// It must not be interrupted by the memory limit: otherwise the table is left with
+                /// the in-memory marks out of sync, and the next `INSERT` fails with a logical error.
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+                /// Remove excessive marks first: it cannot fail, unlike the truncation of files below.
+                storage.removeUnsavedMarks(lock);
 
                 /// No more writing.
                 for (auto & [_, stream] : streams)
@@ -465,9 +472,6 @@ public:
 
                 /// Truncate files to the older sizes.
                 storage.file_checker.repair();
-
-                /// Remove excessive marks.
-                storage.removeUnsavedMarks(lock);
             }
         }
         catch (...)
@@ -1473,7 +1477,7 @@ void registerStorageLog(StorageFactory & factory)
         String disk_name = getDiskName(*args.storage_def, args.getContext());
         /// A custom disk referred to by name is kept registered for as long as the table uses it. The
         /// registration is taken together with the disk, so the disk cannot appear or be released in between.
-        auto [disk, custom_disk_registration] = args.getContext()->getDiskWithCustomDiskRegistration(disk_name);
+        auto [disk, custom_disk_registration] = args.getDiskWithCustomDiskRegistration(disk_name);
 
         auto storage = std::make_shared<StorageLog>(
             args.engine_name,

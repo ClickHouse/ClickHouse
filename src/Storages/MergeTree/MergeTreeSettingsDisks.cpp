@@ -72,19 +72,21 @@ bool checkMergeTreeDiskSettings(const SettingsChanges & changes, ContextPtr cont
     return found_disk_setting;
 }
 
-CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(
+    SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     /// Only the `disk` and `storage_policy` settings yield a registration, and a setting occurs at most once.
     CustomDiskRegistrationPtr registration;
     for (auto & change : changes)
     {
-        if (auto change_registration = resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database))
+        if (auto change_registration = resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database, stored_definition))
             registration = std::move(change_registration);
     }
     return registration;
 }
 
-CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(
+    SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     if (change.name == "storage_policy")
     {
@@ -108,7 +110,8 @@ CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(SettingChange & 
 
     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
     {
-        auto custom_disk = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database);
+        auto custom_disk = DiskFromAST::createCustomDisk(
+            value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", custom_disk.disk_name);
         change.value = custom_disk.disk_name;
         return std::move(custom_disk.registration);

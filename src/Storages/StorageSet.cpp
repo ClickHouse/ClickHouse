@@ -389,7 +389,7 @@ void registerStorageSet(StorageFactory & factory)
         String disk_name = set_settings[SetSetting::disk];
         /// A custom disk referred to by name is kept registered for as long as the table uses it. The
         /// registration is taken together with the disk, so the disk cannot appear or be released in between.
-        auto [disk, custom_disk_registration] = args.getContext()->getDiskWithCustomDiskRegistration(disk_name);
+        auto [disk, custom_disk_registration] = args.getDiskWithCustomDiskRegistration(disk_name);
         auto storage = std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
         storage->setCustomDiskRegistration(std::move(custom_disk_registration));

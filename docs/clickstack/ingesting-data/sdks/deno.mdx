@@ -8,59 +8,30 @@ keywords: ['Deno ClickStack SDK', 'Deno OpenTelemetry', 'ClickStack Deno integra
 
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-<ClickStackIntegrates signals={['logs']} />
+Use Deno's built-in OpenTelemetry support to send logs, metrics, and traces to ClickStack. You do not need the ClickStack Node.js SDK or the legacy Deno logging package.
 
-<Note>
-Currently only supports OpenTelemetry Logging. For tracing support, [see the following guide](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example).
-</Note>
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## Logging {#logging}
+## Set up OpenTelemetry {#set-up-opentelemetry}
 
-Logging is supported by exporting a custom logger for the `std/log` module.
-
-**Example usage:**
-
-```typescript
-import * as log from 'https://deno.land/std@0.203.0/log/mod.ts';
-import { OpenTelemetryHandler } from 'npm:@hyperdx/deno';
-
-log.setup({
-  handlers: {
-    otel: new OpenTelemetryHandler('DEBUG'),
-  },
-
-  loggers: {
-    'my-otel-logger': {
-      level: 'DEBUG',
-      handlers: ['otel'],
-    },
-  },
-});
-
-log.getLogger('my-otel-logger').info('Hello from Deno!');
-```
-
-### Run the application {#run-the-application}
-
-<Tabs>
-<Tab title="Managed ClickStack">
+Follow the official [Deno OpenTelemetry setup instructions](https://docs.deno.com/runtime/fundamentals/open_telemetry/) to instrument your application. Configure the destination below, then enable Deno's built-in integration when starting your application:
 
 ```shell
-OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
-deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
+OTEL_DENO=true OTEL_SERVICE_NAME='my-deno-app' deno run app.ts
 ```
 
-</Tab>
+Add the permissions your application needs. Replace any example destinations or console-exporter settings from upstream instructions, including signal-specific endpoint overrides.
 
-<Tab title="ClickStack Open Source">
+## Configure your destination {#configure-destination}
+
+Set the OTLP HTTP endpoint and ingestion key for your ClickStack collector. Use `http://` if your collector does not have TLS configured. For collector setup, see [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry).
 
 ```shell
-OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
-OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
-deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
 ```
 
-</Tab>
-</Tabs>
+## Verify ingestion {#verify-ingestion}
+
+Start your application and generate activity. In ClickStack, select a recent time range and find your application's service name in Logs or Traces. Check Metrics after allowing time for export.

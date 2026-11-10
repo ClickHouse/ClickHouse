@@ -507,7 +507,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         /// A custom disk referred to by name is kept registered for as long as the table uses it. The
         /// registration is taken together with the disk, so the disk cannot appear or be released in between.
-        auto [disk, custom_disk_registration] = args.getContext()->getDiskWithCustomDiskRegistration(disk_name);
+        auto [disk, custom_disk_registration] = args.getDiskWithCustomDiskRegistration(disk_name);
 
         if (engine_args.size() < 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,

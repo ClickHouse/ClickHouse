@@ -4,6 +4,7 @@
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Disks/CustomDiskRegistration.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
@@ -18,6 +19,10 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTStorage;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class IStoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 class AccessRightsElements;
 class SettingsChanges;
 struct StorageID;
@@ -62,6 +67,14 @@ public:
 
         ContextMutablePtr getContext() const;
         ContextMutablePtr getLocalContext() const;
+
+        /// A disk or a storage policy the table definition names. Refused, unless loading from existing metadata, when the
+        /// query may not use it (see `DiskFromAST::ensureDiskIsAllowed`).
+        DiskPtr getDisk(const String & name) const;
+        StoragePolicyPtr getStoragePolicy(const String & name) const;
+        /// The same as `getDisk`, together with a registration that keeps a custom disk registered for as long as the
+        /// table uses it (see `Context::getDiskWithCustomDiskRegistration`).
+        std::pair<DiskPtr, CustomDiskRegistrationPtr> getDiskWithCustomDiskRegistration(const String & name) const;
     };
 
     /// Analog of the IStorage::supports*() helpers
@@ -112,6 +125,10 @@ public:
         const ConstraintsDescription & constraints,
         LoadingStrictnessLevel mode,
         bool is_restore_from_backup = false) const;
+
+    /// Throw if the CREATE query uses a clause that the table engine does not support. `get` runs the same checks.
+    void checkEngineFeatures(
+        const ASTCreateQuery & query, const ColumnsDescription & columns, LoadingStrictnessLevel mode, const ContextPtr & local_context) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
