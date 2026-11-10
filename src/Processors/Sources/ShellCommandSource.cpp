@@ -737,7 +737,9 @@ namespace
                                   "Executable generates stderr: {}", timeout_command_out.getStderr());
                 }
 
-                if (check_exit_code)
+                /// A command whose output was not read to the end may never exit while its stdout or, if pooled, its
+                /// stdin stays open. Its destructor closes them and terminates it.
+                if (check_exit_code && finished)
                 {
                     try
                     {
