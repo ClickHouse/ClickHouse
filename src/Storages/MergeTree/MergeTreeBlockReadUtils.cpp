@@ -158,8 +158,7 @@ bool injectRequiredColumnsRecursively(
         /// before the patches, exactly as if it was requested, whatever other columns are selected.
         else if (alter_conversions && alter_conversions->hasPatches())
         {
-            const auto & sorting_key_columns = storage_snapshot->metadata->getColumnsRequiredForSortingKey();
-            if (std::ranges::find(sorting_key_columns, column_in_storage->getNameInStorage()) != sorting_key_columns.end())
+            if (getSortingKeyColumnsInStorage(*storage_snapshot->metadata).contains(column_in_storage->getNameInStorage()))
                 add_column(column_name);
         }
     }
@@ -191,6 +190,20 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+}
+
+NameSet getSortingKeyColumnsInStorage(const StorageInMemoryMetadata & metadata)
+{
+    NameSet result;
+    const auto & columns = metadata.getColumns();
+    for (const auto & name : metadata.getColumnsRequiredForSortingKey())
+    {
+        if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            result.insert(column->getNameInStorage());
+        else
+            result.insert(name);
+    }
+    return result;
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)

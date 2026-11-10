@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #if CLICKHOUSE_CLOUD
@@ -441,8 +442,7 @@ const IMergeTreeReader::DefaultExpressionsGraph & IMergeTreeReader::getDefaultEx
     };
 
     auto & sorting_key_columns = graph->sorting_key_columns;
-    for (const auto & name : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
-        sorting_key_columns.insert(add_name_in_storage(name));
+    sorting_key_columns = getSortingKeyColumnsInStorage(*storage_snapshot->metadata);
 
     for (const auto & [name, default_desc] : graph->combined_columns.getDefaults())
     {
