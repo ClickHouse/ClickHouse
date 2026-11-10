@@ -61,6 +61,7 @@
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
+#include <Storages/System/StorageSystemDistributedPartitionMoves.h>
 #include <Storages/System/StorageSystemServerSettings.h>
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
@@ -3188,6 +3189,26 @@ last_exception:
 
 .see_also
 - [Distributed table engine](/reference/engines/table-engines/special/distributed)
+)DOCS_MD");
+    attach<StorageSystemDistributedPartitionMoves>(context, system_database, "distributed_partition_moves", R"DOCS_MD(
+.description
+Contains the partition moves loaded by the `Distributed` tables that have the experimental `partition_moves_zookeeper_path` setting. While a partition is moved between shards, queries read only the copy that the move points to.
+
+.examples
+```sql
+SELECT * FROM system.distributed_partition_moves FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+database:       default
+table:          dist
+zookeeper_path: /clickhouse/partition_moves/events
+version:        3
+moves:          [('202401',1,3,'destination')]
+last_exception:
+```
 )DOCS_MD");
     attach<StorageSystemDictionaries>(context, system_database, "dictionaries", R"DOCS_MD(
 .description

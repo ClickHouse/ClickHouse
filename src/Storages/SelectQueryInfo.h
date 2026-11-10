@@ -2,6 +2,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
+#include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
@@ -9,6 +10,7 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
+#include <unordered_map>
 
 namespace DB
 {
@@ -178,6 +180,11 @@ struct SelectQueryInfo
     ///
     /// Configured in StorageDistributed::getQueryProcessingStage()
     ClusterPtr optimized_cluster;
+    /// The partitions that the query must not read from a shard, by shard number: the copies of the partitions
+    /// being moved between shards that queries skip.
+    ///
+    /// Configured in StorageDistributed::read()
+    std::shared_ptr<const std::unordered_map<UInt32, Strings>> partitions_to_skip_by_shard;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
