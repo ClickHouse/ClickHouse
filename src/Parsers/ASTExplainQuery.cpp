@@ -40,12 +40,9 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     if (query_child)
         setExplainedQuery(std::move(query_child));
 
-    auto table_function_child = r.readScreenedChildOfType<ASTFunction>("table_function");
+    auto table_function_child = r.readChildOfType<ASTFunction>("table_function");
     if (table_function_child)
-    {
-        table_function_child->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_FUNCTION);
         setTableFunction(std::move(table_function_child));
-    }
 
     auto table_override_child = r.readChildOfType<ASTTableOverride>("table_override");
     if (table_override_child)

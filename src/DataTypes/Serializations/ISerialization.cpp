@@ -176,10 +176,6 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedVariantDiscriminators,
     QuantizedCodes,
     ProductQuantizationCodebook,
-    MapKeyValue,
-    ObjectDistinctPaths,
-    ObjectSubObject,
-    ObjectCombinedPath,
 };
 
 String ISerialization::Substream::toString() const
@@ -299,14 +295,12 @@ namespace
 
 using SubstreamIterator = ISerialization::SubstreamPath::const_iterator;
 
-/// encode_for_cache_key renders the parts that exist in cache keys only: the sparse elements, the identity element
-/// of a SHARED path of Object and the keyword in front of a path name of Object.
 String getNameForSubstreamPath(
     String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
     bool escape_for_file_name,
-    bool encode_for_cache_key,
+    bool encode_sparse_stream,
     bool escape_variant_substreams,
     size_t initial_array_level = 0)
 {
@@ -327,7 +321,7 @@ String getNameForSubstreamPath(
             stream_name += ".dict";
         else if (it->type == Substream::DictionaryKeysPrefix)
             stream_name += ".dict_prefix";
-        else if (it->type == Substream::SparseElements && encode_for_cache_key)
+        else if (it->type == Substream::SparseElements && encode_sparse_stream)
             stream_name += ".sparse";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
@@ -406,28 +400,8 @@ String getNameForSubstreamPath(
             stream_name += ".paths_indexes";
         else if (it->type == SubstreamType::ObjectSharedDataCopyValues)
             stream_name += ".values";
-        else if (it->type == SubstreamType::ObjectTypedSharedData)
-            stream_name += ".object_typed_shared_data";
-        else if (it->type == SubstreamType::ObjectTypedSharedDataHeader)
-            stream_name += ".header";
-        else if (it->type == SubstreamType::ObjectTypedSharedDataPathsData)
-            stream_name += ".paths_data";
-        else if (it->type == SubstreamType::ObjectTypedSharedDataPathsMarks)
-            stream_name += ".paths_marks";
-        else if (it->type == SubstreamType::ObjectTypedSharedDataPath)
-        {
-            /// The path shares its files with every other SHARED path, so the element exists in cache keys only.
-            if (encode_for_cache_key)
-                stream_name += ".shared_paths." + escapeForFileName(it->object_path_name);
-        }
         else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
-        {
-            /// In cache keys a path name follows a keyword, so that no name can stand where a fixed stream name
-            /// stands: the key stays injective whatever the paths are called.
-            if (encode_for_cache_key)
-                stream_name += ".object_paths";
             stream_name += "." + (escape_for_file_name ? escapeForFileName(it->object_path_name) : it->object_path_name);
-        }
     }
 
     return stream_name;
@@ -514,7 +488,7 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
 String ISerialization::getSubstreamsCacheKeyForStream(const SubstreamPath & path)
 {
     /// Unlike the subcolumn name, this rendering is injective, so two substreams never share a cache slot.
-    return getNameForSubstreamPath("", path.begin(), path.end(), /*escape_for_file_name=*/true, /*encode_for_cache_key=*/true, /*escape_variant_substreams=*/true);
+    return getNameForSubstreamPath("", path.begin(), path.end(), /*escape_for_file_name=*/true, /*encode_sparse_stream=*/true, /*escape_variant_substreams=*/true);
 }
 
 namespace
@@ -591,33 +565,16 @@ ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsD
     return it == cache->end() ? nullptr : it->second;
 }
 
-ISerialization::DeserializeBinaryBulkStatePtr ISerialization::DeserializeBinaryBulkState::clone(DeserializeBinaryBulkStateCloneContext & context) const
-{
-    auto it = context.cloned.find(this);
-    if (it != context.cloned.end())
-        return it->second;
-
-    auto cloned = cloneImpl(context);
-    context.cloned.emplace(this, cloned);
-    return cloned;
-}
-
 bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
 {
     for (const auto & elem : path)
     {
-        /// `DictionaryKeysPrefix` and `VariantDiscriminatorsPrefix` exist only with `use_specialized_prefixes_and_suffixes_substreams`
-        /// (compact parts). They hold only the serialization version or mode, have no data type, and are structural,
-        /// like the other streams here.
         if (elem.type == Substream::NullMap
             || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
-            || elem.type == Substream::DictionaryKeysPrefix
-            || elem.type == Substream::VariantDiscriminatorsPrefix
-            || elem.type == Substream::SparseOffsets
-            || elem.type == Substream::MapBucketsInfo)
+            || elem.type == Substream::SparseOffsets)
             return false;
     }
     return true;
@@ -755,6 +712,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::InlinedStringSizes
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
+            || path[last_elem].type == Substream::ObjectTypedPath
             || path[last_elem].type == Substream::QuantizedCodes
             || path[last_elem].type == Substream::ProductQuantizationCodebook;
 }
@@ -774,11 +732,10 @@ bool ISerialization::isPrefetchNeededForSubstream(const DB::ISerialization::Subs
     if (prefetch_json_shared_data_substreams || prefix_len == 0 || prefix_len > path.size())
         return true;
 
-    /// The data substreams of the JSON shared data and of the typed shared data are not read from the start of the
-    /// granule: a path's data is located via a mark in another stream and read by seeking to it. With many JSON paths
-    /// the granule is large, so prefetching from the start can fetch data we never read.
-    auto last = path[prefix_len - 1].type;
-    return last != Substream::ObjectSharedDataData && last != Substream::ObjectTypedSharedDataPathsData;
+    /// The JSON shared data Data substream is not read from the start of the granule: a path's data is
+    /// located via a mark in another stream and read by seeking to it. With many JSON paths the granule
+    /// is large, so prefetching from the start can fetch data we never read.
+    return path[prefix_len - 1].type != Substream::ObjectSharedDataData;
 }
 
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
@@ -810,7 +767,7 @@ bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & 
         return false;
 
     return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure
-        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo || path[path.size() - 1].type == SubstreamType::ObjectTypedSharedDataHeader;
+        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
 }
 
 bool ISerialization::isSingleValuePerPartStream(const DB::ISerialization::SubstreamPath & path)
@@ -836,8 +793,7 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
         case SubstreamType::ObjectStructure: [[fallthrough]];
         case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
         case SubstreamType::DictionaryKeysPrefix: [[fallthrough]];
-        case SubstreamType::VariantDiscriminatorsPrefix: [[fallthrough]];
-        case SubstreamType::ObjectTypedSharedDataHeader:
+        case SubstreamType::VariantDiscriminatorsPrefix:
             return true;
         case SubstreamType::DictionaryKeys: [[fallthrough]];
         case SubstreamType::VariantDiscriminators:
@@ -847,8 +803,7 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
     }
 }
 
-ISerialization::SubstreamData
-ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len, const Substream * selected_terminal)
+ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
     chassert(prefix_len <= path.size());
     if (prefix_len == 0)
@@ -864,16 +819,11 @@ ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len, co
     if (!res.column && res.lazy_column_creator)
         res.column = res.lazy_column_creator();
 
-    const auto & terminal = selected_terminal ? *selected_terminal : path[last_elem];
-
     for (ssize_t i = last_elem - 1; i >= 0; --i)
     {
-        auto creator = path[i].creator;
+        const auto & creator = path[i].creator;
         if (creator)
         {
-            if (auto specialized = creator->specializeForSelectedSubcolumn(terminal))
-                creator = std::move(specialized);
-
             res.serialization = res.serialization ? creator->create(res.serialization, res.type) : res.serialization;
             res.type = res.type ? creator->create(res.type) : res.type;
             res.column = res.column ? creator->create(res.column) : res.column;

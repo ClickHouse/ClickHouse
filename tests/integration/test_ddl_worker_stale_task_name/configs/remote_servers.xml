@@ -1,0 +1,12 @@
+<clickhouse>
+    <remote_servers>
+        <stale_task_name_cluster>
+            <shard>
+                <replica>
+                    <host>worker</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </stale_task_name_cluster>
+    </remote_servers>
+</clickhouse>
