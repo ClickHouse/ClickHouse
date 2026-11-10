@@ -1,0 +1,2 @@
+has RELRO: True
+RELRO fully mapped: True
