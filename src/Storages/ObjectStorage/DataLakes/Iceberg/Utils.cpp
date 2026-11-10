@@ -1163,11 +1163,20 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         {
             if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
                 return {Iceberg::f_geometry, false};
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+            if (type->getCustomName())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+            return {Iceberg::f_variant, false};
         }
+        case TypeIndex::Dynamic:
+            return {Iceberg::f_variant, false};
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }
+}
+
+bool isIcebergVariantType(const DataTypePtr & type)
+{
+    return type->getTypeId() == TypeIndex::Dynamic || (type->getTypeId() == TypeIndex::Variant && !type->getCustomName());
 }
 
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)

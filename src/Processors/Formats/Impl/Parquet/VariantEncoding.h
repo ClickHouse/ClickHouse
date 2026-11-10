@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 
@@ -43,5 +44,15 @@ void decodeVariantColumn(
     const String & column_name,
     size_t num_rows,
     const FormatSettings & format_settings);
+
+/// Encodes every row of `column` as an unshredded variant. With `null_map`, a NULL row of a `Dynamic` or
+/// `Variant` column is marked there and gets empty blobs, otherwise it is a variant null.
+void encodeVariantColumn(
+    const IColumn & column,
+    const DataTypePtr & type,
+    const String & column_name,
+    ColumnString & metadata,
+    ColumnString & value,
+    PaddedPODArray<UInt8> * null_map);
 
 }

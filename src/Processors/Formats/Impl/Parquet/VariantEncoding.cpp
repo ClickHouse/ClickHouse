@@ -1,12 +1,30 @@
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ListWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTime64.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -26,11 +44,15 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <memory>
+#include <numeric>
+#include <optional>
 
 #include <fmt/format.h>
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int TOO_DEEP_RECURSION;
     extern const int TYPE_MISMATCH;
@@ -721,6 +743,528 @@ const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_nul
     return assert_cast<const ColumnString &>(*inner);
 }
 
+UInt8 unsignedSize(size_t value)
+{
+    if (value <= 0xFF)
+        return 1;
+    if (value <= 0xFFFF)
+        return 2;
+    if (value <= 0xFFFFFF)
+        return 3;
+    if (value <= 0xFFFFFFFF)
+        return 4;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot write a Parquet variant: it has a part of {} bytes, more than 4 GiB", value);
+}
+
+void writeUnsigned(String & out, size_t value, UInt8 size)
+{
+    for (UInt8 i = 0; i < size; ++i)
+        out.push_back(static_cast<char>((value >> (8 * i)) & 0xFF));
+}
+
+template <typename T>
+void writeFixed(String & out, T value)
+{
+    const size_t pos = out.size();
+    out.resize(pos + sizeof(T));
+    unalignedStoreLittleEndian<T>(out.data() + pos, value);
+}
+
+void writePrimitiveHeader(String & out, PrimitiveType type)
+{
+    out.push_back(static_cast<char>(UInt8(type) << 2));
+}
+
+void writeContainerHeader(String & out, BasicType basic_type, UInt8 value_header)
+{
+    out.push_back(static_cast<char>(UInt8(value_header << 2) | UInt8(basic_type)));
+}
+
+struct JSONNode
+{
+    MapWithMemoryTracking<String, std::unique_ptr<JSONNode>> children;
+    std::optional<String> value;
+};
+
+class VariantEncoder
+{
+public:
+    explicit VariantEncoder(const String & column_name_) : column_name(column_name_) {}
+
+    void reset()
+    {
+        key_ids.clear();
+        keys.clear();
+    }
+
+    void writeMetadata(String & out) const
+    {
+        size_t names_size = 0;
+        for (const auto & key : keys)
+            names_size += key.size();
+
+        const UInt8 offset_size = unsignedSize(std::max(keys.size(), names_size));
+        out.push_back(static_cast<char>(1 | ((offset_size - 1) << 6)));
+        writeUnsigned(out, keys.size(), offset_size);
+        size_t offset = 0;
+        writeUnsigned(out, offset, offset_size);
+        for (const auto & key : keys)
+        {
+            offset += key.size();
+            writeUnsigned(out, offset, offset_size);
+        }
+        for (const auto & key : keys)
+            out.append(key);
+    }
+
+    void encode(const IColumn & column, const IDataType & type, size_t row, String & out)
+    {
+        checkStackSize();
+
+        switch (type.getTypeId())
+        {
+            case TypeIndex::Nullable:
+            {
+                const auto & nullable = assert_cast<const ColumnNullable &>(column);
+                if (nullable.isNullAt(row))
+                    writePrimitiveHeader(out, PrimitiveType::Null);
+                else
+                    encode(nullable.getNestedColumn(), *assert_cast<const DataTypeNullable &>(type).getNestedType(), row, out);
+                return;
+            }
+            case TypeIndex::LowCardinality:
+            {
+                const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(column);
+                encode(
+                    *low_cardinality.getDictionary().getNestedColumn(),
+                    *assert_cast<const DataTypeLowCardinality &>(type).getDictionaryType(),
+                    low_cardinality.getIndexAt(row),
+                    out);
+                return;
+            }
+            case TypeIndex::UInt8:
+                if (type.getName() == "Bool")
+                {
+                    writePrimitiveHeader(out, assert_cast<const ColumnUInt8 &>(column).getData()[row] ? PrimitiveType::True : PrimitiveType::False);
+                    return;
+                }
+                writePrimitiveHeader(out, PrimitiveType::Int16);
+                writeFixed<Int16>(out, assert_cast<const ColumnUInt8 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Int8:
+                writePrimitiveHeader(out, PrimitiveType::Int8);
+                writeFixed<Int8>(out, assert_cast<const ColumnInt8 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Int16:
+                writePrimitiveHeader(out, PrimitiveType::Int16);
+                writeFixed<Int16>(out, assert_cast<const ColumnInt16 &>(column).getData()[row]);
+                return;
+            case TypeIndex::UInt16:
+                writePrimitiveHeader(out, PrimitiveType::Int32);
+                writeFixed<Int32>(out, assert_cast<const ColumnUInt16 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Int32:
+                writePrimitiveHeader(out, PrimitiveType::Int32);
+                writeFixed<Int32>(out, assert_cast<const ColumnInt32 &>(column).getData()[row]);
+                return;
+            case TypeIndex::UInt32:
+                writePrimitiveHeader(out, PrimitiveType::Int64);
+                writeFixed<Int64>(out, assert_cast<const ColumnUInt32 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Int64:
+                writePrimitiveHeader(out, PrimitiveType::Int64);
+                writeFixed<Int64>(out, assert_cast<const ColumnInt64 &>(column).getData()[row]);
+                return;
+            case TypeIndex::UInt64:
+            {
+                const UInt64 value = assert_cast<const ColumnUInt64 &>(column).getData()[row];
+                if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot write the value {} of type UInt64 into the Parquet variant column '{}': the widest variant "
+                        "integer is a signed 64-bit integer",
+                        value, column_name);
+                writePrimitiveHeader(out, PrimitiveType::Int64);
+                writeFixed<Int64>(out, static_cast<Int64>(value));
+                return;
+            }
+            case TypeIndex::Float32:
+                writePrimitiveHeader(out, PrimitiveType::Float);
+                writeFixed<Float32>(out, assert_cast<const ColumnFloat32 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Float64:
+                writePrimitiveHeader(out, PrimitiveType::Double);
+                writeFixed<Float64>(out, assert_cast<const ColumnFloat64 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Decimal32:
+                encodeDecimal<Decimal32, Int32>(column, type, row, PrimitiveType::Decimal4, out);
+                return;
+            case TypeIndex::Decimal64:
+                encodeDecimal<Decimal64, Int64>(column, type, row, PrimitiveType::Decimal8, out);
+                return;
+            case TypeIndex::Decimal128:
+                encodeDecimal<Decimal128, Int128>(column, type, row, PrimitiveType::Decimal16, out);
+                return;
+            case TypeIndex::Date:
+                writePrimitiveHeader(out, PrimitiveType::Date);
+                writeFixed<Int32>(out, assert_cast<const ColumnDate &>(column).getData()[row]);
+                return;
+            case TypeIndex::Date32:
+                writePrimitiveHeader(out, PrimitiveType::Date);
+                writeFixed<Int32>(out, assert_cast<const ColumnDate32 &>(column).getData()[row]);
+                return;
+            case TypeIndex::DateTime:
+            {
+                const bool with_time_zone = assert_cast<const DataTypeDateTime &>(type).hasExplicitTimeZone();
+                writePrimitiveHeader(out, with_time_zone ? PrimitiveType::TimestampTZ : PrimitiveType::TimestampNTZ);
+                writeFixed<Int64>(out, Int64(assert_cast<const ColumnDateTime &>(column).getData()[row]) * 1'000'000);
+                return;
+            }
+            case TypeIndex::DateTime64:
+            {
+                const auto & datetime_type = assert_cast<const DataTypeDateTime64 &>(type);
+                const UInt32 scale = datetime_type.getScale();
+                const bool with_time_zone = datetime_type.hasExplicitTimeZone();
+                const Int64 value = assert_cast<const ColumnDateTime64 &>(column).getData()[row].value;
+                if (scale <= 6)
+                {
+                    writePrimitiveHeader(out, with_time_zone ? PrimitiveType::TimestampTZ : PrimitiveType::TimestampNTZ);
+                    writeFixed<Int64>(out, value * DecimalUtils::scaleMultiplier<Int64>(6 - scale));
+                }
+                else
+                {
+                    writePrimitiveHeader(out, with_time_zone ? PrimitiveType::TimestampNanosTZ : PrimitiveType::TimestampNanosNTZ);
+                    writeFixed<Int64>(out, value * DecimalUtils::scaleMultiplier<Int64>(9 - scale));
+                }
+                return;
+            }
+            case TypeIndex::Time:
+                encodeTime(Int64(assert_cast<const ColumnTime &>(column).getData()[row]) * 1'000'000, type, out);
+                return;
+            case TypeIndex::Time64:
+            {
+                const UInt32 scale = assert_cast<const DataTypeTime64 &>(type).getScale();
+                if (scale > 6)
+                    throwUnsupported(type);
+                encodeTime(assert_cast<const ColumnTime64 &>(column).getData()[row].value * DecimalUtils::scaleMultiplier<Int64>(6 - scale), type, out);
+                return;
+            }
+            case TypeIndex::String:
+                encodeString(column.getDataAt(row), out);
+                return;
+            case TypeIndex::FixedString:
+            {
+                const std::string_view data = column.getDataAt(row);
+                writePrimitiveHeader(out, PrimitiveType::Binary);
+                writeFixed<UInt32>(out, static_cast<UInt32>(data.size()));
+                out.append(data);
+                return;
+            }
+            case TypeIndex::Enum8:
+                encodeString(assert_cast<const DataTypeEnum8 &>(type).getNameForValue(assert_cast<const ColumnInt8 &>(column).getData()[row]), out);
+                return;
+            case TypeIndex::Enum16:
+                encodeString(assert_cast<const DataTypeEnum16 &>(type).getNameForValue(assert_cast<const ColumnInt16 &>(column).getData()[row]), out);
+                return;
+            case TypeIndex::UUID:
+            {
+                UUID uuid = assert_cast<const ColumnUUID &>(column).getData()[row];
+                auto * halves = reinterpret_cast<UInt8 *>(&uuid);
+                if constexpr (std::endian::native == std::endian::little)
+                {
+                    std::reverse(halves, halves + 8);
+                    std::reverse(halves + 8, halves + 16);
+                }
+                else
+                {
+                    std::swap_ranges(halves, halves + 8, halves + 8);
+                }
+                writePrimitiveHeader(out, PrimitiveType::UUID);
+                out.append(reinterpret_cast<const char *>(halves), sizeof(UUID));
+                return;
+            }
+            case TypeIndex::Array:
+            {
+                const auto & array = assert_cast<const ColumnArray &>(column);
+                const auto & nested_type = *assert_cast<const DataTypeArray &>(type).getNestedType();
+                const auto & offsets = array.getOffsets();
+                String values;
+                VectorWithMemoryTracking<size_t> value_offsets;
+                for (size_t i = offsets[row - 1]; i < offsets[row]; ++i)
+                {
+                    value_offsets.push_back(values.size());
+                    encode(array.getData(), nested_type, i, values);
+                }
+                writeArray(value_offsets, values, out);
+                return;
+            }
+            case TypeIndex::Tuple:
+            {
+                const auto & tuple_type = assert_cast<const DataTypeTuple &>(type);
+                const auto & tuple = assert_cast<const ColumnTuple &>(column);
+                const auto & element_types = tuple_type.getElements();
+                String values;
+                VectorWithMemoryTracking<size_t> value_offsets;
+                if (!tuple_type.hasExplicitNames())
+                {
+                    for (size_t i = 0; i < element_types.size(); ++i)
+                    {
+                        value_offsets.push_back(values.size());
+                        encode(tuple.getColumn(i), *element_types[i], row, values);
+                    }
+                    writeArray(value_offsets, values, out);
+                    return;
+                }
+
+                const auto & names = tuple_type.getElementNames();
+                VectorWithMemoryTracking<size_t> order(names.size());
+                std::iota(order.begin(), order.end(), 0);
+                std::sort(order.begin(), order.end(), [&](size_t left, size_t right) { return names[left] < names[right]; });
+                VectorWithMemoryTracking<UInt32> ids;
+                for (size_t i : order)
+                {
+                    ids.push_back(keyId(names[i]));
+                    value_offsets.push_back(values.size());
+                    encode(tuple.getColumn(i), *element_types[i], row, values);
+                }
+                writeObject(ids, value_offsets, values, out);
+                return;
+            }
+            case TypeIndex::Map:
+            {
+                const auto & map_type = assert_cast<const DataTypeMap &>(type);
+                if (!isStringOrFixedString(removeLowCardinality(map_type.getKeyType())))
+                    throwUnsupported(type);
+
+                const auto & nested = assert_cast<const ColumnMap &>(column).getNestedColumn();
+                const auto & map_keys = assert_cast<const ColumnTuple &>(nested.getData()).getColumn(0);
+                const auto & map_values = assert_cast<const ColumnTuple &>(nested.getData()).getColumn(1);
+                const auto & offsets = nested.getOffsets();
+
+                VectorWithMemoryTracking<size_t> order(offsets[row] - offsets[row - 1]);
+                std::iota(order.begin(), order.end(), offsets[row - 1]);
+                std::sort(order.begin(), order.end(), [&](size_t left, size_t right) { return map_keys.getDataAt(left) < map_keys.getDataAt(right); });
+
+                String values;
+                VectorWithMemoryTracking<size_t> value_offsets;
+                VectorWithMemoryTracking<UInt32> ids;
+                for (size_t j = 0; j < order.size(); ++j)
+                {
+                    const std::string_view key = map_keys.getDataAt(order[j]);
+                    if (j != 0 && key == map_keys.getDataAt(order[j - 1]))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot write a map with the duplicate key '{}' into the Parquet variant column '{}': "
+                            "the keys of a variant object must be unique",
+                            key, column_name);
+                    ids.push_back(keyId(key));
+                    value_offsets.push_back(values.size());
+                    encode(map_values, *map_type.getValueType(), order[j], values);
+                }
+                writeObject(ids, value_offsets, values, out);
+                return;
+            }
+            case TypeIndex::Variant:
+            {
+                if (type.getCustomName())
+                    throwUnsupported(type);
+                const auto & variant = assert_cast<const ColumnVariant &>(column);
+                const auto discriminator = variant.globalDiscriminatorAt(row);
+                if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    writePrimitiveHeader(out, PrimitiveType::Null);
+                    return;
+                }
+                encode(
+                    variant.getVariantByGlobalDiscriminator(discriminator),
+                    *assert_cast<const DataTypeVariant &>(type).getVariant(discriminator),
+                    variant.offsetAt(row),
+                    out);
+                return;
+            }
+            case TypeIndex::Dynamic:
+                encodeDynamic(assert_cast<const ColumnDynamic &>(column), row, out);
+                return;
+            case TypeIndex::Object:
+                encodeJSON(assert_cast<const ColumnObject &>(column), assert_cast<const DataTypeObject &>(type), row, out);
+                return;
+            default:
+                throwUnsupported(type);
+        }
+    }
+
+private:
+    [[noreturn]] void throwUnsupported(const IDataType & type) const
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Cannot write a value of type {} into the Parquet variant column '{}'", type.getName(), column_name);
+    }
+
+    UInt32 keyId(std::string_view key)
+    {
+        auto [it, inserted] = key_ids.try_emplace(String(key), static_cast<UInt32>(keys.size()));
+        if (inserted)
+            keys.push_back(it->first);
+        return it->second;
+    }
+
+    template <typename DecimalType, typename NativeType>
+    void encodeDecimal(const IColumn & column, const IDataType & type, size_t row, PrimitiveType primitive, String & out) const
+    {
+        writePrimitiveHeader(out, primitive);
+        out.push_back(static_cast<char>(getDecimalScale(type)));
+        writeFixed<NativeType>(out, assert_cast<const ColumnDecimal<DecimalType> &>(column).getData()[row].value);
+    }
+
+    void encodeTime(Int64 micros, const IDataType & type, String & out) const
+    {
+        if (micros < 0 || micros >= 86'400'000'000LL)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot write a value of type {} into the Parquet variant column '{}': a variant time is a time of day, "
+                "but the value is {} microseconds",
+                type.getName(), column_name, micros);
+        writePrimitiveHeader(out, PrimitiveType::TimeNTZ);
+        writeFixed<Int64>(out, micros);
+    }
+
+    static void encodeString(std::string_view value, String & out)
+    {
+        if (value.size() < 64)
+        {
+            writeContainerHeader(out, BasicType::ShortString, static_cast<UInt8>(value.size()));
+        }
+        else
+        {
+            writePrimitiveHeader(out, PrimitiveType::String);
+            writeUnsigned(out, value.size(), std::max<UInt8>(unsignedSize(value.size()), 4));
+        }
+        out.append(value);
+    }
+
+    static void writeArray(const VectorWithMemoryTracking<size_t> & value_offsets, const String & values, String & out)
+    {
+        const bool is_large = value_offsets.size() > 0xFF;
+        const UInt8 offset_size = unsignedSize(values.size());
+        writeContainerHeader(out, BasicType::Array, static_cast<UInt8>((is_large << 2) | (offset_size - 1)));
+        writeUnsigned(out, value_offsets.size(), is_large ? 4 : 1);
+        for (size_t offset : value_offsets)
+            writeUnsigned(out, offset, offset_size);
+        writeUnsigned(out, values.size(), offset_size);
+        out.append(values);
+    }
+
+    static void writeObject(const VectorWithMemoryTracking<UInt32> & ids, const VectorWithMemoryTracking<size_t> & value_offsets, const String & values, String & out)
+    {
+        const bool is_large = ids.size() > 0xFF;
+        const UInt8 id_size = unsignedSize(ids.empty() ? 0 : *std::max_element(ids.begin(), ids.end()));
+        const UInt8 offset_size = unsignedSize(values.size());
+        writeContainerHeader(out, BasicType::Object, static_cast<UInt8>((is_large << 4) | ((id_size - 1) << 2) | (offset_size - 1)));
+        writeUnsigned(out, ids.size(), is_large ? 4 : 1);
+        for (UInt32 id : ids)
+            writeUnsigned(out, id, id_size);
+        for (size_t offset : value_offsets)
+            writeUnsigned(out, offset, offset_size);
+        writeUnsigned(out, values.size(), offset_size);
+        out.append(values);
+    }
+
+    void encodeDynamic(const ColumnDynamic & dynamic, size_t row, String & out)
+    {
+        const auto & variant = dynamic.getVariantColumn();
+        const auto discriminator = variant.globalDiscriminatorAt(row);
+        if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            writePrimitiveHeader(out, PrimitiveType::Null);
+            return;
+        }
+
+        if (discriminator == dynamic.getSharedVariantDiscriminator())
+        {
+            ReadBufferFromMemory buf(dynamic.getSharedVariant().getDataAt(variant.offsetAt(row)));
+            const DataTypePtr value_type = decodeDataType(buf);
+            auto value_column = value_type->createColumn();
+            value_type->getDefaultSerialization()->deserializeBinary(*value_column, buf, FormatSettings{});
+            encode(*value_column, *value_type, 0, out);
+            return;
+        }
+
+        encode(
+            variant.getVariantByGlobalDiscriminator(discriminator),
+            *assert_cast<const DataTypeVariant &>(*dynamic.getVariantInfo().variant_type).getVariant(discriminator),
+            variant.offsetAt(row),
+            out);
+    }
+
+    void encodeJSON(const ColumnObject & object, const DataTypeObject & type, size_t row, String & out)
+    {
+        JSONNode root;
+        for (auto it = ColumnObject::SortedPathsIterator(object, row, /*skip_typed_nulls_=*/true); !it.end(); it.next())
+        {
+            const auto path_info = it.getCurrentPathInfo();
+            if (path_info.column->isNullAt(path_info.row))
+                continue;
+
+            JSONNode * node = &root;
+            size_t begin = 0;
+            while (true)
+            {
+                if (node->value)
+                    throwJSONPathConflict(path_info.path);
+                const size_t end = path_info.path.find('.', begin);
+                auto & child = node->children[String(path_info.path.substr(begin, end == std::string_view::npos ? end : end - begin))];
+                if (!child)
+                    child = std::make_unique<JSONNode>();
+                node = child.get();
+                if (end == std::string_view::npos)
+                    break;
+                begin = end + 1;
+            }
+            if (node->value || !node->children.empty())
+                throwJSONPathConflict(path_info.path);
+
+            node->value.emplace();
+            if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
+                encode(*path_info.column, *type.getTypedPaths().at(String(path_info.path)), path_info.row, *node->value);
+            else
+                encodeDynamic(assert_cast<const ColumnDynamic &>(*path_info.column), path_info.row, *node->value);
+        }
+        writeJSONNode(root, out);
+    }
+
+    void writeJSONNode(const JSONNode & node, String & out)
+    {
+        if (node.value)
+        {
+            out.append(*node.value);
+            return;
+        }
+
+        String values;
+        VectorWithMemoryTracking<size_t> value_offsets;
+        VectorWithMemoryTracking<UInt32> ids;
+        for (const auto & [name, child] : node.children)
+        {
+            ids.push_back(keyId(name));
+            value_offsets.push_back(values.size());
+            writeJSONNode(*child, values);
+        }
+        writeObject(ids, value_offsets, values, out);
+    }
+
+    [[noreturn]] void throwJSONPathConflict(std::string_view path) const
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot write a JSON value into the Parquet variant column '{}': the path '{}' is both a value and a prefix of another path",
+            column_name, path);
+    }
+
+    const String & column_name;
+    UnorderedMapWithMemoryTracking<String, UInt32> key_ids;
+    VectorWithMemoryTracking<std::string_view> keys;
+};
+
 }
 
 VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column_name_, const FormatSettings & format_settings)
@@ -815,6 +1359,44 @@ void decodeVariantColumn(
                 column_name, metadata_missing ? "`value`" : "`metadata`", metadata_missing ? "`metadata`" : "`value`");
 
         decoder.decode(metadata_blob, value_blob, output);
+    }
+}
+
+void encodeVariantColumn(
+    const IColumn & column,
+    const DataTypePtr & type,
+    const String & column_name,
+    ColumnString & metadata,
+    ColumnString & value,
+    PaddedPODArray<UInt8> * null_map)
+{
+    const size_t num_rows = column.size();
+    const bool nullable_root = null_map && (type->getTypeId() == TypeIndex::Dynamic || type->getTypeId() == TypeIndex::Variant);
+    if (null_map)
+        null_map->resize_fill(num_rows, 0);
+    metadata.reserve(num_rows);
+    value.reserve(num_rows);
+
+    VariantEncoder encoder(column_name);
+    String metadata_blob;
+    String value_blob;
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        if (nullable_root && column.isNullAt(row))
+        {
+            (*null_map)[row] = 1;
+            metadata.insertDefault();
+            value.insertDefault();
+            continue;
+        }
+
+        encoder.reset();
+        metadata_blob.clear();
+        value_blob.clear();
+        encoder.encode(column, *type, row, value_blob);
+        encoder.writeMetadata(metadata_blob);
+        metadata.insertData(metadata_blob.data(), metadata_blob.size());
+        value.insertData(value_blob.data(), value_blob.size());
     }
 }
 

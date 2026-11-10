@@ -1,7 +1,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 
@@ -31,6 +33,13 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vect
 {
     if (!written_field_ids.empty())
         field_ids = std::move(written_field_ids);
+}
+
+static const ColumnVariant * getVariantColumn(const IColumn & column)
+{
+    if (const auto * dynamic_col = checkAndGetColumn<ColumnDynamic>(&column))
+        return &dynamic_col->getVariantColumn();
+    return checkAndGetColumn<ColumnVariant>(&column);
 }
 
 static Range getExtremeRangeFromColumn(const ColumnPtr & column)
@@ -64,6 +73,11 @@ void DataFileStatistics::update(const Chunk & chunk)
         {
             for (UInt8 v : nullable_col->getNullMapData())
                 null_counts[i] += v;
+        }
+        else if (const auto * variant_col = getVariantColumn(*col))
+        {
+            for (auto discriminator : variant_col->getLocalDiscriminators())
+                null_counts[i] += discriminator == ColumnVariant::NULL_DISCRIMINATOR;
         }
         ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(col));
     }

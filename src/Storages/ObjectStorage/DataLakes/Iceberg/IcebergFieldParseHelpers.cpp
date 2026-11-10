@@ -220,7 +220,7 @@ std::optional<Field> deserializeFieldFromBinaryRepr(
     auto non_nullable_type = removeNullable(expected_type);
     if (WhichDataType(non_nullable_type).isDecimal())
         return deserializeDecimalFromBinaryRepr(str, *non_nullable_type, lower_bound, compensate_rounding);
-    if (non_nullable_type->getTypeId() == TypeIndex::Variant)
+    if (non_nullable_type->getTypeId() == TypeIndex::Variant || non_nullable_type->getTypeId() == TypeIndex::Dynamic)
         return std::nullopt;
     /// The spec serializes a `uuid` bound as 16 big-endian bytes and orders the pair by unsigned
     /// byte comparison, while ClickHouse orders `UUID` by its second half. The two orders

@@ -495,7 +495,7 @@ void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
 
 void MetadataGenerator::generateAddColumnMetadata(const String & column_name, DataTypePtr type)
 {
-    if (!type->isNullable())
+    if (!type->isNullable() && !Iceberg::isIcebergVariantType(type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow to add non-nullable columns");
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
     metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
