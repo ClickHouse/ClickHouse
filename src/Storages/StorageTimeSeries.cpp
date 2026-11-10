@@ -398,42 +398,6 @@ bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 }
 
 
-std::shared_ptr<const StorageTimeSeries> StorageTimeSeries::tryGetOwnerOfInnerTagsTable(const StorageID & table_id, const ContextPtr & local_context)
-{
-    static constexpr std::string_view inner_id_prefix = ".inner_id.tags.";
-    static constexpr std::string_view inner_prefix = ".inner.tags.";
-
-    if (table_id.empty())
-        return nullptr;
-
-    const auto & table_name = table_id.table_name;
-    StoragePtr owner;
-
-    if (table_name.starts_with(inner_id_prefix))
-    {
-        UUID owner_uuid;
-        if (!tryParse(owner_uuid, std::string_view{table_name}.substr(inner_id_prefix.size())))
-            return nullptr;
-        owner = DatabaseCatalog::instance().tryGetByUUID(owner_uuid).second;
-    }
-    else if (table_name.starts_with(inner_prefix) && table_id.hasDatabase())
-    {
-        owner = DatabaseCatalog::instance().tryGetTable(
-            StorageID{table_id.getDatabaseName(), table_name.substr(inner_prefix.size())}, local_context);
-    }
-
-    auto time_series = std::dynamic_pointer_cast<const StorageTimeSeries>(owner);
-    if (!time_series || !time_series->isInnerTable(ViewTarget::Tags))
-        return nullptr;
-
-    auto tags_table_id = time_series->tryGetTargetTableID(ViewTarget::Tags, local_context);
-    if (tags_table_id.empty() || !(tags_table_id == table_id))
-        return nullptr;
-
-    return time_series;
-}
-
-
 void StorageTimeSeries::createOrDropTagsDeduplicationCache()
 {
     std::lock_guard lock{caches_mutex};
@@ -909,7 +873,6 @@ void StorageTimeSeries::readImpl(
     /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
     auto read_context = Context::createCopy(local_context);
     read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries(*getStorageSettings(), query_info.isFinal()));
-    read_context->setIsTimeSeriesInnerReadByOwner(true);
 
     NameSet requested_columns{column_names.begin(), column_names.end()};
     auto select_query = makeASTSelectFromTimeSeries(*this, requested_columns, query_info, read_context);

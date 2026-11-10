@@ -34,4 +34,11 @@ ASTPtr makeASTSelectFromTimeSeries(
 /// `final` is whether the outer query uses the `FINAL` keyword (see `SelectQueryInfo::isFinal`).
 SettingsChanges getSettingsForSelectFromTimeSeries(const TimeSeriesSettings & storage_settings, bool final);
 
+/// Translates the `TimeSeries` table's effective SELECT row policy into a predicate over the columns of
+/// its tags target table, and records the contributing policies on the query context. Returns nullptr
+/// when no policy applies. The predicate uses the dedicated tag columns (and reconstructs the outer
+/// `tags` Map when the policy names it) so older rows that omit promoted tags from the stored map still
+/// match the outer semantics. Callers AND it into every tags-table read they generate.
+ASTPtr makeRowPolicyFilterForTagsTable(const StorageTimeSeries & storage, const ContextPtr & context);
+
 }

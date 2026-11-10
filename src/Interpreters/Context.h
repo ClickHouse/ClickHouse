@@ -674,11 +674,6 @@ protected:
     /// replicas (including the replicas of a `Distributed` shard) or a `-Cluster` storage: a replica cannot run them with its
     /// privileges. Plan-based local reads stay allowed.
     bool is_sql_security_overridden_body = false;
-
-    /// True for the query a TimeSeries table runs over its inner tables to serve its own read.
-    /// The row policies of the TimeSeries table are already applied to that read, so the inner
-    /// tags table must not inherit them a second time (see getEffectiveRowPolicyFilter).
-    bool is_time_series_inner_read_by_owner = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
@@ -2090,9 +2085,6 @@ public:
     /// True for a secondary query that reads the slice of a `sampling_key` parallel replicas query
     /// assigned to it by `parallel_replicas_count` / `parallel_replica_offset`.
     bool isSamplingKeyParallelReplicasFollower() const;
-
-    bool isTimeSeriesInnerReadByOwner() const { return is_time_series_inner_read_by_owner; }
-    void setIsTimeSeriesInnerReadByOwner(bool value) { is_time_series_inner_read_by_owner = value; }
 
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
