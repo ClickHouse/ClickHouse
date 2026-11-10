@@ -529,7 +529,7 @@ def test_error_response_keeps_connection_usable(started_cluster):
     try:
         for path, expected_code in [
             ("/v1/other_warehouse/namespaces/ns/tables", 404),
-            ("/v1/my_warehouse/namespaces/ns/tables/t/metrics", 406),
+            ("/v1/my_warehouse/namespaces/ns/register", 406),
         ]:
             connection.request(
                 "POST", path, body=body, headers={"Content-Type": "application/json"}
