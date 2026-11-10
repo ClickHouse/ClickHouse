@@ -111,6 +111,7 @@ else:
 
 # Submodules with test data only. They do not affect the builds, so a bump of them must not rebuild the binaries.
 test_data_submodules = [
+    "./contrib/arrow-testing",
     "./contrib/parquet-testing",
 ]
 
@@ -124,7 +125,6 @@ build_digest_config = Job.CacheDigestConfig(
         "./cmake",
         "./base",
         "./programs",
-        "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/relocation_headroom.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
@@ -158,7 +158,6 @@ fast_test_digest_config = Job.CacheDigestConfig(
         "./cmake",
         "./base",
         "./programs",
-        "./rust",
     ],
 )
 
@@ -354,8 +353,8 @@ class JobConfigs:
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
-        runs_on=RunnerLabels.ARM_TINY,
-        command="python3 ./ci/jobs/copilot_review_job.py --codex",
+        runs_on=RunnerLabels.ARM_SMALL_REVIEW,
+        command="python3 ./ci/jobs/codex_review_job.py",
         allow_failure=True,
         enable_gh_auth=True,
     )
@@ -447,7 +446,10 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
-            provides=[ArtifactNames.CH_AMD_DEBUG],
+            provides=[
+                ArtifactNames.CH_AMD_DEBUG,
+                ArtifactNames.UNITTEST_AMD_DEBUG,
+            ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
@@ -945,6 +947,16 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
     )
+    # The merge queue reruns the targeted selection (the changed tests and the tests
+    # covering the changed lines) against the merge group state, on the only build
+    # the queue makes. See `ci/workflows/merge_queue.py`.
+    stateless_tests_targeted_mq_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, targeted",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
+    )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
@@ -1319,7 +1331,6 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./rust",
             ],
             exclude_paths=test_data_submodules,
             with_git_submodules=True,
@@ -1335,7 +1346,19 @@ class JobConfigs:
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
     )
+    # The sanitizer builds define `SANITIZER` and `DEBUG_OR_SANITIZER_BUILD`, so the suites
+    # under `#if !defined(SANITIZER)` (`DateLUTImpl`, `AllocationInterceptors`) are compiled
+    # only into a plain build. `Build (amd_debug)` already builds `unit_tests_dbms`
+    # (`-DENABLE_TESTS=1`); the `amd_debug` job runs it, so these suites run in pull requests
+    # and not only in `Unit tests (amd_llvm_coverage)`, which pull requests skip without the
+    # `ci-coverage` label. The debug build still defines `DEBUG_OR_SANITIZER_BUILD`, so the
+    # cases under `#ifndef DEBUG_OR_SANITIZER_BUILD` keep running only in the coverage job.
     unittest_jobs = common_unit_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_debug",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_DEBUG],
+        ),
         Job.ParamSet(
             parameter="asan_ubsan",
             runs_on=RunnerLabels.AMD_LARGE,
@@ -1659,7 +1682,11 @@ class JobConfigs:
         ),
     )
     # The same for the full integration run: all test modules, including the ones the coverage
-    # run leaves to `excluded_from_llvm`.
+    # run leaves to `excluded_from_llvm`, except the modules that skip themselves on ARM
+    # (`is_arm()`: `test_storage_hdfs`, `test_storage_kafka`, `test_ytsaurus`, ...). Those are
+    # left to the targeted amd jobs, which select them by their per-module coverage;
+    # `test_ytsaurus` gets that coverage from the per-test coverage run only, see
+    # `PER_TEST_COVERAGE_KEEP_PREFIXES` in `integration_tests_configs.py`.
     integration_test_arm_binary_coverage_replacement_pr_jobs = (
         common_integration_test_job_config.parametrize(
             *[
@@ -1681,6 +1708,15 @@ class JobConfigs:
     integration_test_targeted_pr_jobs = targeted_variants(
         integration_test_jobs_required + integration_test_jobs_non_required,
         allow_failure=False,
+    )
+    # The merge-queue counterpart of `integration_test_targeted_pr_jobs`, on the only
+    # build the queue makes. See `ci/workflows/merge_queue.py`.
+    integration_test_targeted_mq_jobs = common_integration_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, targeted",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        )
     )
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job
@@ -1960,6 +1996,46 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
     )
+    # The Iceberg configuration: the MergeTree tables of the tests are created as
+    # Iceberg tables (`perf.py --table-engine`). In pull requests only when the
+    # Iceberg code changes, see `filter_job.py`.
+    performance_comparison_iceberg_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
+        # Default seccomp blocks `io_uring` (`io_uring.xml`)
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/performance/",
+                "./ci/jobs/scripts/perf/",
+                "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/seaweedfs_service.py",
+                "./ci/jobs/scripts/dataset_download.py",
+                "./ci/docker/performance-comparison",
+                "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/log_cluster.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./tests/config/users.d/ci_logs_sender.yaml",
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
+            ],
+        ),
+        timeout=2 * 3600,
+        result_name_for_cidb="Tests",
+        # Not a gate until the noise of this configuration is known.
+        allow_failure=True,
+    ).parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"arm_release, master_head, {table_engine}, {batch}/{total_batches}",
+                requires=[ArtifactNames.CH_ARM_RELEASE],
+            )
+            for table_engine in ("iceberg_local", "iceberg_s3")
+            # 270 tests: 2 batches of 135 took 103-121 min of the 2 h timeout.
+            for total_batches in (3,)
+            for batch in range(1, total_batches + 1)
+        ],
+    )
     performance_comparison_with_release_base_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
@@ -2044,6 +2120,22 @@ class JobConfigs:
         *[
             Job.ParamSet(parameter=f"arm_release, master_head, nightly, {job}")
             for job in NIGHTLY_PERF_BATCH_JOBS + sorted(set(NIGHTLY_PERF_PLACEMENT.values()) - {*NIGHTLY_PERF_BATCH_JOBS, "skip"})
+        ]
+    )
+    # The Iceberg configuration of `performance_comparison_iceberg_jobs` in `NightlyExtendedPerformance`, every query of every test.
+    nightly_iceberg_performance_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
+        command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        timeout=16 * 3600,
+        result_name_for_cidb="Tests",
+    ).parametrize(
+        *[
+            Job.ParamSet(parameter=f"arm_release, master_head, nightly, {table_engine}, {batch}/{total_batches}")
+            for table_engine in ("iceberg_local", "iceberg_s3")
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
         ]
     )
     docs_job_mintlify = Job.Config(
