@@ -364,9 +364,6 @@ static void writeDataFiles(
             if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
             {
                 column_mapper = createColumnMapper(schema_object);
-                const auto & metadata_object = initial_plan.initial_metadata_object;
-                if (metadata_object->has(Iceberg::f_last_column_id) && !metadata_object->isNull(Iceberg::f_last_column_id))
-                    column_mapper->setLastAssignedFieldId(metadata_object->getValue<Int64>(Iceberg::f_last_column_id));
                 break;
             }
         }
@@ -495,6 +492,8 @@ static DataFileColumnStatistics getColumnStatisticsForRewrite(const ParsedManife
             stats.value_counts.emplace_back(field_id, *column_info.rows_count);
         if (column_info.nulls_count.has_value())
             stats.null_value_counts.emplace_back(field_id, *column_info.nulls_count);
+        if (column_info.nans_count.has_value())
+            stats.nan_value_counts.emplace_back(field_id, *column_info.nans_count);
     }
     /// Bounds stay the raw serialized bytes, so they round-trip whatever the column type.
     for (const auto & [field_id, bounds] : entry.value_bounds)
