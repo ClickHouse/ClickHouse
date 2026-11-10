@@ -256,7 +256,8 @@ try
         deserializer.deserializeRow(columns, manifest_file_reader->decoder(), ext);
     }
 
-    metadata = manifest_file_reader->metadata();
+    for (const auto & [key, value] : manifest_file_reader->metadata())
+        metadata.emplace(key, VectorWithMemoryTracking<uint8_t>(value.begin(), value.end()));
     bytes_read = buffer->count();
     parsed_column = std::move(columns[0]);
     parsed_column_data_type = std::dynamic_pointer_cast<const DataTypeTuple>(data_type);
@@ -507,7 +508,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
 
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
-    for (const auto & path : {c_data_file_value_counts, c_data_file_column_sizes, c_data_file_null_value_counts})
+    for (const auto & path :
+         {c_data_file_value_counts, c_data_file_column_sizes, c_data_file_null_value_counts, c_data_file_nan_value_counts})
     {
         if (hasPath(path))
         {
@@ -521,8 +523,10 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                     columns_infos[number].rows_count = count;
                 else if (path == c_data_file_column_sizes)
                     columns_infos[number].bytes_size = count;
-                else
+                else if (path == c_data_file_null_value_counts)
                     columns_infos[number].nulls_count = count;
+                else
+                    columns_infos[number].nans_count = count;
             }
         }
     }

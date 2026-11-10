@@ -1,4 +1,4 @@
-"""Runs the Rust regression suite of the Avro decoder (`rust/workspace/avro`).
+"""Runs the Rust regression suite of the Avro decoder (`contrib/avro-rust-cmake`).
 
 The server build links only the `staticlib` of the crate and the unit test job runs only
 `unit_tests_dbms`, so nothing else executes the crate's own tests: the input-cut and continuation
@@ -14,7 +14,7 @@ The job therefore generates them and sets `AVRO_REQUIRE_FIXTURES=1`, which turns
 The tests run in the `dev` profile (overflow checks and debug assertions on, as in the Debug builds)
 and in `release` (as the optimized builds are compiled). The `#[ignore]`d exhaustive test is not run.
 Offline, with the vendored crates of `contrib/rust_vendor`, the same way the server build resolves them.
-Cargo loads the whole `rust/workspace`, so the submodules behind its other members' path dependencies
+Cargo loads the whole `contrib/rust-contrib-workspace`, so the submodules behind its other members' path dependencies
 (`contrib/pcodec`, `contrib/wasmtime`) are checked out too.
 
 Miri is not part of this job.
@@ -31,7 +31,7 @@ from ci.praktika.utils import Utils
 
 current_directory = Utils.cwd()
 temp_dir = f"{current_directory}/ci/tmp"
-crate_dir = f"{current_directory}/rust/workspace/avro"
+crate_dir = f"{current_directory}/contrib/avro-rust-cmake"
 fixtures_dir = f"{temp_dir}/avro_fixtures"
 python_deps_dir = f"{temp_dir}/avro_python_deps"
 cargo_home = f"{temp_dir}/avro_cargo_home"
@@ -44,7 +44,7 @@ GIT = "git -c safe.directory='*'"
 
 # The cargo configuration that `contrib/corrosion-cmake/config.toml.in` writes for the server
 # build, reduced to what resolving the workspace needs: the vendored crates in place of crates.io.
-# It lives in `CARGO_HOME` rather than in `rust/workspace/.cargo`, so that it leaves the checkout
+# It lives in `CARGO_HOME` rather than in `contrib/rust-contrib-workspace/.cargo`, so that it leaves the checkout
 # alone and still applies to the nested `cargo build` of `c_abi.rs`, which `--config` would not reach.
 CARGO_CONFIG = f"""\
 [source.vendored-sources]
@@ -70,7 +70,7 @@ def remove_fixtures():
 
 
 def cargo_test(profile_args):
-    manifest_path = shlex.quote(f"{current_directory}/rust/workspace/Cargo.toml")
+    manifest_path = shlex.quote(f"{current_directory}/contrib/rust-contrib-workspace/Cargo.toml")
     return f"cargo test -p _ch_rust_avro --offline --locked {profile_args} --manifest-path {manifest_path}"
 
 
@@ -94,7 +94,7 @@ def main():
         Result.from_commands_run(
             name="Checkout Vendored Crates",
             command=[
-                # Cargo loads every member of `rust/workspace`, so the submodules behind the path
+                # Cargo loads every member of `contrib/rust-contrib-workspace`, so the submodules behind the path
                 # dependencies of the other members (`pco`, `wasmtime`) must be present as well.
                 f"{GIT} submodule sync -- contrib/rust_vendor contrib/pcodec contrib/wasmtime",
                 f"{GIT} submodule update --init --depth 1 --single-branch -- contrib/rust_vendor contrib/pcodec contrib/wasmtime",
