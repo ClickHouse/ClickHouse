@@ -3,7 +3,7 @@
 The tables in this directory are copied from `data/persistent` of the DuckDB Iceberg extension,
 https://github.com/duckdb/duckdb-iceberg/tree/b57f45c2c78965c71f699aa23ae73c292923668e/data/persistent
 (MIT License, see the license text below). The expected results in the tests `05620_iceberg_duckdb_*` to
-`05626_iceberg_duckdb_*` are taken from the sqllogictest files of the extension, `test/sql/local/**/*.test`
+`05625_iceberg_duckdb_*` are taken from the sqllogictest files of the extension, `test/sql/local/**/*.test`
 at the same commit, and from the comments in them that describe how the tables were written.
 The tests `05572_parquet_map_requested_as_tuple` (table `mapping_failures/map_to_struct`) and
 `05612_iceberg_row_lineage_stored_values_pruning` (table `row_lineage_stored_columns`) use the same tables.
@@ -27,9 +27,9 @@ Changes compared to the originals:
 Tables of the DuckDB test data that are not included:
 
 - `benchmark`: data for benchmarks, not for tests.
-- `iceberg/lineitem_iceberg_gz`, `iceberg/lineitem_iceberg_gz_no_hint`, `iceberg/lineitem_iceberg_no_hint`:
-  copies of the TPC-H lineitem table of about 2.5 MB each. Only `iceberg/lineitem_iceberg` is included,
-  it has two snapshots and is used for time travel.
+- `iceberg/lineitem_iceberg`, `iceberg/lineitem_iceberg_gz`, `iceberg/lineitem_iceberg_gz_no_hint`,
+  `iceberg/lineitem_iceberg_no_hint`: copies of the TPC-H lineitem table of about 2.5 MB each, too large to keep
+  in the repository. Time travel is covered by other Iceberg tests.
 - `encrypted_table`: tables encrypted with Iceberg table encryption, which ClickHouse does not support.
 - `big_query_error`: written by BigQuery, the DuckDB test is skipped (the Avro schema of the manifest list
   has no field ids and nullable required fields).
