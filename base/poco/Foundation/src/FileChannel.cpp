@@ -26,6 +26,8 @@
 #include "Poco/Ascii.h"
 #include "Poco/CombinedRotateStrategy.h"
 #include <exception>
+#include <memory>
+#include <utility>
 
 
 namespace Poco {
@@ -48,9 +50,7 @@ FileChannel::FileChannel():
 	_streamCompress(false),
 	_flush(true),
 	_rotateOnOpen(false),
-	_pRotateStrategy(0),
-	_pArchiveStrategy(new ArchiveByNumberStrategy),
-	_pPurgeStrategy(0)
+	_pArchiveStrategy(std::make_unique<ArchiveByNumberStrategy>())
 {
 }
 
@@ -62,9 +62,7 @@ FileChannel::FileChannel(const std::string& path):
 	_streamCompress(false),
 	_flush(true),
 	_rotateOnOpen(false),
-	_pRotateStrategy(0),
-	_pArchiveStrategy(new ArchiveByNumberStrategy),
-	_pPurgeStrategy(0)
+	_pArchiveStrategy(std::make_unique<ArchiveByNumberStrategy>())
 {
 }
 
@@ -74,9 +72,6 @@ FileChannel::~FileChannel()
 	try
 	{
 		close();
-		delete _pRotateStrategy;
-		delete _pArchiveStrategy;
-		delete _pPurgeStrategy;
 	}
 	catch (...)
 	{
@@ -241,33 +236,30 @@ const std::string& FileChannel::path() const
 
 void FileChannel::setRotation(const std::string& rotation)
 {
-	auto * pStrategy = new CombinedRotateStrategy(rotation, _times);
-	delete _pRotateStrategy;
-	_pRotateStrategy = pStrategy;
+	_pRotateStrategy = std::make_unique<CombinedRotateStrategy>(rotation, _times);
 	_rotation = rotation;
 }
 
 
 void FileChannel::setArchive(const std::string& archive)
 {
-	ArchiveStrategy* pStrategy = 0;
+	std::unique_ptr<ArchiveStrategy> pStrategy;
 	if (archive == "number")
 	{
-		pStrategy = new ArchiveByNumberStrategy;
+		pStrategy = std::make_unique<ArchiveByNumberStrategy>();
 	}
 	else if (archive == "timestamp")
 	{
 		if (_times == "utc")
-			pStrategy = new ArchiveByTimestampStrategy<DateTime>;
+			pStrategy = std::make_unique<ArchiveByTimestampStrategy<DateTime>>();
 		else if (_times == "local")
-			pStrategy = new ArchiveByTimestampStrategy<LocalDateTime>;
+			pStrategy = std::make_unique<ArchiveByTimestampStrategy<LocalDateTime>>();
 		else
 			throw PropertyNotSupportedException("times", _times);
 	}
 	else throw InvalidArgumentException("archive", archive);
-	delete _pArchiveStrategy;
 	pStrategy->compress(_compress && !_streamCompress);
-	_pArchiveStrategy = pStrategy;
+	_pArchiveStrategy = std::move(pStrategy);
 	_archive = archive;
 }
 
@@ -297,7 +289,7 @@ void FileChannel::setPurgeAge(const std::string& age)
 	int num = extractDigit(age, &nextToDigit);
 	Timespan::TimeDiff factor = extractFactor(age, nextToDigit);
 
-	setPurgeStrategy(new PurgeByAgeStrategy(Timespan(num * factor)));
+	_pPurgeStrategy = std::make_unique<PurgeByAgeStrategy>(Timespan(num * factor));
 	_purgeAge = age;
 }
 
@@ -306,7 +298,7 @@ void FileChannel::setPurgeCount(const std::string& count)
 {
 	if (setNoPurge(count)) return;
 
-	setPurgeStrategy(new PurgeByCountStrategy(extractDigit(count)));
+	_pPurgeStrategy = std::make_unique<PurgeByCountStrategy>(extractDigit(count));
 	_purgeCount = count;
 }
 
@@ -463,8 +455,7 @@ bool FileChannel::setNoPurge(const std::string& value)
 {
 	if (value.empty() || 0 == icompare(value, "none"))
 	{
-		delete _pPurgeStrategy;
-		_pPurgeStrategy = 0;
+		_pPurgeStrategy.reset();
 		_purgeAge = "none";
 		return true;
 	}
@@ -490,13 +481,6 @@ int FileChannel::extractDigit(const std::string& value, std::string::const_itera
 
 	if (nextToDigit) *nextToDigit = it;
 	return digit;
-}
-
-
-void FileChannel::setPurgeStrategy(PurgeStrategy* strategy)
-{
-	delete _pPurgeStrategy;
-	_pPurgeStrategy = strategy;
 }
 
 

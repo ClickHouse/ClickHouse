@@ -253,7 +253,6 @@ private:
     void archiveCorrupted(const std::string & path);
     bool setNoPurge(const std::string & value);
     int extractDigit(const std::string & value, std::string::const_iterator * nextToDigit = NULL) const;
-    void setPurgeStrategy(PurgeStrategy * strategy);
     Timespan::TimeDiff extractFactor(const std::string & value, std::string::const_iterator start) const;
 
     std::string _path;
@@ -267,9 +266,9 @@ private:
     bool _flush;
     bool _rotateOnOpen;
     std::unique_ptr<LogFile> _pFile;
-    RotateStrategy * _pRotateStrategy;
-    ArchiveStrategy * _pArchiveStrategy;
-    PurgeStrategy * _pPurgeStrategy;
+    std::unique_ptr<RotateStrategy> _pRotateStrategy;
+    std::unique_ptr<ArchiveStrategy> _pArchiveStrategy;
+    std::unique_ptr<PurgeStrategy> _pPurgeStrategy;
     FastMutex _mutex;
 };
 
