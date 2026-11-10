@@ -1781,8 +1781,21 @@ void ColumnsDescription::checkAliasColumnsAreNotCyclic() const
 
         NameSet dependencies;
         for (const auto & name : names)
-            if (const auto * column = bind_to_column(name); column && column->default_desc.kind == ColumnDefaultKind::Alias)
-                dependencies.insert(column->name);
+        {
+            if (const auto * column = bind_to_column(name))
+            {
+                if (column->default_desc.kind == ColumnDefaultKind::Alias)
+                    dependencies.insert(column->name);
+            }
+            else if (!name.contains('.'))
+            {
+                /// A `Nested` prefix: `n` is rebuilt from every `Array` column `n.<suffix>`.
+                for (const auto & nested_column : columns)
+                    if (nested_column.default_desc.kind == ColumnDefaultKind::Alias && nested_column.name.starts_with(name + ".")
+                        && isArray(nested_column.type))
+                        dependencies.insert(nested_column.name);
+            }
+        }
         return dependencies;
     });
 }

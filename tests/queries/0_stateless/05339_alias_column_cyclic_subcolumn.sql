@@ -7,6 +7,7 @@ CREATE TABLE t1 (c0 Int32, b String ALIAS a, a String ALIAS toString(b.size)) EN
 CREATE TABLE t1 (c0 Int32, t Tuple(x UInt64) ALIAS tuple(t.x)) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 CREATE TABLE t1 (a Int32, `a.b` Tuple(x Int32) ALIAS tuple(`a.b.x`)) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 CREATE TABLE t1 (src Array(Tuple(hash String)), x Tuple(foo Tuple(hash String)) ALIAS tuple(tuple(concat(`x.foo`.hash, arrayStringConcat(arrayMap(`x.foo` -> `x.foo`.hash, src)))))) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
+CREATE TABLE t1 (c0 Int32, a Array(Tuple(x UInt64)) ALIAS n, `n.x` Array(UInt64) ALIAS a.x) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 
 CREATE TABLE dst (c0 Int32, c5 String) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv TO dst (c0 Int32, c5 String ALIAS `c5.size`) AS SELECT 1 AS c0, 'a' AS c5; -- { serverError CYCLIC_ALIASES }
@@ -57,3 +58,11 @@ SELECT x FROM t8;
 CREATE TABLE t9 (`n.x` UInt64, n Tuple(x UInt64) ALIAS tuple(`n.x`)) ENGINE = Memory;
 INSERT INTO t9 VALUES (7);
 SELECT n FROM t9;
+
+CREATE TABLE t10 (s Array(UInt64), `n.x` Array(UInt64) ALIAS s, a Array(Tuple(x UInt64)) ALIAS n) ENGINE = Memory;
+INSERT INTO t10 (s) VALUES ([3, 4]);
+SELECT a FROM t10;
+
+CREATE TABLE t11 (n Array(Tuple(x UInt64)), `n.x` Array(UInt64) ALIAS a.x, a Array(Tuple(x UInt64)) ALIAS n) ENGINE = Memory;
+INSERT INTO t11 (n) VALUES ([tuple(5)]);
+SELECT a, `n.x` FROM t11;
