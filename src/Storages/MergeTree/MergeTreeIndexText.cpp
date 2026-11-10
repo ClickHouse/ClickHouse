@@ -1891,6 +1891,26 @@ static DictionarySparseIndex serializeTokensAndPostings(
     return DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 }
 
+/// Checks that the document-lengths stream has one byte per row of the part.
+static void checkDocLengthsRowsCount(
+    const String & stream_name, size_t num_rows, const MergeTreeIndexGranularity & index_granularity, bool can_use_adaptive_granularity)
+{
+    const size_t marks_count = index_granularity.getMarksCountWithoutFinal();
+    bool rows_match = num_rows == index_granularity.getTotalRows();
+
+    /// With non-adaptive marks the writer counts the last granule as full until the part is finalized
+    /// (see `MergeTreeIndexGranularityConstant::fixFromRowsCount`), so the rows only have to end in it.
+    if (!can_use_adaptive_granularity && marks_count > 0)
+        rows_match = num_rows > index_granularity.getMarkStartingRow(marks_count - 1) && num_rows <= index_granularity.getTotalRows();
+
+    if (!rows_match)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Text index document-lengths stream '{}' has {} bytes for {} rows in {} marks",
+            stream_name, num_rows, index_granularity.getTotalRows(), marks_count);
+    }
+}
+
 void TextIndexSerialization::serializeDocLengths(const PaddedPODArray<UInt8> & doc_lengths, MergeTreeIndexOutputStreams & streams, const MergeTreeIndexSerializationState & state)
 {
     auto * stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexDocLengths);
@@ -1906,20 +1926,7 @@ void TextIndexSerialization::serializeDocLengths(const PaddedPODArray<UInt8> & d
     const auto & index_granularity = *state.index_granularity;
     /// Without the final (zero-row) mark: on merge the stream is written before the writer appends it.
     const size_t marks_count = index_granularity.getMarksCountWithoutFinal();
-    const size_t num_rows = stream->plain_hashing.count();
-    bool rows_match = num_rows == index_granularity.getTotalRows();
-
-    /// With non-adaptive marks the writer counts the last granule as full until the part is finalized
-    /// (see `MergeTreeIndexGranularityConstant::fixFromRowsCount`), so the rows only have to end in it.
-    if (!state.can_use_adaptive_granularity && marks_count > 0)
-        rows_match = num_rows > index_granularity.getMarkStartingRow(marks_count - 1) && num_rows <= index_granularity.getTotalRows();
-
-    if (!rows_match)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Text index document-lengths stream '{}' has {} bytes for {} rows in {} marks",
-            stream->escaped_column_name, num_rows, index_granularity.getTotalRows(), marks_count);
-    }
+    checkDocLengthsRowsCount(stream->escaped_column_name, stream->plain_hashing.count(), index_granularity, state.can_use_adaptive_granularity);
 
     auto & marks_out = stream->compress_marks ? stream->marks_compressed_hashing : stream->marks_hashing;
 
@@ -1937,6 +1944,7 @@ void TextIndexSerialization::serializeDocLengths(const PaddedPODArray<UInt8> & d
 
         writeBinaryLittleEndian(mark_in_file.offset_in_compressed_file, marks_out);
         writeBinaryLittleEndian(mark_in_file.offset_in_decompressed_block, marks_out);
+
         if (state.can_use_adaptive_granularity)
             writeBinaryLittleEndian(static_cast<UInt64>(index_granularity.getMarkRows(mark)), marks_out);
 
