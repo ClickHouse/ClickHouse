@@ -154,7 +154,7 @@ for f in truncated_ip.pcap truncated_raw_ip.pcap truncated_null.pcap truncated_s
 done
 
 echo "--- length invariants hold across all fixtures ---"
-for f in packets.pcap packets.pcapng truncated.pcap truncated_headers.pcap truncated_ip.pcap truncated_raw_ip.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap truncated_null.pcap truncated_sll.pcap ppi.pcap sll2.pcap dot3.pcap truncated_dot3.pcap options.pcap truncated_ip_options.pcap dot11.pcap radiotap.pcap truncated_ppi_raw_ip.pcap; do
+for f in packets.pcap packets.pcapng truncated.pcap truncated_headers.pcap truncated_ip.pcap truncated_raw_ip.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap truncated_null.pcap truncated_sll.pcap ppi.pcap sll2.pcap dot3.pcap truncated_dot3.pcap dot3_vlan.pcap jumbogram.pcap options.pcap truncated_ip_options.pcap dot11.pcap radiotap.pcap truncated_ppi_raw_ip.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT
         '$f',
@@ -303,3 +303,14 @@ $CLICKHOUSE_LOCAL -q "
 SELECT * FROM file('$DATA_DIR/packets.pcap', PCAP, 'no_such_column UInt64')" 2>&1 | grep -o -m1 'THERE_IS_NO_COLUMN'
 $CLICKHOUSE_LOCAL -q "
 SELECT * FROM file('$DATA_DIR/packets.pcap', PCAP, 'src_addr UInt8')" 2>&1 | grep -o -m1 'while converting column .src_addr. from type Nullable(IPv6) to type UInt8'
+
+echo "--- IEEE 802.3 frame with SNAP behind an 802.1Q tag, in full and cut inside the IPv4 header ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, capture_length, link_type, protocols, eth_type, vlan_id, ip_version, src_addr, dst_addr, ip_ttl, ip_protocol, src_port, dst_port, length(raw)
+FROM file('$DATA_DIR/dot3_vlan.pcap', PCAP)
+ORDER BY number FORMAT TSV"
+
+echo "--- IPv6 jumbogram: the length comes from the Jumbo Payload option ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, capture_length, protocols, ip_version, ip_protocol, src_port, dst_port, payload_length, cityHash64(payload) = cityHash64(substring(raw, capture_length - 65536 + 1))
+FROM file('$DATA_DIR/jumbogram.pcap', PCAP) FORMAT TSV"

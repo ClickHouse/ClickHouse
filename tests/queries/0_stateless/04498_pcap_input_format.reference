@@ -92,9 +92,10 @@ UDP	4	1
 3	34	42	['ETHERNET_II','IP']	ICMP	34
 --- headers cut by the snapshot length: dissected up to the last complete header ---
 1	58	112	['ETHERNET_II','IPv6','HOPOPT']	6	HOPOPT	\N
-2	66	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	IPv6-Route	\N
-3	74	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	TCP	\N
-4	38	76	['ETHERNET_II','IP']	4	TCP	\N
+2	63	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	IPv6-Route	\N
+3	66	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	IPv6-Route	\N
+4	74	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	TCP	\N
+5	38	76	['ETHERNET_II','IP']	4	TCP	\N
 --- headers cut by the snapshot length before the end of the IP header: the rest is raw, the outer protocols are kept ---
 1	18	76	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	IP	\N	4	18
 2	34	112	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	IPv6	\N	6	34
@@ -141,6 +142,8 @@ ppi.pcap	0	0	0
 sll2.pcap	0	0	0
 dot3.pcap	0	0	0
 truncated_dot3.pcap	0	0	0
+dot3_vlan.pcap	0	0	0
+jumbogram.pcap	0	0	0
 options.pcap	0	0	0
 truncated_ip_options.pcap	0	0	0
 dot11.pcap	0	0	0
@@ -234,3 +237,8 @@ radiotap.pcap	1	RADIOTAP	['RADIOTAP','DOT11_DATA','SNAP','IP','UDP','RAW']	\N		4
 11	UInt32	67	Nullable(String)
 THERE_IS_NO_COLUMN
 while converting column `src_addr` from type Nullable(IPv6) to type UInt8
+--- IEEE 802.3 frame with SNAP behind an 802.1Q tag, in full and cut inside the IPv4 header ---
+1	54	ETHERNET_II	['ETHERNET_II','DOT1Q','SNAP','IP','UDP']	IP	42	4	::ffff:192.0.2.1	::ffff:192.0.2.2	64	UDP	68	67	54
+2	36	ETHERNET_II	['ETHERNET_II','DOT1Q','SNAP','RAW']	IP	42	4	\N	\N	64	UDP	\N	\N	36
+--- IPv6 jumbogram: the length comes from the Jumbo Payload option ---
+1	65606	['ETHERNET_II','IPv6','HOPOPT','UDP','RAW']	6	UDP	5353	5353	65536	1

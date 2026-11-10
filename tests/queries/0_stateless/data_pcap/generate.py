@@ -138,14 +138,15 @@ write_pcap(out_dir / "truncated.pcap", truncated, snaplen=SNAPLEN)
 
 # Packets cut by the snapshot length inside a header: the IPv6 packet with the
 # Hop-by-Hop and Routing chain before TCP, cut inside the Hop-by-Hop header,
-# inside the Routing header (after its `next header` byte), and inside the TCP
+# inside the Routing header after its first byte (so its length byte is not
+# captured), inside the Routing header after its length byte, and inside the TCP
 # header, and an IPv4 TCP packet cut inside the TCP header. The packets are
 # dissected up to the last header captured completely, and for IPv6
 # `ip_protocol` is the extension header that was cut or, after a complete
 # chain, `TCP`.
 chain = ethernet(ipv6(0, hop_by_hop_then_routing + tcp), ether_type=0x86DD)
 chain_start = 14 + 40
-truncated_headers = [(chain[:chain_start + cut], len(chain)) for cut in (4, 8 + 4, 16 + 4)]
+truncated_headers = [(chain[:chain_start + cut], len(chain)) for cut in (4, 8 + 1, 8 + 4, 16 + 4)]
 truncated_headers.append((packets[0][:14 + 20 + 4], len(packets[0])))
 write_pcap(out_dir / "truncated_headers.pcap", truncated_headers, snaplen=chain_start + 16 + 4)
 
@@ -350,3 +351,30 @@ truncated_ppi_raw_ip = [
     (struct.pack("<BBHI", 0, 0, 8, 229) + ipv6(17, udp)[:24], 8 + len(ipv6(17, udp))),
 ]
 write_pcap(out_dir / "truncated_ppi_raw_ip.pcap", truncated_ppi_raw_ip, snaplen=32, linktype=192)
+
+# The IEEE 802.3 frame with SNAP from `dot3.pcap` behind an 802.1Q tag (VLAN 42),
+# in full and cut by the snapshot length inside the IPv4 header it carries: the
+# length after the tag is not an EtherType, so the LLC data is dissected like in
+# an untagged IEEE 802.3 frame.
+snap_ip_vlan = snap_ip[:12] + struct.pack(">HH", 0x8100, 42) + snap_ip[12:]
+dot3_vlan = [(snap_ip_vlan, len(snap_ip_vlan)), (snap_ip_vlan[:14 + 4 + 8 + 10], len(snap_ip_vlan))]
+write_pcap(out_dir / "dot3_vlan.pcap", dot3_vlan)
+
+# An IPv6 jumbogram (RFC 2675): the payload length of the fixed header is 0, and
+# the Jumbo Payload option of the Hop-by-Hop header carries the length of the
+# payload (8 bytes of Hop-by-Hop, 8 bytes of UDP header and 65536 bytes of UDP
+# payload). The UDP length field is 0 as well. The frame is longer than 65535
+# bytes, so the capture has a larger snapshot length.
+jumbo_payload = bytes(range(256)) * 256
+jumbo_hop_by_hop = bytes([17, 0]) + bytes.fromhex("c204") + struct.pack(">I", 8 + 8 + len(jumbo_payload))
+jumbo_udp = struct.pack(">HHHH", 5353, 5353, 0, 0xD9FD) + jumbo_payload
+jumbogram = ethernet(
+    bytes.fromhex("60000000")
+    + struct.pack(">HBB", 0, 0, 64)
+    + bytes.fromhex("20010db8000000000000000000000001")
+    + bytes.fromhex("20010db8000000000000000000000002")
+    + jumbo_hop_by_hop
+    + jumbo_udp,
+    ether_type=0x86DD,
+)
+write_pcap(out_dir / "jumbogram.pcap", [(jumbogram, len(jumbogram))], snaplen=262144)

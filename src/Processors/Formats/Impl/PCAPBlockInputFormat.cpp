@@ -307,24 +307,27 @@ constexpr UInt32 ethernet_header_size = 14;
 /// instead of an EtherType, and the data starts with an LLC header. When both SAPs are 0xAA and
 /// the control field is 0x03 (unnumbered information), a SNAP header follows, and the protocol
 /// it names (for example IP) is dissected further. `Tins::Dot3` always dissects its data as a
-/// plain LLC, so the layers are assembled here.
-Tins::PDU * dissectDot3(const uint8_t * data, UInt32 caplen, UInt16 length)
+/// plain LLC, so the layers are assembled here. `appendLLC` appends to `last` the LLC data that
+/// starts at `offset` and whose length is `length`.
+void appendLLC(Tins::PDU & last, const uint8_t * data, UInt32 offset, UInt32 caplen, UInt16 length)
 {
-    static constexpr UInt32 header_size = ethernet_header_size;
-    auto dot3 = std::make_unique<Tins::Dot3>(data, header_size);
-
     /// The bytes past the length are the padding of a short frame or a trailer, not LLC data.
-    const uint8_t * llc_data = data + header_size;
-    const UInt32 llc_size = std::min<UInt32>(caplen - header_size, length);
+    const uint8_t * llc_data = data + offset;
+    const UInt32 llc_size = std::min<UInt32>(caplen - offset, length);
 
     static constexpr UInt32 snap_header_size = 8;
     if (llc_size >= snap_header_size && llc_data[0] == 0xAA && llc_data[1] == 0xAA && llc_data[2] == 0x03)
-        dot3->inner_pdu(new Tins::SNAP(llc_data, llc_size));
+        last.inner_pdu(new Tins::SNAP(llc_data, llc_size));
     else if (llc_size >= 3) /// The two SAPs and at least one byte of the control field.
-        dot3->inner_pdu(new Tins::LLC(llc_data, llc_size));
+        last.inner_pdu(new Tins::LLC(llc_data, llc_size));
     else if (llc_size > 0)
-        dot3->inner_pdu(new Tins::RawPDU(llc_data, llc_size));
+        last.inner_pdu(new Tins::RawPDU(llc_data, llc_size));
+}
 
+Tins::PDU * dissectDot3(const uint8_t * data, UInt32 caplen, UInt16 length)
+{
+    auto dot3 = std::make_unique<Tins::Dot3>(data, ethernet_header_size);
+    appendLLC(*dot3, data, ethernet_header_size, caplen, length);
     return dot3.release();
 }
 
@@ -410,14 +413,65 @@ Tins::PDU * dissectPPI(const uint8_t * data, UInt32 caplen)
     return ppi.release();
 }
 
+/// Whether an EtherType names an 802.1Q tag.
+bool isVlanTagType(UInt16 ether_type)
+{
+    return ether_type == Tins::Constants::Ethernet::VLAN || ether_type == Tins::Constants::Ethernet::QINQ
+        || ether_type == Tins::Constants::Ethernet::OLD_QINQ;
+}
+
+/// Appends to `last` the 802.1Q tags that follow a link-layer header ending at `offset` and were
+/// captured completely, when `ether_type`, the type field of that header, names a tag. Returns the
+/// offset after the last appended tag; `last` is left pointing to it, and `ether_type` is set to
+/// the type field of the last appended tag.
+UInt32 appendCompleteVlanTags(Tins::PDU *& last, const uint8_t * data, UInt32 offset, UInt32 caplen, UInt16 & ether_type)
+{
+    static constexpr UInt32 vlan_tag_size = 4;
+    while (isVlanTagType(ether_type) && offset + vlan_tag_size <= caplen)
+    {
+        auto * tag = new Tins::Dot1Q(data + offset, vlan_tag_size);
+        last->inner_pdu(tag);
+        last = tag;
+        offset += vlan_tag_size;
+        ether_type = tag->payload_type();
+    }
+    return offset;
+}
+
+/// Dissects an Ethernet frame whose 802.1Q tags are followed by the length of an IEEE 802.3 frame
+/// instead of an EtherType: the Ethernet header, the tags, and the LLC data (see `dissectDot3`).
+/// `Tins::Dot1Q` takes the length for an EtherType and keeps the LLC data raw. Returns `nullptr`
+/// for a frame without tags, a frame cut inside a tag, and a tagged Ethernet II frame, which are
+/// dissected by `libtins`.
+Tins::PDU * dissectVlanTaggedDot3(const uint8_t * data, UInt32 caplen, UInt16 ether_type)
+{
+    static constexpr UInt32 vlan_tag_size = 4;
+    UInt32 offset = ethernet_header_size;
+    UInt16 type_or_length = ether_type;
+    while (isVlanTagType(type_or_length) && offset + vlan_tag_size <= caplen)
+    {
+        type_or_length = static_cast<UInt16>((data[offset + 2] << 8) | data[offset + 3]);
+        offset += vlan_tag_size;
+    }
+    if (offset == ethernet_header_size || type_or_length > 1500)
+        return nullptr;
+
+    auto eth = std::make_unique<Tins::EthernetII>(data, ethernet_header_size);
+    Tins::PDU * last = eth.get();
+    offset = appendCompleteVlanTags(last, data, ethernet_header_size, caplen, ether_type);
+    appendLLC(*last, data, offset, caplen, type_or_length);
+    return eth.release();
+}
+
 /// Dissects a captured frame into a PDU chain according to the link type of the capture.
 /// `libtins` dissects Ethernet, Linux cooked capture, BSD loopback, PPI and 802.11 frames, but
 /// returns a raw PDU for the raw IP link types, so they are dispatched here: `DLT_RAW` carries
 /// either IP version, told apart by the version nibble, while `DLT_IPV4` and `DLT_IPV6` carry
 /// only one. `libtins` also takes every `DLT_EN10MB` frame for Ethernet II, so the IEEE 802.3
-/// frames, whose type field is a length of at most 1500, are dispatched here as well, and so are
-/// the BSD loopback frames (see `dissectLoopback`) and the PPI frames (see `dissectPPI`). The
-/// frames of all the other link types are kept as a single raw PDU.
+/// frames, whose type field is a length of at most 1500, also after 802.1Q tags (see
+/// `dissectVlanTaggedDot3`), are dispatched here as well, and so are the BSD loopback frames (see
+/// `dissectLoopback`) and the PPI frames (see `dissectPPI`). The frames of all the other link
+/// types are kept as a single raw PDU.
 Tins::PDU * dissectFrameLayers(int dlt, const uint8_t * data, UInt32 caplen)
 {
     if (dlt == DLT_NULL && caplen >= loopback_header_size)
@@ -430,6 +484,8 @@ Tins::PDU * dissectFrameLayers(int dlt, const uint8_t * data, UInt32 caplen)
         const UInt16 type_or_length = static_cast<UInt16>((data[12] << 8) | data[13]);
         if (type_or_length <= 1500)
             return dissectDot3(data, caplen, type_or_length);
+        if (auto * frame = dissectVlanTaggedDot3(data, caplen, type_or_length))
+            return frame;
     }
     if (dlt == DLT_RAW || dlt == DLT_IPV4 || dlt == DLT_IPV6)
     {
@@ -443,32 +499,14 @@ Tins::PDU * dissectFrameLayers(int dlt, const uint8_t * data, UInt32 caplen)
     return Tins::Internals::pdu_from_dlt_flag(dlt, data, caplen, /*rawpdu_on_no_match=*/ true);
 }
 
-/// Appends to `last` the 802.1Q tags that follow a link-layer header ending at `offset` and were
-/// captured completely, when `ether_type`, the type field of that header, names a tag. Returns the
-/// offset after the last appended tag; `last` is left pointing to it.
-UInt32 appendCompleteVlanTags(Tins::PDU *& last, const uint8_t * data, UInt32 offset, UInt32 caplen, UInt16 ether_type)
-{
-    static constexpr UInt32 vlan_tag_size = 4;
-    while ((ether_type == Tins::Constants::Ethernet::VLAN || ether_type == Tins::Constants::Ethernet::QINQ
-            || ether_type == Tins::Constants::Ethernet::OLD_QINQ)
-        && offset + vlan_tag_size <= caplen)
-    {
-        auto * tag = new Tins::Dot1Q(data + offset, vlan_tag_size);
-        last->inner_pdu(tag);
-        last = tag;
-        offset += vlan_tag_size;
-        ether_type = tag->payload_type();
-    }
-    return offset;
-}
-
 /// Rebuilds the PDU chain of an Ethernet frame from its outer headers that were captured
-/// completely - the Ethernet II header and its 802.1Q tags, or the IEEE 802.3 header and its
-/// `SNAP` header - and keeps the rest of the frame as a raw PDU. Used when the snapshot length cut
-/// the frame inside a header that `libtins` requires to be complete.
+/// completely - the Ethernet II header and its 802.1Q tags, and the LLC header with `SNAP` of an
+/// IEEE 802.3 frame, which can also follow 802.1Q tags - and keeps the rest of the frame as a raw
+/// PDU. Used when the snapshot length cut the frame inside a header that `libtins` requires to be
+/// complete.
 Tins::PDU * dissectCompleteEthernetHeaders(const uint8_t * data, UInt32 caplen)
 {
-    const UInt16 type_or_length = static_cast<UInt16>((data[12] << 8) | data[13]);
+    UInt16 type_or_length = static_cast<UInt16>((data[12] << 8) | data[13]);
 
     std::unique_ptr<Tins::PDU> root;
     Tins::PDU * last = nullptr;
@@ -478,9 +516,20 @@ Tins::PDU * dissectCompleteEthernetHeaders(const uint8_t * data, UInt32 caplen)
     {
         root = std::make_unique<Tins::Dot3>(data, ethernet_header_size);
         last = root.get();
+    }
+    else
+    {
+        root = std::make_unique<Tins::EthernetII>(data, ethernet_header_size);
+        last = root.get();
 
+        offset = appendCompleteVlanTags(last, data, offset, caplen, type_or_length);
+    }
+
+    /// An IEEE 802.3 frame, also behind 802.1Q tags.
+    if (type_or_length <= 1500)
+    {
         /// The bytes past the length are the padding of a short frame or a trailer, not LLC data.
-        end = ethernet_header_size + std::min<UInt32>(caplen - ethernet_header_size, type_or_length);
+        end = offset + std::min<UInt32>(caplen - offset, type_or_length);
         static constexpr UInt32 snap_header_size = 8;
         const uint8_t * llc_data = data + offset;
         if (end - offset >= snap_header_size && llc_data[0] == 0xAA && llc_data[1] == 0xAA && llc_data[2] == 0x03)
@@ -490,13 +539,6 @@ Tins::PDU * dissectCompleteEthernetHeaders(const uint8_t * data, UInt32 caplen)
             last = snap;
             offset += snap_header_size;
         }
-    }
-    else
-    {
-        root = std::make_unique<Tins::EthernetII>(data, ethernet_header_size);
-        last = root.get();
-
-        offset = appendCompleteVlanTags(last, data, offset, caplen, type_or_length);
     }
 
     if (offset < end)
@@ -522,7 +564,8 @@ Tins::PDU * dissectCompleteOuterHeaders(int dlt, const uint8_t * data, UInt32 ca
     {
         auto sll = std::make_unique<Tins::SLL>(data, sll_header_size);
         Tins::PDU * last = sll.get();
-        const UInt32 offset = appendCompleteVlanTags(last, data, sll_header_size, caplen, sll->protocol());
+        UInt16 protocol = sll->protocol();
+        const UInt32 offset = appendCompleteVlanTags(last, data, sll_header_size, caplen, protocol);
         if (offset < caplen)
             last->inner_pdu(new Tins::RawPDU(data + offset, caplen - offset));
         return sll.release();

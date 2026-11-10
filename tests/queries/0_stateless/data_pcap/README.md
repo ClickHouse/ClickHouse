@@ -14,8 +14,8 @@ rewrite each other's files.
 - `truncated.pcap` — the first three packets captured with a snapshot length of
   34 bytes, so `original_length > capture_length`.
 - `truncated_headers.pcap` — the IPv6 packet with the Hop-by-Hop and Routing
-  chain cut inside the Hop-by-Hop header, inside the Routing header, and inside
-  the TCP header, and an IPv4 TCP packet cut inside the TCP header, so the
+  chain cut inside the Hop-by-Hop header, inside the Routing header after its
+  first byte and after its length byte, and inside the TCP header, and an IPv4 TCP packet cut inside the TCP header, so the
   packets are dissected up to the last header captured completely.
 - `truncated_ip.pcap`, `truncated_raw_ip.pcap` — Ethernet frames cut inside the
   IPv4 header, the IPv6 header, and a VLAN tag, and raw IP packets cut inside the
@@ -61,3 +61,9 @@ rewrite each other's files.
 - `truncated_ppi_raw_ip.pcap` — raw IPv4 and IPv6 packets behind a PPI header
   with `LINKTYPE_RAW`, `LINKTYPE_IPV4` and `LINKTYPE_IPV6`, cut inside the IP
   header after the source address, so the captured IP fields are still filled.
+- `dot3_vlan.pcap` — the IEEE 802.3 frame with `SNAP` from `dot3.pcap` behind an
+  802.1Q tag, in full and cut inside the IPv4 header, so the length after the
+  tag is not taken for an EtherType and the LLC data is dissected.
+- `jumbogram.pcap` — an IPv6 UDP jumbogram (RFC 2675) whose length is in the
+  Jumbo Payload option of the Hop-by-Hop header, in a frame longer than 65535
+  bytes, so the ports and the payload come from the right offsets.
