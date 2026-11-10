@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Fails until https://github.com/ClickHouse/ClickHouse/pull/126078 is merged: Iceberg float bounds
-# exclude NaN, and without that PR min/max pruning drops a file whose only matching row is NaN.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
