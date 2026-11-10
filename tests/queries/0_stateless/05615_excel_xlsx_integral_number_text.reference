@@ -1,0 +1,20 @@
+--- schema inference
+exponent	Nullable(Int64)					
+fraction	Nullable(Float64)					
+unsigned	Nullable(Float64)					
+--- data
+9007199254740993	18446744073709552000
+1000	0
+-125	12
+--- explicit structure
+9007199254740993	18446744073709551615
+1000	0
+-125	12
+9007199254740993	18446744073709551615
+1000	0
+-125	12
+--- not an integer
+UNEXPECTED_DATA_AFTER_PARSED_VALUE
+--- round trip of a decimal with trailing zeros
+9007199254740993	Nullable(Int64)
+9007199254740993

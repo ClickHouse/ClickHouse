@@ -198,6 +198,100 @@ bool tryInsertText(IColumn & column, const SerializationPtr & serialization, std
     return serialization->tryDeserializeWholeText(column, buf, format_settings);
 }
 
+/// Converts the textual representation of an integral number, like `1.0`, `-12E2` or `9007199254740993.0`,
+/// to the decimal notation of the integer (`1`, `-1200`, `9007199254740993`) with exact arithmetic.
+/// Returns false if the text is not a number or the number is not an integer.
+bool numberTextToInteger(std::string_view text, String & out)
+{
+    /// No integer data type has more digits.
+    constexpr size_t max_digits = 100;
+
+    size_t pos = 0;
+    bool negative = false;
+    if (pos < text.size() && (text[pos] == '-' || text[pos] == '+'))
+    {
+        negative = text[pos] == '-';
+        ++pos;
+    }
+
+    String digits;
+    size_t integer_begin = pos;
+    while (pos < text.size() && isNumericASCII(text[pos]))
+        ++pos;
+    digits.append(text.substr(integer_begin, pos - integer_begin));
+
+    size_t fraction_size = 0;
+    if (pos < text.size() && text[pos] == '.')
+    {
+        ++pos;
+        size_t fraction_begin = pos;
+        while (pos < text.size() && isNumericASCII(text[pos]))
+            ++pos;
+        fraction_size = pos - fraction_begin;
+        digits.append(text.substr(fraction_begin, fraction_size));
+    }
+    if (digits.empty())
+        return false;
+
+    Int64 exponent = 0;
+    if (pos < text.size() && (text[pos] == 'e' || text[pos] == 'E'))
+    {
+        ++pos;
+        bool negative_exponent = false;
+        if (pos < text.size() && (text[pos] == '-' || text[pos] == '+'))
+        {
+            negative_exponent = text[pos] == '-';
+            ++pos;
+        }
+        size_t exponent_begin = pos;
+        while (pos < text.size() && isNumericASCII(text[pos]))
+        {
+            /// Saturate: such exponents produce either zero or a number that is too large for any data type.
+            if (exponent < 1000000)
+                exponent = exponent * 10 + (text[pos] - '0');
+            ++pos;
+        }
+        if (pos == exponent_begin)
+            return false;
+        if (negative_exponent)
+            exponent = -exponent;
+    }
+    if (pos != text.size())
+        return false;
+
+    /// The value is `digits * 10^exponent`.
+    exponent -= static_cast<Int64>(fraction_size);
+
+    size_t first_nonzero = digits.find_first_not_of('0');
+    if (first_nonzero == String::npos)
+    {
+        out = "0";
+        return true;
+    }
+    digits.erase(0, first_nonzero);
+
+    if (exponent < 0)
+    {
+        size_t drop = static_cast<size_t>(-exponent);
+        /// The dropped digits must be zeros. The first digit is not zero, so all digits cannot be dropped.
+        if (drop >= digits.size() || digits.find_first_not_of('0', digits.size() - drop) != String::npos)
+            return false;
+        digits.resize(digits.size() - drop);
+    }
+    else
+    {
+        if (digits.size() + static_cast<size_t>(exponent) > max_digits)
+            return false;
+        digits.append(static_cast<size_t>(exponent), '0');
+    }
+
+    out.clear();
+    if (negative)
+        out += '-';
+    out += digits;
+    return true;
+}
+
 LocalDateTime serialToLocalDateTimeOrThrow(double serial, bool date1904)
 {
     auto result = serialToLocalDateTime(serial, date1904);
@@ -337,12 +431,22 @@ void insertNotNullCell(
     if (which.isIntegerOrDecimal())
     {
         /// The original text is exact, while the double may be rounded (e.g. for integers above 2^53).
-        /// But the original text may be like `1.0` or `1E+3`, which is not a valid integer.
-        if (!cell.text.empty() && tryInsertText(column, serialization, cell.text, format_settings))
+        if (cell.text.empty())
+        {
+            String text;
+            formatNumber(cell.number, text);
+            insertText(column, serialization, text, format_settings);
             return;
-        String text;
-        formatNumber(cell.number, text);
-        insertText(column, serialization, text, format_settings);
+        }
+        if (tryInsertText(column, serialization, cell.text, format_settings))
+            return;
+        /// The original text may be like `1.0` or `1E+3`, which is not a valid integer. Convert it exactly.
+        /// If the number is not an integer, the deserialization of the original text throws an exception.
+        String integer_text;
+        if (numberTextToInteger(cell.text, integer_text))
+            insertText(column, serialization, integer_text, format_settings);
+        else
+            insertText(column, serialization, cell.text, format_settings);
         return;
     }
 
@@ -855,11 +959,24 @@ void ColumnTypeInferrer::add(const Cell & cell)
                     has_string = true;
                     return;
                 case NumberFormatKind::Number:
-                    /// 2^63 is exactly representable as a double.
-                    if (cell.number == std::trunc(cell.number) && std::abs(cell.number) < 9223372036854775808.0)
-                        has_integer = true;
+                    if (cell.text.empty())
+                    {
+                        /// 2^63 is exactly representable as a double.
+                        if (cell.number == std::trunc(cell.number) && std::abs(cell.number) < 9223372036854775808.0)
+                            has_integer = true;
+                        else
+                            has_float = true;
+                    }
                     else
-                        has_float = true;
+                    {
+                        /// The original text is exact, while the double may be rounded: `9007199254740993.5` is read as an integer double.
+                        /// The double is rounded to 2^63 for integers close to it, so the check of the range is conservative.
+                        String integer_text;
+                        if (numberTextToInteger(cell.text, integer_text) && std::abs(cell.number) < 9223372036854775808.0)
+                            has_integer = true;
+                        else
+                            has_float = true;
+                    }
                     return;
             }
     }
