@@ -394,6 +394,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.writer_time_zone_name = settings[Setting::output_format_orc_writer_time_zone_name];
     format_settings.vortex.filter_push_down = settings[Setting::input_format_vortex_filter_push_down];
     format_settings.vortex.preserve_order = settings[Setting::input_format_vortex_preserve_order];
+    format_settings.vortex.output_string_as_string = settings[Setting::output_format_vortex_string_as_string];
     format_settings.defaults_for_omitted_fields = settings[Setting::input_format_defaults_for_omitted_fields];
     format_settings.capn_proto.enum_comparing_mode = settings[Setting::format_capn_proto_enum_comparising_mode];
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference];
@@ -460,6 +461,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.aggregate_function_input_format = settings[Setting::aggregate_function_input_format];
     format_settings.allow_special_serialization_kinds = settings[Setting::allow_special_serialization_kinds_in_output_formats];
     format_settings.input_format_column_matching_case_sensitivity = settings[Setting::input_format_column_name_matching_mode];
+    format_settings.source_settings_hash = getFormatSettingsHash(settings);
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
