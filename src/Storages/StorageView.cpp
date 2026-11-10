@@ -454,7 +454,7 @@ bool runsAsDefiner(const StorageInMemoryMetadata & metadata, const ContextPtr & 
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY || context->getAuthenticationGrants())
         return false;
 
-    /// By ID, as `getSQLSecurityOverriddenContext` resolves the definer: users of different storages may share a name.
+    /// By ID: users of different storages may share a name.
     const auto definer_id = context->getAccessControl().find<User>(*metadata.definer);
     const auto user = context->getAccess()->tryGetUser();
     if (!definer_id || !user || context->getUserID() != definer_id)
