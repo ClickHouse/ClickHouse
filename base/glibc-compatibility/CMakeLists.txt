@@ -60,6 +60,9 @@ if (GLIBC_COMPATIBILITY)
         )
         add_custom_target(glibc-compatibility-crt DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/crt1.o")
         add_dependencies(glibc-compatibility glibc-compatibility-crt)
+        # The dependency above only orders the build: relink the executables when the object changes
+        # (CMake >= 3.27, older versions ignore the property).
+        set_property(TARGET glibc-compatibility APPEND PROPERTY INTERFACE_LINK_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/crt1.o")
     endif ()
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
