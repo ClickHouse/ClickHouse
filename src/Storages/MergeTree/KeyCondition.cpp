@@ -2404,6 +2404,20 @@ static bool fixedStringConstantLosesPadding(
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
+/// An `Enum` constant is compared with a `FixedString` by its name, with the trailing zero bytes of the `FixedString`
+/// removed, while its conversion to a `FixedString` pads the name. The padded value agrees with the comparison unless the
+/// name ends with a zero byte itself: `k != CAST('a\0' AS Enum8('a\0' = 1))` is true for the key `'a\0'` of
+/// `FixedString(2)`, to which the constant is converted.
+static bool enumConstantNameLosesZeroBytes(const Field & value, const DataTypePtr & value_type, const DataTypePtr & key_expression_input_type)
+{
+    const auto enum_type = removeLowCardinalityAndNullable(value_type);
+    if (!isEnum(enum_type) || !isFixedString(removeLowCardinalityAndNullable(key_expression_input_type)))
+        return false;
+
+    Field name = tryConvertFieldToType(value, DataTypeString(), enum_type.get(), {});
+    return name.isNull() || (!name.safeGet<String>().empty() && name.safeGet<String>().back() == '\0');
+}
+
 /// Whether a value of `type` (without `Nullable` and `LowCardinality`) can have a `FixedString` nested in a composite
 /// type. `Dynamic` and `JSON` do not show the types of their values, so `CAST(tuple(toFixedString('a', 2)) AS Dynamic)`
 /// and `tuple(CAST(toFixedString('a', 2) AS Dynamic))` are such values as well. A top-level `Dynamic` holding a scalar,
@@ -2427,7 +2441,10 @@ static bool valueMayHaveNestedFixedString(const DataTypePtr & type, const Field 
 /// `FixedString` is handled by the callers (see `fixedStringConstantLosesPadding`).
 /// The padding matters only where the other side can hold a string: a `FixedString` converted to a number is parsed
 /// both by the conversion and by the comparison, so `(toFixedString('123', 3), 5)` over `Tuple(UInt64, UInt64)` is safe.
-/// `Dynamic` and `JSON` can hold a string without showing it in the type.
+/// `Dynamic` and `JSON` can hold a string without showing it in the type. An `Enum` is compared with a `FixedString` by
+/// its name, with the trailing zero bytes of the `FixedString` removed, while the conversion of a `FixedString` to an
+/// `Enum` keeps them, and the conversion of an `Enum` to a `FixedString` pads the name: `tuple(toFixedString('a', 2))`
+/// equals `tuple('a')` of `Tuple(Enum8('a' = 1, 'a\0' = 2))`, but is converted to `tuple('a\0')`.
 static bool nestedFixedStringConversionChangesValues(const DataTypePtr & value_type, const DataTypePtr & input_type, const Field * value)
 {
     auto has_nested_fixed_string = [](const DataTypePtr & type)
@@ -2437,7 +2454,8 @@ static bool nestedFixedStringConversionChangesValues(const DataTypePtr & value_t
 
     auto can_hold_string = [](const DataTypePtr & type)
     {
-        return anyInTypeTree(*type, [](const IDataType & t) { return isStringOrFixedString(t) || isDynamic(t) || isObject(t); });
+        return anyInTypeTree(
+            *type, [](const IDataType & t) { return isStringOrFixedString(t) || isEnum(t) || isDynamic(t) || isObject(t); });
     };
 
     const auto value_type_not_null = removeNullable(recursiveRemoveLowCardinality(value_type));
@@ -2654,6 +2672,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
+                || enumConstantNameLosesZeroBytes(value, constant.type, transform_input_type)
                 || nestedFixedStringConversionChangesValues(constant.type, transform_input_type, &value)
                 || floatValuesMissKeyValues(constant.column, constant.type, transform_input_type, std::make_shared<DataTypeFloat64>())
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
@@ -3408,6 +3427,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     {
         /// The DAG casts the constant to its input type.
         if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type)
+            || enumConstantNameLosesZeroBytes(value, constant.type, candidate.dag.input_type)
             || nestedFixedStringConversionChangesValues(constant.type, candidate.dag.input_type, &value)
             || floatValuesMissKeyValues(constant.column, constant.type, candidate.dag.input_type, std::make_shared<DataTypeFloat64>()))
             continue;
@@ -6329,9 +6349,14 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                         || func_name == "startsWithUTF8" || func_name == "match")
                         return std::nullopt;
 
+                    /// The comparison removes the trailing zero bytes of the key (see `FunctionComparison::executeGeneric`),
+                    /// so it agrees with the padded value only when the value does not end with a zero byte itself:
+                    /// `toFixedString('a', 2) < CAST('a\0' AS Enum8('a\0' = 1))` is true, but the key `'a\0'` is not less
+                    /// than the value padded to `'a\0'`.
                     Field as_string = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
                     if (as_string.isNull()
-                        || as_string.safeGet<String>().size() > assert_cast<const DataTypeFixedString &>(*key_expr_type_not_null).getN())
+                        || as_string.safeGet<String>().size() > assert_cast<const DataTypeFixedString &>(*key_expr_type_not_null).getN()
+                        || (!as_string.safeGet<String>().empty() && as_string.safeGet<String>().back() == '\0'))
                         return std::nullopt;
 
                     const_value = convertFieldToType(as_string, *key_expr_type_not_null);
