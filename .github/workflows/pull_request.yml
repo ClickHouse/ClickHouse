@@ -340,6 +340,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1100,6 +1101,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1160,6 +1162,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1220,6 +1223,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1280,6 +1284,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1340,6 +1345,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1400,6 +1406,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1460,6 +1467,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1520,6 +1528,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1580,6 +1589,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1640,6 +1650,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1700,6 +1711,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1760,6 +1772,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1820,6 +1833,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2103,6 +2117,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2163,6 +2178,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2223,6 +2239,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2283,6 +2300,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2343,6 +2361,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2403,6 +2422,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2463,6 +2483,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2523,6 +2544,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2583,6 +2605,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2643,6 +2666,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2703,6 +2727,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3123,6 +3148,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3183,6 +3209,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3243,6 +3270,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3303,6 +3331,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3363,6 +3392,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3424,6 +3454,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3485,6 +3516,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3546,6 +3578,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3607,6 +3640,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3668,6 +3702,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3729,6 +3764,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3790,6 +3826,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3851,6 +3888,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3912,6 +3950,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3973,6 +4012,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4034,6 +4074,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4139,6 +4180,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4199,6 +4241,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4259,6 +4302,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4454,6 +4498,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4515,6 +4560,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4576,6 +4622,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4637,6 +4684,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4697,6 +4745,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4757,6 +4806,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4817,6 +4867,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4877,6 +4928,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4937,6 +4989,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4997,6 +5050,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5057,6 +5111,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5117,6 +5172,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5177,6 +5233,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5237,6 +5294,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5297,6 +5355,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5478,6 +5537,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5539,6 +5599,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5600,6 +5661,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5661,6 +5723,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5722,6 +5785,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5783,6 +5847,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5844,6 +5909,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5905,6 +5971,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5966,6 +6033,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6027,6 +6095,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6088,6 +6157,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6149,6 +6219,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6210,6 +6281,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6246,6 +6318,51 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_binary_excluded_from_llvm)' --workflow "PR" --ci --timestamp
+
+  unit_tests_amd_debug:
+    runs-on: [self-hosted, pr-amd-large]
+    needs:
+    - build_amd_debug
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX2RlYnVnKQ==') }}
+    name: "Unit tests (amd_debug)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_debug)' --workflow "PR" --ci --timestamp
 
   unit_tests_asan_ubsan:
     runs-on: [self-hosted, pr-amd-large]
@@ -6541,6 +6658,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6608,6 +6726,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6675,6 +6794,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6741,6 +6861,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6807,6 +6928,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6873,6 +6995,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6939,6 +7062,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7005,6 +7129,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7071,6 +7196,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7137,6 +7263,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7203,6 +7330,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7263,6 +7391,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7323,6 +7452,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7383,6 +7513,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7443,6 +7574,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7509,6 +7641,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7570,6 +7703,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7631,6 +7765,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7692,6 +7827,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7753,6 +7889,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7814,6 +7951,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7880,6 +8018,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7940,6 +8079,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8001,6 +8141,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8061,6 +8202,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8121,6 +8263,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8187,6 +8330,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8247,6 +8391,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8308,6 +8453,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8368,6 +8514,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8428,6 +8575,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8494,6 +8642,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8560,6 +8709,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8626,6 +8776,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8692,6 +8843,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8758,6 +8910,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8824,6 +8977,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8890,6 +9044,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8956,6 +9111,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9022,6 +9178,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9088,6 +9245,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9154,6 +9312,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9220,6 +9379,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9286,6 +9446,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9352,6 +9513,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9418,6 +9580,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9484,6 +9647,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9550,6 +9714,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9616,6 +9781,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9792,6 +9958,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9858,6 +10025,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9941,6 +10109,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_amd_llvm_coverage
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
@@ -10020,6 +10189,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10141,6 +10311,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10207,6 +10378,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10273,6 +10445,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10611,6 +10784,7 @@ jobs:
     - stress_test_arm_release
     - stress_test_arm_tsan
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_amd_llvm_coverage
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
