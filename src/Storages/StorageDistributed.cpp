@@ -2521,6 +2521,16 @@ static void finalizeDistributedSettings(DistributedSettings & distributed_settin
             = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
 }
 
+/// Both the `Distributed` and the `Remote`/`RemoteSecure` engines accept the experimental settings, so both must check them.
+static void checkExperimentalDistributedSettings(const DistributedSettings & distributed_settings, const StorageFactory::Arguments & args)
+{
+    if (!distributed_settings[DistributedSetting::partition_moves_zookeeper_path].value.empty()
+        && isFreshTableDefinition(args.mode, args.query.attach_short_syntax)
+        && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_distributed_partition_moves])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Partition moves of `Distributed` tables are experimental. Set `allow_experimental_distributed_partition_moves` to enable it");
+}
+
 namespace
 {
 
@@ -2686,11 +2696,7 @@ void registerStorageDistributed(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, context);
 
-        if (!distributed_settings[DistributedSetting::partition_moves_zookeeper_path].value.empty()
-            && isFreshTableDefinition(args.mode, args.query.attach_short_syntax)
-            && !local_context->getSettingsRef()[Setting::allow_experimental_distributed_partition_moves])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Partition moves of `Distributed` tables are experimental. Set `allow_experimental_distributed_partition_moves` to enable it");
+        checkExperimentalDistributedSettings(distributed_settings, args);
 
         /// Infer an omitted structure here, so a fresh definition resolves under the user's context
         /// and the local-shard `SHOW_COLUMNS` check applies to them. A definition restored from
@@ -3057,6 +3063,7 @@ void registerStorageRemote(StorageFactory & factory)
             distributed_settings.loadFromQuery(*args.storage_def);
 
         finalizeDistributedSettings(distributed_settings, args.getContext());
+        checkExperimentalDistributedSettings(distributed_settings, args);
 
         bool has_local_shard = false;
         for (const auto & shard_info : parsed.cluster->getShardsInfo())

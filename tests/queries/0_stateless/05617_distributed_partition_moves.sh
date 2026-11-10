@@ -57,6 +57,8 @@ $CLICKHOUSE_CLIENT -m -q "
 echo '-- the setting is experimental'
 $CLICKHOUSE_CLIENT -q "CREATE TABLE dist $DIST_DEFINITION SETTINGS partition_moves_zookeeper_path = '$MOVES_PATH'" 2>&1 \
     | grep -o -m1 'SUPPORT_IS_DISABLED'
+$CLICKHOUSE_CLIENT -q "CREATE TABLE remote_dist (d Date, x UInt64) ENGINE = Remote('127.0.0.1', 'shard_0', 'data') SETTINGS partition_moves_zookeeper_path = '${MOVES_PARENT}/remote_partition_moves'" 2>&1 \
+    | grep -o -m1 'SUPPORT_IS_DISABLED'
 
 echo '-- the node is created without moves'
 $CLICKHOUSE_CLIENT --allow_experimental_distributed_partition_moves 1 -q "CREATE TABLE dist $DIST_DEFINITION SETTINGS partition_moves_zookeeper_path = '$MOVES_PATH'"

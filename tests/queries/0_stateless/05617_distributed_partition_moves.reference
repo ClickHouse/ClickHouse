@@ -1,5 +1,6 @@
 -- the setting is experimental
 SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
 -- the node is created without moves
 format version: 1
 
