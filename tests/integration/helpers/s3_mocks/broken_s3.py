@@ -12,6 +12,10 @@ import urllib.parse
 
 INF_COUNT = 100000000
 
+# A server that ignores `Expect: 100-continue` still has a read timeout: in the `never` mode the mock
+# drops a client that has not started to send the body within this time.
+IGNORED_EXPECT_BODY_TIMEOUT_S = 5
+
 
 def _and_then(value, func):
     assert callable(func)
@@ -569,6 +573,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def parse_request(self):
         self.continue_pending = False
+        self.expect_100_ignored = False
         return super().parse_request()
 
     def handle_expect_100(self):
@@ -586,6 +591,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.close_connection = True
             return False
         self.continue_pending = mode != "never"
+        self.expect_100_ignored = mode == "never"
         return True
 
     def send_continue_if_expected(self):
@@ -600,6 +606,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_continue_if_expected()
         content_length = int(self.headers.get("Content-Length", 0))
         to_read = content_length
+        if self.expect_100_ignored and to_read > 0:
+            self.connection.settimeout(IGNORED_EXPECT_BODY_TIMEOUT_S)
+            try:
+                self.rfile.peek(1)
+            except socket.timeout:
+                self.log_message("the client did not send the body in time, drop it")
+                self.close_connection = True
+                raise
+            finally:
+                self.connection.settimeout(None)
         while to_read > 0:
             # read content in order to avoid error on client
             # Poco::Exception. Code: 1000, e.code() = 32, I/O error: Broken pipe

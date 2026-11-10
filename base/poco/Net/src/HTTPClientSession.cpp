@@ -622,28 +622,39 @@ bool HTTPClientSession::peekResponse(HTTPResponse& response)
 
 bool HTTPClientSession::waitForResponseData(const Poco::Timespan& timeout)
 {
+	/// A zero socket timeout means no timeout at all.
+	if (timeout <= 0)
+		throw InvalidArgumentException("HTTPClientSession::waitForResponseData needs a positive timeout");
+
 	if (buffered() > 0)
 		return true;
 
 	/// Reading through the socket, not polling its descriptor: a TLS socket can receive records
 	/// that carry no data, such as a TLS 1.3 session ticket, and only the TLS layer skips them.
+	/// The TLS layer reads with the larger of the receive and send timeouts, so both are set.
+	const auto restore_timeouts = [this]
+	{
+		socket().setReceiveTimeout(getReceiveTimeout());
+		socket().setSendTimeout(getSendTimeout());
+	};
 	socket().setReceiveTimeout(timeout);
+	socket().setSendTimeout(timeout);
 	try
 	{
 		peek();
 	}
 	catch (Poco::TimeoutException&)
 	{
-		socket().setReceiveTimeout(getReceiveTimeout());
+		restore_timeouts();
 		clearException();
 		return false;
 	}
 	catch (...)
 	{
-		socket().setReceiveTimeout(getReceiveTimeout());
+		restore_timeouts();
 		throw;
 	}
-	socket().setReceiveTimeout(getReceiveTimeout());
+	restore_timeouts();
 	return true;
 }
 

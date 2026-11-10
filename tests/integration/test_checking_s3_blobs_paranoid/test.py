@@ -469,18 +469,23 @@ def test_early_error_response_at_upload_is_not_retried(cluster, broken_s3, schem
 
 
 @pytest.mark.parametrize(
-    "mode, scheme, port",
+    "mode, scheme, port, timeout_ms",
     [
-        ("never", "http", 8083),
-        ("never", "https", 8443),
-        ("late", "http", 8083),
-        ("reject", "http", 8083),
+        ("never", "http", 8083, 100),
+        ("never", "https", 8443, 100),
+        ("never", "http", 8083, 0),
+        ("late", "http", 8083, 100),
+        ("reject", "http", 8083, 100),
     ],
 )
-def test_expect_100_continue_not_answered(cluster, broken_s3, mode, scheme, port):
+def test_expect_100_continue_not_answered(
+    cluster, broken_s3, mode, scheme, port, timeout_ms
+):
     # The server does not answer `Expect: 100-continue` (`never`), answers it only after the body has
     # started to arrive (`late`), or refuses it with `417 Expectation Failed` (`reject`). The upload
-    # must still succeed, with no errors.
+    # must still succeed, with no errors. In the `never` mode the mock drops a client that waits for
+    # `100 Continue` longer than its read timeout, so the client must stop waiting after
+    # `s3_expect_continue_timeout_ms`, also over TLS. `0` disables the header.
     node = cluster.instances["node"]
 
     broken_s3.setup_fake_multpartuploads()
@@ -491,7 +496,7 @@ def test_expect_100_continue_not_answered(cluster, broken_s3, mode, scheme, port
         f"""
         INSERT INTO
             TABLE FUNCTION s3(
-                '{scheme}://resolver:{port}/root/data/test_expect_100_continue_not_answered_{mode}_{scheme}',
+                '{scheme}://resolver:{port}/root/data/test_expect_100_continue_not_answered_{mode}_{scheme}_{timeout_ms}',
                 'minio', '{minio_secret_key}',
                 'CSV', auto, 'none'
             )
@@ -500,7 +505,7 @@ def test_expect_100_continue_not_answered(cluster, broken_s3, mode, scheme, port
             s3_max_single_part_upload_size=100,
             s3_min_upload_part_size=33554432,
             s3_max_inflight_parts_for_one_file=1,
-            s3_expect_continue_timeout_ms=100,
+            s3_expect_continue_timeout_ms={timeout_ms},
             s3_check_objects_after_upload=0
         """,
         query_id=insert_query_id,
