@@ -368,6 +368,9 @@ static FillColumnDescription::StepFunction getStepFunction(
         /// for the other integer types, which `FillingRow` takes for passing the border of the filling.
         return [step_value = step.safeGet<Int64>()](Field & field, Int64 jumps_count)
         {
+            if (field.isNull())
+                return;
+
             const UInt64 shift = static_cast<UInt64>(step_value) * static_cast<UInt64>(jumps_count);
 
             if (field.getType() == Field::Types::UInt64)
