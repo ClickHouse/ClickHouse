@@ -159,7 +159,7 @@ echo "--- T8: GROUP BY v of s = 'rare' on the 12-row table"
 echo 'Expect ~1: the numbers of distinct values are raised to 1 with the rows, so the aggregation keeps 1 group (true 1).'
 labels "(SELECT v, count() AS c FROM small WHERE s = 'rare' GROUP BY v)" v '1' ${ON}
 echo "--- T8: GROUP BY v, s of a 5-row table without a filter"
-echo 'Expect 5: s has no counted NDV and 10% of 5 rows truncates to 0, so it is raised to 1: 5 * 1 groups (true 5).'
+echo 'Expect ~5: s has no counted NDV, so the groups are bounded by the 5 rows only (true 5).'
 labels "(SELECT v, s, count() AS c FROM tiny GROUP BY v, s)" v '1' ${ON}
 
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${CLICKHOUSE_DATABASE}_rp ON ${CLICKHOUSE_DATABASE}.t_rp"

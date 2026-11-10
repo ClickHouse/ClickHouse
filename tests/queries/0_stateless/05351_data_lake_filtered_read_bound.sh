@@ -3,8 +3,9 @@
 # no-fasttest: the Iceberg table needs the Parquet and Avro libraries.
 
 # A data lake table keeps its row count in its metadata, which is the count before any filter. A
-# read with a filter the step applies itself keeps that count as its row bound only; without this
-# every filtered read of such a table was estimated at the full table size.
+# read with a filter the step applies itself keeps that count as its row bound, and the manifest
+# bounds of the filtered column give the estimate; without this every filtered read of such a table
+# was estimated at the full table size.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,7 +25,7 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_randomize = 0;
-SET use_statistics = 0;
+SET use_statistics = 1;
 SET allow_insert_into_iceberg = 1;
 SET use_iceberg_metadata_files_cache = 0;
 SET use_iceberg_manifest_statistics = 1;
@@ -43,7 +44,7 @@ INSERT INTO t_dlf_fact SELECT number % 5, number FROM numbers(100000);
 SELECT '-- without a filter the lake table reports its 5 rows';
 EXPLAIN estimates = 1 SELECT count() FROM t_dlf_fact AS f JOIN t_dlf_dim AS d ON f.k = d.k;
 
-SELECT '-- with a filter the 5 rows are only a bound: the read has no estimate';
+SELECT '-- with a filter the 5 rows are a bound, and the bounds 0..4 of v estimate v < 2';
 EXPLAIN estimates = 1 SELECT count() FROM t_dlf_fact AS f JOIN t_dlf_dim AS d ON f.k = d.k WHERE d.v < 2;
 EXPLAIN SELECT count() FROM t_dlf_fact AS f JOIN t_dlf_dim AS d ON f.k = d.k WHERE d.v < 2;
 

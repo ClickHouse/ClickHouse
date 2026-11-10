@@ -57,7 +57,7 @@ Join: t[no_stats~2000] ⋈ dim[1]
 rows: 1000
 --- T6: row policy k < 1000, 1 of 4 files remains
 Expect ~999: as the filter k < 1000 in T2.
-Join: t[no_stats~999] ⋈ dim[2]
+Join: t[no_stats~999] ⋈ dim[5]
 rows: 1000
 --- T7: k % 2 = 0, right above the read
 Expect ~100: the default 1% of 10000 rows for a condition that is not a range, once (true 5000).
@@ -72,6 +72,6 @@ Expect ~1: the numbers of distinct values are raised to 1 with the rows, so the 
 Join: dim[5] ⋈ t[no_stats~1]
 rows: 1
 --- T8: GROUP BY v, s of a 5-row table without a filter
-Expect 5: s has no counted NDV and 10% of 5 rows truncates to 0, so it is raised to 1: 5 * 1 groups (true 5).
-Join: t[5] ⋈ dim[5]
+Expect ~5: s has no counted NDV, so the groups are bounded by the 5 rows only (true 5).
+Join: t[no_stats~5] ⋈ dim[5]
 rows: 5

@@ -296,13 +296,15 @@ RelationStats estimateGroupStats(const Names & keys, const RelationStats & input
     return aggregation_stats;
 }
 
-/// Raises a read with rows to 1 row and 1 value per column: 1% of `=` and the 10% guess of distinct values truncate to 0
-/// on a table of a few rows, and the joins and aggregations above multiply them.
+/// Raises a read with rows to 1 row and a counted column to 1 value: 1% of `=` truncates to 0 on a table of a few rows,
+/// and the joins and aggregations above multiply it. A column without a distinct count keeps 0, which means unknown;
+/// otherwise it would look like a column of one value.
 static void floorReadWithRows(RelationProfile & profile)
 {
     profile.rows = std::max<UInt64>(profile.rows, 1);
     for (auto & [_, column_stats] : profile.column_stats)
-        column_stats.num_distinct_values = std::max<UInt64>(column_stats.num_distinct_values, 1);
+        if (column_stats.domain_distinct_values != 0)
+            column_stats.num_distinct_values = std::max<UInt64>(column_stats.num_distinct_values, 1);
 }
 
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
