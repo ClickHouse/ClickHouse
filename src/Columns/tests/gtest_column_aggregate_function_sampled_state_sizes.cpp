@@ -359,7 +359,7 @@ TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedPayloadAtTheLZ4MatchDista
         "state"};
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, materialized);
     NativeWriter::writeData(
-        *serialization, column_to_write, compressed_buf, std::nullopt, 0, column_to_write->size(), DBMS_TCP_PROTOCOL_VERSION);
+        *serialization, column_to_write, compressed_buf, nullptr, 0, column_to_write->size(), DBMS_TCP_PROTOCOL_VERSION);
     compressed_buf.finalize();
     const size_t actual_compressed_bytes = null_buf.count();
 

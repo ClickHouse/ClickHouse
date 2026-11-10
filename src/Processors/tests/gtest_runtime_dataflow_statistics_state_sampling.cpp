@@ -52,7 +52,7 @@ size_t compressedColumnSize(const ColumnWithTypeAndName & column, const Compress
     CompressedWriteBuffer compressed_buf(null_buf, codec ? codec : CompressionCodecFactory::instance().getDefaultCodec());
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
     NativeWriter::writeData(
-        *serialization, column_to_write, compressed_buf, std::nullopt, 0, column_to_write->size(), DBMS_TCP_PROTOCOL_VERSION);
+        *serialization, column_to_write, compressed_buf, nullptr, 0, column_to_write->size(), DBMS_TCP_PROTOCOL_VERSION);
     compressed_buf.finalize();
     return null_buf.count();
 }

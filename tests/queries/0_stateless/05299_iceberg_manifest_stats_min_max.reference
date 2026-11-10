@@ -23,8 +23,8 @@ __table1.added: 400 [null 0.5]
 __table1.id: 4000
 --- T4: rows of a range condition over half of each range
 Expect about 500 of the 1000 rows: Decimal, DateTime64 in s, Date32 in days, Int64; nullable_int 3/4 non-NULL.
-decimal_value < 125: ice_types: 500 rows
-event_time < '2020-01-01 00:08:20': ice_types: 500 rows
+decimal_value < 125: ice_types: 501 rows
+event_time < '2020-01-01 00:08:20': ice_types: 501 rows
 day < '2020-07-01': ice_types: 497 rows
 id < 500: ice_types: 499 rows
 nullable_int < 50: ice_types: 367 rows

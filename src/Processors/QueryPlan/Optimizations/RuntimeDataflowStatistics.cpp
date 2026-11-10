@@ -197,7 +197,7 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     NullWriteBuffer null_buf;
     CompressedWriteBuffer compressed_buf(null_buf, codec);
     const auto limit = sampleRowLimit(column_to_write->size());
-    NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
+    NativeWriter::writeData(*serialization, column_to_write, compressed_buf, nullptr, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
     compressed_buf.finalize();
     // Return pair of (sample size, compressed size), note that both sizes are based on limited number of rows.
     return std::make_pair(compressed_buf.count(), null_buf.count());
@@ -225,7 +225,7 @@ estimateRepeatedCompressedColumnSize(const ColumnWithTypeAndName & column, size_
         NullWriteBuffer null_buf;
         CompressedWriteBuffer compressed_buf(null_buf, codec);
         for (size_t copy = 0; copy < copies; ++copy)
-            NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
+            NativeWriter::writeData(*serialization, column_to_write, compressed_buf, nullptr, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
         compressed_buf.finalize();
         /// Pair of (sample size, compressed size), like `estimateCompressedColumnSize` returns.
         return std::make_pair(compressed_buf.count(), null_buf.count());

@@ -2699,7 +2699,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// external-aggregation threshold the table is written to disk once the write frees enough memory, whether it
         /// is learning or frozen, and its producer learns again.
         if (over_external_threshold && adaptiveTableWorthSpilling(result, *adaptive))
-            spillAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
+            spillAdaptiveTable(result, *adaptive, result.memoryUsage() + params.min_free_disk_space);
         return true;
     }
 
@@ -2735,8 +2735,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space);
         reseedKeptKeysAfterSpill(result);
     }
 
@@ -6219,8 +6218,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space);
         reseedKeptKeysAfterSpill(result);
     }
 
