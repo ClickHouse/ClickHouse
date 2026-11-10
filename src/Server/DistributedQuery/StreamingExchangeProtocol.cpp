@@ -9,6 +9,7 @@
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeString.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromMemory.h>
