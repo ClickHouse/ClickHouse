@@ -25,7 +25,6 @@
 #include <Analyzer/Passes/ConvertEmptyStringComparisonToFunctionPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
-#include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
@@ -285,9 +284,10 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
     }
 }
 
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool positional_arguments_already_resolved)
+void addQueryTreePasses(
+    QueryTreePassManager & manager, bool only_analyze, bool positional_arguments_already_resolved, StoragePtr replaced_storage)
 {
-    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze, positional_arguments_already_resolved));
+    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze, positional_arguments_already_resolved, std::move(replaced_storage)));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     /// This pass should be run for the secondary queries
@@ -303,7 +303,6 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool 
     manager.addPass(std::make_unique<RegexpFunctionRewritePass>());
 
     manager.addPass(std::make_unique<RewriteSumFunctionWithSumAndCountPass>());
-    manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<RewriteArrayFilterLengthToArrayCountPass>());
