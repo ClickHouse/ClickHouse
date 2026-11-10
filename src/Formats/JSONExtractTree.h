@@ -17,10 +17,6 @@ struct JSONExtractInsertSettings
     /// If false, JSON value will be inserted into column only if type of the value is
     /// the same as column type (no conversions like Integer -> String, Integer -> Float, etc).
     bool allow_type_conversion = true;
-    /// If false, a Date or DateTime value out of the range of its type is rejected instead of saturated.
-    bool saturate_on_overflow = true;
-    /// If false, a DateTime value with fractional seconds is rejected instead of truncated.
-    bool truncate_fractional_seconds = true;
     /// If true, during insert into Dynamic column we first try to insert value into existing variants
     /// and only if failed we try to infer the new variant type.
     bool try_existing_variants_in_dynamic_first = true;
@@ -33,11 +29,6 @@ struct JSONExtractInsertSettings
     /// Use partial match instead of full to skip paths using regular expressions specified
     /// in JSON data type using SKIP REGEXP.
     bool use_partial_match_to_skip_paths_by_regexp = true;
-    /// If true, fractional JSON DOUBLE values (e.g. `3.14`) and STRING values that parse
-    /// as non-integral floats (e.g. `"3.14"`) are not silently truncated to integer types.
-    /// Used inside `VariantNode` so that `Variant(IntT, FloatT)` picks the float member
-    /// for fractional values instead of silently dropping the fractional part.
-    bool no_int_truncation_from_double = false;
 };
 
 template <typename JSONParser>
@@ -60,6 +51,6 @@ template <typename JSONParser>
 bool jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings, size_t max_depth = 0);
 
 template <typename JSONParser, typename NumberType>
-bool tryGetNumericValueFromJSONElement(NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
+bool tryGetNumericValueFromJSONElement(NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
 
 }

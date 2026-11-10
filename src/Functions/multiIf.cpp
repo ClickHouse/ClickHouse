@@ -1,4 +1,3 @@
-#include <Functions/multiIf.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -11,7 +10,6 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -31,15 +29,14 @@ namespace Setting
 {
     extern const SettingsBool allow_execute_multiif_columnar;
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -63,16 +60,12 @@ public:
     {
         const auto & settings = context_->getSettingsRef();
         return std::make_shared<FunctionMultiIf>(
-            settings[Setting::allow_execute_multiif_columnar],
-            settings[Setting::use_variant_as_common_type],
-            settings[Setting::allow_lossy_numeric_supertype]);
+            settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type]);
     }
 
-    explicit FunctionMultiIf(
-        bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_, bool allow_lossy_numeric_supertype_ = false)
+    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_)
         : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
         , use_variant_as_common_type(use_variant_as_common_type_)
-        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
     {}
 
     String getName() const override { return name; }
@@ -98,41 +91,8 @@ public:
         return args;
     }
 
-    String getSignatureString() const override
-    {
-        /// Arguments: cond1, then1, cond2, then2, ..., else. The existing matcher engine
-        /// walks back through the args before `...` and groups them by index coherence:
-        /// (MaybeNullable(UInt8) | Nothing) has index 0; V1 has index 1; together they form
-        /// the repeating pair. The fixed group before `...` matches one mandatory pair, so
-        /// minimum arity is 3 (cond, then, else) — exactly matching the legacy check.
-        ///
-        /// `use_variant_as_common_type` selects `leastSupertypeOrVariant`, matching `if`.
-        if (use_variant_as_common_type)
-            return "(MaybeNullable(UInt8) | Nothing, V1, ..., E) -> leastSupertypeOrVariant(V1, ..., E)";
-        return "(MaybeNullable(UInt8) | Nothing, V1, ..., E) -> leastSupertype(V1, ..., E)";
-    }
-
-    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
-    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
-    /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
-    /// The `ColumnsWithTypeAndName` overload is overridden too so both analysis paths agree.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (!allow_lossy_numeric_supertype)
-            return FunctionIfBase::getReturnTypeImpl(arguments);
-
-        DataTypes types;
-        types.reserve(arguments.size());
-        for (const auto & arg : arguments)
-            types.push_back(arg.type);
-        return getReturnTypeImpl(types);
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
     {
-        if (!allow_lossy_numeric_supertype)
-            return FunctionIfBase::getReturnTypeImpl(args);
-
         /// Arguments are the following: cond1, then1, cond2, then2, ... condN, thenN, else.
 
         auto for_conditions = [&args](auto && f)
@@ -155,7 +115,7 @@ public:
 
         for_conditions([&](const DataTypePtr & arg)
         {
-            const IDataType * nested_type = nullptr;
+            const IDataType * nested_type;
             if (arg->isNullable())
             {
                 if (arg->onlyNull())
@@ -183,9 +143,9 @@ public:
         });
 
         if (use_variant_as_common_type)
-            return getLeastSupertypeOrVariant(types_of_branches, allow_lossy_numeric_supertype);
+            return getLeastSupertypeOrVariant(types_of_branches);
 
-        return getLeastSupertype(types_of_branches, allow_lossy_numeric_supertype);
+        return getLeastSupertype(types_of_branches);
     }
 
     struct Instruction
@@ -206,7 +166,7 @@ public:
         *  depending on values of conditions.
         */
 
-        VectorWithMemoryTracking<Instruction> instructions;
+        std::vector<Instruction> instructions;
         instructions.reserve(arguments.size() / 2 + 1);
 
         Columns converted_columns_holder;
@@ -363,7 +323,7 @@ public:
 
 private:
 
-    static void executeInstructions(VectorWithMemoryTracking<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
         for (size_t i = 0; i < rows; ++i)
         {
@@ -399,7 +359,7 @@ private:
 
     /// We should read source from which instruction on each row?
     template <typename S>
-    static NO_INLINE void calculateInserts(const VectorWithMemoryTracking<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
+    static NO_INLINE void calculateInserts(const std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
         for (S i = static_cast<S>(instructions.size() - 1); i != static_cast<S>(-1); --i)
         {
@@ -441,7 +401,7 @@ private:
 
     template <typename T, typename S, bool nullable_result = false>
     static NO_INLINE void executeInstructionsColumnar(
-        const VectorWithMemoryTracking<Instruction> & instructions,
+        const std::vector<Instruction> & instructions,
         size_t rows,
         PaddedPODArray<T> & res_data,
         PaddedPODArray<UInt8> * res_null_map = nullptr)
@@ -458,8 +418,8 @@ private:
             res_null_map->resize_exact(rows);
         }
 
-        VectorWithMemoryTracking<const T *> data_cols(instructions.size(), nullptr);
-        VectorWithMemoryTracking<const UInt8 *> null_map_cols(instructions.size(), nullptr);
+        std::vector<const T *> data_cols(instructions.size(), nullptr);
+        std::vector<const UInt8 *> null_map_cols(instructions.size(), nullptr);
         for (size_t i = 0; i < instructions.size(); ++i)
         {
             const auto & instruction = instructions[i];
@@ -529,10 +489,7 @@ private:
         {
             auto & cond_column = arguments[i - 1].column;
             /// If condition is const or null and value is false, we can skip execution of expression after this condition.
-            /// `onlyNull` columns (e.g. `Const(Nullable(Nothing))`) are treated as false: their dummy nested column would
-            /// throw from `getBool`, and per the loop preamble `multiIf` already treats NULL conditions as 0.
-            if ((isColumnConst(*cond_column) || cond_column->onlyNull()) && !cond_column->empty()
-                && (cond_column->onlyNull() || !cond_column->getBool(0)))
+            if ((isColumnConst(*cond_column) || cond_column->onlyNull()) && !cond_column->empty() && !cond_column->getBool(0))
             {
                 condition_mask_info.has_ones = false;
                 condition_mask_info.has_zeros = true;
@@ -572,7 +529,6 @@ private:
 
     const bool allow_execute_multiif_columnar;
     const bool use_variant_as_common_type;
-    const bool allow_lossy_numeric_supertype;
 };
 
 }
@@ -580,11 +536,11 @@ private:
 REGISTER_FUNCTION(MultiIf)
 {
     FunctionDocumentation::Description description = R"(
-Allows writing the [`CASE`](/reference/operators#conditional-expression) operator more compactly in the query.
+Allows writing the [`CASE`](/sql-reference/operators#conditional-expression) operator more compactly in the query.
 Evaluates each condition in order. For the first condition that is true (non-zero and not `NULL`), returns the corresponding branch value.
 If none of the conditions are true, returns the `else` value.
 
-Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls
+Setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls
 whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` is true.
 
@@ -637,9 +593,9 @@ FROM LEFT_RIGHT;
     factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type, bool allow_lossy_numeric_supertype)
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type, allow_lossy_numeric_supertype));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type));
 }
 
 }

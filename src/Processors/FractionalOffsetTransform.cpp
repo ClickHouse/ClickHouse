@@ -62,10 +62,6 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::prepare()
     /// Check can we still pull data from input?
     if (num_finished_input_ports != ports_data.size())
     {
-        if (!was_output_needed && !isAnyOutputNeeded())
-            return Status::PortFull;
-        was_output_needed = true;
-
         auto process = [&](size_t pos)
         {
             auto status = pullData(ports_data[pos]);
@@ -244,7 +240,7 @@ void FractionalOffsetTransform::splitChunk(Chunk & current_chunk) const
     /// <----------> num_rows
     /// <---> offset
 
-    chassert(offset < num_rows);
+    assert(offset < num_rows);
 
     UInt64 length = num_rows - offset;
     auto columns = current_chunk.detachColumns();

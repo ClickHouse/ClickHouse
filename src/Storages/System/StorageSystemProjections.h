@@ -1,22 +1,20 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
 {
 
 /// For system.projections table - describes the projections in tables, similar to system.data_skipping_indices.
-class StorageSystemProjections : public StorageWithCommonVirtualColumns
+class StorageSystemProjections : public IStorage
 {
 public:
     explicit StorageSystemProjections(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemProjections"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
