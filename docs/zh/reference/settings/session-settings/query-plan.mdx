@@ -18,7 +18,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "用于切换一项查询计划级别优化的新设置：当最终聚合的输出经由带 LIMIT n 的 ORDER BY 排序，且能够证明每个桶的选择结果准确时，该优化仅物化每个两级桶中排名前 n 的组。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "用于切换一项查询计划级别优化的新增设置：当最终聚合的输出经由带 LIMIT n 的 ORDER BY 排序，且能够证明每个桶的选择结果准确时，该优化仅物化每个两级桶中排名前 n 的组。"}]}]} />
 
 切换一项查询计划级别的优化：当最终聚合的输出经由带有 `LIMIT n` 的 `ORDER BY` 排序，且计划能够证明每个桶的选择结果准确时，该优化会在聚合的最终转换过程中，仅按此顺序物化每个两级桶中排名前 n 的组。结果准确无误：未进入所在桶前 n 名的组，在全局范围内至少有 n 个组排在它之前，因此不可能进入全局前 n 名。
 仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
@@ -28,20 +28,19 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 - 禁用
 * 1 - 启用
 
-## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
+## query_plan_aggregation_having_prefilter {#query_plan_aggregation_having_prefilter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1"},{"label": "启用与查询计划相关的一些重构"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于控制一项查询计划优化：在转换最终聚合的两级桶时，如果针对该聚合自身无参数 count() 的 HAVING 边界条件已排除某个分组，则跳过该分组的键物化。被跳过的分组既不经过过滤，也不进行最终处理，因此对于边界条件排除的分组，不再对写在该边界条件之前的 HAVING 合取条件求值，也不再执行同级聚合的最终处理。此前因这些操作之一引发异常的查询现在可能成功；将 `compatibility` 设为低于 26.10 的版本可保留先前的行为。"}]}]} />
 
-控制是否启用按序聚合的查询计划级别优化。
-仅当设置 [`query_plan_enable_optimizations`](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
+控制是否启用一项查询计划级别的优化，适用于带有 `GROUP BY` 的 `HAVING count() <comparison> <constant>` 查询。在将聚合结果的两级桶转换为块时，如果某个分组的计数无法满足边界条件，则在物化其键列之前跳过该分组，而不是先物化，再由上层过滤器丢弃。此优化可加速高基数 `GROUP BY` 上的“分组计数超过阈值”查询：这类查询会丢弃大多数分组，而转换工作大多花在这些被丢弃分组的键上。
 
-<Note>
-  这是一个专家级设置，仅应由开发人员用于调试。该设置未来可能会以不向后兼容的方式更改，或被移除。
-</Note>
+被跳过的分组既不经过过滤，也不进行最终处理，因此此设置不仅影响性能：对于边界条件排除的分组，不再对写在该边界条件之前的 `HAVING` 合取条件求值，也不再执行同级聚合的最终处理。此前因这些操作之一引发异常的查询可能改为返回行，例如在使用 `count() AS cnt` 的查询中指定 `HAVING throwIf(cnt = 3) = 0 AND count() > 3`。将此设置设为 0，或将 `compatibility` 设为低于 `26.10` 的版本，可保留先前的行为。
 
-可能的值：
+仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
+
+可选值：
 
 * 0 - 禁用
 * 1 - 启用
@@ -69,6 +68,14 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "如果 `JOIN` 之后的过滤器总是会过滤掉默认值，则允许将 `OUTER JOIN` 转换为 `INNER JOIN`"}]}]} />
 
 如果 `JOIN` 之后的过滤器总是会过滤掉默认值，则允许将 `OUTER JOIN` 转换为 `INNER JOIN`
+
+## query_plan_convert_outer_join_to_inner_join_transitively {#query_plan_convert_outer_join_to_inner_join_transitively}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于扩展 `query_plan_convert_outer_join_to_inner_join`，使其同时考虑查询计划中更上层的过滤器以及外层 `JOIN` 的条件。仅在启用 `query_plan_convert_outer_join_to_inner_join` 时生效。"}]}]} />
+
+扩展 `query_plan_convert_outer_join_to_inner_join` 的作用范围，使其同时考虑查询计划中更上层的过滤器以及外层 `JOIN` 的条件。仅在启用 `query_plan_convert_outer_join_to_inner_join` 时生效。
 
 ## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
@@ -135,6 +142,25 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 </Note>
 
 可能的值：
+
+* 0 - 禁用
+* 1 - 启用
+
+## query_plan_filter_push_down_below_limit_by {#query_plan_filter_push_down_below_limit_by}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置，用于控制是否将作用于 `LIMIT BY` 键列的过滤器下推到 `LIMIT BY` 步骤之下。将其设置为 false 可使过滤器保留在 `LIMIT BY` 之上。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于控制是否将作用于 `LIMIT BY` 键列的过滤器下推到 `LIMIT BY` 步骤之下。将其设置为 false 可使过滤器保留在 `LIMIT BY` 之上。"}]}]} />
+
+控制是否将作用于 `LIMIT BY` 键列的过滤器下推到 `LIMIT BY` 步骤之下。
+仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
+该设置独立于 [query&#95;plan&#95;filter&#95;push&#95;down](/zh/reference/settings/session-settings/query-plan#query_plan_filter_push_down) 读取：一旦添加了 `JOIN` 运行时过滤器，即使后者处于关闭状态，下推优化过程仍会执行。
+
+<Note>
+  这是一个专家级设置，仅应由开发人员用于调试。该设置将来可能会以不向后兼容的方式更改或被移除。
+</Note>
+
+可选值：
 
 * 0 - 禁用
 * 1 - 启用
@@ -206,9 +232,9 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 ## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增优化：将 arrayJoin 函数降为真正的 ARRAY JOIN 步骤；默认禁用。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增优化：将 arrayJoin 函数降为真正的 ARRAY JOIN 步骤；默认禁用。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用 query_plan_lower_array_join_function。"}]}]} />
 
 启用或禁用一项查询计划级别的优化：将表达式中的 `arrayJoin` 函数降为真正的 `ARRAY JOIN` 步骤，使其采用与 `ARRAY JOIN` 子句相同的执行机制 (惰性复制和过滤器融合) 。
 仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
@@ -420,17 +446,9 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}]} />
 
 对从对象存储 (包括 Iceberg 表) 读取 Parquet 文件时使用惰性物化优化：对于 `ORDER BY ... LIMIT n` 查询，仅对经 `LIMIT` 保留的 `n` 行读取排序和筛选不需要的列。仅当启用 `query_plan_optimize_lazy_materialization` 时生效。
-
-## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "允许将过滤器下推到受支持存储的 PREWHERE 表达式"}]}]} />
-
-允许将过滤器下推到受支持存储的 PREWHERE 表达式
 
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
@@ -492,22 +510,6 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时，此设置才会生效。
 
 可能的值：
-
-* 0 - 禁用
-* 1 - 启用
-
-## query_plan_read_in_order {#query_plan_read_in_order}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-用于开启或关闭按顺序读取的查询计划级别优化。
-仅在设置 [`query_plan_enable_optimizations`](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
-
-<Note>
-  这是一个专家级设置，仅供开发人员调试时使用。该设置未来可能会发生不向后兼容的变更，或被移除。
-</Note>
-
-可选值：
 
 * 0 - 禁用
 * 1 - 启用
@@ -580,7 +582,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "默认禁用此逻辑。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "默认禁用此逻辑。这同样适用于别名 `optimize_read_in_window_order`。"}]}]} />
 
 切换一项查询计划级别的优化，在对窗口函数进行排序时复用存储排序。
 仅在设置 [`query_plan_enable_optimizations`](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。

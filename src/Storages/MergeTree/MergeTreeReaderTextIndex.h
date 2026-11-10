@@ -3,8 +3,8 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
-#include <Storages/MergeTree/TextIndexPositionData.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/PostingListCursor.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/TextIndexCache.h>
@@ -32,7 +32,7 @@ class MergeTreeReaderTextIndex : public IMergeTreeReader
 public:
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
-        MergeTreeIndexWithCondition index_,
+        IndexReadTask index_read_task_,
         NamesAndTypesList columns_,
         MergeTreeIndexGranulePtr index_granule_);
 
@@ -41,7 +41,7 @@ public:
         size_t current_range_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        MutableColumns & res_columns) override;
+        MutableColumns & res_columns, Columns & shared_columns) override;
 
     /// The virtual columns are resolved from per-mark posting lists addressed
     /// by absolute row number, so a read may start or stop inside a mark.
@@ -82,6 +82,11 @@ private:
     /// Sets per-column flags from the analyzer's verdict.
     void classifyVirtualColumns();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
+    /// Returns the postings folded by the index analysis for the query of the column, if they answer it
+    /// completely (no postings of the query are read per mark) and lazy mode is off, and nullptr otherwise.
+    const PostingList * getFoldedPostings(size_t column_idx) const;
+    /// Fills rows [row_offset, row_offset + num_rows) from `postings` of the whole part.
+    void fillColumnFromPostings(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
     void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows);
 
     /// Search of one column resolved once per part.
@@ -107,19 +112,23 @@ private:
 
     PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
 
-    /// Fills a phrase virtual column from positional data (.pos), computing matching documents
-    /// via phrase intersection (cached per granule).
-    void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
+    /// Fills a phrase virtual column from positional data (.pos), matching only the rows of the window.
+    void applyPostingsPhrase(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows);
     void initializePositionsStream();
 
-    /// Intersects the phrase tokens' postings into candidates, then decodes only the covering blocks.
-    PaddedPODArray<UInt32> phraseSearchBlocked(const TextSearchQuery & search_query);
-    /// One token's full posting list — the rank space the blocked position stream is addressed in.
-    PostingList readAllPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info);
+    struct PhraseTokens;
+
+    struct PhraseStream;
+
+    std::shared_ptr<PhraseStream> makePhraseStream(const TextSearchQuery & search_query);
+    /// The column's phrase stream, able to match rows from `begin` on.
+    PhraseStream & getPhraseStream(size_t column_idx, size_t begin);
+    /// One cursor per unique token.
+    std::vector<PostingListCursorPtr> makePhraseCursors(const PhraseTokens & phrase);
 
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
-    MergeTreeIndexWithCondition index;
+    IndexReadTask index_read_task;
     bool can_read_incomplete_granules = false;
     std::shared_ptr<MergeTreeIndexConditionText> condition_text;
     std::vector<TextSearchQueryPtr> search_queries;
@@ -142,14 +151,12 @@ private:
 
     /// Stream for position data (.pos file) used for phrase queries.
     std::unique_ptr<MergeTreeReaderStream> positions_stream;
-    /// Per-reader memo of phrase results (shared via the postings cache) so repeated readRows calls skip the cache lookup.
-    absl::flat_hash_map<UInt128, FlatPostingsPtr> phrase_search_doc_ids;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
-    TextIndexBlockedPositionsCodec::DecodeScratch blocked_positions_scratch;
+    const PostingList empty_postings;
 
     bool is_initialized = false;
     /// Virtual columns that are always true.
@@ -170,13 +177,16 @@ private:
     /// Per-column `ResolvedSearch`, built on the first granule. Dropped together with `lazy_cursors`.
     std::vector<std::optional<ResolvedSearch>> resolved_searches;
 
+    /// Per-column phrase search, built on the first window. Dropped together with `lazy_cursors`.
+    std::vector<std::shared_ptr<PhraseStream>> phrase_streams;
+
     /// Counters of the lazy intersections, added to the profile events when the reader is destroyed.
     LazyPostingsStats lazy_postings_stats;
 };
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     MergeTreeIndexGranulePtr index_granule);
 

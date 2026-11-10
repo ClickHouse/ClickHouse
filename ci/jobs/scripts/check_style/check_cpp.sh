@@ -89,12 +89,15 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
+    ProfileEvents::getByName
+    ProfileEvents::tryGetByName
     ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::ValueType
     ProfileEvents::dumpToMapColumn
     ProfileEvents::getProfileEvents
+    ProfileEvents::subtractIncrements
     ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
     ProfileEvents::keeper_profile_events
@@ -123,6 +126,7 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::size
 
     ErrorCodes::ErrorCode
+    ErrorCodes::Error
     ErrorCodes::getName
     ErrorCodes::increment
     ErrorCodes::extendedMessage
@@ -277,13 +281,19 @@ directories_to_lint_std_containers_usages=(
     src/Functions
     src/IO
     src/Loggers
+    src/Processors/Formats
+    src/Processors/Merges
+    src/Processors/Executors
+    src/Processors/Sources
+    src/Processors/Transforms
     src/QueryPipeline
     src/TableFunctions
+    src/WindowFunctions
 )
 
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do
     grep "/$dir/" "$STYLE_TMPDIR/all_excluded" |
-        xargs rg -Hn 'std::(deque|list|map|multimap|multiset|queue|set|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)<' |
+        xargs rg -Hn '(std::(deque|list|map|multimap|multiset|queue|set|stack|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)|boost::container::devector)<' |
         grep -vE '^[^:]+:[0-9]+:[[:space:]]*(\*|//|/\*)' |
         grep -v "STYLE_CHECK_ALLOW_STD_CONTAINERS" && echo "Use an -WithMemoryTracking alternative or mark these usages with STYLE_CHECK_ALLOW_STD_CONTAINERS"
 done

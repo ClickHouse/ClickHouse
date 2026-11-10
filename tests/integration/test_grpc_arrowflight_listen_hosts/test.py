@@ -13,6 +13,11 @@ wildcard_node = cluster.add_instance(
     main_configs=["configs/wildcard_hosts.xml"],
 )
 
+ipv6_wildcard_node = cluster.add_instance(
+    "ipv6_wildcard_node",
+    main_configs=["configs/ipv6_wildcard_hosts.xml"],
+)
+
 reload_node = cluster.add_instance(
     "reload_node",
     main_configs=["configs/reload_hosts.xml"],
@@ -121,6 +126,35 @@ def test_one_grpc_listener_for_mixed_wildcard_listen_hosts():
     # That single listener must serve IPv4 too.
     wildcard_node.wait_until_port_is_ready(8888, timeout=10)
     client = pyarrow.flight.FlightClient(f"grpc+tcp://{wildcard_node.ip_address}:8888")
+    try:
+        table = client.do_get(pyarrow.flight.Ticket(b"SELECT 1")).read_all()
+        assert table.column(0)[0].as_py() == 1
+    finally:
+        client.close()
+
+
+def test_one_grpc_listener_for_ipv6_wildcard_listen_host():
+    """`::` is a wildcard address, not a host name: it must be bound even on a host without a global
+    IPv6 address, and, as the only wildcard, it must replace the specific address for the gRPC-based
+    protocols."""
+    node = ipv6_wildcard_node
+    assert node.query("SELECT 1") == "1\n"
+
+    # `contains_in_log` takes a grep pattern, so the brackets of `[::]` are escaped.
+    assert not node.contains_in_log(r"Listen \[::\]:")
+    assert node.contains_in_log(r"Listening for gRPC protocol: \[::\]:9100")
+    assert node.contains_in_log(
+        r"Listening for Arrow Flight compatibility protocol: \[::\]:8888"
+    )
+
+    # The native protocol listener is the dual-stack `::` socket; gRPC may pick either wildcard.
+    wait_for_listeners(node, 9000, lambda addresses: addresses == ["::"], "the `::` listener")
+    for port in (9100, 8888):
+        wait_for_listeners(node, port, is_single_wildcard, "a single wildcard listener")
+
+    # The dual-stack listener must serve IPv4 too.
+    node.wait_until_port_is_ready(8888, timeout=10)
+    client = pyarrow.flight.FlightClient(f"grpc+tcp://{node.ip_address}:8888")
     try:
         table = client.do_get(pyarrow.flight.Ticket(b"SELECT 1")).read_all()
         assert table.column(0)[0].as_py() == 1

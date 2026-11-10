@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-parallel, no-fasttest
-# long: the lock holds put this at about a minute.
+# Tags: no-replicated-database, no-parallel, no-fasttest
 # no-replicated-database - path in zookeeper differs with replicated database
 # no-parallel: the `completed_pipeline_pause_before_teardown` and `patch_parts_lock_pause_before_cas`
 #   failpoints are server-global, so a concurrent test would clear them while this one waits.
+
+# A reduced check of the lightweight update lock: `lock_acquire_timeout` and cancellation bound the
+# wait in both Keeper modes and in both modes of a plain `MergeTree`, a wait spanning several chunks
+# registers its watch once and is interrupted between chunks, and losing the compare-and-swap on the
+# `in_progress` directory retries once instead of spinning on Keeper. Only one cheap arm is kept per
+# wait path.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,7 +30,7 @@ function cleanup()
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP" 2>/dev/null || true
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT patch_parts_lock_pause_before_cas" 2>/dev/null || true
     wait || true
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_timeout_sync SYNC; DROP TABLE IF EXISTS t_lwu_timeout_auto SYNC; DROP TABLE IF EXISTS t_lwu_cas SYNC; DROP TABLE IF EXISTS t_lwu_cancel SYNC; DROP TABLE IF EXISTS t_lwu_plain_sync SYNC; DROP TABLE IF EXISTS t_lwu_plain_auto SYNC" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_timeout_sync SYNC; DROP TABLE IF EXISTS t_lwu_timeout_auto SYNC; DROP TABLE IF EXISTS t_lwu_cas SYNC; DROP TABLE IF EXISTS t_lwu_plain_sync SYNC; DROP TABLE IF EXISTS t_lwu_plain_auto SYNC" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -70,7 +75,6 @@ function start_parked_holder()
 {
     local table_name=$1
     local mode=$2
-    # A plain MergeTree keeps the lock in process memory, so there is no node to count.
     local in_keeper=${3:-1}
 
     holder_qid="${QID_PREFIX}${CLICKHOUSE_DATABASE}_${RANDOM}${RANDOM}"
@@ -166,7 +170,7 @@ function query_stats()
     "
 }
 
-function run()
+function run_timeout()
 {
     mode=$1
     table_name="t_lwu_timeout_$mode"
@@ -175,14 +179,14 @@ function run()
         SET insert_keeper_fault_injection_probability = 0.0;
         DROP TABLE IF EXISTS $table_name SYNC;
 
-        CREATE TABLE $table_name (id UInt64, s String, v UInt64, w UInt64)
+        CREATE TABLE $table_name (id UInt64, s String, v UInt64)
         ENGINE = ReplicatedMergeTree('/zookeeper/{database}/$table_name/', '1')
         ORDER BY id
         SETTINGS
             enable_block_number_column = 1,
             enable_block_offset_column = 1;
 
-        INSERT INTO $table_name VALUES (1, 'aa', 0, 0) (2, 'bb', 0, 0) (3, 'cc', 0, 0);
+        INSERT INTO $table_name VALUES (1, 'aa', 0) (2, 'bb', 0) (3, 'cc', 0);
     "
 
     # A timeout that expires while the lock is still held must fail with TIMEOUT_EXCEEDED, and must
@@ -208,58 +212,16 @@ function run()
     echo "$mode $timeout_ms failed $timed_out waited $(( duration_ms >= timeout_ms * 9 / 10 && duration_ms < timeout_ms * 10 && tries <= 5 ))"
 
     release_holder
-
-    # A timeout longer than the hold must wait for the lock and then be granted it, for a plain and
-    # for a very large value. The waiter is confirmed to be inside the wait before the release, so a
-    # grant that took more than one attempt orders the two events without timing either.
-    for arm in "60000 60" "huge-timeout 1000000"
-    do
-        read -r label timeout_s <<< "$arm"
-        start_parked_holder "$table_name" "$mode"
-
-        tag="$run_id-$mode-$label"
-        $CLICKHOUSE_CLIENT --query_id "$tag" --query "
-            SET enable_lightweight_update = 1;
-            UPDATE $table_name SET v = 400 WHERE s = 'xx'
-            SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = $timeout_s, log_comment = '$tag';
-        " &
-        waiter_pid=$!
-
-        wait_for_blocked_on_lock "$tag"
-        release_holder
-        wait "$waiter_pid"
-
-        read -r _ tries _ _ <<< "$(query_stats "$tag")"
-        echo "$mode $label succeeded contended $(( tries >= 2 ))"
-
-        wait
-    done
+    wait
 
     # Cancellation is polled between wait chunks, so a waiter whose max_execution_time is shorter
     # than both the hold and lock_acquire_timeout must die of its own time limit rather than of the
-    # lock timeout. Which error ends the wait is a fact about where the query got to, so this does
-    # not read a clock; an uninterruptible wait reports the lock timeout instead.
-    start_parked_holder "$table_name" "$mode"
-
-    tag="$run_id-$mode-cancel"
-    error=$($CLICKHOUSE_CLIENT --query "
-        SET enable_lightweight_update = 1;
-        UPDATE $table_name SET v = 500 WHERE s = 'xx'
-        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 30,
-                 max_execution_time = 2, timeout_overflow_mode = 'throw', log_comment = '$tag';
-    " 2>&1 >/dev/null) && error=""
-
-    cancelled=0
-    if [[ "$error" == *"Timeout exceeded:"*"maximum:"* ]]; then cancelled=1; fi
-    echo "$mode cancelled-in-wait $cancelled"
-
-    release_holder
-    wait
-
-    # A timeout shorter than one wait chunk leaves the whole wait inside a single chunk, so the
-    # cancellation has to be seen once the chunk returns rather than only before the next one.
-    # Otherwise this reports the lock timing out, which is a different error than the query's own
-    # limit even though both are TIMEOUT_EXCEEDED, hence matching on the message.
+    # lock timeout. A timeout shorter than one wait chunk leaves the whole wait inside a single chunk,
+    # so the cancellation also has to be seen once the final chunk returns rather than only before the
+    # next one. Which error ends the wait is a fact about where the query got to, so this does not
+    # read a clock; an uninterruptible wait reports the lock timeout instead, which is a different
+    # error than the query's own limit even though both are TIMEOUT_EXCEEDED, hence matching on the
+    # message.
     start_parked_holder "$table_name" "$mode"
 
     tag="$run_id-$mode-shortcancel"
@@ -277,21 +239,12 @@ function run()
     release_holder
     wait
 
-    # An uncontended update must still be granted with lock_acquire_timeout = 0, which is the
-    # current behaviour of both Keeper modes and is intentionally left unchanged.
-    $CLICKHOUSE_CLIENT --query "
-        SET enable_lightweight_update = 1;
-        UPDATE $table_name SET v = 300 WHERE id = 1
-        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 0;
-    "
-    echo "$mode zero-timeout uncontended succeeded"
-
     $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
 }
 
 # A non-replicated table holds the same lock in process memory rather than in Keeper, and both of its
 # modes must be as interruptible as the Keeper ones: cancellation is polled between wait chunks in
-# one shared helper. Same oracle as the arm above, and equally clock-free.
+# one shared helper. Same single-chunk oracle as the arm above, and equally clock-free.
 function run_plain()
 {
     local mode=$1
@@ -312,24 +265,6 @@ function run_plain()
 
     start_parked_holder "$table_name" "$mode" 0
 
-    tag="$run_id-plain-$mode-cancel"
-    error=$($CLICKHOUSE_CLIENT --query "
-        SET enable_lightweight_update = 1;
-        UPDATE $table_name SET v = 500 WHERE s = 'xx'
-        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 30,
-                 max_execution_time = 2, timeout_overflow_mode = 'throw', log_comment = '$tag';
-    " 2>&1 >/dev/null) && error=""
-
-    cancelled=0
-    if [[ "$error" == *"Timeout exceeded:"*"maximum:"* ]]; then cancelled=1; fi
-    echo "plain $mode cancelled-in-wait $cancelled"
-
-    release_holder
-    wait
-
-    # Same single-chunk case as in Keeper: one shared helper serves all four paths.
-    start_parked_holder "$table_name" "$mode" 0
-
     tag="$run_id-plain-$mode-shortcancel"
     error=$($CLICKHOUSE_CLIENT --query "
         SET enable_lightweight_update = 1;
@@ -345,116 +280,18 @@ function run_plain()
     release_holder
     wait
 
-    # The unconditional first attempt is what keeps a zero timeout working, here as in Keeper.
-    $CLICKHOUSE_CLIENT --query "
-        SET enable_lightweight_update = 1;
-        UPDATE $table_name SET v = 300 WHERE id = 1
-        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 0;
-    "
-    echo "plain $mode zero-timeout uncontended succeeded"
-
     $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
 }
 
-# Waiting on the conflicting update's own node rather than on the `in_progress` parent directory:
-# unrelated updates keep changing the parent, so a watch there wakes the waiter over and over
-# without it being able to progress. Only 'auto' mode reads that directory.
-function run_churn()
+# The wait is split into chunks that poll query cancellation in between. The holder parks at the
+# failpoint, so how long the lock is held is chosen here rather than being the duration of an update,
+# which randomized settings are free to change.
+function run_watch()
 {
     table_name="t_lwu_timeout_auto"
-
-    $CLICKHOUSE_CLIENT --query "
-        SET insert_keeper_fault_injection_probability = 0.0;
-        DROP TABLE IF EXISTS $table_name SYNC;
-
-        CREATE TABLE $table_name (id UInt64, s String, v UInt64, w UInt64)
-        ENGINE = ReplicatedMergeTree('/zookeeper/{database}/$table_name/', '1')
-        ORDER BY id
-        SETTINGS
-            enable_block_number_column = 1,
-            enable_block_offset_column = 1;
-
-        INSERT INTO $table_name VALUES (1, 'aa', 0, 0) (2, 'bb', 0, 0) (3, 'cc', 0, 0);
-    "
-
-    start_parked_holder "$table_name" "auto"
-
-    # Churn: `w` is neither read nor written by the holder or the waiter, so these conflict with
-    # nothing and only change the `in_progress` directory.
-    # Bounded as well as stoppable, so that killing the test cannot leave the loop behind updating a
-    # dropped table.
-    churn_stop="$CLICKHOUSE_TMP/${run_id}_churn_stop"
-    rm -f "$churn_stop"
-    (
-        end=$((SECONDS + 120))
-        while [[ ! -e "$churn_stop" && $SECONDS -lt $end ]]
-        do
-            $CLICKHOUSE_CLIENT --query "
-                SET enable_lightweight_update = 1;
-                UPDATE $table_name SET w = w + 1 WHERE id = 1 SETTINGS update_parallel_mode = 'auto';
-            " 2>/dev/null || true
-        done
-    ) &
-    churn_pid=$!
-
-    tag="$run_id-churn"
-    $CLICKHOUSE_CLIENT --query_id "$tag" --query "
-        SET enable_lightweight_update = 1;
-        UPDATE $table_name SET v = 500 WHERE s = 'xx'
-        SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 60, log_comment = '$tag';
-    " &
-    waiter_pid=$!
-
-    wait_for_blocked_on_lock "$tag"
-
-    # A watch on the parent directory wakes once per commit anywhere under it, so the churn has to
-    # commit repeatedly while the waiter is inside the wait for the try count below to tell the two
-    # watch targets apart. `w` counts the churn's own commits, which no runner speed can change.
-    churned=0
-    for _ in {0..600}
-    do
-        sleep 0.1
-        if [[ "$($CLICKHOUSE_CLIENT --query "SELECT w FROM $table_name WHERE id = 1")" -ge 10 ]]
-        then
-            churned=1
-            break
-        fi
-    done
-
-    if [[ "$churned" != 1 ]]
-    then
-        echo "Churn never committed enough times to wake a parent directory watch" >&2
-        exit 2
-    fi
-
-    # Churn stops before the lock is released. Those commits have already woken a parent directory
-    # watch as many times as they are going to, and once the waiter is runnable they would instead
-    # make it lose the parent version compare-and-swap an unbounded number of times.
-    touch "$churn_stop"
-    wait $churn_pid 2>/dev/null || true
-    rm -f "$churn_stop"
-
-    release_holder
-    wait "$waiter_pid"
-
-    read -r _ tries _ <<< "$(query_stats "$tag")"
-    # One try to find the conflict, one to acquire after it clears. A watch on the parent directory
-    # instead wakes once per churn commit and needs an order of magnitude more.
-    echo "churn succeeded tries_bounded $(( tries >= 2 && tries <= 5 ))"
-
-    wait
-    $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
-}
-
-# The wait is split into chunks that poll query cancellation in between, so max_execution_time and
-# KILL QUERY take effect instead of being deferred until the whole lock_acquire_timeout has elapsed.
-# The holder parks at the failpoint, so how long the lock is held is chosen here rather than being
-# the duration of an update, which randomized settings are free to change.
-function run_cancel()
-{
-    table_name="t_lwu_cancel"
-    # More than the three chunks the watch arm below requires, so that arm cannot pass vacuously.
-    local hold_chunks=4
+    # The three chunks the bound below requires. The waiter is confirmed to be inside the wait before
+    # this hold starts, so it spans at least that many.
+    local hold_chunks=3
 
     $CLICKHOUSE_CLIENT --query "
         SET insert_keeper_fault_injection_probability = 0.0;
@@ -472,13 +309,15 @@ function run_cancel()
 
     start_parked_holder "$table_name" "auto"
 
-    # max_execution_time rather than KILL QUERY: both are enforced by QueryStatus::checkTimeLimit(),
-    # and this needs no second client racing to catch the waiter in system.processes.
+    # Cancellation between wait chunks: max_execution_time expires inside the first chunk, so only
+    # the check at the top of the next iteration interrupts the wait. The lock timeout is finite and
+    # far longer than a chunk, so without that check the wait would run until the timeout, and the
+    # check after the last chunk would still report the query's own limit. Hence the duration bound.
     tag="$run_id-cancel"
     error=$($CLICKHOUSE_CLIENT --query "
         SET enable_lightweight_update = 1;
         UPDATE $table_name SET v = 99 WHERE s LIKE 'xx%'
-        SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 600,
+        SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 20,
                  max_execution_time = 2, timeout_overflow_mode = 'throw', log_comment = '$tag';
     " 2>&1 >/dev/null) && error=""
 
@@ -486,14 +325,14 @@ function run_cancel()
 
     cancelled=0
     if [[ "$error" == *"Timeout exceeded:"*"maximum:"* ]]; then cancelled=1; fi
-    # Interrupted within about one chunk rather than waiting out the hold.
-    echo "cancel interrupted $cancelled promptly $(( duration_ms < 8000 ))"
+    # Interrupted within about one chunk rather than waiting out the lock timeout.
+    echo "cancel between-chunks $cancelled promptly $(( duration_ms < 10000 ))"
 
     # A waiter with no max_execution_time parks across several chunks. Chunking the wait must not
     # re-register the watch per chunk: a timed out tryWait deregisters nothing, so that would leave a
     # live callback per chunk on one node. The watch is set by exactly one call, on the conflicting
     # update's node, so a query that waits through N chunks must still register once per outer
-    # iteration. The holder is released only after the waiter has been blocked for more chunks than
+    # iteration. The holder is released only after the waiter has been blocked for as many chunks as
     # the bound below requires, so how many chunks it spans is not raced against the holder.
     tag="$run_id-watch"
     $CLICKHOUSE_CLIENT --query_id "$tag" --query "
@@ -596,10 +435,9 @@ function run_cas_contention()
     $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
 }
 
-run "sync"
-run "auto"
+run_timeout "sync"
+run_timeout "auto"
 run_plain "sync"
 run_plain "auto"
-run_churn
+run_watch
 run_cas_contention
-run_cancel

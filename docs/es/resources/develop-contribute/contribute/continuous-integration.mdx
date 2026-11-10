@@ -257,6 +257,12 @@ La suite completa se ejecuta en las configuraciones de binarios debug y sin inst
 
 Ejecuta las [pruebas de integración](/es/resources/develop-contribute/contribute/tests#integration-tests).
 
+## Cobertura de LLVM {#llvm-coverage}
+
+En la rama master, con cada commit se ejecutan las pruebas sin estado, de integración y unitarias sobre una build con instrumentación de cobertura de LLVM, y se publica el informe de cobertura.
+En los pull requests, estos Jobs solo se ejecutan si tienen la etiqueta `ci-coverage` (o si modifican el código que recopila la cobertura y genera sus informes); añádala para obtener el informe de cobertura del pull request y la cobertura de las líneas modificadas.
+Sin la etiqueta, los pull requests ejecutan en su lugar las mismas configuraciones de pruebas sin estado y de integración sobre la build `arm_binary`; las pruebas unitarias ya se ejecutan con sanitizadores.
+
 ## Comprobación de validación de correcciones de errores {#bugfix-validate-check}
 
 Comprueba que haya una prueba nueva (funcional o de integración) o alguna prueba modificada que falle con el binario compilado en la rama master.
@@ -267,8 +273,8 @@ Esta comprobación se activa cuando la pull request tiene la etiqueta &quot;pr-b
 Ejecuta pruebas funcionales sin estado de forma concurrente desde varios clientes para detectar errores de concurrencia. Si falla:
 
 * Primero, corrige todos los demás fallos de las pruebas;
-  * Consulta el informe para encontrar los logs del servidor y revísalos para identificar posibles causas
-    del error.
+* Consulta el informe para encontrar los logs del servidor y revísalos para identificar posibles causas
+  del error.
 
 ## Comprobación de compatibilidad {#compatibility-check}
 

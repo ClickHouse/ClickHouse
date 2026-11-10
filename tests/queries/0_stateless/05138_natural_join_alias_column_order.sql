@@ -9,8 +9,6 @@ CREATE TABLE o1 (a Int32, x Int32 ALIAS a + 100, b Int32) ENGINE = Memory;
 INSERT INTO o0 VALUES (1, 2), (3, 4);
 INSERT INTO o1 VALUES (1, 2), (3, 4);
 
-SET enable_analyzer = 1;
-
 -- The synthesized `NATURAL JOIN` key list follows the left side's schema order, whether that side is
 -- spelled as a table or as a table function.
 SELECT * FROM o0 NATURAL JOIN o1 ORDER BY ALL FORMAT TSVWithNames;
