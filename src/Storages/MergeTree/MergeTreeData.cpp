@@ -11790,9 +11790,8 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     if (!predicate_node)
         return std::nullopt;
 
-    /// The DAG is built with plain column names, so a stored column named like a function of the
-    /// predicate (a column `toYYYYMM(d)` next to the expression `toYYYYMM(d)`) is merged into that
-    /// function node, and `KeyCondition` can no longer tell them apart. Don't prune in this case.
+    /// The DAG is built with plain column names, so a stored column named like a predicate function (e.g. `toYYYYMM(d)`)
+    /// is merged into that function node, and `KeyCondition` can no longer tell them apart.
     {
         const auto & columns = metadata_snapshot->getColumns();
         for (const auto & node : actions_dag->getNodes())
