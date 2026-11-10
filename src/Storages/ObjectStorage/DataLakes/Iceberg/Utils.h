@@ -82,6 +82,13 @@ bool writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
+/// Removes the metadata file written by `writeMetadataFileAndVersionHint` after the catalog definitively rejected
+/// the commit pointing to it, so that the next attempt, which takes the version from the catalog, can reuse its name.
+void removeRejectedMetadataFile(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    DB::ObjectStoragePtr object_storage);
+
 struct TransformAndArgument
 {
     String transform_name;

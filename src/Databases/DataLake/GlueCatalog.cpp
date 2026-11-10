@@ -682,6 +682,25 @@ String tableLocationFromMetadataPath(const String & metadata_path)
     return fs::path(metadata_path).parent_path().parent_path().string();
 }
 
+/// `s3a://bucket/table/` -> `bucket/table`, because the scheme of a table location is not normalized.
+std::string_view locationWithoutSchemeAndTrailingSlash(std::string_view location)
+{
+    if (auto pos = location.find("://"); pos != std::string_view::npos)
+        location.remove_prefix(pos + 3);
+    while (location.ends_with('/'))
+        location.remove_suffix(1);
+    return location;
+}
+
+/// Whether a table without `metadata_location` is still the table the commit was built on. `getTableMetadata` resolves
+/// the base of such a table from the latest metadata file under its location, so it must be an Iceberg table at the same location.
+bool isSamePointerlessTable(const Aws::Glue::Model::Table & table, const String & base_metadata_path)
+{
+    return isReadableGlueTable(table)
+        && locationWithoutSchemeAndTrailingSlash(table.GetStorageDescriptor().GetLocation())
+            == locationWithoutSchemeAndTrailingSlash(tableLocationFromMetadataPath(base_metadata_path));
+}
+
 }
 
 Poco::JSON::Object::Ptr GlueCatalog::getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object)
@@ -833,7 +852,11 @@ bool GlueCatalog::commitTableUpdate(
         /// `new_metadata_path` is already published, so the pointer must still be at the base it was built on.
         /// Another pointer means a different commit has won or the table was recreated, even if its file has the
         /// same version. Then nothing references our file and `false` lets the caller rebuild on top of the winner.
-        if (!current_metadata_path.empty() && current_metadata_path != base_metadata_path)
+        /// A missing pointer is a conflict too, unless the base was resolved from the location of the same pointerless table.
+        const bool same_base = current_metadata_path.empty()
+            ? isSamePointerlessTable(existing, base_metadata_path)
+            : current_metadata_path == base_metadata_path;
+        if (!same_base)
         {
             if (!update_sent)
             {

@@ -1380,7 +1380,7 @@ def test_writes_do_not_overwrite_replaced_glue_metadata_of_same_version(started_
     executor = ThreadPoolExecutor(max_workers=1)
     try:
         paused_insert = executor.submit(
-            node.query_and_get_error, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+            node.query, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
         )
         node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
 
@@ -1406,14 +1406,20 @@ def test_writes_do_not_overwrite_replaced_glue_metadata_of_same_version(started_
         )
 
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        assert "Write into iceberg was not successful" in paused_insert.result(timeout=120)
+        # The commit built on `base_location` is rejected, its metadata file is removed, and the retry builds on the replacement.
+        paused_insert.result(timeout=120)
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         executor.shutdown(wait=False)
 
     after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
-    assert after["Parameters"]["metadata_location"] == replaced_location
-    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\n"
+    assert after["Parameters"]["previous_metadata_location"] == replaced_location
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\npaused\n"
+
+    # The rejected attempt must not leave a metadata file that blocks later commits.
+    node.query(f"INSERT INTO {table_ref} VALUES ('later');", settings=write_settings)
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN y Nullable(String);", settings=write_settings)
+    assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY x") == "base\t\\N\nlater\t\\N\npaused\t\\N\n"
 
 
 def test_drop_table(started_cluster):

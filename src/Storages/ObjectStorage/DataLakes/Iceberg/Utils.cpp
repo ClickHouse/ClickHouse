@@ -573,6 +573,14 @@ bool writeMetadataFileAndVersionHint(
     return true;
 }
 
+void removeRejectedMetadataFile(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    ObjectStoragePtr object_storage)
+{
+    object_storage->removeObjectIfExists(StoredObject(resolver.resolve(metadata_file_info.path)));
+}
+
 
 String normalizeIcebergTransformFunctionName(const String & function_name)
 {

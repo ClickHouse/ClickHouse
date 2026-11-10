@@ -795,6 +795,8 @@ ExpireSnapshotsResult expireSnapshots(
                 /// Nothing is deleted yet, so a conflict is retried like the metadata file conflict above.
                 if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, base_metadata_path, nullptr, metadata))
                 {
+                    if (!catalog->isTransactional())
+                        removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
                     LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
                     continue;
                 }

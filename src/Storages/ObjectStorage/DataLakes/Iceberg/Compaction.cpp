@@ -1021,6 +1021,8 @@ static bool writeConsolidatedManifestFile(
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_metadata_path, new_snapshot.snapshot, metadata_object))
                 {
                     LOG_INFO(log, "Metadata commit conflict detected via catalog, cleaning up temporary files");
+                    if (!catalog_writes_metadata_file)
+                        removeRejectedMetadataFile(path_resolver, generated_metadata_info, object_storage);
                     cleanup();
                     return false;
                 }
