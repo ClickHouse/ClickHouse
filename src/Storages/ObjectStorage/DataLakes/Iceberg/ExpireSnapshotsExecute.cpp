@@ -670,14 +670,14 @@ ExpireSnapshotsResult expireSnapshots(
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(
+        auto metadata = deepCopy(getMetadataJSONObject(
             metadata_path,
             object_storage,
             persistent_table_components.metadata_cache,
             context,
             log,
             compression_method,
-            persistent_table_components.table_uuid);
+            persistent_table_components.table_uuid));
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");

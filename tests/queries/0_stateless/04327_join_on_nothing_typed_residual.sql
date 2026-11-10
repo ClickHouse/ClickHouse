@@ -4,7 +4,6 @@
 
 -- The bug and its fix live in the analyzer's planner; the old analyzer cannot resolve
 -- an ARRAY JOIN alias inside JOIN ON at all, so pin the analyzer to exercise the fixed path.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (c0 Int32) ENGINE = MergeTree ORDER BY c0;

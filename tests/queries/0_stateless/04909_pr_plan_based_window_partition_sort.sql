@@ -18,7 +18,6 @@ ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128;
 INSERT INTO t_pr_window SELECT number, number % 4, number * 7 % 1000 FROM numbers(20000);
 OPTIMIZE TABLE t_pr_window FINAL;
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

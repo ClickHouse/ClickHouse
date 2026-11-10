@@ -31,18 +31,31 @@ struct FormatParserSharedResources
 
     FormatParserSharedResources(const Settings & settings, size_t num_streams_);
 
-    static FormatParserSharedResourcesPtr singleThreaded(const Settings & settings);
+    /// Parsing happens in the threads that read from the formats, without a thread pool.
+    /// `num_streams` is the number of formats reading at the same time, they share the memory limits.
+    static FormatParserSharedResourcesPtr singleThreaded(const Settings & settings, size_t num_streams_ = 1);
 
     void finishStream();
 
     size_t getParsingThreadsPerReader() const;
     size_t getIOThreadsPerReader() const;
 
+    /// Initializes the runners. Readers of different formats can share one instance (the data
+    /// files of an Iceberg snapshot need not all be in the same format), so whichever reader comes
+    /// first initializes them, and every format must work with the runners another one set up.
     void initOnce(std::function<void()> f);
 
+    /// Initializes `opaque`. Kept apart from `initOnce`, so that a reader of another format that
+    /// came first and initialized only the runners does not leave `opaque` empty.
+    void initOpaqueOnce(std::function<void()> f);
+
 private:
+    static void callOnce(std::once_flag & flag, std::exception_ptr & exception, const std::function<void()> & f);
+
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
     std::exception_ptr init_exception;
+    std::once_flag opaque_init_flag;
+    std::exception_ptr opaque_init_exception;
 };
 }

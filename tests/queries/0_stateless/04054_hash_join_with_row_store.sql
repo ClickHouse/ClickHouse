@@ -18,7 +18,6 @@ SET join_algorithm = 'hash';
 SELECT '--- Row store planner decision test ---';
 
  -- Pin planner settings
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET collect_hash_table_stats_during_joins = 0;

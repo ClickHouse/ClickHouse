@@ -1,7 +1,6 @@
 <clickhouse>
     <profiles>
         <default>
-            <enable_analyzer>1</enable_analyzer>
             <enable_parallel_replicas>1</enable_parallel_replicas>
             <cluster_for_parallel_replicas>default</cluster_for_parallel_replicas>
             <max_parallel_replicas>100</max_parallel_replicas>
