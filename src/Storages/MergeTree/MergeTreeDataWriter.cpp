@@ -796,10 +796,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
     StorageMetadataPtr metadata_snapshot,
     ContextPtr context,
     bool may_have_leftover,
+    bool defer_fsync,
     const MergeTreeTransactionPtr & txn)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover, txn);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover, defer_fsync, txn);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
@@ -810,7 +811,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
     ContextPtr context,
     bool may_have_leftover)
 {
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(patch_part_index), std::move(context), data.insert_increment.get(), may_have_leftover);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(patch_part_index), std::move(context), data.insert_increment.get(), may_have_leftover, /*defer_fsync=*/ false);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
@@ -821,6 +822,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     ContextPtr context,
     UInt64 block_number,
     bool may_have_leftover,
+    bool defer_fsync,
     const MergeTreeTransactionPtr & txn)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
@@ -1191,7 +1193,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             perm_ptr,
             context->getSettingsRef()[Setting::unique_key_max_encoded_size],
             gathered_data.checksums,
-            (*data_settings)[MergeTreeSetting::fsync_after_insert],
+            (*data_settings)[MergeTreeSetting::fsync_after_insert] && !defer_fsync,
             context);
     }
 
@@ -1242,7 +1244,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         gathered_data,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert]);
+        (*data_settings)[MergeTreeSetting::fsync_after_insert] && !defer_fsync);
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});

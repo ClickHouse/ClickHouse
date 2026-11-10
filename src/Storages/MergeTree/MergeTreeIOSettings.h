@@ -222,6 +222,7 @@ struct MergeTreeWriterSettings
     float max_memory_ratio_to_activate_adaptive_write_buffer{};
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
+    UInt64 adaptive_codec_selection_period = 1;
 };
 
 /// Write settings for a part produced by a merge or a mutation.
