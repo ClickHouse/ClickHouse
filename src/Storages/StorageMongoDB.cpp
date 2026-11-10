@@ -115,16 +115,11 @@ void throwIfServerCredentials(const mongocxx::uri & uri, std::string_view remedy
 
 void MongoDBConfiguration::checkServerCredentialsForTable(const ContextPtr & context) const
 {
-    if (!context->shouldRestrictUserQueryS3Credentials())
+    /// In `clickhouse-local` the user is the operator, so the credentials of the process are theirs to use.
+    if (context->getApplicationType() != Context::ApplicationType::SERVER)
         return;
 
-    throwIfServerCredentials(*uri,
-#if CLICKHOUSE_CLOUD
-        ""
-#else
-        ", or enable the setting `s3_allow_server_credentials_in_user_queries`"
-#endif
-    );
+    throwIfServerCredentials(*uri, "");
 }
 
 void MongoDBConfiguration::checkServerCredentialsForDictionary() const
