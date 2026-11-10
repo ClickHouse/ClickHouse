@@ -333,7 +333,7 @@ struct TargetPart
 /// `Memory` table) converts them as the query that added them would have.
 struct Conversion
 {
-    /// Null when the target type is the source type.
+    /// Null when the target type is the source type, or when the function was created without a query.
     FunctionBasePtr cast;
     std::optional<DataTypeValidationSettings> validation_settings;
 };
@@ -373,6 +373,7 @@ public:
         , source_type(arguments[0])
         , source_serialization(source_type->getDefaultSerialization())
         , target_type(std::move(target_type_))
+        , converts(!source_type->equals(*target_type))
         , max_compress_block_size(block_size_bytes.value_or(DEFAULT_MAX_COMPRESS_BLOCK_SIZE))
         , min_compress_block_size(block_size_bytes.value_or(DEFAULT_MIN_COMPRESS_BLOCK_SIZE))
     {
@@ -405,18 +406,18 @@ public:
         /// Built as `accurateCast` builds it, with the settings of the query (enum values, date and time parsing and overflow;
         /// the cast copies them), and prepared here, so that a conversion the types do not allow is reported here and not at the
         /// first granule. `createInternalCast` would saturate dates and times that overflow whatever the settings say.
+        /// Without a query (a state type parsed when a table is loaded) there are no settings to convert with. Such a function
+        /// only reads and merges states, whose pending rows carry the conversion of the query that added them, so it gets no
+        /// cast, and converting rows with it is an error (`writePending`) rather than a conversion with no settings.
         auto own_conversion = std::make_shared<Conversion>();
         own_conversion->validation_settings = std::move(validation_settings_);
-        if (!source_type->equals(*target_type))
+        const ContextPtr query_context = CurrentThread::tryGetQueryContext();
+        if (converts && query_context)
         {
-            const ContextPtr query_context = CurrentThread::tryGetQueryContext();
-            const auto overflow_behavior = query_context
-                ? query_context->getSettingsRef()[Setting::date_time_overflow_behavior].value
-                : FormatSettings::DateTimeOverflowBehavior::Ignore;
             ColumnsWithTypeAndName cast_arguments{{source_type->createColumn(), source_type, ""}, {nullptr, std::make_shared<DataTypeString>(), ""}};
             own_conversion->cast = createFunctionBaseCast(
-                createFunctionConvertSettings(query_context, overflow_behavior), "accurateCast", cast_arguments, target_type, {},
-                CastType::accurate);
+                createFunctionConvertSettings(query_context, query_context->getSettingsRef()[Setting::date_time_overflow_behavior]),
+                "accurateCast", cast_arguments, target_type, {}, CastType::accurate);
             own_conversion->cast->prepare({});
         }
         conversion = std::move(own_conversion);
@@ -617,8 +618,11 @@ private:
         ColumnPtr rows = data_ref.pending->getPtr();
         /// A value the target type cannot hold is an error here, before the state changes.
         ColumnPtr converted = rows;
-        if (rows_conversion.cast)
+        if (converts)
         {
+            if (!rows_conversion.cast)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Aggregate function {} has rows to convert but was created without a query", getName());
             ColumnsWithTypeAndName arguments{
                 {rows, source_type, ""},
                 {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
@@ -747,6 +751,7 @@ private:
     const DataTypePtr source_type;
     const SerializationPtr source_serialization;
     const DataTypePtr target_type;
+    const bool converts;
     const size_t max_compress_block_size;
     const size_t min_compress_block_size;
     ASTPtr codec_description;
