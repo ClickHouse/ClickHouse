@@ -7911,7 +7911,7 @@ bool rangeOfKeyColumnMayHoldNull(
 template <typename ApplyElement, typename Stack>
 void pushAtomGroupMask(const KeyCondition::RPNElement & group, const ApplyElement & apply_element, Stack & rpn_stack)
 {
-    BoolMask group_mask(true, true);
+    BoolMask group_mask(true, true, true);
     for (const auto & atom : group.group_atoms)
     {
         apply_element(atom);
@@ -8146,7 +8146,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
     /// Pushes the mask of an atom or a constant onto `rpn_stack`, or applies a logical operator to it.
     /// Returns false when the element cannot be evaluated on the hyperrectangle. The pushed mask
-    /// `(true, true)` then claims nothing, and the element is reported as unknown, so it does not replace
+    /// `(true, true, true)` then allows every value, and the element is reported as unknown, so it does not replace
     /// the result that another index reported for it.
     const auto apply_element = [&](const RPNElement & element) -> bool
     {
@@ -8154,12 +8154,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
             /// we cannot process it.
-            rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(true, true, true);
             return false;
         }
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
-            rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(true, true, true);
             return false;
         }
 
@@ -8169,14 +8169,14 @@ BoolMask KeyCondition::checkInHyperrectangle(
             size_t key_column = element.getKeyColumn();
             if (key_column >= hyperrectangle.size())
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
 
             const auto mask = checkRangeAtomInKeyRange(element, hyperrectangle[key_column], data_types, key_column);
             if (!mask)
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
             rpn_stack.push_back(atomMask(element, *mask, &column_index_to_column_bf));
@@ -8214,7 +8214,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             size_t key_column = element.getKeyColumn();
             if (key_column >= hyperrectangle.size())
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
 
@@ -8278,13 +8278,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 }
                 else
                 {
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                     return false;
                 }
             }
             else
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
 
@@ -8325,7 +8325,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 /// The point is a whole key column of type Tuple of two coordinates (e.g. `Point`).
                 if (element.key_columns[0] >= hyperrectangle.size())
                 {
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                     return false;
                 }
 
@@ -8335,7 +8335,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
                 {
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                     return false;
                 }
 
@@ -8350,7 +8350,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
 
@@ -8387,7 +8387,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             size_t key_column = element.getKeyColumn();
             if (key_column >= hyperrectangle.size())
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return false;
             }
 
@@ -8553,11 +8553,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
             /// we cannot process it.
-            rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(true, true, true);
         }
         else if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
-            rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(true, true, true);
         }
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
               || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
@@ -8568,13 +8568,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!is_key_col_present)
             {
                 /// Column not represented – treat as unknown for index pruning.
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
             }
             else
             {
                 /// A chain that can't be applied to the range leaves the atom unknown.
                 const auto mask = checkRangeAtomInKeyRange(element, sparse_hyperrectangle[sparse_pos], sparse_data_types, sparse_pos);
-                rpn_stack.push_back(mask ? atomMask(element, *mask, nullptr) : BoolMask(true, true));
+                rpn_stack.push_back(mask ? atomMask(element, *mask, nullptr) : BoolMask(true, true, true));
             }
         }
         else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
@@ -8612,7 +8612,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             if (!is_key_col_present)
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
             }
             else
             {
@@ -8676,12 +8676,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     }
                     else
                     {
-                        rpn_stack.emplace_back(true, true);
+                        rpn_stack.emplace_back(true, true, true);
                     }
                 }
                 else
                 {
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                 }
             }
 
@@ -8724,7 +8724,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
                 if (!is_key_col_present)
                 {
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                     return;
                 }
 
@@ -8741,7 +8741,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 if (!is_x_key_col_present && !is_y_key_col_present)
                 {
                     /// Neither coordinate is available — nothing to prune on.
-                    rpn_stack.emplace_back(true, true);
+                    rpn_stack.emplace_back(true, true, true);
                     return;
                 }
 
@@ -8772,7 +8772,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
                 return;
             }
 
@@ -8810,7 +8810,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             if (!is_key_col_present)
             {
-                rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true, true);
             }
             else
             {
