@@ -95,7 +95,7 @@ constexpr size_t max_parked_readers_per_lane = 2;
 
 }
 
-int MergeTreeReadPoolInOrderSliced::compareKeys(const Block & lhs, const Block & rhs, bool reverse)
+int MergeTreeReadPoolInOrderSliced::compareKeys(const Block & lhs, const Block & rhs, const std::vector<bool> & reverse_flags, bool reverse)
 {
     if (lhs.columns() == 0 || rhs.columns() == 0)
         return static_cast<int>(lhs.columns() == 0) - static_cast<int>(rhs.columns() == 0);
@@ -103,6 +103,8 @@ int MergeTreeReadPoolInOrderSliced::compareKeys(const Block & lhs, const Block &
     for (size_t i = 0; i < lhs.columns(); ++i)
     {
         int result = lhs.getByPosition(i).column->compareAt(0, 0, *rhs.getByPosition(i).column, 1);
+        if (i < reverse_flags.size() && reverse_flags[i])
+            result = -result;
         if (result != 0)
             return reverse ? -result : result;
     }
@@ -111,7 +113,7 @@ int MergeTreeReadPoolInOrderSliced::compareKeys(const Block & lhs, const Block &
 
 bool MergeTreeReadPoolInOrderSliced::QueuedLaneLess::operator()(const QueuedLane & lhs, const QueuedLane & rhs) const
 {
-    const int result = compareKeys(lhs.key, rhs.key, reverse);
+    const int result = compareKeys(lhs.key, rhs.key, *reverse_flags, reverse);
     return result != 0 ? result < 0 : lhs.lane < rhs.lane;
 }
 
@@ -132,6 +134,7 @@ MergeTreeReadPoolInOrderSliced::MergeTreeReadPoolInOrderSliced(
     RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
     size_t num_sources_,
     const Block & primary_key_header_,
+    std::vector<bool> sorting_key_reverse_flags_,
     bool read_in_reverse_order_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
@@ -153,8 +156,9 @@ MergeTreeReadPoolInOrderSliced::MergeTreeReadPoolInOrderSliced(
     , max_slice_marks(std::max<size_t>(1, pool_settings.min_marks_for_concurrent_read))
     , min_slice_bytes_to_share(context_->getSettingsRef()[Setting::min_compress_block_size])
     , primary_key_header(primary_key_header_)
+    , sorting_key_reverse_flags(std::move(sorting_key_reverse_flags_))
     , reverse(read_in_reverse_order_)
-    , queue(QueuedLaneLess{.reverse = read_in_reverse_order_})
+    , queue(QueuedLaneLess{.reverse_flags = &sorting_key_reverse_flags, .reverse = read_in_reverse_order_})
     , sources(num_sources_)
 {
     std::lock_guard lock(mutex);
@@ -234,7 +238,7 @@ std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextLaneBefore(size_t lane
         return std::nullopt;
 
     const auto & head = *queue.begin();
-    if (head.lane == lane || compareKeys(head.key, (*position)->key, reverse) >= 0)
+    if (head.lane == lane || compareKeys(head.key, (*position)->key) >= 0)
         return std::nullopt;
     return head.lane;
 }

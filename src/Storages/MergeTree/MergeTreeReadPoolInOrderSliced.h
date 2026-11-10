@@ -58,6 +58,7 @@ public:
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
         size_t num_sources_,
         const Block & primary_key_header_,
+        std::vector<bool> sorting_key_reverse_flags_,
         bool read_in_reverse_order_);
 
     String getName() const override { return "ReadPoolInOrderSliced"; }
@@ -130,9 +131,11 @@ public:
     std::optional<size_t> nextUnreadMark(size_t lane) const;
     /// Primary key values at the mark of the lane, one row; empty if the index has no value there.
     Block keyAtMark(size_t lane, size_t mark) const;
-    /// Keys that are not known (empty blocks) go last: the queue is the read-ahead order, and the pool does not
-    /// speculate on a lane it cannot place. The merge's demand for such a lane is served regardless.
-    static int compareKeys(const Block & lhs, const Block & rhs, bool reverse = false);
+    /// Compares two keys in reading order: the descending columns of the sorting key and a read in reverse
+    /// order invert the comparison. Keys that are not known (empty blocks) go last: the queue is the
+    /// read-ahead order, and the pool does not speculate on a lane it cannot place. The merge's demand
+    /// for such a lane is served regardless.
+    int compareKeys(const Block & lhs, const Block & rhs) const { return compareKeys(lhs, rhs, sorting_key_reverse_flags, reverse); }
 
     /// The lane is not going to be read anymore: its unread marks, queued slices and parked readers go away.
     void finishLane(size_t lane);
@@ -163,6 +166,7 @@ private:
 
     struct QueuedLaneLess
     {
+        const std::vector<bool> * reverse_flags;
         bool reverse;
         bool operator()(const QueuedLane & lhs, const QueuedLane & rhs) const;
     };
@@ -185,6 +189,8 @@ private:
         std::optional<MergeTreeSliceTag> reading;
         size_t reading_marks = 0;
     };
+
+    static int compareKeys(const Block & lhs, const Block & rhs, const std::vector<bool> & reverse_flags, bool reverse);
 
     size_t nextSliceMarks(size_t lane) const TSA_REQUIRES(mutex);
     /// The slice for the source to read next (see getTask); nothing when the FIFO is empty. Waits while the
@@ -210,6 +216,8 @@ private:
     /// Bytes a slice reads below which it is not worth a request of its own.
     const size_t min_slice_bytes_to_share;
     const Block primary_key_header;
+    /// Per column of the primary key: whether the sorting key orders it in descending order.
+    const std::vector<bool> sorting_key_reverse_flags;
     const bool reverse;
 
     mutable std::mutex mutex;

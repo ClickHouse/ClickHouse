@@ -174,7 +174,7 @@ IProcessor::Status MergeTreeInOrderSliceRouter::prepare()
         }
 
         Block key = pool->keyAtMark(lane, *next_mark);
-        if (key.columns() != 0 && MergeTreeReadPoolInOrderSliced::compareKeys(key, lane_state.announced_key) != 0)
+        if (key.columns() != 0 && pool->compareKeys(key, lane_state.announced_key) != 0)
         {
             Chunk announcement(output.getHeader().cloneEmptyColumns(), 0);
             announcement.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(/*part_level=*/ 0, key, virtual_row_conversions));
