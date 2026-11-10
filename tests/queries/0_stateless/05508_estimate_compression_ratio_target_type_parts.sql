@@ -165,6 +165,52 @@ SELECT abs(estimated / stored - 1) < 0.01 FROM
 );
 DROP TABLE t_wide_granules;
 
+-- A conversion that narrows the rows: `Array(UInt64)` of 2040 elements estimated as `Array(UInt8)`, 2048 bytes a row. The part
+-- sizes its granules on the rows it stores, exactly 10 MiB here (5120 rows, an insert of two granules), not on the source rows
+-- (643), and the ends of granules end compressed blocks. The estimated size of every codec against the part, within 1%.
+CREATE TABLE t_narrowed_zstd1 (x Array(UInt8) CODEC(ZSTD(1))) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 8192, index_granularity_bytes = '10Mi',
+    use_const_adaptive_granularity = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576,
+    ratio_of_defaults_for_sparse_serialization = 0.9375, compute_exact_num_defaults_for_sparse_columns = 1, serialization_info_version = 'with_types',
+    min_columns_to_activate_adaptive_write_buffer = 500;
+CREATE TABLE t_narrowed_zstd6 (x Array(UInt8) CODEC(ZSTD(6))) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 8192, index_granularity_bytes = '10Mi',
+    use_const_adaptive_granularity = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576,
+    ratio_of_defaults_for_sparse_serialization = 0.9375, compute_exact_num_defaults_for_sparse_columns = 1, serialization_info_version = 'with_types',
+    min_columns_to_activate_adaptive_write_buffer = 500;
+CREATE TABLE t_narrowed_lz4 (x Array(UInt8) CODEC(LZ4)) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 8192, index_granularity_bytes = '10Mi',
+    use_const_adaptive_granularity = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576,
+    ratio_of_defaults_for_sparse_serialization = 0.9375, compute_exact_num_defaults_for_sparse_columns = 1, serialization_info_version = 'with_types',
+    min_columns_to_activate_adaptive_write_buffer = 500;
+INSERT INTO t_narrowed_zstd1 SELECT arrayMap(i -> toUInt8((i + number) % 256), range(2040)) FROM numbers(10240);
+INSERT INTO t_narrowed_zstd6 SELECT arrayMap(i -> toUInt8((i + number) % 256), range(2040)) FROM numbers(10240);
+INSERT INTO t_narrowed_lz4 SELECT arrayMap(i -> toUInt8((i + number) % 256), range(2040)) FROM numbers(10240);
+SELECT table, marks FROM system.parts WHERE database = currentDatabase() AND table LIKE 't_narrowed_%' AND active ORDER BY table;
+SELECT
+    abs(estimated.zstd1 / stored.zstd1 - 1) < 0.01,
+    abs(estimated.zstd6 / stored.zstd6 - 1) < 0.01,
+    abs(estimated.lz4 / stored.lz4 - 1) < 0.01
+FROM
+(
+    SELECT
+        sum(8 + 8 * length(x)) / estimateCompressionRatio('ZSTD(1)', 'Array(UInt8)')(x) AS zstd1,
+        sum(8 + 8 * length(x)) / estimateCompressionRatio('ZSTD(6)', 'Array(UInt8)')(x) AS zstd6,
+        sum(8 + 8 * length(x)) / estimateCompressionRatio('LZ4', 'Array(UInt8)')(x) AS lz4
+    FROM (SELECT arrayMap(i -> toUInt64((i + number) % 256), range(2040)) AS x FROM numbers(10240))
+) AS estimated,
+(
+    SELECT
+        sumIf(column_data_compressed_bytes, table = 't_narrowed_zstd1') AS zstd1,
+        sumIf(column_data_compressed_bytes, table = 't_narrowed_zstd6') AS zstd6,
+        sumIf(column_data_compressed_bytes, table = 't_narrowed_lz4') AS lz4
+    FROM system.parts_columns WHERE database = currentDatabase() AND active
+) AS stored
+SETTINGS max_block_size = 1000;
+DROP TABLE t_narrowed_zstd1;
+DROP TABLE t_narrowed_zstd6;
+DROP TABLE t_narrowed_lz4;
+
 DROP TABLE t_strings;
 DROP TABLE t_unique;
 DROP TABLE t_ints;

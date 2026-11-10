@@ -555,17 +555,11 @@ private:
         return *data_ref.pending;
     }
 
-    /// `pending_bytes` is the byte size of the pending rows, which callers that check every row compute once.
-    static bool completesGranule(const Data & data_ref, size_t pending_bytes)
-    {
-        return data_ref.granule_rows + data_ref.pending->size() >= GRANULE_ROWS || data_ref.granule_bytes + pending_bytes >= GRANULE_BYTES;
-    }
-
-    /// `completesGranule`, or the pending rows take `PENDING_BYTES`. Checked for every row added one at a time.
+    /// The pending rows complete the granule by rows, or take `PENDING_BYTES`. Checked for every row added one at a time. Where a
+    /// granule ends by bytes depends on the converted rows, and `writePending` finds it.
     static bool isPendingFull(const Data & data_ref)
     {
-        const size_t pending_bytes = data_ref.pending->byteSize();
-        return completesGranule(data_ref, pending_bytes) || pending_bytes >= PENDING_BYTES;
+        return data_ref.granule_rows + data_ref.pending->size() >= GRANULE_ROWS || data_ref.pending->byteSize() >= PENDING_BYTES;
     }
 
     void addRows(Data & data_ref, const IColumn & column, size_t row_begin, size_t row_end) const
@@ -579,15 +573,12 @@ private:
             auto & pending = pendingOf(data_ref);
             const size_t pending_bytes = pending.byteSize();
             const size_t room_rows = GRANULE_ROWS - std::min(GRANULE_ROWS, data_ref.granule_rows + pending.size());
-            const size_t room_bytes = std::min(
-                PENDING_BYTES - std::min(PENDING_BYTES, pending_bytes),
-                GRANULE_BYTES - std::min(GRANULE_BYTES, data_ref.granule_bytes + pending_bytes));
+            const size_t room_bytes = PENDING_BYTES - std::min(PENDING_BYTES, pending_bytes);
             const size_t rows = std::max<size_t>(1, std::min({row_end - row_begin, room_rows, room_bytes / bytes_per_row}));
             pending.insertRangeFrom(column, row_begin, rows);
             /// The pending rows are written after the first row that fills them, as in `add`, whatever the blocks. The bytes
             /// only grow with the rows, so only a range that filled them by bytes is added again row by row to find that row.
-            const size_t bytes = pending.byteSize();
-            if (rows > 1 && (bytes >= PENDING_BYTES || data_ref.granule_bytes + bytes >= GRANULE_BYTES))
+            if (rows > 1 && pending.byteSize() >= PENDING_BYTES)
             {
                 /// As `add`: a row goes in, then the rows are checked. At least one row goes in, also when a column keeps some
                 /// bytes of the rows it gives back.
@@ -605,11 +596,10 @@ private:
         }
     }
 
-    /// Writes the pending rows to the part: a granule, or a piece of one.
+    /// Writes the pending rows to the part, up to the end of the granule: a granule, or a piece of one.
     void writePending(Data & data_ref) const
     {
         throwIfBroken(data_ref);
-        const bool ends_granule = completesGranule(data_ref, data_ref.pending->byteSize());
 
         /// As `CAST`, which rejects suspicious and experimental types the settings do not allow. Here and not when the function is
         /// created, so that a state type that names such a type can still be read and merged (`ATTACH`, `-Merge`).
@@ -630,7 +620,27 @@ private:
                 {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
             converted = rows_conversion.cast->execute(arguments, target_type, rows->size(), /*dry_run=*/false);
         }
-        const UInt64 rows_bytes = sourceBytes(*rows);
+
+        /// The writer sizes granules on the rows it writes, which are in the target type: a granule ends after `GRANULE_ROWS`
+        /// rows, or at the row where its rows reach `GRANULE_BYTES`. The rows after that end stay pending, in their own type.
+        size_t write_rows = converted->size();
+        size_t write_bytes = converted->byteSize();
+        if (data_ref.granule_bytes + write_bytes >= GRANULE_BYTES)
+        {
+            write_rows = 0;
+            write_bytes = 0;
+            while (write_rows < converted->size() && data_ref.granule_bytes + write_bytes < GRANULE_BYTES)
+                write_bytes += converted->byteSizeAt(write_rows++);
+        }
+        const bool ends_granule = data_ref.granule_rows + write_rows >= GRANULE_ROWS || data_ref.granule_bytes + write_bytes >= GRANULE_BYTES;
+
+        MutableColumnPtr rest;
+        if (write_rows < rows->size())
+        {
+            rest = source_type->createColumn();
+            rest->insertRangeFrom(*rows, write_rows, rows->size() - write_rows);
+        }
+        const UInt64 rows_bytes = sourceBytes(*rows, write_rows);
 
         data_ref.broken = true;
         if (!data_ref.part)
@@ -643,26 +653,26 @@ private:
             for (auto & [_, stream] : part.streams)
                 if (stream->offset() >= min_compress_block_size)
                     stream->endBlock();
-        part.serialization->serializeBinaryBulkWithMultipleStreams(*converted, 0, converted->size(), part.settings, part.state);
+        part.serialization->serializeBinaryBulkWithMultipleStreams(*converted, 0, write_rows, part.settings, part.state);
 
-        data_ref.granule_rows = ends_granule ? 0 : data_ref.granule_rows + rows->size();
-        data_ref.granule_bytes = ends_granule ? 0 : data_ref.granule_bytes + rows->byteSize();
+        data_ref.granule_rows = ends_granule ? 0 : data_ref.granule_rows + write_rows;
+        data_ref.granule_bytes = ends_granule ? 0 : data_ref.granule_bytes + write_bytes;
         data_ref.source_bytes += rows_bytes;
         converted.reset();
         rows.reset();
-        data_ref.pending.reset();
+        data_ref.pending = std::move(rest);
         data_ref.broken = false;
     }
 
-    /// The rows serialized in their own type, as the function measures them without a target type.
-    UInt64 sourceBytes(const IColumn & rows) const
+    /// The first `limit` rows serialized in their own type, as the function measures them without a target type.
+    UInt64 sourceBytes(const IColumn & rows, size_t limit) const
     {
         NullWriteBufferWithMemory out(16384);
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&out](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &out; };
         ISerialization::SerializeBinaryBulkStatePtr state;
         source_serialization->serializeBinaryBulkStatePrefix(rows, settings, state);
-        source_serialization->serializeBinaryBulkWithMultipleStreams(rows, 0, rows.size(), settings, state);
+        source_serialization->serializeBinaryBulkWithMultipleStreams(rows, 0, limit, settings, state);
         source_serialization->serializeBinaryBulkStateSuffix(settings, state);
         out.finalize();
         return out.count();
@@ -714,7 +724,8 @@ private:
     void finish(Data & data_ref) const
     {
         throwIfBroken(data_ref);
-        if (data_ref.pending && !data_ref.pending->empty())
+        /// Every call writes at least one row.
+        while (data_ref.pending && !data_ref.pending->empty())
             writePending(data_ref);
         data_ref.granule_rows = 0;
         data_ref.granule_bytes = 0;
@@ -862,7 +873,7 @@ a simpler model, and its result is not comparable with these.
 
 With `target_type`, the estimate follows how a `MergeTree` table with the default settings writes a column of a wide part: a
 compressed stream per substream (for example, the sizes and the characters of a `String`, the dictionary and the indexes of
-a `LowCardinality` column), granules of 8192 rows, sparse serialization for columns of mostly default values (decided from
+a `LowCardinality` column), granules of 8192 rows or 10 MiB in `target_type`, sparse serialization for columns of mostly default values (decided from
 the first rows of a state, 8192 or the rows of 1 MiB, where a part decides from all its rows). It does not read the settings of any table. The values are
 converted as `accurateCast` converts them, so a value that `target_type` cannot hold is an error. The numerator of a
 `LowCardinality` column is the size of its values, not of its dictionary. Every thread of a query estimates its rows as a

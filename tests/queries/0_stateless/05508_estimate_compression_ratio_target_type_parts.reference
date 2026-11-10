@@ -17,3 +17,7 @@ t_unique	str_zstd lc_zstd lc_lz4 str_lz4	1	1
 t_wide	lc_zstd lc_lz4 str_zstd str_lz4	1	1
 1
 1
+t_narrowed_lz4	3
+t_narrowed_zstd1	3
+t_narrowed_zstd6	3
+1	1	1
