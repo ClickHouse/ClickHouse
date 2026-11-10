@@ -133,6 +133,9 @@ private:
     void onPairingTimeout();
     /// The kernel has dropped the watch of the directory (`IN_IGNORED`), because it was deleted or unmounted.
     void onWatchRemoved();
+    /// The queue of the inotify descriptor of the watcher has overflowed (`IN_Q_OVERFLOW`), so some events of the
+    /// directory may be lost.
+    void onQueueOverflow();
 #elif defined(OS_DARWIN)
     /// The callbacks below are called by the `DirectoryWatchReactor` thread only.
     std::unique_ptr<DarwinDirectoryWatchState> watch_state;

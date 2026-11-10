@@ -198,6 +198,15 @@ void DirectoryWatcherBase::onWatchRemoved()
     owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Directory {} is not watched anymore: it was deleted or unmounted", path));
 }
 
+void DirectoryWatcherBase::onQueueOverflow()
+{
+    LOG_WARNING(
+        owner.storage.getLog(),
+        "The inotify queue has overflowed, so some changes of directory {} may be lost. "
+        "Consider increasing `fs.inotify.max_queued_events`",
+        path);
+}
+
 #elif defined(OS_DARWIN)
 
 int DirectoryWatcherBase::directoryFd() const

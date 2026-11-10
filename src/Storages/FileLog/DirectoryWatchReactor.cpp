@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <limits>
 #include <optional>
 #include <unistd.h>
 #if defined(OS_LINUX)
@@ -462,8 +463,28 @@ void DirectoryWatchReactor::dispatchEvent(int inotify_fd, const inotify_event & 
 {
     if (event.mask & IN_Q_OVERFLOW)
     {
-        LOG_WARNING(log, "The queue of inotify descriptor {} has overflowed, so some changes of the directories watched with it "
-            "are lost. Consider increasing `fs.inotify.max_queued_events`", inotify_fd);
+        /// The overflow is not tied to a watch (its `wd` is -1): every watcher of the descriptor may have lost events,
+        /// so each of them reports it with its table and directory. `registrations_by_wd` is sorted by the descriptor first.
+        for (auto it = registrations_by_wd.lower_bound({inotify_fd, std::numeric_limits<int>::min()});
+             it != registrations_by_wd.end() && it->first.first == inotify_fd;
+             ++it)
+        {
+            for (WatcherRegistration * registration : it->second)
+            {
+                if (registration->failed)
+                    continue;
+
+                try
+                {
+                    registration->watcher->onQueueOverflow();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Cannot handle the queue overflow of a directory watcher, it is not watched anymore");
+                    failWatcher(*registration);
+                }
+            }
+        }
         return;
     }
 
