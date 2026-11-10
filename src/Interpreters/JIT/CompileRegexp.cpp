@@ -676,7 +676,7 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Compiled regexp module has no `regexp_match` symbol");
     }
 
-    auto func = reinterpret_cast<JITRegexpMatcherFunc>(it->second);
+    auto func = CHJIT::getFunction<JITRegexpMatcherFunc>(compiled_module, "regexp_match");
 
     /// `compileModule` has already registered the module in the JIT instance; it is released only by
     /// `deleteCompiledModule` (called from `~CompiledRegexpHolder`). Until the holder is constructed and

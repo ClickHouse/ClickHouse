@@ -32,6 +32,9 @@
 #include <Common/Jemalloc.h>
 #include <Common/JemallocJITArena.h>
 #include <Common/formatReadable.h>
+#include <Common/SharedLockGuard.h>
+#include <Common/SharedMutex.h>
+#include <Interpreters/JIT/callJITFunction.h>
 #include <Core/Types.h>
 
 
@@ -183,6 +186,17 @@ public:
     }
 
     size_t getAllocatedSize() const { return allocated_size; }
+
+    bool contains(const void * address) const
+    {
+        for (const auto & page_block : page_blocks)
+        {
+            const char * base = static_cast<const char *>(page_block.base());
+            if (address >= base && address < base + page_block.blockSize())
+                return true;
+        }
+        return false;
+    }
 
     size_t getPageSize() const { return page_size; }
 
@@ -356,6 +370,11 @@ public:
         ex_page_arena.protect(PROT_READ | PROT_EXEC);
         return true;
     }
+
+    /// The code is freed with the memory manager, however the module is released, so its functions are unregistered here.
+    ~JITModuleMemoryManager() override;
+
+    bool containsCode(const void * address) const { return ex_page_arena.contains(address); }
 
     size_t allocatedSize() const
     {
@@ -578,6 +597,8 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
                 throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "DynamicLinker could not find symbol {} after compilation", function_name);
 
             auto * jit_symbol_address = reinterpret_cast<void *>(jit_symbol.getAddress());
+            if (!module_memory_manager->containsCode(jit_symbol_address))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Compiled function {} is outside the code of its module", function_name);
             compiled_module.function_name_to_symbol.emplace(std::move(function_name), jit_symbol_address);
         }
     }
@@ -607,6 +628,57 @@ void CHJIT::deleteCompiledModule(const CHJIT::CompiledModule & module)
         module_identifier_to_memory_manager.erase(module_it);
     }
     compiled_code_size.fetch_sub(module.size, std::memory_order_relaxed);
+}
+
+namespace
+{
+
+struct JITFunctions
+{
+    SharedMutex mutex;
+    std::unordered_map<const void *, const std::type_info *> types TSA_GUARDED_BY(mutex);
+};
+
+/// Never destroyed: JIT instances held by globals can release their modules after static destructors have run.
+JITFunctions & jitFunctions()
+{
+    static auto * functions = new JITFunctions;
+    return *functions;
+}
+
+}
+
+void registerJITFunction(const void * function, const std::type_info & type)
+{
+    auto & functions = jitFunctions();
+    std::lock_guard lock(functions.mutex);
+    auto [it, inserted] = functions.types.emplace(function, &type);
+    if (!inserted && *it->second != type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A JIT-compiled function is handed out with two different types");
+}
+
+JITModuleMemoryManager::~JITModuleMemoryManager()
+{
+    auto & functions = jitFunctions();
+    std::lock_guard lock(functions.mutex);
+    std::erase_if(functions.types, [this](const auto & entry) { return containsCode(entry.first); });
+}
+
+bool isRegisteredJITFunction(const void * function, const std::type_info & type)
+{
+    auto & functions = jitFunctions();
+    SharedLockGuard lock(functions.mutex);
+    auto it = functions.types.find(function);
+    return it != functions.types.end() && *it->second == type;
+}
+
+void * CHJIT::getFunctionAddress(const CompiledModule & module, const std::string & name, const std::type_info & type)
+{
+    auto it = module.function_name_to_symbol.find(name);
+    if (it == module.function_name_to_symbol.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compiled module has no function {}", name);
+    registerJITFunction(it->second, type);
+    return it->second;
 }
 
 void CHJIT::registerExternalSymbol(const std::string & symbol_name, void * address)

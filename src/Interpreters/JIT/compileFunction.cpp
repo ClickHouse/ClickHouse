@@ -220,7 +220,7 @@ CompiledFunction compileFunction(CHJIT & jit, const IFunctionBase & function)
     ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module.size);
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
-    auto compiled_function_ptr = reinterpret_cast<JITCompiledFunction>(compiled_module.function_name_to_symbol[function.getName()]);
+    auto compiled_function_ptr = CHJIT::getFunction<JITCompiledFunction>(compiled_module, function.getName());
     chassert(compiled_function_ptr);
 
     CompiledFunction result_compiled_function
@@ -560,11 +560,11 @@ CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vec
         compileInsertAggregatesIntoResultColumns(module, functions, insert_aggregate_states_functions_name);
     });
 
-    auto create_aggregate_states_function = reinterpret_cast<JITCreateAggregateStatesFunction>(compiled_module.function_name_to_symbol[create_aggregate_states_functions_name]);
-    auto add_into_aggregate_states_function = reinterpret_cast<JITAddIntoAggregateStatesFunction>(compiled_module.function_name_to_symbol[add_aggregate_states_functions_name]);
-    auto add_into_aggregate_states_function_single_place = reinterpret_cast<JITAddIntoAggregateStatesFunctionSinglePlace>(compiled_module.function_name_to_symbol[add_aggregate_states_functions_name_single_place]);
-    auto merge_aggregate_states_function = reinterpret_cast<JITMergeAggregateStatesFunction>(compiled_module.function_name_to_symbol[merge_aggregate_states_functions_name]);
-    auto insert_aggregate_states_function = reinterpret_cast<JITInsertAggregateStatesIntoColumnsFunction>(compiled_module.function_name_to_symbol[insert_aggregate_states_functions_name]);
+    auto create_aggregate_states_function = CHJIT::getFunction<JITCreateAggregateStatesFunction>(compiled_module, create_aggregate_states_functions_name);
+    auto add_into_aggregate_states_function = CHJIT::getFunction<JITAddIntoAggregateStatesFunction>(compiled_module, add_aggregate_states_functions_name);
+    auto add_into_aggregate_states_function_single_place = CHJIT::getFunction<JITAddIntoAggregateStatesFunctionSinglePlace>(compiled_module, add_aggregate_states_functions_name_single_place);
+    auto merge_aggregate_states_function = CHJIT::getFunction<JITMergeAggregateStatesFunction>(compiled_module, merge_aggregate_states_functions_name);
+    auto insert_aggregate_states_function = CHJIT::getFunction<JITInsertAggregateStatesIntoColumnsFunction>(compiled_module, insert_aggregate_states_functions_name);
 
     chassert(create_aggregate_states_function);
     chassert(add_into_aggregate_states_function);
@@ -779,7 +779,7 @@ CompiledSortDescriptionFunction compileSortDescription(
     ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module.size);
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
-    auto comparator_function = reinterpret_cast<JITSortDescriptionFunc>(compiled_module.function_name_to_symbol[sort_description_dump]);
+    auto comparator_function = CHJIT::getFunction<JITSortDescriptionFunc>(compiled_module, sort_description_dump);
     chassert(comparator_function);
 
     CompiledSortDescriptionFunction compiled_sort_descriptor_function
