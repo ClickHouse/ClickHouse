@@ -24,6 +24,7 @@ DATABASE = E("CLICKHOUSE_DATABASE", "default")
 CLIENT = "filling step plan deserialization"
 REVISION = 54482   # pinned, so the revision-gated fields of the handshake are fixed
 VERSION = 21       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION, pinned so the byte layout is fixed too
+WITH_STEP_ESTIMATES = 21   # per-step row and cost estimates
 OLD = 17           # one below DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP
 U8, U16 = b"\x01", b"\x02"            # BinaryTypeIndex
 NUL, INPUT, ALIAS = b"\x00", 0, 2     # a Null Field or a zero flags byte, ActionsDAG::ActionType
@@ -74,11 +75,12 @@ def interpolate(nodes, outputs, pairs):
     return bytes([2]) + out + vu(len(pairs)) + b"".join(sb(k) + sb(n) for k, n in pairs)
 
 def forge(label, payload, children=(), version=VERSION, out_columns=()):
+    estimates = NUL if version >= WITH_STEP_ESTIMATES else b""   # no estimates
     plan = vu(version) + vu(0) + NUL + vu(len(children))   # version, max_threads, concurrency
     for columns in children:   # one `ReadNothing` child per header, read before its parent
-        plan += vu(0) + sb("ReadNothing") + vu(0) + sb("") + header(columns) + vu(0)
+        plan += vu(0) + sb("ReadNothing") + vu(0) + sb("") + estimates + header(columns) + vu(0)
     plan += sb("Filling") + (vu(0) if version >= 19 else b"")   # step name, per-step version
-    plan += sb("") + header(out_columns) + vu(0) + payload   # description, header, settings
+    plan += sb("") + estimates + header(out_columns) + vu(0) + payload   # description, estimates, header, settings
     qid = os.urandom(16).hex()
     info = (b"\x01" + sb(USER) + sb(qid) + sb("127.0.0.1:9000") + bytes(8) + b"\x01"
             + sb("os_user") + sb("host") + sb(CLIENT) + vu(24) + vu(9) + vu(REVISION) + sb("")
