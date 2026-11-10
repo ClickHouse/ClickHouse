@@ -9,6 +9,8 @@ i32	1
 nullable	1
 low cardinality	1
 date	1
+the primary key prunes
+707
 the index keeps every matching row
 u64	1	1
 alias	1	1
