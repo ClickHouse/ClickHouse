@@ -86,6 +86,26 @@ How many delayed records the adaptive aggregation staged into its partition buff
 
 How many times the adaptive aggregation thawed the local tables because the staged stream proved repeat-dominated.
 
+### AdaptiveCodecBlocksPriced {#adaptivecodecblockspriced}
+
+Number of blocks that adaptive codec selection priced from the start, compressing them with every candidate codec and keeping the smallest output.
+
+### AdaptiveCodecBlocksRepriced {#adaptivecodecblocksrepriced}
+
+Number of blocks that adaptive codec selection priced after the remembered winner had lost ground on them.
+
+### AdaptiveCodecBlocksReused {#adaptivecodecblocksreused}
+
+Number of blocks that adaptive codec selection compressed with the remembered winner alone.
+
+### AdaptiveCodecBytesDefault {#adaptivecodecbytesdefault}
+
+Compressed bytes the default codec produced on the sample blocks of adaptive codec selection, one per window of `adaptive_codec_selection_period` blocks.
+
+### AdaptiveCodecBytesWritten {#adaptivecodecbyteswritten}
+
+Compressed bytes adaptive codec selection wrote on its sample blocks. The ratio to `AdaptiveCodecBytesDefault` is the saving against the default codec.
+
 ### AddressesDiscovered {#addressesdiscovered}
 
 Total count of new addresses in DNS resolve results for HTTP connections
@@ -1464,6 +1484,14 @@ Distributed Cache client event. Number of failures to connect to a distributed c
 
 Distributed Cache connection event. The time spent to connect to distributed cache
 
+### DistrCacheEndRequestMicroseconds {#distrcacheendrequestmicroseconds}
+
+Distributed Cache client event. Time spent sending EndRequest packets to distributed cache
+
+### DistrCacheEndRequestNotSentSocketNotWritable {#distrcacheendrequestnotsentsocketnotwritable}
+
+Distributed Cache client event. Number of EndRequest packets which were not sent because the socket was not writable (the server stopped draining it): the connection is dropped instead and the server notices the EOF
+
 ### DistrCacheEstimatedInflightBytesOnSeek {#distrcacheestimatedinflightbytesonseek}
 
 Distributed Cache read buffer event. The estimated in-flight bytes at the seeks which considered discarding the connection (compare with DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)
@@ -1564,6 +1592,10 @@ Distributed Cache client event. Number of non-retriable distributed cache errors
 
 Distributed Cache client event. Number of retriable distributed cache errors during read requests (counted on each occurrence, including the ones recovered by a retry)
 
+### DistrCacheReadFinalAckFailed {#distrcachereadfinalackfailed}
+
+Distributed Cache event. Number of reads whose connection was lost before the final acknowledgement; the fully received range was accepted
+
 ### DistrCacheReadMicroseconds {#distrcachereadmicroseconds}
 
 Distributed Cache read buffer event. Time spent reading from distributed cache
@@ -1632,6 +1664,10 @@ Distributed Cache registry event. The number of registry entries ignored because
 
 Distributed Cache connection event. The time spent removing outdated connections from the pool
 
+### DistrCacheRequestsEndedOnRelease {#distrcacherequestsendedonrelease}
+
+Distributed Cache client event. Number of open requests which the client had to end while releasing them (a retry which reconnected, a new request over an unfinished one, or the client going away) instead of the reader ending them explicitly
+
 ### DistrCacheReusedConnections {#distrcachereusedconnections}
 
 Distributed Cache connection event. The number of reused connections to distributed cache
@@ -1696,6 +1732,10 @@ Distributed Cache server event. The number of bytes written to cache in distribu
 
 Distributed Cache server event. The number of bytes read from object storage in distributed cache while reading from filesystem cache
 
+### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
+
+Distributed Cache server event. Time spent waiting for the committed temporary-files mutex on contention.
+
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
 Distributed Cache server event. Time spent waiting for a per-client connection bucket mutex on contention (register/unregister/identify/eviction)
@@ -1736,6 +1776,10 @@ Distributed Cache server event. Time spent processing request on DistributedCach
 
 Distributed Cache server event. Number of RefreshCredentials client packets in DistributedCacheServer
 
+### DistrCacheServerRequestsClosedWithoutEndRequest {#distrcacheserverrequestsclosedwithoutendrequest}
+
+Distributed Cache server event. Number of requests whose client closed the connection without sending EndRequest (a killed client, a client whose socket was not writable, or an old client), so the server stopped serving them on EOF. Closes driven by this server (shutdown or connection eviction) are not counted
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 Distributed Cache server event. The number of reused cached s3 clients
@@ -1755,6 +1799,38 @@ Distributed Cache server event. Number of StartRequest packets in DistributedCac
 ### DistrCacheServerSwitches {#distrcacheserverswitches}
 
 Distributed Cache read buffer event. Number of server switches between distributed cache servers in read/write-through cache
+
+### DistrCacheServerTemporaryCleanupScheduleFailures {#distrcacheservertemporarycleanupschedulefailures}
+
+Distributed Cache server event. Number of committed temporary cleanup schedule failures
+
+### DistrCacheServerTemporaryDataControlMicroseconds {#distrcacheservertemporarydatacontrolmicroseconds}
+
+Distributed Cache server event. Time spent processing committed temporary-data controls
+
+### DistrCacheServerTemporaryFilesExpired {#distrcacheservertemporaryfilesexpired}
+
+Distributed Cache server event. Number of committed temporary files expired
+
+### DistrCacheServerTemporaryFilesExtended {#distrcacheservertemporaryfilesextended}
+
+Distributed Cache server event. Number of committed temporary file TTL extensions
+
+### DistrCacheServerTemporaryFilesPublished {#distrcacheservertemporaryfilespublished}
+
+Distributed Cache server event. Number of committed temporary files published
+
+### DistrCacheServerTemporaryFilesPublishRejected {#distrcacheservertemporaryfilespublishrejected}
+
+Distributed Cache server event. Number of rejected committed temporary publications
+
+### DistrCacheServerTemporaryFilesReleased {#distrcacheservertemporaryfilesreleased}
+
+Distributed Cache server event. Number of committed temporary files released
+
+### DistrCacheServerTemporaryReadRejected {#distrcacheservertemporaryreadrejected}
+
+Distributed Cache server event. Number of rejected committed temporary reads
 
 ### DistrCacheServerUpdates {#distrcacheserverupdates}
 
@@ -1784,13 +1860,65 @@ Distributed Cache registry event. The number of successful server registry updat
 
 Distributed Cache client event. Number of distributed cache errors during introspection system table requests (system.distributed_cache, system.distributed_cache_metrics, system.distributed_cache_events). These requests are not retried, so retriable and non-retriable errors are counted together
 
+### DistrCacheTemporaryDataRegistryCallbackFailures {#distrcachetemporarydataregistrycallbackfailures}
+
+Distributed Cache committed temporary-data event. Number of contained temporary-data registry callback failures
+
+### DistrCacheTemporaryDataRegistryLockWaitMicroseconds {#distrcachetemporarydataregistrylockwaitmicroseconds}
+
+Distributed Cache committed temporary-data event. Time spent waiting for the temporary-data registry mutex on contention
+
+### DistrCacheTemporaryDataRegistryScheduleFailures {#distrcachetemporarydataregistryschedulefailures}
+
+Distributed Cache committed temporary-data event. Number of temporary-data registry task schedule failures
+
+### DistrCacheTemporaryDataReleaseBatches {#distrcachetemporarydatareleasebatches}
+
+Distributed Cache committed temporary-data event. Number of release batches
+
+### DistrCacheTemporaryDataReleaseBatchFailures {#distrcachetemporarydatareleasebatchfailures}
+
+Distributed Cache committed temporary-data event. Number of failed release batches
+
+### DistrCacheTemporaryDataReleasesDropped {#distrcachetemporarydatareleasesdropped}
+
+Distributed Cache committed temporary-data event. Number of releases given up after a terminal failure or after the server-side TTL passed while retrying, left to TTL cleanup
+
+### DistrCacheTemporaryDataRenewBatches {#distrcachetemporarydatarenewbatches}
+
+Distributed Cache committed temporary-data event. Number of renewal batches
+
+### DistrCacheTemporaryDataRenewBatchFailures {#distrcachetemporarydatarenewbatchfailures}
+
+Distributed Cache committed temporary-data event. Number of failed renewal batches
+
 ### DistrCacheTemporaryFilesBytesWritten {#distrcachetemporaryfilesbyteswritten}
 
 Distributed Cache connection event. Number of bytes written to temporary files created in distributed cache
 
+### DistrCacheTemporaryFilesConfirmationFailed {#distrcachetemporaryfilesconfirmationfailed}
+
+Distributed Cache committed temporary-data event. Number of failed publication confirmations
+
+### DistrCacheTemporaryFilesConfirmed {#distrcachetemporaryfilesconfirmed}
+
+Distributed Cache committed temporary-data event. Number of publications confirmed on the original server
+
 ### DistrCacheTemporaryFilesCreated {#distrcachetemporaryfilescreated}
 
 Distributed Cache connection event. Number of temporary files created in distributed cache
+
+### DistrCacheTemporaryFilesHandoffFailed {#distrcachetemporaryfileshandofffailed}
+
+Distributed Cache committed temporary-data event. Number of failed owner handoffs
+
+### DistrCacheTemporaryFilesPublicationAmbiguous {#distrcachetemporaryfilespublicationambiguous}
+
+Distributed Cache committed temporary-data event. Number of ambiguous publication replies
+
+### DistrCacheTemporaryFilesPublished {#distrcachetemporaryfilespublished}
+
+Distributed Cache committed temporary-data event. Number of files published by a client
 
 ### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
 
@@ -2304,6 +2432,14 @@ Wait on DOWNLOADING state
 
 Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+Number of times waiting on a DOWNLOADING file segment ended because the downloader released the segment before it downloaded the awaited offset
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+Time spent in the waits counted by `FileSegmentWaitWithoutData`
+
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
 File segment write() time
@@ -2460,6 +2596,10 @@ Lock filesystem cache time for read in priority queue
 
 Lock filesystem cache time for write to priority queue
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+Number of file segments promoted (moved) from the probationary to the protected queue in SLRU cache policy.
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 Number of times a filesystem cache reservation with reserve-ahead did not fit and was retried with exactly the requested size
@@ -2547,6 +2687,14 @@ Total time spent waiting for new threads to start.
 ### HardPageFaults {#hardpagefaults}
 
 The number of hard page faults in query execution threads. High values indicate either that you forgot to turn off swap on your server, or eviction of memory pages of the ClickHouse binary during very high memory pressure, or successful usage of the 'mmap' read method for the tables data.
+
+### HashJoinBuiltWithParallelLayout {#hashjoinbuiltwithparallellayout}
+
+Number of hash tables built for hash joins as several parts. Up to `max_threads` threads fill the parts at the same time, and with `max_threads = 1` one thread fills them all. The `parallel_hash_join_threshold` setting decides which hash joins are built this way.
+
+### HashJoinBuiltWithSerialLayout {#hashjoinbuiltwithseriallayout}
+
+Number of hash tables built for hash joins as one part, one insert at a time. Each hash table counts once, so a grace hash join adds one for every bucket that it loads into memory. See HashJoinBuiltWithParallelLayout.
 
 ### HashJoinPreallocatedElementsInHashTables {#hashjoinpreallocatedelementsinhashtables}
 
@@ -2687,6 +2835,10 @@ Total time spent reading Iceberg `metadata.json` files from storage, including d
 ### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
 
 Number of Iceberg `metadata.json` files read from storage (not served from the Iceberg metadata cache).
+
+### IcebergMetadataJSONValidations {#icebergmetadatajsonvalidations}
+
+Number of times an Iceberg `metadata.json` was checked for the fields the Iceberg specification requires. A file served from the Iceberg metadata cache is checked once.
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2926,7 +3078,11 @@ Total number of rows in the result of a JOIN operation.
 
 ### JoinSpillingHashJoinSwitchedToGraceJoin {#joinspillinghashjoinswitchedtogracejoin}
 
-Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
+Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
+
+### JoinSpillingHashJoinSwitchedToMergeJoin {#joinspillinghashjoinswitchedtomergejoin}
+
+Number of times a HashJoin was switched to MergeJoin due to memory limit in SpillingHashJoin. MergeJoin is chosen instead of GraceHashJoin when the query plan requires the join to keep the row order of the left stream.
 
 ### KafkaBackgroundReads {#kafkabackgroundreads}
 
@@ -3958,7 +4114,7 @@ Number of times an error was encountered in background cleanup task
 
 ### MetadataFromKeeperBackgroundCleanupObjects {#metadatafromkeeperbackgroundcleanupobjects}
 
-Number of times a old deleted object clean up was performed by background task
+Number of times an old deleted object clean up was performed by background task
 
 ### MetadataFromKeeperBackgroundCleanupTransactions {#metadatafromkeeperbackgroundcleanuptransactions}
 
@@ -4600,6 +4756,10 @@ Number of rows of Parquet PREWHERE input columns read as dictionary indexes, so 
 
 The total number of rows that were passed through filter
 
+### ParquetTopKRowGroupsBoundedByDictionary {#parquettopkrowgroupsboundedbydictionary}
+
+The number of parquet row groups whose `ORDER BY ... LIMIT` sort column range was taken from the values of its dictionary that can pass the filter, because its min/max statistics could not bound it (see `use_top_k_dynamic_filtering`)
+
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
 The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
@@ -4758,11 +4918,11 @@ See setting prefer_warmed_unmerged_parts_seconds. Number of times read queries u
 
 ### PrimaryIndexCacheHits {#primaryindexcachehits}
 
-Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.
+Number of times an entry has been found in the primary index cache, so we didn't have to load an index file.
 
 ### PrimaryIndexCacheMisses {#primaryindexcachemisses}
 
-Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.
+Number of times an entry has not been found in the primary index cache, so we had to load an index file in memory, which is a costly operation, adding to query latency.
 
 ### QueriesWithSubqueries {#querieswithsubqueries}
 
@@ -6439,6 +6599,10 @@ Total time spent in processing (queries and other tasks) threads executing CPU i
 ### TableFunctionExecute {#tablefunctionexecute}
 
 Number of table function calls.
+
+### TextIndexDictionaryDFABuilds {#textindexdictionarydfabuilds}
+
+Number of times a DFA was built from a LIKE pattern to skip dictionary blocks of a text index. Reusing an already built DFA is not counted.
 
 ### TextIndexDiscardHint {#textindexdiscardhint}
 

@@ -2,7 +2,9 @@
 
 #include <Core/Block_fwd.h>
 #include <DataTypes/IDataType.h>
-#include <Formats/FormatSettings.h>
+
+#include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -11,6 +13,7 @@ struct ColumnWithTypeAndName;
 class WriteBuffer;
 class CompressedWriteBuffer;
 struct IndexForNativeFormat;
+struct FormatSettings;
 
 /** Serializes the stream of blocks in their native binary format (with names and column types).
   * Designed for communication between servers.
@@ -23,8 +26,10 @@ class NativeWriter
 public:
     /** If non-zero client_revision is specified, additional block information can be written.
       */
+    /// The overload without FormatSettings exists so that this header does not need its definition.
+    NativeWriter(WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_);
     NativeWriter(
-        WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_, std::optional<FormatSettings> format_settings_ = std::nullopt, bool remove_low_cardinality_ = false,
+        WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_, std::optional<FormatSettings> format_settings_, bool remove_low_cardinality_ = false,
         IndexForNativeFormat * index_ = nullptr, size_t initial_size_of_file_ = 0);
 
     SharedHeader getHeader() const { return header; }
@@ -38,7 +43,7 @@ public:
     /// Sets the state versions of the aggregate functions in `type` to the ones announced to a peer at `client_revision`.
     static void setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision);
 
-    static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const std::optional<FormatSettings> & format_settings, UInt64 offset, UInt64 limit, UInt64 client_revision);
+    static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const FormatSettings * format_settings, UInt64 offset, UInt64 limit, UInt64 client_revision);
 
 private:
     WriteBuffer & ostr;
@@ -50,7 +55,7 @@ private:
     CompressedWriteBuffer * ostr_concrete = nullptr;
 
     bool remove_low_cardinality;
-    std::optional<FormatSettings> format_settings;
+    std::shared_ptr<const FormatSettings> format_settings;
 };
 
 }

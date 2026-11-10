@@ -1139,17 +1139,47 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup()
 }
 
 /// Build a pruning predicate on the column: exact IN values when available, otherwise a range.
+/// The input of the DAG with this name, added if there is none: the predicates of several descriptors may read the same column.
+static const ActionsDAG::Node & findOrAddInput(ActionsDAG & dag, const String & name, const DataTypePtr & type)
+{
+    for (const auto * input : dag.getInputs())
+        if (input->result_name == name && input->result_type->equals(*type))
+            return *input;
+    return dag.addInput(name, type);
+}
+
 static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
-    const RuntimeFilter & filter, const String & column_name, const DataTypePtr & column_type, ActionsDAG & dag, const ContextPtr & context)
+    const RuntimeFilter & filter,
+    const RuntimeFilterIndexAnalysisDescriptor & descriptor,
+    ActionsDAG & dag,
+    const ContextPtr & context)
 {
     auto exact_values = filter.getRecordedKeyValues();
     auto range = exact_values ? std::optional<Range>{} : filter.getRecordedKeyRanges();
     if (!exact_values && !range)
         return nullptr;
 
+    const String & column_name = descriptor.key_column_name;
+    const DataTypePtr & column_type = descriptor.key_column_type;
     const auto target_type = filter.getFilterColumnTargetType();
-    const auto & key_node = dag.addInput(column_name, column_type);
-    const auto & key_casted = column_type->equals(*target_type)
+
+    /// The key of a global row index descriptor is the same `_part_offset + _part_starting_offset` expression the probe side
+    /// filters by, under the name `MergeTreeSkipIndexReader::read` gives its key.
+    const ActionsDAG::Node * key_node_ptr = nullptr;
+    if (descriptor.is_global_row_index)
+    {
+        auto uint64_type = std::make_shared<DataTypeUInt64>();
+        const auto & part_offset = findOrAddInput(dag, "_part_offset", uint64_type);
+        const auto & part_starting_offset = findOrAddInput(dag, "_part_starting_offset", uint64_type);
+        key_node_ptr = &dag.addFunction(FunctionFactory::instance().get("plus", context), {&part_offset, &part_starting_offset}, {});
+        if (key_node_ptr->result_name != runtime_filter_global_row_index_node_name)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected name {} of the global row index key, expected {}",
+                key_node_ptr->result_name, runtime_filter_global_row_index_node_name);
+    }
+    else
+        key_node_ptr = &dag.addInput(column_name, column_type);
+    const auto & key_node = *key_node_ptr;
+    const auto & key_casted = key_node.result_type->equals(*target_type)
         ? key_node
         : dag.addCast(key_node, target_type, {}, context);
 
@@ -1202,7 +1232,7 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
         if (!filter)
             continue;
         if (const auto * predicate
-            = convertRuntimeFilterToKeyConditionDAG(*filter, descriptor.key_column_name, descriptor.key_column_type, dag, context))
+            = convertRuntimeFilterToKeyConditionDAG(*filter, descriptor, dag, context))
             and_args.push_back(predicate);
     }
 
