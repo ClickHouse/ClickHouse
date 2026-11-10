@@ -5383,18 +5383,33 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             cached_source = cached_source->filter(filter, /*result_size_hint=*/ rows_pass);
         }
 
-        for (const auto & metadata_state : row_subgroup.variant_metadata_states)
+        /// `VARIANT` states whose rows are array elements (e.g. of an `Array(Dynamic)`) are not in the
+        /// row domain of the filter. Like the outputs formed inside an `Array` above, they were only
+        /// needed to form their enclosing output, so drop them.
+        for (auto & metadata_state : row_subgroup.variant_metadata_states)
         {
             if (!metadata_state)
                 continue;
 
+            if (!metadata_state->rows_are_subgroup_rows)
+            {
+                metadata_state = nullptr;
+                continue;
+            }
+
             VariantReader::filterMetadataState(*metadata_state, filter, /*result_size_hint=*/ rows_pass, options.format);
         }
 
-        for (const auto & state : row_subgroup.variant_source_states)
+        for (auto & state : row_subgroup.variant_source_states)
         {
             if (!state)
                 continue;
+
+            if (!state->rows_are_subgroup_rows)
+            {
+                state = nullptr;
+                continue;
+            }
 
             VariantReader::filterSourceState(*state, filter, /*result_size_hint=*/ rows_pass, options.format);
         }

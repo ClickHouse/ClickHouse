@@ -595,8 +595,7 @@ static MetadataState & getOrPrepareMetadataState(
     Reader & reader,
     Reader::RowSubgroup & row_subgroup,
     const Reader::OutputColumnInfo & output_info,
-    const Reader::VariantSourceInfo & source_info,
-    size_t num_rows)
+    const Reader::VariantSourceInfo & source_info)
 {
     const size_t metadata_state_idx = source_info.metadata_state_slot_idx;
     if (metadata_state_idx >= row_subgroup.variant_metadata_states.size())
@@ -628,7 +627,13 @@ static MetadataState & getOrPrepareMetadataState(
             output_info.primitive_dependencies.size());
     }
 
+    /// The rows of the `metadata` column are its own (top-level) rows, which can differ from the rows
+    /// of the consuming output: a nested `VARIANT` inside an array has a row per array element. The
+    /// parent-to-element mapping is applied later (see `buildNestedMetadataByRow`).
+    const size_t num_rows = metadata_subchunk.null_map ? metadata_subchunk.null_map->size() : metadata_subchunk.column->size();
+
     auto metadata_state = std::make_shared<MetadataState>();
+    metadata_state->rows_are_subgroup_rows = reader.primitive_columns.at(source_info.metadata_primitive_idx).levels.back().rep == 0;
     metadata_state->metadata_values.resize(num_rows);
     metadata_state->metadata_column_holder = metadata_subchunk.column->getPtr();
 
@@ -673,9 +678,10 @@ SourceState & getOrPrepareSourceState(
     state->metadata_state = row_subgroup.variant_metadata_states[source_info.metadata_state_slot_idx];
     if (!state->metadata_state)
     {
-        getOrPrepareMetadataState(reader, row_subgroup, output_info, source_info, num_rows);
+        getOrPrepareMetadataState(reader, row_subgroup, output_info, source_info);
         state->metadata_state = row_subgroup.variant_metadata_states[source_info.metadata_state_slot_idx];
     }
+    state->rows_are_subgroup_rows = state->metadata_state->rows_are_subgroup_rows && !source_info.rows_deeper_than_metadata;
     state->value_values.resize(num_rows);
 
     /// A nested `VARIANT` reuses an enclosing row's dictionary, so its rows do not line up 1:1 with
@@ -1033,7 +1039,7 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
     if (source_info.value_primitive_idx == UINT64_MAX)
         return {};
 
-    MetadataState & metadata_state = getOrPrepareMetadataState(reader, row_subgroup, output_info, source_info, num_rows);
+    MetadataState & metadata_state = getOrPrepareMetadataState(reader, row_subgroup, output_info, source_info);
     const Reader::ColumnSubchunk & value_subchunk = row_subgroup.columns.at(source_info.value_primitive_idx);
     if (!value_subchunk.column)
         return {};

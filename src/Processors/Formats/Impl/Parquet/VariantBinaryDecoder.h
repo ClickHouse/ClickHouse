@@ -175,6 +175,9 @@ struct DecodedVariantValue
 struct MetadataState
 {
     bool metadata_is_shared_across_rows = true;
+    /// False when the `metadata` column is inside an array, so its rows are array elements rather
+    /// than rows of the row subgroup, and the `PREWHERE` row filter does not apply to them.
+    bool rows_are_subgroup_rows = true;
 
     ColumnPtr metadata_column_holder;
     VectorWithMemoryTracking<std::optional<std::string_view>> metadata_values;
@@ -199,6 +202,8 @@ struct SourceState
     };
 
     std::shared_ptr<MetadataState> metadata_state;
+    /// False when the rows of this source are array elements rather than rows of the row subgroup.
+    bool rows_are_subgroup_rows = true;
     bool value_column_is_all_null = true;
     ColumnPtr value_column_holder;
     VectorWithMemoryTracking<std::optional<std::string_view>> value_values;
