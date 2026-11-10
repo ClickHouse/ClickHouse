@@ -1,9 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <memory>
-#include <string>
-#include <utility>
-
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Analyzer/Identifier.h>
