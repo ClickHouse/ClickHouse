@@ -1,4 +1,5 @@
 #include <base/types.h>
+#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromMemory.h>
 
