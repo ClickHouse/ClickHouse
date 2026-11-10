@@ -678,6 +678,7 @@ do
     test_name=$(basename "$test_file" "-raw.tsv")
     sed -n "s/^query\t/$test_name\t/p" < "$test_file" >> "analyze/query-runs.tsv"
     sed -n "s/^profile\t/$test_name\t/p" < "$test_file" >> "analyze/query-profiles.tsv"
+    sed -n "s/^profile-timeout\t/$test_name\t/p" < "$test_file" >> "analyze/profile-timeouts.tsv"
     sed -n "s/^client-time\t/$test_name\t/p" < "$test_file" >> "analyze/client-times.tsv"
     sed -n "s/^report-threshold\t/$test_name\t/p" < "$test_file" >> "analyze/report-thresholds.tsv"
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
@@ -1013,10 +1014,16 @@ then
     perf_py="$script_dir/../../../../tests/performance/scripts/perf.py"
 fi
 
-# Also cap the confirmation wall-clock time. Tests not rerun keep their
-# original verdict (fail-open in the strict direction: no demotion).
+# Also cap the confirmation wall-clock time: 20 minutes, or less when the
+# caller passes CHPC_CONFIRM_DEADLINE_SEC (the SECONDS of this script by which
+# the reruns must end). Tests not rerun keep their original verdict
+# (fail-open in the strict direction: no demotion).
 local confirm_deadline=$(( SECONDS + 1200 ))
-local confirm_test confirm_test_file confirm_indexes
+if [ -n "${CHPC_CONFIRM_DEADLINE_SEC:-}" ] && [ "$CHPC_CONFIRM_DEADLINE_SEC" -lt "$confirm_deadline" ]
+then
+    confirm_deadline=$CHPC_CONFIRM_DEADLINE_SEC
+fi
+local confirm_test confirm_test_file confirm_indexes confirm_time_left
 # Every start of a binary puts its thread stacks at the same place, and a change
 # can come from where the hot frames land in their pages alone, so rerun at three
 # stack placements and confirm a change only if it reproduces at two (step 4).
@@ -1026,6 +1033,16 @@ local tls_surplus=("" $(( 512 + 21 * 64 )) $(( 512 + 43 * 64 )))
 local placement placements_done=0
 for placement in 0 1 2
 do
+    if [ "$SECONDS" -ge "$confirm_deadline" ]
+    then
+        if [ "$placements_done" -eq 0 ]
+        then
+            echo "confirm_changes: WARNING: no time left, skipping confirmation"
+            return 0
+        fi
+        echo "confirm_changes: WARNING: time budget exhausted before stack placement $placement, using the placements measured so far"
+        break
+    fi
     echo "confirm_changes: rerunning at stack placement $placement (static TLS surplus ${tls_surplus[placement]:-default})"
     # The caller runs us with errexit disabled (fail-open), which also masks
     # failures inside restart: its return value only reflects the last check.
@@ -1051,7 +1068,8 @@ do
 
     for confirm_test in $(cut -f1 ${confirm_dir}/flagged-queries.tsv | sort | uniq)
     do
-        if [ "$SECONDS" -ge "$confirm_deadline" ]
+        confirm_time_left=$(( confirm_deadline - SECONDS ))
+        if [ "$confirm_time_left" -le 0 ]
         then
             echo "confirm_changes: WARNING: time budget exhausted at stack placement $placement, the remaining tests are not rerun"
             break 2
@@ -1072,8 +1090,10 @@ do
         # The output goes through a temp file renamed only on success: a partial
         # raw file from a failed rerun could otherwise demote the queries that
         # did rerun, contradicting "the whole test keeps its original verdict".
+        # timeout: a rerun must not run past the deadline (a cut rerun fails like any other).
+        # --foreground keeps perf.py in our process group, so a caller's group kill still reaches it.
         # shellcheck disable=SC2086
-        if "$perf_py" "$confirm_test_file" \
+        if timeout --foreground -k 10 "$confirm_time_left" "$perf_py" "$confirm_test_file" \
             --host localhost localhost \
             --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
             --binary left/clickhouse right/clickhouse \
@@ -1407,6 +1427,60 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     order by test, query_index, metric_name
     ;
 
+-- Hardware counters of the profile runs, which perf.py does for the queries it
+-- sees changed. The measured runs keep `metrics_perf_events_enabled` off,
+-- because the counters add overhead and noise to the timings. Instructions
+-- that stay the same while cycles grow point at stalls or contention (memory,
+-- alignment, frequency) rather than at a change in the executed code.
+create view profile_run_counters as
+    select test, query_index, version,
+        avg(instructions) instructions,
+        avg(cycles) cycles
+    from file('analyze/query-profiles.tsv', TSV,
+        'test text, query_index int, query_id text, version UInt8, time float') query_profiles
+    join (
+        -- All statements of a multi-statement item share the `query_id` of the
+        -- run, so the counters are summed per run.
+        select version, query_id,
+            sum(ProfileEvents['PerfInstructions']) instructions,
+            sum(ProfileEvents['PerfCPUCycles']) cycles
+        from (
+            select 0 version, query_id, ProfileEvents
+                from file('left-query-log.tsv', TSVWithNamesAndTypes)
+                where type = 'QueryFinish'
+            union all
+            select 1 version, query_id, ProfileEvents
+                from file('right-query-log.tsv', TSVWithNamesAndTypes)
+                where type = 'QueryFinish'
+        )
+        where query_id like '%.profile%'
+        group by version, query_id
+    ) profile_query_log using (version, query_id)
+    -- A run that timed out still has a `profile` row and may have finished
+    -- some of its statements, so it is dropped as a whole: counting a part of
+    -- the work as a run would skew the ratios. The runner reports such runs
+    -- itself, because a statement that times out while it is planned leaves
+    -- an `ExceptionBeforeStart` record, which the query log export skips.
+    where (version, query_id) not in (
+        select version, query_id
+        from file('analyze/profile-timeouts.tsv', TSV,
+            'test text, query_index int, query_id text, version UInt8, time float'))
+    group by test, query_index, version
+    ;
+
+-- The ratios are NULL when the query has no complete profile run on a server
+-- (the profiling time budget ran out) or the counters are unavailable on the
+-- runner.
+create view profile_counters as
+    select test, query_index,
+        nullIf(anyIf(instructions, version = 0), 0) left_instructions,
+        nullIf(anyIf(instructions, version = 1), 0) right_instructions,
+        nullIf(anyIf(cycles, version = 0), 0) left_cycles,
+        nullIf(anyIf(cycles, version = 1), 0) right_cycles
+    from profile_run_counters
+    group by test, query_index
+    ;
+
 create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
     as with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
@@ -1421,8 +1495,14 @@ create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
     select
         round(left, 3), round(right, 3), times_change_str,
         round(diff, 3), round(stat_threshold, 3),
+        ifNull(toString(round(right_instructions / left_instructions, 2)), ''),
+        ifNull(toString(round(right_cycles / left_cycles, 2)), ''),
+        ifNull(toString(round(left_instructions / left_cycles, 2)), ''),
+        ifNull(toString(round(right_instructions / right_cycles, 2)), ''),
         changed_fail, test, query_index, query_display_name
-    from queries where changed_show order by abs(diff) desc;
+    from queries
+    left join profile_counters using (test, query_index)
+    where changed_show order by abs(diff) desc;
 
 -- Flagged changes that did not reproduce on the confirmation rerun. They no
 -- longer fail the check (changed_fail was demoted above), but are reported
