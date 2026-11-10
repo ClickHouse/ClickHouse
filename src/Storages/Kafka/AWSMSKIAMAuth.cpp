@@ -190,9 +190,13 @@ void setupAuthentication(
         S3::CredentialsConfiguration credentials_configuration;
         credentials_configuration.use_environment_credentials = use_environment_credentials;
         /// `forbid_implicit_credentials` defaults to true (fail-closed) to restrict server-managed credentials
-        /// in user S3 queries. Kafka `AWS_MSK_IAM` is server-side, operator-configured authentication, not a
-        /// user S3 query, so it opts out: `kafka.use_environment_credentials = 1` must resolve the environment /
-        /// IMDS / profile credentials as before.
+        /// in user S3 queries. The Kafka `AWS_MSK_IAM` path opts out, so the server's ambient identity
+        /// (environment / IMDS / IRSA / ECS / profile files) is resolved whenever the operator sets
+        /// `kafka.use_environment_credentials = 1` in the server config. The mechanism, the broker list, and
+        /// the region can all come from user table settings, so with that config a user who can create Kafka
+        /// tables can make the server send a token signed with its own identity to a broker of the user's
+        /// choice. For this reason the config setting is documented as unsafe, and `remote_url_allow_hosts`
+        /// is the way to restrict the brokers.
         credentials_configuration.forbid_implicit_credentials = false;
 
         auto provider = std::make_shared<S3::S3CredentialsProviderChain>(
