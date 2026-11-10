@@ -36,6 +36,7 @@
 #include <Common/PageCache.h>
 #if USE_GPU
 #include <GPU/GPUDevice.h>
+#include <GPU/GPUKernelCache.h>
 #endif
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
@@ -5329,6 +5330,26 @@ GPU::GPUDevice & Context::getGPU() const
         throw Exception(ErrorCodes::GPU_ERROR, "There is no GPU: the server setting `enable_gpu` is not set");
     return *shared->gpu;
 }
+
+void Context::updateGPUKernelCacheConfiguration(const ServerSettings & server_settings)
+{
+    if (!shared->gpu)
+        return;
+
+    const GPU::GPUDeviceSettings settings = GPU::GPUDeviceSettings::fromServerSettings(server_settings);
+    GPU::GPUKernelCache & cache = shared->gpu->kernelCache();
+    cache.setMaxSizeInBytes(settings.kernel_cache_max_size_in_bytes);
+    cache.setMaxCount(settings.kernel_cache_max_count);
+}
+
+std::pair<size_t, size_t> Context::getGPUKernelCacheLimits() const
+{
+    if (!shared->gpu)
+        return {0, 0};
+
+    const GPU::GPUKernelCache & cache = shared->gpu->kernelCache();
+    return {cache.maxSizeInBytes(), cache.maxCount()};
+}
 #endif
 
 PageCachePtr Context::getPageCache() const
@@ -8927,6 +8948,11 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
+{
+    return getInputFormat(name, buf, sample, max_block_size, std::nullopt);
+}
+
 InputFormatPtr Context::getInputFormat(
     const String & name,
     ReadBuffer & buf,
@@ -8954,9 +8980,19 @@ InputFormatPtr Context::getInputFormat(
         min_block_size_bytes);
 }
 
+OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return getOutputFormat(name, buf, sample, std::nullopt);
+}
+
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
 {
     return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this(), format_settings);
+}
+
+OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return getOutputFormatParallelIfPossible(name, buf, sample, std::nullopt);
 }
 
 OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
@@ -9027,6 +9063,11 @@ void Context::stopServers(const ServerType & server_type) const
 void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     shared->shutdown();
+}
+
+bool Context::isShutdownCalled() const
+{
+    return shared->shutdown_called;
 }
 
 
