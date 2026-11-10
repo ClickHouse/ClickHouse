@@ -46,6 +46,7 @@ namespace DB
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
     M(DATABASE_REPLICAS, "DBReplicas") \
+    M(DATALAKE_GLUE_CATALOG, "GlueCatalog") \
     M(DATALAKE_REST_CATALOG, "RestCatalog") \
     M(DATALAKE_TABLE_SNAPSHOT, "TableSnapshot") \
     M(DDL_WORKER, "DDLWorker") \
