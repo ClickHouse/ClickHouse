@@ -17,6 +17,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/logger_useful.h>
 
@@ -66,6 +67,39 @@ String getRequiredAvroPartitionType(const String & transform_name, const String 
     if (result_type == "uuid" || result_type.starts_with("fixed") || result_type.starts_with("decimal"))
         return "fixed";
     return {};
+}
+
+/// Whether the SQL function that implements the partition transform `transform_name` accepts a source column of the
+/// Iceberg type `source_type`. Reading a manifest instantiates the transform functions of its partition spec, so a
+/// spec they reject, e.g. `truncate[W]` of a `decimal(P, S)` with `P > 18`, which `icebergTruncate` does not support,
+/// must be detected without reading the manifest.
+bool canInstantiatePartitionTransform(const String & transform_name, const String & source_type)
+{
+    String transform = Poco::toLower(transform_name);
+    if (transform == "identity" || transform == "void" || transform.starts_with("bucket"))
+        return true;
+    if (transform == "year" || transform == "month" || transform == "day")
+        return source_type == "date" || source_type.starts_with("timestamp");
+    if (transform == "hour")
+        return source_type.starts_with("timestamp");
+    if (transform.starts_with("truncate"))
+    {
+        if (source_type == "int" || source_type == "long" || source_type == "string" || source_type == "binary")
+            return true;
+        /// `icebergTruncate` supports `Decimal32` and `Decimal64`, which hold a precision of at most 18.
+        static constexpr std::string_view decimal_prefix = "decimal(";
+        if (!source_type.starts_with(decimal_prefix))
+            return false;
+        size_t precision = 0;
+        size_t pos = decimal_prefix.size();
+        while (pos < source_type.size() && source_type[pos] == ' ')
+            ++pos;
+        size_t digits_begin = pos;
+        while (pos < source_type.size() && isNumericASCII(source_type[pos]) && precision <= 18)
+            precision = precision * 10 + (source_type[pos++] - '0');
+        return pos != digits_begin && precision <= 18;
+    }
+    return false;
 }
 
 /// The Avro primitive type `getAvroType` declares for `type`.
@@ -147,6 +181,15 @@ void DataManifestsRewriter::collect(
                 ErrorCodes::LOGICAL_ERROR,
                 "Iceberg manifest {} passed to a data manifest rewrite is not a data manifest",
                 manifest.manifest_file_path.serialize());
+
+        /// Reading the manifest builds the partition key of its spec, which instantiates the transform functions.
+        if (!canInstantiatePartitionSpec(manifest.partition_spec_id))
+        {
+            /// The live files of the manifest cannot be collected, so the manifests cannot be rewritten.
+            if (manifest.live_files_count != 0)
+                has_unsupported_partition_values = true;
+            continue;
+        }
 
         auto manifest_file = fetch->get();
 
@@ -481,6 +524,16 @@ const DataManifestsRewriter::ResolvedPartitionSpec & DataManifestsRewriter::reso
         source_types.push_back(source_field->getValue<String>(f_type));
     }
 
+    /// `ChunkPartitioner` instantiates the transform functions too.
+    for (size_t i = 0; i < source_types.size(); ++i)
+    {
+        if (!canInstantiatePartitionTransform(transforms[i], source_types[i]))
+        {
+            resolved.is_supported = false;
+            return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
+        }
+    }
+
     auto shared_sample_block = std::make_shared<const Block>(std::move(*spec_sample_block));
     DataTypes partitioner_types = ChunkPartitioner(spec_fields, schema_fields, context, shared_sample_block).getResultTypes();
 
@@ -512,14 +565,64 @@ const DataManifestsRewriter::ResolvedPartitionSpec & DataManifestsRewriter::reso
     return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
 }
 
+bool DataManifestsRewriter::canInstantiatePartitionSpec(Int32 spec_id) const
+{
+    Poco::JSON::Object::Ptr spec;
+    for (UInt32 i = 0; i < partition_specs->size(); ++i)
+    {
+        auto candidate = partition_specs->getObject(i);
+        if (candidate->getValue<Int64>(f_spec_id) == spec_id)
+        {
+            spec = candidate;
+            break;
+        }
+    }
+    /// An unknown spec is reported by `resolvePartitionSpec`.
+    if (!spec)
+        return true;
+
+    /// A source column keeps its field id across schemas while its type can be widened (e.g. `decimal(P, S)` to
+    /// `decimal(P', S)`), and the manifest may have been written under any of them: check the type in every schema.
+    auto spec_fields = spec->getArray(f_fields);
+    for (UInt32 i = 0; i < spec_fields->size(); ++i)
+    {
+        auto spec_field = spec_fields->getObject(i);
+        Int32 source_id = spec_field->getValue<Int32>(f_source_id);
+        String transform = spec_field->getValue<String>(f_transform);
+        for (UInt32 j = 0; j < schemas->size(); ++j)
+        {
+            auto schema_fields = schemas->getObject(j)->getArray(f_fields);
+            for (UInt32 k = 0; k < schema_fields->size(); ++k)
+            {
+                auto schema_field = schema_fields->getObject(k);
+                if (schema_field->getValue<Int32>(f_id) != source_id || schema_field->isObject(f_type))
+                    continue;
+                if (!canInstantiatePartitionTransform(transform, schema_field->getValue<String>(f_type)))
+                {
+                    LOG_DEBUG(
+                        log,
+                        "Iceberg data manifests of partition spec {} are not rewritten: transform {} of a source column of type {} is not supported",
+                        spec_id,
+                        transform,
+                        schema_field->getValue<String>(f_type));
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
 Poco::JSON::Object::Ptr DataManifestsRewriter::getSchemaObjectById(Int32 schema_id) const
 {
     /// Used verbatim as the Avro `schema` header of a rewritten manifest, so its data-file bounds resolve under the same
-    /// schema the files were written with.
+    /// schema the files were written with. The copy in the metadata is authoritative.
     for (UInt32 i = 0; i < schemas->size(); ++i)
         if (schemas->getObject(i)->getValue<Int32>(f_schema_id) == schema_id)
             return schemas->getObject(i);
-    throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Iceberg metadata does not contain a schema entry matching schema-id {}", schema_id);
+    /// Expiring snapshots can remove a schema from the metadata while live manifests are still written under it. The
+    /// files were then resolved under the schema registered from the header of their manifest.
+    return persistent_table_components.schema_processor->getIcebergTableSchemaById(schema_id);
 }
 
 }

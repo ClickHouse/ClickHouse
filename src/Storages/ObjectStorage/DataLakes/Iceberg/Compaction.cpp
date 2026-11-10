@@ -580,7 +580,9 @@ static bool writeConsolidatedManifestFile(
     /// the Avro writer to close a manifest list that was never written to, dereferencing a null stream.
     /// This is not the "unpartitioned table" case: the grouping always carries the source spec-id and schema-id,
     /// so an unpartitioned table with live files still forms one group and is consolidated as before.
-    if (total_data_files == 0)
+    /// Live files of a manifest whose partition spec cannot be read by the rewrite are not collected, so they do not
+    /// count here: such a table is rejected below instead.
+    if (total_data_files == 0 && !rewriter.hasUnsupportedPartitionValues())
     {
         LOG_INFO(log, "No live data files in the current snapshot ({} data manifests hold only deleted entries); nothing to do",
                  data_manifests.size());
