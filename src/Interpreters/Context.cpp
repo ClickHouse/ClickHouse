@@ -2927,36 +2927,44 @@ ClassifierPtr Context::getWorkloadClassifier() const
 namespace
 {
 
-/// The settings that define how a query is scheduled. All parts of a query have the same ones.
+/// The query settings that a query is scheduled under, each with the `ClassifierSettings` field it sets
+/// and the type of that field. All parts of a query have the same values of them. Together with
+/// `workload`, which selects the workload itself, this is the only list of them: the helpers below are
+/// generated from it, so a new scheduling setting is added here and in `ClassifierSettings` only.
+#define APPLY_FOR_QUERY_SCHEDULING_SETTINGS(M) \
+    M(weight, weight, Float64) \
+    M(weight_lowering_factor, weight_lowering_factor, Float64) \
+    M(weight_lowering_age_seconds, weight_lowering_age_seconds, Float64) \
+    M(weight_lowering_cpu_seconds, weight_lowering_cpu_seconds, Float64) \
+    M(weight_lowering_io_bytes, weight_lowering_io_bytes, Float64) \
+    M(workload_priority, priority, Priority)
+
+/// Whether `name` is `workload` or a setting from `APPLY_FOR_QUERY_SCHEDULING_SETTINGS`.
 bool isQuerySchedulingSetting(std::string_view name)
 {
-    return name == "workload" || name == "weight" || name == "weight_lowering_factor" || name == "weight_lowering_age_seconds"
-        || name == "weight_lowering_cpu_seconds" || name == "weight_lowering_io_bytes" || name == "workload_priority";
+#define M(SETTING, FIELD, TYPE) || name == #SETTING
+    return name == "workload" APPLY_FOR_QUERY_SCHEDULING_SETTINGS(M);
+#undef M
 }
 
 ClassifierSettings makeClassifierSettings(const Settings & query_settings, bool throw_on_unknown_workload)
 {
-    return ClassifierSettings{
-        .throw_on_unknown_workload = throw_on_unknown_workload,
-        .weight = query_settings[Setting::weight],
-        .weight_lowering_factor = query_settings[Setting::weight_lowering_factor],
-        .weight_lowering_age_seconds = query_settings[Setting::weight_lowering_age_seconds],
-        .weight_lowering_cpu_seconds = query_settings[Setting::weight_lowering_cpu_seconds],
-        .weight_lowering_io_bytes = query_settings[Setting::weight_lowering_io_bytes],
-        .priority = Priority{query_settings[Setting::workload_priority]},
-    };
+    ClassifierSettings result;
+    result.throw_on_unknown_workload = throw_on_unknown_workload;
+#define M(SETTING, FIELD, TYPE) result.FIELD = TYPE{query_settings[Setting::SETTING]};
+    APPLY_FOR_QUERY_SCHEDULING_SETTINGS(M)
+#undef M
+    return result;
 }
 
 bool sameScheduling(const String & workload, const ClassifierSettings & settings, const String & other_workload, const ClassifierSettings & other)
 {
-    return workload == other_workload
-        && settings.weight == other.weight
-        && settings.weight_lowering_factor == other.weight_lowering_factor
-        && settings.weight_lowering_age_seconds == other.weight_lowering_age_seconds
-        && settings.weight_lowering_cpu_seconds == other.weight_lowering_cpu_seconds
-        && settings.weight_lowering_io_bytes == other.weight_lowering_io_bytes
-        && settings.priority.value == other.priority.value;
+#define M(SETTING, FIELD, TYPE) && settings.FIELD == other.FIELD
+    return workload == other_workload APPLY_FOR_QUERY_SCHEDULING_SETTINGS(M);
+#undef M
 }
+
+#undef APPLY_FOR_QUERY_SCHEDULING_SETTINGS
 
 }
 
