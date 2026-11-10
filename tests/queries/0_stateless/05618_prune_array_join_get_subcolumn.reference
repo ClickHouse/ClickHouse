@@ -1,36 +1,46 @@
 -- one subcolumn
 6
-nst.x Array(UInt64)
+nst.x
 -- LEFT ARRAY JOIN
 0
 1
 2
 3
-nst.x Array(UInt64)
+nst.x
 -- subcolumn of an element
 0
 1
 2
-nst.z Array(Array(UInt64))
+nst.z
+-- subcolumn of an element, no alias
+0
+1
+2
+nst.z
 -- getSubcolumn and tupleElement
 1	a
 2	b
 3	c
-nst.x Array(UInt64)
-nst.y Array(String)
+nst.x
+nst.y
 -- the query uses the whole tuple
 1	(1,'a',[1])
 2	(2,'b',[2,3])
 3	(3,'c',[])
-nst.x Array(UInt64)
-nst.y Array(String)
-nst.z Array(Array(UInt64))
+nst.x
+nst.y
+nst.z
 -- subquery
 a
 b
 c
-nst.y Array(String)
+nst.y
 -- join_use_nulls
 3	2
 \N	9
-nst.x Array(UInt64)
+nst.x
+-- element name with a dot
+1
+2
+d.a
+d.a.b
