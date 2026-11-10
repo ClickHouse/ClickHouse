@@ -179,6 +179,7 @@ AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers
         spill_scope = tmp_data->childScope(tmp_data->getSettings().metrics, buffer_bytes);
     }
     return std::make_shared<AdaptiveAggregationSession>(
+        producers,
         layout,
         std::move(spill_scope),
         params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k) : nullptr);
@@ -192,8 +193,9 @@ bool Aggregator::advanceAdaptiveProducer(
     if (over_external_threshold && adaptiveStagingWorthSpilling(adaptive))
         spillAdaptivePartitions(*adaptive.session, *adaptive.partitions);
 
-    /// A frozen producer whose staged stream repeats its misses thaws for good, and the baseline's checks apply.
-    if (adaptive.isFrozen() && adaptiveStagingRepeats(adaptive))
+    /// A frozen producer whose staged stream repeats its misses thaws for good, and the baseline's checks
+    /// apply, unless the top-K pruning is expected to free most of what it stages.
+    if (adaptive.isFrozen() && adaptiveStagingRepeats(adaptive) && !adaptiveTopKPruningFreesStaging(result, adaptive))
         thawAdaptive(result, adaptive);
     if (adaptive.isBaseline())
         return false;
@@ -530,6 +532,34 @@ void AdaptiveAggregationSession::SpilledPartition::readBack(const std::function<
         if (!callback(block))
             break;
     }
+}
+
+bool Aggregator::adaptiveTopKPruningFreesStaging(AggregatedDataVariants & table, AdaptiveAggregationProducer & adaptive) const
+{
+    /// Only a lone `count()` weighs the pruning against a thaw: its records combine the repeats of a key in a
+    /// batch, so staging costs little where the merge frees most of them unread. The records of the other
+    /// aggregates do not combine, so they thaw on the evidence alone.
+    if (!is_simple_count || !params.adaptiveTopKPrunes())
+        return false;
+    chassert(adaptive.count_bins.isAllocated());
+    auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
+    if (frozen.staged_records < frozen.next_pruning_check)
+        return true;
+    frozen.next_pruning_check = 2 * frozen.staged_records;
+
+    /// The hot keys set the local top whether the table holds them or, once the table stopped probing (see
+    /// `FrozenState::recordLocalProbeResults`), the bins do. Staging costs per record: a cold row in a bin
+    /// far below the top is a record of its own, while the rows of a hot key combine into few. The merge
+    /// bounds a bin by the sum of all producers' bins, so a bin counts as pruned only below the top divided
+    /// by their number (see `adaptive_thaw_min_pruned_bin_divisor`). For example, with `LIMIT 10`,
+    /// 8 producers and a local top of 8000 rows, the records in the bins below 1000 rows are those the merge
+    /// is expected to free. Without a local top, every staged group may be in the top, so the pruning frees
+    /// nothing.
+    const auto top = adaptiveLocalTopKCount(table, adaptive.count_bins);
+    if (!top)
+        return false;
+    const size_t divisor = std::max(adaptive_thaw_min_pruned_bin_divisor, adaptive.session->producers);
+    return adaptive_thaw_pruned_share_inverse * adaptive.count_bins.rowsInBinsBelow(*top / divisor) >= frozen.staged_records;
 }
 
 std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const

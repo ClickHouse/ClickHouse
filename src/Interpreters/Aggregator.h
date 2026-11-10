@@ -980,6 +980,19 @@ private:
     /// `AdaptiveAggregationImpl.h`).
     bool adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const;
 
+    /// Whether the top-K pruning is expected to free most of the records that a frozen producer of a lone
+    /// `count()` stages, so that it stays frozen although its staged stream repeats. `table` is the
+    /// producer's frozen table. The caller guarantees that the producer is frozen, and thaws its table when
+    /// the result is `false`: a check holds its result until the staged records double, and only `true` can
+    /// be held.
+    bool adaptiveTopKPruningFreesStaging(AggregatedDataVariants & table, AdaptiveAggregationProducer & adaptive) const;
+
+    /// The local top of a frozen producer of a lone `count()`: the `bucket_top_k`-th largest of the counts of
+    /// its frozen table `table` and of its count bins `bins`, which bound the counts of its staged groups.
+    /// Nothing when they hold fewer counts than that. The caller guarantees that the aggregation is a lone
+    /// `count()`, whose cells hold their counts inline.
+    std::optional<UInt64> adaptiveLocalTopKCount(AggregatedDataVariants & table, const AdaptiveTopKCountBins & bins) const;
+
     /// The frozen consume path: rows whose key the local table holds are aggregated in place,
     /// the other rows are appended to the producer's partitions as delayed records for the merge.
     /// The growth of the local states goes to `local_memory_tracker` when it is given, the staging to
