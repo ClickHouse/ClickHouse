@@ -565,8 +565,11 @@ void FileCache::initialize()
         /// into the global thread pool, `CANNOT_SCHEDULE_TASK` must reach the caller
         /// synchronously instead of being deferred into `init_exception` on the
         /// loading thread, where it would leave the server running with a registered
-        /// but permanently broken cache. Until the metadata is loaded, the threads
-        /// only sleep on their empty queues.
+        /// but permanently broken cache. Until the metadata is loaded, the download
+        /// threads only sleep on their empty queue, and the cleanup thread does not
+        /// take keys from its queue (see `CacheMetadata::startCleanup`): a concurrent
+        /// iteration over the metadata, such as `SYSTEM SYNC FILESYSTEM CACHE`, may
+        /// submit a key that is still being loaded for removal.
         try
         {
             metadata.startup();
@@ -655,6 +658,10 @@ void FileCache::initializeImpl(bool load_metadata)
 
         if (load_metadata)
             loadMetadata();
+
+        /// The cleanup thread is started before the metadata is loaded, but it must not remove a key
+        /// that is still being loaded, see `CacheMetadata::startCleanup`.
+        metadata.startCleanup();
     }
     catch (...)
     {

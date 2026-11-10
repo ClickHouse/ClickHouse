@@ -808,6 +808,11 @@ private:
     /// Unlike `cancelled`, stops the cleanup thread while keeping the queue usable,
     /// so that a retried `CacheMetadata::startup` gets a functional cleanup thread.
     bool stop_requested = false;
+    /// While set, the cleanup thread does not take keys from the queue. It is set until the metadata is
+    /// loaded (see `CacheMetadata::startCleanup`): a key that is still being loaded may be seen as empty by
+    /// a concurrent iteration (e.g. `SYSTEM SYNC FILESYSTEM CACHE`), which submits it for removal, and its
+    /// directory must not be removed while the segments in it are being loaded.
+    bool consumption_paused = true;
 };
 
 void CacheMetadata::cleanupThreadFunc()
@@ -821,9 +826,13 @@ void CacheMetadata::cleanupThreadFunc()
                 return;
 
             auto & keys = cleanup_queue->keys;
-            if (keys.empty())
+            if (keys.empty() || cleanup_queue->consumption_paused)
             {
-                cleanup_queue->cv.wait(lock, [&](){ return cleanup_queue->cancelled || cleanup_queue->stop_requested || !keys.empty(); });
+                cleanup_queue->cv.wait(lock, [&]()
+                {
+                    return cleanup_queue->cancelled || cleanup_queue->stop_requested
+                        || (!keys.empty() && !cleanup_queue->consumption_paused);
+                });
                 if (cleanup_queue->cancelled || cleanup_queue->stop_requested)
                     return;
             }
@@ -1157,11 +1166,21 @@ void CacheMetadata::stopThreads()
     cleanup_thread.reset();
 
     /// The cleanup thread is joined; lift the stop request so that a retried
-    /// startup() gets a functional cleanup thread.
+    /// startup() gets a functional cleanup thread, which again waits for `startCleanup`.
     {
         std::lock_guard lock(cleanup_queue->mutex);
         cleanup_queue->stop_requested = false;
+        cleanup_queue->consumption_paused = true;
     }
+}
+
+void CacheMetadata::startCleanup()
+{
+    {
+        std::lock_guard lock(cleanup_queue->mutex);
+        cleanup_queue->consumption_paused = false;
+    }
+    cleanup_queue->cv.notify_all();
 }
 
 void CacheMetadata::shutdown()
