@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/array/emptyArrayToSingle.h>
@@ -11,6 +12,7 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
 #include <Common/VectorWithMemoryTracking.h>
 namespace DB

@@ -1,6 +1,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Formats/FormatSettings.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/ThreadStatus.h>
 #include <IO/Operators.h>

@@ -378,7 +378,8 @@ public:
         std::optional<std::unordered_set<String>> part_values; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- returned by `MergeTreeDataSelectExecutor::filterPartsByVirtualColumns`
     };
 
-    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(
+        const String & filter_id, const String & column_name, const DataTypePtr & column_type, bool is_global_row_index = false);
     const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
     {
         return join_runtime_filters_for_index_analysis;

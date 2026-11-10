@@ -1,3 +1,4 @@
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>

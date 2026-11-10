@@ -122,6 +122,8 @@ static String describeProjectionRejections(const UnorderedMapWithMemoryTracking<
 
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
+    lowerArrayJoinFunctions(root, nodes, makeExtraSettings(optimization_settings));
+
     if (!optimization_settings.optimize_plan)
         return;
 
@@ -553,6 +555,9 @@ void optimizeTreeSecondPass(
     traverseQueryPlan(stack, root,
         [&](auto &) {},
         [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+
+    /// the conversion makes the pre-join expressions, also without plan optimizations
+    lowerArrayJoinFunctions(root, nodes, extra_settings);
 
     /// The runtime filters were pushed down while the joins were logical, so merge what the conversion
     /// added around the joins, as that push-down did when the joins were converted before it. With the

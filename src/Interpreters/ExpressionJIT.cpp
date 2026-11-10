@@ -404,7 +404,7 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const UnorderedS
     return function.isCompilable();
 }
 
-static CompileDAG getCompilableDAG(
+CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children,
     const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
