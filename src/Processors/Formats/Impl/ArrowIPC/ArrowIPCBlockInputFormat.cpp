@@ -33,7 +33,9 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 #include <Core/UUID.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
@@ -143,104 +145,6 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const ArrowIPC::ArrowFiel
 
 namespace
 {
-/// When case-insensitive column matching is enabled, the named-tuple CAST that maps a decoded Arrow
-/// struct onto the requested type matches element names case-sensitively, so differently-cased struct
-/// fields would silently become default values (the library reader instead matches them). Rebuild the
-/// decoded type so that every Tuple element name matching a requested element name case-insensitively is
-/// renamed to the requested (exact) name; the subsequent CAST then matches. Only the type is rebuilt —
-/// Tuple element names live in the type, not the column, so the column data is left untouched. Recurses
-/// through Array / Map / Nullable / LowCardinality wrappers.
-DataTypePtr alignStructFieldNamesCaseInsensitive(const DataTypePtr & from, const DataTypePtr & to)
-{
-    if (const auto * to_low = typeid_cast<const DataTypeLowCardinality *>(to.get()))
-    {
-        if (const auto * from_low = typeid_cast<const DataTypeLowCardinality *>(from.get()))
-            return std::make_shared<DataTypeLowCardinality>(
-                alignStructFieldNamesCaseInsensitive(from_low->getDictionaryType(), to_low->getDictionaryType()));
-        return from;
-    }
-    if (const auto * to_null = typeid_cast<const DataTypeNullable *>(to.get()))
-    {
-        if (const auto * from_null = typeid_cast<const DataTypeNullable *>(from.get()))
-            return std::make_shared<DataTypeNullable>(
-                alignStructFieldNamesCaseInsensitive(from_null->getNestedType(), to_null->getNestedType()));
-        return alignStructFieldNamesCaseInsensitive(from, to_null->getNestedType());
-    }
-    if (const auto * from_null = typeid_cast<const DataTypeNullable *>(from.get()))
-        return std::make_shared<DataTypeNullable>(alignStructFieldNamesCaseInsensitive(from_null->getNestedType(), to));
-
-    if (const auto * to_arr = typeid_cast<const DataTypeArray *>(to.get()))
-    {
-        if (const auto * from_arr = typeid_cast<const DataTypeArray *>(from.get()))
-            return std::make_shared<DataTypeArray>(
-                alignStructFieldNamesCaseInsensitive(from_arr->getNestedType(), to_arr->getNestedType()));
-        return from;
-    }
-    if (const auto * to_map = typeid_cast<const DataTypeMap *>(to.get()))
-    {
-        if (const auto * from_map = typeid_cast<const DataTypeMap *>(from.get()))
-            return std::make_shared<DataTypeMap>(
-                alignStructFieldNamesCaseInsensitive(from_map->getKeyType(), to_map->getKeyType()),
-                alignStructFieldNamesCaseInsensitive(from_map->getValueType(), to_map->getValueType()));
-        return from;
-    }
-    if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
-    {
-        const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
-        if (!from_tuple)
-            return from;
-
-        /// Without names on both sides, `prepareArrowColumnForCast` matches elements by position (e.g. a struct with
-        /// empty or repeated field names, read as an unnamed tuple), so descend the same way: named structs nested
-        /// inside still need their names aligned. The source keeps its own names, or the lack of them.
-        if (!from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames())
-        {
-            const auto & from_elems = from_tuple->getElements();
-            const auto & to_elems = to_tuple->getElements();
-            if (from_elems.size() != to_elems.size())
-                return from;
-            DataTypes new_elems;
-            new_elems.reserve(from_elems.size());
-            for (size_t i = 0; i < from_elems.size(); ++i)
-                new_elems.push_back(alignStructFieldNamesCaseInsensitive(from_elems[i], to_elems[i]));
-            return from_tuple->hasExplicitNames()
-                ? std::make_shared<DataTypeTuple>(new_elems, from_tuple->getElementNames())
-                : std::make_shared<DataTypeTuple>(new_elems);
-        }
-
-        const auto & from_elems = from_tuple->getElements();
-        const auto & from_names = from_tuple->getElementNames();
-        const auto & to_elems = to_tuple->getElements();
-        const auto & to_names = to_tuple->getElementNames();
-
-        UnorderedMapWithMemoryTracking<String, size_t> to_by_lower;
-        to_by_lower.reserve(to_names.size());
-        for (size_t i = 0; i < to_names.size(); ++i)
-            to_by_lower.emplace(boost::to_lower_copy(to_names[i]), i); /// first occurrence wins on duplicates
-
-        DataTypes new_elems;
-        Strings new_names;
-        new_elems.reserve(from_elems.size());
-        new_names.reserve(from_names.size());
-        for (size_t i = 0; i < from_elems.size(); ++i)
-        {
-            auto it = to_by_lower.find(boost::to_lower_copy(from_names[i]));
-            if (it != to_by_lower.end())
-            {
-                new_names.push_back(to_names[it->second]);
-                new_elems.push_back(alignStructFieldNamesCaseInsensitive(from_elems[i], to_elems[it->second]));
-            }
-            else
-            {
-                new_names.push_back(from_names[i]);
-                new_elems.push_back(from_elems[i]);
-            }
-        }
-        return std::make_shared<DataTypeTuple>(new_elems, new_names);
-    }
-    return from;
-}
-
 /// Prepares the elements of named structs that are requested, recursively; the cast that follows matches them by name.
 /// Nullable tuples are converted with null rows excluded before applying the requested nullability.
 /// Top-level null defaults also populate `missing_values` for column `DEFAULT` expressions.
@@ -1006,8 +910,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                         ErrorCodes::THERE_IS_NO_COLUMN,
                         "Column '{}' is not present in the Arrow IPC data", header_column.name);
 
-                auto missing = header_column.type->createColumn();
-                header_column.type->insertManyDefaultsInto(*missing, num_rows);
+                auto missing = createColumnWithDefaults(*header_column.type, num_rows);
                 if (block_missing_values_ptr)
                     block_missing_values_ptr->setBits(i, num_rows);
                 columns.push_back(std::move(missing));

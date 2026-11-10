@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/Utils.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
 #include <Functions/DateTimeTransforms.h>
@@ -3015,9 +3016,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                 if (!allow_missing_columns)
                     throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
 
-                auto missing_column = header_column.type->createColumn();
-                header_column.type->insertManyDefaultsInto(*missing_column, num_rows);
-                columns.push_back(std::move(missing_column));
+                columns.push_back(createColumnWithDefaults(*header_column.type, num_rows));
                 if (block_missing_values)
                     block_missing_values->setBits(column_i, num_rows);
                 continue;

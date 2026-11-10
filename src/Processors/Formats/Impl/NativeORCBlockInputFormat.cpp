@@ -32,6 +32,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 #include <Formats/castColumnToRequestedType.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -3072,9 +3073,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                 if (!allow_missing_columns)
                     throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
 
-                auto missing_column = header_column.type->createColumn();
-                header_column.type->insertManyDefaultsInto(*missing_column, num_rows);
-                columns_list.push_back(std::move(missing_column));
+                columns_list.push_back(createColumnWithDefaults(*header_column.type, num_rows));
                 if (block_missing_values)
                     block_missing_values->setBits(column_i, num_rows);
                 continue;
@@ -3087,6 +3086,8 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                 orc_column_with_type.first, orc_column_with_type.second, header_column.name, false, header_column.type);
         }
 
+        if (case_insensitive_matching)
+            column.type = alignStructFieldNamesCaseInsensitive(column.type, header_column.type);
         if (null_as_default)
             insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values, true);
 

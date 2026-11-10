@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <DataTypes/Utils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -1266,9 +1267,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
             else
             {
-                auto column = to_element_types[i]->createColumn();
-                to_element_types[i]->insertManyDefaultsInto(*column, input_rows_count);
-                converted_columns[i] = std::move(column);
+                converted_columns[i] = createColumnWithDefaults(*to_element_types[i], input_rows_count);
             }
         }
 

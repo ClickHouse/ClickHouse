@@ -20,4 +20,9 @@ void castColumnToRequestedType(ColumnWithTypeAndName & column, const DataTypePtr
 /// others are dropped. Does nothing unless both are named tuples.
 void matchTupleElementsByName(ColumnWithTypeAndName & column, const DataTypePtr & requested_type);
 
+/// For case-insensitive column matching: renames the named tuple elements in `from` (through Nullable, LowCardinality,
+/// Array and Map) to the spelling of the elements of `to` they match case-insensitively. An exact spelling wins, and
+/// each element of `to` is taken at most once, so the names stay distinct. Only the type changes, not the column.
+DataTypePtr alignStructFieldNamesCaseInsensitive(const DataTypePtr & from, const DataTypePtr & to);
+
 }
