@@ -39,8 +39,7 @@ $CLICKHOUSE_LOCAL -q "SELECT arraySort(groupArray(value)), count() FROM deltaLak
 
 echo '-- local, file:// URI'
 write_clone_log "$DIR/clone_uri" "file://$SRC/$PARQUET"
-$CLICKHOUSE_LOCAL -q "SELECT sum(value), count() FROM deltaLakeLocal('$DIR/clone_uri')
-    SETTINGS optimize_count_from_files = 0, optimize_trivial_count_query = 0"
+$CLICKHOUSE_LOCAL -q "SELECT sum(value), count() FROM deltaLakeLocal('$DIR/clone_uri')"
 
 echo '-- server, source inside user_files'
 cp -r "$SRC" "${USER_DIR}_src"

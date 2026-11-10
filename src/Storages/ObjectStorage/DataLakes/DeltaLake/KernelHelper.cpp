@@ -111,6 +111,7 @@ public:
         /// Resolve the bucket's region once at construction. Region is bucket-bound and
         /// doesn't rotate; credentials do — fetch the live client every time we need them.
         auto client = object_storage->getS3StorageClient();
+        is_gcs = client->isClientForGCS();
         region = client->getRegion();
         if (region.empty() || region == Aws::Region::AWS_GLOBAL)
             region = client->getRegionForBucket(url.bucket, /* force_detect */true);
@@ -128,10 +129,14 @@ public:
     const std::string & getDataPath() const override { return url.key; }
 
     /// The S3 object storage resolves a fully-qualified path to its own bucket and key.
+    /// A `gs://` path names GCS, so only a GCS client takes it.
     std::string resolveDataFilePath(const std::string & path) const override
     {
         auto qualified = DB::trySplitFullyQualifiedObjectPath(path);
-        if (!qualified || (qualified->scheme != "s3" && qualified->scheme != "s3a" && qualified->scheme != "s3n"))
+        const bool is_own_scheme = qualified
+            && (qualified->scheme == "s3" || qualified->scheme == "s3a" || qualified->scheme == "s3n"
+                || (is_gcs && (qualified->scheme == "gs" || qualified->scheme == "gcs")));
+        if (!is_own_scheme)
             return IKernelHelper::resolveDataFilePath(path);
         return DB::unescapeForFileName(path);
     }
@@ -248,6 +253,7 @@ private:
 
     std::string region;
     bool no_sign;
+    bool is_gcs = false;
 
     static std::string getTableLocation(const DB::S3::URI & url)
     {
