@@ -143,6 +143,7 @@ public:
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
     bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
+    bool hasBucketedMapSerialization() const override { return getTargetTable()->hasBucketedMapSerialization(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsDeduplication() const override { return getTargetTable()->supportsDeduplication(); }
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }

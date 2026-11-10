@@ -91,6 +91,7 @@ public:
     bool supportsParallelInsert() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
+    bool hasBucketedMapSerialization() const override;
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
