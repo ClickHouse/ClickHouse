@@ -8,7 +8,8 @@
 #
 # The test compares the reservation of the same horizontal merge of wide parts on a local disk, with every column
 # declared `CODEC(FPC)` or `CODEC(LZ4)`. The parts are large enough for the per-stream worst case to be the binding
-# bound, so each `FPC` stream is priced at least 2 MiB more.
+# bound, so each `FPC` stream is priced at least 2 MiB more. They are also large enough for the reader term not to be
+# capped by the volume the merge reads, which depends on how well each codec compresses.
 #
 # The reservation is read from the MergesMutationsMemoryReservation metric while a background merge is held
 # on the plain_merge_task_pause_before_prepare failpoint (see 05220_merge_memory_reservation_marks_streams).
@@ -35,8 +36,8 @@ function reserved_for_merge()
                  default_compression_codec = 'LZ4', enable_vertical_merge_algorithm = 0,
                  enable_block_number_column = 0, enable_block_offset_column = 0;
 
-        INSERT INTO t_merge_mem_codec_scratch SELECT ${column_values} FROM numbers(400000);
-        INSERT INTO t_merge_mem_codec_scratch SELECT ${column_values} FROM numbers(400000, 400000);
+        INSERT INTO t_merge_mem_codec_scratch SELECT ${column_values} FROM numbers(800000);
+        INSERT INTO t_merge_mem_codec_scratch SELECT ${column_values} FROM numbers(800000, 800000);
     " < /dev/null
 
     timeout 120 ${CLICKHOUSE_LOCAL} --path "$data_dir" -q "

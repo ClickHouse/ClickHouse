@@ -66,6 +66,7 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsNonZeroUInt64 adaptive_write_buffer_initial_size;
+    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 marks_compress_block_size;
@@ -1419,6 +1420,58 @@ UInt64 countRowsMissingColumn(const MergeTreeDataPartsVector & parts, const Stri
     return missing_rows;
 }
 
+/// The rows of the source parts that store `column_name` with sparse serialization, when the merged part
+/// will store it densely. A sparse column stores only the offsets and the non-default values, so its
+/// on-disk uncompressed size (which feeds the input-volume bounds) does not bound what a dense writer emits
+/// for the same rows: every default is written as a full value. `MergeTask` decides the output kind from the
+/// summed `SerializationInfo` data of the source parts with the current
+/// `ratio_of_defaults_for_sparse_serialization` (see `SerializationInfo::chooseKindStack`), so do the same
+/// here. A source part without the column contributes its rows as defaults, as
+/// `addMissedColumnsToSerializationInfos` does for the merge. Only the top-level serialization kind of the
+/// column is considered.
+UInt64 countRowsDensifiedFromSparse(const MergeTreeDataPartsVector & parts, const String & column_name, double ratio_of_defaults_for_sparse)
+{
+    UInt64 sparse_rows = 0;
+    SerializationInfo::Data merged;
+    for (const auto & part : parts)
+    {
+        const auto info = part->getSerializationInfos().tryGet(column_name);
+        if (!info)
+        {
+            merged.num_rows += part->rows_count;
+            if (!part->tryGetColumn(column_name))
+                merged.num_defaults += part->rows_count;
+            continue;
+        }
+        merged.add(info->getData());
+        if (ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::SPARSE))
+            sparse_rows += part->rows_count;
+    }
+    if (sparse_rows == 0)
+        return 0;
+    SerializationInfoSettings info_settings;
+    info_settings.ratio_of_defaults_for_sparse = ratio_of_defaults_for_sparse;
+    if (!info_settings.isAlwaysDefault()
+        && ISerialization::hasKind(SerializationInfo::chooseKindStack(merged, info_settings), ISerialization::Kind::SPARSE))
+        return 0;
+    return sparse_rows;
+}
+
+/// A compressed reader keeps a copy of a compressed block in `CompressedReadBufferBase::own_compressed_buffer`
+/// whenever the whole framed block is not available in its file buffer - a block larger than the file buffer,
+/// or simply one that straddles the end of the buffer. The copy stays allocated next to the file buffer and the
+/// decompressed block for the life of the reader. The framed block is the checksum, the codec header and the
+/// compressed payload (for incompressible data slightly more than the decompressed block: `n + n / 255 + 16`
+/// for `LZ4`, and `CODEC(NONE)` stores it as is), plus the codec's additional size at the end of the buffer.
+/// It is a `PODArray`, so its capacity is rounded up to a power of two: a 1 MiB block keeps a 2 MiB copy.
+UInt64 retainedCompressedBlockCapacity(UInt64 decompressed_block_size)
+{
+    if (decompressed_block_size == 0)
+        return 0;
+    const UInt64 framed_block = decompressed_block_size + decompressed_block_size / 255 + 128 + PADDING_FOR_SIMD;
+    return roundUpToPowerOfTwoOrZero(framed_block);
+}
+
 }
 
 static UInt64 estimateNeededMemoryForMergeImpl(
@@ -1962,6 +2015,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// it physically stores only the columns it patches plus the system columns needed to apply them, all
     /// of which its reader reads, and it has no projection parts.
     const UInt64 input_decompressed_block_size = resolve_compress_block_size_range(settings, input_columns, columns_description).max;
+    /// Besides the file buffer and the decompressed block, every reader stream can retain a copy of a
+    /// compressed block that was not wholly available in its file buffer (see retainedCompressedBlockCapacity).
+    const UInt64 input_block_buffers = saturatingAdd(input_decompressed_block_size, retainedCompressedBlockCapacity(input_decompressed_block_size));
     /// The reader buffers of the base parts when the merge reads `read_columns` (in the source-part view)
     /// from all of them at once. The vertical pricing below reuses it for the reader sets of its stages.
     const auto base_reader_memory = [&](const NamesAndTypesList & read_columns)
@@ -1973,7 +2029,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             const size_t streams = part->getType() == MergeTreeDataPartType::Wide
                 ? countPartStreamsForColumns(*part, read_columns, settings, parts_index)
                 : 1;
-            const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_decompressed_block_size);
+            const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_block_buffers);
             const ColumnSize read_bytes = partReadBytes(*part, read_columns, parts_index);
             memory = saturatingAdd(memory, std::min<UInt64>(
                 saturatingStreamsTimesBuffer(streams, read_buffer_size), read_bytes.data_compressed + read_bytes.data_uncompressed));
@@ -1989,7 +2045,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
             ? countPartStreams(*part, settings, parts_index)
             : 1;
-        const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_decompressed_block_size);
+        const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_block_buffers);
         const UInt64 part_bytes = part->getBytesOnDisk() + part->getBytesUncompressedOnDisk();
         patch_input_memory += std::min<UInt64>(saturatingStreamsTimesBuffer(streams, read_buffer_size), part_bytes);
         sum_input_bytes_uncompressed += part->getBytesUncompressedOnDisk();
@@ -2095,6 +2151,23 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         if (default_filled_columns.contains(column.name) && column.type->haveMaximumSizeOfValue())
             default_filled_value_bytes
                 += countRowsMissingColumn(future_part.parts, part_source_name(column.name)) * column.type->getMaximumSizeOfValueInMemory();
+    }
+
+    /// A column stored sparsely by a source part but densely by the merged part (for example, after
+    /// `ratio_of_defaults_for_sparse_serialization` was raised) writes a full value for every default row,
+    /// while the source part's uncompressed size only counts its offsets and non-default values. Price the
+    /// densified rows of a fixed-size type like the synthesized defaults above, so the bound is shared by the
+    /// multipart ceiling, the writer buffer growth and the compression scratch below
+    /// (see countRowsDensifiedFromSparse).
+    const double ratio_of_defaults_for_sparse = static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]);
+    for (const auto & column : output_columns)
+    {
+        if (!column.type->haveMaximumSizeOfValue())
+            continue;
+        const UInt64 densified_rows
+            = countRowsDensifiedFromSparse(future_part.parts, part_source_name(column.name), ratio_of_defaults_for_sparse);
+        default_filled_value_bytes = saturatingAdd(
+            default_filled_value_bytes, saturatingStreamsTimesBuffer(densified_rows, column.type->getMaximumSizeOfValueInMemory()));
     }
 
     UInt64 multipart_written_bytes = sum_input_bytes_uncompressed;
@@ -2587,8 +2660,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// pricing above - the multipart alternatives are a proven starvation regression). A column present in only SOME
     /// parts is synthesized for the OTHER parts' rows alone, so only those rows are priced here
     /// (countRowsMissingColumn): the rows of the parts that do store the column are read, and their written
-    /// bytes are already inside sum_input_bytes_uncompressed. Outside the ADD COLUMN ... DEFAULT upgrade
-    /// window the extra term is zero.
+    /// bytes are already inside sum_input_bytes_uncompressed. The term also carries the default rows of
+    /// sparse source columns that the merge writes densely (see countRowsDensifiedFromSparse). Outside the
+    /// ADD COLUMN ... DEFAULT upgrade window and sparse-to-dense merges the extra term is zero.
     /// The eager write buffers of the default-filled streams themselves are NOT added here: the
     /// default-filled columns stay in output_columns, so every bound this term is added to already prices
     /// them exactly once - the horizontal base term through output_stream_counts, the vertical bound
@@ -2596,7 +2670,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// for the ADD COLUMN ... DEFAULT path - on a wide JSON / Dynamic default enough to saturate
     /// merges_mutations_memory_usage_soft_limit and reject background merges that fit, the same
     /// over-reservation/starvation pattern the rest of this estimate unwinds.
-    const UInt64 default_filled_term = 3 * default_filled_value_bytes;
+    const UInt64 default_filled_term = saturatingStreamsTimesBuffer(3, default_filled_value_bytes);
 
     /// The marks the merge writes are data the marks-side upload buffers hold just like the data side
     /// holds the column data, with the same in-flight allowance.
@@ -3401,10 +3475,13 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// and its decompressed block, and each side is bounded by the input volume. The readers of
                 /// one nested merge see no more than the whole rebuilt volume.
                 /// Each read-back reader stream also keeps its decompressed block, at most the projection's own
-                /// max_compress_block_size the temporary parts were written with.
+                /// max_compress_block_size the temporary parts were written with, and can retain a copy of a
+                /// compressed block (see retainedCompressedBlockCapacity).
                 const UInt64 read_back_reader_worst_case = saturatingStreamsTimesBuffer(
                     MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_writer_streams,
-                    saturatingAdd(projection_read_buffer_size, projection_max_compress_block_size));
+                    saturatingAdd(
+                        saturatingAdd(projection_read_buffer_size, projection_max_compress_block_size),
+                        retainedCompressedBlockCapacity(projection_max_compress_block_size)));
                 /// `writeTempProjectionPart` materializes non-text skip indexes with the projection's
                 /// metadata, but decides which ones (`materialize_skip_indexes_on_merge` and its exclude
                 /// list) from the table settings snapshot, not the projection's overrides. Those writers live

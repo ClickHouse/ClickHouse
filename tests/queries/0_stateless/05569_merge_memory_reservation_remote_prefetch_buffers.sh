@@ -7,7 +7,9 @@
 # a reader is an AsynchronousBoundedReadBuffer that swaps its filled prefetch buffer into the working memory and
 # allocates another one for the next prefetch, so each reader stream holds two file buffers, not one.
 #
-# The parts are large and incompressible, so the reader term is not capped by the data volume. The same merge
+# The parts are large and incompressible, so the reader term is not capped by the data volume (a reader stream is
+# also charged its decompressed block and a retained copy of a compressed block, so every `String` column is kept
+# in a single stream to leave enough data per stream). The same merge
 # is priced with and without the remote prefetch: 2 parts x 10 columns hold 20 reader streams, and each of them
 # must be charged one more 1 MiB file buffer when the prefetch is on.
 #
@@ -36,10 +38,11 @@ function reserved_for_merge()
                      access_key_id = 'clickhouse',
                      secret_access_key = 'clickhouse'),
                  min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, max_compress_block_size = 1048576,
+                 string_serialization_version = 'single_stream',
                  enable_vertical_merge_algorithm = 0, enable_block_number_column = 0, enable_block_offset_column = 0;
 
-        INSERT INTO t_merge_mem_prefetch SELECT number, ${column_values} FROM numbers(3000);
-        INSERT INTO t_merge_mem_prefetch SELECT number, ${column_values} FROM numbers(3000, 3000);
+        INSERT INTO t_merge_mem_prefetch SELECT number, ${column_values} FROM numbers(5000);
+        INSERT INTO t_merge_mem_prefetch SELECT number, ${column_values} FROM numbers(5000, 5000);
     " < /dev/null
 
     timeout 120 ${CLICKHOUSE_LOCAL} --path "$data_dir" \
