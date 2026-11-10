@@ -1482,10 +1482,28 @@ Header makeResponseHeader(Header request_header, Int32 message_size, Int32 respo
     return result;
 }
 
-std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor)
+std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & message_sections, std::shared_ptr<QueryExecutor> executor)
 {
-    if (sections.empty() || sections[0].kind != 0 || sections[0].documents.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo message does not start with a command document");
+    /** `OP_MSG` allows its sections in any order, so a document sequence may come before the body.
+      * The handlers take the body as the first section and the document sequences after it, which
+      * they identify by name, so the sections are put in that order: the body, then the document
+      * sequences in the order they came.
+      */
+    std::vector<OpMessageSection> sections;
+    sections.reserve(message_sections.size());
+    for (const auto & section : message_sections)
+    {
+        if (section.kind != 0)
+            continue;
+        if (!sections.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A Mongo message has more than one body section");
+        sections.push_back(section);
+    }
+    if (sections.empty() || sections[0].documents.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo message does not contain a command document");
+    for (const auto & section : message_sections)
+        if (section.kind != 0)
+            sections.push_back(section);
 
     auto keys = sections[0].documents[0].getDocumentKeys();
     if (keys.empty())
