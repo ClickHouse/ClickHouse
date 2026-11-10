@@ -1982,9 +1982,24 @@
 
     function setPendingCommandConfirm(command) {
         pending_command_confirm = command;
-        const prompt = document.querySelector(".command-prompt");
-        if (prompt)
-            prompt.classList.toggle("pending-completion", command !== null);
+        const cwd_el = document.getElementById("command-cwd");
+        const symbol = document.querySelector(".command-prompt-symbol");
+        if (command !== null) {
+            /// Same prompt as `keeper-client`: type `y` then Enter.
+            if (symbol)
+                symbol.textContent = "";
+            if (cwd_el)
+                cwd_el.textContent = "[y/n]";
+            const input = document.querySelector("#command");
+            if (input) {
+                input.value = "";
+                input.focus();
+            }
+        } else {
+            if (symbol)
+                symbol.textContent = "➜";
+            updateCwdDisplay();
+        }
     }
     let pending_completion_display = null;
 
@@ -2250,34 +2265,31 @@
 
         command_input.addEventListener("keydown", function (event) {
             if (pending_command_confirm !== null) {
-                if (event.key === "y" || event.key === "Y") {
+                if (event.code === "Enter") {
                     event.preventDefault();
+                    const answer = command_input.value;
+                    command_input.value = "";
                     const command = pending_command_confirm;
-                    appendToOutput("y\n");
+                    appendToOutput(answer + "\n");
                     setPendingCommandConfirm(null);
-                    executeCommand(command, /*already_confirmed=*/ true);
-                    command_container.scrollTop = command_container.scrollHeight;
-                    return;
-                }
-                if (event.key === "n" || event.key === "N" || event.code === "Enter") {
-                    event.preventDefault();
-                    appendToOutput((event.key === "n" || event.key === "N") ? "n\n" : "\n");
-                    setPendingCommandConfirm(null);
+                    if (answer.length === 1 && (answer === "y" || answer === "Y"))
+                        executeCommand(command, /*already_confirmed=*/ true);
                     command_container.scrollTop = command_container.scrollHeight;
                     return;
                 }
                 if (event.code === "KeyC" && event.ctrlKey) {
                     event.preventDefault();
                     appendToOutput("^C\n");
+                    command_input.value = "";
                     setPendingCommandConfirm(null);
                     command_container.scrollTop = command_container.scrollHeight;
                     return;
                 }
-                event.preventDefault();
-                appendToOutput("\n");
-                setPendingCommandConfirm(null);
-                command_container.scrollTop = command_container.scrollHeight;
-                return;
+                /// Do not Tab-complete or walk history while answering [y/n].
+                if (event.code === "Tab" || event.code === "ArrowUp" || event.code === "ArrowDown") {
+                    event.preventDefault();
+                    return;
+                }
             }
             if (pending_completion_display !== null) {
                 /// Tab / y → show all. n → decline. Other keys cancel the prompt.
