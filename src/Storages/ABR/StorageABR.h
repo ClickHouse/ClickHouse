@@ -103,6 +103,7 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     ColumnSizeByName getColumnSizes() const override;
+    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
     bool supportsPrewhere() const override;
     bool canMoveConditionsToPrewhere() const override;
     bool supportsFinal() const override;

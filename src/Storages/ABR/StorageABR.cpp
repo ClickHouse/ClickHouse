@@ -7,9 +7,11 @@
 #include <fmt/ranges.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -506,6 +508,15 @@ StorageABR::ColumnSizeByName StorageABR::getColumnSizes() const
 {
     const auto source_tables = tryGetSourceTables();
     return source_tables.empty() ? ColumnSizeByName{} : source_tables.front()->getColumnSizes();
+}
+
+std::optional<StorageABR::ColumnSizeByName> StorageABR::tryGetColumnSizes() const
+{
+    const auto query_context = CurrentThread::tryGetQueryContext();
+    const StorageID & first = source_table_ids.front();
+    if (!query_context || !query_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, first.database_name, first.table_name))
+        return std::nullopt;
+    return getColumnSizes();
 }
 
 bool StorageABR::supportsPrewhere() const
