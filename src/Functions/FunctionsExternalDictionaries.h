@@ -362,6 +362,16 @@ public:
 
     bool useDefaultImplementationForConstants() const final { return true; }
     bool useDefaultImplementationForNulls() const final { return false; }
+
+    /// For a `LowCardinality` argument the function runs on the values of its dictionary, which always
+    /// holds the type's default value. A default argument of `dictGetOrDefault` is converted to the
+    /// attribute type, and the type's default value (such as an empty `String` for a numeric attribute)
+    /// may be impossible to convert, though no row uses it.
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        return dictionary_get_function_type != DictionaryGetFunctionType::getOrDefault;
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final
     {
         if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
@@ -908,6 +918,8 @@ private:
 
     bool useDefaultImplementationForConstants() const final { return true; }
 
+    bool canBeExecutedOnDefaultArguments() const override { return impl.canBeExecutedOnDefaultArguments(); }
+
     bool isDeterministic() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -1105,7 +1117,12 @@ private:
             2. If column is already nullable we merge column null map with null map that we get from dict has.
           */
 
+        if (arguments[2].type->onlyNull())
+            return dictionary_get_func_impl.executeImpl(arguments, result_type, input_rows_count);
+
         auto dict_has_arguments = filterAttributeNameArgumentForDictHas(arguments);
+        /// `dictHas` expects a key that is not `Nullable`. `NULL` keys are already `NULL` in the `dictGet` result below.
+        dict_has_arguments[1] = columnGetNested(dict_has_arguments[1]);
         auto is_key_in_dictionary_column = dictionary_has_func_impl.executeImpl(dict_has_arguments, std::make_shared<DataTypeUInt8>(), input_rows_count);
         auto is_key_in_dictionary_column_mutable = is_key_in_dictionary_column->assumeMutable();
         ColumnVector<UInt8> & is_key_in_dictionary_column_typed = assert_cast<ColumnVector<UInt8> &>(*is_key_in_dictionary_column_mutable);

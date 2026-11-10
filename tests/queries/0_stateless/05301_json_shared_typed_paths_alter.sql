@@ -1,5 +1,7 @@
--- Tags: long
+-- Tags: long, no-msan
 -- long: many statements; over the time limit of the flaky check under the thread fuzzer.
+-- no-msan: a median of 370 s under MSan against 9 s in a debug build, and it hits the 600 s per-test timeout;
+-- the test still runs under ASan, UBSan and TSan.
 
 -- SHARED added and removed by ALTER MODIFY COLUMN, lazily (a type hint change is metadata only) and by mutation, parts
 -- of both layouts read together and merged, path type changes, a column absent from the part, and the layout of each
