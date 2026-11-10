@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-fasttest, no-parallel-replicas
 
 -- Tests that multiSearchAny() and multiSearchAnyUTF8() utilize the text index.
 -- Substring search is intended to be used with the ngrams (or sparseGrams) tokenizer: every needle
@@ -88,5 +88,11 @@ SELECT count() FROM tab WHERE NOT multiSearchAny(str, ['ClickHouse', 'World']) S
 SELECT '-- an empty needle array is always false';
 SELECT count() FROM tab WHERE multiSearchAny(str, CAST([], 'Array(String)')) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE multiSearchAny(str, CAST([], 'Array(String)')) SETTINGS use_skip_indexes = 1;
+
+SELECT '-- more than 255 needles is accepted (Aho-Corasick path) and returns the same rows with and without the index';
+WITH arrayConcat(['ClickHouse'], arrayMap(i -> concat('needle_', toString(i)), range(255))) AS needles
+SELECT * FROM tab WHERE multiSearchAny(str, needles) ORDER BY id SETTINGS use_skip_indexes = 0;
+WITH arrayConcat(['ClickHouse'], arrayMap(i -> concat('needle_', toString(i)), range(255))) AS needles
+SELECT * FROM tab WHERE multiSearchAny(str, needles) ORDER BY id SETTINGS use_skip_indexes = 1;
 
 DROP TABLE tab;

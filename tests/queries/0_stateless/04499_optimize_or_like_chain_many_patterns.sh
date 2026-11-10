@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# A long OR chain of more than 255 pure-substring LIKE predicates on the same expression used to
-# be rewritten by `optimize_or_like_chain` into a single `multiSearchAny()` call. `multiSearchAny`
-# throws TOO_MANY_ARGUMENTS_FOR_FUNCTION for constant needle arrays larger than UInt8::max (255),
-# so a default-on rewrite turned a previously-working query into an exception. Now such chains fall
-# through to the `multiMatchAny` path (Vectorscan), which has no such cap. Verify that the query
-# succeeds and returns the same result as the un-rewritten OR chain, for both analyzers.
+# A long OR chain of more than 255 pure-substring LIKE predicates on the same expression. Without
+# Aho-Corasick support, `multiSearchAny` throws NOT_IMPLEMENTED for constant needle arrays larger
+# than UInt8::max (255), so `optimize_or_like_chain` must not rewrite the chain into it: the chain
+# falls through to the `multiMatchAny` path (Vectorscan). Verify that the query succeeds and returns
+# the same result as the un-rewritten OR chain, for both analyzers.
 #
 # The needles must be *pure* substrings: no LIKE metacharacters (`_`, `%`) and no regexp
 # metacharacters inside. A stray `_` would make the pattern a wildcard, so it would no longer take

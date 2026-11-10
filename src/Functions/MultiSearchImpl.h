@@ -4,6 +4,13 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Functions/checkMultiSearchAnyAvailability.h>
+#include "config.h"
+
+#if USE_AHO_CORASICK
+#    include <Functions/MultiSearchAhoCorasickCache.h>
+#    include <aho_corasick.h>
+#endif
 
 
 namespace DB
@@ -11,17 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-}
-
-/// The Volnitsky multi-searcher used for a constant array of needles stores
-/// the matched needle index in a single byte, so it cannot handle more than 255 needles.
-inline void checkMultiSearchNeedlesLimit(std::string_view function_name, size_t needles_count)
-{
-    if (needles_count > std::numeric_limits<UInt8>::max())
-        throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-            "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
-            function_name, needles_count, std::to_string(std::numeric_limits<UInt8>::max()));
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename Name, typename Impl>
@@ -31,6 +28,7 @@ struct MultiSearchImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
+    static constexpr bool accepts_force_daachorse = true;
     static constexpr auto name = Name::name;
 
     static auto getReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
@@ -45,10 +43,17 @@ struct MultiSearchImpl
         size_t /*max_hyperscan_regexp_length*/,
         size_t /*max_hyperscan_regexp_total_length*/,
         bool /*reject_expensive_hyperscan_regexps*/,
+        bool force_daachorse,
         size_t input_rows_count)
     {
-        // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
-        checkMultiSearchNeedlesLimit(name, needles_arr.size());
+        checkMultiSearchAnyAvailability(name, needles_arr.size(), force_daachorse);
+#if USE_AHO_CORASICK
+        if (multiSearchAnyNeedsAhoCorasick(needles_arr.size(), force_daachorse))
+        {
+            vectorConstantAhoCorasick(haystack_data, haystack_offsets, needles_arr, res, input_rows_count);
+            return;
+        }
+#endif
 
         VectorWithMemoryTracking<std::string_view> needles;
         needles.reserve(needles_arr.size());
@@ -76,6 +81,90 @@ struct MultiSearchImpl
         if (iteration == 0)
             std::fill(res.begin(), res.end(), 0);
     }
+
+#if USE_AHO_CORASICK
+    /// Aho-Corasick based search for large pattern sets (>255 patterns) or when forced.
+    /// The compiled automaton is reused across blocks via a process-wide direct-mapped cache.
+    static void vectorConstantAhoCorasick(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const Array & needles_arr,
+        PaddedPODArray<UInt8> & res,
+        size_t input_rows_count)
+    {
+        res.resize(input_rows_count);
+
+        if (needles_arr.empty())
+        {
+            std::fill(res.begin(), res.end(), 0);
+            return;
+        }
+
+        /// An empty needle is a substring of every haystack, so any empty needle means every row
+        /// matches — short-circuit without building an automaton.
+        for (const auto & needle : needles_arr)
+        {
+            if (needle.safeGet<String>().empty())
+            {
+                std::fill(res.begin(), res.end(), 1);
+                return;
+            }
+        }
+
+        constexpr MultiSearchCaseMode case_mode = Impl::case_sensitive
+            ? MultiSearchCaseMode::Sensitive
+            : (Impl::is_utf8 ? MultiSearchCaseMode::InsensitiveUtf8 : MultiSearchCaseMode::InsensitiveAscii);
+
+        /// Keep the automaton alive for the whole search even if it is evicted concurrently.
+        auto automaton = getOrBuildAhoCorasickAutomaton(case_mode, needles_arr);
+
+        auto search_batch = [&](const uint8_t * data, const uint64_t * offsets)
+        {
+            if (aho_corasick_search_batch(
+                    automaton->handle,
+                    data,
+                    offsets,
+                    static_cast<uint64_t>(input_rows_count),
+                    reinterpret_cast<uint8_t *>(res.data())) != 0)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Aho-Corasick search panicked while evaluating function {}", name);
+            }
+        };
+
+        if constexpr (case_mode == MultiSearchCaseMode::Sensitive)
+        {
+            search_batch(
+                reinterpret_cast<const uint8_t *>(haystack_data.data()),
+                reinterpret_cast<const uint64_t *>(haystack_offsets.data()));
+            return;
+        }
+
+        /// Fold haystacks the same way the needles were folded, then search the folded copy. Folding
+        /// here (not in the Rust crate) keeps case semantics identical to the legacy searcher, whose
+        /// exact one-code-point mapping the automaton must reproduce.
+        PaddedPODArray<UInt8> folded_data;
+        PaddedPODArray<UInt64> folded_offsets(input_rows_count);
+        folded_data.reserve(haystack_data.size());
+
+        size_t prev_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const size_t end_offset = haystack_offsets[i];
+            appendFoldedForMultiSearch(
+                case_mode,
+                reinterpret_cast<const char *>(&haystack_data[prev_offset]),
+                end_offset - prev_offset,
+                folded_data);
+            folded_offsets[i] = folded_data.size();
+            prev_offset = end_offset;
+        }
+
+        search_batch(
+            reinterpret_cast<const uint8_t *>(folded_data.data()),
+            reinterpret_cast<const uint64_t *>(folded_offsets.data()));
+    }
+#endif
 
     static void vectorVector(
         const ColumnString::Chars & haystack_data,
