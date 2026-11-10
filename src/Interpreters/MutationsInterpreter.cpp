@@ -829,6 +829,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// first command scan so their MATERIALIZED closure can be seeded into dependency analysis
     /// below, before the per-command stage loop runs.
     NameSet clear_column_names;
+    NameSet materialize_column_names;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
@@ -850,6 +851,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             has_clear_column = true;
             clear_column_names.insert(command.column_name);
         }
+
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+            materialize_column_names.insert(command.column_name);
 
         /// The _row_exists mask is handled by APPLY_DELETED_MASK, not as a data column.
         if (command.type == MutationCommand::READ_COLUMN && command.read_for_patch
@@ -1083,6 +1087,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         all_affected_materialized.insert(affected_materialized.begin(), affected_materialized.end());
     all_affected_materialized.insert(patch_affected_materialized.begin(), patch_affected_materialized.end());
     all_affected_materialized.insert(clear_affected_materialized.begin(), clear_affected_materialized.end());
+    /// The default expression may have changed since the stored artifacts were built, e.g. after `MODIFY COLUMN`.
+    all_affected_materialized.insert(materialize_column_names.begin(), materialize_column_names.end());
 
     if (settings.recalculate_dependencies_of_updated_columns)
     {
