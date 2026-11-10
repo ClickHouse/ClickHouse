@@ -59,7 +59,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
 SETTINGS enable_parallel_replicas = 0, max_rows_to_read = 0; -- system.text_log can be really big
 
 -- Results still match non-parallel execution, and count() is not multiplied across replicas.
-SELECT count(), sum(b), min(a), max(a) FROM t_clone_marked WHERE event_date >= yesterday() AND event_time >= now() - 600 AND a > 5;
+SELECT count(), sum(b), min(a), max(a) FROM t_clone_marked WHERE a > 5;
 SELECT b, count() FROM t_clone_marked GROUP BY b ORDER BY b;
 
 -- Slow the initiator's local read so the remote replicas emit rows first: exercises the cloned local
