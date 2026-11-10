@@ -23,11 +23,12 @@ q()
 
 
 # A table without snapshots. `v1.gc_disabled.metadata.json` is another version of the first metadata file
-# with a single column, used by Dremio to test the `nessie.gc.enabled` property; `version-hint.text` points to `v1.metadata.json`.
+# with a single column, used by Dremio to test the `nessie.gc.enabled` property. Both files have version 1,
+# so `v1.metadata.json` is selected explicitly: otherwise the choice would depend on the order of the directory listing.
 echo empty_table
-q "DESCRIBE icebergLocal('$DATA/empty_table') SETTINGS describe_compact_output = 1"
-q "SELECT count() FROM icebergLocal('$DATA/empty_table')"
-q "SELECT * FROM icebergLocal('$DATA/empty_table')"
+q "DESCRIBE icebergLocal('$DATA/empty_table', SETTINGS iceberg_metadata_file_path = 'metadata/v1.metadata.json') SETTINGS describe_compact_output = 1"
+q "SELECT count() FROM icebergLocal('$DATA/empty_table', SETTINGS iceberg_metadata_file_path = 'metadata/v1.metadata.json')"
+q "SELECT * FROM icebergLocal('$DATA/empty_table', SETTINGS iceberg_metadata_file_path = 'metadata/v1.metadata.json')"
 echo nation
 q "DESCRIBE icebergLocal('$DATA/nation') SETTINGS describe_compact_output = 1"
 q "SELECT count() FROM icebergLocal('$DATA/nation')"
