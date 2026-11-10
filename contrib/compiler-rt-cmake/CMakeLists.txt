@@ -71,7 +71,7 @@ endif()
 # state in the caller (e.g. -fsanitize-memory-track-origins=1 for MSan
 # drops the hot __msan_chain_origin calls; see cmake/sanitize.cmake),
 # or LTO so the inserter can see across the call boundary.
-set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-isystem +[^ ]+|-nostdlibinc|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec)")
+set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-isystem +[^ ]+|-nostdlibinc|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec|-mbranch-protection=[^ ]+)")
 foreach (lang C CXX ASM)
     string(REGEX MATCHALL "${_compiler_rt_keep_re}" _kept "${CMAKE_${lang}_FLAGS}")
     string(JOIN " " CMAKE_${lang}_FLAGS ${_kept})
@@ -700,6 +700,27 @@ if (ENABLE_XRAY)
         list(APPEND _xray_combined_full "${SANCOMMON_DIR}/${s}")
     endforeach()
     list(APPEND _xray_combined_full "${CMAKE_CURRENT_SOURCE_DIR}/xray_reject_modes.cpp")
+
+    # The AArch64 trampolines have neither BTI landing pads nor the BTI property, although the patched
+    # sleds enter them with `blr`. Compile a copy with a landing pad at every entry and the property note.
+    if (ARCH_AARCH64 AND USE_BRANCH_PROTECTION)
+        set(_xray_trampoline "${XRAY_DIR}/xray_trampoline_AArch64.S")
+        file(READ "${_xray_trampoline}" _xray_trampoline_text)
+        string(REGEX REPLACE "(ASM_SYMBOL\\(__xray_[A-Za-z]+\\):)" "\\1\n  BTI_C" _xray_trampoline_text "${_xray_trampoline_text}")
+        string(APPEND _xray_trampoline_text "\nGNU_PROPERTY_BTI_PAC_GCS\n")
+        set(_xray_trampoline_bti "${CMAKE_CURRENT_BINARY_DIR}/xray_trampoline_AArch64_bti.S")
+        set(_xray_trampoline_old_text "")
+        if (EXISTS "${_xray_trampoline_bti}")
+            file(READ "${_xray_trampoline_bti}" _xray_trampoline_old_text)
+        endif()
+        if (NOT _xray_trampoline_old_text STREQUAL _xray_trampoline_text)
+            file(WRITE "${_xray_trampoline_bti}" "${_xray_trampoline_text}")
+        endif()
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_xray_trampoline}")
+        # For the includes relative to the original file (`../builtins/assembly.h`).
+        set_source_files_properties("${_xray_trampoline_bti}" PROPERTIES INCLUDE_DIRECTORIES "${XRAY_DIR}")
+        list(TRANSFORM _xray_combined_full REPLACE "^${_xray_trampoline}$" "${_xray_trampoline_bti}")
+    endif()
 
     add_library(clang_rt_xray STATIC ${_xray_combined_full})
     target_include_directories(clang_rt_xray PRIVATE ${SANITIZER_INCLUDE_DIRS})

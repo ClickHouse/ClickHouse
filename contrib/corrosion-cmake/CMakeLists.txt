@@ -196,6 +196,12 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
+# The prebuilt standard library lacks the BTI property, which would disable BTI for the whole executable.
+if (USE_BRANCH_PROTECTION)
+    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
+    list(APPEND RUSTFLAGS "-Zbranch-protection=bti,pac-ret")
+endif()
+
 # rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
 # defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
 # general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
