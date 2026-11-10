@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ListWithMemoryTracking.h>
 #include <array>
 #include <atomic>
 #include <memory>
@@ -651,7 +652,7 @@ public:
     /// arrive pre-allocated (merge-only aggregation) and cannot be tracked.
     std::optional<UInt64> getPeakMemoryUsage() const;
 
-    std::list<TemporaryBlockStreamHolder> detachTemporaryData();
+    ListWithMemoryTracking<TemporaryBlockStreamHolder> detachTemporaryData();
 
     /// Part of automatic parallel replicas implementation.
     size_t estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const;
@@ -778,7 +779,7 @@ private:
     /// For external aggregation.
     TemporaryDataOnDiskScopePtr tmp_data;
     mutable std::mutex tmp_files_mutex;
-    mutable std::list<TemporaryBlockStreamHolder> tmp_files TSA_GUARDED_BY(tmp_files_mutex);
+    mutable ListWithMemoryTracking<TemporaryBlockStreamHolder> tmp_files TSA_GUARDED_BY(tmp_files_mutex);
 
     size_t min_bytes_for_prefetch = 0;
 
@@ -963,16 +964,14 @@ private:
         Arena * arena,
         std::atomic<bool> & is_cancelled) const;
 
-    /// The adaptive verdict of a finished run: whether its staged streams were repeat-dominated, so that later runs of
-    /// the query should not engage the adaptive aggregation, or nothing when the run measured nothing.
+    /// The adaptive verdict of a finished run: whether at least half of the producers whose tables froze
+    /// thawed, so that later runs of the query should not engage the adaptive aggregation, or nothing when
+    /// the run measured nothing.
     std::optional<bool> adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
 
-    /// Compares a frozen producer's repeated staging cost with the states its ordinary table would retain.
-    bool adaptiveStagingWastes(
-        const AdaptiveAggregationProducer & adaptive, size_t state_bytes_per_key, size_t state_cost_multiplier) const;
-
-    /// The thaw verdict of a frozen producer, checked between blocks: its own staged stream repeats its misses so much
-    /// that its table would do better absorbing them in place (see the tuning constants in `AdaptiveAggregationImpl.h`).
+    /// Whether a frozen producer thaws, checked between blocks: its own staged stream repeats its misses so
+    /// much that its table would do better absorbing them in place (see the tuning constants in
+    /// `AdaptiveAggregationImpl.h`).
     bool adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const;
 
     /// The frozen consume path: rows whose key the local table holds are aggregated in place,
