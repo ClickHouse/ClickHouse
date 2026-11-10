@@ -118,7 +118,7 @@ void Aggregator::accountStagedBatch(
     ///   stream of five `UInt64` arguments at global repeat 10 can therefore remain profitable when
     ///   its local streams repeat little.
     /// - The sample receives routing hashes matching `hash & 0xFF == 0`. Each distinct key has the
-    ///   same sampling probability, and `distinct_sampled_hashes` collapses its repeats onto one entry.
+    ///   same sampling probability, and `distinct_sampled_hashes` counts its repeats once.
     ///   For a growing set aggregate, a bounded sketch also counts distinct argument tuples of these
     ///   keys, including the key in their hash because equal arguments in different groups occupy
     ///   separate states.
@@ -128,22 +128,36 @@ void Aggregator::accountStagedBatch(
         auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
         frozen.staged_records += total;
         frozen.staged_bytes += staged.record_bytes + total * adaptive_thaw_record_cost;
-        for (size_t i = 0; i < total; ++i)
+        const auto sample = [&](size_t i)
         {
             const auto hash = hashes[i];
-            if ((hash & adaptive_thaw_sample_mask) == 0)
+            if ((hash & adaptive_thaw_sample_mask) != 0)
+                return;
+            frozen.addSampledHash(hash);
+            if (adaptive_state_bytes_per_distinct_input)
             {
-                frozen.distinct_sampled_hashes.insert(hash);
-                if (adaptive_state_bytes_per_distinct_input)
-                {
-                    SipHash input_hash;
-                    input_hash.update(hash);
-                    for (const auto position : aggregates_positions[adaptive_distinct_input_aggregate])
-                        columns[position]->updateHashWithValue(misses.getSourceRows()[i], input_hash);
-                    frozen.addSampledInputHash(input_hash.get64());
-                }
+                SipHash input_hash;
+                input_hash.update(hash);
+                for (const auto position : aggregates_positions[adaptive_distinct_input_aggregate])
+                    columns[position]->updateHashWithValue(misses.getSourceRows()[i], input_hash);
+                frozen.addSampledInputHash(input_hash.get64());
             }
+        };
+        /// About one record in 256 is sampled, so the hashes are tested eight at a time, and only a block
+        /// with a sampled hash pays for the per-record calls.
+        constexpr size_t sample_test_block = 8;
+        size_t i = 0;
+        for (; i + sample_test_block <= total; i += sample_test_block)
+        {
+            bool sampled = false;
+            for (size_t j = i; j < i + sample_test_block; ++j)
+                sampled |= (hashes[j] & adaptive_thaw_sample_mask) == 0;
+            if (sampled)
+                for (size_t j = i; j < i + sample_test_block; ++j)
+                    sample(j);
         }
+        for (; i < total; ++i)
+            sample(i);
     }
 
     misses.clear();
