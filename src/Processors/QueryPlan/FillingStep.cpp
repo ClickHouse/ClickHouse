@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FillingStep.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/FillingTransform.h>

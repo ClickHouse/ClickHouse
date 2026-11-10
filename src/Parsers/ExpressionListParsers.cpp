@@ -1008,6 +1008,9 @@ struct ParserExpressionImpl
     ParserQualifiedColumnsMatcher qualified_columns_matcher_parser;
     ParserSubquery subquery_parser;
 
+    /// Positions of CASE and INTERVAL tokens whose keyword reading failed; only the identifier reading is tried there.
+    std::unordered_set<const char *> failed_keyword_readings;
+
     bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
 
     using Layers = std::vector<std::unique_ptr<Layer>>;
@@ -3332,6 +3335,9 @@ static bool isArrayConstructorWithKeyword(IParser::Pos pos)
                 if (depth == 0)
                     return true;
                 break;
+            /// The statement ends before the bracket is closed.
+            case TokenType::Semicolon:
+                return false;
             default:
                 break;
         }
@@ -3619,6 +3625,10 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
                 if (!layers.back()->getResult(res))
                     break;
 
+                /// Bracket layers can fold into one `ASTLiteral`, which `max_ast_depth` does not see,
+                /// so they count towards the parse depth from push to pop.
+                if (typeid_cast<ArrayLayer *>(layers.back().get()) || typeid_cast<RoundBracketsLayer *>(layers.back().get()))
+                    pos.decreaseDepth();
                 layers.pop_back();
                 layers.back()->pushOperand(res);
                 continue;
@@ -3637,11 +3647,13 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
         if (layers.size() == 1 && layers.back()->getResult(node))
             return true;
 
-        layers.pop_back();
-
         /// We try to check whether there was a checkpoint
-        while (!layers.empty() && !layers.back()->saved_checkpoint)
+        bool popped_keyword_layer = false;
+        do
+        {
+            popped_keyword_layer = dynamic_cast<IntervalLayer *>(layers.back().get()) || dynamic_cast<CaseLayer *>(layers.back().get());
             layers.pop_back();
+        } while (!layers.empty() && !layers.back()->saved_checkpoint);
 
         if (layers.empty())
             return false;
@@ -3651,6 +3663,10 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
 
         auto saved_checkpoint = layers.back()->saved_checkpoint.value();
         layers.back()->saved_checkpoint.reset();
+
+        /// A keyword layer reads nothing below itself, so if it failed unfinished it fails wherever this position is reached.
+        if (popped_keyword_layer)
+            failed_keyword_readings.insert(saved_checkpoint.first->begin);
 
         pos = saved_checkpoint.first;
         layers.back()->current_checkpoint = saved_checkpoint.second;
@@ -3964,13 +3980,20 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     auto current_checkpoint = layers.back()->current_checkpoint;
     layers.back()->current_checkpoint = Checkpoint::None;
 
-    if (current_checkpoint != Checkpoint::Interval && parseOperator(pos, toStringView(Keyword::INTERVAL), expected))
+    /// Skipping a failed keyword reading leaves no checkpoint, as trying it again and restoring would.
+    const bool keyword_reading_failed = failed_keyword_readings.contains(old_pos->begin);
+    if (keyword_reading_failed)
+        layers.back()->saved_checkpoint.reset();
+
+    if (current_checkpoint != Checkpoint::Interval && !keyword_reading_failed
+        && parseOperator(pos, toStringView(Keyword::INTERVAL), expected))
     {
         layers.back()->saved_checkpoint = {old_pos, Checkpoint::Interval};
         layers.push_back(std::make_unique<IntervalLayer>());
         return Action::OPERAND;
     }
-    if (current_checkpoint != Checkpoint::Case && parseOperator(pos, toStringView(Keyword::CASE), expected))
+    if (current_checkpoint != Checkpoint::Case && !keyword_reading_failed
+        && parseOperator(pos, toStringView(Keyword::CASE), expected))
     {
         layers.back()->saved_checkpoint = {old_pos, Checkpoint::Case};
         layers.push_back(std::make_unique<CaseLayer>());
@@ -3997,6 +4020,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             ++pos;
             ++pos;
             layers.push_back(std::make_unique<ArrayLayer>());
+            pos.increaseDepth();
             return Action::OPERAND;
         }
 
@@ -4031,12 +4055,14 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
             ++pos;
             layers.push_back(std::make_unique<RoundBracketsLayer>());
+            pos.increaseDepth();
             return Action::OPERAND;
         }
         else if (pos->type == TokenType::OpeningSquareBracket)
         {
             ++pos;
             layers.push_back(std::make_unique<ArrayLayer>());
+            pos.increaseDepth();
             return Action::OPERAND;
         }
         else if (mysql_global_variable_parser.parse(pos, tmp, expected))
