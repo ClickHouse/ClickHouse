@@ -2100,7 +2100,7 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
 
                 if (has_all_arguments)
                 {
-                    if (input_rows_count > 0 && node->type == ActionType::FUNCTION)
+                    if (node->type == ActionType::FUNCTION)
                         CurrentThread::checkIfNotCancelled();
                     node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, true);
                 }

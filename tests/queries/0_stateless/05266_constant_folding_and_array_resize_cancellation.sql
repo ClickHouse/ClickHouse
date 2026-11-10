@@ -30,6 +30,12 @@ INSERT INTO t_insert_cast (a, b) SELECT dummy, editDistance(repeat('a', 20000), 
 DROP TABLE t_insert_cast;
 -- A constant of more than 1 MiB is not kept by the analyzer, so it is evaluated again when the query plan is built.
 SELECT intDiv(length(repeat('ab', 600000)), 0), editDistance(repeat('a', 20000), repeat('b', 20000)) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+-- Nor a function that the header of a query plan step evaluates, here on the default value that an empty
+-- LowCardinality column still holds.
+DROP TABLE IF EXISTS t_header_fold;
+CREATE TABLE t_header_fold (s LowCardinality(String)) ENGINE = Memory;
+SELECT editDistance(concat(s, repeat('a', 20000)), repeat('b', 20000)), intDiv(length(s), 0) FROM t_header_fold SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+DROP TABLE t_header_fold;
 
 -- A constant reference vector is cast to the type of the QBit column during analysis, which fails to parse 'x';
 -- after the deadline, the query stops before that cast.
