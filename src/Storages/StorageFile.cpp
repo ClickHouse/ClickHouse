@@ -1676,10 +1676,12 @@ StorageFileSource::FilesIterator::FilesIterator(
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.assign(filter_sources.size(), archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filter_sources, filter_paths, actions, virtual_columns_, hive_columns_, context_,
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filter_sources,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, actions, virtual_columns_, hive_columns_, context_,
+                    /*format_settings=*/std::nullopt,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
         }
         else
             deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
@@ -1718,10 +1720,12 @@ String StorageFileSource::FilesIterator::next()
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.push_back(archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filtered_files, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filtered_files,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
+                    /*format_settings=*/std::nullopt,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_files.empty())
                 continue;
         }
@@ -2296,7 +2300,7 @@ Chunk StorageFileSource::generate()
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
-                    std::vector<size_t> matching_row_groups;
+                    RowGroupIndices matching_row_groups;
                     for (size_t i = 0; i < marks.size(); ++i)
                         if (marks[i])
                             matching_row_groups.push_back(i);
@@ -3969,9 +3973,9 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## PARTITION BY {#partition-by}
 
-`PARTITION BY` — Optional.  It is possible to create separate files by partitioning the data on a partition key. In most cases, you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`CREATE TABLE ... ENGINE = File` does not support `PARTITION BY`. To write separate files by a partition key, use `INSERT INTO FUNCTION file(...) PARTITION BY` with `{_partition_id}` in the file name. For example, `INSERT INTO FUNCTION file('out_{_partition_id}.csv', 'CSV', 'd Date, v String') PARTITION BY toYYYYMM(d) SELECT ...` writes one file per month, such as `out_202601.csv`. The placeholder is not expanded when reading, so read the files back with a glob, such as `file('out_*.csv')`.
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+To read data stored in Hive-style `key=value/` directories, use the [`file`](/reference/functions/table-functions/file#hive-style-partitioning) table function with `use_hive_partitioning = 1`. A filter on a partition column then reads only the matching files.
 
 ## Virtual columns {#virtual-columns}
 

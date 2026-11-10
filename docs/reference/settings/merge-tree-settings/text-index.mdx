@@ -47,8 +47,8 @@ Default posting list block size for text indexes (rows).
 Can be overridden by explicit `posting_list_block_size` index argument.
 
 ## text_index_posting_list_codec {#text_index_posting_list_codec}
-<SettingsInfoBlock type="TextIndexPostingListCodec" default_value="none" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "none"},{"label": "New setting"}]}]}/>
+<SettingsInfoBlock type="TextIndexPostingListCodec" default_value="pfor" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "none"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "pfor"},{"label": "Use the `pfor` posting list codec for text indexes by default"}]}]}/>
 
 Default posting list codec for text indexes. One of `none`, `bitpacking`, `pfor`.
 Can be overridden by explicit `posting_list_codec` index argument.

@@ -49,6 +49,8 @@ EXCLUDE=(
     05361_geospatial_crs_geography.parquet
     05361_geospatial_crs_srid.parquet
     05361_geospatial_geography_points.parquet
+    # GeoParquet 1.1 native (GeoArrow) encodings, tested by 05497.
+    05497_geoparquet_native_encodings.parquet
     # Intentionally non-compliant files for testing DELTA_BINARY_PACKED padding tolerance.
     04045_delta_no_padding_3vals.parquet
     04045_delta_no_padding_5vals.parquet
