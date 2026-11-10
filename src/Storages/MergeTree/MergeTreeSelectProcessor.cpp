@@ -723,6 +723,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     {
                         task = std::move(new_task);
                         current_task_finalized = false;
+                        /// The slice announces the key its rows start at; the interval counts from there.
+                        blocks_since_virtual_row = 0;
                         return makeSliceMarker(ended, /*idle=*/ false);
                     }
                     /// Nothing to read right now; the router wakes the source up when there is. The finished

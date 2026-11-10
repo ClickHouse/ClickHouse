@@ -5220,6 +5220,7 @@ Requires `read_in_order_use_virtual_row`. Applies to local reading only, and not
 With `read_in_order_use_virtual_row_per_block`, the number of blocks a part reads before it reports its position to the merge again.
 A larger interval means fewer reports and less merge overhead on queries that scan a lot of data; a smaller interval lets the merge move on from filtered-out parts sooner.
 Set to 1 to report after every block. Values below 1 are treated as 1.
+With `read_in_order_use_sliced_pool`, every slice of a part reports its position when it starts, and the interval counts the blocks read since.
 )", 0, \
         {"26.11", 1, 8, "New setting to emit a virtual row after every N-th block read instead of after every block when `read_in_order_use_virtual_row_per_block` is enabled. Every virtual row passes through the merge, so the previous per-block emission slowed down scan-heavy read-in-order queries with selective filters."}) \
     DECLARE(Int64, read_in_order_virtual_row_prefetch_window, -1, R"(
