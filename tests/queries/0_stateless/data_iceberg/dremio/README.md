@@ -28,7 +28,6 @@ Tables:
 - `v2/products_with_eq_deletes`: format version 2, equality deletes on the key and on a non-key column, a position delete;
   `README.md` describes how it was built and the expected number of rows (450).
 - `v2/products_with_eq_deletes_upper_case_columns`: the same table with upper case column names.
-- `v2/Merge_On_Read_Target_Partitioned`, `v2/Merge_On_Read_Target_Unpartitioned`: one data file of 100000 rows each.
 
 The expected results in the tests come from the Dremio tests (`TestIcebergScan`, `TestIcebergTableFilesFunction`,
 `TestIcebergManifestListRecordReader`), the `README.md` of `products_with_eq_deletes`, and from an independent reader:
@@ -39,8 +38,9 @@ Tables of the Dremio test resources that are not included:
 
 - `v2/longDir.../multi_rowgroup_orders_with_deletes`: a copy of `v2/multi_rowgroup_orders_with_deletes` under three
   directories with names of 110 characters.
-- `v2/Merge_On_Read_Source_Partitioned`: the source table of the same `MERGE` tests, the same layout as
-  `v2/Merge_On_Read_Target_Partitioned` (1.7 MB).
+- `v2/Merge_On_Read_Source_Partitioned`, `v2/Merge_On_Read_Target_Partitioned`, `v2/Merge_On_Read_Target_Unpartitioned`:
+  the tables of the `MERGE` tests, one data file of 100000 rows each (1.7 MB). They are too large for the repository,
+  and the way their files are referenced is covered by `v2/products_with_eq_deletes`.
 - `supplier`, `orders`, `complex*`, `mapTest`, `root_pointer`, `non_iceberg_with_column_ids`, `orphan_files`: plain Parquet
   or JSON files, not Iceberg tables. `utils`: Iceberg view metadata files.
 - `dac/backend/src/test/resources/datasets/iceberg`: `empty_table` is the same table; `metastore_table` contains only
