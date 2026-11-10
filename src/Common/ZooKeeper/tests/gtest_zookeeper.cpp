@@ -76,6 +76,7 @@ public:
     void multi(std::span<const RequestPtr>, MultiCallback) override { unsupported(); }
     void multi(const Requests &, MultiCallback) override { unsupported(); }
     void getACL(const String &, GetACLCallback) override { unsupported(); }
+    silk::FiberEvent & getExpiredEvent() override { unsupported(); }
 
 private:
     [[noreturn]] static void unsupported()
