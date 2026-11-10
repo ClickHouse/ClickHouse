@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <IO/writeJSONNumber.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 
 #include <Columns/ColumnConst.h>
