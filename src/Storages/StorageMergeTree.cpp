@@ -3058,7 +3058,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
             /// `MutateTask` removes a dropped (or cleared) column, index or projection from the result part after all
             /// other commands, so a later mutation that writes it again must not be squashed into the same task.
-            if (std::ranges::any_of(*single_mutation_commands, [](const MutationCommand & command) { return command.isDropOrRename(); }))
+            if (std::ranges::any_of(single_mutation_commands, [](const MutationCommand & command) { return command.isDropOrRename(); }))
                 break;
         }
 
