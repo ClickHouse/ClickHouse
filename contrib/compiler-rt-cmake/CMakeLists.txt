@@ -701,25 +701,50 @@ if (ENABLE_XRAY)
     endforeach()
     list(APPEND _xray_combined_full "${CMAKE_CURRENT_SOURCE_DIR}/xray_reject_modes.cpp")
 
-    # The AArch64 trampolines have neither BTI landing pads nor the BTI property, although the patched
-    # sleds enter them with `blr`. Compile a copy with a landing pad at every entry and the property note.
+    # XRay predates BTI. With branch protection, compile patched copies of two of its files:
+    # * the AArch64 trampolines have neither BTI landing pads nor the BTI property, although the patched
+    #   sleds enter them with `blr`: add a landing pad at every entry and the property note;
+    # * patching a function makes its pages writable and then executable again with `mprotect`, without
+    #   `PROT_BTI`, which would leave the patched pages unguarded: add `PROT_BTI` if the kernel supports
+    #   BTI (`HWCAP2_BTI`). Both constants are missing in the headers of the sysroot.
     if (ARCH_AARCH64 AND USE_BRANCH_PROTECTION)
-        set(_xray_trampoline "${XRAY_DIR}/xray_trampoline_AArch64.S")
-        file(READ "${_xray_trampoline}" _xray_trampoline_text)
-        string(REGEX REPLACE "(ASM_SYMBOL\\(__xray_[A-Za-z]+\\):)" "\\1\n  BTI_C" _xray_trampoline_text "${_xray_trampoline_text}")
-        string(APPEND _xray_trampoline_text "\nGNU_PROPERTY_BTI_PAC_GCS\n")
-        set(_xray_trampoline_bti "${CMAKE_CURRENT_BINARY_DIR}/xray_trampoline_AArch64_bti.S")
-        set(_xray_trampoline_old_text "")
-        if (EXISTS "${_xray_trampoline_bti}")
-            file(READ "${_xray_trampoline_bti}" _xray_trampoline_old_text)
-        endif()
-        if (NOT _xray_trampoline_old_text STREQUAL _xray_trampoline_text)
-            file(WRITE "${_xray_trampoline_bti}" "${_xray_trampoline_text}")
-        endif()
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_xray_trampoline}")
-        # For the includes relative to the original file (`../builtins/assembly.h`).
-        set_source_files_properties("${_xray_trampoline_bti}" PROPERTIES INCLUDE_DIRECTORIES "${XRAY_DIR}")
-        list(TRANSFORM _xray_combined_full REPLACE "^${_xray_trampoline}$" "${_xray_trampoline_bti}")
+        # Replaces `source` in `_xray_combined_full` with a copy at `copy` containing `text`.
+        function(_xray_use_patched_copy source copy text)
+            set(_old_text "")
+            if (EXISTS "${copy}")
+                file(READ "${copy}" _old_text)
+            endif()
+            if (NOT _old_text STREQUAL text)
+                file(WRITE "${copy}" "${text}")
+            endif()
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}")
+            # For the includes relative to the original file (`../builtins/assembly.h`, `xray_defs.h`).
+            set_source_files_properties("${copy}" PROPERTIES INCLUDE_DIRECTORIES "${XRAY_DIR}")
+            list(TRANSFORM _xray_combined_full REPLACE "^${source}$" "${copy}")
+            set(_xray_combined_full "${_xray_combined_full}" PARENT_SCOPE)
+        endfunction()
+
+        set(_source "${XRAY_DIR}/xray_trampoline_AArch64.S")
+        file(READ "${_source}" _text)
+        string(REGEX REPLACE "(ASM_SYMBOL\\(__xray_[A-Za-z]+\\):)" "\\1\n  BTI_C" _text "${_text}")
+        string(APPEND _text "\nGNU_PROPERTY_BTI_PAC_GCS\n")
+        _xray_use_patched_copy("${_source}" "${CMAKE_CURRENT_BINARY_DIR}/xray_trampoline_AArch64_bti.S" "${_text}")
+
+        set(_source "${XRAY_DIR}/xray_interface.cpp")
+        file(READ "${_source}" _text)
+        foreach (_prot "PROT_READ | PROT_WRITE | PROT_EXEC)" "PROT_READ | PROT_EXEC)")
+            string(FIND "${_text}" "${_prot}" _first)
+            string(FIND "${_text}" "${_prot}" _last REVERSE)
+            if (_first EQUAL -1 OR NOT _first EQUAL _last)
+                message(FATAL_ERROR "Expected exactly one `mprotect` with `${_prot}` in ${_source}")
+            endif()
+            string(REPLACE ")" " | xrayBranchTargetProtection())" _prot_bti "${_prot}")
+            string(REPLACE "${_prot}" "${_prot_bti}" _text "${_text}")
+        endforeach()
+        set(_text "#include <sys/auxv.h>
+static int xrayBranchTargetProtection() { return (getauxval(AT_HWCAP2) & (1UL << 17)) ? 0x10 : 0; } // HWCAP2_BTI, PROT_BTI
+${_text}")
+        _xray_use_patched_copy("${_source}" "${CMAKE_CURRENT_BINARY_DIR}/xray_interface_bti.cpp" "${_text}")
     endif()
 
     add_library(clang_rt_xray STATIC ${_xray_combined_full})
