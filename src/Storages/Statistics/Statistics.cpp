@@ -457,7 +457,7 @@ std::optional<UInt64> ColumnStatistics::tryEstimateCardinality() const
 {
     /// A number set by `setCardinality` takes precedence over a sketch.
     if (external_cardinality)
-        return *external_cardinality;
+        return external_cardinality;
     if (const IStatistics * uniq_stats = findUniqStats(stats))
         return uniq_stats->estimateCardinality();
     if (getCardinalitySource() == CardinalitySource::AssumedDistinct)
