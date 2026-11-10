@@ -25,7 +25,9 @@ shards per enabled architecture.
 
 The `pr-performance` label runs the full test suite on eight ARM shards; AMD
 still uses coverage selection on six shards. The `ci-force-all` label runs the
-full suite on eight shards per architecture. Full runs retain the existing query
+full suite on eight shards per architecture. So do changes that coverage cannot
+see: submodules, build files, compiler images, the performance harness, fixtures and server
+configuration, and setting defaults. Full runs retain the existing query
 sampling settings. Master, release, nightly and special Iceberg comparisons keep
 their existing behavior.
 

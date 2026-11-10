@@ -38,15 +38,55 @@ FIXED_TESTS = Path(__file__).with_name("performance_fixed_tests.json")
 COVERAGE_CHECK = "Performance Comparison%per_query_coverage%"
 QUERY_ID = r"^(.+)\.query([0-9]+)\.([0-9a-f]+)\.(first|warm)$"
 HEADER_SUFFIXES = (".h", ".hpp", ".hh", ".hxx", ".inc")
+# The compiler images; the other build inputs come from `filter_job.py`.
+BUILD_PATHS = ("ci/docker/cctools/", "ci/docker/fasttest/", "ci/docker/binary-builder/")
+# The runner, fixtures and server configuration of every test: no covered source line changes.
+HARNESS_PATHS = (
+    "tests/performance/scripts/",
+    "tests/performance/user_files/",
+    "tests/config/top_level_domains/",
+    "tests/config/config.d/top_level_domains_lists.xml",
+    "ci/jobs/scripts/perf/",
+    "ci/jobs/performance_tests.py",
+    "ci/jobs/scripts/dataset_download.py",
+    "ci/jobs/scripts/seaweedfs_service.py",
+    "ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
+    "ci/docker/test-base/",
+    "ci/docker/performance-comparison/",
+    "programs/server/config.xml",
+    "programs/server/users.xml",
+    "programs/server/config.d/",
+)
 
 
 def full_suite_reason(info, build_type):
+    from ci.jobs.scripts.workflow_hooks.filter_job import (
+        _has_arch_sensitive_changes,
+        _has_submodule_changes,
+        _has_uncounted_build_changes,
+    )
+
     if info.pr_number <= 0:
         return "Not a pull request"
     if "ci-force-all" in info.pr_labels:
         return "Requested by ci-force-all"
     if build_type == "arm_release" and "pr-performance" in info.pr_labels:
         return "Requested by pr-performance"
+    # Missing inputs fail in `select`, not in the pre-hook that starts the whole workflow.
+    changed = [f.removeprefix("./") for f in info.get_changed_files() or []]
+    if (
+        _has_submodule_changes(changed)
+        or _has_uncounted_build_changes(changed)
+        or _has_arch_sensitive_changes(changed)
+        or any(f.startswith(BUILD_PATHS) or f.endswith((".cmake", "CMakeLists.txt")) for f in changed)
+    ):
+        return "Build change: submodules, build files and compiler images have no coverage"
+    if any(f.startswith(HARNESS_PATHS) for f in changed):
+        return "Performance harness, fixtures or server configuration changed"
+    # `src/Core/Settings.cpp` is excluded from coverage: every test reads settings.
+    settings = info.get_kv_data("settings_declaration_changes") or {"declarations": []}
+    if any(d["default_changed"] for d in settings["declarations"]):
+        return "Setting default changed"
     return ""
 
 
@@ -440,6 +480,10 @@ class PerformanceSelection(Targeting):
         return self._sources[key]
 
     def select(self, test_files, directory=Path("tests/performance")):
+        if self.info.get_changed_files() is None or self.info.get_kv_data(
+            "settings_history_fetch_error"
+        ):
+            raise RuntimeError("Changed files or setting default changes are unavailable")
         snapshots, covered_tests, binary_sha = self.snapshot()
         metadata = self._github_get(f"pulls/{self.pr_number}").json()
         if metadata["head"]["sha"] != self.info.sha:
