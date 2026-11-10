@@ -1,8 +1,6 @@
 descending: files,sorted=5,5 tagged=5
-descending_off: files,sorted=4,1 tagged=0
 small: files,sorted=1,1 tagged=1
 partitioned: files,sorted=6,6 tagged=6
-partitioned_off: files,sorted=6,0 tagged=0
 two_columns: files,sorted=5,5 tagged=5
 desc: files,sorted=5,5 tagged=5
 byte_limit: files,sorted=10,10 tagged=10

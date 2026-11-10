@@ -3,7 +3,7 @@
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
 # An `INSERT` into an Iceberg table with a sort order writes every data file sorted by it and tags it with `sort_order_id`.
-# `_off` twins run the same insert with the setting off; their files are neither sorted nor tagged.
+# Reverting the sort in the sink makes the sortedness and tag lines fail.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -47,21 +47,12 @@ run_case()
     report "$1" "$5" "$6"
 }
 
-# $1: case name, then as `run_case`: runs the insert with sorting on and off.
-run_case_on_off()
-{
-    local name="$1"
-    shift
-    run_case "${name}" "$@"
-    run_case "${name}_off" "$@" "--iceberg_insert_sort_data_files=0"
-}
-
 RANDOM_X="cityHash64(number) % 100000"
 
-run_case_on_off descending "x Int64" "ORDER BY x" "SELECT 10000 - number FROM numbers(10000)" "x" "arraySort"
+run_case descending "x Int64" "ORDER BY x" "SELECT 10000 - number FROM numbers(10000)" "x" "arraySort"
 # Three out-of-order blocks below the file limit become one sorted file.
 run_case small "x Int64" "ORDER BY x" "SELECT 2400 - number FROM numbers(2400)" "x" "arraySort"
-run_case_on_off partitioned "x Int64, p Int32" "PARTITION BY p ORDER BY x" \
+run_case partitioned "x Int64, p Int32" "PARTITION BY p ORDER BY x" \
     "SELECT ${RANDOM_X}, number % 3 FROM numbers(10000)" "x" "arraySort"
 run_case two_columns "a Int32, b Int32" "ORDER BY (a, b)" \
     "SELECT cityHash64(number) % 10, cityHash64(number, 1) % 1000 FROM numbers(10000)" "(a, b)" "arraySort"

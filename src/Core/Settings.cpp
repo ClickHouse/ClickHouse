@@ -10452,13 +10452,6 @@ independently of its size.
 )", 0, \
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
-    DECLARE(Bool, iceberg_insert_sort_data_files, true, R"(
-An `INSERT` into an Iceberg table with a sort order writes each data file sorted by it and records the sort order in
-the file's manifest entry (`sort_order_id`), which enables reading in order. A data file holds whole inserted blocks
-and stays within `iceberg_insert_max_rows_in_data_file` rows and `iceberg_insert_max_bytes_in_data_file` uncompressed
-bytes unless a single block exceeds them, so files can be smaller than without sorting. With `0`, only each inserted block is sorted, and the files are not marked as sorted.
-)", 0, \
-        {"26.11", false, true, "New setting: an `INSERT` into an Iceberg table writes data files sorted by the table's sort order and marks them as sorted."}) \
     DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
 An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
 and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own

@@ -93,7 +93,6 @@ namespace Setting
     extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
     extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
     extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
-    extern const SettingsBool iceberg_insert_sort_data_files;
     extern const SettingsNonZeroUInt64 max_block_size;
 }
 
@@ -1311,7 +1310,7 @@ IcebergStorageSink::IcebergStorageSink(
     }
 
     sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context, &sort_order_description);
-    if (!sort_description.column_names.empty() && context->getSettingsRef()[Setting::iceberg_insert_sort_data_files])
+    if (!sort_description.column_names.empty())
         data_file_sort_order_id = metadata->getValue<Int32>(Iceberg::f_default_sort_order_id);
 
     Block extended_block_for_sorting = *sample_block_;
@@ -1388,7 +1387,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
             continue;
         }
 
-        getWriter(partition_key).consume(Chunk(withoutSortColumns(part_chunk.getColumns(), start_columns_size), part_chunk.getNumRows()));
+        getWriter(partition_key).consume(part_chunk);
     }
 
     auto new_chunk = Chunk(withoutSortColumns(chunk.getColumns(), start_columns_size), chunk.getNumRows());
