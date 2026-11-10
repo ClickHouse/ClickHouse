@@ -6,6 +6,7 @@ import math
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import tempfile
 import time
@@ -208,6 +209,15 @@ DASHBOARD_POLL_INTERVAL_SEC = 15
 FALLBACK_SHARED_MIN_OTHER_PRS = 3
 FALLBACK_SHARED_MIN_FRACTION = 0.8
 FALLBACK_SHARED_DAYS = 7
+# A PR fails when a query of a test it adds or changes has at least this many runs on the
+# tested server and corr(run number, time) and time(last run) / time(first run) above these.
+RUN_TREND_MIN_RUNS = 5
+RUN_TREND_MIN_CORR = 0.8
+RUN_TREND_MIN_GROWTH = 1.2
+RUN_TREND_README = (
+    "https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/README.md"
+    "#queries-whose-time-keeps-growing-with-each-run"
+)
 # A few seconds after praktika started the job's timeout: the time the job has left is counted from here.
 JOB_START = time.monotonic()
 # Kept free at the end of the job: a dashboard poll in flight at the deadline, the end of a cut
@@ -2440,6 +2450,111 @@ def build_dashboard_results_children(regressions):
     return children
 
 
+_RUN_NUMBER_RE = re.compile(r"\.run(\d+)$")
+
+
+def _parse_query_run(fields):
+    """`(query_index, version, run, time)` of a row of `analyze/query-runs.tsv`, None if it does not parse."""
+    if (
+        len(fields) != 5
+        or not _TSV_UINT_RE.fullmatch(fields[1])
+        or fields[3] not in ("0", "1")
+        or not _TSV_FLOAT_RE.fullmatch(fields[4])
+    ):
+        return None
+    run = _RUN_NUMBER_RE.search(fields[2])
+    return (int(fields[1]), int(fields[3]), int(run.group(1)), float(fields[4])) if run else None
+
+
+def find_run_trends(query_runs_path, test_names):
+    """The queries of `test_names` that get slower run over run on the tested server (`version` 1).
+
+    Reads compare.sh's `test, query_index, query_id, version, time` rows. Returns a dict per
+    flagged query in (test, query_index) order; raises on a row of `test_names` that does not parse.
+    """
+    series = {}
+    with open(query_runs_path, encoding="utf-8", newline="") as f:
+        for fields in csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE):
+            if not fields or fields[0] not in test_names:
+                continue
+            row = _parse_query_run(fields)
+            if row is None:
+                raise ValueError(f"unexpected row in [{query_runs_path}]: {fields!r}")
+            query_index, version, run, time_s = row
+            series.setdefault((fields[0], query_index), ([], []))[version].append((run, time_s))
+
+    trends = []
+    for (test, query_index), (reference, tested) in sorted(series.items()):
+        if len(tested) < RUN_TREND_MIN_RUNS:
+            continue
+        runs, times = zip(*sorted(tested))
+        if times[0] <= 0 or len(set(times)) == 1 or len(set(runs)) == 1:
+            continue
+        corr = statistics.correlation(runs, times)
+        growth = times[-1] / times[0]
+        if corr > RUN_TREND_MIN_CORR and growth > RUN_TREND_MIN_GROWTH:
+            trends.append(
+                {
+                    "test": test,
+                    "query_index": query_index,
+                    "corr": corr,
+                    "growth": growth,
+                    "tested": times,
+                    "reference": [t for _, t in sorted(reference)],
+                }
+            )
+    return trends
+
+
+def run_trend_gate(info, test_files, workdir):
+    """The run-trend check of the tests this PR adds or changes in this shard:
+    `(fail, message suffix, Check Results children)`."""
+    changed_files = info.get_changed_files()
+    if changed_files is None:
+        print("WARNING: the changed files are unknown, not checking changed tests for query times that keep growing")
+        info.add_workflow_warning(
+            "Performance comparison: the changed files are unknown, so the tests this PR adds or changes "
+            "were not checked for query times that keep growing with each run"
+        )
+        return False, "", []
+    try:
+        names = {
+            name.removesuffix(".xml")
+            for name in test_discovery.changed_tests(changed_files, "./tests/performance/")
+            if name in test_files
+        }
+        trends = find_run_trends(f"{workdir}/analyze/query-runs.tsv", names) if names else []
+    except Exception as e:
+        traceback.print_exc()
+        return True, f"; could not check whether query times of the tests this PR adds or changes keep growing: {e}", []
+    if not trends:
+        return False, "", []
+
+    def series(times):
+        return ", ".join(f"{t:.4g}" for t in times)
+
+    children = [
+        Result(
+            name=f"Query {t['test']} #{t['query_index']} time keeps growing with each run",
+            status=Result.Status.FAIL,
+            info=(
+                f"Run times on the tested server, s: {series(t['tested'])}"
+                + (f"; on the reference server: {series(t['reference'])}" if t["reference"] else "")
+                + f". Correlation of run number and time {t['corr']:.2f}, last run / first run {t['growth']:.2f} "
+                f"(the check fails above {RUN_TREND_MIN_CORR} and {RUN_TREND_MIN_GROWTH}). Usually each run reads "
+                "what the previous runs changed, for example a table or file that grows; make every run do the same "
+                'work. See "Queries whose time keeps growing with each run" in tests/performance/README.md.'
+            ),
+            links=[RUN_TREND_README],
+        )
+        for t in trends
+    ]
+    for child in children:
+        print(f"{child.name}: {child.info}")
+    subject = "1 query" if len(trends) == 1 else f"{len(trends)} queries"
+    return True, f"; the time of {subject} of the tests this PR adds or changes keeps growing with each run", children
+
+
 # Outcomes of fetching one previous result artifact from S3.
 FETCH_OK = "ok"
 FETCH_MISSING = "missing"
@@ -3932,9 +4047,16 @@ def main():
         elif not message:
             status = Result.Status.FAIL
             message = "No message in report."
+        trend_children = []
+        if compare_against_master and not nightly and not TABLE_ENGINE and info.pr_number > 0 and not info.is_local_run:
+            trend_fail, trend_suffix, trend_children = run_trend_gate(info, test_files, perf_wd)
+            if trend_fail:
+                status = Result.Status.FAIL
+            message += trend_suffix
         # Copy slower/unstable queries into Check Results so that Praktika
         # attaches per-query CIDB history links in the report.
         check_sub_results = build_dashboard_results_children(dashboard_regressions)
+        check_sub_results += trend_children
         # Find the "Tests" sub-result that holds per-query results
         tests_result = None
         for r in results:
