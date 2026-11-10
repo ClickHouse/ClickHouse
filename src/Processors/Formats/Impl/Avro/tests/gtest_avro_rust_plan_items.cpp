@@ -62,8 +62,9 @@ void appendArray(Bytes & out, UInt64 count, const Bytes & item = {})
 {
     if (count)
         appendLong(out, static_cast<Int64>(count));
-    for (UInt64 i = 0; i < count; ++i)
-        out.insert(out.end(), item.begin(), item.end());
+    if (!item.empty())
+        for (UInt64 i = 0; i < count; ++i)
+            out.insert(out.end(), item.begin(), item.end());
     appendLong(out, 0);
 }
 
