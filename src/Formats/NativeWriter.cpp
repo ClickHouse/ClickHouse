@@ -9,6 +9,7 @@
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Formats/NativeWriter.h>
+#include <Formats/FormatSettings.h>
 
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSparse.h>
@@ -27,6 +28,11 @@ namespace ErrorCodes
 }
 
 
+NativeWriter::NativeWriter(WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_)
+    : NativeWriter(ostr_, client_revision_, std::move(header_), std::nullopt)
+{
+}
+
 NativeWriter::NativeWriter(
     WriteBuffer & ostr_,
     UInt64 client_revision_,
@@ -41,7 +47,7 @@ NativeWriter::NativeWriter(
     , index(index_)
     , initial_size_of_file(initial_size_of_file_)
     , remove_low_cardinality(remove_low_cardinality_)
-    , format_settings(std::move(format_settings_))
+    , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
 {
     if (index)
     {
@@ -61,7 +67,7 @@ void NativeWriter::flush()
     const ISerialization & serialization,
     const ColumnPtr & column,
     WriteBuffer & ostr,
-    const std::optional<FormatSettings> & format_settings,
+    const FormatSettings * format_settings,
     UInt64 offset,
     UInt64 limit,
     UInt64 client_revision)
@@ -77,7 +83,7 @@ void NativeWriter::flush()
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0;
     settings.native_format = true;
-    settings.format_settings = format_settings ? &*format_settings : nullptr;
+    settings.format_settings = format_settings;
     if (client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION)
     {
         settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V1;
@@ -232,7 +238,7 @@ size_t NativeWriter::write(const Block & block)
 
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.
-            writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
+            writeData(*serialization, column.column, ostr, format_settings.get(), 0, 0, client_revision);
 
         if (index)
         {

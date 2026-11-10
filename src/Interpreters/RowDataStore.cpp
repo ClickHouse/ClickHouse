@@ -38,152 +38,31 @@ namespace ErrorCodes
 namespace
 {
 
-#define APPLY_FOR_FIELD_SIZES(M) \
-    M(1) M(2) M(3) M(4) M(5) M(6) M(7) M(8) \
-    M(9) M(10) M(11) M(12) M(13) M(14) M(15) M(16) \
-    M(17) M(18) M(19) M(20) M(21) M(22) M(23) M(24) \
-    M(25) M(26) M(27) M(28) M(29) M(30) M(31) M(32)
-
-template <size_t field_size>
-void gatherField(char * __restrict dst, const char * __restrict src, size_t row_length, size_t offset, size_t length)
-{
-    for (size_t row = 0; row < length; ++row)
-        memcpy(dst + row * row_length + offset, src + row * field_size, field_size);
-}
-
-template <size_t value_size>
-void gatherNullableField(char * __restrict dst, const char * __restrict null_src, const char * __restrict data_src, size_t row_length, size_t offset, size_t length)
-{
-    for (size_t row = 0; row < length; ++row)
-    {
-        char * row_dst = dst + row * row_length + offset;
-        row_dst[0] = null_src[row];
-        memcpy(row_dst + 1, data_src + row * value_size, value_size);
-    }
-}
-
-/// Only values longer than 15 bytes take room in the overflow buffer, shorter ones live inside the ref.
-size_t computeOverflowBytes(const ColumnPtr & column, size_t start, size_t length)
-{
-    size_t bytes = 0;
-    const ColumnString & string_column = assert_cast<const ColumnString &>(*removeNullable(column));
-    const ColumnString::Offsets & offsets = string_column.getOffsets();
-    for (size_t row = start; row < start + length; ++row)
-    {
-        const size_t value_size = offsets[row] - offsets[static_cast<ssize_t>(row) - 1];
-        if (value_size > UnhashedPackedStringRef::MAX_SMALL_LEN)
-            bytes += value_size;
-    }
-
-    return bytes;
-}
-
-template <bool is_nullable>
-void gatherStringField(char * __restrict dst, const char * __restrict null_src, const ColumnString & column, size_t row_length, size_t offset, size_t start, size_t length, char *& overflow_cursor)
-{
-    const ColumnString::Offsets & offsets = column.getOffsets();
-    const char * chars = reinterpret_cast<const char *>(column.getChars().data());
-    for (size_t row = 0; row < length; ++row)
-    {
-        char * row_dst = dst + row * row_length + offset;
-        if constexpr (is_nullable)
-        {
-            row_dst[0] = null_src[row];
-            ++row_dst;
-        }
-
-        const size_t source_row = start + row;
-        const UInt64 begin = offsets[static_cast<ssize_t>(source_row) - 1];
-        const size_t value_size = offsets[source_row] - begin;
-        const char * value = chars + begin;
-        /// The store owns its bytes: a long value is copied to the overflow buffer and the ref points there.
-        if (value_size > UnhashedPackedStringRef::MAX_SMALL_LEN)
-        {
-            memcpy(overflow_cursor, value, value_size);
-            value = overflow_cursor;
-            overflow_cursor += value_size;
-        }
-
-        unalignedStore<UnhashedPackedStringRef>(row_dst, UnhashedPackedStringRef::build(value, value_size));
-    }
-}
-
 template <typename ColumnsContainer>
 void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, const ColumnsContainer & columns, size_t start, size_t length, char * dst, char *& overflow_cursor)
 {
     for (size_t i = 0; i < layout.size(); ++i)
     {
         const auto & field_layout = layout[i];
-        if (!field_layout.elements.empty())
+        if (field_layout.elements.empty())
         {
-            const IColumn * tuple_column = columns[i].get();
-            if (field_layout.is_nullable)
-            {
-                const auto & nullable_column = assert_cast<const ColumnNullable &>(*tuple_column);
-                const char * null_src = nullable_column.getNullMapColumn().getDataAt(start).data();
-                gatherField<1>(dst, null_src, row_length, field_layout.offset, length);
-                tuple_column = &nullable_column.getNestedColumn();
-            }
-            const auto & elements = assert_cast<const ColumnTuple &>(*tuple_column).getColumns();
-            doGatherRows(field_layout.elements, row_length, elements, start, length, dst, overflow_cursor);
+            columns[i]->gatherRangeIntoRows(dst, row_length, field_layout.offset, start, length, overflow_cursor, /*null_map=*/ nullptr);
+            continue;
         }
-        else if (field_layout.is_string)
-        {
-            if (field_layout.is_nullable)
-            {
-                const auto & nullable_column = assert_cast<const ColumnNullable &>(*columns[i]);
-                const char * null_src = nullable_column.getNullMapColumn().getDataAt(start).data();
-                const auto & strings = assert_cast<const ColumnString &>(nullable_column.getNestedColumn());
-                gatherStringField<true>(dst, null_src, strings, row_length, field_layout.offset, start, length, overflow_cursor);
-            }
-            else
-            {
-                const auto & strings = assert_cast<const ColumnString &>(*columns[i]);
-                gatherStringField<false>(dst, nullptr, strings, row_length, field_layout.offset, start, length, overflow_cursor);
-            }
-        }
-        else if (field_layout.is_nullable)
-        {
-            const auto * nullable_column = assert_cast<const ColumnNullable *>(columns[i].get());
-            const char * null_src = nullable_column->getNullMapColumn().getDataAt(start).data();
-            const char * data_src = nullable_column->getNestedColumn().getDataAt(start).data();
-            const size_t value_size = field_layout.size - 1;
 
-            switch (value_size)
-            {
-#define M(N) \
-                case N: \
-                    gatherNullableField<N>(dst, null_src, data_src, row_length, field_layout.offset, length); \
-                    break;
-                APPLY_FOR_FIELD_SIZES(M)
-#undef M
-                default:
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "RowDataStore got a nullable field of {} bytes, expected at most 32.", value_size);
-            }
-        }
-        else
+        const IColumn * tuple_column = columns[i].get();
+        if (field_layout.is_nullable)
         {
-            const char * src = columns[i]->getDataAt(start).data();
-            const size_t field_size = field_layout.size;
-
-            switch (field_size)
-            {
-#define M(N) \
-                case N: \
-                    gatherField<N>(dst, src, row_length, field_layout.offset, length); \
-                    break;
-                APPLY_FOR_FIELD_SIZES(M)
-#undef M
-                default:
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "RowDataStore got a field of {} bytes, expected at most 32.", field_size);
-            }
+            const auto & nullable_column = assert_cast<const ColumnNullable &>(*tuple_column);
+            nullable_column.getNullMapColumn().gatherRangeIntoRows(
+                dst, row_length, field_layout.offset, start, length, overflow_cursor, /*null_map=*/ nullptr);
+            tuple_column = &nullable_column.getNestedColumn();
         }
+        const auto & elements = assert_cast<const ColumnTuple &>(*tuple_column).getColumns();
+        doGatherRows(field_layout.elements, row_length, elements, start, length, dst, overflow_cursor);
     }
 }
 
-#undef APPLY_FOR_FIELD_SIZES
 
 void fillFieldFromRowStorePtrs(IColumn & column, const RowDataStore::FieldLayout & field, const RowStorePointers & row_store_ptrs, size_t begin, size_t count)
 {
@@ -382,9 +261,8 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
 
     /// A store is gathered only once, so the overflow buffer is sized exactly here and never moves.
     size_t overflow_bytes = 0;
-    for (size_t i = 0; i < layout->size(); ++i)
-        if ((*layout)[i].is_string)
-            overflow_bytes += computeOverflowBytes(columns[i], start, length);
+    for (const auto & column : columns)
+        overflow_bytes += column->rowStoreOverflowBytes(start, length);
     overflow.resize_exact(overflow_bytes);
     char * overflow_cursor = overflow.data();
 
@@ -470,7 +348,8 @@ NameSet computeRowStoreCandidateColumns(
         {
             /// The average comes from the statistics and includes the 8-byte offset. 0 means the average is unknown.
             const Float64 avg_value_bytes = table_join.getRightColumnAvgBytes(column.name);
-            if (avg_value_bytes > 0 && avg_value_bytes <= UnhashedPackedStringRef::MAX_SMALL_LEN + sizeof(ColumnString::Offset)
+            if (min_string_column_bytes != 0 && avg_value_bytes > 0
+                && avg_value_bytes <= UnhashedPackedStringRef::MAX_SMALL_LEN + sizeof(ColumnString::Offset)
                 && static_cast<Float64>(right_rows) * avg_value_bytes >= static_cast<Float64>(min_string_column_bytes))
                 columns.insert(column.name);
         }

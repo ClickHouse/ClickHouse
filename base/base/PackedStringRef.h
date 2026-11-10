@@ -1,14 +1,33 @@
 #pragma once
 
 #include <bit>
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string_view>
 
 #include <base/StringViewHash.h>
 #include <base/defines.h>
 
-/// PackedStringRef is a compact, 16-byte string representation that encodes
-/// payload and tag bits inside two 64-bit words.
+/// The two words of a value. Without a hash they are 4-byte aligned, so that a row can hold the value at any multiple
+/// of 4 bytes. `PackedStringRef` keeps the 8-byte alignment of its hash table cells.
+template <size_t HASH_BYTES>
+struct PackedStringRefWords
+{
+    uint64_t low;
+    uint64_t high;
+};
+
+template <>
+struct __attribute__((packed, aligned(4))) PackedStringRefWords<0>
+{
+    uint64_t low;
+    uint64_t high;
+};
+
+/// `PackedStringRefT` is a compact, 16-byte string representation that encodes
+/// payload and tag bits inside two 64-bit words. `HASH_BYTES` is the size of the content
+/// hash that starts a small or medium value: 4 in `PackedStringRef`, 0 in `UnhashedPackedStringRef`.
 ///
 /// Every field lives at a fixed byte offset inside the struct. The packed
 /// pointer and the 64-bit large length are stored in little-endian byte order
@@ -20,7 +39,7 @@
 /// values built by the same code on the same host.
 ///
 /// ------------------------------------------------------------
-/// Byte layout (16 bytes total):
+/// Byte layout of `PackedStringRef` (16 bytes total):
 ///
 ///   bytes  0..3  : hash32         (small / medium)
 ///                  low 32 bits of length (large)
@@ -44,16 +63,25 @@
 ///   - isEmpty()  : high == 0
 ///
 /// ------------------------------------------------------------
-/// `UnhashedPackedStringRef` uses the same tag byte and large encoding but stores
-/// no hash and has no medium encoding: the small payload starts at byte 0 and
-/// holds up to 15 bytes.
+/// `UnhashedPackedStringRef` has no hash and no medium encoding: a small string of
+/// up to 15 bytes starts at byte 0, and every longer string is large. The tag byte
+/// and the large encoding are the same as above:
+///
+///   bytes  0..14 : the string, then zeros (small)
+///   bytes  0..7  : length (large)
+///   bytes  8..14 : low 56 bits of pointer in little-endian byte order (large)
+///   byte   15    : tag byte, as above
+///
+/// Two small values are equal as 16 bytes if and only if their strings are equal.
+/// A large value holds the address of its string, so the values of equal strings at
+/// different addresses differ.
 template <size_t HASH_BYTES>
-struct PackedStringRefT
+struct PackedStringRefT : PackedStringRefWords<HASH_BYTES>
 {
     static_assert(HASH_BYTES == 0 || HASH_BYTES == 4);
 
-    uint64_t low;
-    uint64_t high;
+    using PackedStringRefWords<HASH_BYTES>::low;
+    using PackedStringRefWords<HASH_BYTES>::high;
 
     static constexpr size_t HASH_SIZE_BYTES = HASH_BYTES;
     static constexpr size_t SMALL_PAYLOAD_OFFSET = HASH_SIZE_BYTES;
@@ -115,49 +143,6 @@ private:
         return value;
     }
 
-    /// `hash` is ignored when `HASH_BYTES` is 0.
-    ALWAYS_INLINE void buildSmall(const char * ptr, size_t len, uint32_t hash)
-    {
-        if constexpr (std::endian::native == std::endian::little)
-        {
-            /// Compose both words in registers. Byte-offset stores followed by a reload
-            /// of `low`/`high` defeat store-to-load forwarding, and the variable-length
-            /// payload copy compiles to a libc `memcpy` call; both dominate the per-row
-            /// cost of hash table probes with short keys.
-            uint64_t w0 = 0;
-            std::memcpy(&w0, ptr, sizeof(w0));
-            uint64_t w1 = 0;
-            /// Zero the bytes past the end of the string: they are part of the key identity.
-            if (len <= sizeof(w0))
-            {
-                w0 &= ~uint64_t(0) >> ((sizeof(w0) - len) * 8);
-            }
-            else
-            {
-                std::memcpy(&w1, ptr + sizeof(w0), sizeof(w1));
-                w1 &= ~uint64_t(0) >> ((2 * sizeof(w0) - len) * 8);
-            }
-
-            if constexpr (HASH_BYTES > 0)
-            {
-                low = hash | ((w0 & 0xFFFFFFFF) << 32);
-                high = (w0 >> 32) | (w1 << 32) | (len << (56 + SMALL_LEN_SHIFT_IN_BYTE));
-            }
-            else
-            {
-                low = w0;
-                high = w1 | (len << (56 + SMALL_LEN_SHIFT_IN_BYTE));
-            }
-        }
-        else
-        {
-            if constexpr (HASH_BYTES > 0)
-                std::memcpy(rawBytes(), &hash, sizeof(hash));
-            std::memcpy(rawBytes() + SMALL_PAYLOAD_OFFSET, ptr, len);
-            rawBytes()[TAG_BYTE_OFFSET] = static_cast<uint8_t>(static_cast<uint8_t>(len) << SMALL_LEN_SHIFT_IN_BYTE);
-        }
-    }
-
     ALWAYS_INLINE void buildLarge(const char * ptr, size_t len)
     {
         if constexpr (std::endian::native == std::endian::little)
@@ -172,6 +157,26 @@ private:
             rawBytes()[TAG_BYTE_OFFSET] = LARGE_TAG_BYTE;
         }
     }
+
+    /// A struct and not a `std::array`, because the hardened `operator[]` of `std::array` would check the bounds on every row.
+    struct ShortStringMasks
+    {
+        alignas(16) uint8_t bytes[16][16];
+    };
+
+    /// For `len` at most 15, `short_string_masks.bytes[len]` has 0xFF in the bytes [0, len) and `len` shifted left by
+    /// `SMALL_LEN_SHIFT_IN_BYTE` in byte 15.
+    static constexpr ShortStringMasks short_string_masks = []
+    {
+        ShortStringMasks masks{};
+        for (size_t len = 0; len < 16; ++len)
+        {
+            for (size_t i = 0; i < len; ++i)
+                masks.bytes[len][i] = 0xFF;
+            masks.bytes[len][TAG_BYTE_OFFSET] = static_cast<uint8_t>(len << SMALL_LEN_SHIFT_IN_BYTE);
+        }
+        return masks;
+    }();
 
 public:
     ALWAYS_INLINE bool isLarge() const
@@ -216,7 +221,7 @@ public:
     ALWAYS_INLINE const char * getMediumPtr() const
         requires(HASH_BYTES > 0)
     {
-        return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
+        return getHeapPtr();
     }
 
     ALWAYS_INLINE uint64_t getLargeSize() const
@@ -241,13 +246,22 @@ public:
     }
 
     ALWAYS_INLINE size_t heapSize() const
-        requires(HASH_BYTES > 0)
     {
-        if (isMedium())
-            return getMediumSize();
+        if constexpr (HASH_BYTES > 0)
+        {
+            if (isMedium())
+                return getMediumSize();
+        }
         if (isLarge())
             return getLargeSize();
         return 0;
+    }
+
+    /// The out-of-line bytes of a medium or large string, `heapSize` of them: both encodings
+    /// keep the pointer in the same low 56 bits.
+    ALWAYS_INLINE const char * getHeapPtr() const
+    {
+        return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
 
     ALWAYS_INLINE size_t size() const
@@ -257,8 +271,8 @@ public:
     }
 
     /// Copies the value to `dst` and returns the end of the copy. A small value is copied as the
-    /// whole 16-byte ref, which is cheaper than a variable length copy, so `dst` must have 15
-    /// writable bytes past the value.
+    /// whole 16-byte ref, which is cheaper than a variable length copy, so 16 bytes at `dst` must
+    /// be writable, even when the value is empty.
     ALWAYS_INLINE char8_t * copyTo(char8_t * dst) const
         requires(HASH_BYTES == 0)
     {
@@ -271,34 +285,29 @@ public:
         return dst + getSmallSize();
     }
 
+    /// A small string is viewed in place, so the view is valid while this value is.
     ALWAYS_INLINE explicit operator std::string_view() const
-        requires(HASH_BYTES > 0)
     {
         if (isEmpty())
             return {};
         if (isSmall())
             return {getSmallPtr(), getSmallSize()};
-        if (isMedium())
-            return {getMediumPtr(), getMediumSize()};
+        if constexpr (HASH_BYTES > 0)
+        {
+            if (isMedium())
+                return {getMediumPtr(), getMediumSize()};
+        }
         return {getLargePtr(), getLargeSize()};
     }
 
-    /// Set the medium-string pointer (low 56 bits) and clear the tag byte.
-    /// Used by `keyHolderPersistKey` to rebind the key to arena-owned memory.
-    ALWAYS_INLINE void setMediumPointer(const char * ptr)
-        requires(HASH_BYTES > 0)
+    /// Points a medium or large string at a copy of its out-of-line bytes, keeping the encoding,
+    /// which the tag byte holds. Used to rebind a key to memory that outlives the bytes it viewed
+    /// (see `keyHolderPersistKey`).
+    ALWAYS_INLINE void setHeapPointer(const char * ptr)
     {
+        chassert(heapSize() != 0);
         chassert((reinterpret_cast<uintptr_t>(ptr) >> (PACKED_POINTER_BYTES * 8)) == 0);
         storeLE(rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
-        rawBytes()[TAG_BYTE_OFFSET] = 0;
-    }
-
-    /// Set the large-string pointer (low 56 bits) and set the LARGE tag byte.
-    ALWAYS_INLINE void setLargePointer(const char * ptr)
-    {
-        chassert((reinterpret_cast<uintptr_t>(ptr) >> (PACKED_POINTER_BYTES * 8)) == 0);
-        storeLE(rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
-        rawBytes()[TAG_BYTE_OFFSET] = LARGE_TAG_BYTE;
     }
 
     /// Build a packed value, computing the 32-bit content hash with `hash_fn(ptr, len)`.
@@ -320,7 +329,35 @@ public:
 
         if (len <= MAX_SMALL_LEN)
         {
-            r.buildSmall(ptr, len, hash_fn(ptr, len));
+            const uint32_t hash = hash_fn(ptr, len);
+            if constexpr (std::endian::native == std::endian::little)
+            {
+                /// Compose both words in registers. Byte-offset stores followed by a reload
+                /// of `low`/`high` defeat store-to-load forwarding, and the variable-length
+                /// payload copy compiles to a libc `memcpy` call; both dominate the per-row
+                /// cost of hash table probes with short keys.
+                uint64_t w0 = 0;
+                std::memcpy(&w0, ptr, sizeof(w0));
+                uint64_t w1 = 0;
+                /// Zero the bytes past the end of the string: they are part of the key identity.
+                if (len <= sizeof(w0))
+                {
+                    w0 &= ~uint64_t(0) >> ((sizeof(w0) - len) * 8);
+                }
+                else
+                {
+                    std::memcpy(&w1, ptr + sizeof(w0), sizeof(w1));
+                    w1 &= ~uint64_t(0) >> ((2 * sizeof(w0) - len) * 8);
+                }
+                r.low = hash | ((w0 & 0xFFFFFFFF) << 32);
+                r.high = (w0 >> 32) | (w1 << 32) | (len << (56 + SMALL_LEN_SHIFT_IN_BYTE));
+            }
+            else
+            {
+                std::memcpy(r.rawBytes(), &hash, sizeof(hash));
+                std::memcpy(r.rawBytes() + SMALL_PAYLOAD_OFFSET, ptr, len);
+                r.rawBytes()[TAG_BYTE_OFFSET] = static_cast<uint8_t>(static_cast<uint8_t>(len) << SMALL_LEN_SHIFT_IN_BYTE);
+            }
             return r;
         }
 
@@ -346,21 +383,44 @@ public:
         return r;
     }
 
+    /// Returns the ref of any string. For a string of at most 15 bytes it reads 16 bytes from `ptr`, as `buildShort` does.
+    /// Code that knows the length class should call `buildShort` or `buildLong`.
     static ALWAYS_INLINE PackedStringRefT build(const char * ptr, size_t len)
         requires(HASH_BYTES == 0)
     {
+        return len <= MAX_SMALL_LEN ? buildShort(ptr, len) : buildLong(ptr, len);
+    }
+
+    /// Returns the ref of a string longer than 15 bytes. The ref points to `ptr`.
+    static ALWAYS_INLINE PackedStringRefT buildLong(const char * ptr, size_t len)
+        requires(HASH_BYTES == 0)
+    {
         PackedStringRefT r{};
-
-        if (len == 0)
-            return r;
-
-        if (len <= MAX_SMALL_LEN)
-        {
-            r.buildSmall(ptr, len, 0);
-            return r;
-        }
-
         r.buildLarge(ptr, len);
+        return r;
+    }
+
+    /// Returns the ref of a string of at most 15 bytes. It reads 16 bytes from `ptr`, even for an empty string, so 16
+    /// bytes at `ptr` must be readable. `ColumnString::Chars` provides them: a `PaddedPODArray` has 63 readable bytes
+    /// after its end.
+    static ALWAYS_INLINE PackedStringRefT buildShort(const char * ptr, size_t len)
+        requires(HASH_BYTES == 0)
+    {
+        chassert(len <= MAX_SMALL_LEN);
+
+        /// Two `uint64_t` words, because clang reads them with one 16-byte load. From a byte array, clang loads bytes 0 to 14
+        /// as 8 + 4 + 2 + 1 bytes.
+        uint64_t words[2];
+        uint64_t mask[2];
+        std::memcpy(words, ptr, sizeof(words));
+        /// A table of masks instead of a branch on `len`.
+        std::memcpy(mask, short_string_masks.bytes[len], sizeof(mask));
+        PackedStringRefT r{};
+        r.low = words[0] & mask[0];
+        /// Setting byte 15 to 0xFF makes the AND keep byte 15 of the mask, which holds the size. Byte 15 is the highest
+        /// byte of the second word on little-endian and the lowest on big-endian.
+        constexpr uint64_t tag_byte = std::endian::native == std::endian::little ? uint64_t(0xFF) << 56 : uint64_t(0xFF);
+        r.high = (words[1] | tag_byte) & mask[1];
         return r;
     }
 };
@@ -400,6 +460,7 @@ inline ALWAYS_INLINE bool operator==(PackedStringRef lhs, PackedStringRef rhs)
 
         const char * lhs_ptr = reinterpret_cast<const char *>(lhs.high & PackedStringRef::POINTER_MASK);
         const char * rhs_ptr = reinterpret_cast<const char *>(rhs.high & PackedStringRef::POINTER_MASK);
+        chassert(lhs_ptr && rhs_ptr);
         const size_t size = (lhs_tag & PackedStringRef::LARGE_TAG_BYTE) ? lhs.low : (lhs.low >> 32);
 #if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
         return memequalWide(lhs_ptr, rhs_ptr, size);
@@ -429,6 +490,23 @@ inline ALWAYS_INLINE bool operator==(PackedStringRef lhs, PackedStringRef rhs)
 
         return false;
     }
+}
+
+/// Two values are equal if their strings are. Small values are equal when their 16 bytes are. Large values with different
+/// addresses are compared by content.
+inline ALWAYS_INLINE bool operator==(UnhashedPackedStringRef lhs, UnhashedPackedStringRef rhs)
+{
+    if (lhs.low == rhs.low && lhs.high == rhs.high)
+        return true;
+
+    if (!lhs.isLarge() || !rhs.isLarge() || lhs.getLargeSize() != rhs.getLargeSize())
+        return false;
+
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    return memequalWide(lhs.getLargePtr(), rhs.getLargePtr(), lhs.getLargeSize());
+#else
+    return memcmp(lhs.getLargePtr(), rhs.getLargePtr(), lhs.getLargeSize()) == 0;
+#endif
 }
 
 namespace ZeroTraits

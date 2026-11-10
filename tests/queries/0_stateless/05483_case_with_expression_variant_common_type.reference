@@ -1,0 +1,14 @@
+a	Variant(String, UInt8)
+1	Variant(String, UInt8)
+0	Variant(String, UInt64)
+1	Variant(String, UInt64)
+a	Variant(String, UInt8)
+1	Variant(String, UInt8)
+a	Variant(String, UInt8)
+\N	Variant(String, UInt8)
+1	Variant(String, UInt8)
+1	Int32
+1000	Int32
+-1	Int32
+a	Variant(String, UInt8)
+1	Variant(String, UInt8)

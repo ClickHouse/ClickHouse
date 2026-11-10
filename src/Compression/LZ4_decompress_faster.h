@@ -37,6 +37,9 @@ namespace LZ4
   */
 static constexpr size_t ADDITIONAL_BYTES_AT_END_OF_BUFFER = 64;
 
+/// Smaller blocks always use variant 0 and do not update the statistics.
+static constexpr size_t MIN_BLOCK_SIZE_TO_CHOOSE_VARIANT = 32768;
+
 
 /** When decompressing uniform sequence of blocks (for example, blocks from one file),
   *  you can pass single PerformanceStatistics object to subsequent invocations of 'decompress' method.
