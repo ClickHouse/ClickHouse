@@ -1219,6 +1219,9 @@ public:
     /// Only for a definition written now: an existing table with such a column must still load and replicate.
     static void checkLossyCodecOnLowCardinality(const ColumnsDescription & columns);
 
+    /// Throws if a `vector_similarity` index may not be created on a table with these merging params.
+    static void checkVectorSimilarityIndexIsAllowed(const MergingParams & merging_params, const MergeTreeSettings & settings);
+
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
     void checkDropOrRenameCommandDoesntAffectInProgressMutations(
