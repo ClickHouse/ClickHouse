@@ -217,6 +217,31 @@ bool storageMayChangeColumnOnFly(const StorageSnapshotPtr & storage_snapshot, co
     return !materialized_dependencies.findColumnsToRecalculate(name_in_storage, columns_changed_on_fly).empty();
 }
 
+/// Whether the column is used by the primary key, the partition key or a secondary index of the storage.
+/// Index analysis matches the key expressions against the expressions of the query, so a key defined over
+/// `getSubcolumn(tup, 'a')` (or over `tup` itself) is not matched by a direct read of the column `tup.a`,
+/// and the index would no longer prune anything. This is the same gate `FunctionToSubcolumnsPass` applies.
+bool isKeyColumn(const StorageMetadataPtr & metadata, const NameAndTypePair & column_in_table)
+{
+    NameSet names{column_in_table.name, column_in_table.getNameInStorage()};
+    auto contains_any = [&](const Names & key_columns)
+    {
+        for (const auto & key_column : key_columns)
+            if (names.contains(key_column))
+                return true;
+        return false;
+    };
+
+    if (contains_any(metadata->getColumnsRequiredForPrimaryKey()) || contains_any(metadata->getColumnsRequiredForPartitionKey()))
+        return true;
+
+    for (const auto & index : metadata->getSecondaryIndices())
+        if (contains_any(index.expression->getRequiredColumns()))
+            return true;
+
+    return false;
+}
+
 /// Whether the storage behind `proj_column` can serve its subcolumn `subcolumn_name` directly. This is the same
 /// gate `FunctionToSubcolumnsPass` applies before reading a subcolumn instead of the whole column: some storages
 /// (system tables, ...) report `supportsOptimizationToSubcolumns` = false, others (`file`, `url`, ...) can serve
@@ -249,6 +274,9 @@ bool storageCanReadSubcolumn(
         return false;
 
     if (storageMayChangeColumnOnFly(storage_snapshot, *column_in_table, context))
+        return false;
+
+    if (isKeyColumn(storage_snapshot->metadata, *column_in_table))
         return false;
 
     if (storage.supportsOptimizationToSubcolumns())
