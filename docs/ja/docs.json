@@ -9,16 +9,20 @@
     {
       "menu": [
         {
-          "$ref": "./get-started/navigation.json"
+          "$ref": "./get-started/navigation.json",
+          "icon": "/images/icons/icon-get-started.svg"
         },
         {
-          "$ref": "./concepts/navigation.json"
+          "$ref": "./concepts/navigation.json",
+          "icon": "/images/icons/icon-concepts.svg"
         },
         {
-          "$ref": "./guides/navigation.json"
+          "$ref": "./guides/navigation.json",
+          "icon": "/images/icons/icon-guides.svg"
         },
         {
-          "$ref": "./reference/navigation.json"
+          "$ref": "./reference/navigation.json",
+          "icon": "/images/icons/icon-reference.svg"
         }
       ],
       "tab": "データベース"
@@ -31,10 +35,12 @@
           "item": "ClickHouse Cloud"
         },
         {
-          "$ref": "./products/cloud/navigation.json"
+          "$ref": "./products/cloud/navigation.json",
+          "icon": "/images/icons/icon-clickhouse-cloud.svg"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json"
+          "$ref": "./products/managed-postgres/navigation.json",
+          "icon": "/images/icons/icon-postgres.svg"
         },
         {
           "href": "https://langfuse.com/docs",
@@ -47,13 +53,16 @@
           "item": "オープンソース"
         },
         {
-          "$ref": "./clickstack/navigation.json"
+          "$ref": "./clickstack/navigation.json",
+          "icon": "/images/icons/icon-clickstack.svg"
         },
         {
-          "$ref": "./chdb/navigation.json"
+          "$ref": "./chdb/navigation.json",
+          "icon": "/images/icons/icon-chdb.svg"
         },
         {
-          "$ref": "./products/kubernetes-operator/navigation.json"
+          "$ref": "./products/kubernetes-operator/navigation.json",
+          "icon": "/images/icons/icon-kubernetes-operator.svg"
         }
       ],
       "tab": "ソリューション"
@@ -68,13 +77,16 @@
           ]
         },
         {
-          "$ref": "./integrations/clickpipes/navigation.json"
+          "$ref": "./integrations/clickpipes/navigation.json",
+          "icon": "/images/icons/icon-clickpipes.svg"
         },
         {
-          "$ref": "./integrations/language-clients/navigation.json"
+          "$ref": "./integrations/language-clients/navigation.json",
+          "icon": "/images/icons/icon-language-clients.svg"
         },
         {
-          "$ref": "./integrations/connectors/navigation.json"
+          "$ref": "./integrations/connectors/navigation.json",
+          "icon": "/images/icons/icon-connectors.svg"
         }
       ],
       "tab": "インテグレーション"
@@ -82,16 +94,20 @@
     {
       "menu": [
         {
-          "$ref": "./resources/support-center/navigation.json"
+          "$ref": "./resources/support-center/navigation.json",
+          "icon": "/images/icons/icon-support-center.svg"
         },
         {
-          "$ref": "./resources/develop-contribute/navigation.json"
+          "$ref": "./resources/develop-contribute/navigation.json",
+          "icon": "/images/icons/icon-contribute.svg"
         },
         {
-          "$ref": "./resources/changelogs/navigation.json"
+          "$ref": "./resources/changelogs/navigation.json",
+          "icon": "/images/icons/icon-changelogs.svg"
         },
         {
-          "$ref": "./resources/about/navigation.json"
+          "$ref": "./resources/about/navigation.json",
+          "icon": "/images/icons/icon-about.svg"
         }
       ],
       "tab": "リソース"
