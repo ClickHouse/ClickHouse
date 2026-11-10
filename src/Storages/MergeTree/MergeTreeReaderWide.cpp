@@ -80,7 +80,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
         throw;
     }
@@ -106,7 +106,7 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
         throw;
     }
@@ -232,7 +232,7 @@ size_t MergeTreeReaderWide::readRows(
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
