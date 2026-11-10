@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -6808,7 +6809,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             if (setting_name == "storage_policy")
             {
-                checkStoragePolicy(local_context->getStoragePolicy(new_value.safeGet<String>()));
+                const auto new_storage_policy = local_context->getStoragePolicy(new_value.safeGet<String>());
+                /// Only a changed policy is checked, so a table that already has it can still be altered otherwise.
+                if (new_storage_policy != getStoragePolicy())
+                    DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context);
+                checkStoragePolicy(new_storage_policy);
                 found_storage_policy_setting = true;
             }
             else if (setting_name == "disk")
