@@ -9,11 +9,6 @@
 #    include <emmintrin.h>
 #endif
 
-#if defined(__aarch64__) && defined(__ARM_NEON)
-#    include <arm_neon.h>
-#      pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
-
 /** memcpy function could work suboptimal if all the following conditions are met:
   * 1. Size of memory region is relatively small (approximately, under 50 bytes).
   * 2. Size of memory region is not known at compile-time.
@@ -73,23 +68,20 @@ inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const
     __msan_unpoison_overflow_15(src, n);
     if (n <= 0)
         return;
-    vst1q_s8(reinterpret_cast<signed char *>(dst), vld1q_s8(reinterpret_cast<const signed char *>(src)));
+    __builtin_memcpy(dst, src, 16);
     if (n <= 16)
         return;
 
     size_t offset = 16;
     while (offset + 16 < static_cast<size_t>(n))
     {
-        const auto head = vld1q_s8(reinterpret_cast<const signed char *>(src + offset));
-        const auto tail = vld1q_s8(reinterpret_cast<const signed char *>(src + offset + 16));
-        vst1q_s8(reinterpret_cast<signed char *>(dst + offset), head);
-        vst1q_s8(reinterpret_cast<signed char *>(dst + offset + 16), tail);
+        __builtin_memcpy(dst + offset, src + offset, 32);
         offset += 32;
         /// Avoid the loop-idiom optimization replacing the vector stores with `memcpy`.
         __asm__ __volatile__("" : : : "memory");
     }
     if (offset < static_cast<size_t>(n))
-        vst1q_s8(reinterpret_cast<signed char *>(dst + offset), vld1q_s8(reinterpret_cast<const signed char *>(src + offset)));
+        __builtin_memcpy(dst + offset, src + offset, 16);
 }
 }
 
