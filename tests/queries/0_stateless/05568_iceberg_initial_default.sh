@@ -66,6 +66,10 @@ elif mode == "rename":
     renamed = next(f for f in struct["fields"] if f["name"] == "j")
     renamed["name"] = "y"
     renamed["initial-default"] = 9
+elif mode == "rename_to_dropped":
+    struct = next(f for f in fields if f["name"] == "t")["type"]
+    struct["fields"] = [f for f in struct["fields"] if f["name"] != "x"]
+    struct["fields"][0]["name"] = "x"
 elif mode == "readd_in_list":
     by_name = {f["name"]: f for f in fields}
     u = by_name["u"]["type"]["fields"][1]["type"]["element"]
@@ -342,6 +346,24 @@ for format in Parquet ORC Avro; do
             SELECT 'rename', t.x, t.y FROM icebergLocal('${table}/');
             SELECT 'rename', t.y FROM icebergLocal('${table}/');
             SELECT 'rename', t.x, t.y FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 0;
+        "
+    fi
+
+    # A field renamed to the name of a dropped field: the filter on it is not pushed down to the dropped field.
+    if [ "${format}" != Avro ]; then
+        table="${format}_rename_to_dropped"
+        ${LOCAL} --allow_insert_into_iceberg=1 -q "
+            CREATE TABLE t (t Tuple(x Nullable(Int32), j Nullable(Int32))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t VALUES ((10, 100));
+        "
+        add_fields "${table}" rename_to_dropped
+        bind_to_current_schema "${table}"
+        nested_filter="FROM icebergLocal('${table}/') WHERE t.x = 100 SETTINGS optimize_move_to_prewhere = 0, optimize_functions_to_subcolumns = 1"
+        ${LOCAL} -q "
+            SELECT 'rename to dropped', t, t.x FROM icebergLocal('${table}/');
+            SELECT 'rename to dropped, t.x = 100', t ${nested_filter}, input_format_orc_filter_push_down = 1;
+            SELECT 'rename to dropped, t.x = 100', t ${nested_filter}, input_format_orc_filter_push_down = 0;
+            SELECT 'rename to dropped, t.x = 10', t FROM icebergLocal('${table}/') WHERE t.x = 10 SETTINGS input_format_orc_filter_push_down = 1;
         "
     fi
 

@@ -96,6 +96,9 @@ rename	(10,100)
 rename	10	100
 rename	100
 rename	10	100
+rename to dropped	(100)	100
+rename to dropped, t.x = 100	(100)
+rename to dropped, t.x = 100	(100)
 dotted	7	(11)
 ORC
 schema ids	[0]
@@ -122,6 +125,9 @@ rename	(10,100)
 rename	10	100
 rename	100
 rename	10	100
+rename to dropped	(100)	100
+rename to dropped, t.x = 100	(100)
+rename to dropped, t.x = 100	(100)
 readd in list	([(10,9)])	[((10,9))]	(1,[(10,9)])
 readd in list	[9]	[9]	[9]
 dotted	7	(11)

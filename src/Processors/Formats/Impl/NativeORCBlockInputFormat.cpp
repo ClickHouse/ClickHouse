@@ -1444,6 +1444,41 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     const ColumnNameToFieldId & encoding,
     bool ignore_case);
 
+/// The ORC type of the column `path` of the data lake schema, matching each struct on its way from the root by Iceberg field
+/// id, as the reader selects it: nullptr if it is absent from the file, nullopt if this cannot be told (a struct on the way
+/// without field ids, a list or a map), in which case the reader matches it by name.
+static std::optional<const ORC::Type *> resolveORCFieldByIcebergId(
+    const String & path, const ColumnMapper & column_mapper, const ORC::Type & file_schema, ORCFieldIdsCache & cache)
+{
+    const auto & encoding = column_mapper.getStorageColumnEncoding();
+    auto field = encoding.find(path);
+    if (field == encoding.end())
+        return std::nullopt;
+
+    VectorWithMemoryTracking<Int64> levels;
+    for (size_t pos = path.find('.'); pos != String::npos; pos = path.find('.', pos + 1))
+        if (auto ancestor = encoding.find(path.substr(0, pos)); ancestor != encoding.end())
+            levels.push_back(ancestor->second);
+    levels.push_back(field->second);
+
+    const ORC::Type * level_type = &file_schema;
+    for (size_t i = 0; i < levels.size(); ++i)
+    {
+        /// Field ids are unique: a struct on the way that has the column's own id holds the column (as in `getORCFieldAbsence`).
+        if (i + 1 < levels.size())
+        {
+            auto column_field = findORCFieldByIcebergId(*level_type, field->second, cache);
+            if (column_field && *column_field)
+                return column_field;
+        }
+        auto orc_field = findORCFieldByIcebergId(*level_type, levels[i], cache);
+        if (!orc_field || !*orc_field)
+            return orc_field;
+        level_type = *orc_field;
+    }
+    return level_type;
+}
+
 void NativeORCBlockInputFormat::prepareFileReader()
 {
     getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
@@ -1482,7 +1517,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
     }
 
     UnorderedSetWithMemoryTracking<UInt64> include_typeids;
-    /// A same-named field of an absent column has another field id: it is neither read nor used by the filter push-down.
+    /// A same-named field of an absent column has another field id: it is not read. The filter push-down resolves the
+    /// columns of the filter by name, so it is disabled if that is not the field that the reader reads by field id.
     bool absent_column_has_namesake = false;
     /// Under the data lake schema, the top-level struct and list columns of the file whose elements are requested, selected
     /// with the type hint that `orcColumnsToCHChunk` reads them with, so that their fields are matched by field id.
@@ -1543,9 +1579,12 @@ void NativeORCBlockInputFormat::prepareFileReader()
     {
         for (const auto & required : format_filter_info->filter_actions_dag->getRequiredColumns())
         {
+            /// Either the column is absent and a dropped field has its name, or the field with its name is another one
+            /// (a field renamed to the name of a dropped one), while the reader reads the field with its field id.
             auto adjusted_type = required.type;
-            if (getORCFieldAbsence(required.name, *filter_column_mapper, file_schema, field_ids_cache).first
-                && traverseDownORCTypeByName(required.name, &file_schema, adjusted_type, ignore_case))
+            const auto * field_by_name = traverseDownORCTypeByName(required.name, &file_schema, adjusted_type, ignore_case);
+            const auto field_by_id = resolveORCFieldByIcebergId(required.name, *filter_column_mapper, file_schema, field_ids_cache);
+            if (field_by_name && field_by_id && *field_by_id != field_by_name)
             {
                 absent_column_has_namesake = true;
                 break;
@@ -3132,15 +3171,21 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             /// If all fields of the struct have an Iceberg field id, an element of the hint is read only from the field
             /// with its id, and an element that no field has gets its `initial-default`.
             std::optional<VectorWithMemoryTracking<Int64>> file_field_ids;
-            if (column_mapper && !mapper_path.empty() && tuple_type_hint && tuple_type_hint->hasExplicitNames())
-                file_field_ids = getORCFieldIcebergIds(*orc_type);
             VectorWithMemoryTracking<bool> element_is_read(tuple_type_hint ? tuple_type_hint->getElements().size() : 0);
-            VectorWithMemoryTracking<std::optional<Int64>> element_field_ids(file_field_ids ? element_is_read.size() : 0);
-            for (size_t pos = 0; pos < element_field_ids.size(); ++pos)
+            VectorWithMemoryTracking<std::optional<Int64>> element_field_ids;
+            if (column_mapper && !mapper_path.empty() && tuple_type_hint && tuple_type_hint->hasExplicitNames())
             {
-                const auto & encoding = column_mapper->getStorageColumnEncoding();
-                if (auto it = encoding.find(mapper_path + "." + tuple_type_hint->getNameByPosition(pos + 1)); it != encoding.end())
-                    element_field_ids[pos] = it->second;
+                file_field_ids = getORCFieldIcebergIds(*orc_type);
+                if (file_field_ids)
+                {
+                    element_field_ids.resize(element_is_read.size());
+                    const auto & encoding = column_mapper->getStorageColumnEncoding();
+                    for (size_t pos = 0; pos < element_field_ids.size(); ++pos)
+                    {
+                        if (auto it = encoding.find(mapper_path + "." + tuple_type_hint->getNameByPosition(pos + 1)); it != encoding.end())
+                            element_field_ids[pos] = it->second;
+                    }
+                }
             }
 
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
