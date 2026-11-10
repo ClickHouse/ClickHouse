@@ -220,6 +220,44 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE t_text_column_ttl_stopped;
 
+SELECT 'MATERIALIZED column reading a column missing from every part falls back to rebuild';
+
+DROP TABLE IF EXISTS t_text_missing_dependency;
+
+CREATE TABLE t_text_missing_dependency
+(
+    id UInt64,
+    text String,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1,
+    PROJECTION p (SELECT id, text, _part_offset ORDER BY text)
+)
+ENGINE = ReplacingMergeTree ORDER BY id
+SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, merge_text_indexes_and_projections_on_delete_only_merges = 1,
+    enable_vertical_merge_algorithm = 0, deduplicate_merge_projection_mode = 'rebuild';
+
+INSERT INTO t_text_missing_dependency VALUES (1, 'old');
+INSERT INTO t_text_missing_dependency VALUES (2, 'old');
+
+-- No TTL: the TTL step that the missing column `a` adds to the merge recomputes `text` from it.
+ALTER TABLE t_text_missing_dependency ADD COLUMN a UInt64;
+ALTER TABLE t_text_missing_dependency MODIFY COLUMN text String MATERIALIZED if(a = 0, 'fresh', 'old');
+
+OPTIMIZE TABLE t_text_missing_dependency FINAL;
+
+SELECT groupArray(text) FROM (SELECT text FROM t_text_missing_dependency ORDER BY id);
+SELECT count() FROM t_text_missing_dependency WHERE hasToken(text, 'fresh') SETTINGS force_data_skipping_indices = 'idx_text', optimize_use_projections = 0;
+SELECT groupArray(token) FROM (SELECT DISTINCT token FROM mergeTreeTextIndex(currentDatabase(), t_text_missing_dependency, idx_text) ORDER BY token);
+SELECT groupArray(text) FROM (SELECT text FROM mergeTreeProjection(currentDatabase(), t_text_missing_dependency, p) ORDER BY id);
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT ProfileEvents['MergedTextIndexes'], ProfileEvents['RebuiltTextIndexes'], ProfileEvents['MergedProjections'], ProfileEvents['RebuiltProjections']
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_text_missing_dependency' AND event_type = 'MergeParts' AND error = 0 AND part_name NOT LIKE '%.proj'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+DROP TABLE t_text_missing_dependency;
+
 SELECT 'OPTIMIZE DEDUPLICATE';
 
 DROP TABLE IF EXISTS t_text_dedup;

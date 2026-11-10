@@ -32,6 +32,12 @@ column TTL with stopped TTL merges falls back to rebuild
 ['fresh']
 ['fresh','fresh']
 0	1	0	1
+MATERIALIZED column reading a column missing from every part falls back to rebuild
+['fresh','fresh']
+2
+['fresh']
+['fresh','fresh']
+0	1	0	1
 OPTIMIZE DEDUPLICATE
 3000
 3000
