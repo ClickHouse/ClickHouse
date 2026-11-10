@@ -197,9 +197,6 @@
   },
   "scripts": [
     {
-      "src": "/_site/customizations/clickstack-availability.js"
-    },
-    {
       "src": "/_site/customizations/settings-legacy-redirect.js"
     },
     {
@@ -216,9 +213,6 @@
     },
     {
       "src": "/_site/customizations/cloud-sidebar-ad.js"
-    },
-    {
-      "src": "/_site/customizations/section-ticker.js"
     },
     {
       "src": "/_site/customizations/tab-nav.js"

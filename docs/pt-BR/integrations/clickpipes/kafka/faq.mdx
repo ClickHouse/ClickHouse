@@ -10,9 +10,13 @@ integration:
   - category: 'clickpipes'
 ---
 
-## FAQ do ClickPipes for Kafka {#faq}
+<div id="faq">
+  ## FAQ do ClickPipes for Kafka
+</div>
 
-### Geral {#general}
+<div id="general">
+  ### Geral
+</div>
 
 <Accordion title="Como o ClickPipes for Kafka funciona?">
   O ClickPipes usa uma arquitetura dedicada que executa a API Kafka Consumer para ler dados de um tópico especificado e depois inserir esses dados em uma tabela do ClickHouse em um serviço específico do ClickHouse Cloud.
@@ -44,15 +48,15 @@ integration:
   Sim, o ClickPipes para streaming pode ser escalado tanto horizontal quanto verticalmente.
   O escalonamento horizontal adiciona mais réplicas para aumentar a taxa de transferência, enquanto o escalonamento vertical aumenta os recursos (CPU e RAM) alocados a cada réplica para lidar com workloads mais intensivos.
   Isso pode ser configurado durante a criação do ClickPipe ou a qualquer momento em **Settings** -&gt; **Advanced Settings** -&gt; **Scaling**.
-
-  Se o ClickPipe usar um endpoint privado reverso do AWS PrivateLink, o número total de réplicas somando todos os ClickPipes que compartilham esse endpoint é limitado. Consulte [limite de réplicas por endpoint privado reverso](/pt-BR/integrations/clickpipes/networking/aws-privatelink#rpe-replica-limit).
 </Accordion>
 
 <Accordion title="Não consigo encontrar alguns dos meus tópicos Kafka na UI de configuração do ClickPipes. Por quê?">
   A UI de descoberta de tópicos do ClickPipes lista até 1.500 tópicos por padrão. Se o seu cluster Kafka tiver mais de 1.500 tópicos, alguns deles talvez não apareçam na lista suspensa. Para verificar se o tópico existe, confira diretamente com um cliente Kafka usando as mesmas credenciais. Se isso for confirmado e você precisar aumentar o limite de listagem para mais de 1.500, entre em contato com o suporte do ClickHouse.
 </Accordion>
 
-### Azure Event Hubs {#azure-eventhubs}
+<div id="azure-eventhubs">
+  ### Azure Event Hubs
+</div>
 
 <Accordion title="O ClickPipe do Azure Event Hubs funciona sem a superfície Kafka?">
   Não. O ClickPipes exige que o espaço de nomes do Event Hubs tenha a superfície Kafka habilitada. Isso só está disponível em níveis acima do **Basic**. Consulte a [documentação do Azure Event Hubs](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-quickstart-kafka-enabled-event-hubs?tabs=passwordless#create-an-azure-event-hubs-namespace) para mais informações.

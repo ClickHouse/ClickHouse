@@ -13,10 +13,12 @@ keywords: ['SQL 控制台', 'SET ROLE', 'RBAC', '访问控制']
 当您在 ClickHouse Cloud SQL 控制台中运行 `SET ROLE` 时，角色似乎会在单次查询中更改，但在下一次查询时又恢复原状。如果权限需要跨查询和会话持续生效，请设置用户专属 SQL 控制台角色。
 
 <Tip>
-  建议使用[云托管数据库角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)从控制台管理数据库访问。`sql-console-role:<email>` 角色与 SQL 控制台中的 JWT 会话不兼容。
+  建议使用[云托管数据库角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) 从控制台管理数据库访问。`sql-console-role:<email>` 角色与 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) 不兼容。
 </Tip>
 
-## 症状 {#symptoms}
+<div id="symptoms">
+  ## 症状
+</div>
 
 您可能会遇到以下一种或多种情况：
 
@@ -35,7 +37,9 @@ SELECT
     defaultRoles();
 ```
 
-## 为什么会出现这种情况 {#why-this-happens}
+<div id="why-this-happens">
+  ## 为什么会出现这种情况
+</div>
 
 SQL 控制台通过无状态 HTTP 连接向多副本 ClickHouse Cloud 服务发送查询。连续执行的查询不一定会使用同一连接或副本。
 
@@ -43,7 +47,9 @@ SQL 控制台通过无状态 HTTP 连接向多副本 ClickHouse Cloud 服务发�
 
 因此，请勿将 `SET ROLE` 用作 SQL 控制台中的持久性访问控制机制。
 
-## SQL 控制台用户角色的工作原理 {#how-sql-console-user-roles-work}
+<div id="how-sql-console-user-roles-work">
+  ## SQL 控制台用户角色的工作原理
+</div>
 
 当用户打开 SQL 控制台时，ClickHouse Cloud 会按以下命名规则创建一个数据库用户：
 
@@ -65,7 +71,9 @@ sql-console-role:user@example.com
 | `sql_console_admin` 和 `sql_console_read_only` | 内置 SQL 控制台角色          | 是，由 ClickHouse Cloud 管理 |
 | `sql-console-role:<email>`                    | 管理员创建的用户专属自定义角色       | 是，用户登录时应用               |
 
-## 配置持久权限 {#configure-persistent-permissions}
+<div id="configure-persistent-permissions">
+  ## 配置持久权限
+</div>
 
 请使用在该服务上具有管理特权的用户运行以下语句，例如具有 `sql_console_admin` 角色的 SQL 控制台用户，或拥有 `ACCESS MANAGEMENT` 特权的其他用户。
 
@@ -127,7 +135,9 @@ sql-console-role:user@example.com
   </Step>
 </Steps>
 
-## 避免修改托管角色 {#avoid-modifying-managed-roles}
+<div id="avoid-modifying-managed-roles">
+  ## 避免修改托管角色
+</div>
 
 请勿修改 `sql_console_admin` 或 `sql_console_read_only` 来授予自定义权限。这些内置角色由 ClickHouse Cloud 管理。若要为单个用户设置权限，请使用 `sql-console-role:<email>`。
 

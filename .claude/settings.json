@@ -27,9 +27,6 @@
       "Bash(strings:*)",
       "Bash(nm:*)",
       "Bash(pwd)",
-      "Bash(node .claude/tools/fetch_ci_report.js *)",
-      "Bash(git grep *)",
-      "Bash(git merge-base *)",
       "WebFetch(domain:github.com)",
       "WebSearch(*)"
     ]

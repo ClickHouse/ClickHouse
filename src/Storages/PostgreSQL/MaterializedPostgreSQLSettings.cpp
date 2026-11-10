@@ -15,17 +15,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
 }
 
 #define LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, materialized_postgresql_max_block_size, 65536, "Number of row collected before flushing data into table.", 0) \
     DECLARE(String, materialized_postgresql_tables_list, "", "List of tables for MaterializedPostgreSQL database engine", 0) \
-    DECLARE(String, materialized_postgresql_unmaterialized_tables_list, "", \
-        "Internal, set automatically: the published tables of a whole-schema MaterializedPostgreSQL database that were never " \
-        "materialized (for example, their initial snapshot has failed). It is persisted together with `materialized_postgresql_tables_list` " \
-        "by `ATTACH TABLE` and `DETACH TABLE PERMANENTLY`, so that `BACKUP` keeps refusing to omit these tables after a restart", 0) \
     DECLARE(String, materialized_postgresql_schema_list, "", "List of schemas for MaterializedPostgreSQL database engine", 0) \
     DECLARE(String, materialized_postgresql_replication_slot, "", "A user-created replication slot", 0) \
     DECLARE(String, materialized_postgresql_snapshot, "", "User provided snapshot in case he manages replication slots himself", 0) \
@@ -90,19 +85,6 @@ void MaterializedPostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
-}
-
-void MaterializedPostgreSQLSettings::checkConsistencyForFreshDefinition() const
-{
-    /// A user-managed replication slot has a single fixed name, which is shared by every replica of a database or table
-    /// created with `ON CLUSTER`, while the unique replication consumer identifier exists to make the consumer unique.
-    if (!(*this)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty()
-        && (*this)[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Setting `materialized_postgresql_replication_slot` cannot be used together with "
-            "`materialized_postgresql_use_unique_replication_consumer_identifier`: a user-managed replication slot has a single "
-            "fixed name and cannot be unique per consumer. Remove one of these settings");
 }
 
 bool MaterializedPostgreSQLSettings::hasBuiltin(std::string_view name)
