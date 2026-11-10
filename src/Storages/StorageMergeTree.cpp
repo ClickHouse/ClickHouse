@@ -114,6 +114,8 @@ namespace FailPoints
     extern const char mt_alter_settings_pause_before_metadata_commit[];
     extern const char mt_alter_readonly_pause_after_metadata_commit[];
     extern const char mt_move_partition_pause_before_commit[];
+    extern const char mt_drop_partition_pause_after_merges_stopped[];
+    extern const char mt_merge_selecting_task_pause_after_selection[];
     extern const char mt_alter_readonly_throw_in_start_background_workers[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
@@ -2807,6 +2809,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         has_mutations = !current_mutations_by_version.empty();
     }
 
+    FailPointInjection::pauseFailPoint(FailPoints::mt_merge_selecting_task_pause_after_selection);
+
     auto is_cancelled = [&merges_blocker = merger_mutator.merges_blocker](const MergeMutateSelectedEntryPtr & entry)
     {
         if (entry->future_part)
@@ -3380,15 +3384,6 @@ bool StorageMergeTree::optimize(
 namespace
 {
 
-size_t countOccurrences(const StorageMergeTree::DataParts & haystack, const DataPartsVector & needle)
-{
-    size_t total = 0;
-    for (const auto & n : needle)
-        total += haystack.count(n);
-
-    return total;
-}
-
 auto getNameWithState(const auto & parts)
 {
     return std::views::transform(parts, [](const auto & p)
@@ -3399,11 +3394,10 @@ auto getNameWithState(const auto & parts)
 
 }
 
-// Same as stopMergesAndWait, but waits only for merges on parts belonging to a certain partition.
+// Same as stopMergesAndWait, but waits only for merges and mutations of parts belonging to a certain partition.
 ActionLock StorageMergeTree::stopMergesAndWaitForPartition(String partition_id)
 {
     LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition partition_id: `{}`", partition_id);
-    /// Stop all merges and prevent new from starting, BUT unlike stopMergesAndWait(), only wait for the merges on small set of parts to finish.
 
     std::unique_lock lock(currently_processing_in_background_mutex);
 
@@ -3411,20 +3405,22 @@ ActionLock StorageMergeTree::stopMergesAndWaitForPartition(String partition_id)
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger_mutator.merges_blocker.cancelForPartition(partition_id);
 
-    DataPartsVector parts_to_wait;
+    /// Every tagged part of the partition is waited for, whatever its state. A merge or mutation of a table
+    /// with transactions publishes its result and outdates its source parts before it commits the transaction
+    /// and untags the sources (`MergePlainMergeTreeTask::finish`), so waiting only for the active parts would
+    /// miss it, and its uncommitted result could not be removed non-transactionally.
+    const auto count_merging_in_partition = [&]
     {
-        auto parts_lock = readLockParts();
-        parts_to_wait = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, parts_lock);
-    }
-    LOG_TRACE(log, "StorageMergeTree::stopMergesAndWaitForPartition parts to wait: {} ({} items)",
-        fmt::join(getNameWithState(parts_to_wait), ", "), parts_to_wait.size());
+        size_t count = 0;
+        for (const auto & part : currently_merging_mutating_parts)
+            count += part->info.getPartitionId() == partition_id;
+        return count;
+    };
 
     LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition all mutating parts: {} ({} items)",
         fmt::join(getNameWithState(currently_merging_mutating_parts), ", "), currently_merging_mutating_parts.size());
 
-    // TODO allow to stop merges in specific partition only (like it's done in ReplicatedMergeTree)
-
-    while (size_t still_merging = countOccurrences(currently_merging_mutating_parts, parts_to_wait))
+    while (size_t still_merging = count_merging_in_partition())
     {
         LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition Waiting for currently running merges ({} {} parts are merging right now)",
             fmt::join(getNameWithState(currently_merging_mutating_parts), ", "), still_merging);
@@ -3936,6 +3932,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             partition_id_to_drop = getPartitionIDFromQuery(partition, query_context);
             merge_blocker = stopMergesAndWaitForPartition(partition_id_to_drop);
         }
+
+        FailPointInjection::pauseFailPoint(FailPoints::mt_drop_partition_pause_after_merges_stopped);
 
         /// Only base parts are detached; pending patches are left behind, so re-attaching would
         /// silently revert the update. Reject instead (same guard as the Replicated engine).

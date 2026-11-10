@@ -49,6 +49,9 @@ wait_until_running t_mutation
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_merge DROP PARTITION 2"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_mutation DETACH PARTITION 2"
 
+# The merge and the mutation of partition 1 are still running after the drop and the detach.
+$CLICKHOUSE_CLIENT -q "SELECT table, is_mutation FROM system.merges WHERE database = currentDatabase() ORDER BY ALL"
+
 # A cancelled merge or mutation writes its part_log entry before the drop returns.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS part_log"
 $CLICKHOUSE_CLIENT -q "

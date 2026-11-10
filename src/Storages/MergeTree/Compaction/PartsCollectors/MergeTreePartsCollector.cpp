@@ -11,14 +11,28 @@ namespace DB
 namespace
 {
 
-MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeTreeTransactionPtr & tx)
+MergeTreeDataPartsVector collectInitial(const StorageMergeTree & data, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicate & merge_pred)
 {
     MergeTreeData::DataPartsKinds affordable_kinds{MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch};
+
+    /// Parts of a partition whose merges are blocked are left out while the parts lock is held.
+    /// `stopMergesAndWaitForPartition` blocks the partition under `currently_processing_in_background_mutex`,
+    /// which is held for the whole selection, before the parts are removed under the parts lock. So a part
+    /// collected here from a partition that is not blocked stays in the working set until the selection has
+    /// tagged it, and the removing operation then waits for the merge. A check after the parts lock is released
+    /// could see the blocker already lifted and keep parts that are gone.
+    const auto in_blocked_partition = [&](const MergeTreeDataPartPtr & part)
+    {
+        return merge_pred.areMergesBlockedInPartition(part->info.getPartitionId());
+    };
 
     if (!tx)
     {
         /// Simply get all active parts
-        return data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds);
+        auto lock = data.readLockParts();
+        auto parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds, lock);
+        std::erase_if(parts, in_blocked_partition);
+        return parts;
     }
 
     /// Merge predicate (for simple MergeTree) allows to merge two parts only if both parts are visible for merge transaction.
@@ -35,6 +49,8 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
         auto lock = data.readLockParts();
         active_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds, lock);
         outdated_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated}, affordable_kinds, lock);
+        std::erase_if(active_parts, in_blocked_partition);
+        std::erase_if(outdated_parts, in_blocked_partition);
     }
 
     ActiveDataPartSet active_parts_set{data.format_version};
@@ -130,7 +146,7 @@ CollectedPartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
     const std::optional<PartitionIdsHint> & partitions_hint,
     LogSeriesLimiter & series_log) const
 {
-    auto parts = filterByPartitions(collectInitial(storage, tx), partitions_hint);
+    auto parts = filterByPartitions(collectInitial(storage, tx, *merge_pred), partitions_hint);
     auto partitions_stats = calculateStatisticsForParts(parts, current_time);
     auto ranges = splitPartsByPreconditions(std::move(parts), storage_policy, tx, merge_pred, series_log);
     return {constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time), std::move(partitions_stats)};
@@ -142,7 +158,7 @@ std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllP
     const time_t & current_time,
     const std::string & partition_id) const
 {
-    auto parts = filterByPartitions(collectInitial(storage, tx), PartitionIdsHint{partition_id});
+    auto parts = filterByPartitions(collectInitial(storage, tx, *merge_pred), PartitionIdsHint{partition_id});
     if (auto result = checkAllParts(parts, storage_policy, tx, merge_pred); !result)
         return std::unexpected(std::move(result.error()));
 
