@@ -36,11 +36,12 @@ source_owned_doc_files = embedded_doc_files + [
 source_owned_doc_paths = inline_doc_paths + [
     "src/Databases/",
     "src/DataTypes/",
-    # SQL statement reference pages are generated from the `R"DOCS_MD(...)"` blocks
-    # of the statement registrations that live next to the parsers.
+    "src/Dictionaries/",
+    "src/Interpreters/",
     "src/Parsers/",
     "src/Processors/Formats/",
     "src/Storages/",
+    "src/WindowFunctions/",
 ]
 
 source_owned_doc_markers = (
