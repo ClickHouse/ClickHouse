@@ -614,7 +614,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
 
     try
     {
-        auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
+        auto [metadata_version, metadata_path, compression_method, _] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
             object_storage, table_path, *storage_settings, nullptr, resolve_context, log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
@@ -804,15 +804,10 @@ bool GlueCatalog::commitTableUpdate(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
+    const String & base_metadata_path,
     const Poco::JSON::Object::Ptr & new_schema,
     const Poco::JSON::Object::Ptr & new_metadata) const
 {
-    /// `new_metadata_path` is already published, so the pointer must still be at the base it was built on.
-    /// ClickHouse names it `vN` with `N - 1` parsed from the base pointer, and the file name CAS lets only one
-    /// writer publish `vN`, so a pointer with another version means a different commit has won. Then nothing
-    /// references our file and `false` lets the caller clean up and rebuild on top of the winner.
-    const Int32 base_version = DB::Iceberg::getMetadataFileAndVersion(new_metadata_path).version - 1;
-
     bool update_sent = false;
     for (size_t attempt = 0; attempt < MAX_UPDATE_TABLE_ATTEMPTS; ++attempt)
     {
@@ -835,12 +830,15 @@ bool GlueCatalog::commitTableUpdate(
         if (current_metadata_path == new_metadata_path)
             return true;
 
-        if (!current_metadata_path.empty() && DB::Iceberg::getMetadataFileAndVersion(current_metadata_path).version != base_version)
+        /// `new_metadata_path` is already published, so the pointer must still be at the base it was built on.
+        /// Another pointer means a different commit has won or the table was recreated, even if its file has the
+        /// same version. Then nothing references our file and `false` lets the caller rebuild on top of the winner.
+        if (!current_metadata_path.empty() && current_metadata_path != base_metadata_path)
         {
             if (!update_sent)
             {
-                LOG_DEBUG(log, "Glue table {}.{} points to {} instead of version {}, commit of {} conflicts",
-                    namespace_name, table_name, current_metadata_path, base_version, new_metadata_path);
+                LOG_DEBUG(log, "Glue table {}.{} points to {} instead of {}, commit of {} conflicts",
+                    namespace_name, table_name, current_metadata_path, base_metadata_path, new_metadata_path);
                 return false;
             }
 
@@ -886,20 +884,22 @@ bool GlueCatalog::updateMetadata(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
+    const String & base_metadata_path,
     Poco::JSON::Object::Ptr /*new_snapshot*/,
     Poco::JSON::Object::Ptr new_metadata) const
 {
-    return commitTableUpdate(namespace_name, table_name, new_metadata_path, nullptr, new_metadata);
+    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_metadata_path, nullptr, new_metadata);
 }
 
 bool GlueCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
+    const String & base_metadata_path,
     Poco::JSON::Object::Ptr new_schema,
     Int32 /*previous_schema_id*/) const
 {
-    return commitTableUpdate(namespace_name, table_name, new_metadata_path, new_schema, nullptr);
+    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_metadata_path, new_schema, nullptr);
 }
 
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
