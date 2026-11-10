@@ -137,10 +137,10 @@ struct CostInputs
     Float64 parallelism = 1.0;
     /// Node count of the expression's own distribution property.
     Float64 node_count = 1.0;
-    /// Physical rows through the exchange when the selected child emits more than the group
-    /// statistics say (a partial top-N emits up to L rows per node). Resolved by the caller
-    /// from the selected child; overrides the trimmed output row count.
-    std::optional<Float64> exchange_rows_override;
+    /// Rows the selected input emits when they differ from its group statistics: a partial top-N emits up
+    /// to L rows per node, a preliminary `DISTINCT` a value once per node. Resolved by the caller from the
+    /// selected input for an exchange, which moves these rows, and for a final `DISTINCT`, which inserts them.
+    std::optional<Float64> input_physical_rows;
     const CostConfig & config;
 };
 

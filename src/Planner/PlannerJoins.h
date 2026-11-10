@@ -251,6 +251,7 @@ struct JoinAlgorithmParams
     UInt64 max_entries_for_hash_table_stats;
 
     UInt64 parallel_hash_join_threshold;
+    HashJoinLayout hash_join_layout;
 
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
@@ -262,6 +263,7 @@ struct JoinAlgorithmParams
 
     bool enable_hash_join_row_store = true;
     Float64 min_rows_ratio_for_hash_join_row_store = 0;
+    UInt64 min_string_column_bytes_for_hash_join_row_store = 0;
 
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};

@@ -90,7 +90,7 @@ SHOW CREATE TABLE t_unknown_setting;
 DROP TABLE t_unknown_setting;
 
 -- An alias of a query setting resolves, so it must not be mistaken for an unknown name.
-CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog SETTINGS enable_analyzer = 1;
+CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog SETTINGS replication_alter_partitions_sync = 1;
 SHOW CREATE TABLE t_unknown_setting;
 DROP TABLE t_unknown_setting;
 

@@ -22,7 +22,6 @@
 
 SET enable_unique_key = 1;
 SET use_query_condition_cache = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_qcc_uk;
 

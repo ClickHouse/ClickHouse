@@ -11,14 +11,6 @@ CREATE TABLE nr (`x` Nullable(UInt32), `s` Nullable(String)) ENGINE = MergeTree 
 INSERT INTO t VALUES (1, 'l');
 INSERT INTO nr VALUES (2, NULL);
 
-{% for enable_analyzer in [1] -%}
-
-SET enable_analyzer = {{ enable_analyzer }};
-
-{% if enable_analyzer -%}
-SELECT '- analyzer -';
-{% endif -%}
-
 SET join_use_nulls = 0;
 
 SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM t AS l LEFT JOIN nr AS r USING (x) ORDER BY t.x;
@@ -68,8 +60,6 @@ SELECT '-';
 SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM nr AS l LEFT JOIN t AS r USING (s) ORDER BY t.x;
 SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM nr AS l RIGHT JOIN t AS r USING (s) ORDER BY t.x;
 SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM nr AS l FULL JOIN t AS r USING (s) ORDER BY t.x;
-
-{% endfor %}
 
 DROP TABLE t;
 DROP TABLE nr;
