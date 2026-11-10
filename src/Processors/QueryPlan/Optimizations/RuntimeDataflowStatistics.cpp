@@ -50,27 +50,15 @@ void RuntimeDataflowStatisticsCache::setBoundary(UInt64 root_key, Boundary bound
 
 std::shared_ptr<const RuntimeDataflowStatisticsCache::Undecided> RuntimeDataflowStatisticsCache::getUndecided(UInt64 root_key) const
 {
-    auto undecided = undecided_cache->get(root_key);
-    if (undecided && undecided->reason == UndecidedReason::CollectorUnsupported
-        && stats_cache->get(undecided->statistics_key) != undecided->statistics_at_start)
-        return nullptr;
-    return undecided;
+    return undecided_cache->get(root_key);
 }
 
-std::shared_ptr<const RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCache::getStatsEntry(size_t key) const
-{
-    return stats_cache->get(key);
-}
-
-void RuntimeDataflowStatisticsCache::setUndecided(
-    UInt64 root_key, UndecidedReason reason, size_t statistics_key, std::shared_ptr<const Entry> statistics_at_start)
+void RuntimeDataflowStatisticsCache::setUndecided(UInt64 root_key, UndecidedReason reason)
 {
     auto undecided = std::make_shared<Undecided>();
     undecided->reason = reason;
     /// Two executions can race here, and then both entries count as the first, which costs one more build.
     undecided->first = !undecided_cache->get(root_key);
-    undecided->statistics_key = statistics_key;
-    undecided->statistics_at_start = std::move(statistics_at_start);
     undecided_cache->set(root_key, undecided);
 }
 
@@ -94,11 +82,7 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
     {
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "Unsupported case encountered, skipping statistics update.");
         if (undecided_key)
-            dataflow_cache.setUndecided(
-                undecided_key,
-                RuntimeDataflowStatisticsCache::UndecidedReason::CollectorUnsupported,
-                cache_key,
-                statistics_at_start);
+            dataflow_cache.setUndecided(undecided_key, RuntimeDataflowStatisticsCache::UndecidedReason::CollectorUnsupported);
         return;
     }
 

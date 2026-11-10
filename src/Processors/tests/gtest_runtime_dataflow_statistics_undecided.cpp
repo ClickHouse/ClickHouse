@@ -48,64 +48,22 @@ TEST(RuntimeDataflowStatisticsUndecided, CollectorUnsupportedIsRemembered)
     EXPECT_EQ(undecided->reason, Reason::CollectorUnsupported);
 }
 
-/// The collection that failed started first and finished last; another one of the same plan succeeded in between and
-/// published statistics. The failure is published after the success, and must not hide it.
-TEST(RuntimeDataflowStatisticsUndecided, FailedCollectorFinishingAfterSuccessIsIgnored)
+/// A collection that succeeds forgets what an earlier one could not collect.
+TEST(RuntimeDataflowStatisticsUndecided, SuccessfulCollectionForgetsFailure)
 {
     const UInt64 undecided_key = freshKey();
     const UInt64 statistics_key = freshKey();
     auto & cache = getRuntimeDataflowStatisticsCache();
+    {
+        RuntimeDataflowStatisticsBlock failed(statistics_key, /*total_rows_to_read_=*/100, undecided_key);
+        failed.unsupported_case = true;
+    }
+    ASSERT_NE(cache.getUndecided(undecided_key), nullptr);
 
-    auto failed = std::make_unique<RuntimeDataflowStatisticsBlock>(statistics_key, /*total_rows_to_read_=*/100, undecided_key);
-    failed->unsupported_case = true;
     {
         RuntimeDataflowStatisticsBlock succeeded(statistics_key, /*total_rows_to_read_=*/100, undecided_key);
         measureSomething(succeeded);
     }
-    ASSERT_TRUE(cache.getStats(statistics_key));
+    EXPECT_TRUE(cache.getStats(statistics_key));
     EXPECT_EQ(cache.getUndecided(undecided_key), nullptr);
-
-    failed.reset();
-    EXPECT_EQ(cache.getUndecided(undecided_key), nullptr);
-}
-
-/// Same as above, but the failed collection replaces statistics that already existed when it started (the drifted
-/// case): a newer success must still win.
-TEST(RuntimeDataflowStatisticsUndecided, FailedCollectorFinishingAfterRecollectionIsIgnored)
-{
-    const UInt64 undecided_key = freshKey();
-    const UInt64 statistics_key = freshKey();
-    auto & cache = getRuntimeDataflowStatisticsCache();
-    {
-        RuntimeDataflowStatisticsBlock first(statistics_key, /*total_rows_to_read_=*/100, undecided_key);
-        measureSomething(first);
-    }
-
-    auto failed = std::make_unique<RuntimeDataflowStatisticsBlock>(statistics_key, /*total_rows_to_read_=*/1000, undecided_key);
-    failed->unsupported_case = true;
-    {
-        RuntimeDataflowStatisticsBlock succeeded(statistics_key, /*total_rows_to_read_=*/1000, undecided_key);
-        measureSomething(succeeded);
-    }
-    failed.reset();
-    EXPECT_EQ(cache.getUndecided(undecided_key), nullptr);
-}
-
-/// A failure published while the statistics it saw at its start are still current does hold, also when they exist.
-TEST(RuntimeDataflowStatisticsUndecided, FailedCollectorOverUnchangedStatisticsHolds)
-{
-    const UInt64 undecided_key = freshKey();
-    const UInt64 statistics_key = freshKey();
-    {
-        RuntimeDataflowStatisticsBlock first(statistics_key, /*total_rows_to_read_=*/100, undecided_key);
-        measureSomething(first);
-    }
-    {
-        RuntimeDataflowStatisticsBlock failed(statistics_key, /*total_rows_to_read_=*/1000, undecided_key);
-        failed.unsupported_case = true;
-    }
-
-    const auto undecided = getRuntimeDataflowStatisticsCache().getUndecided(undecided_key);
-    ASSERT_NE(undecided, nullptr);
-    EXPECT_EQ(undecided->reason, Reason::CollectorUnsupported);
 }

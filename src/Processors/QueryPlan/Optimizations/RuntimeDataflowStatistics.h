@@ -72,9 +72,6 @@ public:
 
     std::optional<Entry> getStats(size_t key) const;
 
-    /// The entry itself, so that a caller can tell later whether it was replaced.
-    std::shared_ptr<const Entry> getStatsEntry(size_t key) const;
-
     void update(size_t key, RuntimeDataflowStatistics stats);
 
     /// The keys of the single-replica plan's boundary - the node matched to the top of the replicas plan - and of
@@ -115,18 +112,12 @@ public:
         /// what measures its hash table, and join reordering takes row counts from that, so the build after it often
         /// orders both plans alike.
         bool first = false;
-        /// For `CollectorUnsupported`: the key of the statistics the collection was for, and the statistics stored
-        /// under it when the collection started. A collection that succeeds after that replaces them, and then this
-        /// entry no longer holds, however the two finished relative to each other.
-        size_t statistics_key = 0;
-        std::shared_ptr<const Entry> statistics_at_start;
     };
 
-    /// Under the same key as the boundary. Null for an entry that a later successful collection overrides.
+    /// Under the same key as the boundary.
     std::shared_ptr<const Undecided> getUndecided(UInt64 root_key) const;
 
-    void setUndecided(
-        UInt64 root_key, UndecidedReason reason, size_t statistics_key = 0, std::shared_ptr<const Entry> statistics_at_start = nullptr);
+    void setUndecided(UInt64 root_key, UndecidedReason reason);
 
     void forgetUndecided(UInt64 root_key);
 
@@ -202,7 +193,6 @@ struct RuntimeDataflowStatisticsBlock
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
         , undecided_key(undecided_key_)
-        , statistics_at_start(undecided_key ? getRuntimeDataflowStatisticsCache().getStatsEntry(cache_key) : nullptr)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -216,8 +206,6 @@ struct RuntimeDataflowStatisticsBlock
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
     const UInt64 undecided_key = 0;
-    /// The statistics under `cache_key` when this collection started; see `RuntimeDataflowStatisticsCache::Undecided`.
-    const std::shared_ptr<const RuntimeDataflowStatistics> statistics_at_start;
 
     std::atomic_bool unsupported_case{false};
 
