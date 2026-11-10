@@ -78,7 +78,9 @@
     var path = window.location.pathname.slice(prefix.length).replace(/\/$/, '');
     if (path !== '/clickstack' && path.indexOf('/clickstack/') !== 0) return;
 
-    var managed = path === '/clickstack/observability' || path.indexOf('/clickstack/observability/') === 0;
+    var managed = path === '/clickstack/observability'
+      || path.indexOf('/clickstack/observability/') === 0
+      || path.indexOf('/clickstack/self-configured/') === 0;
     document.querySelectorAll('a.nav-dropdown-item, a.mobile-nav-tabs-item').forEach(function (a) {
       var href = new URL(a.href, window.location.origin).pathname.replace(/\/$/, '');
       var isManaged = href === prefix + '/clickstack/observability';
