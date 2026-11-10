@@ -2808,7 +2808,7 @@ std::unique_ptr<IPostingListWeightsCodec> createWeightsCodec(TextIndexScoringKin
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index without scoring stores no weights");
         case TextIndexScoringKind::BM25:
             /// Term frequencies are small integers, which the block codec of the row ids encodes well.
-            return createWeightsCodecFromBlockCodec(row_ids_codec_type);
+            return createPostingListWeightsCodec(row_ids_codec_type);
     }
 }
 

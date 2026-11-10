@@ -198,7 +198,7 @@ namespace
     };
 }
 
-std::unique_ptr<IPostingListWeightsCodec> createWeightsCodecFromBlockCodec(IPostingListCodec::Type type)
+std::unique_ptr<IPostingListWeightsCodec> createPostingListWeightsCodec(IPostingListCodec::Type type)
 {
     switch (type)
     {

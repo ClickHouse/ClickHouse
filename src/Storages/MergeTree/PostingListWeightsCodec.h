@@ -37,6 +37,6 @@ public:
 };
 
 /// Creates the weights codec that stores `(weight - 1)` in the block format of the row ids codec `type`. Throws for `None`.
-std::unique_ptr<IPostingListWeightsCodec> createWeightsCodecFromBlockCodec(IPostingListCodec::Type type);
+std::unique_ptr<IPostingListWeightsCodec> createPostingListWeightsCodec(IPostingListCodec::Type type);
 
 }
