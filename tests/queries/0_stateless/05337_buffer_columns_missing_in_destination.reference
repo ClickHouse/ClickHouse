@@ -48,8 +48,8 @@ SELECT x FROM buf_m ORDER BY x;
 3
 SELECT count() FROM buf_m;
 1
-SELECT k, l, x, j2.c FROM buf_w ORDER BY k;
-1	4	42	7
+SELECT k, l, x, y, j2.c FROM buf_w ORDER BY k;
+1	4	42	9	7
 after flush	2	1	1
 -- { echoOn }
 SELECT count() FROM buf_s;
@@ -100,6 +100,6 @@ SELECT x FROM buf_m ORDER BY x;
 3
 SELECT count() FROM buf_m;
 1
-SELECT k, l, x, j2.c FROM buf_w ORDER BY k;
-1	4	42	7
+SELECT k, l, x, y, j2.c FROM buf_w ORDER BY k;
+1	4	42	9	7
 1	5

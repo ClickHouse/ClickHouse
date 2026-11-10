@@ -77,4 +77,28 @@ EOF
 ${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT x FROM $db.test_buffer_4"
 ${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT n.b FROM $db.test_buffer_5"
 
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE TABLE $db.test_table_6 (k UInt32, t Tuple(a UInt32, b String)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO $db.test_table_6 VALUES (1, (7, 'foo'));
+CREATE TABLE $db.test_buffer_6 (k UInt32, t Tuple(a UInt32, b String), x UInt32 DEFAULT t.a)
+    ENGINE = Buffer($db, test_table_6, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+GRANT SELECT ON $db.test_buffer_6 TO $user;
+GRANT SELECT(k, t, x) ON $db.test_table_6 TO $user;
+EOF
+# The default of `x` reads the subcolumn `t.a`, which the grant on `t` covers.
+${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT x FROM $db.test_buffer_6"
+
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE TABLE $db.test_table_7 (k UInt32, j JSON) ENGINE = MergeTree ORDER BY k;
+INSERT INTO $db.test_table_7 VALUES (1, '{"a": 5}');
+CREATE TABLE $db.test_alias_7 ENGINE = Alias(currentDatabase(), 'test_table_7');
+CREATE TABLE $db.test_buffer_7 (k UInt32, j JSON, x UInt8 DEFAULT 0)
+    ENGINE = Buffer($db, test_alias_7, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+GRANT SELECT ON $db.test_buffer_7 TO $user;
+GRANT SELECT(\`j.a\`, x) ON $db.test_alias_7 TO $user;
+GRANT SELECT(\`j.a\`) ON $db.test_table_7 TO $user;
+EOF
+# A grant on the path `j.a` alone is enough to read the row count.
+${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT x FROM $db.test_buffer_7"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"

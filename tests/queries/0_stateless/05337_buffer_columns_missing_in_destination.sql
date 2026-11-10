@@ -37,10 +37,10 @@ CREATE TABLE buf_m (k UInt32, arr Array(UInt8), x UInt64 DEFAULT length(arr), z 
 ENGINE = Buffer(currentDatabase(), dst_m, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
 INSERT INTO buf_m (k, arr) VALUES (1, [1, 2, 3]);
 
-CREATE TABLE dst_w (k UInt32, s LowCardinality(String), j JSON) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE buf_w (k UInt32, s String, j JSON, l UInt64 DEFAULT length(s), x UInt64 DEFAULT j.a.b::UInt64, j2 JSON DEFAULT '{"c": 7}')
+CREATE TABLE dst_w (k UInt32, s LowCardinality(String), j JSON, `j.c` UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE buf_w (k UInt32, s String, j JSON, l UInt64 DEFAULT length(s), x UInt64 DEFAULT j.a.b::UInt64, y UInt64 DEFAULT j.c::UInt64, j2 JSON DEFAULT '{"c": 7}')
 ENGINE = Buffer(currentDatabase(), dst_w, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
-INSERT INTO buf_w (k, s, j) VALUES (1, 'abcd', '{"a": {"b": 42}}');
+INSERT INTO buf_w (k, s, j) VALUES (1, 'abcd', '{"a": {"b": 42}, "c": 9}');
 
 SELECT 'before flush';
 
@@ -65,7 +65,7 @@ SELECT k, arr, x, z FROM buf_m ORDER BY k;
 SELECT k, x FROM buf_m ORDER BY k;
 SELECT x FROM buf_m ORDER BY x;
 SELECT count() FROM buf_m;
-SELECT k, l, x, j2.c FROM buf_w ORDER BY k;
+SELECT k, l, x, y, j2.c FROM buf_w ORDER BY k;
 -- { echoOff }
 
 OPTIMIZE TABLE buf_s;
@@ -94,7 +94,7 @@ SELECT k, arr, x, z FROM buf_m ORDER BY k;
 SELECT k, x FROM buf_m ORDER BY k;
 SELECT x FROM buf_m ORDER BY x;
 SELECT count() FROM buf_m;
-SELECT k, l, x, j2.c FROM buf_w ORDER BY k;
+SELECT k, l, x, y, j2.c FROM buf_w ORDER BY k;
 -- { echoOff }
 
 -- The lambda parameter `arr` is not a column the default reads. Without the plan optimizations,

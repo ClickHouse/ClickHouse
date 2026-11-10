@@ -22,6 +22,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -341,9 +342,12 @@ void collectDefaultInputs(
     RequiredSourceColumnsVisitor::Data required;
     RequiredSourceColumnsVisitor(required).visit(column_default->expression);
 
+    /// A dotted name can be a subcolumn in one table and a column in the other, so both must read the same column.
     auto is_physical_in_both = [&](const String & name)
     {
-        return our_snapshot->tryGetColumn(physical_columns, name) && destination_snapshot->tryGetColumn(physical_columns, name);
+        auto ours = our_snapshot->tryGetColumn(physical_columns, name);
+        auto theirs = destination_snapshot->tryGetColumn(physical_columns, name);
+        return ours && theirs && ours->getNameInStorage() == theirs->getNameInStorage();
     };
 
     for (const auto & input_name : required.requiredColumns())
@@ -531,8 +535,7 @@ void StorageBuffer::read(
                 columns_to_fill.insert(columns_to_fill.end(), fill_closure.begin(), fill_closure.end());
                 fill_support = fill_inputs;
 
-                /// A destination column read only for the row count or the sizes of a `Nested` group is the smallest
-                /// one the user may read, as for `count()`.
+                /// A destination column read only for the sizes of a `Nested` group is the smallest one the user may read.
                 auto smallest_readable_column = [&](const NamesAndTypesList & columns)
                 {
                     const auto readable = checkAccessRights(destination, destination->getStorageID(), destination_snapshot, Names{}, local_context);
@@ -570,11 +573,19 @@ void StorageBuffer::read(
                 {
                     Names fill_support_names(fill_support.begin(), fill_support.end());
                     std::ranges::sort(fill_support_names);
-                    local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), fill_support_names);
+                    local_context->checkAccess(
+                        AccessType::SELECT,
+                        destination->getStorageID(),
+                        destination_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
+                            fill_support_names, local_context, destination->getStorageID()));
                 }
 
+                /// The row count is read from the column `count()` would read.
                 if (columns_intersection.empty())
-                    columns_intersection.push_back(smallest_readable_column(destination_metadata_snapshot->getColumns().getAllPhysical()));
+                {
+                    const auto readable = checkAccessRights(destination, destination->getStorageID(), destination_snapshot, Names{}, local_context);
+                    columns_intersection.push_back(chooseSmallestColumnToReadFromStorage(destination, destination_snapshot, readable).name);
+                }
             }
 
             if (columns_intersection.empty())
