@@ -11,6 +11,10 @@ DROP TABLE IF EXISTS buf_w;
 DROP TABLE IF EXISTS dst_w;
 DROP TABLE IF EXISTS buf_l;
 DROP TABLE IF EXISTS dst_l;
+DROP TABLE IF EXISTS buf_n;
+DROP TABLE IF EXISTS dst_n;
+DROP TABLE IF EXISTS buf_t;
+DROP TABLE IF EXISTS dst_t;
 
 CREATE TABLE dst_s (k UInt32, arr Array(UInt8), `n.a` Array(UInt8)) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE buf_s
@@ -42,6 +46,16 @@ CREATE TABLE buf_w (k UInt32, s String, j JSON, l UInt64 DEFAULT length(s), x UI
 ENGINE = Buffer(currentDatabase(), dst_w, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
 INSERT INTO buf_w (k, s, j) VALUES (1, 'abcd', '{"a": {"b": 42}, "c": 9}');
 
+CREATE TABLE dst_n (k UInt32, `n.a` String, `p.a` Array(UInt8)) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE buf_n (k UInt32, `n.a` Array(UInt8), `n.b` Array(UInt8), `p.a` String, `p.b` Array(UInt8))
+ENGINE = Buffer(currentDatabase(), dst_n, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+INSERT INTO buf_n (k, `n.a`, `p.a`) VALUES (1, [4, 5], '[4,5]');
+
+CREATE TABLE dst_t (k UInt32, t Tuple(a UInt8, b UInt8)) ENGINE = StripeLog;
+CREATE TABLE buf_t (k UInt32, t Tuple(a UInt8, b UInt8), x UInt8 DEFAULT t.a)
+ENGINE = Buffer(currentDatabase(), dst_t, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+INSERT INTO buf_t (k, t) VALUES (1, (7, 8));
+
 SELECT 'before flush';
 
 -- { echoOn }
@@ -66,12 +80,19 @@ SELECT k, x FROM buf_m ORDER BY k;
 SELECT x FROM buf_m ORDER BY x;
 SELECT count() FROM buf_m;
 SELECT k, l, x, y, j2.c FROM buf_w ORDER BY k;
+SELECT k, n.b, p.b FROM buf_n ORDER BY k;
+SELECT k, n.a, n.b, p.a, p.b FROM buf_n ORDER BY k;
+SELECT x FROM buf_t;
+SELECT k, t, x FROM buf_t ORDER BY k;
 -- { echoOff }
 
 OPTIMIZE TABLE buf_s;
 OPTIMIZE TABLE buf_m;
 OPTIMIZE TABLE buf_w;
-SELECT 'after flush', (SELECT count() FROM dst_s), (SELECT count() FROM dst_m), (SELECT count() FROM dst_w);
+OPTIMIZE TABLE buf_n;
+OPTIMIZE TABLE buf_t;
+SELECT 'after flush', (SELECT count() FROM dst_s), (SELECT count() FROM dst_m), (SELECT count() FROM dst_w),
+    (SELECT count() FROM dst_n), (SELECT count() FROM dst_t);
 
 -- { echoOn }
 SELECT count() FROM buf_s;
@@ -95,6 +116,10 @@ SELECT k, x FROM buf_m ORDER BY k;
 SELECT x FROM buf_m ORDER BY x;
 SELECT count() FROM buf_m;
 SELECT k, l, x, y, j2.c FROM buf_w ORDER BY k;
+SELECT k, n.b, p.b FROM buf_n ORDER BY k;
+SELECT k, n.a, n.b, p.a, p.b FROM buf_n ORDER BY k;
+SELECT x FROM buf_t;
+SELECT k, t, x FROM buf_t ORDER BY k;
 -- { echoOff }
 
 -- The lambda parameter `arr` is not a column the default reads. Without the plan optimizations,
@@ -113,3 +138,7 @@ DROP TABLE buf_w;
 DROP TABLE dst_w;
 DROP TABLE buf_l;
 DROP TABLE dst_l;
+DROP TABLE buf_n;
+DROP TABLE dst_n;
+DROP TABLE buf_t;
+DROP TABLE dst_t;

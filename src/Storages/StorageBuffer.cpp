@@ -358,7 +358,8 @@ void collectDefaultInputs(
             continue;
 
         const String storage_name = input->getNameInStorage();
-        const String & read_name = is_physical_in_both(input_name) ? input_name : storage_name;
+        const bool read_subcolumn = destination_snapshot->storage.supportsSubcolumns() && is_physical_in_both(input_name);
+        const String & read_name = read_subcolumn ? input_name : storage_name;
         if (is_physical_in_both(read_name))
         {
             if (std::ranges::find(read_columns, read_name) == read_columns.end())
@@ -546,7 +547,8 @@ void StorageBuffer::read(
                     return ExpressionActions::getSmallestColumn(readable_columns.empty() ? columns : readable_columns).name;
                 };
 
-                /// A missing `Nested` member gets the sizes of an array of its group the destination has.
+                /// A missing `Nested` member gets the sizes of a member of its group that is an array in the Buffer and that the
+                /// destination has, converted to the Buffer type unless the destination stores it as an array too.
                 for (const String & name : columns_to_fill)
                 {
                     const auto group = Nested::extractTableName(name);
@@ -555,9 +557,16 @@ void StorageBuffer::read(
                         continue;
 
                     NamesAndTypesList group_arrays;
+                    NamesAndTypesList group_arrays_to_convert;
                     for (const auto & column : destination_metadata_snapshot->getColumns().getAllPhysical())
-                        if (Nested::extractTableName(column.name) == group && isArray(column.type))
-                            group_arrays.push_back(column);
+                    {
+                        auto our_member = storage_snapshot->tryGetColumn(GetColumnsOptions::AllPhysical, column.name);
+                        if (Nested::extractTableName(column.name) == group && our_member && isArray(our_member->type))
+                            (isArray(column.type) ? group_arrays : group_arrays_to_convert).push_back(column);
+                    }
+                    const bool convert = group_arrays.empty();
+                    if (convert)
+                        group_arrays = std::move(group_arrays_to_convert);
                     if (group_arrays.empty())
                         continue;
 
@@ -565,6 +574,8 @@ void StorageBuffer::read(
                     String size_source = read_array != columns_intersection.end() ? *read_array : smallest_readable_column(group_arrays);
                     if (read_array == columns_intersection.end())
                         columns_intersection.push_back(size_source);
+                    if (convert)
+                        fill_inputs.insert(size_source);
                     fill_support.insert(std::move(size_source));
                 }
 

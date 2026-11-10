@@ -50,7 +50,15 @@ SELECT count() FROM buf_m;
 1
 SELECT k, l, x, y, j2.c FROM buf_w ORDER BY k;
 1	4	42	9	7
-after flush	2	1	1
+SELECT k, n.b, p.b FROM buf_n ORDER BY k;
+1	[0,0]	[]
+SELECT k, n.a, n.b, p.a, p.b FROM buf_n ORDER BY k;
+1	[4,5]	[0,0]	[4,5]	[]
+SELECT x FROM buf_t;
+7
+SELECT k, t, x FROM buf_t ORDER BY k;
+1	(7,8)	7
+after flush	2	1	1	1	1
 -- { echoOn }
 SELECT count() FROM buf_s;
 2
@@ -102,4 +110,12 @@ SELECT count() FROM buf_m;
 1
 SELECT k, l, x, y, j2.c FROM buf_w ORDER BY k;
 1	4	42	9	7
+SELECT k, n.b, p.b FROM buf_n ORDER BY k;
+1	[0,0]	[]
+SELECT k, n.a, n.b, p.a, p.b FROM buf_n ORDER BY k;
+1	[4,5]	[0,0]	[4,5]	[]
+SELECT x FROM buf_t;
+7
+SELECT k, t, x FROM buf_t ORDER BY k;
+1	(7,8)	7
 1	5
