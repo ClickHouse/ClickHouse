@@ -272,8 +272,7 @@ def test_async_metadata_refresh(started_cluster_iceberg_with_spark, storage_type
         f"/iceberg_data/default/{TABLE_NAME}/",
         "",
     )
-    # the fresh metadata won't get pulled at SELECT, so we see stale data
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000")) == 100
+    # No stale read check here: the refresher may already have run since the upload.
     # Wait for the background async refresher to pick up the new metadata (2 periods of ASYNC_METADATA_REFRESH_PERIOD_MS)
     time.sleep(ASYNC_METADATA_REFRESH_PERIOD_MS/1000 * 2)
 
