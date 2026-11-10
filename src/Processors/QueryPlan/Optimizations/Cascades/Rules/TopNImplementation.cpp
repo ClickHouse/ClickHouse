@@ -56,6 +56,7 @@ VectorWithMemoryTracking<GroupExpressionPtr> TopNImplementation::applyImpl(Group
         impl->properties = ExpressionProperties{};
         impl->properties.distribution.node_count = node_count;
         impl->properties.sorting = sort_desc;                  /// output is sorted
+        impl->properties.stream_layout = StreamLayout::Single; /// the bounded sort merges each node's streams
 
         addPhysicalToMemo(impl, required_properties, memo, result);
     };

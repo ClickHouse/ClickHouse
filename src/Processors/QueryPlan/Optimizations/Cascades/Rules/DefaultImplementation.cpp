@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
@@ -39,6 +40,7 @@ public:
             || typeid_cast<const DistinctStep *>(step) != nullptr
             || typeid_cast<const MergingAggregatedStep *>(step) != nullptr
             || typeid_cast<const JoinStepLogical *>(step) != nullptr
+            || typeid_cast<const WindowStep *>(step) != nullptr
             || typeid_cast<const ReadFromMergeTree *>(step) != nullptr)
             return false;
         /// A top-N sort is handled by `TopNImplementation`; any other sort left in the memo

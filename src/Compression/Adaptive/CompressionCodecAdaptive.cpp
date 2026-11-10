@@ -48,11 +48,25 @@ constexpr std::array T64_TYPES = {
 constexpr std::array ALP_TYPES = {TypeIndex::Float32, TypeIndex::Float64};
 
 /// Codecs specialized for particular types. Each one is also tried followed by the deployment default if it's a general-purpose compressor.
+/// At most one entry per type. Pricing a block compresses it with every candidate, so the pool size bounds merge time.
 constexpr auto SPECIALIZED_CODECS = std::to_array<SpecializedCodec>({
     /// T64 defaults to the byte flavour (over bit). Good: same size + faster [de]compression.
     {"T64", T64_TYPES},
     {"ALP(AUTO)", ALP_TYPES},
 });
+
+/// We shall have at most one specialized codec per type. Pricing a block compresses it with every candidate, so the pool size bounds merge time.
+/// Please do not add more. If there is a codec that decompresses faster and achieves a smaller size in most scenarios, use it instead.
+consteval bool atMostOneSpecializedCodecPerType()
+{
+    for (size_t i = 0; i < SPECIALIZED_CODECS.size(); ++i)
+        for (size_t j = i + 1; j < SPECIALIZED_CODECS.size(); ++j)
+            for (const TypeIndex type : SPECIALIZED_CODECS[i].types)
+                if (std::ranges::contains(SPECIALIZED_CODECS[j].types, type))
+                    return false;
+    return true;
+}
+static_assert(atMostOneSpecializedCodecPerType(), "a type may have one specialized codec in the adaptive pool, see the comment above");
 
 /// Every codec and chain the pool offers, in pool order
 Codecs candidatesOf(const AdaptiveCodec::Pool & pool)
