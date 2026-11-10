@@ -235,23 +235,26 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread(ThreadName name, std::promise<void> & started)
+    /// An exception would leave every waiter hanging, so it terminates the server. MemoryTracker does not throw here.
+    void schedulerThread(ThreadName name, std::promise<void> & started) noexcept
     {
-        events.runSchedulerThread(name, started, [this]
-        {
-            while (!stop_flag.load())
-            {
-                // Dequeue and execute single request
-                auto [request, _] = dequeueRequest();
-                if (request)
-                    request->execute();
-                else // No more requests -- block until any event happens
-                    events.process();
+        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+        DB::setThreadName(name);
+        EventQueue::SchedulerThread scheduler_thread(&events);
+        started.set_value();
 
-                // Process all events before dequeuing to ensure fair competition
-                while (events.tryProcess()) {}
-            }
-        });
+        while (!stop_flag.load())
+        {
+            // Dequeue and execute single request
+            auto [request, _] = dequeueRequest();
+            if (request)
+                request->execute();
+            else // No more requests -- block until any event happens
+                events.process();
+
+            // Process all events before dequeuing to ensure fair competition
+            while (events.tryProcess()) {}
+        }
     }
 
     Resource * current = nullptr; // round-robin pointer

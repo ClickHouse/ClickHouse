@@ -156,22 +156,25 @@ public:
     }
 
 private:
-    void schedulerThread(ThreadName name, std::promise<void> & started)
+    /// An exception would leave every waiter hanging, so it terminates the server. MemoryTracker does not throw here.
+    void schedulerThread(ThreadName name, std::promise<void> & started) noexcept
     {
-        events.runSchedulerThread(name, started, [this]
+        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+        setThreadName(name);
+        EventQueue::SchedulerThread scheduler_thread(&events);
+        started.set_value();
+
+        while (!stop_flag.load())
         {
-            while (!stop_flag.load())
-            {
-                if (events.tryProcess()) // Priority 0: process events
-                    continue;
-                else if (decrease) // Priority 1: process decrease requests
-                    approveDecrease();
-                else if (increase) // Priority 2: process increase requests
-                    approveIncrease();
-                else // Block until any event happens
-                    events.process();
-            }
-        });
+            if (events.tryProcess()) // Priority 0: process events
+                continue;
+            else if (decrease) // Priority 1: process decrease requests
+                approveDecrease();
+            else if (increase) // Priority 2: process increase requests
+                approveIncrease();
+            else // Block until any event happens
+                events.process();
+        }
     }
 
     SpaceSharedNodePtr child;

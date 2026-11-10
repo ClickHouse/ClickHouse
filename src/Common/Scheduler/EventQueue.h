@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/Scheduler/ISchedulerNode.h>
-#include <Common/setThreadName.h>
 
 #include <base/types.h>
 
@@ -101,11 +100,7 @@ public:
     /// Wait for single event (if not available) and process it
     void process();
 
-    /// Runs `loop` as the scheduler thread of this queue and sets `started` once attached.
-    /// An exception would leave every waiter hanging, so it terminates the server. MemoryTracker does not throw here.
-    void runSchedulerThread(ThreadName name, std::promise<void> & started, const std::function<void()> & loop) noexcept;
-
-    /// Waits for `runSchedulerThread` to start. Terminates the server if the thread finished without starting.
+    /// Waits until a scheduler thread sets `started`. Terminates the server if the thread finished without setting it.
     static void waitSchedulerThreadStarted(std::future<void> & started) noexcept;
 
     /// Returns current time point
