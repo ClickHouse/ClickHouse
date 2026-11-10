@@ -623,6 +623,7 @@ struct FormatSettings
     {
         bool filter_push_down = true;
         bool preserve_order = false;
+        bool output_string_as_string = true;
     } vortex{};
 
     /// For capnProto format we should determine how to

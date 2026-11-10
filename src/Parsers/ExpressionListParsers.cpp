@@ -3625,6 +3625,10 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
                 if (!layers.back()->getResult(res))
                     break;
 
+                /// Bracket layers can fold into one `ASTLiteral`, which `max_ast_depth` does not see,
+                /// so they count towards the parse depth from push to pop.
+                if (typeid_cast<ArrayLayer *>(layers.back().get()) || typeid_cast<RoundBracketsLayer *>(layers.back().get()))
+                    pos.decreaseDepth();
                 layers.pop_back();
                 layers.back()->pushOperand(res);
                 continue;
@@ -4016,6 +4020,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             ++pos;
             ++pos;
             layers.push_back(std::make_unique<ArrayLayer>());
+            pos.increaseDepth();
             return Action::OPERAND;
         }
 
@@ -4050,12 +4055,14 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
             ++pos;
             layers.push_back(std::make_unique<RoundBracketsLayer>());
+            pos.increaseDepth();
             return Action::OPERAND;
         }
         else if (pos->type == TokenType::OpeningSquareBracket)
         {
             ++pos;
             layers.push_back(std::make_unique<ArrayLayer>());
+            pos.increaseDepth();
             return Action::OPERAND;
         }
         else if (mysql_global_variable_parser.parse(pos, tmp, expected))

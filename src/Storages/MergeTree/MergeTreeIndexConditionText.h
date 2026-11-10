@@ -240,7 +240,10 @@ private:
     [[nodiscard]] TextIndexDirectReadMode getHintOrNoneMode() const;
 
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
-    [[nodiscard]] bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
+    [[nodiscard]] bool traverseMapElementValueNode(
+        const RPNBuilderFunctionTreeNode & function_node,
+        const RPNBuilderTreeNode & index_column_node,
+        const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     /// Returns true if the node represents `arrayElement(map_col, 'key')`

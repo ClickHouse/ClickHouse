@@ -448,8 +448,8 @@ struct ColumnAccessIndex
 {
     enum Type : uint8_t { Columns, RowStore };
 
-    ColumnAccessIndex(Type type_, size_t index_, size_t field_offset_ = 0, size_t field_size_ = 0, bool is_nullable_ = false)
-        : type(type_), index(index_), field_offset(field_offset_), field_size(field_size_), is_nullable(is_nullable_)
+    ColumnAccessIndex(Type type_, size_t index_, size_t field_offset_ = 0, size_t field_size_ = 0, bool is_nullable_ = false, bool is_string_ = false)
+        : type(type_), index(index_), field_offset(field_offset_), field_size(field_size_), is_nullable(is_nullable_), is_string(is_string_)
     {
     }
 
@@ -460,6 +460,7 @@ struct ColumnAccessIndex
     size_t field_offset;
     size_t field_size;
     bool is_nullable;
+    bool is_string;
 
     bool operator==(const ColumnAccessIndex &) const = default;
 };

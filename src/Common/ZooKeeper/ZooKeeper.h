@@ -850,6 +850,17 @@ public:
         return path;
     }
 
+    [[nodiscard]] ZooKeeper & getZooKeeper() const
+    {
+        return zookeeper;
+    }
+
+    /// Keeper removes the ephemeral nodes of an expired session.
+    [[nodiscard]] bool isLost() const
+    {
+        return zookeeper.expired();
+    }
+
     [[nodiscard]] bool isCreated() const
     {
         return created;

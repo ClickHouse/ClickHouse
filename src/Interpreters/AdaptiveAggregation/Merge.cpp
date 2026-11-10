@@ -425,6 +425,26 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
 {
     using Key = AdaptiveRecordKey<Method>;
     const bool prefetch = prefetchesStagedKeys<Key>(table);
+
+    /// `fiu_do_on` calls `fiu_fail` only after the first failpoint has been enabled in the process, and from
+    /// then on at every check, even after that failpoint is disabled. `fiu_fail` takes process-wide locks of
+    /// libfiu: about a microsecond per call with a dozen merging threads, more than creating the states of a
+    /// key. So a drain asks once, at its first created key, and a `ONCE` failpoint is still consumed only by
+    /// a created key.
+    bool states_failure_checked = false;
+    const auto inject_states_failure = [&]() ALWAYS_INLINE
+    {
+        if (states_failure_checked)
+            return;
+        states_failure_checked = true;
+        /// Stands for the creation of the states failing, as on a memory limit: the key stays in the
+        /// table with a null state.
+        fiu_do_on(FailPoints::adaptive_aggregation_drain_create_states_throw,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while creating the states of a merged key");
+        });
+    };
+
     StagedRecordWalk walk;
     visitStagedRecordFormat<Key>(adaptive_argument_layout.get(), is_simple_count, [&]<typename Record>(Record format) ALWAYS_INLINE
     {
@@ -471,12 +491,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                         if (inserted)
                         {
                             it->getMapped() = nullptr;
-                            /// Stands for the creation of the states failing, as on a memory limit: the key stays
-                            /// in the table with a null state.
-                            fiu_do_on(FailPoints::adaptive_aggregation_drain_create_states_throw,
-                            {
-                                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while creating the states of a merged key");
-                            });
+                            inject_states_failure();
                             AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
                             createAggregateStates(place);
                             it->getMapped() = place;
@@ -508,12 +523,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                     if (inserted)
                     {
                         it->getMapped() = nullptr;
-                        /// Stands for the creation of the states failing, as on a memory limit: the key stays
-                        /// in the table with a null state.
-                        fiu_do_on(FailPoints::adaptive_aggregation_drain_create_states_throw,
-                        {
-                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while creating the states of a merged key");
-                        });
+                        inject_states_failure();
                         AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
                         createAggregateStates(place, use_compiled_functions);
                         it->getMapped() = place;
