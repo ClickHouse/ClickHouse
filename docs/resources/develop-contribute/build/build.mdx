@@ -55,6 +55,11 @@ For other Linux distributions, check if you can install any of LLVM's [prebuild 
 As of February 2026, Clang 21 or higher is required.
 GCC or other compilers are not supported.
 
+<Tip>
+ClickHouse CI compiles with a build of the same Clang release that is optimized with PGO and BOLT and compiles ClickHouse faster.
+On Linux with glibc 2.38 or newer, `eval "$(utils/download-ci-toolchain.sh)"` downloads that compiler with `curl` and `zstd` and sets `CC` and `CXX` to it for configuring a new build directory.
+</Tip>
+
 ## Install the Rust compiler (optional) {#install-the-rust-compiler-optional}
 
 <Note>
