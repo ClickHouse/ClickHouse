@@ -1,0 +1,69 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/react-native
+description: 'React Native setup and configuration for ClickHouse Observability and self-managed deployments.'
+title: 'React Native'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'React Native'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Use OpenTelemetry to send traces from your React Native application's JavaScript layer to ClickHouse Observability.
+
+<ClickStackIntegrates signals={['traces']} />
+
+## Set up OpenTelemetry {#set-up-opentelemetry}
+
+Follow the official [OpenTelemetry React Native demo](https://opentelemetry.io/docs/demo/services/react-native-app/) and its [instrumentation source](https://github.com/open-telemetry/opentelemetry-demo/tree/main/src/react-native-app) to initialize tracing and instrument network requests.
+
+The demo uses the OpenTelemetry JavaScript packages, which are not explicitly supported on React Native. Validate compatibility with your application's React Native and OpenTelemetry versions.
+
+## Configure your destination {#configure-destination}
+
+Replace the demo's local exporter configuration with the destination below. Use this exporter in the span processor from the upstream setup. The exporter URL must include `/v1/traces`.
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Keep the complete HTTPS endpoint, including its port, and append `/v1/traces`:
+
+```javascript
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+
+const traceExporter = new OTLPTraceExporter({
+  url: 'https://YOUR_OTEL_ENDPOINT:4318/v1/traces',
+  headers: {
+    Authorization: 'Bearer YOUR_INGESTION_API_KEY',
+  },
+});
+```
+
+</Tab>
+<Tab title="Self-managed">
+
+Use your collector's OTLP HTTP endpoint and ingestion key. The collector must be reachable from the device. For collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured).
+
+```javascript
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+
+const traceExporter = new OTLPTraceExporter({
+  url: 'https://YOUR_COLLECTOR_HOST:4318/v1/traces',
+  headers: {
+    Authorization: 'YOUR_INGESTION_API_KEY',
+  },
+});
+```
+
+</Tab>
+</Tabs>
+
+## Verify ingestion {#verify-ingestion}
+
+Run your application on a device or simulator and make network requests. In ClickHouse Observability, select a recent time range and find your application's service name in Traces.
+
+For instrumentation details and React Native compatibility workarounds, see the [OpenTelemetry React Native demo](https://opentelemetry.io/docs/demo/services/react-native-app/). For exporter options, see the [OpenTelemetry JavaScript exporter documentation](https://opentelemetry.io/docs/languages/js/exporters/).
