@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <Poco/URI.h>
+#include <Common/SecretString.h>
 
 #include <Core/SettingsEnums.h>
 
@@ -37,7 +38,7 @@ struct URI
     std::string storage_name;
     /// Path (or path pattern) in archive if uri is an archive.
     std::optional<std::string> archive_pattern;
-    std::string uri_str;
+    SecretString uri_str;
 
     bool is_virtual_hosted_style = false;
 

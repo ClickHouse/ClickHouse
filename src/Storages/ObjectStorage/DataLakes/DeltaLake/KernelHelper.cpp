@@ -183,7 +183,7 @@ public:
 
         set_option("aws_bucket", url.bucket);
 
-        if (url.uri_str.starts_with("http"))
+        if (std::string_view(url.uri_str).starts_with("http"))
         {
             set_option("allow_http", "true");
             set_option("aws_endpoint", url.endpoint);

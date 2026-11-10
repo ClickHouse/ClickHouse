@@ -5,14 +5,15 @@
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/memory.h>
-#include <Poco/XML/XMLString.h>
+#include <Poco/NoDumpAllocator.h>
 
 #if USE_JEMALLOC && defined(OS_LINUX)
 #include <jemalloc/jemalloc.h>
 #include <sys/mman.h>
 
-#include <Common/PerCPU.h>
+#include <Common/PerCPUSlots.h>
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 #endif
@@ -56,7 +57,7 @@ bool commitNoDumpExtent(extent_hooks_t *, void * addr, size_t size, size_t offse
     return madvise(static_cast<char *>(addr) + offset, length, MADV_DONTDUMP) != 0;
 }
 
-std::vector<unsigned> createArenas()
+std::vector<unsigned> createArenas(size_t num_arenas)
 {
     size_t hooks_size = sizeof(default_hooks);
     if (int err = je_mallctl("arena.0.extent_hooks", &default_hooks, &hooks_size, nullptr, 0))
@@ -67,7 +68,7 @@ std::vector<unsigned> createArenas()
     no_dump_hooks.commit = commitNoDumpExtent;
     extent_hooks_t * hooks = &no_dump_hooks;
 
-    std::vector<unsigned> indices(PerCPU::getNumCPUs());
+    std::vector<unsigned> indices(num_arenas);
     for (unsigned & index : indices)
     {
         size_t index_size = sizeof(index);
@@ -118,9 +119,9 @@ void * allocateImpl(size_t bytes, size_t alignment) noexcept
     {
         try
         {
-            static const auto * arenas = new std::vector<unsigned>(createArenas());
-            Int32 cpu = PerCPU::getCurrentCPU();
-            static thread_local ThreadCache tcache(MALLOCX_ARENA((*arenas)[(cpu < 0 ? 0 : cpu) % arenas->size()]));
+            static const auto * cpu_slots = new PerCPUSlots;
+            static const auto * arenas = new std::vector<unsigned>(createArenas(std::max<size_t>(cpu_slots->size(), 1)));
+            static thread_local ThreadCache tcache(MALLOCX_ARENA((*arenas)[cpu_slots->getCurrentSlot() % arenas->size()]));
         }
         catch (...)
         {
@@ -185,12 +186,12 @@ void JemallocNoDumpArenas::deallocate(void * ptr) noexcept
 
 }
 
-void * Poco::XML::allocateNoDump(std::size_t bytes)
+void * Poco::allocateNoDump(std::size_t bytes)
 {
     return DB::JemallocNoDumpArenas::allocate(bytes);
 }
 
-void Poco::XML::deallocateNoDump(void * ptr) noexcept
+void Poco::deallocateNoDump(void * ptr) noexcept
 {
     DB::JemallocNoDumpArenas::deallocate(ptr);
 }

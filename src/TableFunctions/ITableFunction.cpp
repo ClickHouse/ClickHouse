@@ -102,7 +102,7 @@ String ITableFunction::getFunctionURINormalized() const
 {
     try
     {
-        Poco::URI uri(getFunctionURI());
+        Poco::URI uri{String(getFunctionURI())};
         uri.normalize();
         return uri.toString();
     }

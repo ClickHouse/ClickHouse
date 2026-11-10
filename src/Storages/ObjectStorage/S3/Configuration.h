@@ -120,7 +120,7 @@ public:
 
     Path getRawPath() const override { return url.key; }
     void setRawPath(const Path & path) override { url.key = path.path; }
-    const String & getRawURI() const override { return url.uri_str; }
+    std::string_view getRawURI() const override { return url.uri_str; }
 
     const Paths & getPaths() const override { return keys; }
     void setPaths(const Paths & paths) override

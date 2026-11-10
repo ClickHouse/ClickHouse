@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 #include "Poco/Foundation.h"
+#include "Poco/NoDumpAllocator.h"
 
 
 namespace Poco
@@ -131,7 +132,7 @@ public:
     /// A list of registered URI schemes can be found
     /// at <http://www.iana.org/assignments/uri-schemes>.
 
-    const std::string & getUserInfo() const;
+    std::string_view getUserInfo() const [[clang::lifetimebound]];
     /// Returns the user-info part of the URI.
 
     void setUserInfo(const std::string & userInfo);
@@ -205,11 +206,11 @@ public:
     /// In addition to regular encoding, function also encodes '&' and '=',
     /// if found in param or val.
 
-    const std::string & getRawQuery() const;
+    std::string_view getRawQuery() const [[clang::lifetimebound]];
     /// Returns the query string in raw form, which usually
     /// means percent encoded.
 
-    void setRawQuery(const std::string & query);
+    void setRawQuery(std::string_view query);
     /// Sets the query part of the URI.
     ///
     /// The given query string must be properly percent-encoded.
@@ -356,11 +357,11 @@ private:
 
 
     std::string _scheme;
-    std::string _userInfo;
+    std::vector<char, NoDumpAllocator<char>> _userInfo;
     std::string _host;
     unsigned short _port;
     std::string _path;
-    std::string _query;
+    std::vector<char, NoDumpAllocator<char>> _query;
     std::string _fragment;
 
     bool _enable_url_encoding = true;
@@ -376,9 +377,9 @@ inline const std::string & URI::getScheme() const
 }
 
 
-inline const std::string & URI::getUserInfo() const
+inline std::string_view URI::getUserInfo() const
 {
-    return _userInfo;
+    return {_userInfo.data(), _userInfo.size()};
 }
 
 
@@ -394,9 +395,9 @@ inline const std::string & URI::getPath() const
 }
 
 
-inline const std::string & URI::getRawQuery() const
+inline std::string_view URI::getRawQuery() const
 {
-    return _query;
+    return {_query.data(), _query.size()};
 }
 
 

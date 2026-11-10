@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <utility>
 #include <Common/Exception.h>
 
@@ -50,7 +51,7 @@ struct ProxyConfiguration
 
     /// Splits a URI userinfo component ("user" or "user:password") into its two parts.
     /// Splits on the FIRST colon only, because a password may legally contain ':'.
-    static std::pair<std::string, std::string> parseUserInfo(const std::string & user_info)
+    static std::pair<std::string_view, std::string_view> parseUserInfo(std::string_view user_info)
     {
         const auto pos = user_info.find(':');
 

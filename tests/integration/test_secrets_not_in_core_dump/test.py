@@ -1,7 +1,10 @@
+import base64
+
 import pytest
 import redis
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import arrowflight_pass, arrowflight_user
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -9,6 +12,7 @@ node = cluster.add_instance(
     main_configs=["configs/secrets.xml"],
     user_configs=["configs/users.xml"],
     with_redis=True,
+    with_arrowflight=True,
     env_variables={"MALLOC_CONF": "junk:free"},
 )
 
@@ -24,6 +28,8 @@ MEMORY_DATABASE_TABLE_SECRET = "nodump_memory_database_table_secret_8c2e5a9f3b7d
 REMOTE_DATABASE_PASSWORD = "nodump_remote_database_password_1d9f3b7e5c2a8046"
 URL_TABLE_HEADER = "nodump_url_table_header_6b1e4d8a2f9c3075"
 ELASTICSEARCH_API_KEY = "nodump_elasticsearch_api_key_3f7a1c9e5b2d8046"
+S3_PRESIGNED_URL_SIGNATURE = "nodump_s3_presigned_url_signature_7e3b9d1f5a2c4068"
+ARROWFLIGHT_TOKEN = base64.b64encode(f"{arrowflight_user}:{arrowflight_pass}".encode()).decode()
 SECRETS = [
     "nodump_interserver_password_4f1c2a9e7b3d5068",
     "nodump_cluster_password_8a2e6c4d1f0b9375",
@@ -42,6 +48,9 @@ SECRETS = [
     REMOTE_DATABASE_PASSWORD,
     URL_TABLE_HEADER,
     ELASTICSEARCH_API_KEY,
+    S3_PRESIGNED_URL_SIGNATURE,
+    arrowflight_pass,
+    ARROWFLIGHT_TOKEN,
 ]
 
 
@@ -121,6 +130,16 @@ def test_core_dump_has_no_secrets(started_cluster):
         f"ENGINE = Elasticsearch('http://localhost:1', 'index', api_key = '{ELASTICSEARCH_API_KEY}')",
         settings={"enable_elasticsearch": 1},
     )
+
+    node.query(
+        "CREATE TABLE s3_presigned_table (x UInt64) ENGINE = S3('http://localhost:1/table/data.csv"
+        f"?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature={S3_PRESIGNED_URL_SIGNATURE}', NOSIGN, 'CSV')"
+    )
+    node.query(
+        "CREATE TABLE arrowflight_table (column1 String, column2 String) "
+        f"ENGINE = ArrowFlight('arrowflight1:5006', 'ABC', '{arrowflight_user}', '{arrowflight_pass}')"
+    )
+    node.query("SELECT * FROM arrowflight_table FORMAT Null")
 
     # Needed to force the configured disks to be actually created
     node.query("SELECT * FROM system.disks FORMAT Null")

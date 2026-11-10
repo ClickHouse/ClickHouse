@@ -18,9 +18,9 @@
 #define XML_XMLString_INCLUDED
 
 
+#include "Poco/NoDumpAllocator.h"
 #include "Poco/XML/XML.h"
 
-#include <cstddef>
 #include <string>
 #include <string_view>
 
@@ -29,30 +29,6 @@ namespace Poco
 {
 namespace XML
 {
-
-
-/// Storage for XML strings, which may hold secrets from configuration files.
-/// The defaults use malloc; the host application overrides them with memory excluded from core dumps.
-void * allocateNoDump(std::size_t bytes);
-void deallocateNoDump(void * ptr) noexcept;
-
-template <class T>
-struct NoDumpAllocator
-{
-    using value_type = T;
-    NoDumpAllocator() = default;
-    template <class U>
-    NoDumpAllocator(const NoDumpAllocator<U> &)
-    {
-    }
-    T * allocate(std::size_t n) { return static_cast<T *>(allocateNoDump(n * sizeof(T))); }
-    void deallocate(T * ptr, std::size_t) noexcept { deallocateNoDump(ptr); }
-};
-template <class T, class U>
-bool operator==(const NoDumpAllocator<T> &, const NoDumpAllocator<U> &)
-{
-    return true;
-}
 
 
 //

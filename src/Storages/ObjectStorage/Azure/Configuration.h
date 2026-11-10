@@ -101,7 +101,7 @@ public:
 
     Path getRawPath() const override { return blob_path; }
     void setRawPath(const Path & path) override { blob_path = path; }
-    const String & getRawURI() const override { return blob_path.path; }
+    std::string_view getRawURI() const override { return blob_path.path; }
 
     const Paths & getPaths() const override { return blobs_paths; }
     void setPaths(const Paths & paths) override { blobs_paths = paths; }

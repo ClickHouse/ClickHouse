@@ -80,9 +80,9 @@ URI::URI(std::string_view uri_, bool allow_archive_path_syntax, bool keep_presig
     else
         uri_str = uri_;
 
-    uri = Poco::URI(uri_str);
+    uri = Poco::URI(String(uri_str));
     /// Keep a copy of how Poco parsed the original string before any mapping
-    Poco::URI original_uri(uri_str);
+    Poco::URI original_uri{String(uri_str)};
     bool looks_like_presigned = false;
     for (const auto & [qk, qv] : original_uri.getQueryParameters())
     {

@@ -587,7 +587,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
               */
 
             std::string path_and_query;
-            const std::string & query = target_uri.getRawQuery();
+            std::string_view query = target_uri.getRawQuery();
             const std::string reserved = "?#:;+@&=%"; /// Poco::URI::RESERVED_QUERY_PARAM without '/' plus percent sign.
             Poco::URI::encode(target_uri.getPath(), reserved, path_and_query);
 

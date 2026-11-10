@@ -424,7 +424,7 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
 
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
     {
-        String path = s3_object_storage.getURI().uri_str;
+        String path(s3_object_storage.getURI().uri_str);
         fs::path root = path;
         fs::path suffix = parsing_result.path_suffix;
         url = S3::URI(String(root / suffix));
