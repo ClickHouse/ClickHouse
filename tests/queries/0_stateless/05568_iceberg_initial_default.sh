@@ -61,6 +61,11 @@ elif mode == "readd_nested":
     struct = next(f for f in fields if f["name"] == "t")["type"]["fields"][0]["type"]
     struct["fields"] = [f for f in struct["fields"] if f["name"] != "j"]
     struct["fields"].append({"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9, "write-default": 9})
+elif mode == "rename":
+    struct = next(f for f in fields if f["name"] == "t")["type"]
+    renamed = next(f for f in struct["fields"] if f["name"] == "j")
+    renamed["name"] = "y"
+    renamed["initial-default"] = 9
 elif mode == "readd_in_list":
     by_name = {f["name"]: f for f in fields}
     u = by_name["u"]["type"]["fields"][1]["type"]["element"]
@@ -320,6 +325,23 @@ for format in Parquet ORC Avro; do
             SELECT 'readd nested', tupleElement(t, 's') FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 1;
             SELECT 'readd nested', tupleElement(t, 's') FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 0;
             SELECT 'readd nested', t.s.x, t.s.j FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 1;
+        "
+    fi
+
+    # A renamed field with a default keeps its field id, so its stored value is read, not the default.
+    if [ "${format}" != Avro ]; then
+        table="${format}_rename"
+        ${LOCAL} --allow_insert_into_iceberg=1 -q "
+            CREATE TABLE t (t Tuple(x Nullable(Int32), j Nullable(Int32))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t VALUES ((10, 100));
+        "
+        add_fields "${table}" rename
+        bind_to_current_schema "${table}"
+        ${LOCAL} -q "
+            SELECT 'rename', t FROM icebergLocal('${table}/');
+            SELECT 'rename', t.x, t.y FROM icebergLocal('${table}/');
+            SELECT 'rename', t.y FROM icebergLocal('${table}/');
+            SELECT 'rename', t.x, t.y FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 0;
         "
     fi
 
