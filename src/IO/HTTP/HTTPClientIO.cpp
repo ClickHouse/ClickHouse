@@ -1,8 +1,8 @@
 #include <IO/HTTP/HTTPClientIO.h>
+#include <IO/TimeoutSetter.h>
 
 #include <Common/Exception.h>
 #include <Common/Hex.h>
-#include <Common/scope_guard_safe.h>
 
 #include <Poco/Ascii.h>
 #include <Poco/Net/NetException.h>
@@ -635,14 +635,7 @@ static bool waitForResponseDataWithTimeout(Poco::Net::HTTPClientSession & sessio
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The wait for an HTTP response needs a positive timeout");
 
     /// The TLS layer reads with the larger of the receive and send timeouts, so both are set.
-    /// A socket that fails here is broken, and the session is dropped anyway.
-    auto & socket = session.socket();
-    SCOPE_EXIT_SAFE({
-        socket.setReceiveTimeout(session.getReceiveTimeout());
-        socket.setSendTimeout(session.getSendTimeout());
-    });
-    socket.setReceiveTimeout(timeout);
-    socket.setSendTimeout(timeout);
+    TimeoutSetter timeout_setter(session.socket(), timeout);
     return session.waitForResponseData();
 }
 
