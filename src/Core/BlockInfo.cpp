@@ -50,7 +50,7 @@ void readField(T & value, ReadBuffer & in)
   */
 constexpr size_t MAX_OUT_OF_ORDER_BUCKETS = 256;
 
-void readField(std::vector<Int32> & value, ReadBuffer & in)
+void readField(VectorWithMemoryTracking<Int32> & value, ReadBuffer & in)
 {
     readVectorBinary(value, in, MAX_OUT_OF_ORDER_BUCKETS);
 }
