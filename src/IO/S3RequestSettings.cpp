@@ -224,6 +224,12 @@ void S3RequestSettings::validateUploadSettings()
             ReadableSize((*this)[S3RequestSetting::strict_upload_part_size].value),
             ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value));
 
+    /// A zero socket timeout means no timeout at all: the wait for `100 Continue` would never end.
+    if (!(*this)[S3RequestSetting::expect_continue_timeout_ms])
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting expect_continue_timeout_ms cannot be zero. To disable `Expect: 100-continue`, set expect_continue_min_body_size to 0");
+
     /// `copyS3File` splits by min and max even when a strict size is set.
     if (!(*this)[S3RequestSetting::min_upload_part_size])
         throw Exception(

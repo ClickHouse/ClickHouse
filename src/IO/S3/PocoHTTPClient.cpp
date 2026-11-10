@@ -658,7 +658,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             /// transport can wait for the answer; the SDK would add it to streaming requests, which
             /// `ExtendedRequest::IsStreaming` turns off.
             const bool expect_continue = !expect_continue_rejected && s3_expect_continue_min_body_size > 0
-                && s3_expect_continue_timeout_ms > 0 && request.GetContentBody() && poco_request.hasContentLength()
+                && request.GetContentBody() && poco_request.hasContentLength()
                 && static_cast<UInt64>(poco_request.getContentLength64()) >= s3_expect_continue_min_body_size;
             poco_request.setExpectContinue(expect_continue);
 

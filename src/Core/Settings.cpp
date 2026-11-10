@@ -674,7 +674,7 @@ before reading the body and closes the connection makes the error look like a ne
     DECLARE(UInt64, s3_expect_continue_timeout_ms, S3::DEFAULT_EXPECT_CONTINUE_TIMEOUT_MS, R"(
 How long ClickHouse waits for the answer to the `Expect: 100-continue` header (see `s3_expect_continue_min_body_size`)
 before it sends the body of an S3 request anyway. Some servers and proxies do not answer the header.
-`0` disables the header.
+Must be positive. To disable the header, set `s3_expect_continue_min_body_size` to `0`.
 )", 0, \
         {"26.11", 1000, 1000, "New setting"}) \
     DECLARE(UInt64, azure_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
