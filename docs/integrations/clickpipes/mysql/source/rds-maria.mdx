@@ -94,7 +94,7 @@ Connect to your RDS MariaDB instance as an admin user and execute the following 
     GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
     ```
 
-3. Grant replication permissions to the user. MariaDB 10.5 and newer also require `SLAVE MONITOR`:
+3. Grant replication permissions to the user. MariaDB 10.5.9 and newer also require `SLAVE MONITOR`:
 
     ```sql
     GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
