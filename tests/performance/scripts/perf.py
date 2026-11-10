@@ -728,6 +728,8 @@ extra_drop_queries = []
 #   {"kind": "shell", "script": "..."}      -- run as a bash script, see below.
 test_queries = []
 for e in root.findall("query"):
+    # A disabled query keeps its query_index, the key of the performance history, but is not run.
+    disabled = e.get("disabled", "0") not in ("0", "false", "")
     if e.get("type") == "shell":
         # A shell-script query: a snippet of bash executed for each server and
         # measured by its wall-clock time. This lets us benchmark things the
@@ -744,7 +746,7 @@ for e in root.findall("query"):
         # client arguments inside the script.
         if not e.text or not e.text.strip():
             raise Exception('Empty <query type="shell"> in the test file')
-        test_queries.append({"kind": "shell", "script": e.text})
+        test_queries.append({"kind": "shell", "script": e.text, "disabled": disabled})
         continue
 
     if "file" in e.attrib:
@@ -756,9 +758,11 @@ for e in root.findall("query"):
         for stmt in statements:
             keyword = first_keyword(stmt)
             if keyword in ("CREATE", "ALTER"):
-                extra_create_queries.append(stmt)
+                if not disabled:
+                    extra_create_queries.append(stmt)
             elif keyword in ("DROP", "TRUNCATE"):
-                extra_drop_queries.append(stmt)
+                if not disabled:
+                    extra_drop_queries.append(stmt)
             else:
                 select_stmts.append(stmt)
         # Some benchmark queries (e.g. TPC-DS Q14) have multiple SELECTs in one file.
@@ -770,10 +774,10 @@ for e in root.findall("query"):
         #   zip(*expanded) -> ("SELECT FROM a.x", "SELECT FROM a.y"), ("SELECT FROM b.x", "SELECT FROM b.y")
         expanded = [substitute_parameters([s]) for s in select_stmts]
         for group in zip(*expanded):
-            test_queries.append({"kind": "sql", "statements": list(group)})
+            test_queries.append({"kind": "sql", "statements": list(group), "disabled": disabled})
     else:
         test_queries += [
-            {"kind": "sql", "statements": [s]} for s in substitute_parameters([e.text])
+            {"kind": "sql", "statements": [s], "disabled": disabled} for s in substitute_parameters([e.text])
         ]
 
 
@@ -811,6 +815,11 @@ if args.print_settings:
 
     exit(0)
 
+for i in args.queries_to_run or []:
+    if test_queries[i]["disabled"]:
+        print(f"The query no. {i} is disabled in this test")
+        exit(1)
+
 # Skip long tests
 if not args.long:
     for tag in root.findall(".//tag"):
@@ -842,7 +851,7 @@ if args.table_engine and not root.findall("create_query"):
 # options, fail closed: reject the test up front rather than benchmark the wrong
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
-has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
+has_shell_queries = any(q["kind"] == "shell" and not q["disabled"] for q in test_queries)
 if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
@@ -952,6 +961,7 @@ stop_merges = (
         q["kind"] == "sql"
         and not any(first_keyword(s) in WRITE_KEYWORDS for s in q["statements"])
         for q in test_queries
+        if not q["disabled"]
     )
 )
 
@@ -1301,7 +1311,7 @@ if not args.use_existing_tables:
             sys.exit(0)
         # The measured lightweight updates of the rewritten tables too.
         for q_item in test_queries:
-            if q_item["kind"] == "sql":
+            if q_item["kind"] == "sql" and not q_item["disabled"]:
                 q_item["statements"] = [
                     iceberg_engine.rewrite_update(q, args.binary[-1], tables) for q in q_item["statements"]
                 ]
@@ -1407,13 +1417,13 @@ if stop_merges:
 os.system("sync")
 reportStageEnd("sync")
 
-# By default, test all queries.
-queries_to_run = range(0, len(test_queries))
+# By default, test all queries that are not disabled.
+queries_to_run = [i for i, q in enumerate(test_queries) if not q["disabled"]]
 
 if args.max_queries and not (args.soft_max_queries and run_all_queries):
     # If specified, test a limited number of queries chosen at random.
     queries_to_run = random.sample(
-        range(0, len(test_queries)), min(len(test_queries), args.max_queries)
+        queries_to_run, min(len(queries_to_run), args.max_queries)
     )
 
 if args.queries_to_run:

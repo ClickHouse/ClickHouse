@@ -73,6 +73,7 @@ namespace Setting
     extern const SettingsHashJoinLayout hash_join_layout;
     extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
+    extern const SettingsUInt64 min_string_column_bytes_for_hash_join_row_store;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
@@ -1208,7 +1209,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         && (row_store_ratio == 0.0
             || (params.rhs_size_estimation && row_store_output
                 && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio));
-    table_join->setRowStoreEnabled(enable_row_store);
+    if (enable_row_store)
+        table_join->setRowStoreCandidateColumns(
+            computeRowStoreCandidateColumns(
+                *table_join, *right_table_expression_header, params.rhs_size_estimation.value_or(0),
+                params.min_string_column_bytes_for_hash_join_row_store));
 
     const auto build_layout
         = table_join->preferParallelHashLayout(params.hash_join_layout, params.rhs_size_estimation, params.parallel_hash_join_threshold)
@@ -1336,6 +1341,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     hash_join_layout = settings[Setting::hash_join_layout];
     enable_hash_join_row_store = settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[Setting::min_rows_ratio_for_hash_join_row_store];
+    min_string_column_bytes_for_hash_join_row_store = settings[Setting::min_string_column_bytes_for_hash_join_row_store];
 
     grace_hash_join_initial_buckets = settings[Setting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = settings[Setting::grace_hash_join_max_buckets];
@@ -1370,6 +1376,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     hash_join_layout = join_settings.hash_join_layout;
     enable_hash_join_row_store = join_settings.enable_hash_join_row_store;
     min_rows_ratio_for_hash_join_row_store = join_settings.min_rows_ratio_for_hash_join_row_store;
+    min_string_column_bytes_for_hash_join_row_store = join_settings.min_string_column_bytes_for_hash_join_row_store;
 
     grace_hash_join_initial_buckets = join_settings.grace_hash_join_initial_buckets;
     grace_hash_join_max_buckets = join_settings.grace_hash_join_max_buckets;

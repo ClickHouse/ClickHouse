@@ -15,6 +15,8 @@ namespace DB
 ///   - `String` / `FixedString` columns:
 ///       sum of byte lengths over non-NULL rows (`string_total_bytes`); the average length is
 ///       `string_total_bytes / non_null_string_count`, which merges trivially across parts.
+///   - integer and `Decimal` columns without `Nullable` or `LowCardinality`: the state of the `sum`
+///       aggregate function over the values, like `uniq_v2` statistics keep the state of `uniqCombined64`
 ///   - any supported column type:
 ///       `default_count` (number of rows equal to the *type's* default value seen by `build`).
 ///       "Default" here is the type-intrinsic default (`IColumn::isDefaultAt` / `IDataType::getDefault`),
@@ -33,6 +35,7 @@ class StatisticsBasic : public IStatistics
 {
 public:
     StatisticsBasic(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
+    ~StatisticsBasic() override;
 
     void build(const ColumnPtr & column) override;
     /// A summary of data that was not read (e.g. a data lake file). A NULL bound leaves min/max unknown, so they miss the
@@ -43,6 +46,7 @@ public:
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
+    std::optional<UInt64> getSerializedSize() const override;
 
     std::optional<Float64> estimateLess(const Field & val) const override;
     std::optional<Float64> estimateEqual(const Field & val) const override;
@@ -60,6 +64,7 @@ public:
     /// NULL bound there means that no value was non-NULL. A summary without bounds for rows that may be non-NULL has
     /// values that the bounds merged with it miss.
     bool minMaxCoversAllValues() const { return min_max_covers_all_values; }
+    bool hasSum() const { return sum != nullptr; }
 
     const Field & getMin() const { return min; }
     const Field & getMax() const { return max; }
@@ -68,6 +73,7 @@ public:
     UInt64 getNullCount() const { return (is_nullable && has_default_count) ? default_count : 0; }
     UInt64 getDefaultCount() const { return default_count; }
     UInt64 getRowCount() const { return row_count; }
+    Field getSum() const;
 
 private:
     Field min; /// null Field means "not initialized" (e.g. all values seen so far were NULL)
@@ -85,6 +91,12 @@ private:
     bool has_default_count = true; /// true unless deserialized from older code that did not write a default-value count
     /// See `minMaxCoversAllValues`. Not serialized: only a summary clears it, and summaries are never written.
     bool min_max_covers_all_values = true;
+
+    /// The state of `sum` over the values, allocated only for the types of `canStatisticsTrackSum`, because the parts
+    /// keep the statistics of every column in memory. Null also when deserialized from older code that did not write
+    /// the sum, or merged with such statistics.
+    struct Sum;
+    std::unique_ptr<Sum> sum;
 };
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
