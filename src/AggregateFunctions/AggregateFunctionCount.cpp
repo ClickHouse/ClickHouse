@@ -302,7 +302,7 @@ The default is the [uniqExact](/reference/functions/aggregate-functions/uniqExac
 The `SELECT count() FROM table` query is optimized by default using metadata from MergeTree.
 If you need to use row-level security, disable optimization using the [`optimize_trivial_count_query`](/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) setting.
 
-`SELECT count(nullable_column) FROM table` reads only the [`null`](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data.
+`SELECT count(nullable_column) FROM table` can read only the [`null`](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data, as long as `nullable_column` isn't used anywhere else in the query.
 The query `SELECT count(n) FROM table` transforms to `SELECT sum(NOT n.null) FROM table`.
 This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 
