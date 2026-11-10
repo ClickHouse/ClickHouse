@@ -1090,12 +1090,14 @@ void considerEnablingParallelReplicas(
         {
             /// Take turns rather than wait for the outcome of the retry: however many executions run at once, one in
             /// `retry_after + 1` builds the plan, and the rest skip it until a new outcome replaces the entry. After
-            /// the first outcome for this plan the first turn is the one that builds (see `Undecided::first`).
+            /// the first outcome for this plan the first execution builds it, whatever the setting (see
+            /// `Undecided::first`), and the turns count from the one after it.
             const UInt64 retry_after = optimization_settings.automatic_parallel_replicas_undecided_retry_after_executions;
             /// The largest value cannot have one added; it is far beyond any count of executions anyway.
             const UInt64 period = retry_after == std::numeric_limits<UInt64>::max() ? retry_after : retry_after + 1;
             const UInt64 execution = undecided->executions.fetch_add(1, std::memory_order_relaxed);
-            if (const auto turn = (undecided->first ? execution + period - 1 : execution) % period; turn < retry_after)
+            const bool first_retry = undecided->first && execution == 0;
+            if (const auto turn = (undecided->first ? execution - 1 : execution) % period; !first_retry && turn < retry_after)
             {
                 ProfileEvents::increment(eventOf(undecided->reason));
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRetryDeferred);

@@ -12,6 +12,9 @@ undecided_limit_3	0	1	0	1	0	0
 undecided_limit_4	0	1	0	1	0	0
 undecided_limit_5	0	1	0	1	0	0
 undecided_limit_6	1	0	0	1	0	0
+undecided_limit_max_1	1	0	0	1	0	0
+undecided_limit_max_2	1	0	0	1	0	0
+undecided_limit_max_3	0	1	0	1	0	0
 undecided_limit_off_1	1	0	0	1	0	0
 undecided_limit_off_2	1	0	0	1	0	0
 undecided_warm_1	1	0	0	1	0	0

@@ -9854,7 +9854,9 @@ Lets automatic parallel replicas remember, per query plan, where the replicas' s
 repeated query whose statistics decline parallel replicas is decided without building the plan with parallel
 replicas.
 
-Disable it to make every query pay the full cost of the decision, e.g. when benchmarking that cost.
+Disables remembered boundaries. To benchmark the cost of building the plan with parallel replicas, also set
+`automatic_parallel_replicas_undecided_retry_after_executions = 0`: the plans whose last build ended without a
+decision are skipped independently of this setting.
 )", 0, \
         {"26.10", false, true, "New setting. Automatic parallel replicas now remembers the boundary of the replicas' share of the work per query plan; previously every query built the plan with parallel replicas to find it."}) \
     DECLARE(UInt64, automatic_parallel_replicas_undecided_retry_after_executions, 10, R"(
@@ -9869,7 +9871,8 @@ plans alike. Statistics that change later are noticed on the next turn.
 
 Building that plan costs about as much as planning the query again, which is most of the run time of a short query.
 
-0 - build the plan with parallel replicas on every execution.
+0 disables deferral after undecided outcomes. It is independent of `automatic_parallel_replicas_remember_boundary`,
+which spares the build for plans decided from statistics.
 )", 0, \
         {"26.11", 0, 10, "New setting. Automatic parallel replicas now skips building the plan with parallel replicas for a number of executions of a query plan whose last build ended without a decision; previously every execution built it."}) \
     DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(

@@ -57,6 +57,14 @@ FORMAT Null SETTINGS log_comment = 'undecided_limit_off_1', automatic_parallel_r
 SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
 FORMAT Null SETTINGS log_comment = 'undecided_limit_off_2', automatic_parallel_replicas_undecided_retry_after_executions = 0;
 
+-- The largest value skips the build for good after the second outcome, but the second run still builds it.
+SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
+FORMAT Null SETTINGS log_comment = 'undecided_limit_max_1', automatic_parallel_replicas_undecided_retry_after_executions = 18446744073709551615;
+SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
+FORMAT Null SETTINGS log_comment = 'undecided_limit_max_2', automatic_parallel_replicas_undecided_retry_after_executions = 18446744073709551615;
+SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
+FORMAT Null SETTINGS log_comment = 'undecided_limit_max_3', automatic_parallel_replicas_undecided_retry_after_executions = 18446744073709551615;
+
 -- A correlated subquery: the planner uses no parallel replicas in the plan built with them. The second run builds the
 -- plan again at once, the third skips it.
 SELECT sum(l_price) FROM t_undecided_l, t_undecided_o
