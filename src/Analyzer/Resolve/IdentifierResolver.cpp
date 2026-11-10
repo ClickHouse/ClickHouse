@@ -1001,6 +1001,14 @@ static bool isQualifiedByOtherTableExpression(
         if (check_alias && !other_table_expression_data.table_name.empty() && other_table_expression_data.table_name == path_start)
             return true;
 
+        /// The visible name of a materialized CTE: its `table_name` is the generated name of the temporary table.
+        if (check_alias)
+        {
+            if (const auto * other_table_node = other_table_expression_node->as<TableNode>();
+                other_table_node && other_table_node->isMaterializedCTE() && other_table_node->getMaterializedCTE()->cte_name == path_start)
+                return true;
+        }
+
         bool other_crosses_boundary = false;
         if (other_table_expression_data.matchDatabaseAndTableName(identifier, &other_crosses_boundary) == qualifier_parts
             && !other_crosses_boundary)
