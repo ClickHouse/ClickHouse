@@ -2369,7 +2369,9 @@ TEST(SchedulerSpaceShared, ImpossibleGrowSelfKillsWhileEvictionForAnotherRequest
     EXPECT_EQ(a.killCount(), 0u);
 
     b.reset();
-    a.waitSynced();
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (a.size() != 70 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
     EXPECT_EQ(a.size(), 70);
     EXPECT_EQ(a.killCount(), 0u);
 }
@@ -2419,9 +2421,52 @@ TEST(SchedulerSpaceShared, ImpossibleGrowsWhileEvictionIsInFlightAreKilledOnce)
     EXPECT_EQ(a.killCount(), 0u);
 
     c.reset();
-    a.waitSynced();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (a.size() != 65 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
     EXPECT_EQ(a.size(), 65);
     EXPECT_EQ(a.killCount(), 0u);
+}
+
+
+/// Two limits may select the same victim: the inner one for a request inside it, the outer one for a request
+/// outside. The victim is asked to be killed once.
+TEST(SchedulerSpaceShared, VictimOfNestedLimitsIsKilledOnce)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * outer = r.addLimit("/", 100);
+    FairAllocation * fair = r.addFair("/fair", outer);
+    AllocationLimit * inner = r.addLimit("/fair/inner", 60, fair);
+    AllocationQueue * inner_queue = r.addQueueUnder("/fair/inner/queue", inner);
+    AllocationQueue * outer_queue = r.addQueueUnder("/fair/queue", fair);
+    r.registerResource();
+
+    auto victim = std::make_unique<ManualAllocation>(inner_queue, "victim", 50, /* eviction_score = */ 100);
+    ManualAllocation inside(inner_queue, "inside", 5);
+    ManualAllocation outside(outer_queue, "outside", 40);
+
+    auto wait_until = [](auto condition)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (!condition() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+    };
+
+    inside.increaseAsync(10); // 55 + 10 > 60: the inner limit selects `victim`, which keeps its memory for now
+    wait_until([&] { return victim->killCount() > 0; });
+    ASSERT_EQ(victim->killCount(), 1u);
+
+    outside.increaseAsync(10); // 95 + 10 > 100: the outer limit descends into the larger inner workload, to `victim`
+    r.sync();
+    EXPECT_EQ(victim->killCount(), 1u) << "An allocation must be asked to be killed once";
+
+    victim.reset();
+    wait_until([&] { return inside.size() == 15 && outside.size() == 50; });
+    EXPECT_EQ(inside.size(), 15);
+    EXPECT_EQ(outside.size(), 50);
+    EXPECT_EQ(inside.killCount(), 0u);
+    EXPECT_EQ(outside.killCount(), 0u);
 }
 
 
