@@ -1,0 +1,6 @@
+-- baseline: the policy confines the user to its single tenant (1)
+1
+-- a scalar subquery shipped to the shards still resolves there (8 = 4 tenants x 2 shards)
+8
+-- and the shards consumed it through an explicit __getScalar reference (1)
+1

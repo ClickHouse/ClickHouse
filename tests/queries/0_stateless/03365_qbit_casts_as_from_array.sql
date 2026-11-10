@@ -57,7 +57,9 @@ SELECT * FROM format('Values', 'qbit QBit(BFloat16, 9)', '(tuple([1,2,3]::QBit(B
 
 
 SELECT 'Test with and without analyzer / constant QBit';
+SELECT round(L2DistanceTransposed([1,2,3]::QBit(Float64, 3), [1,2,3]::Array(Float64), 3), 1) settings enable_analyzer=0;
 SELECT round(L2DistanceTransposed([1,2,3]::QBit(Float64, 3), [1,2,3]::Array(Float64), 3), 1) settings enable_analyzer=1;
+SELECT round(L2DistanceTransposed(materialize([1,2,3]::QBit(Float64, 3)), [1,2,3]::Array(Float64), 3), 1) settings enable_analyzer=0;
 SELECT round(L2DistanceTransposed(materialize([1,2,3]::QBit(Float64, 3)), [1,2,3]::Array(Float64), 3), 1) settings enable_analyzer=1;
 
 SELECT 'Difficult tests';

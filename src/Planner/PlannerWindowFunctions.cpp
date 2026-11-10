@@ -1,7 +1,7 @@
 #include <optional>
 #include <Planner/PlannerWindowFunctions.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <AggregateFunctions/WindowFunction.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/WindowNode.h>
@@ -20,6 +20,11 @@ namespace Setting
 {
     extern const SettingsBool compile_sort_description;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
+}
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -78,19 +83,15 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
 {
     std::unordered_map<std::string, WindowDescription> window_name_to_description;
 
-    /// The same window function can appear many times in the query tree, e.g. when it is reached through
-    /// several references to an alias, and it must be computed only once.
-    NameSet unique_window_function_names;
-
     for (const auto & window_function_node : window_function_nodes)
     {
         auto & window_function_node_typed = window_function_node->as<FunctionNode &>();
 
-        auto window_function_name = calculateActionNodeName(window_function_node, planner_context);
-        if (!unique_window_function_names.emplace(window_function_name).second)
-            continue;
-
         auto function_window_description = extractWindowDescriptionFromWindowNode(window_function_node, planner_context);
+
+        auto frame_type = function_window_description.frame.type;
+        if (frame_type != WindowFrame::FrameType::ROWS && frame_type != WindowFrame::FrameType::RANGE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Window frame '{}' is not implemented", frame_type);
 
         auto window_name = function_window_description.window_name;
 
@@ -99,7 +100,7 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
 
         WindowFunctionDescription window_function;
         window_function.function_node = nullptr;
-        window_function.column_name = std::move(window_function_name);
+        window_function.column_name = calculateActionNodeName(window_function_node, planner_context);
         window_function.aggregate_function = window_function_node_typed.getAggregateFunction();
 
         const auto & parameters_nodes = window_function_node_typed.getParameters().getNodes();
@@ -170,7 +171,7 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
                     return false;
             }
 
-            chassert(left[i] == right[i]);
+            assert(left[i] == right[i]);
         }
 
         /** Note that we check the length last, because we want to put together the

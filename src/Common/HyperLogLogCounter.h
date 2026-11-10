@@ -3,24 +3,22 @@
 #include <base/types.h>
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
-#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/transformEndianness.h>
 
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
 
 #include <bit>
 #include <cmath>
-#include <limits>
 #include <string>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 }
@@ -41,7 +39,7 @@ namespace details
 template <UInt8 K>
 struct LogLUT
 {
-    LogLUT() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in the body
+    LogLUT()
     {
         log_table[0] = 0.0;
         for (size_t i = 1; i <= M; ++i)
@@ -58,7 +56,7 @@ struct LogLUT
 private:
     static constexpr size_t M = 1 << ((static_cast<unsigned int>(K) <= 12) ? K : 12);
 
-    double log_table[M + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
+    double log_table[M + 1];
 };
 
 template <UInt8 K> struct MinCounterTypeHelper;
@@ -186,20 +184,10 @@ public:
         long double val = rank_count[size - 1];
         for (int i = size - 2; i >= 0; --i)
         {
-            val /= 2.0L;
+            val /= 2.0;
             val += rank_count[i];
         }
         return static_cast<DenominatorType>(val);
-    }
-
-    /// Only the counts are checked, not the registers: a state whose registers disagree with its counts passes, and
-    /// merging into it can make its counts wrap, so the merged state then fails this check.
-    bool countsAddUp(UInt64 bucket_count, UInt64 zeros) const
-    {
-        UInt64 sum = 0;
-        for (size_t i = 0; i < size; ++i)
-            sum += rank_count[i];
-        return sum == bucket_count && rank_count[0] == zeros;
     }
 
 private:
@@ -310,12 +298,6 @@ public:
         update(bucket, rank);
     }
 
-    void ALWAYS_INLINE prefetch(Value value) const
-    {
-        const auto bucket = extractBitSequence(getHash(value), 0, precision);
-        __builtin_prefetch(rank_store.getSerializableState().data() + static_cast<size_t>(bucket) * rank_width / 8);
-    }
-
     UInt64 size() const
     {
         /// Normalizing factor for harmonic mean.
@@ -334,11 +316,6 @@ public:
 
         double final_estimate = fixRawEstimate(raw_estimate);
 
-        if (final_estimate < 0)
-            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Corrupted HyperLogLog state: the estimate {} is negative", final_estimate);
-        /// For 64-bit hashes the estimate of a valid state can exceed the range of UInt64.
-        if (final_estimate + 0.5 >= 0x1p64)
-            return std::numeric_limits<UInt64>::max();
         return static_cast<UInt64>(final_estimate + 0.5); /// NOLINT
     }
 
@@ -346,21 +323,17 @@ public:
     {
         const auto & rhs_rank_store = rhs.rank_store;
         for (HashValueType bucket = 0; bucket < bucket_count; ++bucket)
-            update</* check_rank = */ true>(bucket, rhs_rank_store[bucket]);
+            update(bucket, rhs_rank_store[bucket]);
     }
 
     void read(DB::ReadBuffer & in)
     {
-        auto rank_state = rank_store.getSerializableState();
-        in.readStrict(reinterpret_cast<char *>(rank_state.data()), rank_state.size());
-
         if constexpr (std::endian::native == std::endian::little)
-        {
-            in.readStrict(reinterpret_cast<char *>(&denominator), sizeof(DenominatorCalculatorType));
-            in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
-        }
+            in.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
         else
         {
+            in.readStrict(reinterpret_cast<char *>(&rank_store), sizeof(RankStore));
+
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
             in.readStrict(denominator_copy.data(), denom_size);
@@ -375,35 +348,21 @@ public:
             in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
             DB::transformEndianness<std::endian::native, std::endian::little>(zeros);
         }
-
-        if constexpr (details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig)
-        {
-            if (!denominator.countsAddUp(bucket_count, zeros))
-                throw DB::Exception(
-                    DB::ErrorCodes::INCORRECT_DATA,
-                    "Corrupted HyperLogLog state: the rank counts do not add up to the number of buckets {} or the count of rank 0 "
-                    "is not the stored number of zero registers {}",
-                    bucket_count, zeros);
-        }
     }
 
     static void skip(DB::ReadBuffer & in)
     {
-        in.ignore(RankStore::serializedSize() + sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
+        in.ignore(sizeof(RankStore) + sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
     }
 
     void write(DB::WriteBuffer & out) const
     {
-        auto rank_state = rank_store.getSerializableState();
-        out.write(reinterpret_cast<const char *>(rank_state.data()), rank_state.size());
+       if constexpr (std::endian::native == std::endian::little)
+            out.write(reinterpret_cast<const char *>(this), sizeof(*this));
+       else
+       {
+            out.write(reinterpret_cast<const char *>(&rank_store), sizeof(RankStore));
 
-        if constexpr (std::endian::native == std::endian::little)
-        {
-            out.write(reinterpret_cast<const char *>(&denominator), sizeof(DenominatorCalculatorType));
-            out.write(reinterpret_cast<const char *>(&zeros), sizeof(ZerosCounterType));
-        }
-        else
-        {
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
             memcpy(denominator_copy.data(), reinterpret_cast<const char *>(&denominator), denom_size);
@@ -418,7 +377,7 @@ public:
             auto zeros_copy = zeros;
             DB::transformEndianness<std::endian::little, std::endian::native>(zeros_copy);
             out.write(reinterpret_cast<const char *>(&zeros_copy), sizeof(ZerosCounterType));
-        }
+       }
     }
 
     /// Read and write in text mode is suboptimal (but compatible with OLAPServer and Metrage).
@@ -439,7 +398,7 @@ public:
 
     static void skipText(DB::ReadBuffer & in)
     {
-        UInt8 dummy = 0;
+        UInt8 dummy;
         for (size_t i = 0; i < RankStore::size(); ++i)
         {
             if (i != 0)
@@ -483,28 +442,17 @@ private:
 
     /// Update maximum rank for current bucket.
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
-    /// A rank from another state is checked: a corrupted state can have ranks above `max_rank`, the last index of `rank_count`.
-    template <bool check_rank = false>
     void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
     {
-        UInt8 cur_rank = rank_store.get(bucket);
+        typename RankStore::Locus content = rank_store[bucket];
+        UInt8 cur_rank = static_cast<UInt8>(content);
 
         if (rank > cur_rank)
         {
-            if constexpr (check_rank)
-            {
-                if (unlikely(rank > max_rank))
-                    throw DB::Exception(
-                        DB::ErrorCodes::INCORRECT_DATA,
-                        "Corrupted HyperLogLog state: rank {} is above the maximum rank {}",
-                        static_cast<UInt32>(rank),
-                        max_rank);
-            }
-
             if (cur_rank == 0)
                 --zeros;
             denominator.update(cur_rank, rank);
-            rank_store.set(bucket, rank);
+            content = rank;
         }
     }
 
@@ -520,7 +468,7 @@ private:
         {
             static constexpr double pow2_32 = 4294967296.0;
 
-            double fixed_estimate = 0;
+            double fixed_estimate;
 
             if (raw_estimate > (pow2_32 / 30.0))
                 fixed_estimate = raw_estimate;
@@ -534,7 +482,7 @@ private:
 
     double applyCorrection(double raw_estimate) const
     {
-        double fixed_estimate = 0;
+        double fixed_estimate;
 
         if (BiasEstimator::isTrivial())
         {
@@ -563,7 +511,7 @@ private:
     /// (S. Heule et al., Proceedings of the EDBT 2013 Conference).
     double applyBiasCorrection(double raw_estimate) const
     {
-        double fixed_estimate = 0;
+        double fixed_estimate;
 
         if (raw_estimate <= (5 * bucket_count))
             fixed_estimate = raw_estimate - BiasEstimator::getBias(raw_estimate);
@@ -578,7 +526,7 @@ private:
     /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990).
     double applyLinearCorrection(double raw_estimate) const
     {
-        double fixed_estimate = 0;
+        double fixed_estimate;
 
         if (zeros != 0)
             fixed_estimate = bucket_count * (log_lut.getLog(bucket_count) - log_lut.getLog(zeros));

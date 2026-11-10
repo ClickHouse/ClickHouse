@@ -9,7 +9,7 @@ CREATE TABLE test (d Date, x UInt64) ENGINE = MergeTree() PARTITION BY d ORDER B
 INSERT INTO test VALUES ('2025-01-01', 1), ('2025-01-02', 2);
 "
 
-for enable_analyzer in 1; do
+for enable_analyzer in 0 1; do
 # should filter by virtual columns
 $CLICKHOUSE_CLIENT --query "SELECT * FROM test WHERE _partition_id = '202501' FORMAT Null" --enable_analyzer=$enable_analyzer --print-profile-events 2>&1 \
     | grep -q FilterPartsByVirtualColumnsMicroseconds && echo "enable_analyzer: $enable_analyzer, filtering by virtual columns"

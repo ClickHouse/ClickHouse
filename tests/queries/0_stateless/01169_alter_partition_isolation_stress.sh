@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-ordinary-database, no-azure-blob-storage, no-s3-storage
+# Tags: long, no-replicated-database, no-ordinary-database, no-encrypted-storage, no-azure-blob-storage, no-s3-storage
 
 # shellcheck disable=SC2015
 # shellcheck disable=SC2119
@@ -21,7 +21,7 @@ function thread_insert()
 {
     set -eu
     val=1
-    while clickhouse_test_time_left; do
+    while true; do
         $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);
@@ -208,7 +208,7 @@ function thread_partition_dst_to_src()
 function thread_select()
 {
     set -eu
-    while clickhouse_test_time_left; do
+    while true; do
         output=$(
         $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
