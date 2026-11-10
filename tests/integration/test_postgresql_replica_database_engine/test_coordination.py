@@ -1585,6 +1585,78 @@ def test_leaked_publication_of_another_source_cluster_is_not_dropped(started_clu
         pg_query(f'DROP PUBLICATION IF EXISTS "{publication_name}"')
 
 
+def test_leaked_publication_cleanup_is_serialized_with_concurrent_create(started_cluster):
+    # Two fresh coordinated CREATEs can both see a leaked publication with no coordination state. The check
+    # is only advisory: if one replica dropped the leak, registered, won the election and created its live
+    # publication while the other one was between the check and its drop, the late drop would remove the
+    # live publication under the running consumer, and replication would stop for good. The cleanup holds
+    # `/leader` (only its holder ever creates the publication), so the other replica cannot start in that
+    # window: it retries, and both replicas then converge on the new publication.
+    pg_manager.create_postgres_table("test_table")
+    pg_manager.create_postgres_table("old_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    # Learn the engine's generated publication name from a real setup, then drop the setup cleanly.
+    create_coordinated_db("old_table")
+    check_tables_are_synchronized(instance, "old_table")
+    publication_name = pg_query("SELECT pubname FROM pg_publication")[0][0]
+    pg_manager2.drop_materialized_db()
+    pg_manager.drop_materialized_db()
+    assert not publication_exists()
+
+    # Simulate the leak of the old setup's publication.
+    pg_query(f'CREATE PUBLICATION "{publication_name}" FOR TABLE ONLY "old_table"')
+
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    failpoint = "materialized_postgresql_pause_before_leaked_publication_drop"
+    pause_line = "Pausing before dropping a leaked publication"
+    busy_line = "another replica holds the replication leadership"
+    pause_baseline = count_in_all_logs(instance, pause_line)
+    busy_baseline = count_in_all_logs(instance2, busy_line)
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        # The first replica holds `/leader` and is paused right before the drop.
+        wait_for_new_log_occurrence(instance, pause_line, pause_baseline)
+
+        # The second replica sees the same leak, but cannot clean it up or start while the first one holds
+        # `/leader`.
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        wait_for_new_log_occurrence(instance2, busy_line, busy_baseline)
+        assert pg_query(
+            f"SELECT tablename FROM pg_publication_tables WHERE pubname = '{publication_name}'"
+        ) == [("old_table",)]
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    publication_tables = {
+        row[0]
+        for row in pg_query(
+            f"SELECT tablename FROM pg_publication_tables WHERE pubname = '{publication_name}'"
+        )
+    }
+    assert publication_tables == {"test_table"}
+
+    # Replication keeps going through the new publication.
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+    pg_query('DROP TABLE IF EXISTS "old_table"')
+
+
 def test_refused_drop_in_restart_window_does_not_disable_startup(started_cluster):
     # A fail-close refused DROP DATABASE deactivates the background startup task up front. In the
     # attach/restart window - where the replication handler has not been rebuilt yet - the refusal must

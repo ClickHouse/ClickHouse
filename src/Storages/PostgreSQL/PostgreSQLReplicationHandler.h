@@ -248,15 +248,6 @@ private:
     /// the snapshot, and it propagates to the standbys through ClickHouse replication.
     void ensureNestedTablesExist();
 
-    /// For every nested table whose shut-down copy `ensureNestedTablesExist` drops, the generation (the creation
-    /// zxid of the root node, 0 if it was missing) of the shared replicated tree that copy belonged to is recorded
-    /// in Keeper at `getNestedRecreationPath` before the drop. The record survives failed attempts, retried
-    /// database startups (which reconstruct the handler) and restarts. Once the replacement exists, it is compared
-    /// with the tree the replacement joined, and the `snapshot_completed` marker is removed if they differ.
-    String getNestedRecreationPath(const String & table_name) const;
-    void recordNestedTreeGeneration(const String & table_name, const NestedTableEngineSpec & engine_spec);
-    void checkRecordedNestedTreeGeneration(const String & table_name);
-
     /// Coordinated mode: mark the nested tables available on this replica once it holds the complete initial
     /// snapshot (the marker exists and the local replica has caught up). Returns whether all of them are.
     bool markCaughtUpNestedTablesAvailable();
@@ -427,9 +418,6 @@ private:
     /// registers, so trusting them there would make a concurrently fenced foreign table set authoritative.
     bool hasSurvivingCoordinationState(bool include_refused_drop_metadata);
     bool isInitialSnapshotCompleted();
-    /// Removes the `snapshot_completed` marker if no replica other than this one's exists in the shared tree of
-    /// a nested table, so that the next active worker redoes the snapshot instead of resuming from the slot.
-    void invalidateInitialSnapshotIfNoOtherNestedReplica(const NestedTableEngineSpec & engine_spec);
     /// Removes the `snapshot_completed` marker unconditionally; `reason` is logged.
     void invalidateInitialSnapshot(const String & reason);
     void markInitialSnapshotCompleted(const String & lsn);

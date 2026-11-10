@@ -1,5 +1,6 @@
 #include <random>
 #include <base/sort.h>
+#include <base/scope_guard.h>
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -282,7 +283,9 @@ namespace FailPoints
     extern const char materialized_postgresql_fail_leader_release_at_shutdown[];
     extern const char materialized_postgresql_fail_load_from_snapshot[];
     extern const char materialized_postgresql_fail_add_table_to_replication[];
+    extern const char materialized_postgresql_fail_after_publication_removal[];
     extern const char materialized_postgresql_pause_before_register_replica[];
+    extern const char materialized_postgresql_pause_before_leaked_publication_drop[];
     extern const char materialized_postgresql_pause_in_non_last_teardown[];
     extern const char materialized_postgresql_pause_before_marking_snapshot_completed[];
     extern const char materialized_postgresql_pause_before_redo_snapshot_truncate[];
@@ -2015,20 +2018,21 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
                 "the shared replicated tree",
                 postgres_database, table_name);
 
-            /// Dropping the dead copy deletes its data. If no other replica of the shared tree holds the data,
-            /// it was the last copy: the recreated table is empty, but the shared slot and the `snapshot_completed`
-            /// marker survive, so the next active worker would resume from the slot and never reload the rows.
-            /// Invalidate the completed snapshot before discarding the last copy, so the next active worker redoes
-            /// it (`startSynchronization` reloads every table when the slot exists without the marker). A peer can
-            /// drop its own copy at any moment between this check and the creation of the replacement, so the
-            /// generation of the shared tree is recorded here as well, and checked again once the replacement
-            /// exists (see `getNestedRecreationPath`).
+            /// Dropping the dead copy deletes its data. If it was the last copy that holds the data, the recreated
+            /// table is empty, but the shared slot and the `snapshot_completed` marker survive, so the next active
+            /// worker would resume from the slot and never reload the rows. Nothing cheap proves that another copy
+            /// holds the data: the other replicas registered in the shared tree can be stopped copies that are
+            /// being recovered the same way at the same time, or replacements that have not fetched any part yet
+            /// (and a stopped copy cannot serve the fetches). So invalidate the completed snapshot before discarding
+            /// any stopped copy, and the next active worker redoes it (`startSynchronization` reloads every table
+            /// when the slot exists without the marker). This costs a reload of the snapshot, but it is only done
+            /// in the recovery from a refused drop. The marker is removed durably before the drop, and a failure to
+            /// remove it fails the attempt without discarding the copy.
             const auto shut_down_engine_spec = makeNestedEngineSpec(table_name);
             if (coordination_enabled && shut_down_engine_spec.replicated)
-            {
-                recordNestedTreeGeneration(table_name, shut_down_engine_spec);
-                invalidateInitialSnapshotIfNoOtherNestedReplica(shut_down_engine_spec);
-            }
+                invalidateInitialSnapshot(fmt::format(
+                    "The shut-down copy of the shared nested table at {} is being dropped and recreated, and it may be "
+                    "the last copy that holds the data of the completed snapshot", shut_down_engine_spec.zookeeper_path));
 
             /// Use the wrapper's internal nested-table context: for the database engine the nested table
             /// lives inside the coordinated DatabaseMaterializedPostgreSQL, whose `dropTable` refuses a
@@ -2110,16 +2114,6 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
                 throw;
             }
         }
-
-        /// The replacement of a dropped shut-down copy exists now. If the shared tree it joined is not the one
-        /// the dropped copy belonged to, every copy of the old tree was dropped in the meantime (the tree is
-        /// removed together with its last replica), so the replacement joined an empty tree: the completed
-        /// snapshot no longer exists in any copy and must be redone. Checked after the creation, because only
-        /// then the replacement is registered in the tree and keeps it from being removed.
-        /// The record is kept in Keeper, so it survives a failure of this check, the reconstruction of the
-        /// handler by a retried database startup, and a server restart.
-        if (coordination_enabled)
-            checkRecordedNestedTreeGeneration(table_name);
 
         /// The nested table is deliberately not marked as available here: it is still empty (or only partially
         /// replicated) until the active worker has loaded the whole snapshot and this replica has fetched it.
@@ -2308,6 +2302,23 @@ void PostgreSQLReplicationHandler::coordinationFunc()
 
         if (leader_node)
         {
+            /// A running consumer means that this worker has loaded or resumed a completed initial snapshot, so the
+            /// `snapshot_completed` marker existed. It is removed while the setup runs only when the snapshot is no
+            /// longer present in the shared nested tables: the recovery from a refused drop on any replica discards
+            /// a stopped copy that may have been the last one holding the data (see `ensureNestedTablesExist`).
+            /// Every replica hides its nested tables while the marker is missing, so the snapshot must be redone
+            /// now, not at the next failover. Stop the consumer; `startSynchronization` below then takes the
+            /// redo-the-snapshot branch, because the slot exists without the marker.
+            if (consumer && !isInitialSnapshotCompleted())
+            {
+                LOG_WARNING(log, "The initial snapshot marker was removed while this replica was the active worker. "
+                                 "Stopping the consumer and reloading all tables from a new snapshot");
+                std::lock_guard lifecycle_lock(consumer_lifecycle_mutex);
+                consumer_task->deactivate(); /// blocks until the in-flight consume() iteration finishes
+                std::lock_guard lock(consumer_ptr_mutex);
+                consumer.reset();
+            }
+
             /// Still the active worker. Make sure the consumer is running (retry if a previous
             /// startSynchronization attempt failed).
             if (!consumer)
@@ -3542,8 +3553,6 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes(bool remove_metadata)
     }
     remove_checked(coordination_keeper_path + "/replicas", /* recursive */ true);
     remove_checked(coordination_keeper_path + "/snapshot_completed");
-    /// The records of `recordNestedTreeGeneration` are meaningless once the setup is torn down.
-    remove_checked(coordination_keeper_path + "/nested_recreations", /* recursive */ true);
     /// The naming fingerprint and table set remain until the local nested tables are actually gone. A refused
     /// DROP then restarts against their authoritative coordinated identity instead of treating the still-live
     /// publication as a leak and deriving a different set from the current PostgreSQL schema.
@@ -3600,76 +3609,6 @@ bool PostgreSQLReplicationHandler::isInitialSnapshotCompleted()
 
     auto zookeeper = getContext()->getZooKeeper();
     return zookeeper->exists(coordination_keeper_path + "/snapshot_completed");
-}
-
-
-String PostgreSQLReplicationHandler::getNestedRecreationPath(const String & table_name) const
-{
-    return coordination_keeper_path + "/nested_recreations/" + coordination_replica_name + "/" + escapeForFileName(table_name);
-}
-
-
-void PostgreSQLReplicationHandler::recordNestedTreeGeneration(const String & table_name, const NestedTableEngineSpec & engine_spec)
-{
-    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::recordNestedTreeGeneration");
-
-    auto zookeeper = getContext()->getZooKeeper();
-    Coordination::Stat tree_stat;
-    const bool tree_exists = zookeeper->exists(engine_spec.zookeeper_path, &tree_stat);
-    const Int64 generation = tree_exists ? tree_stat.czxid : 0;
-
-    /// A record left by an earlier attempt that failed before the replacement was created is kept: it holds the
-    /// generation of the tree that the data of the dropped copy belonged to (or an older one, which is checked
-    /// conservatively the same way).
-    const String path = getNestedRecreationPath(table_name);
-    zookeeper->createAncestors(path);
-    const auto code = zookeeper->tryCreate(path, toString(generation), zkutil::CreateMode::Persistent);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-        throw zkutil::KeeperException::fromPath(code, path);
-}
-
-
-void PostgreSQLReplicationHandler::checkRecordedNestedTreeGeneration(const String & table_name)
-{
-    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::checkRecordedNestedTreeGeneration");
-
-    auto zookeeper = getContext()->getZooKeeper();
-    const String path = getNestedRecreationPath(table_name);
-    String recorded;
-    if (!zookeeper->tryGet(path, recorded))
-        return;
-
-    const auto engine_spec = makeNestedEngineSpec(table_name);
-    const Int64 generation = parse<Int64>(recorded);
-    Coordination::Stat tree_stat;
-    const bool tree_exists = zookeeper->exists(engine_spec.zookeeper_path, &tree_stat);
-    if (!tree_exists || generation == 0 || tree_stat.czxid != generation)
-        invalidateInitialSnapshot(fmt::format(
-            "The shared nested table at {} was recreated since this replica dropped its shut-down copy, so no "
-            "copy of the completed snapshot is left", engine_spec.zookeeper_path));
-
-    /// Removed only after the check (and the invalidation) succeeded: if anything above fails, the next attempt
-    /// checks again.
-    const auto code = zookeeper->tryRemove(path);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-        throw zkutil::KeeperException::fromPath(code, path);
-}
-
-
-void PostgreSQLReplicationHandler::invalidateInitialSnapshotIfNoOtherNestedReplica(const NestedTableEngineSpec & engine_spec)
-{
-    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::invalidateInitialSnapshotIfNoOtherNestedReplica");
-
-    auto zookeeper = getContext()->getZooKeeper();
-    Strings replicas;
-    zookeeper->tryGetChildren(engine_spec.zookeeper_path + "/replicas", replicas);
-    for (const auto & replica : replicas)
-        if (replica != engine_spec.replica_name)
-            return;
-
-    invalidateInitialSnapshot(fmt::format(
-        "No other replica of the shared nested table at {} holds its data, so this replica's copy, which is being "
-        "recreated, is the last one", engine_spec.zookeeper_path));
 }
 
 
@@ -4508,21 +4447,78 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
     if (publication_exists_before_startup && coordination_enabled && !is_attach
         && !hasSurvivingCoordinationState(/* include_refused_drop_metadata */ true))
     {
-        LOG_WARNING(log,
-                    "Publication {} exists, but there is no coordination state under {} (no snapshot marker and no "
-                    "registered replicas): it was left behind by an incompletely dropped coordinated setup and its "
-                    "table set is stale. Dropping it; it will be recreated",
-                    doubleQuoteString(publication_name), coordination_keeper_path);
-
-        /// The absence of other coordination state does not prove that the publication belongs to this setup:
-        /// an interrupted first startup may have recorded the source cluster only. Check it through the session
-        /// of every drop attempt (`execWithRetry` may reconnect to another backend).
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_)
+        /// The check above is only advisory: it ran before this replica registered, and it does not stay true until
+        /// the drop below. Another replica can drop the leak meanwhile, register, win the election and create its
+        /// live publication, which a blind drop here would then remove under its running consumer. Only the holder
+        /// of `/leader` ever creates the publication, and every replica registers before it competes for
+        /// `/leader`. So hold `/leader` for the cleanup and repeat the check under it: if there is still no
+        /// coordination state, no replica can have created the publication since, and none can until the node
+        /// is released after the drop. If another replica holds `/leader`, it is registered, so the publication
+        /// is live: fail this attempt, and the retry of the background startup task adopts it.
+        auto zookeeper = getContext()->getZooKeeper();
+        const String leader_path = coordination_keeper_path + "/leader";
+        zookeeper->createAncestors(leader_path);
+        zkutil::EphemeralNodeHolderPtr cleanup_leader_node;
         {
-            checkLeakedPublicationTargetIsRecordedSourceCluster(tx_);
-            dropPublication(tx_);
+            auto election_lock = LeakedLeaderNodeReleaser::instance().lockElections();
+            cleanup_leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
+            if (!cleanup_leader_node && removeLeakedOwnLeaderNode(zookeeper, leader_path))
+                cleanup_leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
+        }
+
+        if (!cleanup_leader_node)
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Publication {} looks left behind by an incompletely dropped coordinated setup, but another replica "
+                "holds the replication leadership at {}, so the publication may be live. Retrying",
+                doubleQuoteString(publication_name), leader_path);
+
+        /// Releases the temporary leadership through the session that holds it, like `releaseLeadershipAfterFailedStartup`.
+        /// An unconfirmed removal is not retried blindly: the node is this replica's own under the current session,
+        /// so a later election recognizes and removes it (see `removeLeakedOwnLeaderNode`).
+        SCOPE_EXIT({
+            try
+            {
+                auto election_lock = LeakedLeaderNodeReleaser::instance().lockElections();
+                zookeeper->remove(leader_path);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Could not confirm the removal of the temporary replication leader node");
+            }
+            cleanup_leader_node->setAlreadyRemoved();
         });
-        publication_exists_before_startup = false;
+
+        if (!hasSurvivingCoordinationState(/* include_refused_drop_metadata */ true))
+        {
+            LOG_WARNING(log,
+                        "Publication {} exists, but there is no coordination state under {} (no snapshot marker and no "
+                        "registered replicas): it was left behind by an incompletely dropped coordinated setup and its "
+                        "table set is stale. Dropping it; it will be recreated",
+                        doubleQuoteString(publication_name), coordination_keeper_path);
+
+            /// The absence of other coordination state does not prove that the publication belongs to this setup:
+            /// an interrupted first startup may have recorded the source cluster only. Check it through the session
+            /// of every drop attempt (`execWithRetry` may reconnect to another backend).
+            execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_)
+            {
+                /// The temporary leadership is what makes the drop safe, so it must still be held.
+                if (zookeeper->expired())
+                    throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                        "The Keeper session holding the temporary replication leadership expired, not dropping "
+                        "publication {}", doubleQuoteString(publication_name));
+
+                fiu_do_on(FailPoints::materialized_postgresql_pause_before_leaked_publication_drop,
+                {
+                    LOG_INFO(log, "Pausing before dropping a leaked publication until failpoint "
+                             "materialized_postgresql_pause_before_leaked_publication_drop is disabled");
+                    FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_leaked_publication_drop);
+                });
+
+                checkLeakedPublicationTargetIsRecordedSourceCluster(tx_);
+                dropPublication(tx_);
+            });
+            publication_exists_before_startup = false;
+        }
     }
 
     Strings expected_tables;
@@ -5081,6 +5077,14 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
     consumer_task->deactivate();
     try
     {
+        /// Stop tracking the table in the consumer before it is removed from the publication. The removal runs in a
+        /// `pqxx::nontransaction`, so PostgreSQL can have applied it even when this throws (for example, the response
+        /// was lost). A consumer re-armed below with the table still tracked would then go on acknowledging the WAL
+        /// that no longer carries its changes, as if the table were up to date. The caller treats a failure here as
+        /// potentially committed and reloads the table from a new snapshot (see
+        /// `DatabaseMaterializedPostgreSQL::detachTablePermanently`), which re-adds it to the consumer.
+        getConsumer()->removeNested(postgres_table_name);
+
         postgres::Connection replication_connection(connection_info, /* replication */true);
 
         {
@@ -5088,8 +5092,11 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
             removeTableFromPublication(tx, postgres_table_name);
         }
 
-        /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
-        getConsumer()->removeNested(postgres_table_name);
+        fiu_do_on(FailPoints::materialized_postgresql_fail_after_publication_removal,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected failure after removing table `{}` from the publication", postgres_table_name);
+        });
     }
     catch (...)
     {

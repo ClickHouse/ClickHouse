@@ -983,6 +983,58 @@ def test_failed_detach_keeps_membership_without_reload_marker(started_cluster):
     pg_manager.drop_materialized_db()
 
 
+def test_failed_publication_removal_reloads_table(started_cluster):
+    # `ALTER PUBLICATION ... DROP TABLE` runs outside of a transaction, so a DETACH TABLE ... PERMANENTLY that
+    # fails right after it can have removed the table from the publication anyway. Restoring the original
+    # membership as is would keep consuming the slot past changes the publication no longer carries: a row
+    # deleted meanwhile would survive for good. The failure is treated as potentially committed instead, and
+    # the table is reloaded from a new snapshot and put back into the publication.
+    table_name = "postgresql_replica_detach_publication_removed"
+    other_table_name = "postgresql_replica_detach_publication_removed_other"
+    for name in (table_name, other_table_name):
+        pg_manager.create_postgres_table(name)
+        instance.query(
+            f"INSERT INTO postgres_database.{name} SELECT number, number FROM numbers(50)"
+        )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_name},{other_table_name}'"
+        ],
+    )
+    check_tables_are_synchronized(instance, table_name)
+    check_tables_are_synchronized(instance, other_table_name)
+
+    failpoint = "materialized_postgresql_fail_after_publication_removal"
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        error = instance.query_and_get_error(
+            f"DETACH TABLE test_database.{table_name} PERMANENTLY"
+        )
+        assert "Injected failure" in error
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    # The failed DETACH is a no-op: the table is still replicated, including deletes.
+    pg_manager.execute(f"DELETE FROM {table_name} WHERE key = 0")
+    instance.query(
+        f"INSERT INTO postgres_database.{other_table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+    check_tables_are_synchronized(instance, other_table_name)
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 49
+
+    instance.restart_clickhouse()
+    pg_manager.execute(f"DELETE FROM {table_name} WHERE key = 1")
+    check_tables_are_synchronized(instance, table_name)
+    check_tables_are_synchronized(instance, other_table_name)
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 48
+
+    pg_manager.drop_materialized_db()
+
+
 def test_count_does_not_include_deleted_rows(started_cluster):
     # A `SELECT count()` needs no particular column, so the planner reads the cheapest column of the
     # nested table - which is the one-byte `_sign` column itself. The `_sign = 1` filter of the wrapped

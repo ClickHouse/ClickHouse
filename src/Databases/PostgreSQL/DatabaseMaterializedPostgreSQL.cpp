@@ -1054,62 +1054,11 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             }
         };
 
-        auto alter_query = createAlterSettingsQuery(new_settings);
-
+        /// Brings the table back after a failed detach that may already have removed it from the publication and
+        /// the consumer.
+        auto readd_table_with_reload = [&]
         {
-            auto current_context = Context::createCopy(getContext()->getGlobalContext());
-            current_context->setInternalQuery(true);
-            InterpreterAlterQuery(alter_query, current_context).execute();
-        }
-
-        try
-        {
-            /// Scoped tightly: the rollback ALTER below reaches `applySettingsChanges`, which takes
-            /// `handler_mutex`, so it must run only after the guard is destroyed during unwinding.
-            std::lock_guard lock(handler_mutex);
-            if (!replication_handler)
-                throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
-                    "Cannot remove table `{}` from replication: the replication handler is gone. Retry later", table_name);
-            replication_handler->removeTableFromReplication(table_name);
-        }
-        catch (...)
-        {
-            /// Nothing besides the tables-list setting is committed yet - restore it and propagate.
-            rollback_tables_list();
-            throw;
-        }
-
-        try
-        {
-            fiu_do_on(FailPoints::materialized_postgresql_fail_nested_drop_on_detach,
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED,
-                    "Injected failure while dropping the nested table of detached table `{}`", table_name);
-            });
-
-            auto current_context = Context::createCopy(getContext()->getGlobalContext());
-            current_context->makeQueryContext();
-            DatabaseAtomic::dropTable(current_context, table_name, true);
-        }
-        catch (Exception & e)
-        {
-            /// `DatabaseAtomic::dropTable` can throw after it has already detached the nested table (in the
-            /// cleanup steps that follow the metadata rename). Then the detach has in fact completed: the
-            /// table is out of the publication, the consumer, the persisted tables list and the catalog. Do
-            /// not try to re-add a table that is gone (it would fail and leave a dead wrapper published);
-            /// finish the detach by removing the wrapper, and report the cleanup error.
-            if (!DatabaseAtomic::isTableExist(table_name, getContext()))
-            {
-                {
-                    std::lock_guard tables_lock(tables_mutex);
-                    materialized_tables.erase(table_name);
-                }
-                e.addMessage("while cleaning up the dropped nested table of detached table `" + table_name
-                    + "`; the table is detached");
-                throw;
-            }
-
-            /// The table is already out of the publication and the consumer, and the WAL that PostgreSQL
+            /// The table is (or may already be) out of the publication and the consumer, and the WAL that PostgreSQL
             /// sent past that point no longer carries its changes, so merely re-registering the consumer
             /// state would lose data. Re-add through `addTableToReplication`: it clears the surviving nested
             /// table and reloads it from a fresh snapshot, and restores the publication and the consumer
@@ -1194,6 +1143,78 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             /// which fails closed, and until then the detach can be retried.
             if (reload_marker_persisted)
                 rollback_tables_list();
+        };
+
+        auto alter_query = createAlterSettingsQuery(new_settings);
+
+        {
+            auto current_context = Context::createCopy(getContext()->getGlobalContext());
+            current_context->setInternalQuery(true);
+            InterpreterAlterQuery(alter_query, current_context).execute();
+        }
+
+        bool removal_started = false;
+        try
+        {
+            /// Scoped tightly: the rollback ALTER below reaches `applySettingsChanges`, which takes
+            /// `handler_mutex`, so it must run only after the guard is destroyed during unwinding.
+            std::lock_guard lock(handler_mutex);
+            if (!replication_handler)
+                throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot remove table `{}` from replication: the replication handler is gone. Retry later", table_name);
+            removal_started = true;
+            replication_handler->removeTableFromReplication(table_name);
+        }
+        catch (...)
+        {
+            if (!removal_started)
+            {
+                /// Nothing besides the tables-list setting is committed yet - restore it and propagate.
+                rollback_tables_list();
+                throw;
+            }
+
+            /// A failed removal must be treated as potentially committed: `removeTableFromReplication` removes the
+            /// table from the consumer before the publication, and `ALTER PUBLICATION ... DROP TABLE` runs in a
+            /// `pqxx::nontransaction`, so PostgreSQL can have applied it even if the response was lost. Restoring
+            /// the original membership as is would let the table resume from the slot, which has already skipped
+            /// the changes made while the table was out of the publication (a row deleted meanwhile would survive
+            /// for good). Recover the same way as from a failed nested drop below.
+            readd_table_with_reload();
+            throw;
+        }
+
+        try
+        {
+            fiu_do_on(FailPoints::materialized_postgresql_fail_nested_drop_on_detach,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED,
+                    "Injected failure while dropping the nested table of detached table `{}`", table_name);
+            });
+
+            auto current_context = Context::createCopy(getContext()->getGlobalContext());
+            current_context->makeQueryContext();
+            DatabaseAtomic::dropTable(current_context, table_name, true);
+        }
+        catch (Exception & e)
+        {
+            /// `DatabaseAtomic::dropTable` can throw after it has already detached the nested table (in the
+            /// cleanup steps that follow the metadata rename). Then the detach has in fact completed: the
+            /// table is out of the publication, the consumer, the persisted tables list and the catalog. Do
+            /// not try to re-add a table that is gone (it would fail and leave a dead wrapper published);
+            /// finish the detach by removing the wrapper, and report the cleanup error.
+            if (!DatabaseAtomic::isTableExist(table_name, getContext()))
+            {
+                {
+                    std::lock_guard tables_lock(tables_mutex);
+                    materialized_tables.erase(table_name);
+                }
+                e.addMessage("while cleaning up the dropped nested table of detached table `" + table_name
+                    + "`; the table is detached");
+                throw;
+            }
+
+            readd_table_with_reload();
 
             e.addMessage("while dropping the nested table of detached table `" + table_name + "`");
             throw;
