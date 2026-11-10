@@ -3397,6 +3397,30 @@ void Context::addViewAccessInfo(const String & view_name)
     query_access_info->views.emplace(view_name);
 }
 
+void Context::addSQLSecurityOverriddenBody(const StorageID & view_id, const ContextPtr & body_context, const ASTPtr & body_query)
+{
+    const auto hash = body_query->getTreeHash(/*ignore_aliases=*/ false);
+    const std::pair<UInt64, UInt64> query_hash{hash.low64, hash.high64};
+    auto user = body_context->getUserName();
+    auto current_database = body_context->getCurrentDatabase();
+    auto body_query_context = body_context->getQueryContext();
+
+    std::lock_guard lock(query_access_info->mutex);
+    auto & bodies = query_access_info->sql_security_overridden_bodies;
+    /// A body planned again, e.g. for every block of a materialized view that reads the view, adds to the first one.
+    for (const auto & body : bodies)
+    {
+        if (body->query_hash == query_hash && body->user == user && StorageID::DatabaseAndTableNameEqual{}(body->view, view_id))
+        {
+            body_query_context->setQueryAccessInfo(body->access_info);
+            return;
+        }
+    }
+    bodies.push_back(std::make_shared<const SQLSecurityOverriddenBody>(SQLSecurityOverriddenBody{
+        .view = view_id, .query_hash = query_hash, .user = std::move(user), .current_database = std::move(current_database),
+        .query = body_query, .access_info = body_query_context->getQueryAccessInfoPtr()}));
+}
+
 void Context::addUsedRowPolicy(const String & policy_name)
 {
     if (isGlobalContext())
@@ -3404,15 +3428,6 @@ void Context::addUsedRowPolicy(const String & policy_name)
 
     std::lock_guard<std::mutex> lock(query_access_info->mutex);
     query_access_info->row_policies.emplace(policy_name);
-}
-
-void Context::markQueryAccessInfoHiddenFromUserQueryLog()
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
-
-    std::lock_guard<std::mutex> lock(query_access_info->mutex);
-    query_access_info->is_hidden_from_user_query_log = true;
 }
 
 void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)

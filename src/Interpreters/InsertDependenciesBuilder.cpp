@@ -34,7 +34,6 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
 #include <Interpreters/Context.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/CountingTransform.h>
@@ -1351,9 +1350,17 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
 {
     const auto & current = path.current();
 
+    const auto & metadata = metadata_snapshots.at(current);
     auto parent_select_context = select_contexts.at(path.parent(2));
-    auto select_context = metadata_snapshots.at(current)->getSQLSecurityOverriddenContext(parent_select_context);
-    select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
+    auto select_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
+    /// The body of a `DEFINER` / `NONE` view runs in a query context of its own and is logged as a child row of the query.
+    if (metadata->sql_security_type == SQLSecurityType::DEFINER || metadata->sql_security_type == SQLSecurityType::NONE)
+    {
+        if (parent_select_context->hasQueryContext())
+            parent_select_context->getQueryContext()->addSQLSecurityOverriddenBody(current, select_context, metadata->getSelectQuery().inner_query);
+    }
+    else
+        select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)
     select_context->setSetting("parallelize_output_from_storages", Field{false});
@@ -1541,12 +1548,14 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
         const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
 
-        if (init_context->hasQueryContext()
-            && init_context->getGlobalContext()->getConfigRef().getBool("query_log.enable_query_access_info_attribution", false))
+        /// An insert into a `DEFINER` / `NONE` view writes its target under the view's identity, logged as a child row of the query.
+        if ((metadata->sql_security_type == SQLSecurityType::DEFINER || metadata->sql_security_type == SQLSecurityType::NONE)
+            && init_context->hasQueryContext())
         {
-            const auto query_access_info = init_context->getQueryContext()->getQueryAccessInfoPtr();
-            select_context->setQueryAccessInfo(query_access_info);
-            insert_context->setQueryAccessInfo(query_access_info);
+            auto insert_query = make_intrusive<ASTInsertQuery>();
+            insert_query->table_id = inner_table_;
+            init_context->getQueryContext()->addSQLSecurityOverriddenBody(root_view_, select_context, insert_query);
+            init_context->getQueryContext()->addSQLSecurityOverriddenBody(root_view_, insert_context, insert_query);
         }
 
         root_view = root_view_;
@@ -1568,12 +1577,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     {
         if (current == init_table_id)
         {
-            if (init_context->hasQueryContext()
-                && (!metadata->sql_security_type
-                    || metadata->sql_security_type == SQLSecurityType::DEFINER
-                    || metadata->sql_security_type == SQLSecurityType::NONE))
-                init_context->getQueryContext()->markQueryAccessInfoHiddenFromUserQueryLog();
-
             set_defaults_for_root_view(init_table_id, materialized_view->getTargetTableId());
             view_types[init_table_id] = QueryViewsLogElement::ViewType::MATERIALIZED;
             return true;
@@ -1589,18 +1592,12 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         input_headers[current] = output_headers.at(path.parent(2));
         // output_headers is filled at next call observePath(inner_table)
 
-        if (init_context->hasQueryContext()
-            && (!metadata->sql_security_type
-                || metadata->sql_security_type == SQLSecurityType::DEFINER
-                || metadata->sql_security_type == SQLSecurityType::NONE))
-            init_context->getQueryContext()->markQueryAccessInfoHiddenFromUserQueryLog();
-
         std::tie(select_contexts[current], insert_contexts[current]) = createSelectInsertContext(path);
 
         dependent_views[current] = {};
 
-        if (init_context->hasQueryContext())
-            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
+        if (const auto & source_writer_context = insert_contexts.at(path.parent(2)); source_writer_context->hasQueryContext())
+            source_writer_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
 
         return true;
     }
@@ -1610,8 +1607,10 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         /// at the first iteration it is the init_table_id most likely
         /// the following iterations will be for inner tables of materialized views
 
-        if (init_context->hasQueryContext())
-            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
+        /// A table is recorded by the query that writes it: the caller for the table it inserts into, else the view it is the target of.
+        const auto & writer_context = current == init_table_id ? init_context : insert_contexts.at(parent);
+        if (writer_context->hasQueryContext())
+            writer_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
 
         if (current == init_table_id)
         {

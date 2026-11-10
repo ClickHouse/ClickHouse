@@ -157,7 +157,7 @@ ${CLICKHOUSE_CLIENT} --user "$definer" --query "
     SELECT secret FROM $db.policy_dist SETTINGS $pr_settings, prefer_localhost_replica = 1, log_comment = '05257_dist_direct_${CLICKHOUSE_DATABASE}'"
 ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS query_log;
-    SELECT replaceOne(log_comment, '_' || currentDatabase(), ''), countIf(NOT is_initial_query) > 0 FROM system.query_log
+    SELECT replaceOne(log_comment, '_' || currentDatabase(), ''), countIf(NOT is_initial_query AND distributed_depth > 0) > 0 FROM system.query_log
     WHERE type = 'QueryFinish' AND initial_query_id IN (
         SELECT query_id FROM system.query_log
         WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()

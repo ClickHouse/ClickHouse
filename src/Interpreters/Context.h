@@ -509,6 +509,8 @@ protected:
     std::unordered_map<UUID, StorageSnapshotPtr> pinned_storage_snapshots;
 
 public:
+    struct SQLSecurityOverriddenBody;
+
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
@@ -524,7 +526,6 @@ public:
             projections = rhs.projections;
             views = rhs.views;
             row_policies = rhs.row_policies;
-            is_hidden_from_user_query_log = rhs.is_hidden_from_user_query_log;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -546,7 +547,7 @@ public:
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
             std::swap(row_policies, rhs.row_policies);
-            std::swap(is_hidden_from_user_query_log, rhs.is_hidden_from_user_query_log);
+            std::swap(sql_security_overridden_bodies, rhs.sql_security_overridden_bodies);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -558,9 +559,22 @@ public:
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
         std::set<std::string> row_policies TSA_GUARDED_BY(mutex){};
-        bool is_hidden_from_user_query_log TSA_GUARDED_BY(mutex) = false;
+        /// The bodies this query ran under the identity of a `SQL SECURITY DEFINER` / `NONE` view, see `Context::addSQLSecurityOverriddenBody`.
+        /// Not copied by the copy constructor: a copy of the context runs none of them.
+        std::vector<std::shared_ptr<const SQLSecurityOverriddenBody>> sql_security_overridden_bodies TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
+
+    /// What runs under the identity of a `SQL SECURITY DEFINER` / `NONE` view, in a query context of its own.
+    struct SQLSecurityOverriddenBody
+    {
+        StorageID view = StorageID::createEmpty();
+        std::pair<UInt64, UInt64> query_hash;
+        String user;
+        String current_database;
+        ASTPtr query;
+        QueryAccessInfoPtr access_info;
+    };
 
 protected:
     /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
@@ -1218,8 +1232,9 @@ public:
 
     void addQueryAccessInfo(const Names & partition_names);
     void addViewAccessInfo(const String & view_name);
+    /// The body `body_query` of the view `view_id`, run in `body_context` under the view's identity, is logged as a child row of this query.
+    void addSQLSecurityOverriddenBody(const StorageID & view_id, const ContextPtr & body_context, const ASTPtr & body_query);
     void addUsedRowPolicy(const String & policy_name);
-    void markQueryAccessInfoHiddenFromUserQueryLog();
 
     struct QualifiedProjectionName
     {

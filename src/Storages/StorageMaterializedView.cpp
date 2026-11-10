@@ -53,7 +53,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 #include <Core/UUID.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 #include <Backups/BackupEntriesCollector.h>
 
@@ -528,21 +527,6 @@ void StorageMaterializedView::readImpl(
     auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
 
-    if (local_context->hasQueryContext() && context->hasQueryContext())
-    {
-        auto query_context = local_context->getQueryContext();
-        auto view_query_context = context->getQueryContext();
-        const bool enable_query_access_info_attribution = local_context->getGlobalContext()->getConfigRef().getBool(
-            "query_log.enable_query_access_info_attribution", false);
-        if (!view_metadata->sql_security_type
-            || (enable_query_access_info_attribution
-                && (view_metadata->sql_security_type == SQLSecurityType::DEFINER
-                    || view_metadata->sql_security_type == SQLSecurityType::NONE)))
-            query_context->markQueryAccessInfoHiddenFromUserQueryLog();
-        if (enable_query_access_info_attribution && view_query_context != query_context)
-            view_query_context->setQueryAccessInfo(query_context->getQueryAccessInfoPtr());
-    }
-
     StoragePtr storage;
     TableLockHolder lock;
 
@@ -587,6 +571,20 @@ void StorageMaterializedView::readImpl(
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;
+
+    /// A read through a `DEFINER` / `NONE` view runs under its identity and is logged as a child row of the query.
+    if (local_context->hasQueryContext() && context->hasQueryContext()
+        && context->getQueryContext() != local_context->getQueryContext())
+    {
+        auto read_query = make_intrusive<ASTSelectQuery>();
+        auto select_list = make_intrusive<ASTExpressionList>();
+        for (const auto & name : column_names)
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        read_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+        read_query->replaceDatabaseAndTable(storage_id);
+        local_context->getQueryContext()->addSQLSecurityOverriddenBody(getStorageID(), context, read_query);
+    }
+
     storage->read(query_plan, column_names, target_storage_snapshot, src_table_query_info, context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())

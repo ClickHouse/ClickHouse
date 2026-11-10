@@ -97,9 +97,7 @@ ORDER BY event_time_microseconds;
 If correlated child queries can run on other nodes, query `system.query_log` on every node, for example with [`clusterAllReplicas`](/reference/functions/table-functions/cluster).
 </Tip>
 
-The server option `query_log.enable_query_access_info_attribution` is disabled by default and cannot be changed by a query. See the [query log server settings](/reference/settings/server-settings/settings/query#query_log) for its view and materialized-view attribution scope. `system.user_query_log` continues to require an authenticated matching identity, an initial query, and a marker explicitly equal to `0`.
-
-These user-log filters do not apply to operator reads of `system.query_log`; rows available there remain governed by normal logging, sampling, retention, and access controls. If a per-user row policy exposes `system.query_log`, preserve its existing user-identity predicate and add `is_initial_query = 1 AND query_access_info_is_hidden = 0`, or use `system.user_query_log`.
+What a query runs under the identity of a `SQL SECURITY DEFINER` or `NONE` view or materialized view is logged as a child row of the query: a read of the view, a read through the materialized view, an insert into it, or its query run on `INSERT` into its source table. In such a row, `is_initial_query = 0`, `initial_query_id` is the query, `user` is the definer (empty for `NONE`), `query` is what ran (the view's query, or the read or write of the materialized view's target), and `tables`, `columns`, `partitions`, `projections` and `used_row_policies` are what it accessed. There is one row per distinct body and place it ran, with the type of the query's final row and no metrics.
 
 Each query creates one or two rows in the `query_log` table, depending on the status (see the `type` column) of the query:
 

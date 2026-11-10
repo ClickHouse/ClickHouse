@@ -493,7 +493,6 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
         element.query_views.insert(access_info.views.begin(), access_info.views.end());
         element.used_row_policies.insert(access_info.row_policies.begin(), access_info.row_policies.end());
-        element.query_access_info_is_hidden = static_cast<UInt8>(access_info.is_hidden_from_user_query_log);
     }
 
     /// We copy QueryFactoriesInfo for thread-safety, because it is possible that query context can be modified by some processor even
@@ -629,22 +628,18 @@ QueryLogElement logQueryStart(
     /// Log into system table start of query execution, if need.
     if (log_queries)
     {
+        /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
+        if (pipeline.initialized())
         {
             const auto & info = context->getQueryAccessInfo();
             std::lock_guard lock(info.mutex);
-            elem.query_access_info_is_hidden = static_cast<UInt8>(info.is_hidden_from_user_query_log);
-
-            /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
-            if (pipeline.initialized())
-            {
-                elem.query_databases = info.databases;
-                elem.query_tables = info.tables;
-                elem.query_columns = info.columns;
-                elem.query_partitions = info.partitions;
-                elem.query_projections = info.projections;
-                elem.query_views = info.views;
-                elem.used_row_policies = info.row_policies;
-            }
+            elem.query_databases = info.databases;
+            elem.query_tables = info.tables;
+            elem.query_columns = info.columns;
+            elem.query_partitions = info.partitions;
+            elem.query_projections = info.projections;
+            elem.query_views = info.views;
+            elem.used_row_policies = info.row_policies;
         }
 
         if (async_insert)
@@ -909,6 +904,57 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 }
 
 
+/// Writes what the query ran under the identity of `SQL SECURITY DEFINER` / `NONE` views (`Context::addSQLSecurityOverriddenBody`)
+/// as its child rows: the identity, the query and what it accessed, without metrics.
+static void logSQLSecurityOverriddenBodies(
+    QueryLog & query_log, const QueryLogElement & elem, Context::QueryAccessInfo & access_info, UInt64 max_query_length)
+{
+    std::vector<std::shared_ptr<const Context::SQLSecurityOverriddenBody>> bodies;
+    {
+        std::lock_guard lock(access_info.mutex);
+        bodies.swap(access_info.sql_security_overridden_bodies);
+    }
+
+    for (const auto & body : bodies)
+    {
+        QueryLogElement row;
+        row.type = elem.type;
+        row.event_time = elem.event_time;
+        row.event_time_microseconds = elem.event_time_microseconds;
+        row.query_start_time = elem.query_start_time;
+        row.query_start_time_microseconds = elem.query_start_time_microseconds;
+        row.log_comment = elem.log_comment;
+        row.is_internal = elem.is_internal;
+        row.exception_code = elem.exception_code;
+        row.exception = elem.exception;
+
+        row.current_database = body->current_database;
+        row.query = body->query->formatForLogging(max_query_length);
+        row.normalized_query_hash = normalizedQueryHash(row.query, false);
+        row.query_kind = body->query->getQueryKind();
+
+        row.client_info = elem.client_info;
+        row.client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        row.client_info.current_query_id = toString(UUIDHelpers::generateV4());
+        row.client_info.current_user = body->user;
+
+        {
+            const auto & body_access_info = *body->access_info;
+            std::lock_guard lock(body_access_info.mutex);
+            row.query_databases = body_access_info.databases;
+            row.query_tables = body_access_info.tables;
+            row.query_columns = body_access_info.columns;
+            row.query_partitions = body_access_info.partitions;
+            row.query_projections = body_access_info.projections;
+            row.query_views = body_access_info.views;
+            row.used_row_policies = body_access_info.row_policies;
+        }
+
+        query_log.add([&](QueryLogElement & e) { e = row; });
+        logSQLSecurityOverriddenBodies(query_log, elem, *body->access_info, max_query_length);
+    }
+}
+
 static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -990,7 +1036,10 @@ static void logQueryFinishImpl(
                 elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
             if (auto query_log = context->getQueryLog())
+            {
                 query_log->add([&](QueryLogElement & e) { e = elem; });
+                logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
+            }
         }
 
         /// Already logged; `elem` lives on in a `BlockIO` callback and this snapshot would outlive the query.
@@ -1151,12 +1200,6 @@ void logQueryException(
 
     elem.is_internal = log_as_internal;
 
-    {
-        const auto & access_info = context->getQueryAccessInfo();
-        std::lock_guard lock(access_info.mutex);
-        elem.query_access_info_is_hidden = static_cast<UInt8>(access_info.is_hidden_from_user_query_log);
-    }
-
     /// `elem.stack_trace` has two readers: `logException` below and `system.query_log`'s `stack_trace` column.
     std::shared_ptr<QueryLog> query_log;
     if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
@@ -1175,6 +1218,7 @@ void logQueryException(
             elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
         query_log->add([&](QueryLogElement & e) { e = elem; });
+        logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
     }
 
     if (query_span)
@@ -1234,12 +1278,6 @@ void logExceptionBeforeStart(
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
-
-    {
-        const auto & access_info = context->getQueryAccessInfo();
-        std::lock_guard lock(access_info.mutex);
-        elem.query_access_info_is_hidden = static_cast<UInt8>(access_info.is_hidden_from_user_query_log);
-    }
 
     // We don't calculate databases, tables and columns when the query isn't able to start
 
@@ -1349,6 +1387,7 @@ void logExceptionBeforeStart(
                     " (the setting was changed for the query).");
 
             query_log->add([&](QueryLogElement & e) { e = elem; });
+            logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
         }
         else if (!settings[Setting::log_queries])
         {

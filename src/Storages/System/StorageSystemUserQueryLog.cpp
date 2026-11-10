@@ -192,11 +192,9 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         SharedHeader header_,
-        StorageID log_table_id_,
-        bool has_query_access_info_marker_)
+        StorageID log_table_id_)
         : SourceStepWithFilter(std::move(header_), column_names_, query_info_, storage_snapshot_, context_)
         , log_table_id(std::move(log_table_id_))
-        , has_query_access_info_marker(has_query_access_info_marker_)
     {
         setStepDescription("Read the query log records of the current user");
     }
@@ -209,7 +207,6 @@ private:
     String buildPushedDownConditions() const;
 
     StorageID log_table_id;
-    bool has_query_access_info_marker;
 };
 
 String ReadFromUserQueryLog::buildPushedDownConditions() const
@@ -286,9 +283,7 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
     /// user's log. EXECUTE AS updates both identities, while SQL SECURITY view contexts retain the
     /// caller's ClientInfo. For rows received from an initiator, `initial_user` is the initiating user
     /// and `user` may be the interserver connection user.
-    /// Only top-level rows with an explicit marker value of 0 are visible. Equality with 0 excludes
-    /// NULL markers, and a backing table without the marker fails closed by making the condition false.
-    /// The marker is checked here and is not part of the exposed table schema.
+    /// Only top-level rows are visible: a child row, such as the body of a `SQL SECURITY DEFINER` view, carries the caller's `initial_user`.
     const auto & client_info = outer_context->getClientInfo();
     /// clickhouse-local queries can lack an authenticated session, so both ClientInfo user names are empty.
     /// Permit that identity only in the LOCAL application and on its LOCAL interface. A SECONDARY_QUERY can
@@ -305,12 +300,11 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
         || (!client_info.current_user.empty() && client_info.current_user == client_info.initial_user);
 
     String select_query = fmt::format(
-        "SELECT {} FROM {} WHERE {} AND (if(initial_user != '', initial_user, user) = {}) AND is_initial_query = 1 AND {}",
+        "SELECT {} FROM {} WHERE {} AND (if(initial_user != '', initial_user, user) = {}) AND is_initial_query = 1",
         select_columns,
         log_table_id.getFullTableName(),
         has_consistent_user_identity ? "1" : "0",
-        quoteString(client_info.initial_user),
-        has_query_access_info_marker ? "`query_access_info_is_hidden` = 0" : "0");
+        quoteString(client_info.initial_user));
 
     if (String pushed_conditions = buildPushedDownConditions(); !pushed_conditions.empty())
         select_query += fmt::format(" AND ({})", pushed_conditions);
@@ -367,9 +361,6 @@ ColumnsDescription StorageSystemUserQueryLog::getColumnsDescription()
     ColumnsDescription res;
     for (auto column : QueryLogElement::getColumnsDescription())
     {
-        if (column.name == "query_access_info_is_hidden")
-            continue;
-
         column.type = recursiveRemoveLowCardinality(column.type);
         res.add(std::move(column));
     }
@@ -456,15 +447,8 @@ void StorageSystemUserQueryLog::read(
     /// Only the vetted subset of the outer predicate is pushed into the internal query (see
     /// `ReadFromUserQueryLog`), keeping efficient partition pruning and point lookups on the backing
     /// table.
-    const auto source_table_metadata = source_table->getInMemoryMetadataPtr(context, false);
     query_plan.addStep(std::make_unique<ReadFromUserQueryLog>(
-        column_names,
-        query_info,
-        storage_snapshot,
-        context,
-        std::move(expected_header),
-        source_table->getStorageID(),
-        source_table_metadata->getColumns().has("query_access_info_is_hidden")));
+        column_names, query_info, storage_snapshot, context, std::move(expected_header), source_table->getStorageID()));
 }
 
 }
