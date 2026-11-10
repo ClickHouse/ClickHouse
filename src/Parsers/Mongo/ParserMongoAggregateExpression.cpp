@@ -213,28 +213,35 @@ ASTPtr makeSequentialFloatFold(const std::string & function, const std::vector<A
         element(operand, 3),
         makeASTFunction("greaterOrEquals", exact->clone(), makeLiteral(Field(std::numeric_limits<Int64>::min()))),
         makeASTFunction("lessOrEquals", exact->clone(), makeLiteral(Field(std::numeric_limits<Int64>::max()))));
+    /** The two operators promote the subtotal differently, as their evaluators in Mongo do. `$add`
+      * converts the exact subtotal to a double when it reaches the first operand that is not an
+      * integer, or when the subtotal leaves the range. `$multiply` keeps a product of doubles from
+      * the first operand on, along with the exact one, and that product of doubles is the result
+      * once it is not an integer: `[9007199254740993, 3, 1.0]` is `27021597764222976`, the product
+      * of the operands as doubles, and not the exact `27021597764222979` converted to a double.
+      */
+    const bool is_multiply = function == "multiply";
+    auto float_step = makeASTFunction(function, element(accumulator, 2), element(operand, 1));
     auto body = makeASTFunction(
         "multiIf",
         element(accumulator, 3),
-        make_tuple(
-            makeLiteral(Field(UInt64(0))),
-            makeASTFunction(function, element(accumulator, 2), element(operand, 1)),
-            makeLiteral(Field(UInt64(1))),
-            accumulator_type),
+        make_tuple(makeLiteral(Field(UInt64(0))), float_step->clone(), makeLiteral(Field(UInt64(1))), accumulator_type),
         std::move(exact_fits),
-        make_tuple(exact->clone(), makeLiteral(Field(UInt64(0))), makeLiteral(Field(UInt64(0))), accumulator_type),
+        make_tuple(
+            exact->clone(), is_multiply ? float_step->clone() : makeLiteral(Field(UInt64(0))), makeLiteral(Field(UInt64(0))), accumulator_type),
         /// The first operand that is not an integer, or a subtotal out of the range: the subtotal
         /// becomes a double, as in Mongo.
         make_tuple(
             makeLiteral(Field(UInt64(0))),
-            makeASTFunction(function, makeASTFunction("toFloat64", element(accumulator, 1)), element(operand, 1)),
+            is_multiply ? float_step->clone()
+                        : makeASTFunction(function, makeASTFunction("toFloat64", element(accumulator, 1)), element(operand, 1)),
             makeLiteral(Field(UInt64(1))),
             accumulator_type));
 
     /// The identity of the operation, so that the first operand is taken as it is.
-    const UInt64 identity = function == "multiply" ? 1 : 0;
+    const UInt64 identity = is_multiply ? 1 : 0;
     auto initial = make_tuple(
-        makeLiteral(Field(identity)), makeLiteral(Field(UInt64(0))), makeLiteral(Field(UInt64(0))), accumulator_type);
+        makeLiteral(Field(identity)), makeLiteral(Field(identity)), makeLiteral(Field(UInt64(0))), accumulator_type);
     auto parameters = makeASTFunction("tuple", make_intrusive<ASTIdentifier>(accumulator), make_intrusive<ASTIdentifier>(operand));
     auto folded = makeASTFunction(
         "arrayFold",
@@ -390,9 +397,10 @@ ASTPtr withGuard(ASTPtr value, ASTPtr condition, const std::string & message)
   */
 ASTPtr withIntegerOverflowCheck(const ASTPtr & exact, ASTPtr approximate)
 {
+    /// The type of a `Dynamic` result is the one of its value in each row, see `makeRuntimeTypeName`.
     auto is_wide_integer = makeASTFunction(
         "match",
-        makeASTFunction("toTypeName", exact->clone()),
+        makeRuntimeTypeName(exact),
         makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*U?Int64\)*$)"))));
     auto deviation = makeASTFunction(
         "abs", makeASTFunction("minus", makeASTFunction("toFloat64", exact->clone()), std::move(approximate)));
@@ -1278,9 +1286,13 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
                         "plus", dividend->clone(), makeASTFunction("toDecimal256", makeLiteral(Field(UInt64(0))), makeLiteral(Field(UInt64(20))))),
                     dividend->clone()),
                 makeASTFunction("if", std::move(has_decimal), makeLiteral(Field(UInt64(1))), makeLiteral(Field(UInt64(2)))));
+            /// Mongo returns `null` when either operand is `null`, before it looks at the divisor.
             return withRowGuard(
                 makeASTFunction("divide", std::move(widened_dividend), divisor->clone()),
-                makeASTFunction("equals", divisor->clone(), makeLiteral(Field(UInt64(0)))),
+                makeASTFunction(
+                    "and",
+                    makeASTFunction("isNotNull", dividend->clone()),
+                    makeASTFunction("equals", divisor->clone(), makeLiteral(Field(UInt64(0))))),
                 "'$divide' cannot divide by zero");
         });
     }
@@ -1404,10 +1416,24 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
             /// result is.
             if (operands.size() > 2)
             {
+                /** The result is a floating point number when its type is a floating point one, a
+                  * constant. A `Dynamic` result has the type of its value in each row, which is a
+                  * floating point one when one of the operands holds a floating point number, see
+                  * `makeRuntimeTypeName`, so then the choice is made for each row.
+                  */
+                const String float_type_pattern = R"(^(Nullable\(|LowCardinality\()*B?Float)";
+                std::vector<ASTPtr> runtime_float_operands;
+                runtime_float_operands.reserve(operands.size());
+                for (const auto & operand : operands)
+                    runtime_float_operands.push_back(
+                        makeASTFunction("match", makeRuntimeTypeName(operand), makeLiteral(Field(float_type_pattern))));
                 auto is_float = makeASTFunction(
-                    "match",
-                    makeASTFunction("toTypeName", exact->clone()),
-                    makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*B?Float)"))));
+                    "multiIf",
+                    makeASTFunction("match", makeASTFunction("toTypeName", exact->clone()), makeLiteral(Field(float_type_pattern))),
+                    makeLiteral(Field(true)),
+                    makeIsDynamic(exact),
+                    makeASTFunction("ifNull", makeFunction("or", std::move(runtime_float_operands)), makeLiteral(Field(false))),
+                    makeLiteral(Field(false)));
                 /// A `NULL` literal makes the type `Nullable(Nothing)`, which nothing converts to.
                 auto type = makeASTFunction(
                     "replaceRegexpOne",
@@ -1650,16 +1676,24 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         {
             const auto & number = values[0];
             const auto & base = values[1];
+            /// Mongo returns `null` when either operand is `null`, before it checks the domain of
+            /// the other one, so each check holds only when the other operand is not `null`.
             auto checked_number = withRowGuard(
                 makeASTFunction("log", number->clone()),
-                makeASTFunction("lessOrEquals", number->clone(), makeLiteral(Field(UInt64(0)))),
+                makeASTFunction(
+                    "and",
+                    makeASTFunction("isNotNull", base->clone()),
+                    makeASTFunction("lessOrEquals", number->clone(), makeLiteral(Field(UInt64(0))))),
                 "The argument of '$log' must be a positive number");
             auto checked_base = withRowGuard(
                 makeASTFunction("log", base->clone()),
                 makeASTFunction(
-                    "or",
-                    makeASTFunction("lessOrEquals", base->clone(), makeLiteral(Field(UInt64(0)))),
-                    makeASTFunction("equals", base->clone(), makeLiteral(Field(UInt64(1))))),
+                    "and",
+                    makeASTFunction("isNotNull", number->clone()),
+                    makeASTFunction(
+                        "or",
+                        makeASTFunction("lessOrEquals", base->clone(), makeLiteral(Field(UInt64(0)))),
+                        makeASTFunction("equals", base->clone(), makeLiteral(Field(UInt64(1)))))),
                 "The base of '$log' must be a positive number other than 1");
             return makeASTFunction("divide", std::move(checked_number), std::move(checked_base));
         });
