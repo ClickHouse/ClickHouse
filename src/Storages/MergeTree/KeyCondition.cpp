@@ -7921,6 +7921,32 @@ void pushAtomGroupMask(const KeyCondition::RPNElement & group, const ApplyElemen
     rpn_stack.push_back(group_mask);
 }
 
+/// Builds the mask for a range, set, or `IS [NOT] NULL` atom from `mask`, the result for its range or set on the key
+/// ranges. `column_index_to_column_bf` is null when the caller has no bloom filters.
+BoolMask atomMask(
+    const KeyCondition::RPNElement & element, BoolMask mask, const KeyCondition::ColumnIndexToBloomFilter * column_index_to_column_bf)
+{
+    if (mask.can_be_true && element.bloom_filter_data && column_index_to_column_bf)
+        mask.can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, *column_index_to_column_bf);
+
+    /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
+    /// If `element.range` is relaxed (and thus wider) and contains `key_range`, then `can_be_false` becomes false.
+    /// However, in reality `can_be_false` may be true, because the actual range of element may be stricter than `element.range`.
+    /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
+    /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
+    /// Therefore, we must set `can_be_false = true` to be safe.
+    /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
+    if (element.relaxed)
+        mask.can_be_false = true;
+
+    if (element.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE
+        || element.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_SET
+        || element.function == KeyCondition::RPNElement::FUNCTION_IS_NULL)
+        mask = !mask;
+
+    return mask;
+}
+
 /// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
 /// answering true or false as `IS NULL` and `IS NOT NULL` do.
 bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
@@ -8153,26 +8179,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 rpn_stack.emplace_back(true, true);
                 return false;
             }
-            rpn_stack.emplace_back(*mask);
-
-            // we don't create bloom_filter_data if monotonic_functions_chain is present
-            if (rpn_stack.back().can_be_true && element.bloom_filter_data && element.monotonic_functions_chain.empty())
-            {
-                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
-            }
-
-            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
-            /// If `element.range` is relaxed (and thus wider) and contains `key_range`, then `can_be_false` becomes false.
-            /// However, in reality `can_be_false` may be true, because the actual range of element may be stricter than `element.range`.
-            /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
-            /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
-            /// Therefore, we must set `can_be_false = true` to be safe.
-            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
-            if (element.relaxed)
-                rpn_stack.back().can_be_false = true;
-
-            if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
-                rpn_stack.back() = !rpn_stack.back();
+            rpn_stack.push_back(atomMask(element, *mask, &column_index_to_column_bf));
         }
         else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
         {
@@ -8390,13 +8397,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = element.range.intersectsRange(*key_range);
             bool contains = element.range.containsRange(*key_range);
 
-            rpn_stack.emplace_back(intersects, !contains);
-
-            if (element.relaxed)
-                rpn_stack.back().can_be_false = true;
-
-            if (element.function == RPNElement::FUNCTION_IS_NULL)
-                rpn_stack.back() = !rpn_stack.back();
+            rpn_stack.push_back(atomMask(element, BoolMask(intersects, !contains), nullptr));
         }
         else if (
             element.function == RPNElement::FUNCTION_IN_SET
@@ -8446,21 +8447,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, element.first_function_number, single_point));
-
-            if (rpn_stack.back().can_be_true && element.bloom_filter_data)
-            {
-                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
-            }
-
-            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
-            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
-            /// Therefore, we must set `can_be_false = true` to be safe.
-            if (element.relaxed)
-                rpn_stack.back().can_be_false = true;
-
-            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-                rpn_stack.back() = !rpn_stack.back();
+            rpn_stack.push_back(atomMask(
+                element,
+                element.set_index->checkInRange(hyperrectangle, data_types, element.first_function_number, single_point),
+                &column_index_to_column_bf));
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
@@ -8583,22 +8573,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
             else
             {
                 /// A chain that can't be applied to the range leaves the atom unknown.
-                rpn_stack.push_back(checkRangeAtomInKeyRange(element, sparse_hyperrectangle[sparse_pos], sparse_data_types, sparse_pos)
-                                        .value_or(BoolMask(true, true)));
+                const auto mask = checkRangeAtomInKeyRange(element, sparse_hyperrectangle[sparse_pos], sparse_data_types, sparse_pos);
+                rpn_stack.push_back(mask ? atomMask(element, *mask, nullptr) : BoolMask(true, true));
             }
-
-            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
-            /// If `element.range` is relaxed (and thus wider) and contains `key_range`, then `can_be_false` becomes false.
-            /// However, in reality `can_be_false` may be true, because the actual range of element may be stricter than `element.range`.
-            /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
-            /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
-            /// Therefore, we must set `can_be_false = true` to be safe.
-            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
-            if (element.relaxed)
-                rpn_stack.back().can_be_false = true;
-
-            if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
-                rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
         {
@@ -8843,13 +8820,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 bool intersects = element.range.intersectsRange(*key_range);
                 bool contains   = element.range.containsRange(*key_range);
 
-                rpn_stack.emplace_back(intersects, !contains);
-
-                if (element.relaxed)
-                    rpn_stack.back().can_be_false = true;
-
-                if (element.function == RPNElement::FUNCTION_IS_NULL)
-                    rpn_stack.back() = !rpn_stack.back();
+                rpn_stack.push_back(atomMask(element, BoolMask(intersects, !contains), nullptr));
             }
         }
         else if (element.function == RPNElement::FUNCTION_IN_SET
@@ -8899,17 +8870,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(
-                key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, element.first_function_number, single_point));
-
-            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
-            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
-            /// Therefore, we must set `can_be_false = true` to be safe.
-            if (element.relaxed)
-                rpn_stack.back().can_be_false = true;
-
-            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-                rpn_stack.back() = !rpn_stack.back();
+            rpn_stack.push_back(atomMask(
+                element,
+                element.set_index->checkInRange(
+                    key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, element.first_function_number, single_point),
+                nullptr));
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
