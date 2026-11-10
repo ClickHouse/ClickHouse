@@ -5,6 +5,8 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 
+#include <numeric>
+
 namespace DB
 {
 
@@ -34,6 +36,21 @@ namespace
     }
 
     constexpr size_t PFOR_MAX_BLOCK_BYTES = PFor::maxCompressedBytes<uint32_t>(IPostingListBlockCodec::BLOCK_SIZE);
+
+    size_t decodePFor(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, PFor::Delta mode, uint32_t base)
+    {
+        chassert(count > 0 && count <= out.size());
+        const auto * data = reinterpret_cast<const uint8_t *>(in.data());
+
+        /// `count` is never zero here, so a zero return means malformed input, not an empty block.
+        const size_t consumed = PFor::decodeBlocks<uint32_t>(data, count, mode, out.data(), data + in.size(), base);
+        if (consumed == 0)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
+
+        in = in.subspan(consumed);
+        return consumed;
+    }
 }
 
 size_t BitpackingPostingListBlockCodec::encodeBlock(std::span<const uint32_t> values, PODArray<char> & out)
@@ -63,7 +80,14 @@ size_t BitpackingPostingListBlockCodec::encodeBlock(std::span<const uint32_t> va
     return needed_bytes_with_header;
 }
 
-size_t BitpackingPostingListBlockCodec::decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out)
+size_t BitpackingPostingListBlockCodec::decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base)
+{
+    const size_t consumed = decodeValues(in, count, out);
+    std::inclusive_scan(out.begin(), out.begin() + count, out.begin(), std::plus<uint32_t>{}, base);
+    return consumed;
+}
+
+size_t BitpackingPostingListBlockCodec::decodeValues(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out)
 {
     if (in.empty())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
@@ -105,19 +129,14 @@ size_t PForPostingListBlockCodec::encodeBlock(std::span<const uint32_t> values, 
     return written;
 }
 
-size_t PForPostingListBlockCodec::decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out)
+size_t PForPostingListBlockCodec::decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base)
 {
-    chassert(count > 0 && count <= out.size());
-    const auto * data = reinterpret_cast<const uint8_t *>(in.data());
+    return decodePFor(in, count, out, PFor::Delta::d0, base);
+}
 
-    /// `count` is never zero here, so a zero return means malformed input, not an empty block.
-    const size_t consumed = PFor::decodeBlocks<uint32_t>(data, count, PFor::Delta::none, out.data(), data + in.size());
-    if (consumed == 0)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
-
-    in = in.subspan(consumed);
-    return consumed;
+size_t PForPostingListBlockCodec::decodeValues(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out)
+{
+    return decodePFor(in, count, out, PFor::Delta::none, 0);
 }
 
 size_t PForPostingListBlockCodec::maxBlockBytes() const

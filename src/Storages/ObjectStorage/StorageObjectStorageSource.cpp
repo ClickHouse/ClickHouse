@@ -736,10 +736,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
-                VirtualColumnUtils::filterByPathOrFile(
-                    paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
-                    /*format_settings=*/std::nullopt,
-                    is_explicit_archive_member ? &archive_member_names : nullptr);
+                VirtualColumnUtils::filterSourcesByIndexes(
+                    paths,
+                    VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                        filter_paths, actions, virtual_columns, hive_columns, local_context,
+                        /*format_settings=*/std::nullopt,
+                        is_explicit_archive_member ? &archive_member_names : nullptr));
             }
             else
             {
@@ -912,10 +914,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
-                VirtualColumnUtils::filterByPathOrFile(
-                    keys, paths, actions, virtual_columns, hive_columns, local_context,
-                    /*format_settings=*/std::nullopt,
-                    is_explicit_archive_member ? &archive_member_names : nullptr);
+                VirtualColumnUtils::filterSourcesByIndexes(
+                    keys,
+                    VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                        paths, actions, virtual_columns, hive_columns, local_context,
+                        /*format_settings=*/std::nullopt,
+                        is_explicit_archive_member ? &archive_member_names : nullptr));
             }
             else
             {
@@ -2650,15 +2654,12 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
                         file_names.push_back(object_info->getFileName());
                 }
 
-                VirtualColumnUtils::filterByPathOrFile(
+                VirtualColumnUtils::filterSourcesByIndexes(
                     new_batch,
-                    paths,
-                    filter_expr,
-                    virtual_columns,
-                    hive_columns,
-                    local_context,
-                    /*format_settings=*/std::nullopt,
-                    match_web_paths_only ? &file_names : nullptr);
+                    VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                        paths, filter_expr, virtual_columns, hive_columns, local_context,
+                        /*format_settings=*/std::nullopt,
+                        match_web_paths_only ? &file_names : nullptr));
             }
 
             after_filter = new_batch.size();
@@ -2769,10 +2770,12 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.push_back(archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filtered_keys,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
+                    /*format_settings=*/std::nullopt,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_keys.empty())
             {
                 if (emit_profile_events)
