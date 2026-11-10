@@ -99,9 +99,8 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
     {
         case VolumeLoadBalancing::ROUND_ROBIN:
         {
-            size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
-            size_t index = start_from % disks.size();
-            return disks[index];
+            const size_t turn = last_used.fetch_add(1u, std::memory_order_acq_rel);
+            return disks[turn % disks.size()];
         }
         case VolumeLoadBalancing::LEAST_USED:
         {
@@ -152,15 +151,29 @@ ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<Reserva
     {
         case VolumeLoadBalancing::ROUND_ROBIN:
         {
-            size_t disks_num = disks.size();
-            for (size_t i = 0; i < disks_num; ++i)
-            {
-                size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
-                size_t index = start_from % disks_num;
+            /// Every attempt takes the next turn, like a reservation of its own, so that concurrent
+            /// reservations spread over the disks in the order of their turns. When other threads take turns
+            /// between two attempts, the turn of a reservation can fall on a disk it has already tried. It
+            /// then takes one of the disks it has not tried, picked by the round of the turn so that such
+            /// attempts spread over them evenly. So a reservation tries every disk once.
+            const size_t disks_num = disks.size();
+            const size_t first_disk = last_used.fetch_add(1u, std::memory_order_acq_rel) % disks_num;
+            if (ReservationPtr reservation = try_reserve(disks[first_disk]))
+                return reservation;
 
-                ReservationPtr reservation = try_reserve(disks[index]);
-                if (reservation)
+            /// The first attempt cannot fall on a tried disk, so the untried disks are tracked only after it
+            /// fails, and a reservation that succeeds at once copies nothing.
+            Disks untried = disks;
+            untried.erase(untried.begin() + first_disk);
+            while (!untried.empty())
+            {
+                const size_t turn = last_used.fetch_add(1u, std::memory_order_acq_rel);
+                auto disk = std::ranges::find(untried, disks[turn % disks_num]);
+                if (disk == untried.end())
+                    disk = untried.begin() + (turn / disks_num) % untried.size();
+                if (ReservationPtr reservation = try_reserve(*disk))
                     return reservation;
+                untried.erase(disk);
             }
             return {};
         }
@@ -174,8 +187,11 @@ ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<Reserva
             for (auto it = disks_with_size.begin(); it != disks_with_size.end(); ++it)
             {
                 std::iter_swap(it, std::max_element(it, disks_with_size.end()));
-                ReservationPtr reservation = try_reserve(it->disk);
-                it->unreserved_space = reservation ? reservation->getUnreservedSpace() : it->disk->getUnreservedSpace();
+                ReservationPtr reservation;
+                if (it->disk->isReadOnly())
+                    it->unreserved_space = it->disk->getUnreservedSpace();
+                else
+                    reservation = it->disk->reserveAndGetUnreservedSpace(bytes, constraints, it->unreserved_space);
                 if (reservation)
                     return reservation;
             }

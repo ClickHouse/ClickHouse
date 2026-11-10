@@ -448,7 +448,10 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
-            provides=[ArtifactNames.CH_AMD_DEBUG],
+            provides=[
+                ArtifactNames.CH_AMD_DEBUG,
+                ArtifactNames.UNITTEST_AMD_DEBUG,
+            ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
@@ -956,11 +959,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
     )
-    # The selection depends on the merge-queue entry (the tests `master` changed
-    # after the PR's last CI run) and on the attempt (`Targeting.selection_cutoff`),
-    # neither of which is in the digest, so a cached result must not stand in.
-    for job in stateless_tests_targeted_mq_jobs:
-        job.digest_config = None
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
@@ -1351,7 +1349,19 @@ class JobConfigs:
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
     )
+    # The sanitizer builds define `SANITIZER` and `DEBUG_OR_SANITIZER_BUILD`, so the suites
+    # under `#if !defined(SANITIZER)` (`DateLUTImpl`, `AllocationInterceptors`) are compiled
+    # only into a plain build. `Build (amd_debug)` already builds `unit_tests_dbms`
+    # (`-DENABLE_TESTS=1`); the `amd_debug` job runs it, so these suites run in pull requests
+    # and not only in `Unit tests (amd_llvm_coverage)`, which pull requests skip without the
+    # `ci-coverage` label. The debug build still defines `DEBUG_OR_SANITIZER_BUILD`, so the
+    # cases under `#ifndef DEBUG_OR_SANITIZER_BUILD` keep running only in the coverage job.
     unittest_jobs = common_unit_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_debug",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_DEBUG],
+        ),
         Job.ParamSet(
             parameter="asan_ubsan",
             runs_on=RunnerLabels.AMD_LARGE,
@@ -1675,7 +1685,11 @@ class JobConfigs:
         ),
     )
     # The same for the full integration run: all test modules, including the ones the coverage
-    # run leaves to `excluded_from_llvm`.
+    # run leaves to `excluded_from_llvm`, except the modules that skip themselves on ARM
+    # (`is_arm()`: `test_storage_hdfs`, `test_storage_kafka`, `test_ytsaurus`, ...). Those are
+    # left to the targeted amd jobs, which select them by their per-module coverage;
+    # `test_ytsaurus` gets that coverage from the per-test coverage run only, see
+    # `PER_TEST_COVERAGE_KEEP_PREFIXES` in `integration_tests_configs.py`.
     integration_test_arm_binary_coverage_replacement_pr_jobs = (
         common_integration_test_job_config.parametrize(
             *[
@@ -1707,9 +1721,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         )
     )
-    # Not cached, for the same reason as `stateless_tests_targeted_mq_jobs`.
-    for job in integration_test_targeted_mq_jobs:
-        job.digest_config = None
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job
     # script via Info().pr_number and Info().workflow_name.
