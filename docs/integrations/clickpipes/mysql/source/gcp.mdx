@@ -23,10 +23,10 @@ The PITR feature determines whether binary logging is turned on or off for MySQL
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-pitr.webp" alt="Enabling PITR in Cloud SQL" size="lg" border/>
 
-Setting the value to a reasonably long value depending on the replication use-case is advisable.
+Set the transaction log retention to at least 3 days. Cloud SQL keeps binary logs for the shorter of this setting and `binlog_expire_logs_seconds`.
 
 If not already configured, make sure to set these in the database flags section by editing the Cloud SQL:
-1. `binlog_expire_logs_seconds` to a value >= `86400` (1 day).
+1. `binlog_expire_logs_seconds` to a value >= `259200` (3 days).
 2. `binlog_row_metadata` to `FULL`
 3. `binlog_row_image` to `FULL`
 

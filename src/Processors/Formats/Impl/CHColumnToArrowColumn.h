@@ -42,6 +42,8 @@ public:
         /// Output the Nothing type (e.g. `SELECT NULL`) as the Arrow Null type.
         /// By default such columns raise an UNKNOWN_TYPE exception.
         bool output_nothing_as_null = false;
+        /// Whether `output_string_as_string` also covers FixedString columns not output as Arrow::FixedSizeBinary.
+        bool output_fixed_string_as_string = true;
         /// Upper bound on one record batch; a chunk holding more is written as several.
         UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
         /// What to do with a type having no conversion: reject it, or write one serialized value per row
