@@ -33,9 +33,9 @@ void backupUserDefinedSQLObjects(
     BackupEntriesCollector & backup_entries_collector,
     const String & data_path_in_backup,
     UserDefinedSQLObjectType object_type,
-    const VectorWithMemoryTracking<std::pair<String, ASTPtr>> & objects)
+    const std::vector<std::pair<String, ASTPtr>> & objects)
 {
-    VectorWithMemoryTracking<std::pair<String, BackupEntryPtr>> backup_entries;
+    std::vector<std::pair<String, BackupEntryPtr>> backup_entries;
     backup_entries.reserve(objects.size());
     for (const auto & [object_name, create_object_query] : objects)
         backup_entries.emplace_back(
@@ -81,7 +81,7 @@ void backupUserDefinedSQLObjects(
 }
 
 
-VectorWithMemoryTracking<std::pair<String, ASTPtr>>
+std::vector<std::pair<String, ASTPtr>>
 restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_path_in_backup, UserDefinedSQLObjectType object_type)
 {
     auto context = restorer.getContext();
@@ -108,7 +108,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
         }
     }
 
-    VectorWithMemoryTracking<std::pair<String, ASTPtr>> res;
+    std::vector<std::pair<String, ASTPtr>> res;
 
     for (const auto & filename : filenames)
     {

@@ -5,20 +5,11 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
-#include <Interpreters/misc.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -27,7 +18,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_time_time64_type;
-    extern const SettingsBool enable_nullable_tuple_type;
+    extern const SettingsBool allow_experimental_nullable_tuple_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -51,7 +42,7 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
-    , enable_nullable_tuple_type(settings[Setting::enable_nullable_tuple_type])
+    , allow_experimental_nullable_tuple_type(settings[Setting::allow_experimental_nullable_tuple_type])
 {
 }
 
@@ -148,7 +139,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.enable_nullable_tuple_type)
+        if (!settings.allow_experimental_nullable_tuple_type)
         {
             if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&data_type))
             {
@@ -157,17 +148,16 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot create column with type '{}' because Nullable Tuple type is not allowed. "
-                        "Set setting enable_nullable_tuple_type = 1 in order to allow it",
+                        "Set setting allow_experimental_nullable_tuple_type = 1 in order to allow it",
                         data_type.getName());
                 }
             }
         }
     };
 
+    validate_callback(*type_to_check);
     if (settings.validate_nested_types)
-        forEachInTypeTree(*type_to_check, validate_callback);
-    else
-        validate_callback(*type_to_check);
+        type_to_check->forEachChild(validate_callback);
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)
@@ -183,11 +173,10 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (!dynamic_cast<ASTExpressionList *>(columns_list_raw.get()))
+    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
+    if (!columns_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST to ASTExpressionList");
 
-    auto columns_list = make_intrusive<ASTColumns>();
-    columns_list->set(columns_list->columns, columns_list_raw);
     auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
     auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
     for (const auto & [name, type] : columns.getAll())
@@ -217,7 +206,8 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     if (!columns_list_raw)
         return false;
 
-    if (!dynamic_cast<ASTExpressionList *>(columns_list_raw.get()))
+    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
+    if (!columns_list)
     {
         error = fmt::format("Invalid columns declaration list: \"{}\"", structure);
         return false;
@@ -225,8 +215,6 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 
     try
     {
-        auto columns_list = make_intrusive<ASTColumns>();
-        columns_list->set(columns_list->columns, columns_list_raw);
         columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
         auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
         for (const auto & [name, type] : columns.getAll())
@@ -238,128 +226,6 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
         error = getCurrentExceptionMessage(false);
         return false;
     }
-}
-
-namespace
-{
-
-void replaceObjectIdentifiersWithLiterals(ASTPtr & ast, const ColumnsDescription & columns)
-{
-    auto replace_if_not_column = [&](ASTPtr & argument)
-    {
-        if (const auto * identifier = argument->as<ASTIdentifier>();
-            identifier && !columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier->name()))
-            argument = make_intrusive<ASTLiteral>(identifier->name());
-    };
-
-    if (auto * function = ast->as<ASTFunction>(); function && function->arguments)
-    {
-        auto & arguments = function->arguments->children;
-        if (!arguments.empty() && (functionIsDictGet(function->name) || functionIsJoinGet(function->name)))
-            replace_if_not_column(arguments[0]);
-        else if (arguments.size() == 2 && functionIsInOrGlobalInOperator(function->name))
-            replace_if_not_column(arguments[1]);
-    }
-    for (auto & child : ast->children)
-        replaceObjectIdentifiersWithLiterals(child, columns);
-}
-
-}
-
-NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const ColumnDescription & column)
-{
-    RequiredSourceColumnsVisitor::Data data;
-    auto expression = column.default_desc.expression->clone();
-    replaceObjectIdentifiersWithLiterals(expression, columns);
-    RequiredSourceColumnsVisitor(data).visit(expression);
-    NameSet storage_reads;
-    for (const auto & read : data.requiredColumns())
-    {
-        auto read_column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, read);
-        storage_reads.insert(read_column ? read_column->getNameInStorage() : read);
-    }
-    return storage_reads;
-}
-
-void removeMisboundDefaultsFromStructureHint(
-    ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns)
-{
-    std::unordered_map<String, NameSet> reads;
-    for (const auto & column : structure_hint)
-        if (column.default_desc.expression)
-            reads.emplace(column.name, getStorageColumnsReadByDefault(structure_hint, column));
-
-    NameSet removed;
-    for (const auto & [name, required] : reads)
-    {
-        if (std::ranges::any_of(required, [&](const String & read)
-            {
-                auto it = insertion_columns_by_hint_column.find(read);
-                return it != insertion_columns_by_hint_column.end() && !it->second.contains(read)
-                    && insertion_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, read);
-            }))
-            removed.insert(name);
-    }
-
-    for (bool changed = !removed.empty(); changed;)
-    {
-        changed = false;
-        for (const auto & [name, required] : reads)
-            if (!removed.contains(name) && std::ranges::any_of(required, [&](const String & read) { return removed.contains(read); }))
-                changed |= removed.insert(name).second;
-    }
-
-    for (const auto & name : removed)
-        structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
-}
-
-String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)
-{
-    const auto names = columns.getAll().getNameSet();
-    std::unordered_map<String, NameSet> reads;
-    for (const auto & column : columns)
-    {
-        if (column.default_desc.kind != ColumnDefaultKind::Default || !column.default_desc.expression
-            || column.default_desc.expression->hasSecretParts())
-            continue;
-        reads.emplace(column.name, getStorageColumnsReadByDefault(columns, column));
-    }
-
-    /// The least fixed point, so cycles and self-reads are never sent.
-    NameSet sent;
-    for (bool changed = true; changed;)
-    {
-        changed = false;
-        for (const auto & [name, required] : reads)
-        {
-            if (!sent.contains(name) && std::ranges::all_of(required, [&](const String & read)
-                    {
-                        if (names.contains(read))
-                            return !columns.hasDefault(read) || sent.contains(read);
-                        /// Not a column of the table the `DEFAULT`s come from either: the nodes resolve the name the same way as
-                        /// this server, as a function, dictionary, table or set.
-                        return !insertion_columns || !insertion_columns->hasColumnOrSubcolumn(GetColumnsOptions::All, read);
-                    }))
-                changed |= sent.insert(name).second;
-        }
-    }
-
-    WriteBufferFromOwnString buf;
-    bool first = true;
-    for (const auto & column : columns)
-    {
-        if (!std::exchange(first, false))
-            writeCString(", ", buf);
-        writeBackQuotedString(column.name, buf);
-        writeChar(' ', buf);
-        writeString(column.type->getName(), buf);
-        if (sent.contains(column.name))
-        {
-            writeCString(" DEFAULT ", buf);
-            writeString(column.default_desc.expression->formatWithSecretsOneLine(), buf);
-        }
-    }
-    return buf.str();
 }
 
 }

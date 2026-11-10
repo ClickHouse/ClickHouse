@@ -71,7 +71,7 @@ private:
     RegexpFieldExtractor field_extractor;
 };
 
-class RegexpSchemaReader final : public IRowSchemaReader
+class RegexpSchemaReader : public IRowSchemaReader
 {
 public:
     RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);

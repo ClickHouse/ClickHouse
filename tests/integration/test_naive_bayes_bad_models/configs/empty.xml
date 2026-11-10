@@ -1,0 +1,11 @@
+<clickhouse>
+  <nb_models>
+    <model>
+      <name>empty_model</name>
+      <path>/etc/clickhouse-server/config.d/empty.bin</path>
+      <mode>byte</mode>
+      <n>1</n>
+      <alpha>1</alpha>
+    </model>
+  </nb_models>
+</clickhouse>
