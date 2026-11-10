@@ -523,6 +523,13 @@ private:
                 if (source && !source->tryGetAlias().empty())
                     scope.names.insert(source->tryGetAlias());
 
+            if (table_expression.subquery)
+            {
+                if (!addSubqueryColumnNames(scope, *table_expression.subquery))
+                    scope.unknown = true;
+                continue;
+            }
+
             const auto * table_identifier = table_expression.database_and_table_name
                 ? table_expression.database_and_table_name->as<ASTTableIdentifier>() : nullptr;
             if (!table_identifier || table_identifier->isParam())
@@ -553,6 +560,44 @@ private:
 
             addColumnNames(scope, table);
         }
+    }
+
+    /// The columns of a subquery source, from the names of its select list: the alias of an expression, or the name of
+    /// an identifier (both the full name and the last part, as the old and the new analyzer name the column). Returns
+    /// false when the columns are not known here (an asterisk, a matcher, a set operation other than `UNION`), so
+    /// that any name may be a column.
+    static bool addSubqueryColumnNames(ExpressionScope & scope, const IAST & subquery)
+    {
+        const auto * select_with_union = subquery.children.empty() ? nullptr : subquery.children.front()->as<ASTSelectWithUnionQuery>();
+        if (!select_with_union || !select_with_union->list_of_selects || select_with_union->list_of_selects->children.empty())
+            return false;
+
+        /// The columns of a `UNION` are named by its first branch.
+        const auto * select = select_with_union->list_of_selects->children.front()->as<ASTSelectQuery>();
+        if (!select || !select->select())
+            return false;
+
+        for (const auto & expression : select->select()->children)
+        {
+            if (String alias = expression->tryGetAlias(); !alias.empty())
+            {
+                addColumnName(scope, alias);
+            }
+            else if (const auto * identifier = expression->as<ASTIdentifier>())
+            {
+                addColumnName(scope, identifier->name());
+                addColumnName(scope, identifier->shortName());
+            }
+            else if (expression->as<ASTFunction>() || expression->as<ASTLiteral>())
+            {
+                scope.names.insert(expression->getColumnName());
+            }
+            else
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     static std::vector<String> splitNameParts(const std::vector<String> & name_parts)
