@@ -21,6 +21,8 @@
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
@@ -37,6 +39,7 @@ namespace ProfileEvents
 {
     extern const Event RowsReadByMainReader;
     extern const Event RowsReadByPrewhereReaders;
+    extern const Event RowsSkippedByPrewhereReaders;
 }
 
 namespace DB
@@ -1894,6 +1897,16 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
+
+        /// PREWHERE ProfileEvents: the number of rows this step filters out. The granule-level counters
+        /// (GranulesReadByPrewhereReaders / GranulesSkippedByPrewhereReaders) are computed once per part by
+        /// `MergeTreeReadersChain` from the final, all-steps-applied result, because a granule may be split
+        /// across read blocks and a later PREWHERE step may drop a granule that an earlier one did not.
+        /// Rows that survived the previous steps and therefore enter this one. When an earlier step deferred its
+        /// filter, `num_rows` is still the full block size, so the survivor count has to be read from final_filter.
+        const size_t rows_before_prewhere_filter
+            = result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
+
         result.optimize(current_filter, can_read_incomplete_granules, false);
         /// Null when predicate_statistics_sample_rate = 0 (default). Counts the rows that passed all steps so far.
         if (performance_counters)
@@ -1910,6 +1923,13 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
             result.applyFilter(filter_to_apply);
         }
+
+        /// Rows that this step filtered out: those that entered the step minus those that still survive
+        /// (mirrors the survivor count used for `rows_passed_filter` above). Summed over all steps, this is
+        /// the total number of rows dropped by PREWHERE.
+        const size_t rows_after_prewhere_filter
+            = result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
+        ProfileEvents::increment(ProfileEvents::RowsSkippedByPrewhereReaders, rows_before_prewhere_filter - rows_after_prewhere_filter);
     }
 
     LOG_TEST(log, "After execute prewhere {}", result.dumpInfo());

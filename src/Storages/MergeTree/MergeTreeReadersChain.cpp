@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
@@ -12,6 +13,12 @@
 
 #include <algorithm>
 #include <unordered_set>
+
+namespace ProfileEvents
+{
+    extern const Event GranulesReadByPrewhereReaders;
+    extern const Event GranulesSkippedByPrewhereReaders;
+}
 
 namespace DB
 {
@@ -51,6 +58,18 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
         if (range_readers[i - 1].getReader()->mayEvaluateMissingDefaults())
         {
             last_reader_evaluating_defaults = i - 1;
+            break;
+        }
+    }
+
+    /// The PREWHERE granule ProfileEvents are only meaningful when the chain actually evaluates a PREWHERE
+    /// filter: a chain without a Filter step neither reads nor drops granules "by PREWHERE".
+    for (const auto & range_reader : range_readers)
+    {
+        const auto * step = range_reader.getPrewhereInfo();
+        if (step && step->type == PrewhereExprStep::Filter)
+        {
+            prewhere_granule_stats_enabled = true;
             break;
         }
     }
@@ -405,7 +424,64 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     }
 
     applyPatchesAfterReader(read_result, range_readers.size() - 1);
+
+    /// Account the granules this block read and dropped by PREWHERE. The result now reflects all PREWHERE
+    /// steps, so `rows_per_granule` holds the final survivor count of each granule. Feed them in mark order;
+    /// a granule split across blocks is reassembled by `feedPrewhereGranuleMark`.
+    if (prewhere_granule_stats_enabled)
+    {
+        read_result.forEachGranuleMark([this](size_t mark, size_t surviving_rows)
+        {
+            feedPrewhereGranuleMark(mark, surviving_rows > 0);
+        });
+
+        /// Nothing left to read for this part: the trailing granule is complete, so flush the final counts.
+        if (ranges.empty() && isCurrentRangeFinished())
+            flushPrewhereGranuleStats();
+    }
+
     return read_result;
+}
+
+void MergeTreeReadersChain::feedPrewhereGranuleMark(size_t mark, bool survived)
+{
+    /// Marks arrive in non-decreasing order across the whole part read. The only repeat is the trailing
+    /// granule of one block continuing as the leading granule of the next, so an equal mark means the same
+    /// granule split across blocks: combine the survivor flags instead of counting it twice.
+    if (prewhere_pending_mark && *prewhere_pending_mark == mark)
+    {
+        prewhere_pending_mark_survived |= survived;
+        return;
+    }
+
+    if (prewhere_pending_mark)
+        finalizePrewhereGranule();
+
+    prewhere_pending_mark = mark;
+    prewhere_pending_mark_survived = survived;
+}
+
+void MergeTreeReadersChain::finalizePrewhereGranule()
+{
+    ++prewhere_granules_read;
+    if (!prewhere_pending_mark_survived)
+        ++prewhere_granules_dropped;
+
+    prewhere_pending_mark.reset();
+    prewhere_pending_mark_survived = false;
+}
+
+void MergeTreeReadersChain::flushPrewhereGranuleStats()
+{
+    if (prewhere_granule_stats_flushed)
+        return;
+
+    if (prewhere_pending_mark)
+        finalizePrewhereGranule();
+
+    ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders, prewhere_granules_read);
+    ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders, prewhere_granules_dropped);
+    prewhere_granule_stats_flushed = true;
 }
 
 void MergeTreeReadersChain::executeActionsBeforePrewhere(

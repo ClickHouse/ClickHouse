@@ -132,6 +132,23 @@ private:
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
 
+    /// PREWHERE granule ProfileEvents (GranulesReadByPrewhereReaders / GranulesSkippedByPrewhereReaders).
+    /// A granule can be split across several read blocks and a later PREWHERE step can drop a granule an
+    /// earlier one kept, so the counts are accumulated per part from the final result of every block and
+    /// flushed once, when the part's ranges are exhausted. `feedPrewhereGranuleMark` is fed every granule
+    /// in mark order; it keeps the trailing granule pending until the next mark (or the flush) confirms it
+    /// is complete, OR-ing the survivor flag of the pieces of a split granule.
+    void feedPrewhereGranuleMark(size_t mark, bool survived);
+    void finalizePrewhereGranule();
+    void flushPrewhereGranuleStats();
+
+    bool prewhere_granule_stats_enabled = false;
+    bool prewhere_granule_stats_flushed = false;
+    std::optional<size_t> prewhere_pending_mark;
+    bool prewhere_pending_mark_survived = false;
+    size_t prewhere_granules_read = 0;
+    size_t prewhere_granules_dropped = 0;
+
     bool is_initialized = false;
     LoggerPtr log = getMergeTreeReadersChainLogger();
 };

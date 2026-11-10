@@ -373,6 +373,36 @@ public:
         /// Applies the filter to the columns and updates num_rows.
         void applyFilter(const FilterWithCachedCount & filter);
 
+        /// Calls `callback(mark, surviving_rows)` once for every granule in this result, where `mark` is
+        /// the granule's mark number in the part and `surviving_rows` is `rows_per_granule` for it (the
+        /// number of rows that survived all filtering steps applied so far). Uses the same mark mapping as
+        /// `computeUnmatchedMarkRanges`. A granule split across read blocks appears in each block it spans,
+        /// so the caller must combine the pieces (see `MergeTreeReadersChain` PREWHERE granule stats).
+        template <typename Callback>
+        void forEachGranuleMark(Callback && callback) const
+        {
+            if (rows_per_granule.empty())
+                return;
+
+            /// The first i_start entries come from the in-progress range carried over from the previous
+            /// read; their marks start at in_progress_start_mark. The rest belong to started_ranges.
+            const size_t i_start = started_ranges.empty() ? rows_per_granule.size() : started_ranges[0].num_granules_read_before_start;
+
+            if (in_progress_start_mark.has_value())
+                for (size_t i = 0; i < i_start; ++i)
+                    callback(*in_progress_start_mark + i, rows_per_granule[i]);
+
+            size_t range_idx = 0;
+            for (size_t i = i_start; i < rows_per_granule.size(); ++i)
+            {
+                while (range_idx + 1 < started_ranges.size() && started_ranges[range_idx + 1].num_granules_read_before_start <= i)
+                    ++range_idx;
+
+                const size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;
+                callback(started_ranges[range_idx].range.begin + offset, rows_per_granule[i]);
+            }
+        }
+
         /// Verifies that columns and filter sizes match.
         /// The checks might be non-trivial so it make sense to have the only in debug builds.
         void checkInternalConsistency() const;
