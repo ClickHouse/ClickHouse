@@ -421,10 +421,13 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
     }
 
     bool secure = cluster_info.current_node.secure;
+    /// The port is used to decide which members are this server itself. Without a local secure listener
+    /// (possible for an observer) no member can be this server, so use 0, which never matches: falling back to
+    /// the default secure port would mark another server on the same host listening on it as local.
     ClusterConnectionParameters params{
         /* username= */ cluster_info.username,
         /* password= */ cluster_info.password,
-        /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
+        /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(0) : context->getTCPPort(),
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,
