@@ -160,8 +160,8 @@ struct PostingListBuildContext
     size_t segment_size = 0;
     bool enable_positions = false;
     TextIndexScoringKind scoring = TextIndexScoringKind::None;
+    /// One byte per row of the granule (or of the merged part), indexed by row id.
     const PaddedPODArray<UInt8> * doc_lengths = nullptr;
-    UInt32 doc_lengths_first_row_id = 0;
 };
 
 /// Builds one token's posting list during the index build.

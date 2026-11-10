@@ -94,11 +94,7 @@ void SegmentedPostingListCodec::append(std::span<const UInt32> row_ids, std::spa
             const size_t block_size = std::min(BLOCK_SIZE, rows_in_chunk - offset);
             const std::span<const UInt32> block_weights = weights.empty() ? weights : weights.subspan(pos + offset, block_size);
 
-            encodeBlock(
-                row_ids.subspan(pos + offset, block_size),
-                block_weights,
-                doc_lengths,
-                context.doc_lengths_first_row_id);
+            encodeBlock(row_ids.subspan(pos + offset, block_size), block_weights, doc_lengths);
         }
 
         pos += rows_in_chunk;
@@ -282,8 +278,7 @@ void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo
 void SegmentedPostingListCodec::encodeBlock(
     std::span<const UInt32> block_row_ids,
     std::span<const UInt32> weights,
-    std::span<const UInt8> doc_lengths,
-    UInt32 doc_lengths_first_row_id)
+    std::span<const UInt8> doc_lengths)
 {
     chassert(block_codec);
     chassert(!block_row_ids.empty() && block_row_ids.size() <= BLOCK_SIZE);
@@ -318,10 +313,8 @@ void SegmentedPostingListCodec::encodeBlock(
 
         for (UInt32 row_id : block_row_ids)
         {
-            chassert(row_id >= doc_lengths_first_row_id);
-            const size_t doc_lengths_index = row_id - doc_lengths_first_row_id;
-            chassert(doc_lengths_index < doc_lengths.size());
-            min_dl_byte = std::min(min_dl_byte, doc_lengths[doc_lengths_index]);
+            chassert(row_id < doc_lengths.size());
+            min_dl_byte = std::min(min_dl_byte, doc_lengths[row_id]);
         }
 
         const UInt32 max_weight = weights.empty() ? 1 : std::ranges::max(weights);
