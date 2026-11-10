@@ -20,6 +20,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Access/resolveSetting.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
@@ -755,6 +756,14 @@ Possible values:
 - 1 — `SELECT` returns empty result for empty file.
 )", 0, \
         {"24.11", false, true, "We hope it will provide better UX"}) \
+    DECLARE(Bool, s3_skip_hidden_files, false, R"(
+Enables or disables skipping hidden paths when listing files by glob in [S3](/reference/engines/table-engines/integrations/s3) engine tables: objects with a path segment starting with `_` or `.` below the non-glob prefix of the path. A segment containing `=` is a partition directory (such as `_p=1` for a partition column `_p`) and is not hidden. Hive-ecosystem writers (Hive, Spark, Trino) stage in-progress output and write marker objects under such paths (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), and reading them races with the writer's commit: the query can return uncommitted data or fail when the writer renames or deletes the staged object mid-read. Segments within the non-glob prefix are not checked. Tables with `partition_strategy = 'hive'` always skip hidden paths regardless of this setting.
+
+Possible values:
+- 0 — every object matched by the glob is read.
+- 1 — objects with a hidden path segment below the non-glob prefix are skipped.
+)", 0, \
+        {"26.11", false, false, "New setting: skip objects with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}) \
     DECLARE(Bool, azure_create_new_file_on_insert, false, R"(
 Enables or disables creating a new file on each insert in azure engine tables
 )", 0) \
@@ -927,6 +936,14 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(Bool, hdfs_skip_hidden_files, false, R"(
+Enables or disables skipping hidden paths when listing files by glob in [HDFS](/reference/engines/table-engines/integrations/hdfs) engine tables: files with a path segment starting with `_` or `.` below the non-glob prefix of the path. A segment containing `=` is a partition directory (such as `_p=1` for a partition column `_p`) and is not hidden. Hive-ecosystem writers (Hive, Spark, Trino) stage in-progress output and write marker files under such paths (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), and reading them races with the writer's commit. Segments within the non-glob prefix are not checked. Tables with `partition_strategy = 'hive'` always skip hidden paths regardless of this setting.
+
+Possible values:
+- 0 — every file matched by the glob is read.
+- 1 — files with a hidden path segment below the non-glob prefix are skipped.
+)", 0, \
+        {"26.11", false, false, "New setting: skip files with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}) \
     DECLARE(Bool, enable_hdfs_pread, true, R"(
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0, \
         {"25.4", true, true, "New setting."}) \
@@ -960,6 +977,14 @@ Possible values:
 - 1 — `SELECT` returns empty result for empty file.
 )", 0, \
         {"24.6", false, false, "Allow to skip empty files in azure table engine"}) \
+    DECLARE(Bool, azure_skip_hidden_files, false, R"(
+Enables or disables skipping hidden paths when listing files by glob in [AzureBlobStorage](/reference/engines/table-engines/integrations/azureBlobStorage) engine tables: blobs with a path segment starting with `_` or `.` below the non-glob prefix of the path. A segment containing `=` is a partition directory (such as `_p=1` for a partition column `_p`) and is not hidden. Hive-ecosystem writers (Hive, Spark, Trino) stage in-progress output and write marker objects under such paths (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), and reading them races with the writer's commit. Segments within the non-glob prefix are not checked. Tables with `partition_strategy = 'hive'` always skip hidden paths regardless of this setting.
+
+Possible values:
+- 0 — every blob matched by the glob is read.
+- 1 — blobs with a hidden path segment below the non-glob prefix are skipped.
+)", 0, \
+        {"26.11", false, false, "New setting: skip blobs with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}) \
     DECLARE(ArrowFlightDescriptorType, arrow_flight_request_descriptor_type, ArrowFlightDescriptorType::Path, R"(
 Type of descriptor to use for Arrow Flight requests. 'path' sends the dataset name as a path descriptor. 'command' sends a SQL query as a command descriptor (required for Dremio).
 
@@ -1883,9 +1908,6 @@ Possible values:
 )", 0) \
     \
     DECLARE(NonZeroUInt64, min_chunk_bytes_for_parallel_parsing, (10 * 1024 * 1024), R"(
-- Type: unsigned int
-- Default value: 1 MiB
-
 The minimum chunk size in bytes, which each thread will parse in parallel.
 )", 0) \
     DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, true, R"(
@@ -4608,6 +4630,14 @@ Possible values:
 
 - Any positive integer, starting from 2.
 )", 0) \
+    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
+Initial number of grace hash join buckets
+)", 0, \
+        {"26.11", 1, 1, "The setting is no longer experimental. The default is unchanged."}) \
+    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
+Limit on the number of grace hash join buckets
+)", 0, \
+        {"26.11", 1024, 1024, "The setting is no longer experimental. The default is unchanged."}) \
     DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, R"(
 Maximal size of the set to filter joined tables by each other's row sets before joining.
 
@@ -10937,12 +10967,6 @@ transaction on this replica. On expiry they throw `TIMEOUT_EXCEEDED`.
         {"26.11", 10000, 10000, "New setting bounding how long `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` and `COMMIT` wait for commits to become visible on this replica."}) \
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
-Initial number of grace hash join buckets
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
-Limit on the number of grace hash join buckets
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys

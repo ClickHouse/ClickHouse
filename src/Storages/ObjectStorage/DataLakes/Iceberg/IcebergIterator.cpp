@@ -150,7 +150,13 @@ private:
         auto & pruner = pruners[schema_id];
         if (!pruner)
             pruner = std::make_unique<ManifestFilesPruner>(
-                schema_processor, table_schema_id, schema_id, predicate_dag.get(), /*partition_key_=*/nullptr, context);
+                schema_processor,
+                table_schema_id,
+                schema_id,
+                predicate_dag.get(),
+                /*partition_key_=*/nullptr,
+                PartitionSpecification{},
+                context);
         return pruner.get();
     }
 
