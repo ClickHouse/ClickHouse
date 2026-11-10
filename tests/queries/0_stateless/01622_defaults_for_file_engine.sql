@@ -1,6 +1,6 @@
-insert into table function file("data1622.json", "TSV", "value String") VALUES ('{"a":1}');
+insert into table function file({CLICKHOUSE_DATABASE:String}, "TSV", "value String") VALUES ('{"a":1}');
 drop table if exists json;
-create table json(a int, b int default 7, c default a + b) engine File(JSONEachRow, 'data1622.json');
+create table json(a int, b int default 7, c default a + b) engine File(JSONEachRow, {CLICKHOUSE_DATABASE:String});
 set input_format_defaults_for_omitted_fields = 1;
 select * from json;
 truncate table json;
