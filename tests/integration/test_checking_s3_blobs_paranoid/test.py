@@ -475,16 +475,17 @@ def test_early_error_response_at_upload_is_not_retried(cluster, broken_s3, schem
         ("never", "https", 8443, 100),
         ("late", "http", 8083, 100),
         ("reject", "http", 8083, 100),
+        ("reject_late", "http", 8083, 100),
     ],
 )
 def test_expect_100_continue_not_answered(
     cluster, broken_s3, mode, scheme, port, timeout_ms
 ):
     # The server does not answer `Expect: 100-continue` (`never`), answers it only after the body has
-    # started to arrive (`late`), or refuses it with `417 Expectation Failed` (`reject`). The upload
-    # must still succeed, with no errors. In the `never` mode the mock drops a client that waits for
-    # `100 Continue` longer than its read timeout, so the client must stop waiting after
-    # `s3_expect_continue_timeout_ms`, also over TLS.
+    # started to arrive (`late`), or refuses it with `417 Expectation Failed`, before the body
+    # (`reject`) or after it (`reject_late`). The upload must still succeed, with no errors. In the
+    # `never` mode the mock drops a client that waits for `100 Continue` longer than its read
+    # timeout, so the client must stop waiting after `s3_expect_continue_timeout_ms`, also over TLS.
     node = cluster.instances["node"]
 
     broken_s3.setup_fake_multpartuploads()

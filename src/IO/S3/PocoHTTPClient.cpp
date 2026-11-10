@@ -687,16 +687,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     poco_response,
                     Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(s3_expect_continue_timeout_ms) * 1000));
 
-                if (response_body && poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_EXPECTATION_FAILED)
-                {
-                    /// The server, or a proxy on the way, does not support the expectation.
-                    LOG_DEBUG(log, "Server refused `Expect: 100-continue` for {}, sending the request again without it", uri);
-                    expect_continue_rejected = true;
-                    ++max_redirects;
-                    continue;
-                }
-
-                if (response_body)
+                /// A `417` is handled below, after both ways the response can arrive.
+                if (response_body && poco_response.getStatus() != Poco::Net::HTTPResponse::HTTP_EXPECTATION_FAILED)
                 {
                     /// Fail closed: the SDK must never take an upload whose body was not sent for a success.
                     if (poco_response.getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
@@ -745,6 +737,16 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Receiving response...");
                 response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
+            }
+
+            /// The server, or a proxy on the way, does not support the expectation. RFC 9110 asks to repeat the
+            /// request without it, also when the `417` comes after the body, once the wait for `100 Continue` expired.
+            if (expect_continue && poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_EXPECTATION_FAILED)
+            {
+                LOG_DEBUG(log, "Server refused `Expect: 100-continue` for {}, sending the request again without it", uri);
+                expect_continue_rejected = true;
+                ++max_redirects;
+                continue;
             }
 
             watch.stop();

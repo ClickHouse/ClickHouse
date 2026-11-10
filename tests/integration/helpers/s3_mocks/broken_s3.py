@@ -574,6 +574,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def parse_request(self):
         self.continue_pending = False
         self.expect_100_ignored = False
+        self.reject_after_body = False
         return super().parse_request()
 
     def handle_expect_100(self):
@@ -581,7 +582,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         # goes out only when the handler starts to read the body. A handler that answers without
         # reading the body sends its final response instead, and the client must not send the body.
         # `late` sends `100 Continue` only after `late_ms`, `never` does not send it at all, and
-        # `reject` refuses the expectation with `417 Expectation Failed`.
+        # `reject` refuses the expectation with `417 Expectation Failed`. `reject_late` does not send
+        # `100 Continue` and answers an upload with `417` only after it has read the body.
         mode = _runtime.expect_100_mode
         if mode == "reject":
             self.send_response_only(417)
@@ -590,8 +592,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.close_connection = True
             return False
-        self.continue_pending = mode != "never"
-        self.expect_100_ignored = mode == "never"
+        self.continue_pending = mode not in ("never", "reject_late")
+        self.expect_100_ignored = mode in ("never", "reject_late")
+        self.reject_after_body = mode == "reject_late"
         return True
 
     def send_continue_if_expected(self):
@@ -810,7 +813,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if path[1] == "expect_100":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             mode = params.get("mode", ["lazy"])[0]
-            if mode not in ("lazy", "never", "late", "reject"):
+            if mode not in ("lazy", "never", "late", "reject", "reject_late"):
                 return self.write_error(400, f"_mock_settings: unknown expect_100 mode {mode}")
             _runtime.expect_100_mode = mode
             _runtime.expect_100_late_ms = int(params.get("late_ms", ["0"])[0])
@@ -861,6 +864,15 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         return self.redirect()
 
     def do_PUT(self):
+        if self.reject_after_body:
+            self.read_all_input()
+            self.send_response(417)
+            self.send_header("Content-Length", "0")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+            return
+
         content_length = int(self.headers.get("Content-Length", 0))
 
         if _runtime.slow_put is not None:
