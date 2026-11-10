@@ -10,10 +10,11 @@
 04196_unique_key_read_skips_an_uncommitted_part
 04198_unique_key_read_sees_a_lost_reply_commit
 
-    A join with `mergeTreeProjection` throws `NOT_FOUND_COLUMN_IN_BLOCK`: the replica resolves the projection side as the base table
+    A read of `mergeTreeProjection` on a remote replica throws `NOT_FOUND_COLUMN_IN_BLOCK`: the replica resolves the projection as the base table
     https://github.com/ClickHouse/ClickHouse/issues/128537
 03401_normal_projection_with_part_offset
 03785_rebuild_projection_with_part_offset
+05569_projection_calculation_subquery_names
 
     A read from a temporary table is shipped, and the replica cannot access it (DATABASE_ACCESS_DENIED)
 00542_access_to_temporary_table_in_readonly_mode
@@ -29,6 +30,12 @@
 
     A read with Top-K dynamic filtering stays local (`__topKFilter` cannot be shipped), so the query does not use parallel replicas
 04717_parallel_replicas_min_rows_per_replica_right_join
+
+    A read with direct read from a text index stays local (`__text_index_*` columns cannot be shipped), so the query does not use parallel replicas
+05410_time_series_tags_functions_parallel_replicas_expired_context
+
+    `SHUFFLE` is not shipped with the plan fragment, so replicas return every row they read and lazy materialization does not apply
+05480_shuffle_clause
 
     A query that is not distributed keeps a split aggregation and a `ParallelReplicasSplit` step
     https://github.com/ClickHouse/ClickHouse/issues/128539
