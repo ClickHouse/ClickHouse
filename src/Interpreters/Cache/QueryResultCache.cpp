@@ -626,6 +626,52 @@ static void expandCommonTableExpressions(ASTPtr & ast, const ContextPtr & contex
     ApplyWithSubqueryVisitor::visit(ast, context, budget);
 }
 
+namespace
+{
+bool isSettingIgnoredInQueryResultCache(const String & setting_name);
+}
+
+/// Whether a `SETTINGS` clause anywhere in `ast` sets a value different from `settings`. The tables of
+/// the whole AST are probed with one context, while the analyzer plans a subquery with its own
+/// `SETTINGS` under a separate context, so the probe would not see that scope: for example, a
+/// subquery's `prefer_localhost_replica = 0` makes a `Distributed` table read its local shard over TCP,
+/// under the profile of the shard's user, while the probe takes the in-process branch. The settings of
+/// the root, already applied to `settings` by the caller, compare equal and do not count. Settings that
+/// change neither the rows nor the read (the query cache ones, `log_comment`, ...) are ignored, and the
+/// filters of `additional_table_filters` / `additional_result_filter` are hashed with their own
+/// dependencies (see `collectFiltersFromQuerySettings`). A setting whose value cannot be compared counts
+/// as different, so the caller fails closed.
+static bool astHasScopeSettingsDifferentFromContext(const IAST & ast, const Settings & settings)
+{
+    for (const auto & child : ast.children)
+        if (astHasScopeSettingsDifferentFromContext(*child, settings))
+            return true;
+
+    const auto * set_query = ast.as<ASTSetQuery>();
+    if (!set_query)
+        return false;
+
+    for (const auto & change : set_query->changes)
+    {
+        if (change.name == "additional_table_filters" || change.name == "additional_result_filter"
+            || isSettingIgnoredInQueryResultCache(change.name))
+            continue;
+
+        try
+        {
+            if (Settings::castValueUtil(change.name, change.value) != settings.get(change.name))
+                return true;
+        }
+        catch (...)
+        {
+            /// Ok to ignore: e.g. `profile` or an unknown setting, which the query itself rejects later;
+            /// its effect on the scope cannot be compared, so report a difference and fail closed.
+            return true;
+        }
+    }
+    return false;
+}
+
 static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr ast, ContextPtr context)
 {
     /// Expand CTEs first, the same way the interpreter does, so that in
@@ -1034,6 +1080,11 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
     /// table stays the same (see `QueryConsumedObjectSets::markNonDeterministic`). This makes the check at
     /// finalization fail, so the result is not stored.
     if (auto consumed_object_sets = context->getQueryConsumedObjectSets(); consumed_object_sets && consumed_object_sets->isNonDeterministic())
+        return {};
+
+    /// A subquery planned under its own settings would be probed under the wrong ones. See
+    /// `astHasScopeSettingsDifferentFromContext`.
+    if (astHasScopeSettingsDifferentFromContext(*ast, context->getSettingsRef()))
         return {};
 
     /// Only the `additional_table_filters` entries that can apply to a table the query reads take part,
