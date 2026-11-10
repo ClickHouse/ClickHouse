@@ -237,6 +237,11 @@ def test_read_in_order_more_files_than_streams(started_cluster_iceberg_with_spar
         instance, q, "MergingSortedTransform",
         "max_threads=4, read_in_order_two_level_merge_threshold=3") == 3
 
+    # More files than threshold * max_threads: the read is declined and the sort is kept.
+    for max_threads, threshold, declined in [(4, 0, True), (4, 1, True), (6, 0, False)]:
+        settings = f"max_threads={max_threads}, read_in_order_two_level_merge_threshold={threshold}"
+        assert (count_in_pipeline(instance, q, "PartialSortingTransform", settings) > 0) == declined, settings
+
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_read_in_order_complex_key_more_files_than_streams(started_cluster_iceberg_with_spark, storage_type):
