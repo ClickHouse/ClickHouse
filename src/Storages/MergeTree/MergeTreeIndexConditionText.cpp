@@ -2384,7 +2384,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
     if (!subdag.getRequiredColumns().empty())
         return false;
 
-    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext(), require_ready_sets))
         return false;
 
     auto output_column_name = subdag.getOutputs().front()->result_name;
