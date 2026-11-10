@@ -147,8 +147,8 @@ html {
 }
 
 /* Override Mintlify prose link color rules for CTA buttons.
-   Light: html:not(.dark) .prose a:not(.card):not(.card *) — specificity (0,4,2)
-   Dark:  .dark .prose a:not(.card):not(.card *)           — specificity (0,4,1)
+   Light: html:not(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *) — specificity (0,4,2)
+   Dark:  .dark .prose a:not(.card):not(.card *):not(.ch-product-availability *)           — specificity (0,4,1)
    We beat both by appending .ch-btn-* to the exact same selector → +1 class. */
 
 /* Primary — light: white text on black bg; dark: black text on yellow bg */
@@ -859,6 +859,11 @@ details.accordion > summary,
     margin-left: 0 !important;
 }
 
+/* Highlight the product selector chevron in dark mode. */
+.dark #sidebar .nav-dropdown-trigger > svg {
+    color: #FDFF75 !important;
+}
+
 /* Product selector trigger button text size */
 .nav-dropdown-products-selector-trigger .truncate,
 .nav-dropdown-products-selector-trigger span.truncate {
@@ -1477,6 +1482,65 @@ html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.c
     background-color: #1c1c1c;
 }
 
+/* Tier cards on the Managed Postgres pricing page. */
+.ch-tier-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 24px 0;
+}
+
+@media (max-width: 768px) {
+    .ch-tier-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+.ch-tier-card {
+    padding: 20px;
+    border: 1px solid #e6e7e9;
+    border-top: 3px solid #161517;
+    border-radius: 8px;
+    background-color: #f7f7f7;
+}
+
+.ch-tier-card .ch-tier-card-title {
+    margin-bottom: 8px;
+    font-size: 1.125rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+.ch-tier-card .ch-tier-card-description {
+    min-height: 3.5em;
+    margin: 0 0 16px;
+    color: #696e79;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.ch-tier-card .ch-tier-card-lead {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.ch-tier-card .ch-tier-card-list {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 0.9rem;
+}
+
+.dark .ch-tier-card {
+    border-color: #2b2b2b;
+    border-top-color: #fdff75;
+    background-color: #191919;
+}
+
+.dark .ch-tier-card .ch-tier-card-description {
+    color: #8c8c8c;
+}
+
 html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta,
 html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta:hover {
     border: 1px solid #fdff75 !important;
@@ -1835,26 +1899,26 @@ body.clickpipes_home .hero-text {
 
 /* Prose links: colored without underline by default, underline appears on hover.
    Light: #135be6 blue. Dark: ClickHouse yellow #FAFF69. */
-html:not(.dark) .prose a:not(.card):not(.card *) {
+html:not(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *) {
     color: #135be6 !important;
     border-bottom: none !important;
     text-decoration: none !important;
     font-weight: normal !important;
 }
-html:not(.dark) .prose a:not(.card):not(.card *):hover {
+html:not(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *):hover {
     color: #135be6 !important;
     text-decoration: underline !important;
 }
 
-.dark .prose a:not(.card):not(.card *),
-:is(.dark) .prose a:not(.card):not(.card *) {
+.dark .prose a:not(.card):not(.card *):not(.ch-product-availability *),
+:is(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *) {
     color: #FAFF69 !important;
     border-bottom: none !important;
     text-decoration: none !important;
     font-weight: normal !important;
 }
-.dark .prose a:not(.card):not(.card *):hover,
-:is(.dark) .prose a:not(.card):not(.card *):hover {
+.dark .prose a:not(.card):not(.card *):not(.ch-product-availability *):hover,
+:is(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *):hover {
     color: #FAFF69 !important;
     text-decoration: underline !important;
     opacity: 1;
@@ -2859,6 +2923,11 @@ html:not(.dark) img[src*="machine-learning"] {
     background-color: #d1d5db !important;
 }
 
+/* Opt-out for transparent diagrams that ship their own light-mode variant */
+html:not(.dark) img.ch-transparent[src] {
+    background-color: transparent !important;
+}
+
 /* ============================================
    Callout Styling
    ============================================ */
@@ -3677,6 +3746,45 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 
 td:has(> .integration-table-logo) {
     white-space: nowrap;
+}
+/* Availability belongs below the title, including the title's AI action. */
+div:has(> #ch-product-availability) {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+}
+
+div:has(> #ch-product-availability) > #ch-page-ask-row {
+    width: 100%;
+}
+
+:is(#ch-product-availability, .ch-product-availability) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 12px;
+  line-height: 20px;
+}
+:is(#ch-product-availability, .ch-product-availability) a {
+  border: 1px solid #d1d1d1;
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: inherit !important;
+  text-decoration: none;
+  font-weight: 500;
+}
+:is(#ch-product-availability, .ch-product-availability) a:hover { text-decoration: underline; }
+:is(#ch-product-availability, .ch-product-availability) a[aria-current="page"] {
+  background: #f7f8d8;
+  border-color: #999c4b;
+  color: #393c16 !important;
+}
+.dark :is(#ch-product-availability, .ch-product-availability) a { border-color: #555; }
+.dark :is(#ch-product-availability, .ch-product-availability) a[aria-current="page"] {
+  background: #292b1c;
+  border-color: #60622e;
+  color: #fdff75 !important;
 }
 
 /* Ask AI is a separate docs-assistant action rather than a second search
