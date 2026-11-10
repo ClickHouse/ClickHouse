@@ -381,6 +381,12 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
 
+void DatabaseOverlay::waitTablesStarted(const FilterByNameFunction & filter_by_table_name, bool no_throw) const
+{
+    for (const auto & db : databases)
+        db->waitTablesStarted(filter_by_table_name, no_throw);
+}
+
 bool DatabaseOverlay::isExternal() const
 {
     for (const auto & db : databases)
@@ -684,6 +690,15 @@ String DatabaseOverlayReadOnly::findSourceDatabase(const String & table_name, Co
     return {};
 }
 
+bool DatabaseOverlayReadOnly::hasTable(
+    const std::vector<std::pair<String, DatabasePtr>> & sources, const String & table_name, const ContextPtr & context_)
+{
+    for (const auto & [source, database] : sources)
+        if (database->isTableExist(table_name, context_) && isSourceTableVisible(source, table_name, context_))
+            return true;
+    return false;
+}
+
 bool DatabaseOverlayReadOnly::isTableExist(const String & table_name, ContextPtr context_) const
 {
     return !findSourceDatabase(table_name, context_).empty();
@@ -695,6 +710,13 @@ StoragePtr DatabaseOverlayReadOnly::tryGetTable(const String & table_name, Conte
     if (source.empty())
         return nullptr;
     return std::make_shared<StorageAlias>(StorageID(getDatabaseName(), table_name), getContext(), source, table_name);
+}
+
+void DatabaseOverlayReadOnly::waitTablesStarted(const FilterByNameFunction & filter_by_table_name, bool no_throw) const
+{
+    for (const auto & source : source_databases)
+        if (auto database = tryGetOverlaySource(source))
+            database->waitTablesStarted(filter_by_table_name, no_throw);
 }
 
 DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIterator(
@@ -710,6 +732,7 @@ DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIteratorWithHint(
     /// lists without a resolved storage object is kept, as the source's own hinted iterator does.
     Tables tables;
     NameSet seen;
+    std::vector<std::pair<String, DatabasePtr>> earlier_local_sources;
     for (const auto & source : source_databases)
     {
         auto database = tryGetOverlaySource(source);
@@ -718,9 +741,11 @@ DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIteratorWithHint(
         for (auto it = database->getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter); it->isValid(); it->next())
         {
             const String & name = it->name();
-            if (isSourceTableVisible(source, name, context_) && seen.insert(name).second)
+            if (isSourceTableVisible(source, name, context_) && seen.insert(name).second && !hasTable(earlier_local_sources, name, context_))
                 tables.emplace(name, std::make_shared<StorageAlias>(StorageID(getDatabaseName(), name), getContext(), source, name));
         }
+        if (skip_not_loaded && !database->isExternal())
+            earlier_local_sources.emplace_back(source, database);
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
@@ -737,6 +762,7 @@ std::vector<LightWeightTableDetails> DatabaseOverlayReadOnly::getLightweightTabl
     /// Merge the names from the sources' own lightweight listings, which can contain tables that the full listing omits.
     std::vector<LightWeightTableDetails> result;
     NameSet seen;
+    std::vector<std::pair<String, DatabasePtr>> earlier_local_sources;
     for (const auto & source : source_databases)
     {
         auto database = tryGetOverlaySource(source);
@@ -744,9 +770,12 @@ std::vector<LightWeightTableDetails> DatabaseOverlayReadOnly::getLightweightTabl
             continue;
         for (auto & table : database->getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter))
         {
-            if (isSourceTableVisible(source, table.name, context_) && seen.insert(table.name).second)
+            if (isSourceTableVisible(source, table.name, context_) && seen.insert(table.name).second
+                && !hasTable(earlier_local_sources, table.name, context_))
                 result.push_back(std::move(table));
         }
+        if (skip_not_loaded && !database->isExternal())
+            earlier_local_sources.emplace_back(source, database);
     }
     std::sort(result.begin(), result.end(), [](const auto & lhs, const auto & rhs) { return lhs.name < rhs.name; });
     return result;

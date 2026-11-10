@@ -133,7 +133,7 @@ protected:
 
             if (!databases_cursor.hasTablesIterator())
                 databases_cursor.setTablesIterator(
-                    databases_cursor.getDatabase()->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false));
+                    databases_cursor.getDatabase()->getTablesIteratorSkippingFailed(context, table_name_filter));
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
