@@ -1,4 +1,5 @@
-#include <atomic>
+#include <mutex>
+#include <optional>
 #include <string_view>
 
 #include <Access/Common/AccessFlags.h>
@@ -8,6 +9,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/QualifiedTableName.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -74,10 +76,32 @@ void validateDictionaryIsNaiveBayes(const ContextPtr & context, const IFunction 
             func.getName());
 }
 
+/// The dictionary the access was checked for. The name is looked up for every block, and a hierarchical name (see
+/// `DatabaseCatalog`) may denote another dictionary after a rename, so the check is repeated when the dictionary changes.
+struct CheckedDictionaryAccess
+{
+    std::mutex mutex;
+    std::optional<QualifiedTableName> checked_for TSA_GUARDED_BY(mutex);
+
+    void check(const ContextPtr & context, const QualifiedTableName & dictionary_id)
+    {
+        {
+            std::lock_guard lock(mutex);
+            if (checked_for == dictionary_id)
+                return;
+        }
+
+        context->checkAccess(AccessType::dictGet, dictionary_id.database, dictionary_id.table);
+
+        std::lock_guard lock(mutex);
+        checked_for = dictionary_id;
+    }
+};
+
 template <typename ClassifyRow>
 void executeNaiveBayes(
     const ContextPtr & context,
-    std::atomic<bool> & access_checked,
+    CheckedDictionaryAccess & access_checked,
     const ColumnsWithTypeAndName & arguments,
     size_t input_rows_count,
     ClassifyRow && classify_row)
@@ -89,11 +113,9 @@ void executeNaiveBayes(
 
     auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
 
-    if (!access_checked.load(std::memory_order_relaxed))
-    {
-        context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-        access_checked.store(true, std::memory_order_relaxed);
-    }
+    access_checked.check(
+        context,
+        QualifiedTableName{.database = dictionary->getDatabaseOrNoDatabaseTag(), .table = dictionary->getDictionaryID().getTableName()});
 
     const auto * nb_dict = typeid_cast<const NaiveBayesDictionary *>(dictionary.get());
     if (!nb_dict)
@@ -129,7 +151,7 @@ class FunctionNaiveBayesBase : public IFunction
 {
 protected:
     ContextPtr context;
-    mutable std::atomic<bool> access_checked{false};
+    mutable CheckedDictionaryAccess access_checked;
 
 public:
     explicit FunctionNaiveBayesBase(ContextPtr context_)
