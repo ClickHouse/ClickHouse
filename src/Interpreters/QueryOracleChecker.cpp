@@ -916,7 +916,7 @@ bool hasWithTotalsAnywhere(const ASTPtr & ast)
     return anyChild(ast, [](const ASTPtr & child) { return hasWithTotalsAnywhere(child); });
 }
 
-/// True if any SELECT keeps a part of its rows chosen by position: `LIMIT`, `OFFSET`, `LIMIT BY`, `LIMIT AFTER`/`UNTIL`.
+/// True if any SELECT keeps a subset of its rows chosen by position.
 bool hasRowLimitAnywhere(const ASTPtr & ast)
 {
     if (!ast)
