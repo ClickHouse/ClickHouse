@@ -55,8 +55,14 @@ namespace
             out[offset] = static_cast<char>(bits);
 
             std::span<char> payload(out.data() + offset + 1, payload_bytes);
-            [[maybe_unused]] const size_t written = BitpackingBlockCodec::encode(values_span, bits, payload);
-            chassert(written == payload_bytes);
+            const size_t written = BitpackingBlockCodec::encode(values_span, bits, payload);
+
+            if (written != payload_bytes)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Bitpacking encode size mismatch: expected {} bytes for {} weights with {} bits, but written {} bytes",
+                    payload_bytes, weights.size(), bits, written);
+            }
 
             return 1 + payload_bytes;
         }
@@ -73,8 +79,14 @@ namespace
             chassert(count > 0 && count <= out.size());
 
             const auto [bits, payload_bytes] = readHeader(in, count);
-            [[maybe_unused]] const size_t consumed = BitpackingBlockCodec::decode(in, count, bits, out);
-            chassert(consumed == payload_bytes);
+            const size_t consumed = BitpackingBlockCodec::decode(in, count, bits, out);
+
+            if (consumed != payload_bytes)
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Bitpacking decode size mismatch: expected to consume {} bytes for {} weights with {} bits, but consumed {} bytes",
+                    payload_bytes, count, bits, consumed);
+            }
 
             addOne(out, count);
             return 1 + payload_bytes;
@@ -128,9 +140,15 @@ namespace
             /// The encoded size is only known afterwards; `PODArray::resize` does not zero-fill, so grow to the bound and shrink.
             const size_t offset = out.size();
             out.resize(offset + MAX_BLOCK_BYTES);
-            const size_t written = PFor::encodeBlocks<uint32_t>(
-                std::span<const uint32_t>(values, weights.size()), PFor::Delta::none, reinterpret_cast<uint8_t *>(out.data() + offset));
-            chassert(written > 0 && written <= MAX_BLOCK_BYTES);
+            const size_t written = PFor::encodeBlocks<uint32_t>(std::span<const uint32_t>(values, weights.size()), PFor::Delta::none, reinterpret_cast<uint8_t *>(out.data() + offset));
+
+            if (written == 0 || written > MAX_BLOCK_BYTES)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "PFor encode size mismatch: written {} bytes for {} weights, expected 1 to {} bytes",
+                    written, weights.size(), MAX_BLOCK_BYTES);
+            }
+
             out.resize(offset + written);
             return written;
         }
@@ -141,9 +159,7 @@ namespace
 
             const size_t offset = out.size();
             out.resize(offset + 1);
-            [[maybe_unused]] const size_t written = PFor::encodeZeros(count, reinterpret_cast<uint8_t *>(out.data() + offset));
-            chassert(written == 1);
-            return 1;
+            return PFor::encodeZeros(count, reinterpret_cast<uint8_t *>(out.data() + offset));
         }
 
         size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) override
@@ -154,8 +170,7 @@ namespace
             /// `count` is never zero here, so a zero return means malformed input, not an empty block.
             const size_t consumed = PFor::decodeBlocks<uint32_t>(data, count, PFor::Delta::none, out.data(), data + in.size());
             if (consumed == 0)
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
 
             in = in.subspan(consumed);
             addOne(out, count);
@@ -170,8 +185,7 @@ namespace
             /// The block size follows from its header, so the values are not decoded.
             const size_t skipped = PFor::skipBlocks<uint32_t>(data, count, data + in.size());
             if (skipped == 0)
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
 
             in = in.subspan(skipped);
             return skipped;
