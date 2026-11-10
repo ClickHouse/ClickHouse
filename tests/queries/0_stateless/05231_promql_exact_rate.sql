@@ -93,7 +93,8 @@ CREATE TABLE t_promql_exact_rate_state
 )
 ENGINE = AggregatingMergeTree ORDER BY id;
 
--- Two parts, so OPTIMIZE has to merge the states.
+-- Two parts, so OPTIMIZE has to merge the states. No background merge until the parts are checked.
+SYSTEM STOP MERGES t_promql_exact_rate_state;
 INSERT INTO t_promql_exact_rate_state
 SELECT 1, timeSeriesRateToGridState(100, 120, 10, 20, 1)(ts, val), timeSeriesRateToGridState(100, 120, 10, 20)(ts, val)
 FROM values('ts UInt32, val Float64', (90, 0), (100, 10), (110, 20));
@@ -103,6 +104,7 @@ FROM values('ts UInt32, val Float64', (115, 25), (120, 40));
 
 SELECT finalizeAggregation(exact_state), finalizeAggregation(default_state) FROM t_promql_exact_rate_state ORDER BY _part;
 SELECT timeSeriesRateToGridMerge(100, 120, 10, 20, 1)(exact_state), timeSeriesRateToGridMerge(100, 120, 10, 20)(default_state) FROM t_promql_exact_rate_state;
+SYSTEM START MERGES t_promql_exact_rate_state;
 
 DETACH TABLE t_promql_exact_rate_state;
 ATTACH TABLE t_promql_exact_rate_state;

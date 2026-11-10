@@ -131,7 +131,9 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
             const bool exact_rate = parseTimeseriesExactRateParameter(name, parameters);
             auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesRateToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale, exact_rate);
+                if (exact_rate)
+                    return std::make_shared<AggregateFunctionTimeseriesRateToGrid<TimestampType, ValueType, true>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
+                return std::make_shared<AggregateFunctionTimeseriesRateToGrid<TimestampType, ValueType, false>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
@@ -230,7 +232,9 @@ SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(
             const bool exact_rate = parseTimeseriesExactRateParameter(name, parameters);
             auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale, exact_rate);
+                if (exact_rate)
+                    return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, ValueType, true>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
+                return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, ValueType, false>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
@@ -329,7 +333,9 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
             const bool exact_rate = parseTimeseriesExactRateParameter(name, parameters);
             auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesDeltaToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale, exact_rate);
+                if (exact_rate)
+                    return std::make_shared<AggregateFunctionTimeseriesDeltaToGrid<TimestampType, ValueType, true>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
+                return std::make_shared<AggregateFunctionTimeseriesDeltaToGrid<TimestampType, ValueType, false>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
