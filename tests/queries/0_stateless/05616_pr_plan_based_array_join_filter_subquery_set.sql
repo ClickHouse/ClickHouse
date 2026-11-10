@@ -26,6 +26,10 @@ SET parallel_replicas_local_plan = 0;
 SET query_plan_join_swap_table = false;
 
 SELECT '--- a non-deterministic set has one value, so exactly one element matches';
+-- A wrong result needs two replicas reading the left table, so it is rare; the plan shows the fragment stays local.
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') = 0 FROM (EXPLAIN SELECT uniqExact(r.elem), count() FROM t_pr_aj_set_left AS l
+INNER JOIN (SELECT id, elem FROM t_pr_aj_set_right ARRAY JOIN arr AS elem) AS r ON l.id = r.id
+WHERE r.elem IN (SELECT if(rand() % 2 = 0, 'b', 'c') FROM numbers(1) SETTINGS enable_parallel_replicas = 0));
 SELECT uniqExact(r.elem), count() FROM t_pr_aj_set_left AS l
 INNER JOIN (SELECT id, elem FROM t_pr_aj_set_right ARRAY JOIN arr AS elem) AS r ON l.id = r.id
 WHERE r.elem IN (SELECT if(rand() % 2 = 0, 'b', 'c') FROM numbers(1) SETTINGS enable_parallel_replicas = 0);
