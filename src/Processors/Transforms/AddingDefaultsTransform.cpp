@@ -265,7 +265,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
 
         NameSet columns_to_compute;
         NameSet visited;
-        std::vector<String> names_to_visit;
+        VectorWithMemoryTracking<String> names_to_visit;
         for (const auto & [col_name, col_idx] : columns_needing_defaults)
             if (needed_columns->contains(col_name))
                 names_to_visit.push_back(col_name);
