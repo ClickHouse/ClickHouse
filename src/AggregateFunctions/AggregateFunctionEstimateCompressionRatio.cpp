@@ -640,7 +640,7 @@ private:
             rest = source_type->createColumn();
             rest->insertRangeFrom(*rows, write_rows, rows->size() - write_rows);
         }
-        const UInt64 rows_bytes = sourceBytes(*rows, write_rows);
+        const UInt64 rows_bytes = sourceBytes(*rows, write_rows, /*first_in_part=*/!data_ref.part);
 
         data_ref.broken = true;
         if (!data_ref.part)
@@ -664,18 +664,23 @@ private:
         data_ref.broken = false;
     }
 
-    /// The first `limit` rows serialized in their own type, as the function measures them without a target type.
-    UInt64 sourceBytes(const IColumn & rows, size_t limit) const
+    /// The first `limit` rows serialized in their own type, as the function measures them without a target type. The prefix and
+    /// the suffix (the mode of `Variant` discriminators) are counted once per part, as one stream has them, so that the numerator
+    /// does not depend on where the granules of the target end. The rows themselves write nothing per call: the types that do
+    /// (`LowCardinality`, sparse, `Dynamic`) never reach here.
+    UInt64 sourceBytes(const IColumn & rows, size_t limit, bool first_in_part) const
     {
         NullWriteBufferWithMemory out(16384);
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&out](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &out; };
         ISerialization::SerializeBinaryBulkStatePtr state;
         source_serialization->serializeBinaryBulkStatePrefix(rows, settings, state);
+        const size_t prefix_end = out.count();
         source_serialization->serializeBinaryBulkWithMultipleStreams(rows, 0, limit, settings, state);
+        const size_t rows_end = out.count();
         source_serialization->serializeBinaryBulkStateSuffix(settings, state);
         out.finalize();
-        return out.count();
+        return first_in_part ? out.count() : rows_end - prefix_end;
     }
 
     std::unique_ptr<TargetPart> openPart(const IColumn & first_granule) const

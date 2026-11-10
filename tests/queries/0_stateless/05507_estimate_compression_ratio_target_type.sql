@@ -6,6 +6,8 @@ SET max_threads = 1, enable_parallel_replicas = 0, max_bytes_before_external_gro
 DROP TABLE IF EXISTS src;
 CREATE TABLE src (n UInt64, s String) ENGINE = Memory;
 INSERT INTO src SELECT number, concat('region_', toString(number % 16)) FROM numbers(50000);
+DROP TABLE IF EXISTS variants;
+CREATE TABLE variants ENGINE = Memory AS SELECT if(number % 3 = 0, NULL, toString(number))::Variant(String) AS v FROM numbers(100);
 
 SELECT 'parameters';
 -- In any order, the codec and the block size optional.
@@ -90,6 +92,14 @@ SELECT uniqExact(extract(h, '^(?:[89A-F][0-9A-F])*[0-7][0-9A-F]')), count() FROM
     UNION ALL SELECT hex(estimateCompressionRatioState('ZSTD(1)', 8192, 'Nullable(String)')(s)) FROM src
     UNION ALL SELECT hex(estimateCompressionRatioState('LZ4', 'String')(toLowCardinality(s))) FROM src
 );
+-- Also when the targets end their granules at other rows: 100 rows of `FixedString(262144)` are 25 MiB, three granules, while
+-- `String` writes one. A `Variant` writes a prefix with each serialization, which must count once.
+SELECT uniqExact(extract(h, '^(?:[89A-F][0-9A-F])*[0-7][0-9A-F]')), count() FROM
+(
+    SELECT hex(estimateCompressionRatioState('LZ4', 'String')(v)) AS h FROM variants
+    UNION ALL SELECT hex(estimateCompressionRatioState('LZ4', 'FixedString(262144)')(v)) FROM variants
+)
+SETTINGS allow_suspicious_fixed_string_types = 1;
 
 SELECT 'ranking';
 -- 16 distinct values: much smaller as `LowCardinality`, with either codec.
@@ -220,6 +230,7 @@ SELECT estimateCompressionRatio('LZ4', 'UInt32')(v) = (SELECT estimateCompressio
 FROM sparse GROUP BY n % 1;
 
 DROP TABLE src;
+DROP TABLE variants;
 DROP TABLE results;
 DROP TABLE states;
 DROP TABLE sparse;
