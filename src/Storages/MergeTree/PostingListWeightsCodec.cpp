@@ -42,7 +42,7 @@ namespace
 
         size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) override
         {
-            const size_t consumed = block_codec.decodeBlock(in, count, out);
+            const size_t consumed = block_codec.decodeValues(in, count, out);
 
             for (size_t i = 0; i < count; ++i)
                 out[i] += 1;

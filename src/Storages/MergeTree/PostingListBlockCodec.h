@@ -52,20 +52,24 @@ class BitpackingPostingListBlockCodec final : public IPostingListBlockCodec
 {
 public:
     size_t encodeBlock(std::span<const uint32_t> values, PODArray<char> & out) override;
-    size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) override;
+    size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base) override;
+    /// Decodes the stored values as is, without restoring row ids from deltas (used for the weights).
+    size_t decodeValues(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out);
 
     /// `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment slack).
     size_t maxBlockBytes() const override { return 1 + sizeof(uint32_t) * BLOCK_SIZE + 16; }
     IPostingListCodec::Type type() const override { return IPostingListCodec::Type::Bitpacking; }
 };
 
-/// One PFor block over gaps `SegmentedPostingListCodec` already computed, hence `Delta::none`.
-/// TODO(ahmadov): move delta into PFor once `deltaApply` stops spilling, today `d0` is slower on exception blocks.
+/// One PFor block. It encodes the deltas `SegmentedPostingListCodec` already computed with `Delta::none`, and decodes
+/// them with `Delta::d0` from `base`, which gives the same bytes and restores the row ids inside PFor's decode.
 class PForPostingListBlockCodec final : public IPostingListBlockCodec
 {
 public:
     size_t encodeBlock(std::span<const uint32_t> values, PODArray<char> & out) override;
-    size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) override;
+    size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base) override;
+    /// Decodes the stored values as is, without restoring row ids from deltas (used for the weights).
+    size_t decodeValues(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out);
     size_t maxBlockBytes() const override;
     IPostingListCodec::Type type() const override { return IPostingListCodec::Type::PFor; }
 };
