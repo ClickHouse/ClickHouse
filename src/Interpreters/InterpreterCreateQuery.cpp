@@ -2079,6 +2079,18 @@ AccessType getDropAccessType(const IStorage & table)
     return AccessType::DROP_TABLE;
 }
 
+/// The query-scoped snapshot cache keeps every table the query has read alive until the query ends.
+void releaseQueryStorageSnapshots(const ContextPtr & context)
+{
+    if (!context->hasQueryContext())
+        return;
+    if (auto metadata_cache = context->getQueryMetadataCache())
+    {
+        auto [snapshot_cache, snapshot_cache_lock] = metadata_cache->getStorageSnapshotCache();
+        snapshot_cache->clear();
+    }
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -2464,6 +2476,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
+        /// This replica executes the entry in this thread. Its synchronous drop, or a concurrent one holding the guard
+        /// below, must not wait for the snapshots the structure inference above cached.
+        releaseQueryStorageSnapshots(getContext());
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), database.get());
         assertOrSetUUID(create, database);
         guard->releaseTableLock();
@@ -3350,6 +3365,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (fill_io.pipeline.initialized())
             getContext()->onQueryExecutionStarted();
         executeTrivialBlockIO(fill_io, getContext(), with_interactive_cancel);
+        /// Nothing reads a table past this point. A synchronous drop of the replaced table, the one below or a
+        /// concurrent one holding a DDL guard the rename needs, waits until nothing references it or its inner tables.
+        releaseQueryStorageSnapshots(current_context);
 
         /// Replace target table with created one
         ASTRenameQuery::Element elem
