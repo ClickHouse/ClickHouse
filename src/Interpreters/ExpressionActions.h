@@ -97,7 +97,7 @@ public:
     ExpressionActions & operator=(ExpressionActions &&) = default;
 
     const Actions & getActions() const { return actions; }
-    const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
+    const ActionsDAG::Nodes & getNodes() const { return actions_dag.getNodes(); }
     const ActionsDAG & getActionsDAG() const { return actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
     const ExpressionActionsSettings & getSettings() const { return settings; }

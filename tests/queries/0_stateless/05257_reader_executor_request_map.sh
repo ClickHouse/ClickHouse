@@ -13,6 +13,7 @@ function range_counts()
     $CLICKHOUSE_CLIENT --send_logs_level=test --use_reader_executor=1 --max_threads=1 \
         --remote_filesystem_read_method=read --local_filesystem_read_method=pread --enable_filesystem_cache=0 \
         --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0 \
+        --use_statistics_for_sum_avg_aggregation=0 \
         -q "$1" 2>&1 >/dev/null | grep -o 'Request map of [^ ]*: [0-9]* bytes in [0-9]* ranges' | grep -o '[0-9]* ranges$' | sort -u
 }
 
