@@ -2,6 +2,7 @@
 
 import base64
 import gzip
+import http.client
 import json
 import time
 import uuid
@@ -147,6 +148,30 @@ def create_namespace(name_levels, properties=None, expected_code=200):
     )
 
 
+def update_namespace_properties(
+    name_levels, updates=None, removals=None, expected_code=200, auth=None
+):
+    body = {}
+    if updates is not None:
+        body["updates"] = updates
+    if removals is not None:
+        body["removals"] = removals
+    namespace = "\x1f".join(name_levels)
+    return catalog_request(
+        "POST",
+        f"/v1/my_warehouse/namespaces/{namespace}/properties",
+        json=body,
+        expected_code=expected_code,
+        auth=auth,
+    )
+
+
+def load_namespace_properties(name_levels):
+    namespace = "\x1f".join(name_levels)
+    response = catalog_request("GET", f"/v1/my_warehouse/namespaces/{namespace}")
+    return response.json()["properties"]
+
+
 def list_namespaces(parent=None):
     params = {"parent": parent} if parent is not None else None
     response = catalog_request("GET", "/v1/my_warehouse/namespaces", params=params)
@@ -278,6 +303,7 @@ def test_config(started_cluster):
         "POST /v1/{prefix}/namespaces",
         "GET /v1/{prefix}/namespaces/{namespace}",
         "HEAD /v1/{prefix}/namespaces/{namespace}",
+        "POST /v1/{prefix}/namespaces/{namespace}/properties",
         "GET /v1/{prefix}/namespaces/{namespace}/tables",
         "POST /v1/{prefix}/namespaces/{namespace}/tables",
         "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}",
@@ -394,6 +420,50 @@ def test_load_namespace(started_cluster):
     catalog_request("GET", "/v1/my_warehouse/namespaces/missing", expected_code=404)
 
 
+def test_update_namespace_properties(started_cluster):
+    ns = f"props_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns], properties={"owner": "asya", "a": "1"})
+
+    response = update_namespace_properties(
+        [ns], updates={"owner": "bob", "b": "2"}, removals=["a", "zzz"]
+    )
+    assert response.json() == {
+        "updated": ["b", "owner"],
+        "removed": ["a"],
+        "missing": ["zzz"],
+    }
+    assert load_namespace_properties([ns]) == {"b": "2", "owner": "bob"}
+
+    response = update_namespace_properties(
+        [ns], updates={"owner": "x"}, removals=["owner"], expected_code=422
+    )
+    assert_error_shape(response, "UnprocessableEntityException")
+
+    response = update_namespace_properties(
+        ["missing"], updates={"owner": "x"}, expected_code=404
+    )
+    assert_error_shape(response, "NoSuchNamespaceException")
+
+    # The location must be inside the warehouse bucket, same as on create.
+    for location in ["http://x", "s3://other-bucket/x"]:
+        response = update_namespace_properties(
+            [ns], updates={"location": location}, expected_code=400
+        )
+        assert_error_shape(response, "BadRequestException")
+    assert load_namespace_properties([ns]) == {"b": "2", "owner": "bob"}
+
+    location = f"s3://{BUCKET}/props/"
+    update_namespace_properties([ns], updates={"location": location})
+    assert load_namespace_properties([ns])["location"] == location
+
+    for body in [{"updates": "x"}, {"removals": "x"}, []]:
+        response = requests.post(
+            catalog_url(f"/v1/my_warehouse/namespaces/{ns}/properties"), json=body
+        )
+        assert response.status_code == 400, response.text
+        assert_error_shape(response, "BadRequestException")
+
+
 def test_malformed_create_namespace(started_cluster):
     for body in [
         None,
@@ -442,6 +512,32 @@ def test_not_found_shape(started_cluster):
         "GET", "/v1/other_warehouse/namespaces", expected_code=404
     )
     assert_error_shape(response, "NotFoundException")
+
+
+def test_error_response_keeps_connection_usable(started_cluster):
+    # Routing rejects each POST. Its body must not leak into the next request on the same connection.
+    # http.client never reconnects on its own, so a closed socket fails the follow-up GET.
+    body = json.dumps({"name": "t"})
+    connection = http.client.HTTPConnection(node.ip_address, CATALOG_PORT)
+    try:
+        for path, expected_code in [
+            ("/v1/other_warehouse/namespaces/ns/tables", 404),
+            ("/v1/my_warehouse/namespaces/ns/tables/t/metrics", 406),
+        ]:
+            connection.request(
+                "POST", path, body=body, headers={"Content-Type": "application/json"}
+            )
+            response = connection.getresponse()
+            text = response.read().decode()
+            assert response.status == expected_code, text
+            assert response.getheader("Connection", "").lower() != "close", text
+            connection.request("GET", "/v1/config?warehouse=my_warehouse")
+            response = connection.getresponse()
+            text = response.read().decode()
+            assert response.status == 200, text
+            assert json.loads(text)["overrides"]["prefix"] == "my_warehouse"
+    finally:
+        connection.close()
 
 
 def wait_listening(url, expected):
@@ -520,35 +616,31 @@ def test_create_namespace_rejects_readonly(started_cluster):
     ns = f"forbidden_{uuid.uuid4().hex[:8]}"
     body = {"namespace": [ns]}
 
-    # Reading is allowed for everyone who can log in.
-    catalog_request("GET", "/v1/my_warehouse/namespaces", auth=("readonly_user", ""))
-
-    response = catalog_request(
-        "POST",
-        "/v1/my_warehouse/namespaces",
-        json=body,
-        auth=("readonly_user", ""),
-        expected_code=403,
-    )
-    assert_error_shape(response, "ForbiddenException")
-    assert "readonly" in response.json()["error"]["message"]
-    assert [ns] not in list_namespaces()
-
     # `allow_ddl = 0` permits writes but not structural changes, and a namespace is structure.
-    catalog_request("GET", "/v1/my_warehouse/namespaces", auth=("no_ddl_user", ""))
-    response = catalog_request(
-        "POST",
-        "/v1/my_warehouse/namespaces",
-        json=body,
-        auth=("no_ddl_user", ""),
-        expected_code=403,
-    )
-    assert_error_shape(response, "ForbiddenException")
-    assert "DDL" in response.json()["error"]["message"]
-    assert [ns] not in list_namespaces()
+    for user, word in [("readonly_user", "readonly"), ("no_ddl_user", "DDL")]:
+        # Reading is allowed for everyone who can log in.
+        catalog_request("GET", "/v1/my_warehouse/namespaces", auth=(user, ""))
+
+        response = catalog_request(
+            "POST",
+            "/v1/my_warehouse/namespaces",
+            json=body,
+            auth=(user, ""),
+            expected_code=403,
+        )
+        assert_error_shape(response, "ForbiddenException")
+        assert word in response.json()["error"]["message"]
+        assert [ns] not in list_namespaces()
 
     create_namespace([ns])
     assert [ns] in list_namespaces()
+
+    for user in ["readonly_user", "no_ddl_user"]:
+        response = update_namespace_properties(
+            [ns], updates={"owner": "bob"}, auth=(user, ""), expected_code=403
+        )
+        assert_error_shape(response, "ForbiddenException")
+    assert load_namespace_properties([ns]) == {}
 
 
 def test_table_ddl_rejects_readonly(started_cluster):
@@ -643,6 +735,81 @@ def test_clickhouse_rest_catalog_client(started_cluster):
         assert node.query(f"EXISTS TABLE rest_client_db.`{ns}.t%3F%23x`") == "1\n"
     finally:
         node.query("DROP DATABASE IF EXISTS rest_client_db")
+
+
+def test_clickhouse_client_creates_table(started_cluster):
+    """A pathless CREATE TABLE lets the embedded catalog choose the location and write the first metadata file."""
+    ns = f"client_create_{uuid.uuid4().hex[:8]}"
+    db = "rest_client_create_db"
+    node.query(f"""
+        DROP DATABASE IF EXISTS {db};
+        SET allow_experimental_database_iceberg = 1;
+        CREATE DATABASE {db}
+        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
+        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+        """)
+
+    def create_query(table, if_not_exists=False):
+        clause = "IF NOT EXISTS " if if_not_exists else ""
+        return f"CREATE TABLE {clause}{db}.`{ns}.{table}` (id Int64, name String) ENGINE = IcebergS3"
+
+    create_settings = {"allow_experimental_database_iceberg": 1}
+
+    try:
+        # The client creates the namespace on the way.
+        node.query(create_query("events"), settings=create_settings)
+        assert [ns] in list_namespaces()
+
+        result = catalog_request("GET", tables_url(ns, "events")).json()
+        location = result["metadata"]["location"]
+        table_uuid = result["metadata"]["table-uuid"]
+        assert location == f"{BASE_LOCATION}/{ns}/events-{table_uuid}"
+        assert result["metadata-location"] == f"{location}/metadata/v1-{table_uuid}.metadata.json"
+
+        node.query(create_query("events", if_not_exists=True), settings=create_settings)
+        error = node.query_and_get_error(create_query("events"), settings=create_settings)
+        assert "already exists" in error, error
+
+        # The catalog schema has no column kinds, so a special column cannot be sent.
+        error = node.query_and_get_error(
+            f"CREATE TABLE {db}.`{ns}.special` (id Int64, doubled Int64 MATERIALIZED id * 2) ENGINE = IcebergS3",
+            settings=create_settings,
+        )
+        assert "Special columns" in error, error
+
+        # The server does not implement UpdateTable yet, so the table stays empty.
+        assert node.query(f"SELECT count() FROM {db}.`{ns}.events`") == "0\n"
+
+        # The codec setting reaches the catalog as a table property, so the catalog writes a gzip file.
+        node.query(create_query("zipped"), settings={**create_settings, "iceberg_metadata_compression_method": "gzip"})
+        result = catalog_request("GET", tables_url(ns, "zipped")).json()
+        assert result["metadata"]["properties"] == {"write.metadata.compression-codec": "gzip"}
+        assert result["metadata-location"].endswith(".gz.metadata.json")
+        assert node.query(f"SELECT count() FROM {db}.`{ns}.zipped`") == "0\n"
+
+        # PARTITION BY becomes the partition spec and ORDER BY becomes the sort order of the create request.
+        node.query(
+            f"CREATE TABLE {db}.`{ns}.sorted` (id Int64, name String) ENGINE = IcebergS3 PARTITION BY name ORDER BY id",
+            settings=create_settings,
+        )
+        metadata = catalog_request("GET", tables_url(ns, "sorted")).json()["metadata"]
+        spec_fields = metadata["partition-specs"][0]["fields"]
+        assert [(f["source-id"], f["field-id"], f["transform"]) for f in spec_fields] == [(2, 1000, "identity")]
+        assert metadata["default-spec-id"] == 0
+        order_fields = metadata["sort-orders"][0]["fields"]
+        assert [(f["source-id"], f["transform"], f["direction"]) for f in order_fields] == [(1, "identity", "asc")]
+        assert metadata["default-sort-order-id"] == 1
+
+        # Iceberg has no equivalent of PRIMARY KEY or SAMPLE BY.
+        for clause in ("PRIMARY KEY id", "SAMPLE BY id"):
+            error = node.query_and_get_error(
+                f"CREATE TABLE {db}.`{ns}.unsupported` (id Int64, name String) ENGINE = IcebergS3 ORDER BY id {clause}",
+                settings=create_settings,
+            )
+            assert "PRIMARY KEY and SAMPLE BY clauses are not supported" in error, error
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
 
 
 def test_keeper_layout(started_cluster):
@@ -848,20 +1015,24 @@ def test_malformed_create_table(started_cluster):
     duplicate_ids = {"type": "struct", "fields": [{"id": 1, "name": "a", "type": "int"}, {"id": 1, "name": "b", "type": "int"}]}
     bad_spec = {"fields": [{"source-id": 9, "field-id": 1000, "name": "p", "transform": "identity"}]}
     unknown_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": "bogus"}]}
+    unknown_v3_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": False, "type": "unknown"}]}
     numeric_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": 123}]}
     bad_element_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": {"type": "list", "element-id": 2, "element-required": True, "element": "bogus"}}]}
     bad_transform_spec = {"fields": [{"source-id": 1, "name": "p", "transform": "bogus"}]}
     bad_transform_order = {"fields": [{"source-id": 1, "transform": "bucket[x]", "direction": "asc", "null-order": "nulls-first"}]}
     bad_direction_order = {"fields": [{"source-id": 1, "transform": "identity", "direction": "up", "null-order": "nulls-first"}]}
     bad_null_order = {"fields": [{"source-id": 1, "transform": "identity", "direction": "asc", "null-order": "first"}]}
+    optional_identifier = dict(DEFAULT_SCHEMA, **{"identifier-field-ids": [2]})
     bodies = [
         {"schema": DEFAULT_SCHEMA},  # no name
         {"name": "", "schema": DEFAULT_SCHEMA},
         {"name": "t"},  # no schema
         {"name": "t", "schema": duplicate_ids},
         {"name": "t", "schema": unknown_type},
+        {"name": "t", "schema": unknown_v3_type},
         {"name": "t", "schema": numeric_type},
         {"name": "t", "schema": bad_element_type},
+        {"name": "t", "schema": optional_identifier},
         {"name": "t", "schema": DEFAULT_SCHEMA, "stage-create": True},
         {"name": "t", "schema": DEFAULT_SCHEMA, "location": f"s3://{BUCKET}/explicit/t"},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": bad_spec},
