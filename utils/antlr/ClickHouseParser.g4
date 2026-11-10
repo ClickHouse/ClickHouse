@@ -87,6 +87,7 @@ alterTableClause
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier codecExpr                           # AlterTableClauseModifyCodec
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier COMMENT stringLiteral               # AlterTableClauseModifyComment
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier REMOVE tableColumnPropertyType      # AlterTableClauseModifyRemove
+    | MODIFY COLUMN (IF EXISTS)? nestedIdentifier typelessColumnModifierList                       # AlterTableClauseModifyModifiers
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                                      # AlterTableClauseModify
     | MODIFY ORDER BY columnExpr                                                      # AlterTableClauseModifyOrderBy
     | MODIFY ttlClause                                                                # AlterTableClauseModifyTTL
@@ -204,6 +205,15 @@ tableColumnPropertyExpr
     | EPHEMERAL columnExpr?
     ;
 tableColumnModifierExpr: columnCommentExpr | codecExpr | columnStatisticsExpr | columnTtlExpr | columnSettingsExpr;
+// MODIFY COLUMN can change the modifiers of a column without a type: ClickHouse reads COMMENT, CODEC, STATISTICS, SETTINGS and
+// TTL as a modifier when it follows the name (see IParserColumnDeclaration). A single COMMENT or a single CODEC keeps its own
+// alternative of alterTableClause, so the list here is not one of them alone: it has two or more modifiers, or one of
+// STATISTICS, TTL and SETTINGS. This alternative comes before the one with a type, because CODEC(ZSTD), STATISTICS(tdigest) and
+// SETTINGS (a = 1) can also be read as a type, and ANTLR resolves that ambiguity to the first alternative.
+typelessColumnModifierList
+    : (columnCommentExpr | codecExpr)* (columnStatisticsExpr | columnTtlExpr | columnSettingsExpr) tableColumnModifierExpr*
+    | (columnCommentExpr | codecExpr) (columnCommentExpr | codecExpr)+
+    ;
 columnCommentExpr: COMMENT stringLiteral;
 columnStatisticsExpr: STATISTICS LPAREN columnExprList RPAREN;
 columnTtlExpr: TTL columnExpr;
@@ -367,8 +377,11 @@ grantScope
 // The names of users and roles. ALL and NONE are keywords that `identifier` accepts, and so are all names of roles.
 // EXCEPT is accepted by GRANT as well: ClickHouse rejects it later.
 granteeList: grantee (COMMA grantee)* (EXCEPT grantee (COMMA grantee)*)?;
+// CURRENT_USER and currentUser, with or without brackets, are the current user, as in parseCurrentUserTag.
+// A bare CURRENT_USER is also a name, so the first alternative has to come first: ANTLR resolves this ambiguity
+// to it. A user with this name can be written as a quoted name.
 grantee
-    : CURRENT_USER LPAREN RPAREN
+    : (CURRENT_USER | CURRENTUSER) (LPAREN RPAREN)?
     | userOrRoleName
     ;
 roleList: userOrRoleName (COMMA userOrRoleName)* (EXCEPT userOrRoleName (COMMA userOrRoleName)*)?;
@@ -751,7 +764,7 @@ interval: NANOSECOND | MICROSECOND | MILLISECOND | SECOND | MINUTE | HOUR | DAY 
 keyword
     // except NULL_SQL, INF, NAN_SQL
     : ACCESS | ADD | AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | AST | ASYNC | ATTACH | BETWEEN | BOTH | BY | CACHES | CASE
-    | CAST | CHECK | CLEAR | CLUSTER | CLUSTERS | CODEC | COLLATE | COLUMN | COLUMNS | COMMENT | CONSTRAINT | CREATE | CROSS | CUBE | CURRENT | CURRENT_USER | CHANGED | DATABASE
+    | CAST | CHECK | CLEAR | CLUSTER | CLUSTERS | CODEC | COLLATE | COLUMN | COLUMNS | COMMENT | CONSTRAINT | CREATE | CROSS | CUBE | CURRENT | CURRENT_USER | CURRENTUSER | CHANGED | DATABASE
     | DATABASES | DATE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESC | DESCENDING | DESCRIBE | DETACH | DICTIONARIES | DICTIONARY | DISK
     | DISTINCT | DISTRIBUTED | DROP | ELSE | ENABLED | END | ENGINE | ENGINES | ESTIMATE | EXCEPT | EXISTS | EXPLAIN | EXPRESSION | EXTENDED | EXTRACT | FETCHES | FIELDS | FILESYSTEM | FILL | FINAL | FIRST
     | FLUSH | FOLLOWING | FOR | FORMAT | FREEZE | FROM | FULL | FUNCTION | FUNCTIONS | GLOBAL | GRANULARITY | GRANTS | GROUP | GROUPING | HAVING | HIERARCHICAL | HOUR | ID
@@ -770,7 +783,7 @@ keyword
     ;
 keywordForAlias
     : AFTER | ALIAS | ALTER | AST | ASYNC | ATTACH | BOTH | CASE | CAST | CHECK | CLEAR | CLUSTER | CODEC
-    | COLUMN | COMMENT | CONSTRAINT | CREATE | CUBE | CURRENT | DATABASE | DATABASES | DATE | DEDUPLICATE | DEFAULT | DELAY
+    | COLUMN | COMMENT | CONSTRAINT | CREATE | CUBE | CURRENT | CURRENTUSER | DATABASE | DATABASES | DATE | DEDUPLICATE | DEFAULT | DELAY
     | DESCRIBE | DETACH | DICTIONARIES | DICTIONARY | DISK | DISTRIBUTED | DROP | ENGINE
     | EXISTS | EXPLAIN | EXPRESSION | EXTRACT | FETCHES | FLUSH | FOLLOWING | FREEZE | FUNCTION | GRANULARITY | HIERARCHICAL
     | ID | IF | INDEX | INJECTIVE | INSERT | IS_OBJECT_ID | KEY | KILL | LAYOUT | LEADING | LIFETIME | LIVE
