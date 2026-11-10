@@ -6,6 +6,7 @@
 #include <Core/SettingsFields.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/Client.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace Poco::Util
 {

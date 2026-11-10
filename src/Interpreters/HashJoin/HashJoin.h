@@ -992,8 +992,6 @@ private:
 
     void freezeMapsForProbing();
 
-    bool isRowStoreSupported() const;
-
     /// Layout is from the sample block, before any fill thread.
     void initRowStore(const Block & block);
 
