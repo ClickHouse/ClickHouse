@@ -404,15 +404,18 @@ static std::vector<JoinCondition> makeCrossProduct(const std::vector<JoinConditi
 }
 
 
-static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_expression, JoinOperatorBuildContext & builder_context)
+static std::vector<JoinCondition> buildJoinConditionsGeneral(
+    const QueryTreeNodePtr & join_expression,
+    JoinOperatorBuildContext & builder_context,
+    bool inner_join_keeps_or_as_single_clause,
+    bool & or_kept_as_single_clause_in_inner_join)
 {
     using JoinConditions = std::vector<JoinCondition>;
     if (join_expression->getNodeType() != QueryTreeNodeType::FUNCTION)
     {
         std::vector<JoinCondition> join_conditions;
         buildJoinCondition(join_expression, builder_context, join_conditions.emplace_back());
-        addConditionsToJoinOperator(builder_context, std::move(join_conditions));
-        return;
+        return join_conditions;
     }
 
     std::unordered_map<const IQueryTreeNode *, JoinConditions> built_clauses;
@@ -469,7 +472,7 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                 bool plan_as_single_clause = with_key_expression != 0 && with_key_expression < result.size();
                 /// Without key expressions a clause narrows the candidate pairs only by the conditions evaluated before
                 /// matching. If one clause has none, splitting cannot narrow what an ALL join matches.
-                /// An ALL INNER join is never split: every join algorithm evaluates the whole `OR` after matching on the keys of the enclosing `AND`, while splitting hides these keys inside one `or` predicate from join reordering.
+                /// An ALL INNER join is not split: the `OR` is evaluated after matching on the keys of the enclosing `AND`, while splitting hides these keys inside one `or` predicate from join reordering.
                 /// An outer join is split if every clause has a condition evaluated before matching, because a single clause with a condition on both tables requires the `hash` or `grace_hash` algorithm.
                 /// `hasEquiConditions` also counts an equality with a constant, such as `t1.a = 1 OR t2.b = 2`, which is not a join key, so the rules below look for a join key between the two tables.
                 if (!plan_as_single_clause && builder_context.join_operator.strictness == JoinStrictness::All
@@ -478,8 +481,11 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                         return hasJoinKeyCondition(clause, builder_context.expression_actions);
                     }))
                 {
-                    if (builder_context.join_operator.kind == JoinKind::Inner)
+                    if (inner_join_keeps_or_as_single_clause && builder_context.join_operator.kind == JoinKind::Inner)
+                    {
                         plan_as_single_clause = true;
+                        or_kept_as_single_clause_in_inner_join = true;
+                    }
                     else
                         plan_as_single_clause = !std::ranges::all_of(result, [&](const JoinCondition & clause)
                         {
@@ -522,7 +528,22 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
         }
     }
 
-    addConditionsToJoinOperator(builder_context, std::move(built_clauses.at(join_expression.get())));
+    return std::move(built_clauses.at(join_expression.get()));
+}
+
+static void buildDisjunctiveJoinConditionsGeneral(
+    const QueryTreeNodePtr & join_expression, JoinOperatorBuildContext & builder_context, const std::vector<JoinAlgorithm> & join_algorithms)
+{
+    bool or_kept_as_single_clause_in_inner_join = false;
+    auto join_conditions = buildJoinConditionsGeneral(
+        join_expression, builder_context, /* inner_join_keeps_or_as_single_clause= */ true, or_kept_as_single_clause_in_inner_join);
+    /// Within one of several clauses such an `OR` is evaluated during matching, which only `hash` and `grace_hash` support.
+    if (join_conditions.size() > 1 && or_kept_as_single_clause_in_inner_join
+        && !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+        && !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::GRACE_HASH))
+        join_conditions = buildJoinConditionsGeneral(
+            join_expression, builder_context, /* inner_join_keeps_or_as_single_clause= */ false, or_kept_as_single_clause_in_inner_join);
+    addConditionsToJoinOperator(builder_context, std::move(join_conditions));
 }
 
 String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_internal_aliases)
@@ -600,7 +621,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
             || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO)) && query_settings[Setting::allow_general_join_planning];
 
         if (use_general_join_planning)
-            buildDisjunctiveJoinConditionsGeneral(join_expression_node, build_context);
+            buildDisjunctiveJoinConditionsGeneral(join_expression_node, build_context, join_algorithms);
         else
             buildDisjunctiveJoinConditions(join_expression_node, build_context);
     }
