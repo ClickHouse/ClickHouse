@@ -226,6 +226,7 @@ struct MergeTreeWriterSettings
     size_t compact_parts_max_bytes_to_buffer{};
     size_t compact_parts_max_granules_to_buffer{};
     bool apply_adaptive_codec = false;
+    UInt64 adaptive_codec_selection_period = 1;
 };
 
 }

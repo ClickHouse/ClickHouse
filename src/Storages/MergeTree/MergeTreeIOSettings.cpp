@@ -76,6 +76,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 compact_parts_max_bytes_to_buffer;
     extern const MergeTreeSettingsNonZeroUInt64 compact_parts_max_granules_to_buffer;
     extern const MergeTreeSettingsBool enable_adaptive_codec_selection;
+    extern const MergeTreeSettingsNonZeroUInt64 adaptive_codec_selection_period;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -126,6 +127,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , compact_parts_max_bytes_to_buffer((*storage_settings)[MergeTreeSetting::compact_parts_max_bytes_to_buffer])
     , compact_parts_max_granules_to_buffer((*storage_settings)[MergeTreeSetting::compact_parts_max_granules_to_buffer])
     , apply_adaptive_codec(try_adaptive_codec_ && (*storage_settings)[MergeTreeSetting::enable_adaptive_codec_selection])
+    , adaptive_codec_selection_period(isCompactPart(data_part) ? 1 : (*storage_settings)[MergeTreeSetting::adaptive_codec_selection_period])
 {
 }
 
