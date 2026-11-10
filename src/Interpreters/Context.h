@@ -2284,7 +2284,8 @@ public:
     ColumnsCacheWriteBudgetPtr getColumnsCacheWriteBudget() const;
 
     const QueryMaxThreadsSnapshotPtr & getQueryMaxThreadsSnapshot() const;
-    void setQueryMaxThreadsSnapshot(const QueryMaxThreadsSnapshotPtr & snapshot);
+    /// For a query context made for a part of the query of `from`.
+    void shareQueryMaxThreadsSnapshot(const Context & from);
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;

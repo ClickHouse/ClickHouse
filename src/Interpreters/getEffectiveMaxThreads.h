@@ -16,18 +16,21 @@ class Context;
 class QueryMaxThreadsSnapshot
 {
 public:
-    /// See `getServerFreeMemory`.
-    std::optional<Int64> getFreeMemory();
+    struct Values
+    {
+        std::optional<Int64> free_memory; /// See `getServerFreeMemory`.
+        size_t cpu_share = 0; /// See `ConcurrencyControl::getFairShare`.
+    };
 
-    /// See `ConcurrencyControl::getFairShare`.
-    size_t getCPUShare();
+    /// The current values.
+    static Values take();
+
+    /// The values at the first call.
+    const Values & get();
 
 private:
-    std::once_flag free_memory_once;
-    std::optional<Int64> free_memory;
-
-    std::once_flag cpu_share_once;
-    size_t cpu_share = 0;
+    std::once_flag once;
+    Values values;
 };
 
 using QueryMaxThreadsSnapshotPtr = std::shared_ptr<QueryMaxThreadsSnapshot>;

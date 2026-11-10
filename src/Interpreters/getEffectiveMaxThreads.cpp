@@ -18,34 +18,26 @@ namespace Setting
     extern const SettingsBool use_concurrency_control_for_max_threads;
 }
 
-std::optional<Int64> QueryMaxThreadsSnapshot::getFreeMemory()
+QueryMaxThreadsSnapshot::Values QueryMaxThreadsSnapshot::take()
 {
-    std::call_once(free_memory_once, [this] { free_memory = getServerFreeMemory(); });
-    return free_memory;
+    return {getServerFreeMemory(), ConcurrencyControl::instance().getFairShare()};
 }
 
-size_t QueryMaxThreadsSnapshot::getCPUShare()
+const QueryMaxThreadsSnapshot::Values & QueryMaxThreadsSnapshot::get()
 {
-    std::call_once(cpu_share_once, [this] { cpu_share = ConcurrencyControl::instance().getFairShare(); });
-    return cpu_share;
+    std::call_once(once, [this] { values = take(); });
+    return values;
 }
 
 namespace
 {
 
 /// A context that is not a query context (e.g. the global context) has no snapshot: it reads the current state.
-std::optional<Int64> getFreeMemory(const Context & context)
+QueryMaxThreadsSnapshot::Values getValues(const Context & context)
 {
     if (const auto & snapshot = context.getQueryMaxThreadsSnapshot())
-        return snapshot->getFreeMemory();
-    return getServerFreeMemory();
-}
-
-size_t getCPUShare(const Context & context)
-{
-    if (const auto & snapshot = context.getQueryMaxThreadsSnapshot())
-        return snapshot->getCPUShare();
-    return ConcurrencyControl::instance().getFairShare();
+        return snapshot->get();
+    return QueryMaxThreadsSnapshot::take();
 }
 
 }
@@ -54,7 +46,7 @@ size_t limitThreadsByFreeMemory(const Context & context, size_t threads, UInt64 
 {
     if (min_free_per_thread == 0 || threads <= 1)
         return threads;
-    return getMaxThreadsForFreeMemory(threads, min_free_per_thread, getFreeMemory(context));
+    return getMaxThreadsForFreeMemory(threads, min_free_per_thread, getValues(context).free_memory);
 }
 
 size_t getEffectiveMaxThreads(const Context & context)
@@ -67,7 +59,7 @@ size_t getEffectiveMaxThreads(const Context & context)
         || !settings[Setting::use_concurrency_control] || !settings[Setting::use_concurrency_control_for_max_threads])
         return max_threads;
 
-    size_t fair_share = getCPUShare(context);
+    size_t fair_share = getValues(context).cpu_share;
     if (fair_share >= max_threads)
         return max_threads;
 
