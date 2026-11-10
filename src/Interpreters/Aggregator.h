@@ -964,16 +964,14 @@ private:
         Arena * arena,
         std::atomic<bool> & is_cancelled) const;
 
-    /// The adaptive verdict of a finished run: whether its staged streams were repeat-dominated, so that later runs of
-    /// the query should not engage the adaptive aggregation, or nothing when the run measured nothing.
+    /// The adaptive verdict of a finished run: whether at least half of the producers whose tables froze
+    /// thawed, so that later runs of the query should not engage the adaptive aggregation, or nothing when
+    /// the run measured nothing.
     std::optional<bool> adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
 
-    /// Compares a frozen producer's repeated staging cost with the states its ordinary table would retain.
-    bool adaptiveStagingWastes(
-        const AdaptiveAggregationProducer & adaptive, size_t state_bytes_per_key, size_t state_cost_multiplier) const;
-
-    /// The thaw verdict of a frozen producer, checked between blocks: its own staged stream repeats its misses so much
-    /// that its table would do better absorbing them in place (see the tuning constants in `AdaptiveAggregationImpl.h`).
+    /// Whether a frozen producer thaws, checked between blocks: its own staged stream repeats its misses so
+    /// much that its table would do better absorbing them in place (see the tuning constants in
+    /// `AdaptiveAggregationImpl.h`).
     bool adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const;
 
     /// The frozen consume path: rows whose key the local table holds are aggregated in place,
