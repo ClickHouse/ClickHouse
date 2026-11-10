@@ -535,7 +535,7 @@ void readArchivedCompletionTimes(
     *    Hudi reads in and overwrites the entire table/partition with each update.
     *    Hudi controls the number of file groups under a single partition according to the
     *    hoodie.parquet.max.file.size option. Once a single Parquet file is too large, Hudi creates a second file group.
-    *    Each file group is identified by File Id
+    *    Each file group is identified by File Id.
     */
 Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
 {
