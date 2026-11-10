@@ -951,10 +951,10 @@ ASTPtr makeRowPolicyFilterForTagsTable(const StorageTimeSeries & storage, const 
     }
 
     const auto columns_by_tags = getColumnsByTags(*storage.getStorageSettings());
-    const auto tags_columns
-        = storage.getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false)->getColumns();
+    const auto tags_table_metadata
+        = storage.getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
 
-    return rewriteRowPolicyExpressionForTagsTable(filter->expression, columns_by_tags, tags_columns);
+    return rewriteRowPolicyExpressionForTagsTable(filter->expression, columns_by_tags, tags_table_metadata->columns);
 }
 
 }
