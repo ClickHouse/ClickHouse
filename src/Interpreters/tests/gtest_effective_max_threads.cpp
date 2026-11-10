@@ -53,6 +53,26 @@ TEST(EffectiveMaxThreads, CPUShareIsTakenOncePerQuery)
     EXPECT_EQ(getEffectiveMaxThreads(*independent_query), 1);
 }
 
+/// The snapshot is taken even if the first part of the query is planned with one thread: a materialized view
+/// with an automatic `max_threads` is planned after the parent query has taken its CPU slot.
+TEST(EffectiveMaxThreads, SnapshotIsTakenWithOneThread)
+{
+    auto & concurrency_control = ConcurrencyControl::instance();
+    concurrency_control.setMaxConcurrency(2);
+    SCOPE_EXIT({ concurrency_control.setMaxConcurrency(UnlimitedSlots); });
+
+    auto query = makeQueryContext();
+    query->setSetting("max_threads", Field(UInt64(1)));
+    query->setSetting("max_threads_min_free_memory_per_thread", Field(UInt64(0)));
+    ASSERT_EQ(getEffectiveMaxThreads(*query), 1);
+
+    auto other_allocation = concurrency_control.allocate(1, 1);
+
+    auto copy = Context::createCopy(query);
+    copy->setSetting("max_threads", Field(UInt64(0)));
+    EXPECT_EQ(getEffectiveMaxThreads(*copy), 2);
+}
+
 /// The same for the free memory used by `max_threads_min_free_memory_per_thread`.
 TEST(EffectiveMaxThreads, FreeMemoryIsTakenOncePerQuery)
 {

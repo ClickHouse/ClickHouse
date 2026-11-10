@@ -44,22 +44,23 @@ QueryMaxThreadsSnapshot::Values getValues(const Context & context)
 
 size_t limitThreadsByFreeMemory(const Context & context, size_t threads, UInt64 min_free_per_thread)
 {
-    if (min_free_per_thread == 0 || threads <= 1)
-        return threads;
     return getMaxThreadsForFreeMemory(threads, min_free_per_thread, getValues(context).free_memory);
 }
 
 size_t getEffectiveMaxThreads(const Context & context)
 {
+    /// Taken even when not needed here, so that the parts of the query planned later use the same values.
+    const auto values = getValues(context);
+
     const Settings & settings = context.getSettingsRef();
-    size_t max_threads = limitThreadsByFreeMemory(context, settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+    size_t max_threads = getMaxThreadsForFreeMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread], values.free_memory);
 
     /// An explicitly set `max_threads` is respected as is.
     if (max_threads <= 1 || !settings[Setting::max_threads].is_auto
         || !settings[Setting::use_concurrency_control] || !settings[Setting::use_concurrency_control_for_max_threads])
         return max_threads;
 
-    size_t fair_share = getValues(context).cpu_share;
+    size_t fair_share = values.cpu_share;
     if (fair_share >= max_threads)
         return max_threads;
 
