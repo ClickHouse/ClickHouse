@@ -2258,7 +2258,8 @@ try
             {
                 try
                 {
-                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(listen_host, streaming_exchange_port, exchange_connections_ptr));
+                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(
+                        listen_host, streaming_exchange_port, server_settings[ServerSetting::listen_backlog], exchange_connections_ptr));
                     exchange_servers.back()->start();
                 }
                 catch (Poco::Exception & e)
