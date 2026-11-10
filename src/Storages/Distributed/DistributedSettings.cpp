@@ -34,6 +34,9 @@ namespace ErrorCodes
     DECLARE_WITH_ALIAS(Milliseconds, background_insert_sleep_time_ms, 0, "Default - distributed_background_insert_sleep_time_ms", 0, monitor_sleep_time_ms) \
     DECLARE_WITH_ALIAS(Milliseconds, background_insert_max_sleep_time_ms, 0, "Default - distributed_background_insert_max_sleep_time_ms", 0, monitor_max_sleep_time_ms) \
     DECLARE(Bool, flush_on_detach, true, "Flush data to remote nodes on DETACH/DROP/server shutdown", 0) \
+    /** Bucket map settings. */ \
+    DECLARE(String, bucket_map_zookeeper_path, "", "Experimental. Path in ZooKeeper of the bucket map that assigns the buckets of the table to shards. When set, a row goes to the bucket `sharding_key % buckets` and then to the shard of that bucket, instead of the slot computed from the shard weights. The path may start with the name of an auxiliary ZooKeeper. Requires `allow_experimental_distributed_bucket_map`.", 0) \
+    DECLARE(UInt64, bucket_map_buckets, 0, "Number of buckets of the bucket map. If the map does not exist when the table is created, it is created with this number of buckets split evenly between the shards. If the map exists, its number of buckets must be equal to this value. 0 - use the existing map.", 0) \
 
 DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DISTRIBUTED_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)

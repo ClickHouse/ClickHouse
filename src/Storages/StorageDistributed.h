@@ -40,6 +40,7 @@ class ConnectionPoolWithFailover;
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
 
 class IStorageCluster;
+class DistributedBucketMapWatcher;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -131,6 +132,7 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void initializeFromDisk();
+    void startup() override;
     void shutdown(bool is_drop) override;
     void flushAndPrepareForShutdown() override;
     void drop() override;
@@ -151,6 +153,13 @@ public:
     void flushClusterNodesAllData(ContextPtr context, const SettingsChanges & settings_changes);
 
     size_t getShardCount() const;
+
+    /// The index of the shard of every sharding key slot: from the bucket map of the table if it has one,
+    /// otherwise from the shard weights of `cluster`. `cluster` must be the full cluster of the table.
+    std::shared_ptr<const Cluster::SlotToShard> getSlotToShard(const ClusterPtr & cluster) const;
+
+    /// Used by StorageSystemDistributedBucketMaps. Returns nullptr if the table does not have a bucket map.
+    DistributedBucketMapWatcher * getBucketMapWatcher() const { return bucket_map_watcher.get(); }
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
@@ -196,17 +205,19 @@ private:
     /// Used by StorageSystemDistributionQueue
     std::vector<DistributedAsyncInsertDirectoryQueue::Status> getDirectoryQueueStatuses() const;
 
-    static IColumn::Selector createSelector(ClusterPtr cluster, const ColumnWithTypeAndName & result);
+    static IColumn::Selector createSelector(const Cluster::SlotToShard & slot_to_shard, const ColumnWithTypeAndName & result);
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
+    ///
+    /// Sets `query_info.slot_to_shard` if it returns a cluster.
     ClusterPtr getOptimizedCluster(
         ContextPtr local_context,
         const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info) const;
+        SelectQueryInfo & query_info) const;
 
     ClusterPtr skipUnusedShardsWithAnalyzer(
-        ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
+        ClusterPtr cluster, SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
 
     /// This method returns optimal query processing stage.
     ///
@@ -302,6 +313,9 @@ private:
     VolumePtr data_volume;
 
     std::unique_ptr<DistributedSettings> distributed_settings;
+
+    /// Is set if the table has the `bucket_map_zookeeper_path` setting.
+    std::unique_ptr<DistributedBucketMapWatcher> bucket_map_watcher;
 
     struct ClusterNodeData
     {
