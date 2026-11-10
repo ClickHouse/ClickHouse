@@ -32,6 +32,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int NOT_IMPLEMENTED;
+extern const int TOO_BIG_AST;
 }
 
 namespace Mongo
@@ -1286,6 +1287,20 @@ void translateUnionWith(SelectChain & chain, const rapidjson::Value & stage, con
         their_categories->arguments->children.push_back(
             makeTypeCategory(makeASTFunction("toTypeName", makeASTFunction("any", make_intrusive<ASTIdentifier>(name)))));
     }
+    /** The probe is a copy of the other pipeline, which is also kept as the branch of the union. A
+      * `$unionWith` nested in the pipeline of another one is thus copied twice, and each level of
+      * the nesting doubles the query, while the JSON text holds a single copy of it. So the other
+      * pipeline is bounded before it is copied, by the default of `max_ast_elements`, which a query
+      * twice as large as the copy fails anyway: the size of the query grows exponentially only up
+      * to that bound, whatever the depth of the nesting is.
+      */
+    static constexpr size_t max_union_probe_elements = 50000;
+    if (size_t elements = other_select->size(); elements > max_union_probe_elements)
+        throw Exception(
+            ErrorCodes::TOO_BIG_AST,
+            "The pipeline of '$unionWith' translates into a query of {} elements, more than {}, the most a '$unionWith' takes",
+            elements,
+            max_union_probe_elements);
     SelectChain probe(makeSubquery(other_select->clone()));
     probe.select_list = make_intrusive<ASTExpressionList>();
     probe.select_list->children.push_back(std::move(their_categories));
