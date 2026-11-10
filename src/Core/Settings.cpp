@@ -2036,7 +2036,9 @@ When disabled, row policies are applied before FINAL, which can cause different 
 filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
 
 If the row policy expression is deterministic and depends only on non-floating-point columns in ORDER BY, it will still be
-applied before FINAL as an optimization, since such filtering cannot affect the deduplication result. Floating-point columns
+applied before FINAL as an optimization, since such filtering cannot affect the deduplication result. A value computed
+once for the whole query, such as `currentUser()`, `now()` or the set of `IN (subquery)`, does not make the expression
+non-deterministic. Floating-point columns
 or columns containing floating-point (such as `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
 are excluded because `-0.0` and `0.0` deduplicate as one key while a policy condition can tell them apart.
 

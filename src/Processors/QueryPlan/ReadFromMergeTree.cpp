@@ -193,13 +193,8 @@ std::optional<ActionsDAG> buildGraphiteFinalIndexFilter(const ActionsDAG & filte
 
 bool isNodeDeterministic(const ActionsDAG::Node * node)
 {
-    /// A `COLUMN` node is not always an innocent literal. `node->isDeterministic` covers the function of a
-    /// `FUNCTION` node and a constant that was folded from a non-deterministic expression such as `now`.
-    /// `allNodeFunctions` additionally looks inside a lambda that constant folding turned into a `COLUMN`
-    /// node holding a `ColumnFunction`: a call on the lambda argument lives in the lambda's own
-    /// `ActionsDAG`, so it is invisible to a walk over this DAG alone.
-    if (!node->isDeterministic())
-        return false;
+    /// A constant has one value for the whole query, even one folded from `currentUser` or `now`, so it cannot split
+    /// a dedup group. Only a lambda folded into a constant runs per row, so its body is checked.
     if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
         return false;
 
@@ -3463,7 +3458,7 @@ bool ReadFromMergeTree::isRowPolicyDeferredAfterFinal() const
 
     /// Safe to apply before FINAL only if the policy is Sorting-Key-only (verdict
     /// is the same for every row of a dedup group) and deterministic
-    /// (no `rand`/`now` flipping the winner)
+    /// (no `rand` flipping the winner)
     return !(isNodeOverSortingKey(filter_output, sorting_key_set) && isNodeDeterministic(filter_output));
 }
 
