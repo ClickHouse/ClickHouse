@@ -74,9 +74,12 @@ struct statvfs getStatVFS(String path)
         }
 
         /// Same as below: we sometimes ask about a directory that is yet to be created.
+        /// The parent of a volume root such as `X:/` is the root itself, so stop there
+        /// instead of retrying the same failing call forever when the volume is unavailable.
         auto fs_path = pathFromString(path);
         const auto error = GetLastError();
-        if ((error == ERROR_PATH_NOT_FOUND || error == ERROR_FILE_NOT_FOUND) && fs_path.has_parent_path())
+        if ((error == ERROR_PATH_NOT_FOUND || error == ERROR_FILE_NOT_FOUND) && fs_path.has_parent_path()
+            && fs_path.parent_path() != fs_path)
         {
             path = pathToString(fs_path.parent_path());
             continue;
@@ -96,7 +99,7 @@ struct statvfs getStatVFS(String path)
 
         /// Sometimes we create directories lazily, so we can request free space in a directory that yet to be created.
         auto fs_path = std::filesystem::path(path);
-        if (errno == ENOENT && fs_path.has_parent_path())
+        if (errno == ENOENT && fs_path.has_parent_path() && fs_path.parent_path() != fs_path)
         {
             path = fs_path.parent_path();
             continue;
@@ -112,7 +115,8 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
 {
     fs::path filepath = pathFromString(path);
     /// `path` may point to nonexisting file, then we can't check it directly, move to parent directory
-    while (filepath.has_parent_path() && !fs::exists(filepath))
+    /// Stop at the root (its parent is itself), which may be missing if it is an unavailable volume.
+    while (filepath.has_parent_path() && filepath.parent_path() != filepath && !fs::exists(filepath))
         filepath = filepath.parent_path();
     auto free_space = fs::space(filepath).free;
     return data_size <= free_space;
