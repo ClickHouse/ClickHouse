@@ -43,6 +43,8 @@ class _Environment(MetaClasses.Serializable):
     WORKFLOW_START_TIME: float = 0.0
     # merged PR for "push" or "merge_group" workflow
     LINKED_PR_NUMBER: int = 0
+    # "push" workflow: the branch head before the push (the event's `before`)
+    PUSH_BEFORE_SHA: str = ""
     LOCAL_RUN: bool = False
     PR_IS_DRAFT: bool = False
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
@@ -99,6 +101,7 @@ class _Environment(MetaClasses.Serializable):
         PR_LABELS = []
         PR_IS_DRAFT = False
         LINKED_PR_NUMBER = 0
+        PUSH_BEFORE_SHA = ""
         EVENT_TIME = ""
         EVENT_ACTION = ""
         COMMIT_MESSAGE = ""
@@ -129,6 +132,7 @@ class _Environment(MetaClasses.Serializable):
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
+                PUSH_BEFORE_SHA = github_event.get("before", "")
                 CHANGE_URL = github_event["head_commit"]["url"]  # commit url
                 PR_NUMBER = 0
                 COMMIT_URL = CHANGE_URL
@@ -255,6 +259,7 @@ class _Environment(MetaClasses.Serializable):
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_MESSAGES=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
+            PUSH_BEFORE_SHA=PUSH_BEFORE_SHA,
             # TODO: Find a better way to store and pass commit authors data through workflow
             JOB_KV_DATA={
                 "commit_authors": COMMIT_AUTHORS,

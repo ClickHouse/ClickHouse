@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Archives/ArchiveEntryPositions.h>
@@ -420,6 +421,9 @@ private:
     struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
+    /// The archive reader's own buffer when `read_buf` decompresses a file inside an archive. Declared before `read_buf`,
+    /// which references it, so that it is destroyed after.
+    std::unique_ptr<ReadBuffer> archive_entry_read_buf;
     std::unique_ptr<ReadBuffer> read_buf;
     InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
@@ -437,9 +441,9 @@ private:
     {
         String cache_file_key;
         size_t total_row_groups = 0;
-        std::vector<size_t> matched_row_groups;
+        VectorWithMemoryTracking<size_t> matched_row_groups;
         /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
-        std::vector<std::pair<size_t, Field>> best_values;
+        VectorWithMemoryTracking<std::pair<size_t, Field>> best_values;
     };
     std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
