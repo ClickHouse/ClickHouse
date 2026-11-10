@@ -1379,8 +1379,7 @@ Pipe ReadFromMergeTree::readInOrderSliced(
             actions_settings,
             sliced_reader_settings,
             index_build_context,
-            lazy_materializing_rows,
-            &storage_snapshot->metadata->getColumns());
+            lazy_materializing_rows);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
         processor->enableSlicedReading();
