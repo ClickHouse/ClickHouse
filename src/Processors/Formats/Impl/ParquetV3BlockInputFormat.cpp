@@ -825,7 +825,7 @@ VectorWithMemoryTracking<FileBucketInfoPtr> ParquetBucketSplitter::splitForParal
     }
     const auto & metadata = footer->metadata;
 
-    std::vector<size_t> row_groups;
+    VectorWithMemoryTracking<size_t> row_groups;
     for (size_t i = 0; i < metadata.row_groups.size(); ++i)
         if (metadata.row_groups[i].num_rows > 0)
             row_groups.push_back(i);
@@ -838,7 +838,7 @@ VectorWithMemoryTracking<FileBucketInfoPtr> ParquetBucketSplitter::splitForParal
     /// range: rows with similar values tend to be close to each other in the file, so the row groups
     /// that survive filtering by min/max statistics, or that contain most of the rows passing the
     /// filter, are spread across all readers instead of falling to one of them.
-    std::vector<std::shared_ptr<ParquetFileBucketInfo>> buckets(num_buckets);
+    VectorWithMemoryTracking<std::shared_ptr<ParquetFileBucketInfo>> buckets(num_buckets);
     for (auto & bucket : buckets)
     {
         bucket = std::make_shared<ParquetFileBucketInfo>();
