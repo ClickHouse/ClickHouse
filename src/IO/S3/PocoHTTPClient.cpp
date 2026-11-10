@@ -576,7 +576,11 @@ void PocoHTTPClient::makeRequestInternalImpl(
         if (per_request_configuration)
             proxy_configuration = per_request_configuration();
 
-        for (size_t attempt = 0; attempt <= s3_max_redirects; ++attempt)
+        /// Set when the server refused `Expect: 100-continue` with `417 Expectation Failed`. The request
+        /// is then sent once more without the header, and that does not count as a redirect.
+        bool expect_continue_rejected = false;
+
+        for (size_t attempt = 0; attempt <= s3_max_redirects + (expect_continue_rejected ? 1 : 0); ++attempt)
         {
             Poco::URI target_uri(uri);
 
@@ -654,8 +658,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
             /// be read anymore. The header is decided here and not by the SDK, because only the
             /// transport can wait for the answer; the SDK would add it to streaming requests, which
             /// `ExtendedRequest::IsStreaming` turns off.
-            const bool expect_continue = s3_expect_continue_min_body_size > 0 && request.GetContentBody()
-                && poco_request.hasContentLength()
+            const bool expect_continue = !expect_continue_rejected && s3_expect_continue_min_body_size > 0
+                && request.GetContentBody() && poco_request.hasContentLength()
                 && static_cast<UInt64>(poco_request.getContentLength64()) >= s3_expect_continue_min_body_size;
             poco_request.setExpectContinue(expect_continue);
 
@@ -682,6 +686,14 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     session,
                     poco_response,
                     Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(s3_expect_continue_timeout_ms) * 1000));
+
+                if (response_body && poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_EXPECTATION_FAILED)
+                {
+                    /// The server, or a proxy on the way, does not support the expectation.
+                    LOG_DEBUG(log, "Server refused `Expect: 100-continue` for {}, sending the request again without it", uri);
+                    expect_continue_rejected = true;
+                    continue;
+                }
 
                 if (response_body)
                 {

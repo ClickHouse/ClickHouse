@@ -468,6 +468,52 @@ def test_early_error_response_at_upload_is_not_retried(cluster, broken_s3, schem
     assert s3_errors == 2, s3_errors
 
 
+@pytest.mark.parametrize(
+    "mode, scheme, port",
+    [
+        ("never", "http", 8083),
+        ("never", "https", 8443),
+        ("late", "http", 8083),
+        ("reject", "http", 8083),
+    ],
+)
+def test_expect_100_continue_not_answered(cluster, broken_s3, mode, scheme, port):
+    # The server does not answer `Expect: 100-continue` (`never`), answers it only after the body has
+    # started to arrive (`late`), or refuses it with `417 Expectation Failed` (`reject`). The upload
+    # must still succeed, with no errors.
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_expect_100(mode, late_ms=1000 if mode == "late" else None)
+
+    insert_query_id = randomize_query_id(f"TEST_EXPECT_100_CONTINUE_NOT_ANSWERED_{mode}")
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                '{scheme}://resolver:{port}/root/data/test_expect_100_continue_not_answered_{mode}_{scheme}',
+                'minio', '{minio_secret_key}',
+                'CSV', auto, 'none'
+            )
+        SELECT number, randomString(1000) FROM numbers(40000)
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=33554432,
+            s3_max_inflight_parts_for_one_file=1,
+            s3_expect_continue_timeout_ms=100,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    create_multipart, upload_parts, s3_errors = get_multipart_counters(
+        node, insert_query_id, log_type="QueryFinish"
+    )
+    assert create_multipart == 1
+    assert upload_parts == 2
+    assert s3_errors == 0, s3_errors
+
+
 @pytest.mark.parametrize("send_something", [True, False])
 def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
     cluster, broken_s3, send_something
