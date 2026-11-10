@@ -69,8 +69,16 @@ void setBranchProtectionAttributes([[maybe_unused]] llvm::Module & module)
         function.addFnAttr("branch-target-enforcement");
 #    endif
 #    if defined(__ARM_FEATURE_PAC_DEFAULT)
-        function.addFnAttr("sign-return-address", (__ARM_FEATURE_PAC_DEFAULT & 4) ? "all" : "non-leaf");
-        function.addFnAttr("sign-return-address-key", (__ARM_FEATURE_PAC_DEFAULT & 2) ? "b_key" : "a_key");
+#        if __ARM_FEATURE_PAC_DEFAULT & 4
+        function.addFnAttr("sign-return-address", "all");
+#        else
+        function.addFnAttr("sign-return-address", "non-leaf");
+#        endif
+#        if __ARM_FEATURE_PAC_DEFAULT & 2
+        function.addFnAttr("sign-return-address-key", "b_key");
+#        else
+        function.addFnAttr("sign-return-address-key", "a_key");
+#        endif
 #    endif
     }
 #endif
