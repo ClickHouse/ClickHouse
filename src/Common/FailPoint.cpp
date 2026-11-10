@@ -377,7 +377,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
     PAUSEABLE_ONCE(mt_move_partition_pause_before_commit) \
     PAUSEABLE_ONCE(mt_drop_partition_pause_after_merges_stopped) \
-    PAUSEABLE_ONCE(mt_merge_selecting_task_pause_after_selection) \
+    PAUSEABLE(mt_merge_selecting_task_pause_after_selection) \
     PAUSEABLE_ONCE(mt_merge_task_pause_before_transaction_commit) \
     PAUSEABLE_ONCE(mt_pause_before_loading_outdated_part) \
     PAUSEABLE(mt_pause_before_loading_queued_outdated_part) \

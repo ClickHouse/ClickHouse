@@ -2809,7 +2809,14 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         has_mutations = !current_mutations_by_version.empty();
     }
 
-    FailPointInjection::pauseFailPoint(FailPoints::mt_merge_selecting_task_pause_after_selection);
+    /// Test hook: holds the selection of a table that has a blocked partition between releasing the mutex
+    /// and checking the selected entry against the blocker. Other tables are let through, so that a test
+    /// does not have to stop the merges of the whole server.
+    fiu_do_on(FailPoints::mt_merge_selecting_task_pause_after_selection,
+    {
+        if (merger_mutator.merges_blocker.countPartitionBlockers() > 0)
+            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::mt_merge_selecting_task_pause_after_selection);
+    });
 
     auto is_cancelled = [&merges_blocker = merger_mutator.merges_blocker](const MergeMutateSelectedEntryPtr & entry)
     {
