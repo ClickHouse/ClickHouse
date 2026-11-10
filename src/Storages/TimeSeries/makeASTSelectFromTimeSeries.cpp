@@ -6,7 +6,9 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Common/Exception.h>
 #include <Common/SettingsChanges.h>
+#include <Common/quoteString.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -39,6 +41,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_IDENTIFIER;
+}
 
 namespace TimeSeriesSetting
 {
@@ -860,10 +867,32 @@ ASTPtr makeASTForOuterTagsMap(const std::unordered_map<String, String> & columns
 }
 
 
+/// Throws UNKNOWN_IDENTIFIER when a bare identifier is not a tags-table column. The rewritten
+/// expression is injected into a nested tags subquery; unbound names would otherwise resolve as
+/// correlated outer references (for example `samples`) instead of failing closed.
+void assertIdentifiersExistOnTagsTable(const ASTPtr & node, const ColumnsDescription & tags_columns)
+{
+    if (!node)
+        return;
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        if (!identifier->compound() && !tags_columns.has(identifier->shortName()))
+            throw Exception(
+                ErrorCodes::UNKNOWN_IDENTIFIER,
+                "Identifier {} cannot be resolved against the TimeSeries tags table",
+                backQuoteIfNeed(identifier->name()));
+    }
+
+    for (const auto & child : node->children)
+        assertIdentifiersExistOnTagsTable(child, tags_columns);
+}
+
 /// Rewrites a policy expression written against the outer TimeSeries columns so it evaluates over the
 /// tags target table: `tags['<k>']` becomes the dedicated column for `__name__` and `tags_to_columns`
 /// tags (or stays a Map access otherwise), a bare `tags` becomes `timeSeriesTagsToMap(...)`, and every
-/// other identifier is left as written (so a policy on `samples` fails with UNKNOWN_IDENTIFIER).
+/// other identifier is checked against the tags table (so a policy on `samples` fails with
+/// UNKNOWN_IDENTIFIER).
 ASTPtr rewriteRowPolicyExpressionForTagsTable(
     const ASTPtr & node,
     const std::unordered_map<String, String> & columns_by_tags,
@@ -953,8 +982,11 @@ ASTPtr makeRowPolicyFilterForTagsTable(const StorageTimeSeries & storage, const 
     const auto columns_by_tags = getColumnsByTags(*storage.getStorageSettings());
     const auto tags_table_metadata
         = storage.getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
+    const auto & tags_columns = tags_table_metadata->columns;
 
-    return rewriteRowPolicyExpressionForTagsTable(filter->expression, columns_by_tags, tags_table_metadata->columns);
+    auto rewritten = rewriteRowPolicyExpressionForTagsTable(filter->expression, columns_by_tags, tags_columns);
+    assertIdentifiersExistOnTagsTable(rewritten, tags_columns);
+    return rewritten;
 }
 
 }
