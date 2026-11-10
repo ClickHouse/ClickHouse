@@ -161,9 +161,9 @@ ArchiveByNumberStrategy::~ArchiveByNumberStrategy()
 }
 
 
-LogFile* ArchiveByNumberStrategy::archive(LogFile* pFile, bool streamCompress)
+void ArchiveByNumberStrategy::archive(std::unique_ptr<LogFile> & file, bool streamCompress)
 {
-	std::string base = pFile->path();
+	std::string base = file->path();
 	std::string ext = "";
 
 	if (base.ends_with(".lz4"))
@@ -172,7 +172,7 @@ LogFile* ArchiveByNumberStrategy::archive(LogFile* pFile, bool streamCompress)
 		ext = ".lz4";
 	}
 
-	delete pFile;
+	file.reset();
 	int n = -1;
 	std::string path;
 	do
@@ -203,9 +203,9 @@ LogFile* ArchiveByNumberStrategy::archive(LogFile* pFile, bool streamCompress)
 	}
 
 	if (streamCompress)
-		return new CompressedLogFile(base);
+		file = std::make_unique<CompressedLogFile>(base);
 	else
-		return new LogFile(base);
+		file = std::make_unique<LogFile>(base);
 }
 
 

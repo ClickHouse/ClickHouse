@@ -25,6 +25,8 @@
 #include "Poco/LogFile.h"
 #include "Poco/NumberFormatter.h"
 
+#include <memory>
+
 
 namespace Poco
 {
@@ -44,11 +46,10 @@ public:
     ArchiveStrategy();
     virtual ~ArchiveStrategy();
 
-    virtual LogFile * archive(LogFile * pFile, bool streamCompress = false) = 0;
-    /// Renames the given log file for archiving
-    /// and creates and returns a new log file.
-    /// The given LogFile object is deleted.
-    /// Returns CompressedLogFile if streamCompress flag is set.
+    virtual void archive(std::unique_ptr<LogFile> & file, bool streamCompress = false) = 0;
+    /// Closes and renames `file` for archiving and replaces it with a new log file.
+    /// If this method throws, `file` may be null.
+    /// Creates CompressedLogFile if streamCompress flag is set.
 
     void compress(bool flag = true);
     /// Enables or disables compression of archived files.
@@ -74,7 +75,7 @@ class Foundation_API ArchiveByNumberStrategy : public ArchiveStrategy
 public:
     ArchiveByNumberStrategy();
     ~ArchiveByNumberStrategy();
-    LogFile * archive(LogFile * pFile, bool streamCompress = false);
+    void archive(std::unique_ptr<LogFile> & file, bool streamCompress = false);
 };
 
 
@@ -88,12 +89,12 @@ public:
 
     ~ArchiveByTimestampStrategy() { }
 
-    LogFile * archive(LogFile * pFile, bool streamCompress = false)
+    void archive(std::unique_ptr<LogFile> & file, bool streamCompress = false)
     /// Archives the file by appending the current timestamp to the
     /// file name. If the new file name exists, additionally a monotonic
     /// increasing number is appended to the log file name.
     {
-        std::string base = pFile->path();
+        std::string base = file->path();
         std::string ext = "";
 
         if (base.ends_with(".lz4"))
@@ -102,7 +103,7 @@ public:
             ext = ".lz4";
         }
 
-        delete pFile;
+        file.reset();
         std::string archPath = base;
         archPath.append(".");
         DateTimeFormatter::append(archPath, DT().timestamp(), "%Y%m%d%H%M%S%i");
@@ -114,9 +115,9 @@ public:
             moveFile(base + ext, archPath);
 
         if (streamCompress)
-            return new CompressedLogFile(base);
+            file = std::make_unique<CompressedLogFile>(base);
         else
-            return new LogFile(base);
+            file = std::make_unique<LogFile>(base);
     }
 
 private:

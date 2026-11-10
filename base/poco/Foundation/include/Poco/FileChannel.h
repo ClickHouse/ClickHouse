@@ -24,6 +24,8 @@
 #include "Poco/Timespan.h"
 #include "Poco/Timestamp.h"
 
+#include <memory>
+
 
 namespace Poco
 {
@@ -247,7 +249,7 @@ protected:
 
 private:
     void unsafeRotate();
-    LogFile * newLogFile();
+    std::unique_ptr<LogFile> newLogFile();
     void archiveCorrupted(const std::string & path);
     bool setNoPurge(const std::string & value);
     int extractDigit(const std::string & value, std::string::const_iterator * nextToDigit = NULL) const;
@@ -264,7 +266,7 @@ private:
     std::string _purgeCount;
     bool _flush;
     bool _rotateOnOpen;
-    LogFile * _pFile;
+    std::unique_ptr<LogFile> _pFile;
     RotateStrategy * _pRotateStrategy;
     ArchiveStrategy * _pArchiveStrategy;
     PurgeStrategy * _pPurgeStrategy;

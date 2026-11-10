@@ -25,7 +25,6 @@
 #include "Poco/Exception.h"
 #include "Poco/Ascii.h"
 #include "Poco/CombinedRotateStrategy.h"
-#include <utility>
 
 
 namespace Poco {
@@ -48,7 +47,6 @@ FileChannel::FileChannel():
 	_streamCompress(false),
 	_flush(true),
 	_rotateOnOpen(false),
-	_pFile(0),
 	_pRotateStrategy(0),
 	_pArchiveStrategy(new ArchiveByNumberStrategy),
 	_pPurgeStrategy(0)
@@ -63,7 +61,6 @@ FileChannel::FileChannel(const std::string& path):
 	_streamCompress(false),
 	_flush(true),
 	_rotateOnOpen(false),
-	_pFile(0),
 	_pRotateStrategy(0),
 	_pArchiveStrategy(new ArchiveByNumberStrategy),
 	_pPurgeStrategy(0)
@@ -99,8 +96,7 @@ void FileChannel::close()
 {
 	FastMutex::ScopedLock lock(_mutex);
 
-	delete _pFile;
-	_pFile = 0;
+	_pFile.reset();
 }
 
 
@@ -110,13 +106,13 @@ void FileChannel::log(const Message& msg)
 
 	unsafeOpen();
 
-	if (_pRotateStrategy && _pArchiveStrategy && _pRotateStrategy->mustRotate(_pFile))
+	if (_pRotateStrategy && _pArchiveStrategy && _pRotateStrategy->mustRotate(_pFile.get()))
 	{
 		unsafeRotate();
 		// we must call mustRotate() again to give the
 		// RotateByIntervalStrategy a chance to write its timestamp
 		// to the new file.
-		_pRotateStrategy->mustRotate(_pFile);
+		_pRotateStrategy->mustRotate(_pFile.get());
 	}
 
 	try
@@ -340,12 +336,9 @@ void FileChannel::unsafeOpen()
 
 void FileChannel::unsafeRotate()
 {
-	/// `archive` deletes the current file, so `_pFile` must not dangle if opening the new one fails.
-	/// The raw pointer is intentional: `archive` owns `pFile` and deletes it, so it must not be deleted here.
-	LogFile * pFile = std::exchange(_pFile, nullptr);
 	try
 	{
-		_pFile = _pArchiveStrategy->archive(pFile, _streamCompress);
+		_pArchiveStrategy->archive(_pFile, _streamCompress);
 		purge();
 	}
 	catch (...)
@@ -445,15 +438,15 @@ void FileChannel::archiveCorrupted(const std::string& path)
 	}
 }
 
-LogFile * FileChannel::newLogFile()
+std::unique_ptr<LogFile> FileChannel::newLogFile()
 {
 	if (_streamCompress) {
 		archiveCorrupted(_path);
-		return new CompressedLogFile(_path);
+		return std::make_unique<CompressedLogFile>(_path);
 	}
 	else
 	{
-		return new LogFile(_path);
+		return std::make_unique<LogFile>(_path);
 	}
 }
 
