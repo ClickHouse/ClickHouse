@@ -904,8 +904,7 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 }
 
 
-/// Writes what the query ran under the identity of `SQL SECURITY DEFINER` / `NONE` views (`Context::addSQLSecurityOverriddenBody`)
-/// as its child rows: the identity, the query and what it accessed, without metrics.
+/// Writes the bodies registered by `Context::addSQLSecurityOverriddenBody` as child rows of `elem`, without metrics.
 static void logSQLSecurityOverriddenBodies(
     QueryLog & query_log, const QueryLogElement & elem, Context::QueryAccessInfo & access_info, UInt64 max_query_length)
 {

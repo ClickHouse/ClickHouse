@@ -340,7 +340,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view, const ASTPtr & view_query)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    /// Only the body of a `DEFINER` / `NONE` view has a query context of its own; it is logged as a child row of the query.
+    /// Only the context of a `DEFINER` / `NONE` view has a query context of its own.
     if (context->hasQueryContext() && view_context->hasQueryContext()
         && view_context->getQueryContext() != context->getQueryContext())
         context->getQueryContext()->addSQLSecurityOverriddenBody(view->getStorageID(), view_context, view_query);
@@ -756,8 +756,7 @@ void StorageView::readImpl(
             current_inner_query, view_context, options, column_names, sealed ? nullptr : query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
-        /// The body's query context has no other owner, while the plan steps reference it only weakly and the
-        /// optimizer still records the chosen projections into it.
+        /// The plan owns the body's query context: its steps hold it only weakly, and the optimizer records projections into it.
         query_plan.addInterpreterContext(view_context);
     }
 

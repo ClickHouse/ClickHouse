@@ -6833,8 +6833,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     if (view->isSealed(*storage_snapshot->metadata, scope.context))
         return;
 
-    /// The body of a `DEFINER` / `NONE` view runs as another user: inlined, it could be shipped to parallel replicas with the
-    /// query, and its query context, which logs what it accesses as a child row of the query, would have no owner.
+    /// An inlined `DEFINER` / `NONE` body could be shipped to parallel replicas, and its own query context would have no owner.
     const auto & view_metadata = *storage_snapshot->metadata;
     if (view_metadata.sql_security_type == SQLSecurityType::DEFINER || view_metadata.sql_security_type == SQLSecurityType::NONE)
         return;

@@ -572,7 +572,7 @@ void StorageMaterializedView::readImpl(
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;
 
-    /// A read through a `DEFINER` / `NONE` view runs under its identity and is logged as a child row of the query.
+    /// `context` has a query context of its own only for a `DEFINER` / `NONE` view.
     if (local_context->hasQueryContext() && context->hasQueryContext()
         && context->getQueryContext() != local_context->getQueryContext())
     {

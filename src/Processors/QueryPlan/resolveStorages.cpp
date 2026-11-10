@@ -289,8 +289,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
             context->getSettingsRef()[Setting::max_threads]
         );
 
-        /// Serialized table and table-function reads bypass the planner's access-info registration.
-        /// Record the resolved storage after building the read, as the planner does.
+        /// Reads of a serialized plan bypass the planner, which records what a read accesses.
         if (context->hasQueryContext())
             context->getQueryContext()->addQueryAccessInfo(storage->getStorageID(), column_names);
 

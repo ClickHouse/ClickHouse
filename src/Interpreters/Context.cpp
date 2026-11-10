@@ -3407,7 +3407,6 @@ void Context::addSQLSecurityOverriddenBody(const StorageID & view_id, const Cont
 
     std::lock_guard lock(query_access_info->mutex);
     auto & bodies = query_access_info->sql_security_overridden_bodies;
-    /// A body planned again, e.g. for every block of a materialized view that reads the view, adds to the first one.
     for (const auto & body : bodies)
     {
         if (body->query_hash == query_hash && body->user == user && StorageID::DatabaseAndTableNameEqual{}(body->view, view_id))

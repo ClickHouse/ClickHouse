@@ -1353,7 +1353,6 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     const auto & metadata = metadata_snapshots.at(current);
     auto parent_select_context = select_contexts.at(path.parent(2));
     auto select_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
-    /// The body of a `DEFINER` / `NONE` view runs in a query context of its own and is logged as a child row of the query.
     if (metadata->sql_security_type == SQLSecurityType::DEFINER || metadata->sql_security_type == SQLSecurityType::NONE)
     {
         if (parent_select_context->hasQueryContext())
@@ -1548,7 +1547,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
         const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
 
-        /// An insert into a `DEFINER` / `NONE` view writes its target under the view's identity, logged as a child row of the query.
         if ((metadata->sql_security_type == SQLSecurityType::DEFINER || metadata->sql_security_type == SQLSecurityType::NONE)
             && init_context->hasQueryContext())
         {
@@ -1607,7 +1605,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         /// at the first iteration it is the init_table_id most likely
         /// the following iterations will be for inner tables of materialized views
 
-        /// A table is recorded by the query that writes it: the caller for the table it inserts into, else the view it is the target of.
         const auto & writer_context = current == init_table_id ? init_context : insert_contexts.at(parent);
         if (writer_context->hasQueryContext())
             writer_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});

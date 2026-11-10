@@ -278,18 +278,12 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
         select_columns += backQuoteIfNeed(name);
     }
 
-    /// `initial_user` is forwarded in ClientInfo and may be supplied by a SECONDARY_QUERY peer. Only
-    /// trust it when it matches the authenticated current user; otherwise a peer could name another
-    /// user's log. EXECUTE AS updates both identities, while SQL SECURITY view contexts retain the
-    /// caller's ClientInfo. For rows received from an initiator, `initial_user` is the initiating user
-    /// and `user` may be the interserver connection user.
-    /// Only top-level rows are visible: a child row, such as the body of a `SQL SECURITY DEFINER` view, carries the caller's `initial_user`.
+    /// `initial_user` is forwarded in ClientInfo and can be supplied by a SECONDARY_QUERY peer, so it is trusted only when
+    /// it equals the authenticated current user (EXECUTE AS updates both). In a forwarded row `user` may be the interserver user.
+    /// Child rows, e.g. of a `SQL SECURITY DEFINER` view body, carry the caller's `initial_user`: only top-level rows are visible.
     const auto & client_info = outer_context->getClientInfo();
-    /// clickhouse-local queries can lack an authenticated session, so both ClientInfo user names are empty.
-    /// Permit that identity only in the LOCAL application and on its LOCAL interface. A SECONDARY_QUERY can
-    /// carry a supplied interface, but an authenticated session still has a non-empty current_user; the interserver
-    /// handler stamps TCP_INTERSERVER. Empty server identities and forwarded or otherwise inconsistent identities
-    /// remain fail-closed.
+    /// clickhouse-local can run without an authenticated session, with both user names empty. That identity is accepted only
+    /// in the LOCAL application on the LOCAL interface. A SECONDARY_QUERY can supply the interface, but its `current_user` is set.
     const bool has_local_empty_user_identity =
         outer_context->getApplicationType() == Context::ApplicationType::LOCAL
         && client_info.interface == ClientInfo::Interface::LOCAL

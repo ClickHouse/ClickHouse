@@ -559,13 +559,11 @@ public:
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
         std::set<std::string> row_policies TSA_GUARDED_BY(mutex){};
-        /// The bodies this query ran under the identity of a `SQL SECURITY DEFINER` / `NONE` view, see `Context::addSQLSecurityOverriddenBody`.
-        /// Not copied by the copy constructor: a copy of the context runs none of them.
+        /// Child rows of the query, see `Context::addSQLSecurityOverriddenBody`. Not copied by the copy constructor.
         std::vector<std::shared_ptr<const SQLSecurityOverriddenBody>> sql_security_overridden_bodies TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
-    /// What runs under the identity of a `SQL SECURITY DEFINER` / `NONE` view, in a query context of its own.
     struct SQLSecurityOverriddenBody
     {
         StorageID view = StorageID::createEmpty();
