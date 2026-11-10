@@ -27,7 +27,6 @@ SETTINGS table_disk = true, index_granularity_bytes = 10485760,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      metadata_snapshot_write_delay_ms = 0, -- the readers see the snapshot of the state right after every commit
       path = '${disk_path}')
 "
 
@@ -80,7 +79,6 @@ SETTINGS table_disk = true, index_granularity_bytes = 10485760,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      metadata_snapshot_write_delay_ms = 0, -- the readers see the snapshot of the state right after every commit
       path = '${disk_path_desc}')
 "
 

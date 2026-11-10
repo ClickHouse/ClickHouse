@@ -436,8 +436,6 @@ StorageMaterializedView::StorageMaterializedView(
 
         auto new_columns_list = make_intrusive<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
-        if (query.columns_list->codec_declarations)
-            new_columns_list->set(new_columns_list->codec_declarations, query.columns_list->codec_declarations->ptr());
         if (storage_features.supports_skipping_indices)
         {
             if (query.columns_list->indices)
@@ -467,8 +465,6 @@ StorageMaterializedView::StorageMaterializedView(
 
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
-        /// The inner table comes from the backup too, so it must not get a definition other than the backup's.
-        create_interpreter.setIsRestoreFromBackup(is_restore_from_backup);
         create_interpreter.execute();
 
         if (fixed_uuid)

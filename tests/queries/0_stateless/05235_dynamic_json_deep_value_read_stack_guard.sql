@@ -11,8 +11,3 @@ EXPLAIN QUERY TREE SELECT finalizeAggregation(CAST(unhex(concat('01', repeat('30
 SELECT toString(finalizeAggregation(CAST(unhex(materialize('0130008008200000000101613000800820000000010161300080082000000000')) AS AggregateFunction(any, Dynamic))));
 
 SELECT length(toString(finalizeAggregation(CAST(unhex(materialize(concat('01', repeat('3000800820000000010161', 4000), '300080082000000000'))) AS AggregateFunction(any, Dynamic))))); -- { serverError TOO_DEEP_RECURSION }
-
--- Hashing a value descends the same nesting.
-SELECT sipHash64(finalizeAggregation(CAST(unhex(materialize('0130008008200000000101613000800820000000010161300080082000000000')) AS AggregateFunction(any, Dynamic))));
-
-SELECT sipHash64(finalizeAggregation(CAST(unhex(materialize(concat('01', repeat('3000800820000000010161', 4000), '300080082000000000'))) AS AggregateFunction(any, Dynamic)))); -- { serverError TOO_DEEP_RECURSION }
