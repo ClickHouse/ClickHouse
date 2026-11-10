@@ -1,0 +1,4 @@
+failed_pool	Failed	executable	0	\N	\N	\N	\N	\N
+loaded_pipe	Success	executable	0	0	0	0	0	log_last
+loaded_pool	Success	executable_pool	4	0	0	0	1	log_last
+1	1	1	1	1	[]	[]

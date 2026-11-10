@@ -1,0 +1,77 @@
+--- an extended region is charged from the next hand-over on
+Key 1
+8388608
+1
+error: MEMORY_LIMIT_EXCEEDED UDF_EXECUTION_FAILED
+8388608
+Key 3
+16777216
+0
+--- a region extended past the cap costs the command its worker
+Key 1
+0
+0
+Key 2
+0
+1
+--- pages committed past the end of the file count against the cap
+Key 1
+0
+0
+Key 2
+0
+1
+--- a region smaller than a page is not over its own cap
+Key 1
+1
+Key 2
+Key 3
+1
+--- pages committed within the cap are charged once
+Key 1
+1	1
+1
+1290
+1	1
+1
+--- a growth on top of pages committed far past the end is charged for what it commits
+Key 1
+1	1
+1
+38890
+1	1	1
+1
+1
+--- a growth that would take the footprint past the cap is refused before it commits
+Key 1
+1	1
+error: CANNOT_WRITE_AFTER_END_OF_BUFFER UDF_EXECUTION_FAILED
+0
+0
+Key 2
+1
+--- pages committed during a request are seen by the growth it asks for
+error: CANNOT_WRITE_AFTER_END_OF_BUFFER UDF_EXECUTION_FAILED
+0
+1
+1
+--- a file stretched to the cap with pages past its end is discarded before the server fills it in
+Key 1
+0
+0
+Key 2
+0
+1
+--- the length of the file is held to the cap in bytes
+Key 1
+0
+0
+1
+--- a hole punched by the command is not fatal
+Key 1
+1	1
+Key 2
+1
+--- a file extended by the command is mapped whole at the next borrow
+65536
+131072

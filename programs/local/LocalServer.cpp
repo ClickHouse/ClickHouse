@@ -1736,6 +1736,7 @@ void LocalServer::processConfig()
                 : 0.0,
         };
         memory_worker.emplace(memory_worker_config, global_context->getPageCache());
+        global_context->setSharedMemoryRequiresProcessRSS(memory_worker->getSource() == MemoryWorker::MemoryUsageSource::OS);
         /// Inform `MemoryWorker` of the configured ceiling and the ratio so its dynamic
         /// adjustment (which only sees `MemAvailable` or cgroup memory) cannot exceed
         /// the explicit `max_server_memory_usage`. `clickhouse-local` does not currently

@@ -1567,6 +1567,7 @@ try
     };
 
     MemoryWorker memory_worker(memory_worker_config, global_context->getPageCache());
+    global_context->setSharedMemoryRequiresProcessRSS(memory_worker.getSource() == MemoryWorker::MemoryUsageSource::OS);
 
     /// This object will periodically calculate some metrics.
     std::unique_ptr<AsynchronousMetrics> async_metrics;

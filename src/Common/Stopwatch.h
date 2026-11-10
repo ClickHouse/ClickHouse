@@ -26,6 +26,25 @@ static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC;
 
 UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK);
 
+/// A point on the monotonic clock (`clock_gettime_ns`) `timeout_ms` from now. Saturated rather than
+/// wrapped: a timeout too large to represent - a "wait forever" figure - must not come out as a
+/// deadline in the past, turning every wait into a probe.
+inline UInt64 monotonicDeadlineNs(UInt64 timeout_ms)
+{
+    const UInt64 now_ns = clock_gettime_ns();
+    const UInt64 max_ms = (std::numeric_limits<UInt64>::max() - now_ns) / 1000000ULL;
+    return now_ns + (timeout_ms < max_ms ? timeout_ms : max_ms) * 1000000ULL;
+}
+
+/// Milliseconds left until `deadline_ns` on the monotonic clock, 0 once it has passed. Rounded up,
+/// so that the last fraction of a millisecond is still waited out rather than turning a `poll` with
+/// it into a non-blocking probe.
+inline UInt64 millisecondsUntil(UInt64 deadline_ns)
+{
+    const UInt64 now_ns = clock_gettime_ns();
+    return now_ns >= deadline_ns ? 0 : (deadline_ns - now_ns + 999999ULL) / 1000000ULL;
+}
+
 /// Takes previously returned value and returns it again if time stepped back for some reason.
 ///
 /// You should use this if OS does not support CLOCK_MONOTONIC_RAW

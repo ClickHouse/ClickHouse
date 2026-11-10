@@ -1,0 +1,94 @@
+<functions>
+    <!--
+      Four functionally identical echo UDFs that differ only in the transport, so a benchmark can
+      attribute wall-clock differences to the transport alone. All use `executable_pool` (so process
+      startup is amortized), the same `TabSeparated` format and the same String -> String signature.
+    -->
+
+    <!-- Baseline: plain pipe transport, streaming (flush per row). -->
+    <function>
+        <type>executable_pool</type>
+        <name>bench_pipe_stream</name>
+        <return_type>String</return_type>
+        <argument><type>String</type></argument>
+        <format>TabSeparated</format>
+        <pool_size>16</pool_size>
+        <command>echo_pipe.py</command>
+    </function>
+
+    <!-- Fair pipe baseline: one flush per chunk via send_chunk_header. -->
+    <function>
+        <type>executable_pool</type>
+        <name>bench_pipe_chunk</name>
+        <return_type>String</return_type>
+        <argument><type>String</type></argument>
+        <format>TabSeparated</format>
+        <pool_size>16</pool_size>
+        <send_chunk_header>1</send_chunk_header>
+        <command>echo_pipe_chunked.py</command>
+    </function>
+
+    <!-- The same, with the pipes enlarged to 1 MiB (command_pipe_capacity, F_SETPIPE_SZ): the
+         cheapest thing one could do to a pipe transport. Separates what shared memory saves on
+         system calls - which a bigger pipe saves too - from what it saves on copying, which a
+         bigger pipe does not. -->
+    <function>
+        <type>executable_pool</type>
+        <name>bench_pipe_chunk_1m</name>
+        <return_type>String</return_type>
+        <argument><type>String</type></argument>
+        <format>TabSeparated</format>
+        <pool_size>16</pool_size>
+        <send_chunk_header>1</send_chunk_header>
+        <command_pipe_capacity>1048576</command_pipe_capacity>
+        <command>echo_pipe_chunked.py</command>
+    </function>
+
+    <!-- Shared-memory transport (synchronous). -->
+    <function>
+        <type>executable_pool</type>
+        <name>bench_shm</name>
+        <return_type>String</return_type>
+        <argument><type>String</type></argument>
+        <format>TabSeparated</format>
+        <pool_size>16</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <!-- Sized for one block of the default workload (65536 rows x 100 B, echoed in place), with
+             room to grow for the row-size sweep. The whole region is reserved when a worker is
+             started, so an oversized region is paid for on every pool warm-up. -->
+        <shared_memory_size>16777216</shared_memory_size>
+        <shared_memory_max_size>134217728</shared_memory_max_size>
+        <command>echo_shm.py</command>
+    </function>
+
+    <!-- The pipe counterpart of bench_shm_busy: the same artificial per-chunk work over the chunked
+         pipe, so that the busy variants are compared with each other and not with an idle echo. -->
+    <function>
+        <type>executable_pool</type>
+        <name>bench_pipe_busy</name>
+        <return_type>String</return_type>
+        <argument><type>String</type></argument>
+        <format>TabSeparated</format>
+        <pool_size>16</pool_size>
+        <send_chunk_header>1</send_chunk_header>
+        <command>echo_pipe_busy.py</command>
+    </function>
+
+    <!--
+      Compute-heavy variant: echo_shm_busy.py adds per-chunk CPU work, so the command's compute
+      time dominates the server-side serialization instead of the other way round.
+    -->
+    <function>
+        <type>executable_pool</type>
+        <name>bench_shm_busy</name>
+        <return_type>String</return_type>
+        <argument><type>String</type></argument>
+        <format>TabSeparated</format>
+        <pool_size>16</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>16777216</shared_memory_size>
+        <shared_memory_max_size>134217728</shared_memory_max_size>
+        <command>echo_shm_busy.py</command>
+    </function>
+
+</functions>

@@ -1,0 +1,2 @@
+udf_defaults	Success	log_last	1	0	0	0	0
+udf_explicit	Success	throw	0	131072	0	0	0
