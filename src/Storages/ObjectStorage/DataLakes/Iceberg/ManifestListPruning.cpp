@@ -187,13 +187,19 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
     for (const auto & [tuple_index, width] : condition_it->second.integer_truncate_fields)
     {
         auto & lower = hyperrectangle[tuple_index].left;
+        auto & upper = hyperrectangle[tuple_index].right;
         if (isLegacyTruncateValue(lower, width))
         {
-            const auto multiple = floorToMultiple(lower.safeGet<Int64>(), width);
-            lower = multiple ? FieldRef(*multiple) : FieldRef(NEGATIVE_INFINITY);
+            if (const auto multiple = floorToMultiple(lower.safeGet<Int64>(), width))
+                lower = FieldRef(*multiple);
+            else
+            {
+                /// No multiple of `W` is below the value, so the spec value of its rows wraps to a large positive one.
+                lower = FieldRef(NEGATIVE_INFINITY);
+                upper = FieldRef(POSITIVE_INFINITY);
+            }
         }
 
-        auto & upper = hyperrectangle[tuple_index].right;
         if (isLegacyTruncateValue(upper, width))
         {
             const auto multiple = floorToMultiple(upper.safeGet<Int64>(), width);

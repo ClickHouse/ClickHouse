@@ -74,6 +74,21 @@ SELECT count() FROM t_legacy SETTINGS use_iceberg_partition_pruning = 0;
 
 DROP TABLE t_legacy;
 
+-- The same writer, then the two manifests were merged into one by OPTIMIZE TABLE ... MANIFEST with
+-- iceberg_insert_single_manifest_for_all_partitions = 1: partitions {-9223372036854775806} (i64 = -9223372036854775806)
+-- and {0} (i64 = 5). The spec value of the first row wraps to 9223372036854775806.
+DROP TABLE IF EXISTS t_compacted;
+CREATE TABLE t_compacted ENGINE = IcebergS3(s3_conn, filename = 'iceberg_truncate_negative_legacy_compacted');
+SELECT 'compacted i64 = -9223372036854775806',
+    (SELECT count() FROM t_compacted WHERE i64 = -9223372036854775806 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_compacted WHERE i64 = -9223372036854775806 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_compacted WHERE i64 = -9223372036854775806 SETTINGS use_iceberg_partition_pruning = 0);
+SELECT 'compacted icebergTruncate(10, i64) = 9223372036854775806',
+    (SELECT count() FROM t_compacted WHERE icebergTruncate(10, i64) = 9223372036854775806 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_compacted WHERE icebergTruncate(10, i64) = 9223372036854775806 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_compacted WHERE icebergTruncate(10, i64) = 9223372036854775806 SETTINGS use_iceberg_partition_pruning = 0);
+DROP TABLE t_compacted;
+
 -- A current server stores truncate(10, INT64_MIN) as a positive value that is not a multiple of 10
 -- (the subtraction wraps). That is a spec value, so it must not be taken for a legacy one: the
 -- mutation below is allowed.
