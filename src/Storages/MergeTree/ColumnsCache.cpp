@@ -687,8 +687,7 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
     /// The memory of the cache is the server's, see `setMany`.
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
 
-    /// No invalidation stamp is advanced here, see the declaration: the part is removed from
-    /// the cache only once no reader can hold it, so there is no deferred write to reject.
+    /// No invalidation stamp is advanced here, see the declaration.
     std::vector<Key> keys_to_remove;
     {
         std::lock_guard lock(index_mutex);
