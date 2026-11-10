@@ -1995,7 +1995,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan::Nodes & nodes,
     LogicalJoinInfo && logical_join_info,
-    bool disjunctions_optimization_applied)
+    bool disjunctions_optimization_applied,
+    const std::unordered_map<String, ColumnStats> & right_relation_column_stats)
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
 
@@ -2351,6 +2352,22 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
+                if (prepared_join_storage.storage_key_value)
+                {
+                    /// The whole action is merged into the right-side DAG below, so the DAG gets only its inputs.
+                    std::stack<const ActionsDAG::Node *> stack;
+                    stack.push(action);
+                    while (!stack.empty())
+                    {
+                        const auto * node = stack.top();
+                        stack.pop();
+                        if (node->type == ActionsDAG::ActionType::INPUT)
+                            used_expressions.emplace_back(node, expression_actions);
+                        for (const auto * child : node->children)
+                            stack.push(child);
+                    }
+                    continue;
+                }
                 /// x (Alias) -> toNullable(x) -> x (Input)
                 action = action->children.at(0)->children.at(0);
                 /// toNullable(x) -> x (Input)
@@ -2522,6 +2539,20 @@ static QueryPlanNode buildPhysicalJoinImpl(
     SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);
     SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag);
 
+    const bool right_has_strings = std::any_of(right_sample_block->begin(), right_sample_block->end(), [](const auto & column)
+    {
+        return isString(removeNullable(removeLowCardinality(column.type)));
+    });
+    if (join_settings.enable_hash_join_row_store && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
+    {
+        auto right_column_stats = right_relation_column_stats.empty()
+            ? QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats
+            : right_relation_column_stats;
+        QueryPlanOptimizations::remapColumnStats(right_column_stats, right_dag);
+        for (const auto & [name, stats] : right_column_stats)
+            table_join->setRightColumnAvgBytes(name, stats.avg_bytes);
+    }
+
     JoinPtr join_algorithm_ptr = chooseJoinAlgorithm(
         table_join,
         prepared_join_storage,
@@ -2650,7 +2681,8 @@ void JoinStepLogical::buildPhysicalJoin(
         /// physical step the guard is read off. That read is inert today - `JoinStep` is built without
         /// `use_join_disjunctions_push_down`, so the push-down cannot run on it either way - but the
         /// field is what decides it if that ever changes, and a default `false` would decide it wrong.
-        join_step->isDisjunctionsOptimizationApplied()
+        join_step->isDisjunctionsOptimizationApplied(),
+        join_step->right_relation.column_stats
     );
 
     /// The estimate of the logical join holds for the physical join step and for the expressions
