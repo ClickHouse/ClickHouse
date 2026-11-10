@@ -36,6 +36,11 @@ SELECT estimateCompressionRatio('UInt8')(n) FROM src; -- { serverError CANNOT_CO
 SELECT estimateCompressionRatio('UInt8')(n) FROM src WHERE n < 256 FORMAT Null;
 SELECT estimateCompressionRatio('String')(nullIf(s, 'region_5')) FROM src; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT estimateCompressionRatio('Nullable(String)')(nullIf(s, 'region_5')) > 0 FROM src;
+-- NULL rows of `if` are measured too: the optimizer does not turn `f(if(c, NULL, x))` into `fIf(x, not c)`.
+SELECT estimateCompressionRatio('String')(if(n = 5, NULL, s)) FROM src; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT estimateCompressionRatio('Nullable(String)')(if(n % 10 = 0, NULL, s))
+    = (SELECT estimateCompressionRatio('Nullable(String)')(if(n % 10 = 0, NULL, s)) FROM src SETTINGS optimize_rewrite_aggregate_function_with_if = 0)
+FROM src;
 SELECT estimateCompressionRatio('UInt32')(s) FROM src; -- { serverError CANNOT_PARSE_TEXT }
 -- The conversion follows the settings of the query, as `accurateCast`.
 SELECT estimateCompressionRatio('Enum8(\'only\' = 1)')(toUInt8(2)); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }

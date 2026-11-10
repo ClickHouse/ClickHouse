@@ -427,6 +427,14 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    /// NULL rows are measured (a null map, or an error for a type that cannot hold NULL), so the optimizer must not rewrite
+    /// `f(if(c, NULL, x))` to `fIf(x, not c)`, which drops them. `RewriteAggregateFunctionWithIfPass` asks this.
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function, const DataTypes &, const Array &, const AggregateFunctionProperties &) const override
+    {
+        return nested_function;
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & data_ref = data(place);
