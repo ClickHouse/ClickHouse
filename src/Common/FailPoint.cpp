@@ -66,6 +66,7 @@ static struct InitFiu
     REGULAR(stripe_log_sink_write_fallpoint) \
     REGULAR(file_checker_update_and_save_fail_reading_sizes) \
     REGULAR(file_checker_update_and_save_fail_persisting) \
+    REGULAR(file_checker_repair_memory_limit_exceeded) \
     ONCE(rocksdb_rename_throw_filesystem_error) \
     REGULAR(rocksdb_rename_fail_reopen) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
@@ -76,6 +77,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
     PAUSEABLE_ONCE(smt_get_status_pause_before_keeper_read) \
+    PAUSEABLE_ONCE(smt_parts_killer_pause_before_staging_part_removal) \
     ONCE(smt_commit_merge_change_version_before_op) \
     ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
     ONCE(smt_detach_part_replica_set_change_before_commit) \

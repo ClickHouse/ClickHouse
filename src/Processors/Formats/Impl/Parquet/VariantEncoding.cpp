@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
@@ -24,8 +26,6 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
-#include <list>
-#include <vector>
 
 #include <fmt/format.h>
 
@@ -215,8 +215,8 @@ public:
 
 private:
     const DataTypeObject & type;
-    std::vector<String> sorted_paths_to_skip;
-    std::list<re2::RE2> path_regexps_to_skip;
+    VectorWithMemoryTracking<String> sorted_paths_to_skip;
+    ListWithMemoryTracking<re2::RE2> path_regexps_to_skip;
     bool use_partial_match;
 };
 
@@ -506,7 +506,7 @@ void insertObjectPaths(
     ColumnObject & column,
     const JSONPathsFilter * filter,
     size_t prev_size,
-    std::vector<SharedDataValue> & shared_data_values)
+    VectorWithMemoryTracking<SharedDataValue> & shared_data_values)
 {
     const ObjectLayout layout = parseObjectLayout(data, pos, value_header);
 
@@ -579,7 +579,7 @@ void decodeObjectIntoJSON(
 {
     const size_t prev_size = column.size();
 
-    std::vector<SharedDataValue> shared_data_values;
+    VectorWithMemoryTracking<SharedDataValue> shared_data_values;
     insertObjectPaths(data, pos, value_header, context, depth, "", true, column, filter, prev_size, shared_data_values);
 
     /// Paths in shared data must be sorted.

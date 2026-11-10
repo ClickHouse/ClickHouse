@@ -894,7 +894,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
 
             NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
             /// Pass skip_subcolumns=false: subquery projection columns are full
-            /// query-level outputs (e.g. tup.a from CountDistinctPass rewrite),
+            /// query-level outputs (e.g. tup.a in SELECT count() FROM (SELECT tup.a FROM t GROUP BY tup.a)),
             /// not storage meta-subcolumns (.size0, .keys) that should be skipped.
             additional_column_to_read = ExpressionActions::getSmallestColumn(projection_columns_list, /*skip_subcolumns=*/ false);
         }
@@ -1794,6 +1794,9 @@ bool allowParallelReplicasForJoinTree(
         const auto * right_table = right_table_expr->as<TableNode>();
         const auto * right_table_function = right_table_expr->as<TableFunctionNode>();
         if (!right_table && !right_table_function)
+            return false;
+
+        if (right_table_function && !tableFunctionCanDriveParallelReplicasRead(*right_table_function, query_sets_additional_table_filters))
             return false;
 
         const auto right_storage = right_table ? right_table->getStorage() : right_table_function->getStorage();
