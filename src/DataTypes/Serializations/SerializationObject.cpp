@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationObject.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/DeserializationTask.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
