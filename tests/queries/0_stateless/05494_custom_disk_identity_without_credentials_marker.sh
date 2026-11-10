@@ -4,16 +4,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A disk definition that uses `from_env` is stored with credentials markers. Tables created by older versions
-# store it without them (26.3), with `_server_credentials_allowed` only (26.7 to 26.10), or with both markers (26.11). After an upgrade,
-# declaring the same disk again in a new table must reuse the existing disk, and the new table must load after a restart.
+# A disk definition that uses `from_env` is stored with the `_server_credentials_allowed` marker. Tables created by
+# versions before 26.7 store it without the marker. After an upgrade, declaring the same disk again in a new table must
+# reuse the existing disk, and the new table must load after a restart.
 # `type = 'from_env T'` with `T=local` counts as a disk that may use server credentials, without needing S3.
 
 export T=local
 
 run_case()
 {
-    local name=$1 strip=$2 type=${3:-"'from_env T'"}
+    local name=$1 strip=$2 type="'from_env T'"
     local dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_${name}"
     rm -rf "${dir}"
     local named="disk(name = 'named_disk', type = ${type}, path = '${dir}/disk_named/')"
@@ -43,11 +43,7 @@ run_case()
     rm -rf "${dir}"
 }
 
-run_case created_before_26_7 's/, equals(_azure_server_credentials_allowed, 1)//; s/, equals(_server_credentials_allowed, 1)//'
-run_case created_on_26_8 's/, equals(_azure_server_credentials_allowed, 1)//'
-run_case created_on_26_11 's/, equals(_server_credentials_allowed, 1)/, equals(_server_credentials_allowed, 1), equals(_azure_server_credentials_allowed, 1)/'
-# The value may also be a quoted identifier.
-run_case created_on_26_11_identifier 's/, equals(_server_credentials_allowed, 1)/, equals(_server_credentials_allowed, 1), equals(_azure_server_credentials_allowed, 1)/' '`from_env T`'
+run_case created_before_26_7 's/, equals(_server_credentials_allowed, 1)//'
 
 # A table detached permanently is not loaded at startup, so its disk is not registered when it is attached again. The
 # short `ATTACH` must still find the disk by the definition stored by the older version, not create an empty one.
@@ -59,7 +55,7 @@ run() { ${CLICKHOUSE_LOCAL} --path "${dir}/data" --dynamic_disk_allow_from_env=1
 echo "--- permanently_detached"
 run "CREATE DATABASE d ENGINE = Atomic; CREATE TABLE d.p (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = disk(type = 'from_env T2', path = '${dir}/blobs/'); INSERT INTO d.p VALUES (7)"
 old_disk=$(ls "${dir}/data/disks" | grep __tmp_internal_)
-sed -i 's/, equals(_azure_server_credentials_allowed, 1)//; s/, equals(_server_credentials_allowed, 1)//' "${dir}"/data/store/*/*/p.sql
+sed -i 's/, equals(_server_credentials_allowed, 1)//' "${dir}"/data/store/*/*/p.sql
 # Load the definition once to learn the name an older version gave the disk, and move the metadata there.
 run "SELECT 1" > /dev/null
 legacy_disk=$(ls "${dir}/data/disks" | grep __tmp_internal_ | grep -v "${old_disk}")

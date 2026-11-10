@@ -1,10 +1,9 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-kubernetes
-title: 'Monitoring Kubernetes with ClickHouse Observability'
-sidebarTitle: 'Monitor Kubernetes'
-description: 'Collect logs, infrastructure metrics, and events from a Kubernetes cluster into ClickHouse Observability on the self-managed experience'
+title: 'Monitoring Kubernetes with Managed ClickStack'
+description: 'Collect logs, infrastructure metrics, and events from a Kubernetes cluster into Managed ClickStack'
 doc_type: 'guide'
-keywords: ['clickstack', 'kubernetes', 'k8s', 'self-managed', 'ClickHouse Observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
+keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -12,22 +11,13 @@ hide_advert: true
 
 import { Image } from "/snippets/components/Image.jsx";
 
-<Note>
-**You are on the self-managed route**
+This guide walks you through collecting logs, infrastructure metrics, and Kubernetes events from a cluster into Managed ClickStack, then viewing them in the built-in Kubernetes dashboard.
 
-You have chosen to set up ClickHouse Observability yourself, using the [self-managed experience](/clickstack/self-configured/overview). On this route you run the OpenTelemetry collector, manage ingestion into your ClickHouse Cloud service, tune the schema, and separate ingestion and query workloads with warehouses. See [OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector), [Performance tuning](/clickstack/self-configured/managing/performance-tuning), and [Isolating read and write workloads](/clickstack/self-configured/managing/isolating-read-write).
+The pattern is the standard OpenTelemetry one: two collectors deployed via the [OpenTelemetry Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), each forwarding to your ClickStack gateway collector via OTLP. A **DaemonSet** runs on every node to collect container logs and kubelet metrics. A **Deployment** with a single replica collects Kubernetes events and cluster-wide metrics. For background on the gateway role, see [Collector roles](/clickstack/ingesting-data/collector#collector-roles).
 
-Prefer a serverless experience where ClickHouse handles ingestion, schemas, and compute for you? Use the default ClickHouse Observability experience and follow [Monitoring Kubernetes with OpenTelemetry](/clickstack/managed-onboarding/monitoring-kubernetes-serverless) instead.
-</Note>
+This guide assumes you've completed [Setting up your OpenTelemetry Collector](/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) and have a ClickStack gateway collector running. 
 
-
-This guide walks you through collecting logs, infrastructure metrics, and Kubernetes events from a cluster into ClickHouse Observability, then viewing them in the built-in Kubernetes dashboard.
-
-The pattern is the standard OpenTelemetry one: two collectors deployed via the [OpenTelemetry Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), each forwarding to your ClickStack gateway collector via OTLP. A **DaemonSet** runs on every node to collect container logs and kubelet metrics. A **Deployment** with a single replica collects Kubernetes events and cluster-wide metrics. For background on the gateway role, see [Collector roles](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured).
-
-This guide assumes you've completed [Setting up your OpenTelemetry Collector](/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) and have a ClickStack gateway collector running.
-
-For a Kubernetes-resident workload, the gateway collector itself should be deployed **inside the same cluster using the upstream OpenTelemetry Helm chart with the ClickStack collector image**. Follow the Helm path in [Deploying the collector](/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) to install it. **Ensure you have recorded this OTLP endpoint**.
+For a Kubernetes-resident workload, the gateway collector itself should be deployed **inside the same cluster using the upstream OpenTelemetry Helm chart with the ClickStack collector image**. Follow the Helm path in [Deploying the collector](/clickstack/ingesting-data/collector#configuring-the-collector) to install it. **Ensure you have recorded this OTLP endpoint**.
 
 <Steps>
 <Step title="Gather your prerequisites" id="gather-prerequisites">
@@ -331,10 +321,10 @@ If nothing shows up:
 </Step>
 <Step title="Further reading" id="further-reading">
 
-- [Kubernetes integration reference](/clickstack/observability/integration-examples/kubernetes#self-managed) for the full set of receivers, processors, and tuning options.
-- [Forwarding resource tags to pods](/clickstack/observability/integration-examples/kubernetes#application-metadata) for more detail on application-side enrichment.
-- [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) with TLS on the OTLP endpoint and least-privilege ingestion users.
-- [Estimating resources](/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured) for gateway and agent deployments at your expected throughput.
-- [Going to production](/clickstack/self-configured/managing/production) for recommendations when going to production.
+- [Kubernetes integration reference](/clickstack/integration-examples/kubernetes) for the full set of receivers, processors, and tuning options.
+- [Forwarding resource tags to pods](/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) for more detail on application-side enrichment.
+- [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector) with TLS on the OTLP endpoint and least-privilege ingestion users.
+- [Estimating resources](/clickstack/ingesting-data/collector#estimating-resources) for gateway and agent deployments at your expected throughput.
+- [Going to production](/clickstack/managing/production) for recommendations when going to production.
 </Step>
 </Steps>

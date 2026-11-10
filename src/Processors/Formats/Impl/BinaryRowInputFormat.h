@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 
 
@@ -31,9 +30,9 @@ public:
     void skipTypes() override;
     void skipHeaderRow();
 
-    VectorWithMemoryTracking<String> readNames() override;
-    VectorWithMemoryTracking<String> readTypes() override;
-    VectorWithMemoryTracking<String> readHeaderRow();
+    std::vector<String> readNames() override;
+    std::vector<String> readTypes() override;
+    std::vector<String> readHeaderRow();
 
 private:
     /// Data types read from input data.

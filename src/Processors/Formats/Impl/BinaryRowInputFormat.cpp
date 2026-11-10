@@ -77,9 +77,9 @@ BinaryFormatReader<with_defaults>::BinaryFormatReader(ReadBuffer & in_, const Fo
 }
 
 template <bool with_defaults>
-VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readHeaderRow()
+std::vector<String> BinaryFormatReader<with_defaults>::readHeaderRow()
 {
-    VectorWithMemoryTracking<String> fields;
+    std::vector<String> fields;
     String field;
     for (size_t i = 0; i < read_columns; ++i)
     {
@@ -90,7 +90,7 @@ VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readHeaderRo
 }
 
 template <bool with_defaults>
-VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readNames()
+std::vector<String> BinaryFormatReader<with_defaults>::readNames()
 {
     readVarUInt(read_columns, *in);
     if (read_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
@@ -99,10 +99,10 @@ VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readNames()
 }
 
 template <bool with_defaults>
-VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readTypes()
+std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
 {
     read_data_types.reserve(read_columns);
-    VectorWithMemoryTracking<String> type_names;
+    Names type_names;
     if (format_settings.binary.decode_types_in_binary_format)
     {
         type_names.reserve(read_columns);
