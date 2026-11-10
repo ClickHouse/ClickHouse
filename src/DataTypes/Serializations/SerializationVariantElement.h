@@ -60,8 +60,7 @@ public:
         bool nullable_added_by_extraction_,
         bool selected_subcolumn_is_null_map_ = false);
 
-    /// The null-map substreams `hasSubcolumnForPath` accepts. `NullMapHidden` is deliberately excluded
-    /// there and so is not one of them.
+    /// The null-map substreams `hasSubcolumnForPath` accepts.
     static bool isNullMapSubstream(Substream::Type type);
     size_t allocatedBytes() const override;
     MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;

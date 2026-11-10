@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/subcolumnResolution.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -679,32 +680,13 @@ const NestedColumnExtractHelper::Subcolumns & NestedColumnExtractHelper::subcolu
                                .withType(root.type)
                                .withColumn(root.column);
 
-    /// Same walk `IDataType::getSubcolumnData` makes for one name, stopping at each subcolumn's path.
-    ISerialization::EnumerateStreamsSettings settings;
-    settings.position_independent_encoding = false;
-    settings.enumerate_dynamic_streams = false;
-    settings.enumerate_virtual_streams = true;
-    root_data.serialization->enumerateStreams(
-        settings,
-        [&](const auto & substream_path)
-        {
-            for (size_t i = 0; i < substream_path.size(); ++i)
-            {
-                const size_t prefix_len = i + 1;
-                if (!substream_path[i].visited && ISerialization::hasSubcolumnForPath(substream_path, prefix_len))
-                {
-                    auto name = ISerialization::getSubcolumnNameForStream(substream_path, prefix_len);
-                    auto path = substream_path;
-                    path.resize(prefix_len);
-                    /// The first spelling wins, as it does in `IDataType::getSubcolumnData`.
-                    subcolumns.path_by_name.try_emplace(name, std::move(path));
-                    if (case_insentive)
-                        subcolumns.name_by_lowercase.try_emplace(boost::to_lower_copy(name), name);
-                }
-                substream_path[i].visited = true;
-            }
-        },
-        root_data);
+    /// The same listing a `DESCRIBE` gets, so a name read here means what it means everywhere else.
+    SubcolumnResolution::forEachSubcolumn(root_data, [&](const auto & path, const auto & name)
+    {
+        if (case_insentive)
+            subcolumns.name_by_lowercase.try_emplace(boost::to_lower_copy(name), name);
+        subcolumns.path_by_name.emplace(name, path);
+    });
 
     subcolumns.complete = true;
     return subcolumns;

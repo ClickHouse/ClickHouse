@@ -315,7 +315,7 @@ String getNameForSubstreamPath(
     size_t array_level = initial_array_level;
     for (auto it = begin; it != end; ++it)
     {
-        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
+        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
             stream_name += ".size" + toString(array_level);
@@ -610,7 +610,6 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
         /// (compact parts). They hold only the serialization version or mode, have no data type, and are structural,
         /// like the other streams here.
         if (elem.type == Substream::NullMap
-            || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
@@ -757,6 +756,17 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::VariantElementNullMap
             || path[last_elem].type == Substream::QuantizedCodes
             || path[last_elem].type == Substream::ProductQuantizationCodebook;
+}
+
+bool ISerialization::isDeclaredSubstream(const SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    auto type = path[prefix_len - 1].type;
+    /// A shared typed path is declared like any other, only its data lives elsewhere.
+    return type == Substream::TupleElement || type == Substream::ObjectTypedPath
+        || type == Substream::ObjectTypedSharedDataPath;
 }
 
 bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)

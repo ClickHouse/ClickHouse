@@ -10,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/subcolumnResolution.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
@@ -26,7 +27,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_PROMOTED;
-    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -150,107 +150,9 @@ size_t IDataType::getSizeOfValueInMemory() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", getName());
 }
 
-namespace
+void IDataType::forEachSubcolumn(const SubcolumnCallback & callback, const SubstreamData & data, size_t initial_array_level)
 {
-
-/// `nested` is the result of resolving the rest of the name dynamically; its path continues ours.
-std::unique_ptr<IDataType::SubcolumnInfo> makeSubcolumnInfo(const ISerialization::SubstreamPath & path, size_t prefix_len, const IDataType::SubcolumnInfo * nested)
-{
-    auto result = std::make_unique<IDataType::SubcolumnInfo>();
-    /// The selected leaf is the end of the whole path: when the rest of the name was resolved dynamically
-    /// it lives in `nested`, while `path[prefix_len - 1]` is only the prefix the dynamic type matched.
-    const ISerialization::Substream * selected_terminal
-        = nested && !nested->substreams_path.empty() ? &nested->substreams_path.back() : nullptr;
-    result->data = ISerialization::createFromPath(path, prefix_len, selected_terminal);
-    result->substreams_path.assign(path.begin(), path.begin() + prefix_len);
-    if (nested)
-        result->substreams_path.insert(result->substreams_path.end(), nested->substreams_path.begin(), nested->substreams_path.end());
-    return result;
-}
-
-
-/// A subcolumn the type at `path[i]` resolved dynamically, completed to a subcolumn of the whole type: the creator of
-/// that element applied, specialized to the selected leaf, and the path continued from the prefix.
-std::unique_ptr<IDataType::SubcolumnInfo> wrapDynamicSubcolumn(
-    ISerialization::SubstreamPath path, size_t i, std::unique_ptr<IDataType::SubcolumnInfo> dynamic_subcolumn_info)
-{
-    if (auto creator = path[i].creator)
-    {
-        /// Offer the creator the leaf that was really selected, which lives at the end
-        /// of the dynamically resolved path, not at `prefix_len - 1` of this one.
-        if (!dynamic_subcolumn_info->substreams_path.empty())
-        {
-            if (auto specialized = creator->specializeForSelectedSubcolumn(dynamic_subcolumn_info->substreams_path.back()))
-                creator = std::move(specialized);
-        }
-
-        /// Build the serialization before the type is wrapped, so that a creator
-        /// inspecting its prev_type argument sees the type the serialization
-        /// actually serializes. Same order as in ISerialization::createFromPath.
-        dynamic_subcolumn_info->data.serialization = creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
-        dynamic_subcolumn_info->data.type = creator->create(dynamic_subcolumn_info->data.type);
-        dynamic_subcolumn_info->data.column = creator->create(dynamic_subcolumn_info->data.column);
-    }
-
-    path[i].data = dynamic_subcolumn_info->data;
-    return makeSubcolumnInfo(path, i + 1, dynamic_subcolumn_info.get());
-}
-
-}
-
-void IDataType::forEachSubcolumn(
-    const SubcolumnCallback & callback,
-    const SubstreamData & data,
-    size_t initial_array_level)
-{
-    ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
-    {
-        for (size_t i = 0; i < subpath.size(); ++i)
-        {
-            size_t prefix_len = i + 1;
-            if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
-            {
-                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, initial_array_level);
-                auto subdata = ISerialization::createFromPath(subpath, prefix_len);
-                auto path_copy = subpath;
-                path_copy.resize(prefix_len);
-                callback(path_copy, name, subdata);
-
-                /// The subcolumns this element's type declares but resolves dynamically, under its name, wrapped as a
-                /// prefix match wraps them.
-                if (const auto & element_data = subpath[i].data; element_data.type)
-                {
-                    size_t array_level = initial_array_level + ISerialization::getArrayLevel(subpath, prefix_len);
-                    element_data.type->forEachKnownDynamicSubcolumnName([&](const String & known_name)
-                    {
-                        if (auto info = element_data.type->getDynamicSubcolumnInfo(known_name, element_data, array_level, false))
-                        {
-                            auto wrapped = wrapDynamicSubcolumn(subpath, i, std::move(info));
-                            callback(wrapped->substreams_path, name + "." + known_name, wrapped->data);
-                        }
-                    }, array_level);
-                }
-            }
-            subpath[i].visited = true;
-        }
-    };
-
-    ISerialization::EnumerateStreamsSettings settings;
-    settings.position_independent_encoding = false;
-    /// Dynamic subcolumns are listed through forEachKnownDynamicSubcolumnName.
-    settings.enumerate_dynamic_streams = false;
-    settings.enumerate_virtual_streams = true;
-    data.serialization->enumerateStreams(settings, callback_with_data, data);
-
-    /// The same for the type itself.
-    if (data.type)
-    {
-        data.type->forEachKnownDynamicSubcolumnName([&](const String & known_name)
-        {
-            if (auto info = data.type->getDynamicSubcolumnInfo(known_name, data, initial_array_level, false))
-                callback(info->substreams_path, known_name, info->data);
-        }, initial_array_level);
-    }
+    SubcolumnResolution::forEachSubcolumn(data, callback, initial_array_level);
 }
 
 std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
@@ -259,65 +161,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
     size_t initial_array_level,
     bool throw_if_null)
 {
-    std::unique_ptr<IDataType::SubcolumnInfo> res;
-    /// Track whether res was set by an exact name match, so that exact matches
-    /// always take priority over prefix (dynamic subcolumn) matches.
-    /// This matters when e.g. JSON has typed paths "a" (Array(JSON)) and "a.b" (Int64):
-    /// without this, the prefix match on "a" would fire first (sorted order) and
-    /// the exact match on "a.b" would be skipped because res is already set.
-    bool res_from_exact_match = false;
-
-    ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
-    {
-        for (size_t i = 0; i < subpath.size(); ++i)
-        {
-            size_t prefix_len = i + 1;
-            if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
-            {
-                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, initial_array_level);
-                /// Create data from path only if it's requested subcolumn.
-                /// Use the first exact match to be consistent with ColumnsDescription::addSubcolumns
-                /// which also keeps the first subcolumn when there are name collisions
-                /// (e.g. "null" can match both Nullable's null-map and a Tuple element named "null").
-                /// Exact matches always take priority over prefix matches regardless of iteration order.
-                if (name == subcolumn_name && !res_from_exact_match)
-                {
-                    res = makeSubcolumnInfo(subpath, prefix_len, nullptr);
-                    res_from_exact_match = true;
-                }
-                /// Check if this subcolumn is a prefix of requested subcolumn and it can create dynamic subcolumns.
-                /// Only use prefix matches when no exact match has been found.
-                else if (!res_from_exact_match && subcolumn_name.starts_with(name + ".") && subpath[i].data.type && subpath[i].data.type->hasDynamicSubcolumnsData())
-                {
-                    auto dynamic_subcolumn_name = subcolumn_name.substr(name.size() + 1);
-                    auto dynamic_subcolumn_info = subpath[i].data.type->getDynamicSubcolumnInfo(
-                        dynamic_subcolumn_name,
-                        subpath[i].data,
-                        initial_array_level + ISerialization::getArrayLevel(subpath, prefix_len),
-                        false);
-                    if (dynamic_subcolumn_info)
-                        res = wrapDynamicSubcolumn(subpath, i, std::move(dynamic_subcolumn_info));
-                }
-            }
-            subpath[i].visited = true;
-        }
-    };
-
-    ISerialization::EnumerateStreamsSettings settings;
-    settings.position_independent_encoding = false;
-    /// Don't enumerate dynamic subcolumns, they are handled separately.
-    settings.enumerate_dynamic_streams = false;
-    settings.enumerate_virtual_streams = true;
-    settings.array_level = initial_array_level;
-    data.serialization->enumerateStreams(settings, callback_with_data, data);
-
-    if (!res && data.type->hasDynamicSubcolumnsData())
-        res = data.type->getDynamicSubcolumnInfo(subcolumn_name, data, settings.array_level, throw_if_null);
-
-    if (!res && throw_if_null)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, data.type->getName());
-
-    return res;
+    return SubcolumnResolution::findSubcolumn(subcolumn_name, data, initial_array_level, throw_if_null);
 }
 
 String IDataType::getSubcolumnNameForZeroArrayLevel(std::string_view subcolumn_name, const SubstreamPath & resolved_path)

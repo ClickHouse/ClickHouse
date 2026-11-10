@@ -2,16 +2,16 @@
 -- no-fasttest: the JSON type is not supported in the fast test build.
 
 -- "sizeN" counts Array wrappers from the root of the column, so the array sizes get a different
--- number at every nesting level. A value from shared data or from the shared variant resolves the
--- name again against its type alone, at level 0, where the number it was resolved with meant
--- another subcolumn, and insertRangeFrom aborted on the type mismatch.
+-- number at every nesting level. On a type that contains JSON none of those numbers names the sizes:
+-- the type cannot tell whether the data has a JSON path spelled that way, so the name means the path,
+-- at every level and for a value from shared data or from the shared variant as well.
 
 DROP TABLE IF EXISTS t04812_json;
 CREATE TABLE t04812_json (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t04812_json FORMAT JSONAsObject {"a" : [{"b" : [42, 43]}]}
 ;
 
-SELECT '-- each Array(JSON) cast adds a wrapper, so sizeN with N = depth - 1 is the array sizes';
+SELECT '-- each Array(JSON) cast adds a wrapper, and no sizeN of the result names the array sizes';
 SELECT toTypeName(json.a.:`Array(JSON)`), toTypeName(json.a.:`Array(JSON)`.b.:`Array(JSON)`) FROM t04812_json;
 
 SELECT '-- depth 2, at the level';
@@ -23,7 +23,7 @@ SELECT json.a.:`Array(JSON)`.b.:`Array(JSON)`.size2, json.a.:`Array(JSON)`.b.:`A
 SELECT '-- a non-reserved name is unaffected';
 SELECT json.a.:`Array(JSON)`.b.:`Array(JSON)`.zzz FROM t04812_json;
 
-SELECT '-- depth 1: resolved at level 0 already, must be untouched';
+SELECT '-- depth 1: resolved at level 0 already';
 SELECT json.a.:`Array(JSON)`.size0, json.a.:`Array(JSON)`.size1 FROM t04812_json;
 
 SELECT '-- depth 2 through an expression that also produces a constant column';
@@ -48,8 +48,8 @@ DROP TABLE t04812_json3;
 -- The arms above request Array(JSON) against a path holding Array(Int64), so the shared-variant
 -- type-name comparison never matches and their values are defaults. Here the requested type is
 -- really present in the shared variant (max_dynamic_types=1 with an Int64 majority evicts it
--- there), so the extracted sizes are non-zero and an implementation that always defaulted the
--- extraction would not reproduce them.
+-- there), so the name is looked up in a value that was actually extracted from it, which an
+-- implementation that always defaulted the extraction would not reproduce.
 DROP TABLE IF EXISTS t04812_evicted;
 CREATE TABLE t04812_evicted (jd Array(JSON(max_dynamic_types=1))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t04812_evicted FORMAT JSONEachRow {"jd":[{"a":1}]} {"jd":[{"a":2}]} {"jd":[{"a":3}]} {"jd":[{"a":[{"k":1},{"k":2}]}]}
@@ -58,7 +58,7 @@ INSERT INTO t04812_evicted FORMAT JSONEachRow {"jd":[{"a":1}]} {"jd":[{"a":2}]} 
 SELECT '-- fixture check: the requested type must sit in the shared variant';
 SELECT arrayMap(x -> isDynamicElementInSharedData(x), jd.a) FROM t04812_evicted;
 
-SELECT '-- shared variant, at the level: the extracted size is non-zero';
+SELECT '-- shared variant, at the level';
 SELECT jd.a.:`Array(JSON)`.size1 FROM t04812_evicted;
 
 SELECT '-- shared variant, above the level';
@@ -100,7 +100,7 @@ CREATE TABLE t04812_map (mp Array(Array(Map(String, JSON)))) ENGINE = MergeTree 
 INSERT INTO t04812_map FORMAT JSONEachRow {"mp":[[{"k":{"a":[{"b":[42,43]}]}}]]}
 ;
 
-SELECT '-- a Map between the array wrappers and the dynamic path: its own array counts too';
+SELECT '-- a Map between the array wrappers and the dynamic path';
 SELECT toTypeName(mp.values.values.a.:`Array(JSON)`) FROM t04812_map;
 SELECT mp.values.values.a.:`Array(JSON)`.size3 FROM t04812_map;
 

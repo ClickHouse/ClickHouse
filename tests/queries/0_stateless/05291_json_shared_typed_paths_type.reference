@@ -88,7 +88,6 @@ t.j.n.p	String						1
 t.j.n.p.size	UInt64						1
 t.s	String						1
 t.s.size	UInt64						1
-arr.size0	UInt64						1
 arr.c	Array(Array(UInt8))						1
 arr.c.size1	Array(UInt64)						1
 m.size0	UInt64						1
@@ -102,8 +101,6 @@ v.String	Nullable(String)						1
 v.String.size	Nullable(UInt64)						1
 v.JSON(SHARED a UInt64).null	UInt8						1
 v.String.null	UInt8						1
-aa.size0	UInt64						1
-aa.size1	Array(UInt64)						1
 aa.c	Array(Array(Array(UInt8)))						1
 aa.c.size2	Array(Array(UInt64))						1
 ma.size0	UInt64						1
@@ -111,8 +108,6 @@ ma.keys	Array(String)						1
 ma.keys.size	Array(UInt64)						1
 ma.values	Array(Array(JSON(SHARED a UInt64)))						1
 ma.values.a	Array(Array(UInt64))						1
-ma.values.size1	Array(UInt64)						1
-n.j.size0	UInt64						1
 n.j.a	Array(UInt64)						1
 n.k.size0	UInt64						1
 0	p0	s0	[]	[100]	200	[[]]	[[]]	[]
