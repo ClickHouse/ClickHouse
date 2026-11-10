@@ -2042,6 +2042,7 @@ public:
     void setStopIntrospectionServersCallback(StopIntrospectionServersCallback && callback);
 
     void shutdown();
+    bool isShutdownCalled() const;
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
