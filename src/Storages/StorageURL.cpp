@@ -2451,6 +2451,33 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
     hash.update(getMetadataVersionForModificationHash());
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     hash.update(uri);
+    /// How the bytes of the resource are requested and decoded. A `DETACH` / `ATTACH` keeps the UUID and
+    /// can restart the metadata version, while the configuration is loaded anew (e.g. an
+    /// `ALTER NAMED COLLECTION` that changes `format` from `CSV` to `TSV`): the `ETag` stays the same,
+    /// but the rows read from it do not.
+    hash.update(format_name.size());
+    hash.update(format_name);
+    hash.update(static_cast<UInt64>(compression_method));
+    hash.update(http_method.size());
+    hash.update(http_method);
+    hash.update(headers.size());
+    for (const auto & header : headers)
+    {
+        hash.update(header.name.size());
+        hash.update(header.name);
+        hash.update(header.value.size());
+        hash.update(header.value);
+    }
+    /// The format settings captured by the table when it is loaded, or those of the reading context
+    /// otherwise. Without the hash of the settings they were derived from, they cannot be represented.
+    if (format_settings)
+    {
+        if (!format_settings->source_settings_hash)
+            return {};
+        hash.update(*format_settings->source_settings_hash);
+    }
+    else
+        hash.update(getFormatSettingsHash(settings));
     /// A strong `ETag` identifies a representation of one resource only: different resources may share
     /// it (RFC 9110, section 8.8.1). When `uri` redirects, switching the redirect target to another
     /// resource with the same validators must still change the hash, so fold the final resource too.

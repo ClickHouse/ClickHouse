@@ -61,6 +61,11 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
+#include "config.h"
+#if USE_AWS_S3
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#endif
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -858,6 +863,40 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
     /// keeps such a round trip from reproducing an earlier hash. See `IStorage::getMetadataVersionForModificationHash`.
     hash.update(getMetadataVersionForModificationHash());
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+
+    /// How the objects are located and decoded. A `DETACH` / `ATTACH` keeps the UUID and can restart the
+    /// metadata version, while the configuration is loaded anew (e.g. an `ALTER NAMED COLLECTION`):
+    /// another format, compression or bucket with identical copies of the objects changes the rows read
+    /// while the paths and the `ETag`s below stay the same. Same as `ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey`.
+    const String data_source = configuration->getDataSourceDescription();
+    hash.update(data_source.size());
+    hash.update(data_source);
+    hash.update(configuration->format.size());
+    hash.update(configuration->format);
+    hash.update(configuration->compression_method.size());
+    hash.update(configuration->compression_method);
+    /// The format settings captured by the table when it is loaded, or those of the reading context
+    /// otherwise. Without the hash of the settings they were derived from, they cannot be represented.
+    if (format_settings)
+    {
+        if (!format_settings->source_settings_hash)
+            return {};
+        hash.update(*format_settings->source_settings_hash);
+    }
+    else
+        hash.update(getFormatSettingsHash(query_context->getSettingsRef()));
+
+#if USE_AWS_S3
+    /// A URL with `versionId` makes every read fetch that version of the object, while the metadata of
+    /// the object (and so its `ETag` below) describes the latest version. A reattachment with another
+    /// `versionId` changes the bytes read without changing anything else that is hashed here.
+    if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(object_storage.get()))
+    {
+        const String version_id = s3_object_storage->getURI().version_id;
+        hash.update(version_id.size());
+        hash.update(version_id);
+    }
+#endif
 
     for (const auto & object : objects)
     {
