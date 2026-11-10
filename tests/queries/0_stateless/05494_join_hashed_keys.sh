@@ -228,9 +228,10 @@ for step in before after
 do
     [ $step = after ] && $CLICKHOUSE_CLIENT -q "DETACH TABLE j_s_u64; ATTACH TABLE j_s_u64; DETACH TABLE j_tn; ATTACH TABLE j_tn;"
     $CLICKHOUSE_CLIENT -q "
-        SELECT 'joinGet $step', count(), sum(cityHash64(id, joinGet('j_s_u64', 'id', s, u1))) FROM l;
-        SELECT 'joinGetOrNull $step', countIf(isNull(joinGetOrNull('j_s_u64', 'id', s, u1))), sum(cityHash64(id, joinGetOrNull('j_s_u64', 'id', s, u1))) FROM l;
-        SELECT 'joinGet tn $step', count(), sum(cityHash64(id, joinGet('j_tn', 'id', tn))) FROM l;
+        -- With parallel replicas, joinGet can look the table up in the default database, not in the test database.
+        SELECT 'joinGet $step', count(), sum(cityHash64(id, joinGet('j_s_u64', 'id', s, u1))) FROM l SETTINGS enable_parallel_replicas = 0;
+        SELECT 'joinGetOrNull $step', countIf(isNull(joinGetOrNull('j_s_u64', 'id', s, u1))), sum(cityHash64(id, joinGetOrNull('j_s_u64', 'id', s, u1))) FROM l SETTINGS enable_parallel_replicas = 0;
+        SELECT 'joinGet tn $step', count(), sum(cityHash64(id, joinGet('j_tn', 'id', tn))) FROM l SETTINGS enable_parallel_replicas = 0;
         -- Parallel replicas read the Join table to send it to the replicas, and a table with hashed keys cannot be read.
         SELECT 'join with Join $step', count(), sum(cityHash64(l.id, j.id)) FROM l ANY LEFT JOIN j_s_u64 AS j USING (s, u1) SETTINGS enable_parallel_replicas = 0;
     "
