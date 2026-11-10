@@ -42,6 +42,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -62,7 +63,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ASTHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -2760,6 +2761,7 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
            "LZ4HC",
            "ZSTD",
            "ZXC",
+           "GDeflate",
            "AES_128_GCM_SIV",
            "AES_256_GCM_SIV",
            "Delta",
@@ -2791,6 +2793,9 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
     else if (chosen == "ZXC" && fuzz_rand() % 2 == 0)
         /// Optional compression level, 1 (fastest) to 7 (max density); default is 3.
         codec_fn.arguments->children.push_back(makeASTFunction("ZXC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 7 + 1))));
+    else if (chosen == "GDeflate" && fuzz_rand() % 2 == 0)
+        /// Optional compression level, 1 (fastest) to 12 (densest); default is 6.
+        codec_fn.arguments->children.push_back(makeASTFunction("GDeflate", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 12 + 1))));
     else if ((chosen == "Delta" || chosen == "DoubleDelta" || chosen == "Gorilla") && fuzz_rand() % 2 == 0)
     {
         /// Optional data byte-size argument, shared by the three delta-style codecs.
@@ -9464,6 +9469,15 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     *max_value = quota_maxes[fuzz_rand() % std::size(quota_maxes)];
                 }
             }
+            /// Fuzz the maximums of the limits defined over profile events the same way.
+            for (auto & [_, max_value] : limits.profile_events_max)
+            {
+                if (fuzz_rand() % 10 == 0)
+                {
+                    static const UInt64 quota_maxes[] = {0, 1, 1000, std::numeric_limits<UInt64>::max()};
+                    max_value = quota_maxes[fuzz_rand() % std::size(quota_maxes)];
+                }
+            }
         }
     }
     else if (auto * drop_access = typeid_cast<ASTDropAccessEntityQuery *>(ast.get()))
@@ -9526,6 +9540,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 describe->temporary = !describe->temporary;
         }
         fuzzChildrenWithAlias(*describe, describe->table_expression);
+    }
+    else if (auto * copy_query = typeid_cast<ASTCopyQuery *>(ast.get()))
+    {
+        fuzzChildrenWithAlias(*copy_query, copy_query->subquery_ast);
     }
     else if (auto * drop_function = typeid_cast<ASTDropFunctionQuery *>(ast.get()))
     {
