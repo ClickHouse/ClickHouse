@@ -139,6 +139,9 @@ public:
     /// Collection and use of the statistics should be enabled.
     void update(const Entry & new_entry, const Params & params);
 
+    /// The entry stored for `key`. Unlike `getSizeHint`, never creates the cache.
+    std::optional<Entry> findEntry(UInt64 key);
+
     std::optional<DB::HashTablesCacheStatistics> getCacheStats() const;
 
 private:

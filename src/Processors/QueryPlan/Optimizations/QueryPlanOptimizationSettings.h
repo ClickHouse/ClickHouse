@@ -11,6 +11,8 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -30,6 +32,18 @@ struct DistributedPlanLocalObject;
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
 /// count it; the builder logs the specific reason itself.
+/// What one lookup of a hash join's statistics (`HashTablesStatistics<HashJoinEntry>`) found when join reordering read
+/// them: a plan built after one of them changed may come out different.
+struct HashJoinStatisticsRead
+{
+    UInt64 key = 0;
+    /// Empty on a miss.
+    std::optional<size_t> source_rows;
+
+    bool operator==(const HashJoinStatisticsRead &) const = default;
+};
+using HashJoinStatisticsReads = std::vector<HashJoinStatisticsRead>;
+
 struct PlanWithParallelReplicas
 {
     enum class SkipReason : uint8_t
@@ -43,6 +57,8 @@ struct PlanWithParallelReplicas
 
     std::unique_ptr<QueryPlan> plan;
     SkipReason skip_reason = SkipReason::None;
+    /// What join reordering read while the plan was optimized; see `QueryPlanOptimizationSettings::hash_join_statistics_reads`.
+    HashJoinStatisticsReads hash_join_statistics_reads;
 };
 
 using QueryPlanWithParallelReplicasBuilder = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const LoggerPtr &)>;
@@ -311,6 +327,11 @@ struct QueryPlanOptimizationSettings
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
     bool automatic_parallel_replicas_remember_boundary = true;
+    UInt64 automatic_parallel_replicas_undecided_retry_after_executions = 0;
+    /// What join reordering read from `HashTablesStatistics<HashJoinEntry>` while this plan was optimized, so that
+    /// automatic parallel replicas can tell when a remembered outcome may have changed. Set only with automatic
+    /// parallel replicas on; the copies of these settings that optimize the parts of the same plan share it.
+    std::shared_ptr<HashJoinStatisticsReads> hash_join_statistics_reads;
     /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
     /// plan; see `parallelReplicasBoundarySettingsHash`.
     UInt64 parallel_replicas_boundary_settings_hash = 0;

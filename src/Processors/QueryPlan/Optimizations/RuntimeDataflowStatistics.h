@@ -10,10 +10,12 @@
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
 #include <Compression/ICompressionCodec.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <atomic>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -65,10 +67,14 @@ public:
     RuntimeDataflowStatisticsCache()
         : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
         , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
+        , undecided_cache(std::make_shared<UndecidedCache>(CurrentMetrics::end(), CurrentMetrics::end(), 64_MiB, 100'000))
     {
     }
 
     std::optional<Entry> getStats(size_t key) const;
+
+    /// The entry itself, so that a caller can tell later whether it was replaced.
+    std::shared_ptr<const Entry> getStatsEntry(size_t key) const;
 
     void update(size_t key, RuntimeDataflowStatistics stats);
 
@@ -87,11 +93,60 @@ public:
 
     void setBoundary(UInt64 root_key, Boundary boundary);
 
+    /// Why building the plan with parallel replicas for a plan ended without a decision.
+    enum class UndecidedReason : uint8_t
+    {
+        PlansNotComparable,
+        PlanWithoutParallelReplicas,
+        /// A step that was asked to collect statistics could not (`RuntimeDataflowStatisticsCacheUpdater::markUnsupportedCase`).
+        CollectorUnsupported,
+    };
+
+    /// The last build of the plan with parallel replicas for a plan ended without a decision, so that the next
+    /// executions can skip building it. It is not a verdict: nothing proves the outcome permanent, so a number of
+    /// executions skip, and the one after them builds again.
+    struct Undecided
+    {
+        UndecidedReason reason = UndecidedReason::PlansNotComparable;
+        /// The executions since, counted on the shared entry so that concurrent ones take turns: every one in
+        /// `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan, the others skip.
+        mutable std::atomic<UInt64> executions{0};
+        /// What join reordering read when both plans were built: a change in any of them may change both plans.
+        HashJoinStatisticsReads join_statistics;
+        /// For `CollectorUnsupported`: the key of the statistics the collection was for, and the statistics stored
+        /// under it when the collection started. A collection that succeeds after that replaces them, and then this
+        /// entry no longer holds, however the two finished relative to each other.
+        size_t statistics_key = 0;
+        std::shared_ptr<const Entry> statistics_at_start;
+    };
+
+    /// Under the same key as the boundary. Null for an entry that a later successful collection overrides.
+    std::shared_ptr<const Undecided> getUndecided(UInt64 root_key) const;
+
+    void setUndecided(
+        UInt64 root_key,
+        UndecidedReason reason,
+        HashJoinStatisticsReads join_statistics,
+        size_t statistics_key = 0,
+        std::shared_ptr<const Entry> statistics_at_start = nullptr);
+
+    void forgetUndecided(UInt64 root_key);
+
 private:
     using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
 
+    struct UndecidedWeight
+    {
+        size_t operator()(const Undecided & undecided) const
+        {
+            return sizeof(Undecided) + undecided.join_statistics.capacity() * sizeof(HashJoinStatisticsRead);
+        }
+    };
+    using UndecidedCache = DB::CacheBase<UInt64, Undecided, std::hash<UInt64>, UndecidedWeight>;
+
     CachePtr stats_cache;
     std::shared_ptr<BoundaryCache> boundary_cache;
+    std::shared_ptr<UndecidedCache> undecided_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
@@ -150,9 +205,15 @@ struct RuntimeDataflowStatisticsBlock
         MaxOutputType = 3,
     };
 
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_)
+    /// `undecided_key`, when not zero, is the key `RuntimeDataflowStatisticsCache::setUndecided` records under when a
+    /// step cannot collect, with `join_statistics`: what join reordering read when the plans were built.
+    RuntimeDataflowStatisticsBlock(
+        size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_key_ = 0, HashJoinStatisticsReads join_statistics_ = {})
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
+        , undecided_key(undecided_key_)
+        , join_statistics(std::move(join_statistics_))
+        , statistics_at_start(undecided_key ? getRuntimeDataflowStatisticsCache().getStatsEntry(cache_key) : nullptr)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -165,6 +226,10 @@ struct RuntimeDataflowStatisticsBlock
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
+    const UInt64 undecided_key = 0;
+    const HashJoinStatisticsReads join_statistics;
+    /// The statistics under `cache_key` when this collection started; see `RuntimeDataflowStatisticsCache::Undecided`.
+    const std::shared_ptr<const RuntimeDataflowStatistics> statistics_at_start;
 
     std::atomic_bool unsupported_case{false};
 

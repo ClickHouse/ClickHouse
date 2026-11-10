@@ -87,6 +87,8 @@ struct RuntimeHashStatisticsContext
     /// whatever was originally stamped into `cache_keys` during the pre-reorder walk.
     std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
     StatsCollectingParams params;
+    /// Where the plan keeps what its join reordering read, for automatic parallel replicas.
+    std::shared_ptr<HashJoinStatisticsReads> reads;
 
     RuntimeHashStatisticsContext(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan::Node & root_node)
         : params{
@@ -94,6 +96,7 @@ struct RuntimeHashStatisticsContext
             /*enable=*/ optimization_settings.collect_hash_table_stats_during_joins,
             optimization_settings.max_entries_for_hash_table_stats,
             optimization_settings.max_size_to_preallocate_for_joins}
+        , reads(optimization_settings.hash_join_statistics_reads)
     {
         if (optimization_settings.collect_hash_table_stats_during_joins)
         {
@@ -120,8 +123,12 @@ struct RuntimeHashStatisticsContext
         if (auto cache_key = getCachedKey(node))
         {
             auto & hash_table_stats = getHashTablesStatistics<HashJoinEntry>();
+            std::optional<size_t> source_rows;
             if (auto hint = hash_table_stats.getSizeHint(params.setKey(cache_key)))
-                return hint->source_rows;
+                source_rows = hint->source_rows;
+            if (reads)
+                reads->push_back({.key = cache_key, .source_rows = source_rows});
+            return source_rows;
         }
         return {};
     }

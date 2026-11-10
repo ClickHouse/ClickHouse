@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <tuple>
 
 
 namespace ProfileEvents
@@ -48,6 +49,48 @@ void RuntimeDataflowStatisticsCache::setBoundary(UInt64 root_key, Boundary bound
     boundary_cache->set(root_key, std::make_shared<Boundary>(boundary));
 }
 
+std::shared_ptr<const RuntimeDataflowStatisticsCache::Undecided> RuntimeDataflowStatisticsCache::getUndecided(UInt64 root_key) const
+{
+    auto undecided = undecided_cache->get(root_key);
+    if (undecided && undecided->reason == UndecidedReason::CollectorUnsupported
+        && stats_cache->get(undecided->statistics_key) != undecided->statistics_at_start)
+        return nullptr;
+    return undecided;
+}
+
+std::shared_ptr<const RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCache::getStatsEntry(size_t key) const
+{
+    return stats_cache->get(key);
+}
+
+void RuntimeDataflowStatisticsCache::setUndecided(
+    UInt64 root_key,
+    UndecidedReason reason,
+    HashJoinStatisticsReads join_statistics,
+    size_t statistics_key,
+    std::shared_ptr<const Entry> statistics_at_start)
+{
+    auto undecided = std::make_shared<Undecided>();
+    undecided->reason = reason;
+    undecided->statistics_key = statistics_key;
+    undecided->statistics_at_start = std::move(statistics_at_start);
+
+    std::ranges::sort(join_statistics, {}, [](const auto & read) { return std::tie(read.key, read.source_rows); });
+    /// The two plans often read the same key. A key read twice may have found different entries, if an execution
+    /// updated it in between; keep both.
+    const auto [first, last] = std::ranges::unique(join_statistics);
+    join_statistics.erase(first, last);
+    join_statistics.shrink_to_fit();
+    undecided->join_statistics = std::move(join_statistics);
+
+    undecided_cache->set(root_key, undecided);
+}
+
+void RuntimeDataflowStatisticsCache::forgetUndecided(UInt64 root_key)
+{
+    undecided_cache->remove(root_key);
+}
+
 void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistics stats)
 {
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
@@ -57,9 +100,18 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
 
 RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
 {
+    auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
+
     if (unsupported_case)
     {
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "Unsupported case encountered, skipping statistics update.");
+        if (undecided_key)
+            dataflow_cache.setUndecided(
+                undecided_key,
+                RuntimeDataflowStatisticsCache::UndecidedReason::CollectorUnsupported,
+                join_statistics,
+                cache_key,
+                statistics_at_start);
         return;
     }
 
@@ -121,8 +173,9 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
         return;
     }
 
-    auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
     dataflow_cache.update(cache_key, res);
+    if (undecided_key)
+        dataflow_cache.forgetUndecided(undecided_key);
 }
 
 bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization, const DataTypePtr & type)
