@@ -140,9 +140,6 @@
               {
                 "href": "https://www.librechat.ai/docs",
                 "item": "LibreChat"
-              },
-              {
-                "$ref": "./products/agentic-data-stack/navigation.json"
               }
             ],
             "tab": "Products"
