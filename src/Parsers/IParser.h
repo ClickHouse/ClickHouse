@@ -75,6 +75,8 @@ std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> 
   */
 struct Expected
 {
+    /// Descriptions of what the parser could accept at `max_parsed_pos`, the rightmost position it reached;
+    /// a syntax error lists them as "Expected one of: ...".
     InlineVector<const char *, 7> variants;
     const char * max_parsed_pos = nullptr;
 
