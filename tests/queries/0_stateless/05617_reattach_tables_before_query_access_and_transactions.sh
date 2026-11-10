@@ -40,10 +40,11 @@ $CLICKHOUSE_CLIENT -q "DROP USER $user"
 
 # A transaction keeps the tables it has modified until it is finished, so the queries inside it must not reattach tables,
 # otherwise `DETACH ... SYNC` would wait for the end of the transaction forever.
+# Parallel replicas do not support transactions.
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE mt (x UInt64) ENGINE = MergeTree ORDER BY x"
 
-$CLICKHOUSE_CLIENT --reattach_tables_before_query_execution_probability 1 --async_insert 0 --max_execution_time 60 -q "
+$CLICKHOUSE_CLIENT --reattach_tables_before_query_execution_probability 1 --async_insert 0 --enable_parallel_replicas 0 --max_execution_time 60 -q "
     BEGIN TRANSACTION;
     INSERT INTO mt VALUES (1);
     COMMIT;
@@ -53,7 +54,7 @@ $CLICKHOUSE_CLIENT --reattach_tables_before_query_execution_probability 1 --asyn
     SELECT 'transactions', groupArray(x) FROM mt;
 "
 
-$CLICKHOUSE_CLIENT --reattach_tables_before_query_execution_probability 1 --async_insert 0 --implicit_transaction 1 --max_execution_time 60 -q "
+$CLICKHOUSE_CLIENT --reattach_tables_before_query_execution_probability 1 --async_insert 0 --enable_parallel_replicas 0 --implicit_transaction 1 --max_execution_time 60 -q "
     INSERT INTO mt VALUES (3);
     SELECT 'implicit transaction', groupArray(x) FROM (SELECT x FROM mt ORDER BY x);
 "
