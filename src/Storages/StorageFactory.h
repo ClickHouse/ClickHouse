@@ -163,13 +163,6 @@ public:
         return it == storages.end() ? nullptr : &it->second.secret_arguments;
     }
 
-    /// Features of a registered engine, or nullptr for an unknown one (which fails later where it is created).
-    const StorageFeatures * tryGetStorageFeatures(const String & name) const
-    {
-        auto it = storages.find(name);
-        return it == storages.end() ? nullptr : &it->second.features;
-    }
-
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         VectorWithMemoryTracking<String> result;
@@ -191,6 +184,9 @@ public:
     std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+
+    /// Throws if storage cannot be temporary
+    void checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const;
 
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
