@@ -1009,8 +1009,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (node.name == "lambda")
         throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected lambda expression");
 
-    /// The call is committed to the function with this name. Check the grant here, before the special
-    /// branches below can handle the call themselves (`indexHint`, ...) or replace it (`IN` with `has`).
+    /// `FunctionFactory` checks the grant for the functions it creates, but user defined functions do not come
+    /// from it, and neither do the functions which the branches below build themselves (`indexHint`, ...).
     checkFunctionAccess(data.getContext(), node.name);
 
     /// Function arrayJoin.
@@ -1508,10 +1508,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     }
     else if (is_user_defined_wasm_function && node.parameters)
         throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
-
-    /// The function which is actually executed requires its own grant too: the factory may replace the requested one
-    /// (`toTime` with `toTimeWithFixedDate` under `use_legacy_to_time`).
-    checkFunctionAccess(current_context, function_builder->getName());
 
     checkFunctionHasEmptyNullsAction(node);
 

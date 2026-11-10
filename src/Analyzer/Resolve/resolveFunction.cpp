@@ -139,7 +139,7 @@ struct RegisteredFunctionArity
   */
 std::optional<RegisteredFunctionArity> tryGetRegisteredFunctionArity(const String & function_name, const ContextPtr & context)
 {
-    auto resolver = FunctionFactory::instance().tryGet(function_name, context);
+    auto resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(function_name, context);
     if (!resolver && UserDefinedExecutableFunctionFactory::has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
     {
         /// `has` first: `tryGet` instantiates `UserDefinedFunction` with empty parameters,
@@ -1476,10 +1476,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
-    /// Once no lambda in scope shadows the name, the call is committed to the function with this name,
-    /// built-in or user defined. Check the grant here, before any of the rewrites below can replace the
-    /// call (`if` with a constant condition, `IN` with an array, the early short-circuit of `and`/`or`, ...)
-    /// or rename it.
+    /// Once no lambda in scope shadows the name, it is a call of the function with this name. `FunctionFactory`
+    /// checks the grant for the functions it creates, but user defined functions do not come from it, and the
+    /// special cases below can replace a call before its function is created.
     if (!lambda_expression_untyped)
         checkFunctionAccess(scope.context, function_name);
 
@@ -2250,7 +2249,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// Check the parent first. This avoids probing UDF registries (which take
                     /// the external UDF loader mutex) on every ordinary call like `plus(a, b)`
                     /// where the first argument happens to be an identifier.
-                    auto parent_resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+                    auto parent_resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(function_name, scope.context);
 
                     if (parent_resolver && parent_resolver->isHigherOrderFunction())
                     {
@@ -2333,7 +2332,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         IsHigherOrderFunction is_higher_order_function = [&](const String & name)
         {
-            auto resolver = FunctionFactory::instance().tryGet(name, scope.context);
+            auto resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(name, scope.context);
             return resolver && resolver->isHigherOrderFunction();
         };
 
@@ -3291,12 +3290,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (function)
     {
         checkFunctionNodeHasEmptyNullsAction(function_node);
-
-        /// The function which is actually executed requires its own grant too: the special cases above may have
-        /// replaced the written one (`in` with `nullIn` under `transform_null_in`), and so may the factory
-        /// (`toTime` with `toTimeWithFixedDate` under `use_legacy_to_time`). Check it here, before the constant
-        /// folding below can execute it; `CheckFunctionAccessPass` checks again after the optimizations.
-        checkFunctionAccess(scope.context, function->getName());
     }
     else
     {

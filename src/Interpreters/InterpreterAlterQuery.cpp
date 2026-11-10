@@ -103,7 +103,7 @@ namespace ErrorCodes
 namespace
 {
 
-void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter, const ContextPtr & context)
+void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 {
     for (const auto & child : alter.command_list->children)
     {
@@ -127,7 +127,7 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter, cons
                                command->partition})
         {
             if (payload)
-                replaceLegacyToTime(*payload, context);
+                replaceLegacyToTime(*payload);
         }
     }
 }
@@ -556,7 +556,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>(), getContext());
+        normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
 
     if (settings[Setting::data_type_default_nullable] && !getContext()->isDDLOrOnClusterInternal()
         && !getContext()->getClientInfo().is_shared_catalog_internal)

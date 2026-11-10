@@ -1,6 +1,5 @@
 #include <Interpreters/replaceLegacyToTime.h>
 
-#include <Interpreters/checkFunctionAccess.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTTLElement.h>
@@ -11,15 +10,13 @@
 namespace DB
 {
 
-bool replaceLegacyToTime(IAST & ast, const ContextPtr & context)
+bool replaceLegacyToTime(IAST & ast)
 {
     bool changed = false;
 
     /// The case-insensitive match mirrors the legacy remapping in `FunctionFactory::tryGetImpl`.
     if (auto * function = ast.as<ASTFunction>(); function && Poco::toLower(function->name) == "totime")
     {
-        /// The analysis sees only `toTimeWithFixedDate`, so check the grant for the written `toTime` here.
-        checkFunctionAccess(context, function->name);
         function->name = "toTimeWithFixedDate";
         changed = true;
     }
@@ -32,7 +29,7 @@ bool replaceLegacyToTime(IAST & ast, const ContextPtr & context)
     {
         if (child.get() != select_expression_list)
         {
-            changed |= replaceLegacyToTime(*child, context);
+            changed |= replaceLegacyToTime(*child);
             continue;
         }
 
@@ -44,7 +41,7 @@ bool replaceLegacyToTime(IAST & ast, const ContextPtr & context)
             if (with_alias && with_alias->alias.empty())
                 original_name = expression->getColumnName();
 
-            if (replaceLegacyToTime(*expression, context))
+            if (replaceLegacyToTime(*expression))
             {
                 changed = true;
                 if (!original_name.empty())
@@ -57,9 +54,9 @@ bool replaceLegacyToTime(IAST & ast, const ContextPtr & context)
     if (auto * ttl_element = ast.as<ASTTTLElement>())
     {
         for (const auto & group_by_key : ttl_element->group_by_key)
-            changed |= replaceLegacyToTime(*group_by_key, context);
+            changed |= replaceLegacyToTime(*group_by_key);
         for (const auto & group_by_assignment : ttl_element->group_by_assignments)
-            changed |= replaceLegacyToTime(*group_by_assignment, context);
+            changed |= replaceLegacyToTime(*group_by_assignment);
     }
 
     return changed;

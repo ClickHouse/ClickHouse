@@ -118,9 +118,10 @@ namespace
             {
                 /// `fillData` runs under `SuppressQueryFactoriesInfoScope`, so the normal
                 /// resolution path does not register names in `query_log.used_functions`.
-                /// `tryGet` resolves aliases to the canonical function (so aliases inherit
+                /// The factory resolves aliases to the canonical function (so aliases inherit
                 /// its metadata) and honors `use_legacy_to_time`, unlike a duplicated lookup.
-                if (auto resolver = factory.tryGet(name, context))
+                /// Listing a function is not calling it, so its grant is not needed.
+                if (auto resolver = factory.tryGetWithoutAccessCheck(name, context))
                 {
                     signature = resolver->getSignatureString();
                     res_columns[14]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
