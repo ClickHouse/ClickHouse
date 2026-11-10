@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/MySQL/PacketEndpoint.h>
+#include <Core/ResultColumnOrigin.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -38,6 +39,8 @@ private:
     DataTypes data_types;
     Serializations serializations;
     bool use_binary_result_set = false;
+    /// Not owned, may be null. See `FormatSettings::mysql_wire`.
+    const ResultColumnOrigins * result_column_origins = nullptr;
 };
 
 }

@@ -25,6 +25,10 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     "test_storage_s3_queue/test_6.py",
     "test_named_collections_encrypted2/",
     "test_multiple_disks/",
+    # The YTsaurus backend container was OOM-killed under the memory pressure of a coverage
+    # shard (master, 2026-02-17). The module skips itself on ARM, so the `arm_binary` runs of a
+    # pull request skip it too, and without coverage rows the targeted amd jobs could never
+    # select it: the per-test coverage job keeps it, see `PER_TEST_COVERAGE_KEEP_PREFIXES`.
     "test_ytsaurus/",
     # Starts 20 server nodes. Under continuous-mode coverage (%c) every node
     # memory-maps its own ~178 MB profile, and the kernel's writeback of the
@@ -47,6 +51,19 @@ PER_TEST_COVERAGE_SKIP_PREFIXES = [
     # test times out.
     "test_keeper_memory_soft_limit/",
 ]
+
+# Entries of `LLVM_COVERAGE_SKIP_PREFIXES` that the per-test coverage job (`per_test_coverage`)
+# runs anyway. That job records the coverage per test module, and the targeted integration
+# jobs of a pull request select the modules covering the changed lines from these records. A
+# module that skips itself on ARM has no other run in a pull request (`Integration tests
+# (arm_binary, N/4)` skips it, the LLVM coverage family is opt-in), so without the records a
+# change to its code is tested only after the merge, by the `excluded_from_llvm` job of master.
+PER_TEST_COVERAGE_KEEP_PREFIXES = [
+    "test_ytsaurus/",
+]
+assert set(PER_TEST_COVERAGE_KEEP_PREFIXES) <= set(
+    LLVM_COVERAGE_SKIP_PREFIXES
+), "PER_TEST_COVERAGE_KEEP_PREFIXES must be a subset of LLVM_COVERAGE_SKIP_PREFIXES"
 
 TEST_CONFIGS = [
     TC("test_global_overcommit_tracker/", False, "memory overcommit test; isolated to its own ClickHouse instance"),
@@ -78,6 +95,12 @@ TEST_CONFIGS = [
     ),
     TC("test_storage_iceberg_no_spark/", False, "minio/azurite per cluster; fully isolated"),
     TC("test_storage_iceberg_with_spark_cache/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
+    TC(
+        "test_storage_paimon_with_spark/",
+        False,
+        "package-scoped Spark session; each xdist worker gets its own instance",
+        dist_each_sequential=True,
+    ),
     TC("test_storage_iceberg_concurrent/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
     TC(
         "test_storage_delta/test_azure_cluster.py",
@@ -906,7 +929,6 @@ test_cache_bypass_on_disk_failure/test.py	30560
 test_backward_compatibility/test_functions.py	30553
 test_broken_detached_part_quarantine/test.py	30524
 test_distributed_plan_worker_exchange_port/test.py	30506
-test_analyzer_compatibility/test.py	30493
 test_disabled_access_control_improvements/test_select_from_system_tables.py	30484
 test_access_cache_recompute_coalescing/test.py	30416
 test_incremental_refreshable_mv/test.py	30396

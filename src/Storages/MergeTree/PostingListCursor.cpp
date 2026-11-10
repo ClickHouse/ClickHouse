@@ -155,6 +155,10 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
         current_segment = std::get<PostingListSegmentPtr>(cell->value);
     }
 
+    /// A posting list is written with a single codec, so this creates the block codec once per cursor.
+    if (!block_codec || block_codec->type() != current_segment->codec_type)
+        block_codec = createPostingListBlockCodec(current_segment->codec_type);
+
     last_decoded_doc_id = current_segment->first_row_id;
     current_block = 0;
     decoded_count = 0;
@@ -360,39 +364,24 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     if (block_idx == segment.block_count - 1 && segment.tail_size > 0)
         count = segment.tail_size;
 
-    /// Read from payload buffer at the relative offset.
-    size_t payload_offset = static_cast<size_t>(segment.block_offsets[block_idx]);
-
-    if (payload_offset >= segment.payload_buffer.size())
-    {
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupted data: block offset {} is out of payload bounds {}",
-            payload_offset, segment.payload_buffer.size());
-    }
-
+    /// `buildPostingSegment` checked that the block offsets are inside the payload and strictly increasing,
+    /// so every block has a non-empty span.
+    const size_t payload_offset = static_cast<size_t>(segment.block_offsets[block_idx]);
     const size_t next_offset = (block_idx + 1 < segment.block_count)
         ? static_cast<size_t>(segment.block_offsets[block_idx + 1])
         : segment.payload_buffer.size();
-
-    const size_t block_size = next_offset - payload_offset;
+    chassert(payload_offset < next_offset && next_offset <= segment.payload_buffer.size());
 
     std::span<const std::byte> block_data(
         reinterpret_cast<const std::byte *>(segment.payload_buffer.data() + payload_offset),
-        block_size);
-
-    if (block_data.empty())
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: empty block at index {}", block_idx);
+        next_offset - payload_offset);
 
     std::span<uint32_t> out_span(decoded_values, count);
-
-    /// Lazily create the per-block payload codec for this segment's codec type and reuse it across blocks.
-    /// A posting list is written with a single codec, so this is effectively created once per cursor.
-    if (!block_codec || block_codec->type() != segment.codec_type)
-        block_codec = createPostingListBlockCodec(segment.codec_type);
+    chassert(block_codec && block_codec->type() == segment.codec_type);
 
     /// The block span comes from the Index Section offsets and must be consumed in full.
     const size_t expected_bytes = block_data.size();
-    const size_t consumed_bytes = block_codec->decodeBlock(block_data, count, out_span);
+    const size_t consumed_bytes = block_codec->decodeBlock(block_data, count, out_span, last_decoded_doc_id);
 
     if (consumed_bytes != expected_bytes)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
@@ -400,8 +389,6 @@ void PostingListCursor::decodeBlock(size_t block_idx)
             "Index Section span is {} bytes",
             block_idx, consumed_bytes, expected_bytes);
 
-    /// Restore absolute row ids from deltas directly in decoded_values.
-    std::inclusive_scan(decoded_values, decoded_values + count, decoded_values, std::plus<uint32_t>{}, last_decoded_doc_id);
     last_decoded_doc_id = count > 0 ? decoded_values[count - 1] : last_decoded_doc_id;
 
     /// The decoded block must end at the row id the Index Section claims for it: `advance` and the skip
@@ -728,6 +715,15 @@ PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_o
             if (block_idx != current_block || decoded_count == 0)
                 decodeBlock(block_idx);
 
+            /// A whole block in the window needs no search for its range.
+            if (index == 0 && block_first >= row_offset && block_clip_end == static_cast<size_t>(block_last) + 1)
+            {
+                padColumn<op>(data, decoded_values_ptr, row_offset, 0, decoded_count);
+                index = decoded_count;
+                window.extend(decoded_values_ptr[0], static_cast<size_t>(block_last) + 1);
+                continue;
+            }
+
             const PostingsApplyWindow written = linearDecoded<op>(data, row_offset, num_rows);
 
             /// No doc_ids of this block fall into the window. The block has a doc_id >= row_offset (`block_last`),
@@ -795,80 +791,15 @@ PostingsApplyWindow PostingListCursor::linearDecoded(UInt8 * data, size_t row_of
 namespace
 {
 
-/// Leapfrog intersection led by the sparsest cursor (`cursors` are sorted by ascending cardinality).
-/// The other cursors are advanced to the lead's doc_id in order, and the first one that overshoots moves the lead
-/// to its doc_id. So a denser cursor only advances to the doc_ids that all the sparser cursors contain.
-/// `num_cursors` is the number of cursors when it is fixed at compile time, which unrolls the loops over them, or 0.
-template <size_t num_cursors>
-bool intersectLeapfrogImpl(UInt8 * out, const std::vector<PostingListCursor *> & cursor_ptrs, size_t row_offset, size_t effective_end)
-{
-    static_assert(num_cursors <= 8);
-    const size_t n = num_cursors ? num_cursors : cursor_ptrs.size();
-    chassert(cursor_ptrs.size() == n);
-
-    /// Plain pointers in a local array: the compiler can keep them in registers across the calls to the cursors.
-    using CursorsType = std::conditional_t<num_cursors != 0,
-        std::array<PostingListCursor *, num_cursors>,
-        std::vector<PostingListCursor *>>;
-
-    CursorsType cursors{};
-    if constexpr (num_cursors == 0)
-        cursors = cursor_ptrs;
-    else
-        std::copy_n(cursor_ptrs.begin(), num_cursors, cursors.begin());
-
-    PostingListCursor & lead = *cursors[0];
-    bool found = false;
-
-    while (lead.valid() && lead.value() < effective_end)
-    {
-        const uint32_t doc = lead.value();
-        size_t i = 1;
-
-        for (; i < n; ++i)
-        {
-            PostingListCursor & cursor = *cursors[i];
-
-            if (cursor.valid() && cursor.value() < doc)
-                cursor.advance(doc);
-
-            if (!cursor.valid())
-                return found;
-
-            if (cursor.value() > doc)
-                break;
-        }
-
-        if (i == n)
-        {
-            out[doc - row_offset] = 1;
-            found = true;
-
-            for (size_t j = 0; j < n; ++j)
-                cursors[j]->next();
-        }
-        else
-        {
-            lead.advance(cursors[i]->value());
-        }
-    }
-
-    return found;
-}
-
 bool intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
-    switch (cursors.size())
+    bool found = false;
+    leapfrogIntersect(cursors, effective_end, [&](uint32_t doc)
     {
-        case 2: return intersectLeapfrogImpl<2>(out, cursors, row_offset, effective_end);
-        case 3: return intersectLeapfrogImpl<3>(out, cursors, row_offset, effective_end);
-        case 4: return intersectLeapfrogImpl<4>(out, cursors, row_offset, effective_end);
-        case 5: return intersectLeapfrogImpl<5>(out, cursors, row_offset, effective_end);
-        case 6: return intersectLeapfrogImpl<6>(out, cursors, row_offset, effective_end);
-        case 7: return intersectLeapfrogImpl<7>(out, cursors, row_offset, effective_end);
-        case 8: return intersectLeapfrogImpl<8>(out, cursors, row_offset, effective_end);
-        default: return intersectLeapfrogImpl<0>(out, cursors, row_offset, effective_end);
-    }
+        out[doc - row_offset] = 1;
+        found = true;
+    });
+    return found;
 }
 
 /// Brute-force intersection via bitmap counting. The cursors are sorted by ascending cardinality.

@@ -93,12 +93,19 @@ GCPOAuthToken postTokenRequest(
 
     GCPOAuthToken result;
     result.access_token = object->getValue<String>("access_token");
+    checkGCPOAuthAccessToken(result.access_token);
     if (object->has("expires_in"))
         result.expires_in = object->getValue<Int64>("expires_in");
 
     return result;
 }
 
+}
+
+void checkGCPOAuthAccessToken(const std::string & access_token)
+{
+    if (access_token.find_first_of("\r\n") != std::string::npos)
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "GCP access token contains CR or LF");
 }
 
 GCPOAuthToken fetchGCPOAuthToken(

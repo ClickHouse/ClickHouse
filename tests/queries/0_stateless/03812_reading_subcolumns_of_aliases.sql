@@ -1,4 +1,3 @@
-set enable_analyzer=1;
 set optimize_functions_to_subcolumns=1;
 
 drop table if exists test;
