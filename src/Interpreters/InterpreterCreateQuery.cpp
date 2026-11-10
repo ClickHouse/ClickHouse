@@ -218,6 +218,14 @@ namespace fs = std::filesystem;
 namespace
 {
 
+[[noreturn]] void throwExplicitStatisticsNotSupported(const String & column_name)
+{
+    throw Exception(ErrorCodes::INCORRECT_QUERY,
+        "Explicit declaration of statistics for column {} is not supported. "
+        "Statistics are collected automatically for all columns according to the `auto_statistics_types` MergeTree setting",
+        backQuoteIfNeed(column_name));
+}
+
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
 /// hidden inner tables (`MaterializedView`, `TimeSeries`) issue nested internal `CREATE`s from
 /// their constructors, before the outer object itself is attached. The whole group must be
@@ -906,11 +914,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         /// Statistics can no longer be declared per column: they are collected for all columns according
         /// to the `auto_statistics_types` MergeTree setting. A declaration in the metadata of an existing
         /// table or in a backup is ignored, so that such tables can still be loaded and restored.
-        if (col_decl.getStatisticsDesc() && !skip_checks && !is_restore_from_backup)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Explicit declaration of statistics for column {} is not supported. "
-                "Statistics are collected automatically for all columns according to the `auto_statistics_types` MergeTree setting",
-                backQuoteIfNeed(column.name));
+        /// A declaration in a query executed by a DDL worker (`ON CLUSTER`) is ignored as well: a fresh query
+        /// is rejected on the initiator before it is routed (see `execute`), so it can only come from
+        /// an entry accepted by an older version of the initiator.
+        if (col_decl.getStatisticsDesc() && !skip_checks && !is_restore_from_backup && !already_normalized_on_initiator)
+            throwExplicitStatisticsNotSupported(column.name);
 
         if (auto ttl = col_decl.getTTL())
             column.ttl = ttl;
@@ -4066,6 +4074,18 @@ BlockIO InterpreterCreateQuery::execute()
     bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
+        /// Reject an explicit declaration of statistics before routing, because the DDL workers ignore it
+        /// to stay able to replay entries accepted by older versions. An `ATTACH` is allowed to carry it,
+        /// as it is for a local query.
+        if (!create.attach && !is_restore_from_backup && create.columns_list && create.columns_list->columns)
+        {
+            for (const auto & child : create.columns_list->columns->children)
+            {
+                if (const auto * col_decl = child->as<ASTColumnDeclaration>(); col_decl && col_decl->getStatisticsDesc())
+                    throwExplicitStatisticsNotSupported(col_decl->name);
+            }
+        }
+
         if (create.attach_as_replicated.has_value())
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
