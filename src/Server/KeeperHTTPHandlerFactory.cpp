@@ -335,20 +335,6 @@ KeeperHTTPCommandsHandler::KeeperHTTPCommandsHandler(
 {
 }
 
-static bool validateAndAssignCwd(KeeperClientBase & client, const String & cwd_param, HTTPServerResponse & response)
-{
-    const String normalized = cwd_param.empty() ? "/" : cwd_param;
-    if (!normalized.starts_with('/'))
-    {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid cwd");
-        *response.send() << "Invalid cwd: must be an absolute path starting with '/'.\n";
-        return false;
-    }
-
-    client.cwd = fs::path(normalized);
-    return true;
-}
-
 void KeeperHTTPCommandsHandler::handleRequest(
     HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 try
@@ -389,25 +375,30 @@ try
     if (has_complete)
     {
         setResponseDefaultHeaders(response);
-
-        std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        KeeperClientBase client(stream, stream);
-        client.zookeeper = keeper_client->get();
-        client.ask_confirmation = false;
-
-        if (!validateAndAssignCwd(client, cwd, response))
-            return;
-
         response.setContentType("application/json");
 
-        const auto completion = client.completeQueryPrefix(complete_prefix);
-
         Poco::JSON::Object response_json;
-        Poco::JSON::Array completions_array;
-        for (const auto & entry : completion.completions)
-            completions_array.add(entry);
-        response_json.set("completions", completions_array);
-        response_json.set("replace_start", static_cast<UInt64>(completion.replace_start));
+        if (!cwd.empty() && !cwd.starts_with('/'))
+        {
+            response_json.set("message", "Invalid cwd: must be an absolute path starting with '/'.");
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid cwd");
+        }
+        else
+        {
+            std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            KeeperClientBase client(stream, stream);
+            client.zookeeper = keeper_client->get();
+            client.cwd = client.getAbsolutePath(cwd);
+            client.ask_confirmation = false;
+
+            const auto completion = client.completeQueryPrefix(complete_prefix);
+
+            Poco::JSON::Array completions_array;
+            for (const auto & entry : completion.completions)
+                completions_array.add(entry);
+            response_json.set("completions", completions_array);
+            response_json.set("replace_start", static_cast<UInt64>(completion.replace_start));
+        }
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
@@ -447,15 +438,18 @@ try
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
+    else if (!cwd.empty() && !cwd.starts_with('/'))
+    {
+        response_json.set("message", "Invalid cwd: must be an absolute path starting with '/'.");
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid cwd");
+    }
     else
     {
         std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         KeeperClientBase client(stream, stream);
         client.zookeeper = keeper_client->get();
+        client.cwd = client.getAbsolutePath(cwd);
         client.ask_confirmation = false;  // Confirmations are not supported in UI
-
-        if (!validateAndAssignCwd(client, cwd, response))
-            return;
 
         const auto cwd_before = client.cwd;
         client.processQueryText(command);

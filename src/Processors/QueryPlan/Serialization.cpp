@@ -81,9 +81,23 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
     return Block(std::move(columns));
 }
 
+namespace
+{
+
+void checkSupportedVersion(UInt64 version)
+{
+    if (version < DBMS_MIN_SUPPORTED_QUERY_PLAN_SERIALIZATION_VERSION)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Query plan serialization version {} is not supported. The oldest supported version is {}",
+            version, DBMS_MIN_SUPPORTED_QUERY_PLAN_SERIALIZATION_VERSION);
+}
+
+}
+
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 {
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    checkSupportedVersion(version);
 
     if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS && (max_threads || concurrency_control))
         throw Exception(
@@ -102,6 +116,7 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const
 {
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    checkSupportedVersion(version);
 
     if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS && (max_threads || concurrency_control))
         throw Exception(
@@ -188,7 +203,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         QueryPlanSerializationSettings settings;
         node->step->serializeSettings(settings, flags.version);
 
-        settings.writeChangedBinary(out);
+        settings.write(out);
 
         IQueryPlanStep::Serialization ctx{out, registry};
         ctx.version = flags.version;
@@ -232,6 +247,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Query plan serialization version {} is not supported. The last supported version is {}",
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    checkSupportedVersion(version);
 
     SerializationFlags flags{.version = version, .skip_data = skip_data};
     return deserialize(in, context, flags, max_type_complexity);
@@ -302,7 +318,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
 
         QueryPlanSerializationSettings settings;
-        settings.readBinary(in);
+        settings.read(in);
 
         SharedHeaders input_headers;
         input_headers.reserve(frame.children.size());

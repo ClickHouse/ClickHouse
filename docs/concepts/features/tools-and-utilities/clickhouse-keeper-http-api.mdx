@@ -84,7 +84,7 @@ Success response (HTTP 200):
 Query parameters:
 - `complete` - When present, tab-completes the CLI line prefix given as the parameter value (text up to the cursor), using the same logic as `clickhouse-keeper-client`. Returns completion candidates and a `replace_start` UTF-8 byte offset into the `complete` value. An empty value lists all registered command names. No command is executed.
 - `command` - The command to execute (required unless `complete` is set)
-- `cwd` - Current working directory for path-based commands and completion (default: `/`)
+- `cwd` - Current working directory for path-based commands and completion; must be an absolute path (default: `/`)
 
 #### Complete command line {#complete-command-line}
 
