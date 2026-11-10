@@ -1,0 +1,11 @@
+--- a materialized CTE qualifies its columns
+2
+2
+--- the columns of a subquery source
+Code: 43
+other
+1
+--- CREATE AS SELECT in a Replicated database
+5
+--- ALTER ON CLUSTER with a subcolumn on the right side of IN
+1
