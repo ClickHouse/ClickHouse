@@ -24,8 +24,10 @@ SeaweedFS is an open-source distributed file and object store with an S3-compati
 - **Server-side maintenance** - automatic Parquet compaction and snapshot expiration, with no external maintenance service
 
 <Note>
-As this feature is experimental, you will need to enable it using:
-`SET allow_experimental_database_iceberg = 1;`
+This feature is in beta. Enable it with:
+`SET allow_database_iceberg = 1;`
+
+On versions before 25.8, where the feature is experimental, use `SET allow_experimental_database_iceberg = 1;` instead.
 </Note>
 
 ## Local development setup {#local-development-setup}
@@ -146,7 +148,7 @@ docker exec -it seaweedfs-clickhouse clickhouse-client
 Then create the database connection to the SeaweedFS catalog:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 
 CREATE DATABASE lake
 ENGINE = DataLakeCatalog('http://seaweedfs:8181/v1', 'tutorialkey', 'tutorialsecret')
@@ -203,7 +205,7 @@ ORDER BY total DESC;
 You can also create tables in the SeaweedFS catalog and write to them directly from ClickHouse:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 SET allow_experimental_insert_into_iceberg = 1;
 SET write_full_path_in_iceberg_metadata = 1;
 
