@@ -5,7 +5,6 @@
 -- window of one sweep has to cover the same build rows: a build row skipped by all but the last window
 -- is silently missing from the result.
 
-SET enable_analyzer = 1;
 -- No algorithm is enabled, so every kind below is answered by the operator, `INNER` included.
 SET join_algorithm = '';
 -- One probe chunk of the whole table, so that `max_block_size` below decides the number of windows.

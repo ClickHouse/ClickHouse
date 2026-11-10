@@ -1,0 +1,6 @@
+A limit at the group count leaves the result exact
+500250	1000000
+The frozen tables went to disk and the merge went external
+1	1
+A limit below the staged group count aborts the external merge
+TOO_MANY_ROWS
