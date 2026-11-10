@@ -1,0 +1,22 @@
+caller rows
+insert	0	0	1	0
+insert_into_view	0	0	0	0
+read_definer	0	0	0	0
+read_legacy	0	0	1	0
+read_target	0	1	0	0
+child rows
+insert	SELECT id, v FROM dst_definer	definer	0	1	0	1
+insert	SELECT id, v FROM lookup WHERE id >= 0	definer	1	0	0	1
+insert	SELECT s.id AS id, l.v AS v FROM src AS s LEFT JOIN v_lookup AS l ON s.id = l.id	definer	0	1	1	1
+insert_into_view	INSERT INTO dst_definer VALUES	definer	0	1	1	1
+insert_into_view	SELECT id, v FROM dst_definer	definer	0	1	0	1
+read_definer	SELECT id FROM dst_definer	definer	0	1	0	1
+user_query_log
+insert
+insert_into_view
+read_definer
+read_legacy
+read_target
+mv read child rows
+read_definer	SELECT id FROM dst_definer	dst_definer	dst_definer.id	dst_definer.all	db
+read_memory	SELECT id FROM dst_chain	dst_chain	dst_chain.id		db

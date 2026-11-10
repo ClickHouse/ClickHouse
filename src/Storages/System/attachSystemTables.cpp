@@ -4058,9 +4058,13 @@ SELECT code_point, code_point_value, notation FROM system.unicode WHERE code_poi
         attach<StorageSystemUserQueryLog>(context, system_database, "user_query_log",
             R"DOCS_MD(
 .description
-Shows the current user their own query log records. It reads the query log table configured by the `query_log.database` and `query_log.table` server settings (`system.query_log` by default) and returns only the rows whose initiating user is equal to `currentUser()` (the initiating user is taken from `initial_user` when it is set, otherwise from `user`).
+Shows the current user their own query log records. It reads the query log table configured by the `query_log.database` and `query_log.table` server settings (`system.query_log` by default) and returns only the rows whose initiating user is equal to `currentUser()` (the initiating user is taken from `initial_user` when it is set, otherwise from `user`). An authenticated current user must be non-empty and match the reported initial user. The unauthenticated `clickhouse-local` client is the exception: it can read rows with an empty initiating user only when both user identities are empty and the query uses the `LOCAL` interface. In other cases, the table returns no rows.
 
 Unlike the query log table itself, `system.user_query_log` can be read without any grants, so users can inspect their own queries without being given access to the queries of others.
+
+Only top-level rows (`is_initial_query = 1`) are returned. Child rows, such as the queries a distributed query sends to other servers and what runs under the identity of `SQL SECURITY DEFINER` and `NONE` views, are omitted.
+
+A row policy that exposes `system.query_log` by `initial_user` also exposes those child rows, so add `is_initial_query = 1` to it or use `system.user_query_log`.
 
 This is only supported when the query log is stored locally. If `query_log.engine` is configured as `Distributed` or any other engine that delegates reads to another server, `system.user_query_log` refuses to read from it and throws an exception, because the required access check cannot be enforced across a ClickHouse-protocol server boundary. In that case, disable the table with `query_log.enable_user_query_log = 0`.
 

@@ -126,7 +126,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 
@@ -6862,16 +6861,9 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     if (view->isSealed(*storage_snapshot->metadata, scope.context))
         return;
 
-    /// A query that ships an inlined body to parallel replicas would have it run as another user. Only plan-based
-    /// parallel replicas ship the resolved plan; the offset and custom key modes ship the query text, as task-based ones do otherwise.
+    /// An inlined `DEFINER` / `NONE` body could be shipped to parallel replicas, and its own query context would have no owner.
     const auto & view_metadata = *storage_snapshot->metadata;
-    auto can_ship = [](const ContextPtr & c)
-    {
-        return (c->canUseParallelReplicasOnInitiator() && !c->getSettingsRef()[Setting::parallel_replicas_plan_based])
-            || c->canUseParallelReplicasCustomKey() || c->canUseOffsetParallelReplicas();
-    };
-    if ((view_metadata.sql_security_type == SQLSecurityType::DEFINER || view_metadata.sql_security_type == SQLSecurityType::NONE)
-        && (can_ship(scope.context) || (scope.context->hasQueryContext() && can_ship(scope.context->getQueryContext()))))
+    if (view_metadata.sql_security_type == SQLSecurityType::DEFINER || view_metadata.sql_security_type == SQLSecurityType::NONE)
         return;
 
     auto storage_id = storage->getStorageID();

@@ -571,6 +571,22 @@ void StorageMaterializedView::readImpl(
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;
+
+    /// `context` has a query context of its own only for a `DEFINER` / `NONE` view.
+    if (local_context->hasQueryContext() && context->hasQueryContext()
+        && context->getQueryContext() != local_context->getQueryContext())
+    {
+        auto read_query = make_intrusive<ASTSelectQuery>();
+        auto select_list = make_intrusive<ASTExpressionList>();
+        for (const auto & name : column_names)
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        read_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+        read_query->replaceDatabaseAndTable(storage_id);
+        local_context->getQueryContext()->addSQLSecurityOverriddenBody(getStorageID(), context, read_query);
+        /// `storage->read` below bypasses the planner, which records what a read accesses.
+        context->getQueryContext()->addQueryAccessInfo(storage_id, column_names);
+    }
+
     storage->read(query_plan, column_names, target_storage_snapshot, src_table_query_info, context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())

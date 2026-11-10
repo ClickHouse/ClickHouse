@@ -4,6 +4,7 @@
 
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Processors/ForkProcessor.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
@@ -1339,9 +1340,16 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
 {
     const auto & current = path.current();
 
+    const auto & metadata = metadata_snapshots.at(current);
     auto parent_select_context = select_contexts.at(path.parent(2));
-    auto select_context = metadata_snapshots.at(current)->getSQLSecurityOverriddenContext(parent_select_context);
-    select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
+    auto select_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
+    if (metadata->sql_security_type == SQLSecurityType::DEFINER || metadata->sql_security_type == SQLSecurityType::NONE)
+    {
+        if (parent_select_context->hasQueryContext())
+            parent_select_context->getQueryContext()->addSQLSecurityOverriddenBody(current, select_context, metadata->getSelectQuery().inner_query);
+    }
+    else
+        select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)
     select_context->setSetting("parallelize_output_from_storages", Field{false});
@@ -1529,6 +1537,15 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
         const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
 
+        if ((metadata->sql_security_type == SQLSecurityType::DEFINER || metadata->sql_security_type == SQLSecurityType::NONE)
+            && init_context->hasQueryContext())
+        {
+            auto insert_query = make_intrusive<ASTInsertQuery>();
+            insert_query->table_id = inner_table_;
+            init_context->getQueryContext()->addSQLSecurityOverriddenBody(root_view_, select_context, insert_query);
+            init_context->getQueryContext()->addSQLSecurityOverriddenBody(root_view_, insert_context, insert_query);
+        }
+
         root_view = root_view_;
         inner_tables[root_view] = inner_table_;
         select_queries[root_view] = init_query;
@@ -1567,8 +1584,8 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         dependent_views[current] = {};
 
-        if (init_context->hasQueryContext())
-            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
+        if (const auto & source_writer_context = insert_contexts.at(path.parent(2)); source_writer_context->hasQueryContext())
+            source_writer_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
 
         return true;
     }
@@ -1578,8 +1595,9 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         /// at the first iteration it is the init_table_id most likely
         /// the following iterations will be for inner tables of materialized views
 
-        if (init_context->hasQueryContext())
-            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
+        const auto & writer_context = current == init_table_id ? init_context : insert_contexts.at(parent);
+        if (writer_context->hasQueryContext())
+            writer_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
 
         if (current == init_table_id)
         {

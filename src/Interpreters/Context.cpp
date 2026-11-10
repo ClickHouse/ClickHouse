@@ -3397,6 +3397,29 @@ void Context::addViewAccessInfo(const String & view_name)
     query_access_info->views.emplace(view_name);
 }
 
+void Context::addSQLSecurityOverriddenBody(const StorageID & view_id, const ContextPtr & body_context, const ASTPtr & body_query)
+{
+    const auto hash = body_query->getTreeHash(/*ignore_aliases=*/ false);
+    const std::pair<UInt64, UInt64> query_hash{hash.low64, hash.high64};
+    auto user = body_context->getUserName();
+    auto current_database = body_context->getCurrentDatabase();
+    auto body_query_context = body_context->getQueryContext();
+
+    std::lock_guard lock(query_access_info->mutex);
+    auto & bodies = query_access_info->sql_security_overridden_bodies;
+    for (const auto & body : bodies)
+    {
+        if (body->query_hash == query_hash && body->user == user && StorageID::DatabaseAndTableNameEqual{}(body->view, view_id))
+        {
+            body_query_context->setQueryAccessInfo(body->access_info);
+            return;
+        }
+    }
+    bodies.push_back(std::make_shared<const SQLSecurityOverriddenBody>(SQLSecurityOverriddenBody{
+        .view = view_id, .query_hash = query_hash, .user = std::move(user), .current_database = std::move(current_database),
+        .query = body_query, .access_info = body_query_context->getQueryAccessInfoPtr()}));
+}
+
 void Context::addUsedRowPolicy(const String & policy_name)
 {
     if (isGlobalContext())

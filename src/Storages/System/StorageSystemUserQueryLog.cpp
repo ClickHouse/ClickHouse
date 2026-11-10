@@ -278,14 +278,27 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
         select_columns += backQuoteIfNeed(name);
     }
 
-    /// For queries received from an initiator (e.g. from a distributed query), the initiating user is
-    /// recorded in `initial_user`, while `user` may be the interserver connection user. `currentUser()`
-    /// is `ClientInfo::initial_user` as well, so both sides of the comparison use the initiating user.
+    /// `initial_user` is forwarded in ClientInfo and can be supplied by a SECONDARY_QUERY peer, so it is trusted only when
+    /// it equals the authenticated current user (EXECUTE AS updates both). In a forwarded row `user` may be the interserver user.
+    /// Child rows, e.g. of a `SQL SECURITY DEFINER` view body, carry the caller's `initial_user`: only top-level rows are visible.
+    const auto & client_info = outer_context->getClientInfo();
+    /// clickhouse-local can run without an authenticated session, with both user names empty. That identity is accepted only
+    /// in the LOCAL application on the LOCAL interface. A SECONDARY_QUERY can supply the interface, but its `current_user` is set.
+    const bool has_local_empty_user_identity =
+        outer_context->getApplicationType() == Context::ApplicationType::LOCAL
+        && client_info.interface == ClientInfo::Interface::LOCAL
+        && client_info.current_user.empty()
+        && client_info.initial_user.empty();
+    const bool has_consistent_user_identity =
+        has_local_empty_user_identity
+        || (!client_info.current_user.empty() && client_info.current_user == client_info.initial_user);
+
     String select_query = fmt::format(
-        "SELECT {} FROM {} WHERE (if(initial_user != '', initial_user, user) = {})",
+        "SELECT {} FROM {} WHERE {} AND (if(initial_user != '', initial_user, user) = {}) AND is_initial_query = 1",
         select_columns,
         log_table_id.getFullTableName(),
-        quoteString(outer_context->getClientInfo().initial_user));
+        has_consistent_user_identity ? "1" : "0",
+        quoteString(client_info.initial_user));
 
     if (String pushed_conditions = buildPushedDownConditions(); !pushed_conditions.empty())
         select_query += fmt::format(" AND ({})", pushed_conditions);
