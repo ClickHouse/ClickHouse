@@ -68,9 +68,7 @@ workflow = Workflow.Config(
     enable_cidb=True,
     enable_merge_ready_status=True,
     enable_commit_status_on_failure=True,
-    # Config-time skip for the stateless flaky check on PRs that change no
-    # stateless tests, so non-test PRs do not schedule the runner and restore
-    # the binary only for the job to self-skip inside `functional_tests.py`.
+    enable_job_filtering_by_changes=True,
     workflow_filter_hooks=[should_skip_merge_queue_job],
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
