@@ -900,10 +900,11 @@ def configure_performance_shards():
 
     info = Info()
     config = RunConfig.from_fs(info.workflow_name)
-    total = pr_shards(info)
     # ci-force-all bypasses workflow_filter_hooks, so mutually exclusive job
     # families must be filtered in this pre-hook, before claiming any runners.
     for job in JobConfigs.performance_comparison_pr_jobs:
+        build_type = job.parameter.split(",", 1)[0].strip()
+        total = pr_shards(info, build_type)
         count = int(job.parameter.rsplit("/", 1)[1])
         if count != total:
             config.set_job_as_filtered(job.name, "Other performance shard family selected")

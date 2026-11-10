@@ -23,9 +23,11 @@ have no coverage, including shell tests, are included too. Every query in every
 selected XML runs, with the usual adaptive timing repetitions. These runs use six
 shards per enabled architecture.
 
-The `pr-performance` or `ci-force-all` label selects the full test suite on eight
-shards. These full runs retain the existing query sampling settings. Master,
-release, nightly and special Iceberg comparisons keep their existing behavior.
+The `pr-performance` label runs the full test suite on eight ARM shards; AMD
+still uses coverage selection on six shards. The `ci-force-all` label runs the
+full suite on eight shards per architecture. Full runs retain the existing query
+sampling settings. Master, release, nightly and special Iceberg comparisons keep
+their existing behavior.
 
 Each job attaches `performance_selection.json` with its tests, selection reasons,
 coverage identities, source mapping gaps and query policy. Missing or incomplete

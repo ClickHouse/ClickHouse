@@ -2016,8 +2016,8 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
     )
-    # Exactly one family is enabled by the PR configuration pre-hook: six selected-test shards,
-    # or eight full-suite shards when explicitly requested by a label.
+    # One family per architecture: six selected-test shards, or eight full-suite shards.
+    # pr-performance requests the full suite on ARM; ci-force-all does so on both architectures.
     performance_comparison_pr_jobs = performance_comparison_with_master_head_job.parametrize(
         *[
             Job.ParamSet(

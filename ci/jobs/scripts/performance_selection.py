@@ -40,17 +40,18 @@ QUERY_ID = r"^(.+)\.query([0-9]+)\.([0-9a-f]+)\.(first|warm)$"
 HEADER_SUFFIXES = (".h", ".hpp", ".hh", ".hxx", ".inc")
 
 
-def full_suite_reason(info):
+def full_suite_reason(info, build_type):
     if info.pr_number <= 0:
         return "Not a pull request"
-    for label in ("pr-performance", "ci-force-all"):
-        if label in info.pr_labels:
-            return f"Requested by {label}"
+    if "ci-force-all" in info.pr_labels:
+        return "Requested by ci-force-all"
+    if build_type == "arm_release" and "pr-performance" in info.pr_labels:
+        return "Requested by pr-performance"
     return ""
 
 
-def pr_shards(info):
-    return 8 if full_suite_reason(info) else 6
+def pr_shards(info, build_type):
+    return 8 if full_suite_reason(info, build_type) else 6
 
 
 def performance_config(base):

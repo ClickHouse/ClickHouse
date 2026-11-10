@@ -3029,9 +3029,9 @@ def main():
         from ci.praktika.cidb import CIDBTimeoutError
 
         assert total_batches == pr_shards(
-            info
+            info, test_options[0]
         ), "Performance shard count differs from the selected run mode"
-        reason = full_suite_reason(info)
+        reason = full_suite_reason(info, test_options[0])
         if reason:
             selection = {"mode": "full", "reason": reason, "selected": test_files}
         else:
