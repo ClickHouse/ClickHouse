@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
