@@ -10,7 +10,6 @@
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
 #include <base/unaligned.h>
-#include <bit>
 
 namespace DB
 {
@@ -39,7 +38,7 @@ constexpr size_t MAX_UNCOMPRESSED_CHUNK_SIZE = 65536;
 uint32_t maskedCrc32c(const char * data, size_t size)
 {
     uint32_t crc = crc32c::Crc32c(data, size);
-    return std::rotr(crc, 15) + 0xa282ead8;
+    return ((crc >> 15) | (crc << 17)) + 0xa282ead8;
 }
 
 }

@@ -37,18 +37,17 @@ SELECT * FROM pg_available_extensions;
 
 | Extension | Version | Description |
 |-----------|---------|-------------|
-| `address_standardizer` | 3.6.4 | Used to parse an address into constituent elements |
-| `address_standardizer_data_us` | 3.6.4 | Address Standardizer US dataset example |
-| `age` | 1.8.0 | Apache AGE graph database extension |
-| `amcheck` | 1.5 | Functions for verifying relation integrity |
-| `anon` | 3.1.3 | Anonymization and data masking for PostgreSQL |
+| `address_standardizer` | 3.6.3 | Used to parse an address into constituent elements |
+| `address_standardizer_data_us` | 3.6.3 | Address Standardizer US dataset example |
+| `adminpack` | 2.1 | Administrative functions for PostgreSQL *(PG16 only)* |
+| `age` | 1.7.0 | Apache AGE graph database extension |
+| `amcheck` | | Functions for verifying relation integrity |
 | `autoinc` | 1.0 | Functions for auto-incrementing fields |
 | `bloom` | 1.0 | Bloom access method - signature file based index |
 | `bool_plperl` | 1.0 | Transform between bool and plperl |
 | `bool_plperlu` | 1.0 | Transform between bool and plperlu |
 | `btree_gin` | 1.3 | Support for indexing common datatypes in GIN |
 | `btree_gist` | 1.8 | Support for indexing common datatypes in GiST |
-| `chdb` | 0.1 | Embedded ClickHouse (chDB) integration for PostgreSQL |
 | `citext` | 1.8 | Data type for case-insensitive character strings |
 | `cube` | 1.5 | Data type for multidimensional cubes |
 | `dblink` | 1.2 | Connect to other PostgreSQL databases from within a database |
@@ -59,11 +58,11 @@ SELECT * FROM pg_available_extensions;
 | `fuzzystrmatch` | 1.2 | Determine similarities and distance between strings |
 | `h3` | 4.2.3 | H3 bindings for PostgreSQL |
 | `h3_postgis` | 4.2.3 | H3 PostGIS integration |
-| `hll` | 2.21 | Type for storing HyperLogLog data |
+| `hll` | 2.19 | Type for storing HyperLogLog data |
 | `hstore` | 1.8 | Data type for storing sets of (key, value) pairs |
 | `hstore_plperl` | 1.0 | Transform between hstore and plperl |
 | `hstore_plperlu` | 1.0 | Transform between hstore and plperlu |
-| `hypopg` | 1.4.3 | Hypothetical indexes for PostgreSQL |
+| `hypopg` | 1.4.2 | Hypothetical indexes for PostgreSQL |
 | `intagg` | 1.1 | Integer aggregator and enumerator (obsolete) |
 | `insert_username` | 1.0 | Functions for tracking who changed a table |
 | `intarray` | 1.5 | Functions, operators, and index support for 1-D arrays of integers |
@@ -75,30 +74,31 @@ SELECT * FROM pg_available_extensions;
 | `ltree` | 1.3 | Data type for hierarchical tree-like structures |
 | `moddatetime` | 1.0 | Functions for tracking last modification time |
 | `mysql_fdw` | 1.2 | Foreign data wrapper for querying a MySQL server |
+| `old_snapshot` | 1.0 | Utilities in support of old_snapshot_threshold *(PG16 only)* |
 | `orafce` | 4.16 | Functions and operators that emulate a subset of functions and packages from the Oracle RDBMS |
 | `pageinspect` | 1.13 | Inspect the contents of database pages at a low level |
-| `pg_buffercache` | 1.6 | Examine the shared buffer cache |
-| `pg_clickhouse` | 0.10 | Interfaces to query ClickHouse databases from PostgreSQL |
+| `pg_buffercache` | | Examine the shared buffer cache |
+| `pg_clickhouse` | 0.3 | Interfaces to query ClickHouse databases from PostgreSQL |
 | `pg_cron` | 1.6 | Job scheduler for PostgreSQL |
 | `pg_freespacemap` | 1.3 | Examine the free space map (FSM) |
-| `pg_hint_plan` | 1.8.0 | Optimizer hints for PostgreSQL |
+| `pg_hint_plan` | | Optimizer hints for PostgreSQL |
 | `pg_ivm` | 1.13 | Incremental view maintenance on PostgreSQL |
 | `pg_logicalinspect` | 1.0 | Functions to inspect logical decoding components *(PG18+)* |
-| `pg_partman` | 5.5.0 | Extension to manage partitioned tables by time or ID |
+| `pg_partman` | 5.4.3 | Extension to manage partitioned tables by time or ID |
 | `pg_prewarm` | 1.2 | Prewarm relation data |
-| `pg_re2 (re2)` | 0.4 | ClickHouse-compatible regular expression functions backed by Google's RE2 |
+| `pg_re2` | 0.1 | ClickHouse-compatible regular expression functions backed by Google's RE2 |
 | `pg_repack` | 1.5.3 | Reorganize tables in PostgreSQL databases with minimal locks |
 | `pg_similarity` | 1.0 | Support similarity queries |
 | `pg_stat_ch` | 0.3 | Streams per-query execution telemetry to ClickHouse in real time |
-| `pg_stat_statements` | 1.12 | Track planning and execution statistics of all SQL statements executed |
+| `pg_stat_statements` | | Track planning and execution statistics of all SQL statements executed |
 | `pg_surgery` | 1.0 | Extension to perform surgery on a damaged relation |
 | `pg_tokenizer` | 0.1.1 | Text tokenizer used with `vchord_bm25` |
 | `pg_trgm` | 1.6 | Text similarity measurement and index searching based on trigrams |
 | `pg_visibility` | 1.2 | Examine the visibility map (VM) and page-level visibility info |
 | `pg_walinspect` | 1.1 | Functions to inspect contents of PostgreSQL Write-Ahead Log |
-| `pgaudit` | 18.0 | Provides auditing functionality |
+| `pgaudit` | | Provides auditing functionality |
 | `pgcrypto` | 1.4 | Cryptographic functions |
-| `pglogical` | 2.4.8 | PostgreSQL Logical Replication |
+| `pglogical` | 2.4.6 | PostgreSQL Logical Replication |
 | `pglogical_origin` | 1.0.0 | Dummy extension for compatibility when upgrading from Postgres 9.4 |
 | `pgrouting` | 4.0.1 | pgRouting Extension |
 | `pgrowlocks` | 1.2 | Show row-level locking information |
@@ -107,12 +107,12 @@ SELECT * FROM pg_available_extensions;
 | `plperl` | 1.0 | PL/Perl procedural language |
 | `plperlu` | 1.0 | PL/PerlU untrusted procedural language |
 | `plpgsql` | 1.0 | PL/pgSQL procedural language |
-| `plpgsql_check` | 2.10 | Extended check for plpgsql functions |
-| `postgis` | 3.6.4 | PostGIS geometry and geography spatial types and functions |
-| `postgis_raster` | 3.6.4 | PostGIS raster types and functions |
-| `postgis_sfcgal` | 3.6.4 | PostGIS SFCGAL functions |
-| `postgis_tiger_geocoder` | 3.6.4 | PostGIS tiger geocoder and reverse geocoder |
-| `postgis_topology` | 3.6.4 | PostGIS topology spatial types and functions |
+| `plpgsql_check` | 2.8 | Extended check for plpgsql functions |
+| `postgis` | 3.6.3 | PostGIS geometry and geography spatial types and functions |
+| `postgis_raster` | 3.6.3 | PostGIS raster types and functions |
+| `postgis_sfcgal` | 3.6.3 | PostGIS SFCGAL functions |
+| `postgis_tiger_geocoder` | 3.6.3 | PostGIS tiger geocoder and reverse geocoder |
+| `postgis_topology` | 3.6.3 | PostGIS topology spatial types and functions |
 | `postgres_fdw` | 1.2 | Foreign-data wrapper for remote PostgreSQL servers |
 | `prefix` | 1.2.0 | Prefix Range module for PostgreSQL |
 | `refint` | 1.0 | Functions for implementing referential integrity (obsolete) |
@@ -130,7 +130,7 @@ SELECT * FROM pg_available_extensions;
 | `uuid-ossp` | 1.1 | Generate universally unique identifiers (UUIDs) |
 | `vchord` | 1.1.1 | Vector indexing access methods for Postgres |
 | `vchord_bm25` | 0.3.0 | BM25 ranking access method for full-text search |
-| `pgvector (vector)` | 0.8.6 | Vector data type and ivfflat and hnsw access methods |
+| `vector` | 0.8.2 | Vector data type and ivfflat and hnsw access methods |
 | `xml2` | 1.2 | XPath querying and XSLT |
 
 ## pg_clickhouse extension {#pg-clickhouse}

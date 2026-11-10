@@ -3,6 +3,7 @@
 -- "Nested type LowCardinality(...) cannot be inside Nullable type"
 
 SET allow_suspicious_low_cardinality_types = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_lc_in;
 CREATE TABLE t_lc_in (a LowCardinality(String), b String) ENGINE = Memory;

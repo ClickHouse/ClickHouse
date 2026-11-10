@@ -852,14 +852,6 @@ struct ZooKeeperMultiReadResponse final : public ZooKeeperMultiResponse
     using ZooKeeperMultiResponse::ZooKeeperMultiResponse;
 };
 
-/// Derive a multi transaction's aggregate error from its subresponses: on a failed multi
-/// the aggregate is left ZOK and the real error is carried only in the failing subresponse
-/// (with ZRUNTIMEINCONSISTENCY on the operations after it), so promote the first non-ZOK,
-/// non-ZRUNTIMEINCONSISTENCY subresponse error to the aggregate. Used both when
-/// deserializing a response from the wire (ZooKeeperMultiResponse::readImpl) and for a
-/// response obtained in-process through KeeperOverDispatcher, which skips readImpl.
-void promoteMultiResponseError(MultiResponse & response);
-
 /// Fake internal coordination (keeper) response. Never received from client
 /// and never send to client.
 struct ZooKeeperSessionIDRequest final : ZooKeeperRequest
@@ -925,36 +917,6 @@ struct ZooKeeperListRecursiveResponse : ListRecursiveResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::ListRecursive; }
 
     size_t bytesSize() const override { return ListRecursiveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
-};
-
-struct ZooKeeperListWithOptionsRequest final : ListWithOptionsRequest, ZooKeeperRequest
-{
-    ZooKeeperListWithOptionsRequest() = default;
-    explicit ZooKeeperListWithOptionsRequest(const ListWithOptionsRequest & base) : ListWithOptionsRequest(base) {}
-
-    OpNum getOpNum() const override { return OpNum::ListWithOptions; }
-    void writeImpl(WriteBuffer & out) const override;
-    void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl(bool short_format) const override;
-    size_t sizeImpl() const override;
-    ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return true; }
-    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
-    {
-        return std::make_shared<ZooKeeperListWithOptionsRequest>(*this);
-    }
-
-    size_t bytesSize() const override { return ListWithOptionsRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
-};
-
-struct ZooKeeperListWithOptionsResponse : ListWithOptionsResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override;
-    void writeImpl(WriteBuffer & out) const override;
-    size_t sizeImpl() const override;
-    OpNum getOpNum() const override { return OpNum::ListWithOptions; }
-
-    size_t bytesSize() const override { return ListWithOptionsResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
 class ZooKeeperRequestFactory final : private boost::noncopyable
 {

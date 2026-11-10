@@ -81,7 +81,6 @@ public:
         const String & replica_name_,
         size_t idx_,
         const LoggerPtr & log_,
-        size_t num_consumers_,
         UInt64 partition_shard_num_ = 0,
         UInt64 shard_count_ = 0);
 
@@ -108,12 +107,7 @@ public:
     ///   - Couldn't lock any topic partitions
     /// In case of these reasons it doesn't make sense to set up the whole pipeline, which not the lightest operation.
     /// As a result we have the the MessageSink callback. In the end I think the extra complexity worth it.
-    /// `locks_refresh_polls` is how many extra poll cycles the consumer may keep its current
-    /// assignment before this does a full Keeper round (refresh locks + rebalance). It is passed in
-    /// rather than captured in the constructor because consumers are built once in
-    /// `StorageKafka2::startup()` and reused across Keeper sessions, so a captured value would stay
-    /// frozen for the lifetime of the attachment. 0 refreshes on every cycle.
-    std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls);
+    std::optional<CannotPollReason> prepareToPoll();
 
     /// Returns empty optional if polling it not possible or no messages were polled.
     /// Returns an OffsetGuard that rollbacks the offsets unless it is committed or deactivated.
@@ -158,11 +152,7 @@ private:
 
     std::filesystem::path keeper_path;
     const String replica_name;
-    const size_t idx;
-
-    /// Consumers configured on this node (`kafka_num_consumers`). Fixed for the lifetime of
-    /// the storage; used to split the node's lock quota. See `computeConsumerQuota`.
-    const size_t num_consumers;
+    size_t idx;
 
     /// Partition affinity settings (enabled when shard_count > 0)
     UInt64 partition_shard_num = 0;
@@ -191,9 +181,6 @@ private:
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
 
-    /// Computes this consumer's share of node_quota, distributing remainder by consumer
-    /// index so all consumers' quotas sum to exactly node_quota.
-    size_t computeConsumerQuota(size_t node_quota) const;
 
     std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions();
     ActiveReplicasInfo getActiveReplicasInfo(const std::unordered_set<String> & replicas_with_lock);
@@ -205,8 +192,6 @@ private:
     void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks) TSA_REQUIRES(topic_partition_locks_mutex);
 
     void rollbackToCommittedOffsets();
-    /// Callable while an exception is propagating, where a throw would terminate the server.
-    void rollbackToCommittedOffsetsNoThrow() noexcept;
 
     void saveCommittedOffset(int64_t new_offset);
     void saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, uint64_t intent);
