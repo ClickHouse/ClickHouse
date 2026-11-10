@@ -2654,11 +2654,10 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     /// Before `finalizePart`, so the dense index's checksum lands in `checksums.txt`, as on INSERT.
     if (global_ctx->is_unique_key_merge && global_ctx->rows_written > 0)
     {
-        const UniqueKeyMergeRowMap row_map(
-            global_ctx->future_part->parts, *global_ctx->unique_key_read_snapshot, *global_ctx->merged_part_offsets);
         UniqueKeyMergedIndexBuilder(
             global_ctx->future_part->parts,
-            row_map,
+            *global_ctx->unique_key_read_snapshot,
+            *global_ctx->merged_part_offsets,
             global_ctx->new_data_part->getDataPartStorage(),
             global_ctx->data->getContext())
             .build(global_ctx->gathered_data.checksums, ctx->need_sync);

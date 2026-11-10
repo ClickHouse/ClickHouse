@@ -53,7 +53,8 @@ class UniqueKeyMergedIndexBuilder
 public:
     UniqueKeyMergedIndexBuilder(
         const MergeTreeDataPartsVector & sources,
-        const UniqueKeyMergeRowMap & row_map,
+        const DeleteBitmapSnapshot & read_snapshot,
+        const MergedPartOffsets & merged_part_offsets,
         IDataPartStorage & merged_part_storage,
         ContextPtr context);
 
@@ -62,7 +63,7 @@ public:
 
 private:
     const MergeTreeDataPartsVector & sources;
-    const UniqueKeyMergeRowMap & row_map;
+    const UniqueKeyMergeRowMap row_map;
     IDataPartStorage & merged_part_storage;
     ContextPtr context;
 };

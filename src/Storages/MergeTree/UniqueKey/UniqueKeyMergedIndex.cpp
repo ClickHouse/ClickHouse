@@ -89,11 +89,12 @@ std::optional<UInt64> UniqueKeyMergeRowMap::toMergedRow(size_t source_index, UIn
 
 UniqueKeyMergedIndexBuilder::UniqueKeyMergedIndexBuilder(
     const MergeTreeDataPartsVector & sources_,
-    const UniqueKeyMergeRowMap & row_map_,
+    const DeleteBitmapSnapshot & read_snapshot,
+    const MergedPartOffsets & merged_part_offsets,
     IDataPartStorage & merged_part_storage_,
     ContextPtr context_)
     : sources(sources_)
-    , row_map(row_map_)
+    , row_map(sources_, read_snapshot, merged_part_offsets)
     , merged_part_storage(merged_part_storage_)
     , context(std::move(context_))
 {
