@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
+    extern const SettingsBool cloud_mode;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
     extern const SettingsBool create_if_not_exists;
@@ -2242,7 +2243,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// only `list_of_modes`, and the analyzer rejects `union_mode == UNION_DEFAULT`.
     normalizeSetOperations(query_ptr, getContext());
 
-    /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
+    /// In Cloud, ATTACH TABLE with a full definition is not allowed from user queries
+    /// Short syntax ATTACH TABLE t (no definition) reattaches an existing detached table
+    if (create.attach && !create.attach_short_syntax
+        && !internal && !getContext()->isDDLOrOnClusterInternal()
+        && getContext()->getSettingsRef()[Setting::cloud_mode]
+        && !getContext()->getClientInfo().is_shared_catalog_internal)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ATTACH TABLE with a full table definition is not supported. "
+            "Use ATTACH TABLE {} to reattach an existing detached table.",
+            create.getTable());
+
     if (!create.attach_short_syntax && create.attach_as_replicated.has_value())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Attaching table as [not] replicated is supported only for short attach queries");
