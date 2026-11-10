@@ -6,8 +6,11 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Common/FailPoint.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Common/SipHash.h>
+#include <Common/escapeForFileName.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
@@ -88,6 +91,11 @@ private:
 
 }
 
+std::string IKernelHelper::resolveDataFilePath(const std::string & path) const
+{
+    return DB::resolvePathInsideTable(getDataPath(), DB::unescapeForFileName(path));
+}
+
 /// A helper class to manage S3-compatible storage types.
 class S3KernelHelper final : public IKernelHelper
 {
@@ -118,6 +126,15 @@ public:
     const std::string & getTableLocation() const override { return table_location; }
 
     const std::string & getDataPath() const override { return url.key; }
+
+    /// The S3 object storage resolves a fully-qualified path to its own bucket and key.
+    std::string resolveDataFilePath(const std::string & path) const override
+    {
+        auto qualified = DB::trySplitFullyQualifiedObjectPath(path);
+        if (!qualified || (qualified->scheme != "s3" && qualified->scheme != "s3a" && qualified->scheme != "s3n"))
+            return IKernelHelper::resolveDataFilePath(path);
+        return DB::unescapeForFileName(path);
+    }
 
     DB::UInt128 getCredentialsFingerprint() const override
     {
@@ -526,6 +543,22 @@ public:
     const std::string & getTableLocation() const override { return table_location; }
 
     const std::string & getDataPath() const override { return path; }
+
+    /// The local object storage confines an absolute path to its root like any other key.
+    std::string resolveDataFilePath(const std::string & data_file_path) const override
+    {
+        if (!data_file_path.starts_with("file:"))
+            return IKernelHelper::resolveDataFilePath(data_file_path);
+
+        std::string_view file_path = std::string_view(data_file_path).substr(std::string_view("file:").size());
+        /// `file:///abs`; an authority (`file://host/abs`) is not a local file.
+        if (file_path.starts_with("//"))
+            file_path.remove_prefix(2);
+        if (!file_path.starts_with('/'))
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Data file `{}` of the Delta Lake table is not a local absolute path", data_file_path);
+        return DB::unescapeForFileName(std::string(file_path));
+    }
 
     ffi::EngineBuilder * createBuilder() const override
     {

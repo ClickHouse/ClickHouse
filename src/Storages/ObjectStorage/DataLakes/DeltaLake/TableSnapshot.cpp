@@ -203,8 +203,6 @@ public:
             thread.join();
     }
 
-    const std::string & getDataPath() const { return helper->getDataPath(); }
-
     const std::string & getTableLocation() const { return helper->getTableLocation(); }
 
     /// Called on the scanning thread. Under the mutex, so that `next` does not miss the notification between
@@ -632,8 +630,7 @@ public:
 
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
-        std::string full_path = DB::resolvePathInsideTable(
-            context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
+        std::string full_path = context->helper->resolveDataFilePath(KernelUtils::fromDeltaString(path));
         auto object = std::make_shared<DataObjectInfo>(std::move(full_path), size);
         object->data_lake_metadata.emplace();
         if (stats)
