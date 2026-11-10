@@ -488,10 +488,7 @@ public:
             return;
         }
 
-        /// A preliminary DISTINCT deduplicates every stream on its own and the final DISTINCT above it
-        /// deduplicates their union, so it runs on a replica exactly as it does on a shard of a `Distributed`
-        /// table: each replica sends only the distinct rows of its share, and the final DISTINCT stays on the
-        /// initiator. Inside the fragment it also lets `optimizeDistinctInOrder` read in order on the replica.
+        /// Run preliminary DISTINCT on replicas; the final DISTINCT stays on the initiator.
         const auto * distinct_step = typeid_cast<const DistinctStep *>(parent_step);
         if (distinct_step && distinct_step->isPreliminary())
         {
