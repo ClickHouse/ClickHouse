@@ -1,0 +1,12 @@
+definer	1	1	1
+definer_inlined	1	1	1
+direct	1	1	0
+invoker	1	1	0
+none	1	1	1
+definer	1
+definer_inlined	1
+direct	0
+invoker	0
+none	1
+direct	2
+invoker	2
