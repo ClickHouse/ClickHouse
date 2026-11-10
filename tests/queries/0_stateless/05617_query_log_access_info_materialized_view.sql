@@ -14,9 +14,11 @@ CREATE MATERIALIZED VIEW mv_legacy TO dst_legacy AS SELECT id FROM src;
 
 INSERT INTO src SETTINGS log_comment = 'insert' SELECT number FROM numbers(2);
 
-SELECT sum(id) FROM dst_definer SETTINGS log_comment = 'read_target' FORMAT Null;
-SELECT sum(id) FROM mv_definer SETTINGS log_comment = 'read_definer' FORMAT Null;
-SELECT sum(id) FROM mv_legacy SETTINGS log_comment = 'read_legacy' FORMAT Null;
+-- Read rows, not an aggregate: an aggregate may be answered from part statistics without reading any part,
+-- and then no partition is recorded.
+SELECT id FROM dst_definer ORDER BY id SETTINGS log_comment = 'read_target' FORMAT Null;
+SELECT id FROM mv_definer ORDER BY id SETTINGS log_comment = 'read_definer' FORMAT Null;
+SELECT id FROM mv_legacy ORDER BY id SETTINGS log_comment = 'read_legacy' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
