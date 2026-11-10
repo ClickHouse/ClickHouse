@@ -269,9 +269,12 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     {
         ffi::FFI_ArrowArray array{};
         ffi::FFI_ArrowSchema schema{};
+        /// The release callbacks come from Arrow C++ (see `exportRecordBatch`), so call them through Arrow C++'s own struct
+        /// types: the identical `ffi::` structs have a different function type, which fails Clang CFI.
         SCOPE_EXIT({
-            if (schema.release)
-                schema.release(&schema);
+            auto * arrow_schema = reinterpret_cast<ArrowSchema *>(&schema);
+            if (arrow_schema->release)
+                arrow_schema->release(arrow_schema);
         });
         exportRecordBatch(*batch, array, schema);
 
@@ -285,8 +288,9 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
         }
         catch (...)
         {
-            if (array.release)
-                array.release(&array);
+            auto * arrow_array = reinterpret_cast<ArrowArray *>(&array);
+            if (arrow_array->release)
+                arrow_array->release(arrow_array);
             throw;
         }
 
