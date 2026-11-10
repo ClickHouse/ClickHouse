@@ -35,113 +35,116 @@ namespace
         return v;
     }
 
-    constexpr size_t PFOR_MAX_BLOCK_BYTES = PFor::maxCompressedBytes<uint32_t>(IPostingListBlockCodec::BLOCK_SIZE);
-
-    size_t decodePFor(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, PFor::Delta mode, uint32_t base)
+    /// [1 byte bits][bitpacked payload]. The bits byte selects the per-block bit width; the payload is the
+    /// SIMD/portable bit-packed stream produced by BitpackingBlockCodec.
+    class BitpackingPostingListBlockCodec : public IPostingListBlockCodec
     {
-        chassert(count > 0 && count <= out.size());
-        const auto * data = reinterpret_cast<const uint8_t *>(in.data());
+    public:
+        size_t encodeBlock(std::span<const uint32_t> values, PODArray<char> & out) override
+        {
+            auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(values);
+            size_t needed_bytes_with_header = needed_bytes_without_header + 1;
 
-        /// `count` is never zero here, so a zero return means malformed input, not an empty block.
-        const size_t consumed = PFor::decodeBlocks<uint32_t>(data, count, mode, out.data(), data + in.size(), base);
-        if (consumed == 0)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
+            /// Block Layout: [1byte(max_bits)][payload]
+            size_t offset = out.size();
+            out.resize(out.size() + needed_bytes_with_header);
+            std::span<char> out_span(out.data() + offset, needed_bytes_with_header);
+            writeByte(static_cast<uint8_t>(max_bits), out_span);
+            auto used_memory = BitpackingBlockCodec::encode(values, max_bits, out_span);
 
-        in = in.subspan(consumed);
-        return consumed;
-    }
-}
+            if (used_memory != needed_bytes_without_header || !out_span.empty())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Bitpacking encode size mismatch: expected {} bytes payload with {} bits encoding for {} integers, "
+                    "but actually used {} bytes with {} bytes remaining in buffer",
+                    needed_bytes_without_header,
+                    max_bits,
+                    values.size(),
+                    used_memory,
+                    out_span.size());
+            }
 
-size_t BitpackingPostingListBlockCodec::encodeBlock(std::span<const uint32_t> values, PODArray<char> & out)
-{
-    auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(values);
-    size_t needed_bytes_with_header = needed_bytes_without_header + 1;
+            return needed_bytes_with_header;
+        }
 
-    /// Block Layout: [1byte(max_bits)][payload]
-    size_t offset = out.size();
-    out.resize(out.size() + needed_bytes_with_header);
-    std::span<char> out_span(out.data() + offset, needed_bytes_with_header);
-    writeByte(static_cast<uint8_t>(max_bits), out_span);
-    auto used_memory = BitpackingBlockCodec::encode(values, max_bits, out_span);
+        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base) override
+        {
+            if (in.empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
 
-    if (used_memory != needed_bytes_without_header || !out_span.empty())
+            uint8_t bits = readByte(in);
+            if (bits > 32)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
+
+            size_t required_size = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
+            if (in.size() < required_size)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected data size {}, but got {}", required_size, in.size());
+
+            size_t consumed_size = BitpackingBlockCodec::decode(in, count, bits, out);
+            if (required_size != consumed_size)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Bitpacking decode size mismatch: expected to consume {} bytes for {} integers with {} bits, but actually consumed {} bytes",
+                required_size,
+                count,
+                bits,
+                consumed_size);
+
+            std::inclusive_scan(out.begin(), out.begin() + count, out.begin(), std::plus<uint32_t>{}, base);
+
+            /// Total bytes consumed from `in`: the bits byte plus the bit-packed payload.
+            return 1 + consumed_size;
+        }
+
+        /// `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment slack).
+        size_t maxBlockBytes() const override { return 1 + sizeof(uint32_t) * BLOCK_SIZE + 16; }
+
+        IPostingListCodec::Type type() const override { return IPostingListCodec::Type::Bitpacking; }
+    };
+
+    /// One PFor block. It encodes the deltas `SegmentedPostingListCodec` already computed with `Delta::none`, and decodes
+    /// them with `Delta::d0` from `base`, which gives the same bytes and restores the row ids inside PFor's decode.
+    class PForPostingListBlockCodec : public IPostingListBlockCodec
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Bitpacking encode size mismatch: expected {} bytes payload with {} bits encoding for {} integers, "
-            "but actually used {} bytes with {} bytes remaining in buffer",
-            needed_bytes_without_header,
-            max_bits,
-            values.size(),
-            used_memory,
-            out_span.size());
-    }
+    public:
+        size_t encodeBlock(std::span<const uint32_t> values, PODArray<char> & out) override
+        {
+            /// `MAX_BLOCK_BYTES` bounds one block, so an oversized input would overrun the reserved tail.
+            if (values.empty() || values.size() > BLOCK_SIZE)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "PFor block must hold 1 to {} values, got {}", BLOCK_SIZE, values.size());
 
-    return needed_bytes_with_header;
-}
+            /// The encoded size is only known afterwards; `PODArray::resize` does not zero-fill, so grow to the bound and shrink.
+            const size_t offset = out.size();
+            out.resize(offset + MAX_BLOCK_BYTES);
+            const size_t written = PFor::encodeBlocks<uint32_t>(values, PFor::Delta::none, reinterpret_cast<uint8_t *>(out.data() + offset));
+            chassert(written > 0 && written <= MAX_BLOCK_BYTES);
+            out.resize(offset + written);
+            return written;
+        }
 
-size_t BitpackingPostingListBlockCodec::decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base)
-{
-    const size_t consumed = decodeValues(in, count, out);
-    std::inclusive_scan(out.begin(), out.begin() + count, out.begin(), std::plus<uint32_t>{}, base);
-    return consumed;
-}
+        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base) override
+        {
+            chassert(count > 0 && count <= out.size());
+            const auto * data = reinterpret_cast<const uint8_t *>(in.data());
 
-size_t BitpackingPostingListBlockCodec::decodeValues(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out)
-{
-    if (in.empty())
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
+            /// `count` is never zero here, so a zero return means malformed input, not an empty block.
+            const size_t consumed = PFor::decodeBlocks<uint32_t>(data, count, PFor::Delta::d0, out.data(), data + in.size(), base);
+            if (consumed == 0)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
 
-    uint8_t bits = readByte(in);
-    if (bits > 32)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
+            in = in.subspan(consumed);
+            return consumed;
+        }
 
-    size_t required_size = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
-    if (in.size() < required_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected data size {}, but got {}", required_size, in.size());
+        size_t maxBlockBytes() const override { return MAX_BLOCK_BYTES; }
 
-    size_t consumed_size = BitpackingBlockCodec::decode(in, count, bits, out);
-    if (required_size != consumed_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-        "Bitpacking decode size mismatch: expected to consume {} bytes for {} integers with {} bits, but actually consumed {} bytes",
-        required_size,
-        count,
-        bits,
-        consumed_size);
+        IPostingListCodec::Type type() const override { return IPostingListCodec::Type::PFor; }
 
-    /// Total bytes consumed from `in`: the bits byte plus the bit-packed payload.
-    return 1 + consumed_size;
-}
+    private:
+        static constexpr size_t MAX_BLOCK_BYTES = PFor::maxCompressedBytes<uint32_t>(BLOCK_SIZE);
+    };
 
-size_t PForPostingListBlockCodec::encodeBlock(std::span<const uint32_t> values, PODArray<char> & out)
-{
-    /// `PFOR_MAX_BLOCK_BYTES` bounds one block, so an oversized input would overrun the reserved tail.
-    if (values.empty() || values.size() > BLOCK_SIZE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "PFor block must hold 1 to {} values, got {}", BLOCK_SIZE, values.size());
-
-    /// The encoded size is only known afterwards; `PODArray::resize` does not zero-fill, so grow to the bound and shrink.
-    const size_t offset = out.size();
-    out.resize(offset + PFOR_MAX_BLOCK_BYTES);
-    const size_t written = PFor::encodeBlocks<uint32_t>(values, PFor::Delta::none, reinterpret_cast<uint8_t *>(out.data() + offset));
-    chassert(written > 0 && written <= PFOR_MAX_BLOCK_BYTES);
-    out.resize(offset + written);
-    return written;
-}
-
-size_t PForPostingListBlockCodec::decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base)
-{
-    return decodePFor(in, count, out, PFor::Delta::d0, base);
-}
-
-size_t PForPostingListBlockCodec::decodeValues(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out)
-{
-    return decodePFor(in, count, out, PFor::Delta::none, 0);
-}
-
-size_t PForPostingListBlockCodec::maxBlockBytes() const
-{
-    return PFOR_MAX_BLOCK_BYTES;
 }
 
 std::unique_ptr<IPostingListBlockCodec> createPostingListBlockCodec(IPostingListCodec::Type type)

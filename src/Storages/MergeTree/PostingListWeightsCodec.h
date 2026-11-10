@@ -36,7 +36,7 @@ public:
     virtual size_t maxBlockBytes() const = 0;
 };
 
-/// Creates the weights codec that stores `(weight - 1)` with the per-block codec for `type`. Throws for `None`.
+/// Creates the weights codec that stores `(weight - 1)` in the block format of the row ids codec `type`. Throws for `None`.
 std::unique_ptr<IPostingListWeightsCodec> createWeightsCodecFromBlockCodec(IPostingListCodec::Type type);
 
 }
