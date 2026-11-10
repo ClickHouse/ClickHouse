@@ -1,0 +1,9 @@
+round1	0
+round2	15	13	27
+round3	15
+no projection	5	1	4
+no projection	15	2	4
+projection	5	1	4
+projection	15	2	4
+filter no projection	1
+filter projection	1
