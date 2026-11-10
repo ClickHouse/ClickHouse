@@ -780,6 +780,8 @@ void StorageNATS::flushAndPrepareForShutdown()
     /// Blocking lets the in-flight cycle finish instead of streaming until the time limit.
     auto lock = stream_control.block();
     deactivateTask(streaming_task);
+    /// The stopped task cannot unsubscribe, and a subscribed consumer keeps taking messages away from its queue group.
+    unsubscribeConsumers();
 }
 
 void StorageNATS::shutdown(bool /* is_drop */)

@@ -426,33 +426,37 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 
         auto user_tables = list_user_tables();
 
+        auto drain_buffers = [&](const std::vector<StoragePtr> & tables)
+        {
+            for (size_t pass = 0; pass <= tables.size(); ++pass)
+            {
+                size_t flushed = 0;
+                for (const auto & table : tables)
+                {
+                    if (!table)
+                        continue;
+
+                    try
+                    {
+                        flushed += table->flushBufferedRowsBeforeShutdown();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(
+                            log, fmt::format("Failed to flush buffered rows of table {}", table->getStorageID().getNameForLogs()));
+                    }
+                }
+
+                if (flushed == 0)
+                    break;
+
+                LOG_TRACE(log, "Flushed {} buffers of tables before shutdown (pass {})", flushed, pass + 1);
+            }
+        };
+
         /// Tables that write into others in the background stop first, so nothing writes into the tables drained below.
         stop_background_writes(user_tables);
-
-        for (size_t pass = 0; pass <= user_tables.size(); ++pass)
-        {
-            size_t flushed = 0;
-            for (const auto & table : user_tables)
-            {
-                if (!table)
-                    continue;
-
-                try
-                {
-                    flushed += table->flushBufferedRowsBeforeShutdown();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(
-                        log, fmt::format("Failed to flush buffered rows of table {}", table->getStorageID().getNameForLogs()));
-                }
-            }
-
-            if (flushed == 0)
-                break;
-
-            LOG_TRACE(log, "Flushed {} buffers of tables before shutdown (pass {})", flushed, pass + 1);
-        }
+        drain_buffers(user_tables);
 
         /// After the drain, which can wait for a destination that is still starting, nothing may load,
         /// start or replicate tables anymore.
@@ -471,9 +475,10 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         }
 
         /// Prepare every user table before any of them shuts down. List again to include the tables that finished
-        /// loading meanwhile, and stop their background writes first.
+        /// loading meanwhile, stop their background writes and drain what they wrote while destinations still accept it.
         user_tables = list_user_tables();
         stop_background_writes(user_tables);
+        drain_buffers(user_tables);
         for (const auto & table : user_tables)
             if (table)
                 prepare_for_shutdown(table, /*only_background_writes=*/ false);
