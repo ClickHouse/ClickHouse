@@ -31,6 +31,7 @@
 #include <Common/assert_cast.h>
 
 #include <algorithm>
+#include <limits>
 
 
 namespace DB
@@ -86,15 +87,15 @@ namespace
         Columns columns;
 
         /// In DFS pre-order: parents before children, ordered by `begin` within a depth.
-        std::vector<SubcolumnsGroup> groups;
+        VectorWithMemoryTracking<SubcolumnsGroup> groups;
 
         /// Per flattened column: 0 for a top-level column, 1 for its Tuple elements, and so on.
-        std::vector<size_t> depths;
+        VectorWithMemoryTracking<size_t> depths;
 
         /// Per boundary between flattened columns (including both table edges): the topmost header
         /// level where the boundary appears. It is 0 for the table edges and the boundaries between
         /// top-level columns, and d + 1 for the boundaries between the elements of a Tuple at depth d.
-        std::vector<size_t> junction_levels;
+        VectorWithMemoryTracking<size_t> junction_levels;
 
         size_t max_depth = 0;
     };
@@ -253,7 +254,9 @@ void PrettyBlockOutputFormat::calculateWidths(
             /// (e.g. non-printable characters, diacritics, combining characters)
             if (effective_value_width_limit)
             {
-                size_t max_byte_size = effective_value_width_limit * 4;
+                /// Clamp before multiplying: the limit comes from settings and can be large enough
+                /// for `* 4` to wrap.
+                size_t max_byte_size = std::min<UInt64>(effective_value_width_limit, std::numeric_limits<size_t>::max() / 4) * 4;
                 if (serialized_value.size() > max_byte_size)
                     serialized_value.resize(max_byte_size);
             }
@@ -371,8 +374,12 @@ void PrettyBlockOutputFormat::writingThread()
     {
         while (!finish)
         {
-            if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
-                || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+            bool timed_out = std::cv_status::timeout
+                == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms));
+            /// After `stopThread` or `onCancel` the rest is written by `writeSuffix` or not at all.
+            if (finish)
+                break;
+            if (timed_out || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
             {
                 writeMonoChunkIfNeeded();
                 watch.restart();
@@ -714,7 +721,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         vertical_filler_out << "\n";
     }
 
-    std::vector<std::vector<const SubcolumnsGroup *>> groups_by_level(flattened.max_depth + 1);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<const SubcolumnsGroup *>> groups_by_level(flattened.max_depth + 1);
     for (const auto & group : flattened.groups)
         groups_by_level[group.depth].push_back(&group);
 
@@ -912,8 +919,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     bool vertical_filler_written = false;
     size_t displayed_row = 0;
 
-    std::vector<std::optional<String>> serialized_values(num_columns);
-    std::vector<size_t> offsets_inside_serialized_values(num_columns);
+    VectorWithMemoryTracking<std::optional<String>> serialized_values(num_columns);
+    VectorWithMemoryTracking<size_t> offsets_inside_serialized_values(num_columns);
 
     for (size_t i = 0; i < num_rows && displayed_rows < format_settings.pretty.max_rows; ++i)
     {
@@ -1131,7 +1138,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
         if (color)
         {
-            serialized_fragment += "\033[31;1m";
+            /// Reset first: the cut may have dropped the reset of an escape sequence opened in the kept part.
+            serialized_fragment += "\033[0;31;1m";
             serialized_fragment += ellipsis;
             serialized_fragment += "\033[0m";
         }
@@ -1232,6 +1240,18 @@ void PrettyBlockOutputFormat::stopThread()
         finish = true;
         mono_chunk_condvar.notify_one();
     }
+}
+
+void PrettyBlockOutputFormat::onCancel() noexcept
+{
+    if (!format_settings.pretty.squash_consecutive_ms || mono_block)
+        return;
+
+    /// After this `writingThread` never writes `out` again, so the owner of `out` can cancel it.
+    /// Waits for any writing method holding `writing_mutex`, so it can take as long as one blocked write to `out`.
+    std::lock_guard lock(writing_mutex);
+    finish = true;
+    mono_chunk_condvar.notify_one();
 }
 
 PrettyBlockOutputFormat::~PrettyBlockOutputFormat()

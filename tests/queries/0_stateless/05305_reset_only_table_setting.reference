@@ -1,0 +1,14 @@
+CREATE TABLE default.t_reset_only_setting
+(
+    `k` UInt64,
+    `v` UInt64
+)
+ENGINE = EmbeddedRocksDB
+PRIMARY KEY k
+CREATE TABLE default.t_reset_only_setting
+(
+    `k` UInt64,
+    `v` UInt64
+)
+ENGINE = EmbeddedRocksDB
+PRIMARY KEY k
