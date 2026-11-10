@@ -1371,7 +1371,6 @@ void rebuildVariantsToKeptKeys(
     /// From here on the table admits no key outside the kept set, which is what makes it safe to
     /// flush it to a temporary file under the cutoff (see `Aggregator::Params::SharedKeptKeysControl`).
     variants.restricted_to_kept_keys = true;
-    variants.kept_keys_seed = std::move(seed);
 
     ProfileEvents::increment(ProfileEvents::AggregationSharedKeptKeysRebuilds);
 }
@@ -1637,29 +1636,32 @@ void AggregatingTransform::consume(Chunk chunk)
         if (shared_kept_keys)
             applySharedKeptKeysCutoff(/*may_freeze=*/true);
         else
-            capturePerStreamKeptKeysSeed();
+            applyPerStreamKeptKeysCutoff();
     }
 }
 
-void AggregatingTransform::capturePerStreamKeptKeysSeed()
+void AggregatingTransform::applyPerStreamKeptKeysCutoff()
 {
     const auto & aggregator_params = params->params;
 
-    /// Only for the cutoff of the trivial `GROUP BY ... LIMIT` optimization, and only when the
-    /// table can actually be flushed to disk: the seed is needed to re-fill it after the flush.
-    /// Scheduler spills are possible even with `max_bytes_before_external_group_by` disabled.
+    /// Only for the cutoff of the trivial `GROUP BY ... LIMIT` optimization, which caps the
+    /// stream at exactly `max_rows_to_group_by` keys: the crossing block admitted up to a block
+    /// of keys beyond the limit, and the rebuild prunes them, destroying their states, so the
+    /// query does not keep aggregating groups the LIMIT is going to drop (and the hash table
+    /// statistics record the exact cap, not a block-rounded overshoot). The rebuilt table is
+    /// restricted to the kept keys, so external aggregation stays available: a flush leaves
+    /// those keys in it (see `Aggregator::keepsKeysAcrossSpills`).
+    /// A plain `max_rows_to_group_by` cap deliberately keeps whatever the crossing block
+    /// brought in, so there is nothing to do for it here.
     if (!aggregator_params.shared_kept_keys_for_overflow_any || !aggregator_params.tmp_data_scope)
         return;
 
-    /// Already captured — the flag stays set for the rest of the aggregation.
+    /// Already applied — the flag stays set for the rest of the aggregation.
     if (variants.restricted_to_kept_keys || variants.empty())
         return;
 
     const auto & aggregator = params->aggregator;
 
-    /// The table holds exactly the keys this stream kept, so rebuilding it around them changes
-    /// nothing but hands the seed to the `Aggregator`. It happens once, on a table of about
-    /// `max_rows_to_group_by` keys, which is the LIMIT of the query.
     auto own_chunks = aggregator.convertToChunks(variants, /*final=*/false);
     auto seed = std::make_shared<const Block>(buildKeptKeysSeedBlock(
         own_chunks, params->getCustomHeader(/*final_=*/false), aggregator_params.keys_size, aggregator_params.max_rows_to_group_by));
@@ -1699,9 +1701,8 @@ void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)
         std::lock_guard lock(shared.mutex);
         if (!shared.frozen.load(std::memory_order_relaxed))
         {
-            /// The `Aggregator` re-seeds a table emptied by an external-aggregation spill from
-            /// this block (see `Aggregator::Params::SharedKeptKeysControl`), so every stream
-            /// shares it through `AggregatedDataVariants::kept_keys_seed`.
+            /// The frozen kept key set every stream rebuilds its table around
+            /// (see `Aggregator::Params::SharedKeptKeysControl`).
             shared.seed = std::make_shared<const Block>(buildKeptKeysSeedBlock(
                 own_chunks, params->getCustomHeader(/*final_=*/false), aggregator.getParams().keys_size, aggregator.getParams().max_rows_to_group_by));
             shared.frozen.store(true, std::memory_order_release);
@@ -1786,9 +1787,10 @@ void AggregatingTransform::initGenerate()
 
         /// Flush data in the RAM to disk also. It's easier than merging on-disk and RAM data.
         /// A table that already spilled keeps its type with zero rows; writing it again would
-        /// produce an empty part per producer.
+        /// produce an empty part per producer. No rows are left to aggregate, so the kept keys
+        /// need not stay in the table (`is_final_flush`).
         if (variants.hasData())
-            params->aggregator.writeToTemporaryFile(variants);
+            params->aggregator.writeToTemporaryFile(variants, /*max_temp_file_size=*/0, /*is_final_flush=*/true);
     }
 
     /// Hand this thread's staged records and count bins over before the finish barrier below: the
@@ -1930,7 +1932,7 @@ void AggregatingTransform::initGenerate()
                     cur_variants->convertToTwoLevel();
 
                 if (cur_variants->hasData())
-                    params->aggregator.writeToTemporaryFile(*cur_variants);
+                    params->aggregator.writeToTemporaryFile(*cur_variants, /*max_temp_file_size=*/0, /*is_final_flush=*/true);
             }
         }
 
