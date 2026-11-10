@@ -196,7 +196,8 @@ void ASTIdentifier::setShortName(const String & new_name)
 
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// `getID` contains only the '.'-joined `full_name`, which loses the boundaries between parts.
+    hash_state.update(full_name.size());
+    hash_state.update(full_name);
     hash_state.update(name_parts.size());
     for (const auto & part : name_parts)
     {
