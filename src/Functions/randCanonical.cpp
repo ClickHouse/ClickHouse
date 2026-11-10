@@ -56,6 +56,7 @@ class FunctionPostgresRandom final : public FunctionRandomImpl<CanonicalRandImpl
 public:
     static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionPostgresRandom>(); }
 
+    /// PostgreSQL random() accepts no arguments, unlike randCanonical([x]).
     bool isVariadic() const override { return false; }
     String getSignatureString() const override { return "() -> Float64"; }
 };
@@ -82,7 +83,9 @@ Returns a random distributed `Float64` number with uniform distribution between 
     factory.registerFunction<FunctionCanonicalRand>(documentation);
 
     FunctionDocumentation::Description postgres_description = R"(
-Returns a random `Float64` number between `0` (inclusive) and `1` (exclusive), as in PostgreSQL.
+Returns a non-cryptographic pseudo-random `Float64` number between `0` (inclusive) and `1` (exclusive), as in PostgreSQL.
+
+As with other ClickHouse random functions, identical calls in a query may share a result because of [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination).
     )";
     FunctionDocumentation::Syntax postgres_syntax = "random()";
     FunctionDocumentation::Examples postgres_examples = {

@@ -7,9 +7,8 @@ here. Function names and syntax sugar that the server already understands
 either natively or via a case-insensitive alias are left alone (e.g.
 `STDDEV`, `CARDINALITY`, `ARRAY_TO_STRING`, `REGEXP_SUBSTR`, `TRANSLATE`,
 `ARRAY_AGG`, `STRING_AGG`, `EXTRACT(EPOCH|DOW|... FROM ...)`,
-`date_part('unit', ...)`, `unnest(arr)` in expression position,
-`RANDOM()`, `AT TIME ZONE`, `FETCH FIRST n ROWS ONLY`,
-`OFFSET n ROWS FETCH ...`, and
+`date_part('unit', ...)`, `unnest(arr)` in expression position, `RANDOM()`,
+`AT TIME ZONE`, `FETCH FIRST n ROWS ONLY`, `OFFSET n ROWS FETCH ...`, and
 `[LEFT] JOIN LATERAL (subquery) ON TRUE` with `enable_lateral_join`).
 
 PostgreSQL `lhs = ANY(array_expr)` with a non-subquery operand is rewritten to
