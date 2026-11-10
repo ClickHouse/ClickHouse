@@ -890,3 +890,42 @@ TEST_F(DiskEncryptedTest, ConfigurationRejectsPathOverlappingWithPathsDownTheCha
     EXPECT_TRUE(inner->existsFile("c/d/store/file.txt"));
     EXPECT_FALSE(inner->existsFile("store/file.txt"));
 }
+
+TEST_F(DiskEncryptedTest, PathPrefixOfTablePathAliasesSiblingWithoutPath)
+{
+    /// The roots of the two disks differ, but an `encrypted` disk takes a path that already starts with its own `path`
+    /// as already prefixed, so the `store/...` path of an `Atomic` table goes to the same files on both disks.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "store/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", std::nullopt);
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+
+    EXPECT_FALSE(haveSameStorageNamespace(encrypted1, encrypted2));
+
+    const String table_path = "store/abc/abcdef01-2345-6789-abcd-ef0123456789/";
+    EXPECT_THROW(checkDisksHaveDistinctStorageForPath({encrypted1, encrypted2}, table_path, "policy"), DB::Exception);
+    EXPECT_THROW(checkDisksHaveDistinctStorageForPath({encrypted1, local_disk}, table_path, "policy"), DB::Exception);
+
+    /// A table path that does not start with `store/` is prefixed and stays apart.
+    EXPECT_NO_THROW(checkDisksHaveDistinctStorageForPath({encrypted1, encrypted2}, "data/db/table/", "policy"));
+    EXPECT_NO_THROW(checkDisksHaveDistinctStorageForPath({encrypted1, local_disk}, "data/db/table/", "policy"));
+}
+
+TEST_F(DiskEncryptedTest, PathNotPrefixOfTablePathKeepsTableApartFromWrappedDisk)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "encrypted/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "encrypted2/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+
+    const String table_path = "store/abc/abcdef01-2345-6789-abcd-ef0123456789/";
+    EXPECT_NO_THROW(checkDisksHaveDistinctStorageForPath({local_disk, encrypted1, encrypted2}, table_path, "policy"));
+}

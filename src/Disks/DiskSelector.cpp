@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskSelector.h>
+#include <Disks/DiskEncrypted.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>
@@ -79,8 +80,16 @@ String normalizeDiskPath(const String & path, bool is_local)
     return normalized.string();
 }
 
-/// Returns the storage namespace of a disk, or nothing when the disk has no persistent one.
-std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk)
+/// The path of `relative_path` on `disk`: the root of the disk followed by `relative_path`.
+String joinDiskPath(const DiskPtr & disk, const String & relative_path)
+{
+    if (relative_path.empty())
+        return disk->getPath();
+    return (std::filesystem::path(disk->getPath()) / relative_path).string();
+}
+
+/// Returns the storage namespace of `relative_path` on a disk, or nothing when the disk has no persistent one.
+std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk, const String & relative_path = {})
 {
     const auto data_source = disk->getDataSourceDescription();
 
@@ -88,7 +97,7 @@ std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk)
     if (data_source.type == DataSourceType::RAM)
         return {};
 
-    const auto path = normalizeDiskPath(disk->getPath(), data_source.isPathLocal());
+    const auto path = normalizeDiskPath(joinDiskPath(disk, relative_path), data_source.isPathLocal());
 
     /// `DiskBackup` reports `ObjectStorage` with `ObjectStorageType::None` and has no object storage behind it,
     /// so its identity is its description and its path.
@@ -112,15 +121,77 @@ std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk)
 /// For a `local` disk it is the disk's directory. For an object storage disk with `metadata_type = local`,
 /// `DiskObjectStorage::iterateDirectory` lists the local metadata directory, whatever the object storage
 /// behind it is. For a `local` object storage with plain metadata, it is the directory of the objects.
-std::optional<String> getLocalListingDirectory(const DiskPtr & disk)
+std::optional<String> getLocalListingDirectory(const DiskPtr & disk, const String & relative_path = {})
 {
     const auto data_source = disk->getDataSourceDescription();
     if (data_source.type == DataSourceType::RAM || !data_source.isPathLocal())
         return {};
 
-    return normalizeDiskPath(disk->getPath(), /*is_local=*/ true);
+    return normalizeDiskPath(joinDiskPath(disk, relative_path), /*is_local=*/ true);
 }
 
+/// Returns the disk below the `encrypted` layers of `disk` and the path in it that `relative_path` on `disk` maps to.
+///
+/// An `encrypted` disk does not always prefix a path with its own `path`: a path that already starts with it is
+/// taken as already prefixed and passed to the wrapped disk as is (see `DiskEncryptedTransaction::wrappedPath`).
+/// So the root reported by `getPath` does not tell where the files of a table are: an `encrypted` disk with
+/// `path = 'store/'` keeps the files of a table at `store/<prefix>/<uuid>/` directly in the wrapped disk, where
+/// an `encrypted` disk without a `path` over the same disk, or the wrapped disk itself, keeps them too.
+std::pair<DiskPtr, String> resolveEncryptedLayers(DiskPtr disk, String relative_path)
+{
+#if USE_SSL
+    while (const auto * encrypted = dynamic_cast<const DiskEncrypted *>(disk.get()))
+    {
+        relative_path = DiskEncryptedTransaction::wrappedPath(encrypted->getPathInWrappedDisk(), relative_path);
+        disk = encrypted->getDelegateDiskIfExists();
+    }
+#endif
+    return {std::move(disk), std::move(relative_path)};
+}
+
+bool haveSameStorageNamespaceForPath(const DiskPtr & lhs, const DiskPtr & rhs, const String & relative_path)
+{
+    const auto [lhs_disk, lhs_path] = resolveEncryptedLayers(lhs, relative_path);
+    const auto [rhs_disk, rhs_path] = resolveEncryptedLayers(rhs, relative_path);
+
+    if (const auto lhs_directory = getLocalListingDirectory(lhs_disk, lhs_path))
+    {
+        if (lhs_directory == getLocalListingDirectory(rhs_disk, rhs_path))
+            return true;
+    }
+
+    const auto lhs_namespace = getStorageNamespace(lhs_disk, lhs_path);
+    if (!lhs_namespace)
+        return false;
+
+    return lhs_namespace == getStorageNamespace(rhs_disk, rhs_path);
+}
+
+}
+
+void checkDisksHaveDistinctStorageForPath(const Disks & disks, const String & relative_path, const String & storage_policy_name)
+{
+    if (relative_path.empty())
+        return;
+
+    for (size_t i = 0; i < disks.size(); ++i)
+    {
+        for (size_t j = i + 1; j < disks.size(); ++j)
+        {
+            if (disks[i] == disks[j])
+                continue;
+
+            if (haveSameStorageNamespaceForPath(disks[i], disks[j], relative_path))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Disks {} and {} in storage policy {} keep the path {} in the same storage. "
+                    "A table that reads through both of them loads every part twice",
+                    backQuote(disks[i]->getName()),
+                    backQuote(disks[j]->getName()),
+                    backQuote(storage_policy_name),
+                    quoteString(relative_path));
+        }
+    }
 }
 
 bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs)

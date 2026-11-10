@@ -30,6 +30,12 @@ bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs);
 /// `cache` disk over the same disk for one.
 bool areDisksDuplicateStorage(const DiskPtr & lhs, const DiskPtr & rhs);
 
+/// Throws if two of `disks` keep the files at `relative_path` in the same storage, so that a table with this data
+/// path loads every part twice and removes one copy as a duplicate. Unlike the check of the storage policy, which
+/// compares the roots of the disks, this one follows where `relative_path` actually goes through the `encrypted`
+/// layers, which do not prefix a path that already starts with their own `path`.
+void checkDisksHaveDistinctStorageForPath(const Disks & disks, const String & relative_path, const String & storage_policy_name);
+
 /// The metadata storage below the `encrypted` and `cache` layers of `disk`, or nullptr if `disk` is not over an object storage disk.
 MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk);
 

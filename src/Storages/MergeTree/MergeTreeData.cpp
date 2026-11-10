@@ -58,6 +58,7 @@
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Disks/DiskSelector.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
@@ -711,6 +712,8 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     MergeTreeDataFormatVersion min_format_version(0);
     if (date_column_name.empty())
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+
+    checkDisksHaveDistinctStorageForPath(getDisks(), relative_data_path, getStoragePolicy()->getName());
 
     const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
     std::optional<UInt32> read_format_version;
@@ -2352,6 +2355,7 @@ void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_poli
 {
     const auto old_storage_policy = getStoragePolicy();
     old_storage_policy->checkCompatibleWith(new_storage_policy);
+    checkDisksHaveDistinctStorageForPath(new_storage_policy->getDisks(), relative_data_path, new_storage_policy->getName());
 
     if (hasUniqueKey())
     {
@@ -5601,6 +5605,7 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
     LOG_INFO(log, "Renaming table to path {} with ID {}", new_table_path, new_table_id.getFullTableName());
 
     auto disks = getStoragePolicy()->getDisks();
+    checkDisksHaveDistinctStorageForPath(disks, new_table_path, getStoragePolicy()->getName());
 
     for (const auto & disk : disks)
     {

@@ -242,6 +242,32 @@ def test_symlinked_metadata_path_in_storage_policy(start_cluster):
         node.query("SYSTEM RELOAD CONFIG")
 
 
+def test_encrypted_path_prefix_of_table_path(start_cluster):
+    node = cluster.instances["node1"]
+
+    # The roots of the two disks differ, so the policy itself is accepted. But the `store/...` path of an
+    # `Atomic` table starts with the `path` of `encrypted_store_prefix`, which therefore does not prefix it,
+    # and both disks would keep the parts of the table in the same directory.
+    assert "keep the path" in node.query_and_get_error(
+        "CREATE TABLE encrypted_store_prefix_alias (x UInt64) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS storage_policy = 'encrypted_store_prefix_alias'"
+    )
+
+    # An `encrypted` disk with a `path` that a table path does not start with keeps the parts apart from
+    # the disk it wraps.
+    node.query(
+        "CREATE TABLE encrypted_beside_wrapped_disk (x UInt64) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS storage_policy = 'encrypted_beside_wrapped_disk'"
+    )
+    node.query("INSERT INTO encrypted_beside_wrapped_disk VALUES (1)")
+    node.query("ALTER TABLE encrypted_beside_wrapped_disk MOVE PARTITION tuple() TO DISK 'encrypted_other_prefix'")
+    node.query("INSERT INTO encrypted_beside_wrapped_disk VALUES (2)")
+    node.query("DETACH TABLE encrypted_beside_wrapped_disk")
+    node.query("ATTACH TABLE encrypted_beside_wrapped_disk")
+    assert node.query("SELECT x FROM encrypted_beside_wrapped_disk ORDER BY x") == "1\n2\n"
+    node.query("DROP TABLE encrypted_beside_wrapped_disk SYNC")
+
+
 def test_merge_tree_custom_disk_setting(start_cluster):
     TABLE_NAME = "test_merge_tree_custom_disk_setting"
     node1 = cluster.instances["node1"]
