@@ -6370,6 +6370,21 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 /// `ALWAYS_TRUE` would claim that every row matches.
                 chassert(!is_relaxed);
 
+                /// A `Nullable` expression makes the comparison NULL on a NULL, so it isn't a constant. It becomes a range
+                /// atom that holds every non-NULL value, or none.
+                if (key_expr_type_is_nullable)
+                {
+                    RPNElement element(
+                        RPNElement::FUNCTION_IN_RANGE,
+                        {candidate.key_column_num},
+                        float_rewrite_element.function == RPNElement::ALWAYS_TRUE
+                            ? Range::createWholeUniverseWithoutNull()
+                            : Range(NEGATIVE_INFINITY, false, NEGATIVE_INFINITY, false));
+                    element.monotonic_functions_chain = chain;
+                    element.argument_num_of_space_filling_curve = candidate.argument_num_of_space_filling_curve;
+                    return element;
+                }
+
                 /// The comparison folded to a constant. Return it directly so `atom_map` does not
                 /// overwrite its `ALWAYS_TRUE` or `ALWAYS_FALSE` function.
                 float_rewrite_element.key_columns.push_back(candidate.key_column_num);
