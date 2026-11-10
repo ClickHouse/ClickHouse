@@ -1,0 +1,5 @@
+insert	1	1	1
+read_definer	1	0	1
+read_legacy	0	1	1
+read_target	1	0	0
+read_target

@@ -4,6 +4,7 @@
 #include <Common/MemoryTracker.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Processors/ForkProcessor.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
@@ -33,6 +34,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
 #include <Interpreters/Context.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/CountingTransform.h>
@@ -1539,6 +1541,14 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
         const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
 
+        if (init_context->hasQueryContext()
+            && init_context->getGlobalContext()->getConfigRef().getBool("query_log.enable_query_access_info_attribution", false))
+        {
+            const auto query_access_info = init_context->getQueryContext()->getQueryAccessInfoPtr();
+            select_context->setQueryAccessInfo(query_access_info);
+            insert_context->setQueryAccessInfo(query_access_info);
+        }
+
         root_view = root_view_;
         inner_tables[root_view] = inner_table_;
         select_queries[root_view] = init_query;
@@ -1558,6 +1568,12 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     {
         if (current == init_table_id)
         {
+            if (init_context->hasQueryContext()
+                && (!metadata->sql_security_type
+                    || metadata->sql_security_type == SQLSecurityType::DEFINER
+                    || metadata->sql_security_type == SQLSecurityType::NONE))
+                init_context->getQueryContext()->markQueryAccessInfoHiddenFromUserQueryLog();
+
             set_defaults_for_root_view(init_table_id, materialized_view->getTargetTableId());
             view_types[init_table_id] = QueryViewsLogElement::ViewType::MATERIALIZED;
             return true;
@@ -1572,6 +1588,12 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         select_queries[current] = metadata->getSelectQuery().inner_query;
         input_headers[current] = output_headers.at(path.parent(2));
         // output_headers is filled at next call observePath(inner_table)
+
+        if (init_context->hasQueryContext()
+            && (!metadata->sql_security_type
+                || metadata->sql_security_type == SQLSecurityType::DEFINER
+                || metadata->sql_security_type == SQLSecurityType::NONE))
+            init_context->getQueryContext()->markQueryAccessInfoHiddenFromUserQueryLog();
 
         std::tie(select_contexts[current], insert_contexts[current]) = createSelectInsertContext(path);
 

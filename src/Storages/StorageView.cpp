@@ -27,6 +27,7 @@
 
 #include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <ranges>
 
@@ -77,6 +78,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
+    extern const SettingsBool enable_shared_storage_snapshot_in_query;
 }
 
 namespace ErrorCodes
@@ -340,6 +342,20 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    if (context->hasQueryContext() && view_context->hasQueryContext())
+    {
+        auto query_context = context->getQueryContext();
+        auto view_query_context = view_context->getQueryContext();
+        const bool enable_query_access_info_attribution = context->getGlobalContext()->getConfigRef().getBool(
+            "query_log.enable_query_access_info_attribution", false);
+        if (enable_query_access_info_attribution
+            && (storage_snapshot->metadata->sql_security_type == SQLSecurityType::DEFINER
+                || storage_snapshot->metadata->sql_security_type == SQLSecurityType::NONE))
+            query_context->markQueryAccessInfoHiddenFromUserQueryLog();
+        if (enable_query_access_info_attribution && view_query_context != query_context)
+            view_query_context->setQueryAccessInfo(query_context->getQueryAccessInfoPtr());
+    }
+
     Settings view_settings = view_context->getSettingsCopy();
 
     /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
@@ -751,6 +767,9 @@ void StorageView::readImpl(
             current_inner_query, view_context, options, column_names, sealed ? nullptr : query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
+        /// The body's query context has no other owner, while the plan steps reference it only weakly and the
+        /// optimizer still records the chosen projections into it.
+        query_plan.addInterpreterContext(view_context);
     }
 
     /// And also convert to expected structure.
@@ -953,10 +972,30 @@ Used for implementing views (for more information, see the `CREATE VIEW query`).
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    if (context->hasQueryContext() && view_context->hasQueryContext())
+    {
+        auto query_context = context->getQueryContext();
+        auto view_query_context = view_context->getQueryContext();
+        const bool enable_query_access_info_attribution = context->getGlobalContext()->getConfigRef().getBool(
+            "query_log.enable_query_access_info_attribution", false);
+        if (enable_query_access_info_attribution
+            && (storage_snapshot->metadata->sql_security_type == SQLSecurityType::DEFINER
+                || storage_snapshot->metadata->sql_security_type == SQLSecurityType::NONE))
+            query_context->markQueryAccessInfoHiddenFromUserQueryLog();
+        /// The body is planned as part of the caller's query, and its nodes and plan steps hold copies of `view_context`
+        /// that reference a query context only weakly: rather than a query context of its own that nobody owns, let the
+        /// body resolve to the caller's. An inlinable body is a plain projection of a MergeTree table (see `isSealed`).
+        if (enable_query_access_info_attribution && view_query_context != query_context)
+            view_context->setQueryContext(query_context);
+    }
+
     Settings view_settings = view_context->getSettingsCopy();
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
+    /// The snapshot cache of the caller's query is keyed by table only, while the body may read with other
+    /// `apply_mutations_on_fly` / `apply_patch_parts`, e.g. from the definer's profile. Take its own snapshot.
+    view_settings[Setting::enable_shared_storage_snapshot_in_query] = false;
     view_context->setSettings(view_settings);
     /// The inlined view body is the inner query of the view, just like in `getViewContext`:
     /// e.g. it must read the table itself, not the inserted block of a materialized view.

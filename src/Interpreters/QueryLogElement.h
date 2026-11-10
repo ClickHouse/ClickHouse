@@ -68,6 +68,7 @@ struct QueryLogElement
     UInt64 normalized_query_hash{};
 
     IAST::QueryKind query_kind{};
+    std::optional<UInt8> query_access_info_is_hidden;
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
