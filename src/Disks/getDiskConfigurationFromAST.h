@@ -40,6 +40,8 @@ struct DynamicS3DiskCredentialInfo
     /// should persist a `_server_credentials_allowed` marker in the stored definition. The marker is honored
     /// (only) on later metadata loads, so the disk keeps working across restart without re-opting in.
     bool persist_server_credentials_allowance = false;
+    /// The disk is built with server-managed S3 credentials.
+    bool uses_server_credentials = false;
     /// The safe credential forms the AST itself supplied with literal values; the resolved auth mode is
     /// validated against these.
     bool ast_has_explicit_key_pair = false;                 /// literal `access_key_id` + `secret_access_key`
@@ -70,6 +72,13 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
 /// backend with server-managed auth past the pre-resolution check. Throws `ACCESS_DENIED`, or forces the disk
 /// anonymous when loading from existing metadata (see `s3_load_table_anonymously_if_credentials_restricted`).
 void validateResolvedS3DiskCredentials(Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, const DynamicS3DiskCredentialInfo & info);
+
+/// Persisted in the stored definition of a dynamic S3 disk created with `s3_allow_server_credentials_in_user_queries`.
+inline constexpr auto S3_SERVER_CREDENTIALS_MARKER = "_server_credentials_allowed";
+
+/// Whether a resolved dynamic disk may use the server's own credentials on any of its backends (the root or any
+/// `locations.<name>` child). The disk a wrapper names is not checked here.
+bool diskUsesServerCredentials(const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info);
 
 /*
  * A reverse function.

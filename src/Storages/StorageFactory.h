@@ -17,6 +17,10 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTStorage;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class IStoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 class AccessRightsElements;
 class SettingsChanges;
 struct StorageID;
@@ -61,6 +65,11 @@ public:
 
         ContextMutablePtr getContext() const;
         ContextMutablePtr getLocalContext() const;
+
+        /// A disk or a storage policy the table definition names. Refused, unless loading from existing metadata, when the
+        /// query may not use it (see `DiskFromAST::ensureDiskIsAllowed`).
+        DiskPtr getDisk(const String & name) const;
+        StoragePolicyPtr getStoragePolicy(const String & name) const;
     };
 
     /// Analog of the IStorage::supports*() helpers

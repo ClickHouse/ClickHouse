@@ -570,7 +570,13 @@ public:
     /// Was disk created to be used without storage configuration?
     bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
     UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
-    void markDiskAsCustom(UInt128 settings_hash) { custom_disk_settings_hash = settings_hash; }
+    void markDiskAsCustom(UInt128 settings_hash, bool uses_server_credentials)
+    {
+        custom_disk_settings_hash = settings_hash;
+        custom_disk_uses_server_credentials = uses_server_credentials;
+    }
+    /// A custom disk that uses the server's own credentials, directly or through the disk it wraps.
+    bool customDiskUsesServerCredentials() const { return custom_disk_uses_server_credentials; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
@@ -608,6 +614,7 @@ private:
     std::unique_ptr<ThreadPool> copying_thread_pool;
     // 0 means the disk is not custom, the disk is predefined in the config
     UInt128 custom_disk_settings_hash = 0;
+    bool custom_disk_uses_server_credentials = false;
 
     /// True if underlying filesystem is case-insensitive,
     /// e.g. file_name and FILE_NAME are the same files.
