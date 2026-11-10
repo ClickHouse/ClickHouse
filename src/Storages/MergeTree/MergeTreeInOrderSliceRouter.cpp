@@ -67,7 +67,11 @@ IProcessor::Status MergeTreeInOrderSliceRouter::prepare()
         if (!input.hasData())
             continue;
 
-        Chunk chunk = input.pull();
+        /// Pulled with the port set not needed in the same atomic step, so that the source cannot push
+        /// again before the router decides whether to park it: a chunk pushed in between would sit in a
+        /// port that is not needed, which the next pull rejects. The port is set needed again below
+        /// unless the source is parked.
+        Chunk chunk = input.pull(/*set_not_needed=*/ true);
         const auto info = chunk.getChunkInfos().extract<MergeTreeSliceInfo>();
         if (!info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got a chunk without slice info from a source of the sliced pool");
@@ -99,8 +103,12 @@ IProcessor::Status MergeTreeInOrderSliceRouter::prepare()
         /// takes one when it asks again.
         if (info->idle && pool->fifoSize() == 0)
         {
-            input.setNotNeeded();
             input_needed[source] = false;
+        }
+        else
+        {
+            input.setNeeded();
+            input_needed[source] = true;
         }
     }
 
