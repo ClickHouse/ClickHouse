@@ -2342,6 +2342,33 @@ SELECT x, toTypeName(x) FROM t1;
 ┌─x─┬─toTypeName(x)─┐
 │ 1 │ String        │
 └───┴───────────────┘
+
+### Create a table with AS INSERT {#as-insert}
+
+The `CREATE TABLE ... AS INSERT` syntax creates a table and immediately inserts data into it in a single query.
+
+The data can be provided using `SELECT`, `VALUES`, or `FORMAT`.
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)]
+ENGINE = engine
+AS INSERT ...
+```
+
+When IF NOT EXISTS is specified and the table already exists, the query does not insert the data.
+
+### Create a table with AND INSERT {#and-insert}
+
+The `CREATE TABLE ... AND INSERT` syntax creates the table if it does not exist and executes the `INSERT` even if the table already exists.
+
+The `AND INSERT` clause supports `SELECT`, `VALUES`, and `FORMAT` input.
+
+The AND INSERT syntax is useful when a single query should initialize a table on its first execution and insert data into the existing table on subsequent executions.
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)]
+ENGINE = engine
+AND INSERT ...
 ```
 
 ## Specify column default values {#default_values}
