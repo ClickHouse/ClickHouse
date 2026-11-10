@@ -25,7 +25,7 @@ tests_with_text_log=( $(
         xargs grep --with-filename -E 'system\.text_log\b' | grep -vE '^[^:]*:\s*(--|#)' | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_text_log[@]}"; do
-    grep -qE 'event_time|max_rows_to_read[ ]*=[ ]*0' "$test_case" || echo "Query to system.text_log does not have an event_time condition in $test_case"
+    grep -qiE '\bevent_time(_microseconds)?\s*(>|<|=|BETWEEN\b)|max_rows_to_read\s*=\s*0' "$test_case" || echo "Query to system.text_log does not have an event_time condition in $test_case"
 done
 
 grep -iE 'SYSTEM STOP MERGES;?$' -R $ROOT_PATH/tests/queries && echo "Merges cannot be disabled globally in fast/stateless tests, because it will break concurrently running queries"
