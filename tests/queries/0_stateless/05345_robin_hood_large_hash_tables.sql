@@ -47,14 +47,14 @@ INNER JOIN (SELECT number * 2 AS k, number AS r FROM numbers(9000000)) AS rt ON 
 SETTINGS join_algorithm = 'parallel_hash';
 
 SELECT 'JOIN with and without the Robin Hood mode';
--- `enable_join_robin_hood_hash_tables` lets the buckets of the two-level map switch to the Robin Hood mode, which halves them.
+-- `enable_robin_hood_hash_for_joins` lets the buckets of the two-level map switch to the Robin Hood mode, which halves them.
 SET join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SELECT count(), sum(r) FROM numbers(1000000) AS l
 INNER JOIN (SELECT number * 2 AS k, number AS r FROM numbers(9000000)) AS rt ON l.number = rt.k
-SETTINGS enable_join_robin_hood_hash_tables = 1, log_comment = '05345_join_robin_hood';
+SETTINGS enable_robin_hood_hash_for_joins = 1, log_comment = '05345_join_robin_hood';
 SELECT count(), sum(r) FROM numbers(1000000) AS l
 INNER JOIN (SELECT number * 2 AS k, number AS r FROM numbers(9000000)) AS rt ON l.number = rt.k
-SETTINGS enable_join_robin_hood_hash_tables = 0, log_comment = '05345_join_no_robin_hood';
+SETTINGS enable_robin_hood_hash_for_joins = 0, log_comment = '05345_join_no_robin_hood';
 SYSTEM FLUSH LOGS query_log;
 SELECT
     (SELECT max(memory_usage) FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase()

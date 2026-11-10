@@ -732,7 +732,7 @@ void HashJoin::dataMapInit(MapsVariant & map)
     joinDispatchInit(kind, strictness, map, maps_kind);
     joinDispatch(kind, strictness, map, maps_kind, [&](auto, auto, auto & map_)
     {
-        map_.create(data->type, table_join->enableJoinRobinHoodHashTables());
+        map_.create(data->type, table_join->enableRobinHoodHashForJoins());
     });
 
     if (!data)
