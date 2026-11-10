@@ -17,7 +17,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -37,7 +36,6 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1412,80 +1410,36 @@ void collectAliasDependenciesFromAST(
             collectAliasDependenciesFromAST(child, candidate_names, dependencies);
 }
 
-/// Parameters of the enclosing lambdas and SQL UDFs, innermost last, each with whether its argument is a lambda.
-using LambdaParameters = std::vector<std::pair<String, bool>>;
-
-/// Names an ALIAS expression can read from the table, subqueries and SQL UDF bodies included. As in the analyzer, an
-/// identifier whose name or first part is a parameter reads that parameter, and a call of a parameter whose argument
-/// is a lambda calls that lambda, which is read where it is passed.
-void collectNamesReadFromTable(const ASTPtr & node, LambdaParameters & lambda_parameters, NameSet & udfs_in_progress, NameSet & names)
+/// Names an ALIAS expression can read from the table, subqueries included. An identifier whose name or
+/// first part is a parameter of an enclosing lambda reads that parameter, as in the analyzer.
+void collectNamesReadFromTable(const ASTPtr & node, Names & lambda_parameters, NameSet & names)
 {
     if (!node)
         return;
 
-    const auto find_parameter = [&](const String & name) -> const LambdaParameters::value_type *
-    {
-        auto it = std::find_if(
-            lambda_parameters.rbegin(), lambda_parameters.rend(), [&](const auto & parameter) { return parameter.first == name; });
-        return it == lambda_parameters.rend() ? nullptr : &*it;
-    };
-
-    const auto is_lambda = [&](const ASTPtr & argument)
-    {
-        if (const auto * argument_function = argument->as<ASTFunction>())
-            return argument_function->name == "lambda";
-        const auto * argument_identifier = argument->as<ASTIdentifier>();
-        const auto * parameter = argument_identifier ? find_parameter(argument_identifier->name()) : nullptr;
-        return parameter && parameter->second;
-    };
-
-    const auto collect_lambda_body = [&](const ASTFunction & lambda, const std::vector<bool> & arguments_are_lambdas)
-    {
-        auto parameters = RequiredSourceColumnsMatcher::extractNamesFromLambda(lambda);
-        size_t outer_size = lambda_parameters.size();
-        for (size_t i = 0; i < parameters.size(); ++i)
-            lambda_parameters.emplace_back(parameters[i], i < arguments_are_lambdas.size() && arguments_are_lambdas[i]);
-        collectNamesReadFromTable(lambda.arguments->children[1], lambda_parameters, udfs_in_progress, names);
-        lambda_parameters.resize(outer_size);
-    };
-
     if (const auto * identifier = node->as<ASTIdentifier>())
     {
-        if (!find_parameter(identifier->name()) && !find_parameter(identifier->name_parts.front()))
+        const auto is_lambda_parameter = [&](const String & name)
+        { return std::find(lambda_parameters.begin(), lambda_parameters.end(), name) != lambda_parameters.end(); };
+
+        if (!is_lambda_parameter(identifier->name()) && !is_lambda_parameter(identifier->name_parts.front()))
             names.insert(identifier->name());
         return;
     }
 
-    if (const auto * function = node->as<ASTFunction>())
+    if (const auto * function = node->as<ASTFunction>(); function && function->name == "lambda")
     {
-        if (function->name == "lambda")
-        {
-            collect_lambda_body(*function, {});
-            return;
-        }
-
-        const auto * parameter = find_parameter(function->name);
-        if (!(parameter && parameter->second) && !udfs_in_progress.contains(function->name))
-        {
-            ASTPtr udf = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
-            const auto * create_function_query = udf ? udf->as<ASTCreateSQLFunctionQuery>() : nullptr;
-            if (const auto * udf_lambda = create_function_query ? create_function_query->function_core->as<ASTFunction>() : nullptr)
-            {
-                std::vector<bool> arguments_are_lambdas;
-                if (function->arguments)
-                    for (const auto & argument : function->arguments->children)
-                        arguments_are_lambdas.push_back(is_lambda(argument));
-
-                udfs_in_progress.insert(function->name);
-                collect_lambda_body(*udf_lambda, arguments_are_lambdas);
-                udfs_in_progress.erase(function->name);
-            }
-        }
+        auto parameters = RequiredSourceColumnsMatcher::extractNamesFromLambda(*function);
+        size_t outer_size = lambda_parameters.size();
+        lambda_parameters.insert(lambda_parameters.end(), parameters.begin(), parameters.end());
+        collectNamesReadFromTable(function->arguments->children[1], lambda_parameters, names);
+        lambda_parameters.resize(outer_size);
+        return;
     }
 
     for (const auto & child : node->children)
         if (child)
-            collectNamesReadFromTable(child, lambda_parameters, udfs_in_progress, names);
+            collectNamesReadFromTable(child, lambda_parameters, names);
 }
 
 [[noreturn]] void throwDefaultCycleException(const Strings & cycle_path)
@@ -1821,10 +1775,9 @@ void ColumnsDescription::checkAliasColumnsAreNotCyclic() const
 
     throwOnDependencyCycle(alias_columns, [&](const String & alias_column)
     {
-        LambdaParameters lambda_parameters;
-        NameSet udfs_in_progress;
+        Names lambda_parameters;
         NameSet names;
-        collectNamesReadFromTable(get(alias_column).default_desc.expression, lambda_parameters, udfs_in_progress, names);
+        collectNamesReadFromTable(get(alias_column).default_desc.expression, lambda_parameters, names);
 
         NameSet dependencies;
         for (const auto & name : names)
