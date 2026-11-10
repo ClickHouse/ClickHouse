@@ -23,15 +23,15 @@ namespace DB
 ///   4. If the consumed messages are processed successfully, then the the batch must be committed using  the returned
 /// `OffsetGuard`.
 ///
-/// From thread-safety perspective the functions of this class falls into three categories:
+/// From thread-safety perspective the functions of this class falls into four categories:
 ///   a) Functions `startUsing`, `stopUsing` and `moveConsumer`: they need exclusive access to the object, so they
-/// cannot be called simultaneously with other functions. No exceptions.
+/// cannot be called simultaneously with other functions, except for `pollEventsNonOwning`, see d).
 ///   b) Function `getStat`: it can be called simultaneously with any other functions (including itself), except for
 /// the functions of category a).
 ///   c) All other functions: they can be called simultaneously with `getStat`, but nothing else, not even each other
 /// or themselves.
 ///   d) `pollEventsNonOwning`: only polls the events queue of the handle (data lives on detached
-/// partition queues) and touches no other state, so it is safe with everything except category a).
+///   partition queues) and touches no other state, so it is safe with everything except `moveConsumer`.
 class KeeperHandlingConsumer
 {
 public:
@@ -117,11 +117,8 @@ public:
     /// frozen for the lifetime of the attachment. 0 refreshes on every cycle.
     std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls);
 
-    /// Serves librdkafka callbacks (statistics, errors). The consumer must be in use.
-    void drainKafkaEvents();
-
-    /// Same, but without owning the consumer - safe while another thread holds it: it only polls
-    /// the events queue (data lives on detached partition queues), see category d) above.
+    /// Serves librdkafka callbacks (statistics, errors). Safe while another thread holds the
+    /// consumer: it only polls the events queue (data lives on detached partition queues), see category d) above.
     void pollEventsNonOwning();
 
     /// Returns empty optional if polling it not possible or no messages were polled.

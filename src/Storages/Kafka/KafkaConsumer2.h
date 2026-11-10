@@ -103,7 +103,7 @@ public:
 
     // Poll only the main consumer queue without any topic-partition queues. This is useful to get notified about events, such as rebalance,
     // new assignment, etc..
-    void pollEvents(size_t max_tries = 5);
+    void pollEvents(size_t max_tries = 5, bool wait = true);
 
     auto pollTimeout() const { return poll_timeout; }
 

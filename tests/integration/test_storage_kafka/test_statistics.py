@@ -77,7 +77,6 @@ def test_statistics_enabled_by_default(kafka_cluster):
     """rdkafka_stat must be populated without any statistics config for StorageKafka2."""
     topic_name = "topic_statistics_default"
 
-    # Distinct groups: the old engine's broker commits would move the start offset of the Keeper-backed one.
     new_engine_table = k.generate_new_create_table_query(
         "kafka_new", "a String", topic_list=topic_name, consumer_group="statistics_new_engine", format="LineAsString"
     )
@@ -236,7 +235,7 @@ def test_statistics_survive_blocked_mv_insert(kafka_cluster):
                 "statistics events accumulate in the reply queue during a busy-but-not-polling hold"
             )
         finally:
-            # The producer timeout (5 s in the test config) bounds the blocked insert,
+            # The producer timeout (60 s in the test config) bounds the blocked insert,
             # so the teardown only waits that long after dropping the dead destination.
             instance.query("DROP TABLE IF EXISTS test.dead_dst SYNC", ignore_error=True)
 

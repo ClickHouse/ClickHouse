@@ -706,7 +706,7 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
         consumer_number,
         client_id,
         getMaxBlockSize(),
-        /*drain_idle_consumers=*/true};
+        /*enable_statistics_by_default=*/true};
     auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params, std::move(exception_sink));
     // Making more frequent updates, now 1 min
     kafka_config.set("topic.metadata.refresh.interval.ms", "60000");
@@ -1373,10 +1373,6 @@ void StorageKafka2::threadFunc(size_t idx)
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    /// Nobody polls the consumer when this cycle did not stream, so serve its events to keep the queue bounded.
-    if (!incremented_mv_streamers && !task->stream_cancelled)
-        pollIdleConsumerEvents(idx);
-
     if (incremented_mv_streamers)
         active_mv_streamers.fetch_sub(1);
 
@@ -1517,15 +1513,12 @@ void StorageKafka2::pollIdleConsumerEvents(size_t idx)
             std::lock_guard lock(consumers_mutex);
             if (idx >= consumers.size() || !consumers[idx])
                 return;
-            /// No handle means nothing to drain.
             if (!consumers[idx]->hasConsumer())
                 return;
             consumer = consumers[idx];
         }
 
-        /// Always non-owning: acquiring an idle consumer can block for up to
-        /// kafka_consumer_acquire_timeout_ms if it becomes busy in between, which
-        /// would stall this task and every later slot for the whole wait.
+        /// Non-owning: acquiring a consumer that just turned busy would block for kafka_consumer_acquire_timeout_ms.
         consumer->pollEventsNonOwning();
     }
     catch (...)
@@ -1536,9 +1529,8 @@ void StorageKafka2::pollIdleConsumerEvents(size_t idx)
 
 void StorageKafka2::drainEventsTask()
 {
-    /// Periodic drainer independent of the streaming and activation tasks: a blocked MV insert
-    /// keeps its streaming task inside streamToViews, and a Keeper outage makes activate() wait
-    /// in partialShutdown() for that task, so neither can drain events during such waits.
+    /// Independent of the streaming and activation tasks: a blocked MV insert can keep the
+    /// streaming task inside streamToViews, a Keeper outage the activation task in partialShutdown.
     for (size_t idx = 0; idx < tasks.size(); ++idx)
         pollIdleConsumerEvents(idx);
 
