@@ -3,6 +3,7 @@
 
 -- Make sure that distributed index analysis works with parallel replicas
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 drop table if exists test_10m;
 create table test_10m (key Int, value Int) engine=MergeTree() order by key settings distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_bytes_to_activate=0;
 system stop merges test_10m;

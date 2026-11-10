@@ -1676,10 +1676,12 @@ StorageFileSource::FilesIterator::FilesIterator(
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.assign(filter_sources.size(), archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filter_sources, filter_paths, actions, virtual_columns_, hive_columns_, context_,
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filter_sources,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, actions, virtual_columns_, hive_columns_, context_,
+                    /*format_settings=*/std::nullopt,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
         }
         else
             deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
@@ -1718,10 +1720,12 @@ String StorageFileSource::FilesIterator::next()
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.push_back(archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filtered_files, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filtered_files,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
+                    /*format_settings=*/std::nullopt,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_files.empty())
                 continue;
         }
