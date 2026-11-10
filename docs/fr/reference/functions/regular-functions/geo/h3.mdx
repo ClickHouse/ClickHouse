@@ -6,7 +6,9 @@ title: 'Fonctions pour manipuler les indexes H3'
 doc_type: 'reference'
 ---
 
-## H3 Index {#h3-index}
+<div id="h3-index">
+  ## H3 Index
+</div>
 
 [H3](https://h3geo.org/) est un système d’indexation géographique dans lequel la surface de la Terre est divisée en une grille régulière de cellules hexagonales. Ce système est hiérarchique, c’est-à-dire que chaque hexagone du niveau supérieur (« parent ») peut être subdivisé en sept hexagones réguliers plus petits (« enfants »), et ainsi de suite.
 
@@ -18,7 +20,9 @@ L’index H3 est principalement utilisé pour regrouper des lieux et pour d’au
 
 Une description complète du système H3 est disponible sur [le site d’Uber Engineering](https://www.uber.com/blog/h3/).
 
-## h3IsValid {#h3isvalid}
+<div id="h3isvalid">
+  ## h3IsValid
+</div>
 
 Vérifie si le nombre correspond à un index [H3](#h3-index) valide.
 
@@ -49,7 +53,9 @@ SELECT h3IsValid(630814730351855103) AS h3IsValid;
 └───────────┘
 ```
 
-## h3GetResolution {#h3getresolution}
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
 
 Définit la résolution de l’index [H3](#h3-index) donné.
 
@@ -80,7 +86,9 @@ SELECT h3GetResolution(639821929606596015) AS resolution;
 └────────────┘
 ```
 
-## h3EdgeAngle {#h3edgeangle}
+<div id="h3edgeangle">
+  ## h3EdgeAngle
+</div>
 
 Calcule la longueur moyenne d’un arête d’un hexagone [H3](#h3-index) en grades.
 
@@ -110,7 +118,9 @@ SELECT h3EdgeAngle(10) AS edgeAngle;
 └───────────────────────┘
 ```
 
-## h3EdgeLengthM {#h3edgelengthm}
+<div id="h3edgelengthm">
+  ## h3EdgeLengthM
+</div>
 
 Calcule la longueur moyenne d’une arête d’un hexagone [H3](#h3-index), en mètres.
 
@@ -140,7 +150,9 @@ SELECT h3EdgeLengthM(15) AS edgeLengthM;
 └─────────────┘
 ```
 
-## h3EdgeLengthKm {#h3edgelengthkm}
+<div id="h3edgelengthkm">
+  ## h3EdgeLengthKm
+</div>
 
 Calcule la longueur moyenne d’une arête d’un hexagone [H3](#h3-index), en kilomètres.
 
@@ -170,7 +182,9 @@ SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
 └──────────────┘
 ```
 
-## geoToH3 {#geotoh3}
+<div id="geotoh3">
+  ## geoToH3
+</div>
 
 Renvoie l’index [H3](#h3-index) du point `(lat, lon)` à la résolution spécifiée.
 
@@ -205,7 +219,9 @@ SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
 └────────────────────┘
 ```
 
-## h3ToGeo {#h3togeo}
+<div id="h3togeo">
+  ## h3ToGeo
+</div>
 
 Renvoie la latitude et la longitude du centroïde correspondant à l’index [H3](#h3-index) indiqué.
 
@@ -237,7 +253,9 @@ SELECT h3ToGeo(644325524701193974) AS coordinates;
 └───────────────────────────────────────┘
 ```
 
-## h3ToGeoBoundary {#h3togeoboundary}
+<div id="h3togeoboundary">
+  ## h3ToGeoBoundary
+</div>
 
 Renvoie un Array de paires `(lat, lon)` représentant le contour de l’index H3 fourni.
 
@@ -267,7 +285,9 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3kRing {#h3kring}
+<div id="h3kring">
+  ## h3kRing
+</div>
 
 Liste tous les hexagones [H3](#h3-index) situés dans un rayon de `k` autour de l’hexagone donné, dans un ordre aléatoire.
 
@@ -304,11 +324,11 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
 └────────────────────┘
 ```
 
-## h3PolygonToCells {#h3polygontocells}
+<div id="h3polygontocells">
+  ## h3PolygonToCells
+</div>
 
-Renvoie les hexagones (à la résolution spécifiée) compris dans la géométrie fournie, qu’il s’agisse d’un Ring ou d’un (multi-)Polygon. Un hexagone est considéré comme contenu lorsque la géométrie contient son centre, ce qui correspond au mode de containment `0` de [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment).
-
-Chaque sommet de la géométrie doit se trouver sur la sphère : longitude dans la plage `[-180, 180]` et latitude dans la plage `[-90, 90]` degrés. L’ordre des cellules renvoyées n’est pas garanti ; triez donc le tableau lorsque l’ordre est important.
+Renvoie les hexagones (à la résolution spécifiée) compris dans la géométrie fournie, qu’il s’agisse d’un Ring ou d’un (multi-)Polygon.
 
 **Syntaxe**
 
@@ -318,7 +338,7 @@ h3PolygonToCells(geometry, resolution)
 
 **Arguments**
 
-* `geometry` peut être l’un des [types de données Geo](/fr/reference/data-types/geo) suivants ou l’un de leurs types primitifs sous-jacents :
+* `geometry` peut être l’un des [Geo Data Types](/fr/reference/data-types/geo) suivants ou l’un de leurs types primitifs sous-jacents :
   * [Ring](/fr/reference/data-types/geo#ring)
   * [Polygon](/fr/reference/data-types/geo#polygon)
   * [MultiPolygon](/fr/reference/data-types/geo#multipolygon)
@@ -336,21 +356,21 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ```text title="Response"
 ┌────────────h3index─┐
+│ 608692970769612799 │
+│ 608692971927240703 │
 │ 608692970585063423 │
+│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
-│ 608692970769612799 │
-│ 608692970819944447 │
-│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
 
-## h3PolygonToCellsWithContainment {#h3polygontocellswithcontainment}
+<div id="h3polygontocellswithcontainment">
+  ## h3PolygonToCellsWithContainment
+</div>
 
 Renvoie les hexagones (à la résolution spécifiée) qui recouvrent la géométrie fournie — un `ring` ou un `(multi-)polygon` — en utilisant les modes de containment expérimentaux de H3.
-
-Chaque sommet de la géométrie doit se trouver sur la sphère : longitude comprise dans la plage `[-180, 180]` et latitude comprise dans la plage `[-90, 90]` degrés. L’ordre des cellules renvoyées n’est pas garanti ; triez donc le tableau lorsque l’ordre est important.
 
 Cette fonction associe les `flags` aux modes de containment H3 :
 
@@ -392,7 +412,9 @@ SELECT
    └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3GetBaseCell {#h3getbasecell}
+<div id="h3getbasecell">
+  ## h3GetBaseCell
+</div>
 
 Renvoie le numéro de la cellule de base de l’index [H3](#h3-index).
 
@@ -422,7 +444,9 @@ SELECT h3GetBaseCell(612916788725809151) AS basecell;
 └──────────┘
 ```
 
-## h3HexAreaM2 {#h3hexaream2}
+<div id="h3hexaream2">
+  ## h3HexAreaM2
+</div>
 
 Renvoie la surface moyenne d’un hexagone en mètres carrés pour la résolution donnée.
 
@@ -452,7 +476,9 @@ SELECT h3HexAreaM2(13) AS area;
 └──────┘
 ```
 
-## h3HexAreaKm2 {#h3hexareakm2}
+<div id="h3hexareakm2">
+  ## h3HexAreaKm2
+</div>
 
 Renvoie la superficie moyenne d’un hexagone, en kilomètres carrés, pour la résolution donnée.
 
@@ -482,7 +508,9 @@ SELECT h3HexAreaKm2(13) AS area;
 └───────────┘
 ```
 
-## h3IndexesAreNeighbors {#h3indexesareneighbors}
+<div id="h3indexesareneighbors">
+  ## h3IndexesAreNeighbors
+</div>
 
 Indique si les index [H3](#h3-index) spécifiés sont voisins.
 
@@ -514,7 +542,9 @@ SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
 └───┘
 ```
 
-## h3ToChildren {#h3tochildren}
+<div id="h3tochildren">
+  ## h3ToChildren
+</div>
 
 Renvoie un tableau des index enfants pour l’index [H3](#h3-index) donné.
 
@@ -545,7 +575,9 @@ SELECT h3ToChildren(599405990164561919, 6) AS children;
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3ToParent {#h3toparent}
+<div id="h3toparent">
+  ## h3ToParent
+</div>
 
 Renvoie l’index parent (de résolution inférieure) qui contient l’index [H3](#h3-index) donné.
 
@@ -576,7 +608,9 @@ SELECT h3ToParent(599405990164561919, 3) AS parent;
 └────────────────────┘
 ```
 
-## h3ToString {#h3tostring}
+<div id="h3tostring">
+  ## h3ToString
+</div>
 
 Convertit la représentation `H3Index` de l’index en représentation textuelle.
 
@@ -604,7 +638,9 @@ SELECT h3ToString(617420388352917503) AS h3_string;
 └─────────────────┘
 ```
 
-## stringToH3 {#stringtoh3}
+<div id="stringtoh3">
+  ## stringToH3
+</div>
 
 Convertit la représentation textuelle en représentation `H3Index` (UInt64).
 
@@ -634,7 +670,9 @@ SELECT stringToH3('89184926cc3ffff') AS index;
 └────────────────────┘
 ```
 
-## h3GetResolution {#h3getresolution-1}
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
 
 Renvoie la résolution de l’index [H3](#h3-index).
 
@@ -664,7 +702,9 @@ SELECT h3GetResolution(617420388352917503) AS res;
 └─────┘
 ```
 
-## h3IsResClassIII {#h3isresclassiii}
+<div id="h3isresclassiii">
+  ## h3IsResClassIII
+</div>
 
 Indique si l’[index H3](#h3-index) a une résolution d’orientation de classe III.
 
@@ -695,7 +735,9 @@ SELECT h3IsResClassIII(617420388352917503) AS res;
 └─────┘
 ```
 
-## h3IsPentagon {#h3ispentagon}
+<div id="h3ispentagon">
+  ## h3IsPentagon
+</div>
 
 Indique si cet index [H3](#h3-index) représente une cellule pentagonale.
 
@@ -726,7 +768,9 @@ SELECT h3IsPentagon(644721767722457330) AS pentagon;
 └──────────┘
 ```
 
-## h3GetFaces {#h3getfaces}
+<div id="h3getfaces">
+  ## h3GetFaces
+</div>
 
 Renvoie les faces de l’icosaèdre qu’un index [H3](#h3-index) donné intersecte.
 
@@ -756,7 +800,9 @@ SELECT h3GetFaces(599686042433355775) AS faces;
 └───────┘
 ```
 
-## h3CellAreaM2 {#h3cellaream2}
+<div id="h3cellaream2">
+  ## h3CellAreaM2
+</div>
 
 Renvoie la superficie exacte, en mètres carrés, d’une cellule spécifique pour l’index H3 fourni en entrée.
 
@@ -786,7 +832,9 @@ SELECT h3CellAreaM2(579205133326352383) AS area;
 └────────────────────┘
 ```
 
-## h3CellAreaRads2 {#h3cellarearads2}
+<div id="h3cellarearads2">
+  ## h3CellAreaRads2
+</div>
 
 Renvoie l’aire exacte, en radians carrés, d’une cellule spécifique correspondant à l’index H3 fourni en entrée.
 
@@ -816,7 +864,9 @@ SELECT h3CellAreaRads2(579205133326352383) AS area;
 └─────────────────────┘
 ```
 
-## h3ToCenterChild {#h3tocenterchild}
+<div id="h3tocenterchild">
+  ## h3ToCenterChild
+</div>
 
 Renvoie l’index [H3](#h3-index) enfant central (plus fin) contenu dans l’index [H3](#h3-index) donné, à la résolution spécifiée.
 
@@ -847,7 +897,9 @@ SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
 └────────────────────┘
 ```
 
-## h3ExactEdgeLengthM {#h3exactedgelengthm}
+<div id="h3exactedgelengthm">
+  ## h3ExactEdgeLengthM
+</div>
 
 Renvoie la longueur exacte, en mètres, de l’arête unidirectionnelle représentée par l’index H3 d’entrée.
 
@@ -877,7 +929,9 @@ SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 └──────────────────┘
 ```
 
-## h3ExactEdgeLengthKm {#h3exactedgelengthkm}
+<div id="h3exactedgelengthkm">
+  ## h3ExactEdgeLengthKm
+</div>
 
 Renvoie la longueur exacte, en kilomètres, de l’arête unidirectionnelle représentée par l’index H3 fourni en entrée.
 
@@ -907,7 +961,9 @@ SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 └───────────────────┘
 ```
 
-## h3ExactEdgeLengthRads {#h3exactedgelengthrads}
+<div id="h3exactedgelengthrads">
+  ## h3ExactEdgeLengthRads
+</div>
 
 Renvoie la longueur exacte de l’arête unidirectionnelle représentée par l’index H3 d’entrée, en radians.
 
@@ -937,7 +993,9 @@ SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthR
 └─────────────────────┘
 ```
 
-## h3NumHexagons {#h3numhexagons}
+<div id="h3numhexagons">
+  ## h3NumHexagons
+</div>
 
 Renvoie le nombre d’indices H3 uniques pour la résolution donnée.
 
@@ -967,7 +1025,9 @@ SELECT h3NumHexagons(3) AS numHexagons;
 └─────────────┘
 ```
 
-## h3PointDistM {#h3pointdistm}
+<div id="h3pointdistm">
+  ## h3PointDistM
+</div>
 
 Renvoie la distance en mètres selon le « grand cercle » ou la formule « haversine » entre des paires de points GeoCoord (latitude/longitude).
 
@@ -998,7 +1058,9 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 └────────────────────┘
 ```
 
-## h3PointDistKm {#h3pointdistkm}
+<div id="h3pointdistkm">
+  ## h3PointDistKm
+</div>
 
 Renvoie la distance « grand cercle » ou « haversine » entre des paires de points GeoCoord (latitude/longitude), exprimée en kilomètres.
 
@@ -1029,7 +1091,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 └────────────────────┘
 ```
 
-## h3PointDistRads {#h3pointdistrads}
+<div id="h3pointdistrads">
+  ## h3PointDistRads
+</div>
 
 Renvoie la distance « grand cercle » ou « haversine », en radians, entre des paires de points GeoCoord (latitude/longitude).
 
@@ -1060,7 +1124,9 @@ SELECT h3PointDistRads(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistRads;
 └────────────────────┘
 ```
 
-## h3GetRes0Indexes {#h3getres0indexes}
+<div id="h3getres0indexes">
+  ## h3GetRes0Indexes
+</div>
 
 Renvoie un tableau de tous les index H3 de résolution 0.
 
@@ -1086,7 +1152,9 @@ SELECT h3GetRes0Indexes AS indexes ;
 └─────────────────────────────────────────────┘
 ```
 
-## h3GetPentagonIndexes {#h3getpentagonindexes}
+<div id="h3getpentagonindexes">
+  ## h3GetPentagonIndexes
+</div>
 
 Renvoie tous les index H3 en forme de pentagone à la résolution spécifiée.
 
@@ -1116,7 +1184,9 @@ SELECT h3GetPentagonIndexes(3) AS indexes;
 └────────────────────────────────────────────────────────────────┘
 ```
 
-## h3Line {#h3line}
+<div id="h3line">
+  ## h3Line
+</div>
 
 Renvoie la ligne d’indices reliant les deux indices fournis.
 
@@ -1147,7 +1217,9 @@ Array d&#39;index H3 représentant la suite d&#39;index entre les deux index fou
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3Distance {#h3distance}
+<div id="h3distance">
+  ## h3Distance
+</div>
 
 Renvoie la distance, en cellules de grille, entre les deux indices fournis.
 
@@ -1180,7 +1252,9 @@ Renvoie un nombre négatif si le calcul de la distance échoue.
 └──────────┘
 ```
 
-## h3HexRing {#h3hexring}
+<div id="h3hexring">
+  ## h3HexRing
+</div>
 
 Renvoie les indices de l’anneau hexagonal centré sur l’h3Index d’origine fourni, de longueur k.
 
@@ -1213,7 +1287,9 @@ h3HexRing(index, k)
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3GetUnidirectionalEdge {#h3getunidirectionaledge}
+<div id="h3getunidirectionaledge">
+  ## h3GetUnidirectionalEdge
+</div>
 
 Renvoie un index H3 d’arête unidirectionnelle pour deux index de cellules H3 adjacentes (origine et destination). Lève une exception si l’une des entrées n’est pas une cellule H3 valide (ce comportement est contrôlé par le paramètre `functions_h3_default_if_invalid`). Pour des cellules valides qui ne sont pas voisines (y compris la même cellule deux fois), renvoie `0`.
 
@@ -1244,7 +1320,9 @@ h3GetUnidirectionalEdge(originIndex, destinationIndex)
 └─────────────────────┘
 ```
 
-## h3UnidirectionalEdgeIsValid {#h3unidirectionaledgeisvalid}
+<div id="h3unidirectionaledgeisvalid">
+  ## h3UnidirectionalEdgeIsValid
+</div>
 
 Détermine si le H3Index fourni correspond à une arête unidirectionnelle valide. Renvoie 1 s’il s’agit d’une arête unidirectionnelle, et 0 sinon.
 
@@ -1275,7 +1353,9 @@ h3UnidirectionalEdgeIsValid(index)
 └────────────┘
 ```
 
-## h3GetOriginIndexFromUnidirectionalEdge {#h3getoriginindexfromunidirectionaledge}
+<div id="h3getoriginindexfromunidirectionaledge">
+  ## h3GetOriginIndexFromUnidirectionalEdge
+</div>
 
 Renvoie l’index de l’hexagone d’origine à partir de l’arête unidirectionnelle H3Index. Lève une exception si l’entrée n’est pas une arête dirigée valide (contrôlé par le paramètre `functions_h3_default_if_invalid`) ; renvoie `0` uniquement lorsque ce paramètre est activé.
 
@@ -1306,7 +1386,9 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 └────────────────────┘
 ```
 
-## h3GetDestinationIndexFromUnidirectionalEdge {#h3getdestinationindexfromunidirectionaledge}
+<div id="h3getdestinationindexfromunidirectionaledge">
+  ## h3GetDestinationIndexFromUnidirectionalEdge
+</div>
 
 Renvoie l’index du hexagone de destination à partir de l’arête unidirectionnelle H3Index. Lève une exception si l’entrée n’est pas une arête dirigée valide (contrôlé par le paramètre `functions_h3_default_if_invalid`) ; renvoie `0` uniquement lorsque ce paramètre est activé.
 
@@ -1337,7 +1419,9 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 └────────────────────┘
 ```
 
-## h3GetIndexesFromUnidirectionalEdge {#h3getindexesfromunidirectionaledge}
+<div id="h3getindexesfromunidirectionaledge">
+  ## h3GetIndexesFromUnidirectionalEdge
+</div>
 
 Renvoie les index H3 des hexagones d’origine et de destination à partir de l’arête unidirectionnelle H3Index donnée.
 
@@ -1372,7 +1456,9 @@ Lève une exception si l’entrée fournie n’est pas une arête dirigée valid
 └─────────────────────────────────────────┘
 ```
 
-## h3GetUnidirectionalEdgesFromHexagon {#h3getunidirectionaledgesfromhexagon}
+<div id="h3getunidirectionaledgesfromhexagon">
+  ## h3GetUnidirectionalEdgesFromHexagon
+</div>
 
 Renvoie toutes les arêtes unidirectionnelles de l’H3Index fourni. Lève une exception si l’entrée n’est pas une cellule H3 valide (selon le paramètre `functions_h3_default_if_invalid`) ; renvoie un tableau vide uniquement lorsque ce paramètre est activé.
 
@@ -1403,7 +1489,9 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3GetUnidirectionalEdgeBoundary {#h3getunidirectionaledgeboundary}
+<div id="h3getunidirectionaledgeboundary">
+  ## h3GetUnidirectionalEdgeBoundary
+</div>
 
 Renvoie les coordonnées qui définissent l’arête unidirectionnelle. Lève une exception si l’entrée n’est pas une arête dirigée valide (contrôlé par le paramètre `functions_h3_default_if_invalid`) ; renvoie un tableau vide uniquement lorsque ce paramètre est activé.
 

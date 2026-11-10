@@ -4,10 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
 
-#include <base/types.h>
-
 #include <deque>
-#include <optional>
 
 namespace DB
 {
@@ -19,8 +16,7 @@ namespace DB
  */
 class MetadataOperationsHolder
 {
-    /// Returns why the rollback did not complete, if it did not.
-    std::optional<String> rollback(size_t until_pos) noexcept;
+    void rollback(size_t until_pos, Exception & rollback_reason) noexcept;
 
 public:
     void prependOperation(MetadataOperationPtr && operation);

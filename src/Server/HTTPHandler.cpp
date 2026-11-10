@@ -1,5 +1,4 @@
 #include <Server/HTTPHandler.h>
-#include <Server/ConnectionRegistry.h>
 #include <Server/HTTPQueryConstructor.h>
 
 #include <Access/AccessControl.h>
@@ -26,9 +25,7 @@
 #include <Interpreters/TableNameHints.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/Lexer.h>
-#include <Parsers/ParserQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
-#include <Parsers/parseQuery.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -88,7 +85,6 @@ namespace Setting
     extern const SettingsInt64 http_zlib_compression_level;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
-    extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool run_query_in_background;
     extern const SettingsBool send_progress_in_http_headers;
@@ -138,27 +134,11 @@ namespace
 /// Whether the request declares a body that the HTTP handler layer reads by itself, regardless of the query:
 /// Poco's `HTMLForm` loads `application/x-www-form-urlencoded` payloads, and `multipart/form-data` is parsed as
 /// "external data for query processing". Such a body must come with a length on a non-chunked request.
-/// Match URL-encoded forms case-insensitively. Keep multipart framing aligned with the existing
-/// case-sensitive multipart consumers until those are updated together.
 bool requestDeclaresFormBody(const HTTPServerRequest & request)
 {
-    return isContentType(request, "application/x-www-form-urlencoded")
-        || startsWith(request.getContentType(), "multipart/form-data");
-}
-
-/// Only table paths with a known format and no path filters can be used as upload destinations.
-void validateHTTPPathUpload(const HTTPPathInfo & path_info)
-{
-    if (path_info.table.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "HTTP PUT table uploads require a table path with a known format, for example /database/table.CSV");
-
-    if (path_info.format.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "HTTP PUT table uploads require a known format in the URL path, for example /database/table.CSV");
-
-    if (!path_info.path_filters.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP PUT table uploads do not support filters in the URL path");
+    const auto & content_type = request.getContentType();
+    return startsWith(content_type, "application/x-www-form-urlencoded")
+        || startsWith(content_type, "multipart/form-data");
 }
 
 void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
@@ -270,11 +250,6 @@ HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & 
 HTTPHandler::~HTTPHandler() = default;
 
 
-String HTTPHandler::getURIForLogging(const HTTPServerRequest & request) const
-{
-    return maskSensitiveQueryParametersInURI(request.getURI(), [this](const std::string & name) { return isQueryTextParameter(name); });
-}
-
 bool HTTPHandler::authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponse & response)
 {
     return authenticateUserByHTTP(request, params, response, *session, request_credentials, connection_config, server.context(), log);
@@ -291,7 +266,7 @@ void HTTPHandler::processQuery(
 {
     using namespace Poco::Net;
 
-    LOG_TRACE(log, "Request URI: {}", getURIForLogging(request));
+    LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
 
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
@@ -464,6 +439,17 @@ void HTTPHandler::processQuery(
     {
         context->setHTTPHandlerName(introspection_handler_name);
 
+        /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
+        /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
+        /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
+        /// Parse it with unlimited depth and backtracks (`0` disables the limit) here too, so a handler
+        /// that was accepted at creation stays invokable under ordinary session limits instead of failing
+        /// each request until the caller raises `max_parser_depth` / `max_parser_backtracks` themselves.
+        /// The client controls only the typed query parameters, never the query text, and could raise
+        /// these settings per-request anyway (they are changeable under `readonly = 2`); `parseQuery`
+        /// still guards against stack overflow via `checkStackSize`.
+        context->setSetting("max_parser_depth", Field(0));
+        context->setSetting("max_parser_backtracks", Field(0));
     }
 
     /// === Authentication and user profile are applied first ===
@@ -477,15 +463,8 @@ void HTTPHandler::processQuery(
 
     /// POST always allows modifying queries. For SQL-defined handlers (which set `introspection_handler_name`)
     /// the mutating idempotent methods PUT and DELETE are allowed to modify data too, as decided per handler in
-    /// `makeSQLDefinedHandler`. Dynamic path uploads are also allowed to modify data, but only for their specific
-    /// PUT request shape; all other built-in and config-defined handlers keep the POST-only behavior.
-    /// This decision is made before request settings and path parsing are applied because the readonly
-    /// default must be selected first. The path and body are validated below before any query is executed.
-    const bool is_path_table_upload = allowMutatingIdempotentMethods(request, params);
-    setReadOnlyIfHTTPMethodIdempotent(
-        context,
-        request.getMethod(),
-        /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty() || is_path_table_upload);
+    /// `makeSQLDefinedHandler`. Config-defined and built-in handlers keep the POST-only behavior.
+    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod(), /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty());
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
@@ -496,57 +475,8 @@ void HTTPHandler::processQuery(
 
     context->setCurrentQueryId(query_id);
 
-    /// Set the connection of this request to active in `system.connections` until the request ends.
-    /// The connection gets its registration on its first query. The registration stays until the socket closes.
-    /// Between the requests, the connection is idle. See `HTTPConnectionRegistration`.
-    /// Refresh an existing registration also if `collect_connection_metrics` is `false` now.
-    /// The registry keeps such registrations and shows them again when the setting changes to `true`.
-    /// Thus, they must have the client properties and the state of the last request, not of a request before the change.
-    /// The setting controls only new registrations.
-    HTTPConnectionRegistration * connection_registration = request.getConnectionRegistration();
-    if (connection_registration && (connection_registration->handle || ConnectionRegistry::instance().isEnabled()))
-    {
-        /// Each request sets the client properties again.
-        /// A reverse proxy can send the requests of different clients and users on one keep-alive connection.
-        /// Use `current_address` for the address and for the port. Do not use `request.clientAddress`.
-        /// `request.clientAddress` is always the direct TCP peer. Behind a proxy, it is the address of the proxy.
-        /// `authenticateUserByHTTP` sets `current_address`. If `auth_use_forwarded_address` is `true`, this address comes from `X-Forwarded-For`.
-        /// Thus, `system.connections`, `system.processes`, and `system.query_log` show the same address and port.
-        const auto & http_client_info = context->getClientInfo();
-        ConnectionPeer peer;
-        peer.user = http_client_info.current_user;
-        peer.user_id = context->getUserID();
-        peer.client_address = http_client_info.current_address->host();
-        peer.client_port = http_client_info.current_address->port();
-        peer.client_name = request.get("User-Agent", "");
-
-        if (!connection_registration->handle)
-        {
-            ConnectionInfo info;
-            info.protocol = "HTTP";
-            info.server_port = request.serverAddress().port();
-            info.connected_time = connection_registration->connected_time;
-            connection_registration->handle = ConnectionRegistry::instance().add(std::move(info), peer);
-        }
-        connection_registration->handle.setActive(context->getCurrentQueryId(), std::move(peer));
-    }
-    SCOPE_EXIT({
-        if (connection_registration)
-            connection_registration->handle.setIdle();
-    });
-
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
-
-    /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
-    /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
-    /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
-    /// The parser limits are not zeroed on the query context here: `executeQuery` lifts them only for
-    /// the stored text itself via the `parse_server_owned_query_without_limits` flag (`has_server_owned_query`
-    /// is set by `PredefinedQueryHandler`, from which `SQLDefinedQueryHandler` inherits), so the
-    /// request-controlled construction snippets (`select`/`filter`/`order`/`page`) keep the caller's limits. The
-    /// same flag also pins the stored text to the ClickHouse SQL parser, so a request cannot make the handler
-    /// unparsable by asking for another `dialect`.
 
     /// The `X-ClickHouse-Format` header is an alias for the `output_format` setting, or - when
     /// `http_x_clickhouse_format_overrides_output_format` is disabled - for the `default_format`
@@ -579,11 +509,9 @@ void HTTPHandler::processQuery(
     /// has all path features off, we skip path parsing entirely — the rest of the request is treated
     /// exactly as it would be at the root URL.
     HTTPPathInfo path_info;
-    const bool allow_table_after_database
-        = is_path_table_upload && settings[Setting::http_allow_database_as_path];
-    const bool any_path_feature_enabled = settings[Setting::http_allow_database_as_path]
-                                       || settings[Setting::http_allow_table_as_file]
-                                       || settings[Setting::http_allow_filters_as_path];
+    bool any_path_feature_enabled = settings[Setting::http_allow_database_as_path]
+                                  || settings[Setting::http_allow_table_as_file]
+                                  || settings[Setting::http_allow_filters_as_path];
     if (parsesHTTPPath() && any_path_feature_enabled)
     {
         const String & raw_uri = request.getURI();
@@ -618,12 +546,8 @@ void HTTPHandler::processQuery(
                 path_only,
                 settings[Setting::http_allow_database_as_path],
                 settings[Setting::http_allow_table_as_file],
-                settings[Setting::http_allow_filters_as_path],
-                allow_table_after_database);
+                settings[Setting::http_allow_filters_as_path]);
     }
-
-    if (is_path_table_upload)
-        validateHTTPPathUpload(path_info);
 
     /// Resolve the current database from the path and the `database` setting, in that order.
     /// If both are specified and differ, that's an error. We do this *before* `QueryScope::create`
@@ -724,7 +648,7 @@ void HTTPHandler::processQuery(
 
     /// Apply compression from path (if no `compression` setting was specified explicitly).
     SettingsChanges path_derived_changes;
-    if (!is_path_table_upload && !path_info.compression.empty())
+    if (!path_info.compression.empty())
     {
         /// Only a compression supplied by this request (URL parameter or header, collected into
         /// `settings_changes` above) counts as an explicit override that can conflict with the path.
@@ -919,18 +843,6 @@ void HTTPHandler::processQuery(
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
-    if (is_path_table_upload && !path_info.compression.empty())
-    {
-        const auto path_compression = chooseCompressionMethod({}, path_info.compression);
-        if (!http_request_compression_method_str.empty()
-            && chooseCompressionMethod({}, http_request_compression_method_str) != path_compression)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Conflicting compression: '{}' in URL path vs '{}' in `Content-Encoding` header.",
-                path_info.compression, http_request_compression_method_str);
-
-        if (http_request_compression_method_str.empty())
-            http_request_compression_method_str = path_info.compression;
-    }
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
     /// TODO check
     /// input stream are hold inside in_post instance
@@ -945,14 +857,11 @@ void HTTPHandler::processQuery(
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
     std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
+    bool is_in_post_compressed = false;
     if (params.getParsedLast<bool>("decompress", false))
     {
-        auto compressed_body = std::make_unique<CompressedReadBuffer>(
-            std::move(in_post), /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
-        /// Apply the checksum policy before any body read, including the path-upload eof() probe.
-        if (settings[Setting::http_native_compression_disable_checksumming_on_decompress])
-            compressed_body->disableChecksumming();
-        in_post_maybe_compressed = std::move(compressed_body);
+        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(std::move(in_post), /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
+        is_in_post_compressed = true;
     }
     else
     {
@@ -1026,12 +935,6 @@ void HTTPHandler::processQuery(
         }
     }
 
-    /// Framing tells us whether the request body is bounded and can be read. For path uploads, the
-    /// decoded stream is checked below as well, so a zero-length chunked or compressed body does not
-    /// satisfy the non-empty upload contract.
-    const bool request_body_is_framed = feeds_request_body_to_query
-        && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
-
     /// Determine base query: from URL path table, or from `query` param (raw_query).
     String final_query = raw_query;
 
@@ -1069,14 +972,11 @@ void HTTPHandler::processQuery(
         /// `implicit_table_at_top_level` (only applied to FROM-less queries). Forcing the path
         /// table to exist would reject valid requests like `/foo.CSV?query=SELECT+1+FROM+other`
         /// or `POST /db/path_table` with body `SELECT ... FROM other_table`.
-        ///
-        /// Skip it for path uploads as well: this check runs before access control, so an upload - a write - to a
-        /// missing table would reveal its non-existence (and the names of similar tables) to a caller without the
-        /// `INSERT` privilege. The generated `INSERT` reports a missing table through the normal checks instead.
+        bool request_has_body = feeds_request_body_to_query
+            && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
         const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
-        const bool table_name_is_simple = !path_info.table.contains('.');
-        if (table_name_is_simple && !table_db.empty() && raw_query.empty()
-            && !is_path_table_upload && !request_body_is_framed)
+        bool table_name_is_simple = !path_info.table.contains('.');
+        if (table_name_is_simple && !table_db.empty() && raw_query.empty() && !request_has_body)
         {
             StorageID table_id(table_db, path_info.table);
             if (!DatabaseCatalog::instance().isTableExist(table_id, context))
@@ -1110,19 +1010,8 @@ void HTTPHandler::processQuery(
         context->checkSettingsConstraints(implicit_change, SettingSource::QUERY);
         context->applySettingsChanges(implicit_change);
 
-        if (is_path_table_upload)
-        {
-            /// Do not probe a deferred Expect: 100-continue body here. The client waits for the continue
-            /// response before sending it; the deferred callback below performs the same probe after the
-            /// query has passed the normal parsing and quota checks.
-            const bool defer_http_continue = shouldDeferHTTP100Continue(request) && request.getExpectContinue();
-            if (!request_body_is_framed || (!defer_http_continue && in_post_maybe_compressed->eof()))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP PUT table uploads require a non-empty request body");
-
-            final_query = "INSERT INTO " + qualified_table + " FORMAT " + path_info.format + "\n";
-        }
         /// If there is no user-supplied query (URL param empty AND no body), generate a default one.
-        else if (raw_query.empty() && !request_body_is_framed)
+        if (raw_query.empty() && !request_has_body)
             final_query = "SELECT * FROM " + qualified_table;
     }
 
@@ -1135,6 +1024,11 @@ void HTTPHandler::processQuery(
 
     used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
     used_output.out_holder->setSendProgressInterval(settings[Setting::http_headers_progress_interval_ms]);
+
+    /// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
+    /// checksums of client data compressed with internal algorithm are not checked.
+    if (is_in_post_compressed && settings[Setting::http_native_compression_disable_checksumming_on_decompress])
+        static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
     /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin
     /// Note that whether the header is added is determined by the settings, and we can only get the user settings after authentication.
@@ -1165,22 +1059,16 @@ void HTTPHandler::processQuery(
 
     if (!settings[Setting::run_query_in_background] && settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
     {
-        /// Assume that at the point this method is called no one is reading data from the socket any more:
-        /// should be true for read-only queries.
-        auto client_connected = [&request] { return request.checkPeerConnected(); };
-        context->setClientConnectedCallback(client_connected);
-        append_callback([&context, client_connected](const Progress &)
+        append_callback([&context, &request](const Progress &)
         {
-            if (!client_connected())
+            /// Assume that at the point this method is called no one is reading data from the socket any more:
+            /// should be true for read-only queries.
+            if (!request.checkPeerConnected())
                 context->killCurrentQuery();
         });
     }
 
     customizeContext(request, context, *in_post_maybe_compressed);
-    /// Keep a non-owning pointer for the deferred-continue callback. Path uploads transfer ownership of the body
-    /// into the second buffer in `in`; the object remains alive until `executeQuery` has finished with the callback.
-    /// The pointer is cleared below if the body is destroyed instead.
-    ReadBuffer * path_upload_body = is_path_table_upload ? in_post_maybe_compressed.get() : nullptr;
     std::unique_ptr<ReadBuffer> in;
     /// `feeds_request_body_to_query` is false for a SQL-defined handler whose query never reads the body. Appending
     /// the body to such a query would be meaningless, and it would also hang a lengthless non-chunked `PUT`: that
@@ -1190,7 +1078,6 @@ void HTTPHandler::processQuery(
     {
         in = std::move(in_param);
         in_post_maybe_compressed.reset();
-        path_upload_body = nullptr;
     }
     else
     {
@@ -1477,13 +1364,11 @@ void HTTPHandler::processQuery(
     HTTPContinueCallback http_continue_callback = {};
     if (shouldDeferHTTP100Continue(request))
     {
-        http_continue_callback = [&request, &response, path_upload_body]()
+        http_continue_callback = [&request, &response]()
         {
             if (request.getExpectContinue() && response.getStatus() == HTTPResponse::HTTP_OK)
             {
                 response.sendContinue();
-                if (path_upload_body && path_upload_body->eof())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP PUT table uploads require a non-empty request body");
             }
         };
     }
@@ -1513,7 +1398,6 @@ void HTTPHandler::processQuery(
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
-    query_flags.parse_server_owned_query_without_limits = has_server_owned_query;
 
     executeQuery(
         std::move(in),
@@ -1534,11 +1418,6 @@ try
     if (!used_output.out_holder && !used_output.exception_is_written)
     {
         /// If nothing was sent yet and we don't even know if we must compress the response.
-        /// Most successful requests set chunked transfer encoding while preparing the query output.
-        /// Exceptions raised before that point still need a bounded response so a drained HTTP/1.1
-        /// request can safely reuse its connection.
-        if (response.getKeepAlive() && request.getVersion() == HTTPServerRequest::HTTP_1_1 && !response.hasContentLength())
-            response.setChunkedTransferEncoding(true);
         auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
         return wb.cancelWithException(request, exception_code, message, nullptr);
     }
@@ -1684,7 +1563,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute(
-            "clickhouse.uri", [&] { return getURIForLogging(request); });
+            "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
         thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
         thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
@@ -1700,17 +1579,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-        HTMLForm params = [&]()
-        {
-            try
-            {
-                return HTMLForm(default_settings, request);
-            }
-            catch (const Poco::URISyntaxException &)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed HTTP request URI");
-            }
-        }();
+        HTMLForm params(default_settings, request);
 
         if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
             with_stacktrace = true;
@@ -1739,10 +1608,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         const auto & method = request.getMethod();
         const bool is_body_carrying_method
             = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
-        const bool is_path_table_upload = allowMutatingIdempotentMethods(request, params);
         const bool body_may_be_consumed = body_contract_known
             ? (consumes_request_body || requestDeclaresFormBody(request))
-            : (is_path_table_upload || method == HTTPRequest::HTTP_POST || requestDeclaresFormBody(request));
+            : (method == HTTPRequest::HTTP_POST || requestDeclaresFormBody(request));
         const bool method_requires_content_length = is_body_carrying_method && body_may_be_consumed;
         if (method_requires_content_length && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
@@ -1799,25 +1667,10 @@ DynamicQueryHandler::DynamicQueryHandler(
     const std::string & param_name_,
     const HTTPResponseHeaderSetup & http_response_headers_override_,
     const std::string & url_prefix_,
-    HTTPPathHintsPtr path_hints_,
-    bool parse_http_path_,
-    bool allow_path_table_uploads_)
+    HTTPPathHintsPtr path_hints_)
     : HTTPHandler(server_, connection_config_, "DynamicQueryHandler", http_response_headers_override_, url_prefix_, std::move(path_hints_))
     , param_name(param_name_)
-    , parse_http_path(parse_http_path_)
-    , allow_path_table_uploads(allow_path_table_uploads_)
 {
-}
-
-bool DynamicQueryHandler::allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const
-{
-    /// The catch-all factory only routes PUT requests whose last path component has a format suffix.
-    /// The full path is validated after authentication and path parsing in HTTPHandler::processQuery.
-    return allow_path_table_uploads
-        && param_name == "query"
-        && request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
-        && !params.has(param_name)
-        && !mayBeParsedAsMultipartFormData(request);
 }
 
 bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)
@@ -1837,18 +1690,8 @@ bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, 
     return false;
 }
 
-bool DynamicQueryHandler::isQueryTextParameter(const std::string & name) const
-{
-    /// Case-insensitive, like the params.get(param_name) lookup in getQuery.
-    return Poco::icompare(name, param_name) == 0 || startsWith(name, QUERY_PARAMETER_NAME_PREFIX);
-}
-
 std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
-    /// Only the built-in catch-all enables path uploads. Config-defined handlers keep their query parameters.
-    if (allow_path_table_uploads && request.getMethod() == HTTPRequest::HTTP_PUT && params.has(param_name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP PUT table uploads do not support the 'query' parameter");
-
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Part of the query can be passed in the 'query' parameter and the rest in the request body
@@ -1896,7 +1739,6 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     , url_regexp(url_regexp_)
     , header_name_with_capture_regexp(header_name_with_regexp_)
 {
-    setHasServerOwnedQuery();
 }
 
 bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)
@@ -1924,11 +1766,6 @@ bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameter
     }
 
     return false;
-}
-
-bool PredefinedQueryHandler::isQueryTextParameter(const std::string & name) const
-{
-    return receive_params.contains(name) || startsWith(name, QUERY_PARAMETER_NAME_PREFIX);
 }
 
 void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body)
@@ -2012,7 +1849,7 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
             params.load(request, body, handler);
         body_fields_loaded = true;
     }
-    else if (unlikely(isContentType(request, "application/x-www-form-urlencoded")))
+    else if (unlikely(startsWith(request.getContentType(), "application/x-www-form-urlencoded")))
     {
         /// A urlencoded body carries parameter values for the query, so parse it - but only for a handler that
         /// declares parameters bindable this way, and only on a body-carrying method. `_request_body` alone does
@@ -2110,12 +1947,7 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     }
 
     auto creator = [&server, query_param_name, http_response_headers_override, connection_config, url_prefix]() -> std::unique_ptr<DynamicQueryHandler>
-    {
-        /// A rule without `url_prefix` is matched by its own `url`, which is not a `database/table.format` path.
-        const bool parse_http_path = !url_prefix.empty();
-        return std::make_unique<DynamicQueryHandler>(
-            server, connection_config, query_param_name, http_response_headers_override, url_prefix, nullptr, parse_http_path);
-    };
+    { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override, url_prefix); };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
@@ -2138,15 +1970,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     /// Remove leading and trailing whitespace that may come from XML formatting in the config file.
     /// This prevents whitespace from being interpreted as data for binary formats like MsgPack.
     boost::algorithm::trim(predefined_query);
-
-    /// The stored query is server-owned and can be accepted with parser limits higher than the defaults.
-    /// Parse it without parser depth or backtrack limits while discovering its query parameters, just as it
-    /// is parsed when the handler serves a request.
-    const char * query_begin = predefined_query.data();
-    const char * query_end = query_begin + predefined_query.size();
-    ParserQuery parser(query_end);
-    auto query_ast = parseQuery(parser, query_begin, query_end, "predefined query handler", 0, 0, 0);
-    NameSet analyze_receive_params = analyzeReceiveQueryParams(query_ast);
+    NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     connection_config.default_session_user = default_session_user;

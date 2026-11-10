@@ -8,7 +8,7 @@
 -- TTL. REMOVE TTL stays allowed and ATTACH is exempt (loads a pre-existing UK+TTL
 -- table); non-UNIQUE-KEY tables are unaffected. All keys distinct (dedup is a later PR).
 
-SET enable_unique_key = 1;
+SET allow_experimental_unique_key = 1;
 
 DROP TABLE IF EXISTS uk_ttl;
 
@@ -40,7 +40,7 @@ ALTER TABLE uk_ttl MODIFY COLUMN v String TTL d + INTERVAL 1 DAY; -- { serverErr
 
 -- A column ALTER with no TTL clause is unaffected (command.ttl is null).
 ALTER TABLE uk_ttl ADD COLUMN w String;
-ALTER TABLE uk_ttl MODIFY COLUMN w String DEFAULT 'w';
+ALTER TABLE uk_ttl MODIFY COLUMN w LowCardinality(String);
 
 DROP TABLE uk_ttl;
 

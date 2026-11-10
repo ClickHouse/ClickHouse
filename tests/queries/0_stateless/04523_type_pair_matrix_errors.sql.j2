@@ -57,12 +57,7 @@ SELECT
 
 SELECT '-- comparison overflow during scale conversion';
 {{ cmp_throws("CAST('18446744073709551615', 'UInt64')", '>', "toDecimal32('1.5', 2)", 'DECIMAL_OVERFLOW') }}
--- A value that fits the compare type but not at the common scale compares exactly.
-SELECT
-    materialize(toUInt64(9223372036854775807)) > materialize(toDecimal64('1.5', 4)),
-    toUInt64(9223372036854775807) > materialize(toDecimal64('1.5', 4)),
-    materialize(toUInt64(9223372036854775807)) > toDecimal64('1.5', 4),
-    identity(toUInt64(9223372036854775807)) > identity(toDecimal64('1.5', 4));
+{{ cmp_throws("toUInt64(9223372036854775807)", '>', "toDecimal64('1.5', 4)", 'DECIMAL_OVERFLOW') }}
 {{ cmp_throws("toDecimal32('1.5', 2)", '=', "CAST('115792089237316195423570985008687907853269984665640564039457584007913129639935', 'UInt256')", 'DECIMAL_OVERFLOW') }}
 
 -- The same comparisons, and the extreme values that must compare without overflowing, in all four
