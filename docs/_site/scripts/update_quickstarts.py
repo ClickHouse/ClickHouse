@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
 LOCALES = ('ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh')
+QUICKSTART_NAVIGATION_LABELS_PATH = (
+    Path(__file__).resolve().parents[1] / 'quickstart-navigation-labels.json'
+)
 
 CLOUD_SETUP_CARD = {
     'id': 'create-your-first-service-on-cloud',
@@ -73,6 +76,79 @@ CLOUD_SETUP_CARD_TRANSLATIONS = {
         'description': 'ClickHouse Cloud 快速入门指南',
     },
 }
+
+
+def load_quickstart_navigation_labels() -> Dict[str, List[str]]:
+    """Read the locale-owned labels for the Quickstarts navigation section."""
+    labels = json.loads(QUICKSTART_NAVIGATION_LABELS_PATH.read_text(encoding='utf-8'))
+    if set(labels) != set(LOCALES):
+        raise ValueError(
+            "quickstart navigation labels must cover exactly: "
+            + ', '.join(LOCALES)
+        )
+    for locale, group_labels in labels.items():
+        if not isinstance(group_labels, list) or len(group_labels) != 5:
+            raise ValueError(
+                f"quickstart navigation labels for {locale} must contain five labels"
+            )
+        if not all(isinstance(label, str) and label for label in group_labels):
+            raise ValueError(
+                f"quickstart navigation labels for {locale} must be non-empty strings"
+            )
+    return labels
+
+
+def navigation_groups(node: Any):
+    """Yield every navigation object that owns a named page group."""
+    if isinstance(node, dict):
+        if 'group' in node and 'pages' in node:
+            yield node
+        for value in node.values():
+            yield from navigation_groups(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from navigation_groups(value)
+
+
+def update_quickstart_navigation(
+    project_root: Path, locale: str, labels: List[str]
+) -> Optional[str]:
+    """Return a locale navigation file with canonical Quickstarts labels."""
+    path = project_root / locale / 'get-started' / 'navigation.json'
+    source = path.read_text(encoding='utf-8')
+    navigation = json.loads(source)
+    home = f'{locale}/get-started/quickstarts/home'
+    matches = [
+        group
+        for group in navigation_groups(navigation)
+        if home in group.get('pages', [])
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f'{path.relative_to(project_root)}: expected exactly one Quickstarts '
+            'group containing the explorer home page'
+        )
+
+    quickstarts_group = matches[0]
+    nested_groups = [
+        page
+        for page in quickstarts_group['pages']
+        if isinstance(page, dict) and 'group' in page
+    ]
+    if len(nested_groups) != len(labels) - 1:
+        raise ValueError(
+            f'{path.relative_to(project_root)}: expected {len(labels) - 1} '
+            'nested Quickstarts groups'
+        )
+
+    quickstarts_group['group'] = labels[0]
+    for nested_group, label in zip(nested_groups, labels[1:]):
+        nested_group['group'] = label
+
+    updated = json.dumps(navigation, ensure_ascii=False, indent=2)
+    if source.endswith('\n'):
+        updated += '\n'
+    return updated if updated != source else None
 
 
 def add_cloud_setup_card(quickstarts: List[Dict[str, Any]],
@@ -478,6 +554,7 @@ def main():
     # only after all trees have scanned cleanly, so a failure anywhere leaves
     # the tree untouched instead of half-regenerated.
     staged = {}
+    navigation_labels = load_quickstart_navigation_labels()
 
     # English tree: extract data and refresh the in-page badge blocks.
     print(f"Scanning for quick-start files in {quickstarts_dir}...")
@@ -536,6 +613,18 @@ def main():
                          / 'QuickStartsGrid' / 'quickstarts-data.jsx')
         staged[locale_output] = render_data_module(locale_quickstarts)
         print(f"✓ Staged {len(locale_quickstarts)} quick-start(s) for {locale_output}")
+
+    # Navigation labels are controlled UI terminology, not translated prose.
+    # Normalize every locale even when its quickstart pages are unavailable, so
+    # an incomplete locale cannot silently retain labels written by GT.
+    for locale in LOCALES:
+        updated_navigation = update_quickstart_navigation(
+            project_root, locale, navigation_labels[locale]
+        )
+        if updated_navigation is not None:
+            navigation_path = project_root / locale / 'get-started' / 'navigation.json'
+            staged[navigation_path] = updated_navigation
+            print(f"✓ Staged canonical Quickstarts labels for {navigation_path}")
 
     if failures:
         print(f"\n✗ {failures} page(s) failed; nothing was written — "
