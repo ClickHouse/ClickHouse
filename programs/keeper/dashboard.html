@@ -1957,6 +1957,35 @@
     let cli_cwd = "/";
 
     const COMPLETION_DISPLAY_LIMIT = 1000;
+    /// `rmr` / `delete_stale_backups` wait for y/n here. HTTP still runs with
+    /// `ask_confirmation=false` (stateless); the dashboard mirrors keeper-client.
+    let pending_command_confirm = null;
+
+    function keeperCommandName(command) {
+        const trimmed = command.trimStart();
+        const space = trimmed.search(/\s/);
+        return (space === -1 ? trimmed : trimmed.slice(0, space));
+    }
+
+    function needsCommandConfirmation(command) {
+        const name = keeperCommandName(command);
+        return name === "rmr" || name === "delete_stale_backups";
+    }
+
+    function commandConfirmationPrompt(command) {
+        if (keeperCommandName(command) === "delete_stale_backups")
+            return "You are going to delete all inactive backups in /clickhouse/backups.";
+        const rest = command.trimStart().slice(keeperCommandName(command).length).trim();
+        const pathArg = rest.split(/\s+/)[0] || "";
+        return "You are going to recursively delete path " + pathArg;
+    }
+
+    function setPendingCommandConfirm(command) {
+        pending_command_confirm = command;
+        const prompt = document.querySelector(".command-prompt");
+        if (prompt)
+            prompt.classList.toggle("pending-completion", command !== null);
+    }
     let pending_completion_display = null;
 
     function setPendingCompletionDisplay(matches) {
@@ -1985,6 +2014,12 @@
         const bytes = new TextEncoder().encode(str);
         const n = Math.max(0, Math.min(Number(byteOffset) || 0, bytes.length));
         return new TextDecoder().decode(bytes.subarray(0, n));
+    }
+
+    function sliceByUtf8ByteOffsetFrom(str, byteOffset) {
+        const bytes = new TextEncoder().encode(str);
+        const n = Math.max(0, Math.min(Number(byteOffset) || 0, bytes.length));
+        return new TextDecoder().decode(bytes.subarray(n));
     }
 
     function formatColumns(items) {
@@ -2085,6 +2120,12 @@
 
             const replaceStart = Number.isFinite(data.replace_start) ? data.replace_start : 0;
             const head = sliceByUtf8ByteOffset(prefix, replaceStart);
+            /// Same filter as `LineReader::Suggest::getMatchingWords`: only keep
+            /// completions that still start with the typed last word. Escaped
+            /// forms like `/prod/'app;2'` drop out, so LCP cannot shrink to `/prod/`.
+            const typed = sliceByUtf8ByteOffsetFrom(prefix, replaceStart);
+            const visible = matches.filter((m) => m.startsWith(typed));
+            if (visible.length === 0) return;
 
             const applyCompletion = (inserted) => {
                 const completedPrefix = head + inserted;
@@ -2092,14 +2133,14 @@
                 input.setSelectionRange(completedPrefix.length, completedPrefix.length);
             };
 
-            if (matches.length === 1) {
-                applyCompletion(matches[0]);
+            if (visible.length === 1) {
+                applyCompletion(visible[0]);
                 return;
             }
 
-            applyCompletion(longestCommonPrefix(matches));
+            applyCompletion(longestCommonPrefix(visible));
             /// Echo the post-LCP line (same text the live prompt shows), like keeper-client.
-            showCompletionMatches(input.value, matches);
+            showCompletionMatches(input.value, visible);
         } catch (e) { /* ignore fetch errors */ }
     }
 
@@ -2108,6 +2149,7 @@
         /// Cancel any in-flight "Display all N possibilities? (y/n)" so Clear /
         /// Ctrl+L cannot leave the prompt hidden via .pending-completion.
         setPendingCompletionDisplay(null);
+        setPendingCommandConfirm(null);
     }
 
     function appendToOutput(text) {
@@ -2125,7 +2167,7 @@
         executeCommand(command);
     }
 
-    async function executeCommand(command) {
+    async function executeCommand(command, already_confirmed) {
         let command_input = document.querySelector("#command");
         let command_output = document.querySelector("#command-output");
         let command_container = document.getElementById("command-scrolling-container");
@@ -2141,7 +2183,17 @@
         /// left invisible under .pending-completion while the command runs.
         setPendingCompletionDisplay(null);
 
-        appendToOutput(`➜ ${cli_cwd} ${command}\n`);
+        if (!already_confirmed && needsCommandConfirmation(command)) {
+            appendToOutput(`➜ ${cli_cwd} ${command}\n`);
+            appendToOutput(commandConfirmationPrompt(command) + " Continue?\n");
+            setPendingCommandConfirm(command);
+            command_container.scrollTop = command_container.scrollHeight;
+            return;
+        }
+        setPendingCommandConfirm(null);
+
+        if (!already_confirmed)
+            appendToOutput(`➜ ${cli_cwd} ${command}\n`);
         command_container.scrollTop = command_container.scrollHeight;
 
         command_input.disabled = true;
@@ -2197,6 +2249,36 @@
         });
 
         command_input.addEventListener("keydown", function (event) {
+            if (pending_command_confirm !== null) {
+                if (event.key === "y" || event.key === "Y") {
+                    event.preventDefault();
+                    const command = pending_command_confirm;
+                    appendToOutput("y\n");
+                    setPendingCommandConfirm(null);
+                    executeCommand(command, /*already_confirmed=*/ true);
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                if (event.key === "n" || event.key === "N" || event.code === "Enter") {
+                    event.preventDefault();
+                    appendToOutput((event.key === "n" || event.key === "N") ? "n\n" : "\n");
+                    setPendingCommandConfirm(null);
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                if (event.code === "KeyC" && event.ctrlKey) {
+                    event.preventDefault();
+                    appendToOutput("^C\n");
+                    setPendingCommandConfirm(null);
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                event.preventDefault();
+                appendToOutput("\n");
+                setPendingCommandConfirm(null);
+                command_container.scrollTop = command_container.scrollHeight;
+                return;
+            }
             if (pending_completion_display !== null) {
                 /// Tab / y → show all. n → decline. Other keys cancel the prompt.
                 /// Previously Tab fell through: it cleared the question then re-asked,
