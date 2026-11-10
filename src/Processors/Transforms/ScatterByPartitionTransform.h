@@ -1,6 +1,5 @@
 #pragma once
 #include <Columns/IColumn.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Chunk.h>
@@ -25,8 +24,6 @@ struct ScatterByPartitionTransform : IProcessor
     Status prepare() override;
     void work() override;
 
-    bool requiresAllOutputsPushable() const override { return true; }
-
 private:
 
     void generateOutputChunks();
@@ -41,7 +38,7 @@ private:
     std::optional<size_t> round_robin_bucket;
 
     bool has_output_chunks = false;
-    VectorWithMemoryTracking<char> was_output_processed;
+    std::vector<char> was_output_processed;
     Chunk chunk;
 
     PaddedPODArray<UInt32> hash;

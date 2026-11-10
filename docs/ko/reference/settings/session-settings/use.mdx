@@ -14,7 +14,9 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
+<div id="use_async_executor_for_materialized_views">
+  ## use_async_executor_for_materialized_views
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -22,7 +24,9 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 materialized view 쿼리를 async 방식으로, 필요에 따라 멀티스레드로 실행합니다. INSERT 중 materialized view 처리 속도를 높일 수 있지만, 메모리를 더 많이 사용할 수도 있습니다.
 
-## use_cache_for_count_from_files {#use_cache_for_count_from_files}
+<div id="use_cache_for_count_from_files">
+  ## use_cache_for_count_from_files
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,30 +34,37 @@ materialized view 쿼리를 async 방식으로, 필요에 따라 멀티스레드
 
 기본적으로 활성화되어 있습니다.
 
-## use_client_time_zone {#use_client_time_zone}
+<div id="use_client_time_zone">
+  ## use_client_time_zone
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 서버 시간대를 적용하는 대신, DateTime 문자열 값을 해석할 때 클라이언트 시간대를 사용합니다.
 
-## use_columns_cache {#use_columns_cache}
+<div id="use_compact_format_in_distributed_parts_names">
+  ## use_compact_format_in_distributed_parts_names
+</div>
 
-<ExperimentalBadge />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "기본적으로 분산 테이블에 대한 async INSERT에 compact 포맷을 사용"}]}]} />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "MergeTree 테이블에서 컬럼 캐시를 활성화하는 새 실험적 설정이며, 기본적으로 비활성화되어 있습니다."}]}]} />
+`Distributed` 엔진 테이블에 대한 백그라운드(`distributed_foreground_insert`) INSERT에서 블록을 저장할 때 compact 포맷을 사용합니다.
 
-컬럼 캐시 사용 여부를 지정합니다. 0 또는 1을 사용할 수 있으며, 기본값은 0(비활성화)입니다.
-컬럼 캐시는 `MergeTree` 테이블에서 역직렬화된 컬럼을 저장하므로, 자주 사용되는 데이터를 반복해서 압축 해제하고 역직렬화하는 작업이 사라집니다. 따라서 동일한 데이터에 반복적으로 실행되는 쿼리의 지연 시간을 크게 줄일 수 있습니다. 캐시는 테이블 UUID, 데이터 파트 이름, 컬럼명, 그리고 약 65536개 행으로 구성된 연속 그래뉼의 스트라이프(stripe)를 키로 사용합니다.
+가능한 값:
 
-엔트리는 테이블 UUID를 키로 사용하므로, 캐시는 `Atomic`, `Replicated`, `Shared`(ClickHouse Cloud의 기본 데이터베이스 엔진)처럼 UUID를 할당하는 데이터베이스의 테이블에서만 동작합니다. 레거시 `Ordinary` 데이터베이스의 `MergeTree` 테이블은 UUID가 nil이므로 별도의 알림 없이 이 설정을 무시합니다.
+* 0 — `user[:password]@host:port#default_database` 디렉터리 포맷을 사용합니다.
+* 1 — `[shard{shard_index}[_replica{replica_index}]]` 디렉터리 포맷을 사용합니다.
 
-현재 캐시는 wide 파트에만 적용됩니다. compact 파트의 데이터는 컬럼 캐시에서 읽거나 컬럼 캐시에 기록하지 않으므로, 읽기 가속 여부는 파트 포맷에 따라 달라집니다.
+<Note>
+  - `use_compact_format_in_distributed_parts_names=0`이면 cluster 정의 변경 사항이 백그라운드 INSERT에 적용되지 않습니다.
+  - `use_compact_format_in_distributed_parts_names=1`이면 cluster 정의에서 node 순서를 변경할 경우 `shard_index`/`replica_index`도 변경되므로 유의하십시오.
+</Note>
 
-하나의 엔트리에는 한 스트라이프 내의 연속된 그래뉼 범위가 저장됩니다. 그래뉼은 첫 번째 행부터 마지막 행까지 모두 읽힌 후에만 캐시에 저장되고, 읽기는 그래뉼 단위로 캐시에서 처리되며, 서로 다른 읽기가 기록한 범위는 하나로 머지됩니다. 따라서 파트를 서로 다른 마크 범위로 나누어 읽더라도 엔트리를 공유할 수 있습니다.
-
-## use_concurrency_control {#use_concurrency_control}
+<div id="use_concurrency_control">
+  ## use_concurrency_control
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -61,7 +72,9 @@ materialized view 쿼리를 async 방식으로, 필요에 따라 멀티스레드
 
 서버의 동시성 제어를 따릅니다(`concurrent_threads_soft_limit_num` 및 `concurrent_threads_soft_limit_ratio_to_cores` 전역 서버 설정 참조). 비활성화하면 서버에 과부하가 걸린 경우에도 더 많은 스레드를 사용할 수 있습니다(일반적인 사용에는 권장되지 않으며, 주로 테스트에 필요합니다).
 
-## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
+<div id="use_constant_folding_in_index_analysis">
+  ## use_constant_folding_in_index_analysis
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -82,7 +95,9 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-## use_hash_table_stats_for_join_reordering {#use_hash_table_stats_for_join_reordering}
+<div id="use_hash_table_stats_for_join_reordering">
+  ## use_hash_table_stats_for_join_reordering
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -90,7 +105,9 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 조인 재정렬 시 카디널리티 추정을 위해 수집된 해시 테이블 통계를 사용하도록 설정합니다
 
-## use_hedged_requests {#use_hedged_requests}
+<div id="use_hedged_requests">
+  ## use_hedged_requests
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -105,7 +122,9 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 Cloud 기본값: `0`.
 
-## use_hive_partitioning {#use_hive_partitioning}
+<div id="use_hive_partitioning">
+  ## use_hive_partitioning
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -113,7 +132,9 @@ Cloud 기본값: `0`.
 
 활성화되면 ClickHouse는 파일 기반 테이블 엔진 [File](/ko/reference/functions/table-functions/file#hive-style-partitioning)/[S3](/ko/reference/functions/table-functions/s3#hive-style-partitioning)/[URL](/ko/reference/functions/table-functions/url#hive-style-partitioning)/[HDFS](/ko/reference/functions/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/ko/reference/functions/table-functions/azureBlobStorage#hive-style-partitioning)의 경로(`/name=value/`)에서 Hive 스타일 파티셔닝을 감지하고, 쿼리에서 파티션 컬럼을 가상 컬럼으로 사용할 수 있도록 합니다. 이러한 가상 컬럼의 이름은 파티셔닝된 경로의 이름과 같지만, 앞에 `_`가 붙습니다.
 
-## use_indexes_refiner_in_read_pools {#use_indexes_refiner_in_read_pools}
+<div id="use_indexes_refiner_in_read_pools">
+  ## use_indexes_refiner_in_read_pools
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -123,7 +144,9 @@ MergeTree 읽기 풀 내에서 데이터 읽기 시점에 평가된 인덱스를
 
 프리페치 읽기 풀에서는 제거된 범위를 프리페치하지 않습니다. 하지만 작업 경계와 `filesystem_prefetch_max_memory_usage` / `filesystem_prefetches_limit`에 따른 프리페치 허용 여부는 여전히 필터링 전에 결정되므로, 선택도가 매우 높은 필터에서는 남은 작업이 의도한 작업 크기보다 작아질 수 있고 허용 여부 판단도 보수적으로 이루어질 수 있습니다.
 
-## use_join_disjunctions_push_down {#use_join_disjunctions_push_down}
+<div id="use_join_disjunctions_push_down">
+  ## use_join_disjunctions_push_down
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -133,7 +156,9 @@ JOIN 조건에서 OR로 연결된 부분을 해당 입력 측으로 pushdown하�
 이 기능을 사용하면 저장 엔진이 더 이른 단계에서 필터링할 수 있으므로 읽는 데이터 양을 줄일 수 있습니다.
 이 최적화는 쿼리 의미를 그대로 유지하며, 각 최상위 OR 분기가 대상 측에 대해 최소 1개의 결정적(deterministic) 프레디케이트를 제공하는 경우에만 적용됩니다.
 
-## use_legacy_to_time {#use_legacy_to_time}
+<div id="use_legacy_to_time">
+  ## use_legacy_to_time
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -145,7 +170,9 @@ JOIN 조건에서 OR로 연결된 부분을 해당 입력 측으로 pushdown하�
 이 설정과 관계없이 기존 함수는 `toTimeWithFixedDate`로도 언제나 사용할 수 있습니다.
 이 설정이 활성화된 동안에는 `CAST(x AS Time)` 또는 `x::Time`을 사용하여 `Time` 타입으로 변환하십시오.
 
-## use_lightweight_primary_key_index_analysis {#use_lightweight_primary_key_index_analysis}
+<div id="use_lightweight_primary_key_index_analysis">
+  ## use_lightweight_primary_key_index_analysis
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -160,7 +187,9 @@ JOIN 조건에서 OR로 연결된 부분을 해당 입력 측으로 pushdown하�
 * 0 — 비활성화됨. 인덱스 분석 중 모든 프라이머리 키 컬럼이 처리됩니다.
 * 1 — 활성화됨.
 
-## use_parquet_metadata_cache {#use_parquet_metadata_cache}
+<div id="use_parquet_metadata_cache">
+  ## use_parquet_metadata_cache
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -173,7 +202,9 @@ JOIN 조건에서 OR로 연결된 부분을 해당 입력 측으로 pushdown하�
 * 0 - 비활성화
 * 1 - 활성화
 
-## use_primary_key {#use_primary_key}
+<div id="use_primary_key">
+  ## use_primary_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -186,7 +217,9 @@ MergeTree 테이블의 쿼리 실행 중 그래뉼을 프루닝할 때 프라이
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-## use_reader_executor {#use_reader_executor}
+<div id="use_reader_executor">
+  ## use_reader_executor
+</div>
 
 <ExperimentalBadge />
 
@@ -196,7 +229,9 @@ MergeTree 테이블의 쿼리 실행 중 그래뉼을 프루닝할 때 프라이
 
 실험적 기능입니다. 읽기 버퍼로 이루어진 기존의 중첩 구조 대신 새로운 파이프라인 `ReaderExecutor`를 통해 읽기를 라우팅합니다. 실행기가 아직 지원하지 않는 구성에서는 기존 경로로 대체됩니다.
 
-## use_roaring_bitmap_iceberg_positional_deletes {#use_roaring_bitmap_iceberg_positional_deletes}
+<div id="use_roaring_bitmap_iceberg_positional_deletes">
+  ## use_roaring_bitmap_iceberg_positional_deletes
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -204,7 +239,9 @@ MergeTree 테이블의 쿼리 실행 중 그래뉼을 프루닝할 때 프라이
 
 Iceberg 위치 기반 삭제에 Roaring 비트맵을 사용합니다.
 
-## use_streaming_marks_compression {#use_streaming_marks_compression}
+<div id="use_streaming_marks_compression">
+  ## use_streaming_marks_compression
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -212,7 +249,9 @@ Iceberg 위치 기반 삭제에 Roaring 비트맵을 사용합니다.
 
 MergeTree 파트의 마크를 로딩할 때, 먼저 전체 일반 마크 배열을 생성하는 대신 마크를 블록 단위로 하나씩(스트리밍 방식으로) 인메모리 표현으로 압축합니다. 이렇게 하면 서브스트림이 많은 compact 파트(예: JSON 컬럼이 있는 테이블에서 `write_marks_for_substreams_in_compact_parts`가 활성화된 경우)에서 마크를 로딩하는 동안 최대 메모리 사용량을 크게 줄일 수 있습니다.
 
-## use_strict_insert_block_limits {#use_strict_insert_block_limits}
+<div id="use_strict_insert_block_limits">
+  ## use_strict_insert_block_limits
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -235,7 +274,9 @@ MergeTree 파트의 마크를 로딩할 때, 먼저 전체 일반 마크 배열�
 
 기본적으로 비활성화되어 있습니다.
 
-## use_structure_from_insertion_table_in_table_functions {#use_structure_from_insertion_table_in_table_functions}
+<div id="use_structure_from_insertion_table_in_table_functions">
+  ## use_structure_from_insertion_table_in_table_functions
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -243,7 +284,9 @@ MergeTree 파트의 마크를 로딩할 때, 먼저 전체 일반 마크 배열�
 
 데이터에서 스키마를 추론하는 대신 삽입 테이블의 구조를 사용합니다. 가능한 값: 0 - 비활성화, 1 - 활성화, 2 - 자동
 
-## use_uncompressed_cache {#use_uncompressed_cache}
+<div id="use_uncompressed_cache">
+  ## use_uncompressed_cache
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -252,7 +295,9 @@ MergeTree 파트의 마크를 로딩할 때, 먼저 전체 일반 마크 배열�
 
 비교적 큰 양의 데이터(100만 행 이상)를 읽는 쿼리의 경우, 실제로 작은 쿼리를 위한 공간을 확보하기 위해 압축 해제 캐시가 자동으로 비활성화됩니다. 즉, &#39;use&#95;uncompressed&#95;cache&#39; 설정은 항상 1로 두어도 됩니다.
 
-## use_with_fill_by_sorting_prefix {#use_with_fill_by_sorting_prefix}
+<div id="use_with_fill_by_sorting_prefix">
+  ## use_with_fill_by_sorting_prefix
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -51,9 +51,6 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_input_ports = 0;
 
-    /// Inputs are not requested before an output asks for data.
-    bool was_output_needed = false;
-
     UInt64 rows_cnt = 0;
     UInt64 evicted_rows_cnt = 0;
 

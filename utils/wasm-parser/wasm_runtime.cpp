@@ -16,7 +16,6 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Core/Settings.h>
-#include <Core/SettingsSecrets.h>
 
 #include <wasm_sjlj.h>
 
@@ -110,13 +109,6 @@ template Exception::Exception(int, FormatStringHelperImpl<>);
 Field Settings::castValueUtil(std::string_view, const Field & value)
 {
     return value;
-}
-
-/// `Core/SettingsSecrets.cpp` is not built: the module formats with secrets shown, so no setting
-/// value is masked, and the URL masking it reaches stays out of the bundle.
-std::optional<String> CoreSettings::renderSecretSettingValue(const String &, const Field &)
-{
-    return {};
 }
 
 /// Logging is not wired up: nothing consumes it in a browser.

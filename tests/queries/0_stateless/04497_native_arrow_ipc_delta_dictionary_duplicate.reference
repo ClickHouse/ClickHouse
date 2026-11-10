@@ -1,9 +1,2 @@
---- delta dictionary that repeats a base value is read ---
-AAA	LowCardinality(Nullable(String))
-BBB	LowCardinality(Nullable(String))
-AAA	LowCardinality(Nullable(String))
-AAA	LowCardinality(Nullable(String))
-AAA	LowCardinality(Nullable(String))
-AAA	LowCardinality(Nullable(String))
-AAA	5
-BBB	1
+--- delta dictionary that duplicates a base value is rejected ---
+duplicate values
