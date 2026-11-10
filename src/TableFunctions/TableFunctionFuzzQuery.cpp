@@ -78,7 +78,7 @@ SELECT * FROM fuzzQuery('SELECT materialize(\'a\' AS key) GROUP BY key') LIMIT 2
 2. │ EXPLAIN PIPELINE compact = true SELECT 'a' AS key GROUP BY key │
    └────────────────────────────────────────────────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = true});
 }
 

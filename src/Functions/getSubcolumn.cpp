@@ -28,11 +28,10 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    /// Declarative signature — looks up the named subcolumn's type on the
-    /// first argument via the `subcolumnTypeOf` type function.
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(T : Any, const name String) -> subcolumnTypeOf(T, name)";
+        auto subcolumn_name = getSubcolumnName(arguments);
+        return arguments[0].type->getSubcolumnType(subcolumn_name);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -64,16 +63,7 @@ Receives the expression or identifier and constant string with the name of subco
 Returns requested subcolumn extracted from the expression.
 )",
         .syntax = "getSubcolumn(nested_value, subcolumn_name)",
-        .examples{{"getSubcolumn",
-             R"(
-SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')
-FROM values('array_col Array(UInt32), tuple_col Tuple(elem_name String)', ([1, 2, 3], tuple('abc')));
-             )",
-             R"(
-┌─getSubcolumn(array_col, 'size0')─┬─getSubcolumn(tuple_col, 'elem_name')─┐
-│                                3 │ abc                                  │
-└──────────────────────────────────┴──────────────────────────────────────┘
-             )"}},
+        .examples{{"getSubcolumn", "SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')", ""}},
         .introduced_in = {23, 3},
         .category = FunctionDocumentation::Category::Other
     });
