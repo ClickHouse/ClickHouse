@@ -50,6 +50,15 @@ SELECT * FROM (SELECT number % 2 AS k FROM numbers(4)) AS l
 LEFT JOIN v_05331 AS r ON l.k = r.k AND 1 = 2
 ORDER BY ALL;
 
+SELECT 'totals from a view with SQL SECURITY NONE';
+DROP VIEW IF EXISTS v_none_05331;
+CREATE VIEW v_none_05331 SQL SECURITY NONE AS
+    SELECT number % 3 AS k, count() AS c FROM numbers(6) GROUP BY k WITH TOTALS;
+SELECT * FROM (SELECT number % 2 AS k FROM numbers(4)) AS l
+LEFT JOIN v_none_05331 AS r ON l.k = r.k AND 1 = 2
+ORDER BY ALL;
+DROP VIEW v_none_05331;
+
 SELECT 'totals through a Merge table';
 SELECT * FROM (SELECT number % 2 AS k FROM numbers(4)) AS l
 LEFT JOIN merge(currentDatabase(), '^v_05331$') AS r ON l.k = r.k AND 1 = 2
