@@ -71,6 +71,9 @@ struct MongoDBConfiguration
     void checkHosts(const ContextPtr & context) const;
     void checkCollection() const;
 
+    void checkServerCredentialsForTable(const ContextPtr & context) const;
+    void checkServerCredentialsForDictionary() const;
+
     bool isOidColumn(const std::string & name) const
     {
         return oid_fields.contains(name);
