@@ -73,11 +73,11 @@ String PreparedFragmentGraph::formatExchangeKind(const FragmentExchange & exchan
         case FragmentExchange::Kind::Broadcast:
         case FragmentExchange::Kind::Any:
         case FragmentExchange::Kind::SetValues:
-            return String(toString(exchange.kind));
+            return toString(exchange.kind);
         case FragmentExchange::Kind::Gather:
         {
             if (!exchange.merge_sort)
-                return String(toString(exchange.kind));
+                return toString(exchange.kind);
             if (!column_names)
                 return "gather sorted by " + dumpSortDescription(*exchange.merge_sort);
             WriteBufferFromOwnString out;

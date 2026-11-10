@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <optional>
-#include <string_view>
 #include <vector>
 
 namespace DB
@@ -93,7 +92,7 @@ struct FragmentExchange
 };
 
 /// The kind of an exchange as `EXPLAIN` names it: `hash`, `broadcast`, `gather`, `any` or `set values`.
-std::string_view toString(FragmentExchange::Kind kind);
+String toString(FragmentExchange::Kind kind);
 
 struct FragmentGraph
 {

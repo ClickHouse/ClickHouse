@@ -83,7 +83,7 @@ FragmentExchange::Kind getExchangeKind(const ExchangeDescription & description)
 
 }
 
-std::string_view toString(FragmentExchange::Kind kind)
+String toString(FragmentExchange::Kind kind)
 {
     switch (kind)
     {
