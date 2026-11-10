@@ -100,7 +100,9 @@ inline SelectivityEstimate computeSelectivity(
     auto rhs_ndv = getColumnStats(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName());
     const bool lhs_constant = query_graph.isConstantColumn(lhs);
     const bool rhs_constant = query_graph.isConstantColumn(rhs);
-    if (lhs_constant || rhs_constant)
+    /// Only an `ALL` join pairs every two rows on a constant. Join costs ignore strictness, so a condition of an `ANY`,
+    /// semi or anti join keeps the key-join estimate.
+    if ((lhs_constant || rhs_constant) && query_graph.isConditionOfAllJoin(edge))
     {
         /// No key: only a real NDV of the other side tells how many of its rows hold the constant.
         const UInt64 ndv = std::max(lhs_constant ? 0 : lhs_ndv.ndv.value_or(0), rhs_constant ? 0 : rhs_ndv.ndv.value_or(0));

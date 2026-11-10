@@ -188,6 +188,9 @@ struct QueryGraph
     /// Per relation. Called by DPsub only when it uses interesting orders, since it probes the storage order of every input.
     std::function<std::vector<ReadInOrder>(const std::vector<NameSet> & candidates)> find_read_in_order_prefixes;
 
+    /// Whether `edge` is a condition of a join with `ALL` strictness (see `join_strictness` and `edge_conflict_ops`).
+    bool isConditionOfAllJoin(const JoinActionRef & edge) const;
+
     /// Whether a column of one relation holds one value in every row (`is_constant_column`).
     bool isConstantColumn(const JoinActionRef & column) const;
     /// How many sides of the equality `edge` are such columns. With one, the equality is no join key: a row of the other

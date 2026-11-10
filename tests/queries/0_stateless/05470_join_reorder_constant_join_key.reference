@@ -17,4 +17,8 @@ sub-join	0
 sub-join, null-supplying side	1
 written	0
 constant against a column with an NDV	0
+any join	1	1
+any join, greedy	1	1
+semi join	1
+written, with a semi join	0
 100000

@@ -119,6 +119,18 @@ static std::optional<JoinActionRef> resolveInput(const JoinActionRef & ref)
     return resolved;
 }
 
+bool QueryGraph::isConditionOfAllJoin(const JoinActionRef & edge) const
+{
+    /// Only a graph flattened for the conflict detector has joins of different strictness, and only semi/anti joins
+    /// keep theirs in `conflict_ops`.
+    if (join_strictness == JoinStrictness::Any || !semi_anti_flattened)
+        return join_strictness == JoinStrictness::All;
+    for (size_t i = 0; i < edges.size() && i < edge_conflict_ops.size(); ++i)
+        if (edges[i] == edge)
+            return conflict_ops[edge_conflict_ops[i]].strictness == JoinStrictness::All;
+    return join_strictness == JoinStrictness::All;
+}
+
 bool QueryGraph::isConstantColumn(const JoinActionRef & column) const
 {
     auto resolved = resolveInput(column);

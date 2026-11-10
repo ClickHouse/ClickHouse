@@ -134,6 +134,27 @@ SELECT 'constant against a column with an NDV', count() FROM (EXPLAIN PLAN
     SETTINGS query_plan_optimize_join_order_randomize = 3)
 WHERE explain ILIKE '%Selectivity: estimated (NDV) 1';
 
+-- An `ANY` join keeps one row per row of its preserved side, also on a constant key, so the join above it builds from it.
+SELECT 'any join', countIf(explain ILIKE '%Output rows: estimated 1.00 thousand%'), countIf(explain ILIKE '%tp[%] ⋈ (s)%') FROM (EXPLAIN PLAN
+    SELECT count() FROM (SELECT w.k AS k FROM w ANY LEFT JOIN r ON r.src = w.src) AS s JOIN tp ON tp.k = s.k
+    SETTINGS query_plan_join_swap_table = 'auto', query_plan_convert_any_join_to_semi_or_anti_join = 0);
+
+SELECT 'any join, greedy', countIf(explain ILIKE '%Output rows: estimated 1.00 thousand%'), countIf(explain ILIKE '%tp[%] ⋈ (s)%') FROM (EXPLAIN PLAN
+    SELECT count() FROM (SELECT w.k AS k FROM w ANY LEFT JOIN r ON r.src = w.src) AS s JOIN tp ON tp.k = s.k
+    SETTINGS query_plan_join_swap_table = 'auto', query_plan_convert_any_join_to_semi_or_anti_join = 0,
+        query_plan_optimize_join_order_algorithm = 'greedy');
+
+-- A semi join on a constant key, reordered with the other joins, does not multiply rows either: it keeps the key-join cost.
+SELECT 'semi join', count() FROM (EXPLAIN PLAN
+    SELECT count() FROM tp JOIN w ON tp.k = w.k LEFT SEMI JOIN r ON r.src = w.src)
+WHERE explain ILIKE '%Cost: estimated 1.00 thousand%';
+
+-- The `ALL` joins reordered with a semi join still do not count a written constant key as a key.
+SELECT 'written, with a semi join', count() FROM (EXPLAIN PLAN
+    SELECT count() FROM p JOIN w ON w.src = p.src AND w.k = p.k JOIN r ON r.src = w.src AND r.id = p.id LEFT SEMI JOIN tc ON tc.id = p.id
+    SETTINGS enable_join_transitive_predicates = 0)
+WHERE explain ILIKE '%Join conditions: materialize(\'wlr\') = materialize(\'wlr\')';
+
 SELECT count() FROM p JOIN w ON w.src = p.src AND w.k = p.k JOIN r ON r.src = p.src AND r.id = p.id;
 
 DROP VIEW p_limit_by;
