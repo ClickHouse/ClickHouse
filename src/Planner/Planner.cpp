@@ -41,6 +41,7 @@
 #include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/ShuffleStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/BypassExtremesSteps.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
@@ -611,6 +612,11 @@ public:
         query_has_with_totals_in_any_subquery_in_join_tree = queryHasWithTotalsInAnySubqueryInJoinTree(query_tree);
 
         sort_description = extractSortDescription(query_node.getOrderByNode(), *planner_context);
+
+        /// The sort description of `SHUFFLE` is used to merge the shuffled streams from remote servers by the internal
+        /// key column, which is added only to the result of a shard (see `addShuffleStep`).
+        if (query_node.isShuffle())
+            sort_description.emplace_back(ShuffleStep::internal_key_column_name, 1, 1);
 
         if (query_node.hasLimit())
         {
@@ -1361,7 +1367,7 @@ bool limitAlwaysReadsTillEnd(
         return true;
 
     if (query_node.isGroupByWithTotals())
-        return !query_node.hasOrderBy();
+        return !query_node.hasOrderBy() && !query_node.isShuffle();
 
     return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
 }
@@ -1412,7 +1418,7 @@ void addDistinctStep(QueryPlan & query_plan,
       *    `exact_rows_before_limit` or to accumulate WITH TOTALS, and an early stop makes both short.
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
-    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
+    if (!query_node.isShuffle() && (!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
         && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
         && limit_length != 0
         && !query_analysis_result.is_limit_length_negative
@@ -1438,7 +1444,7 @@ void addDistinctStep(QueryPlan & query_plan,
 
     /// The `DISTINCT` that runs after the `ORDER BY` sits above the sort in the plan: the sorted order has
     /// to survive it up to the result.
-    if (!before_order && query_node.hasOrderBy())
+    if (!before_order && (query_node.hasOrderBy() || query_node.isShuffle()))
         distinct_step->preserveInputOrder();
 
     query_plan.addStep(std::move(distinct_step));
@@ -1459,6 +1465,52 @@ void addSortingStep(QueryPlan & query_plan,
         sort_settings);
     sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
+}
+
+/// `SHUFFLE`: shuffle the rows. The random choices are made just in time, no random values are stored for the rows.
+/// If the result is not final (it is sent from a shard to the initiator), `ShuffleStep` appends an internal key column
+/// with sorted random keys, so that the streams of the shards can be merged by `addMergeSortingStep`.
+void addShuffleStep(QueryPlan & query_plan,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const PlannerQueryProcessingInfo & query_processing_info)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    std::optional<ShuffleStep::Key> key;
+    if (query_processing_info.getToStage() != QueryProcessingStage::Complete)
+    {
+        const String key_column_name = ShuffleStep::internal_key_column_name;
+        if (query_plan.getCurrentHeader()->has(key_column_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column name `{}` is reserved for `SHUFFLE`", key_column_name);
+        key = ShuffleStep::Key{.column_name = key_column_name, .replace = false, .direction = 1};
+    }
+
+    auto shuffle_step = std::make_unique<ShuffleStep>(
+        query_plan.getCurrentHeader(),
+        std::move(key),
+        query_analysis_result.partial_sorting_limit,
+        settings[Setting::max_block_size]);
+    shuffle_step->setStepDescription("Shuffle for SHUFFLE");
+    query_plan.addStep(std::move(shuffle_step));
+}
+
+/// On a shard, `addShuffleStep` appends the internal key column of `SHUFFLE`, by which the initiator merges the streams
+/// of the shards. The expression analysis does not know about this column, so keep it in the output of `actions`
+/// that are applied after the shuffle (for example, before `LIMIT BY`).
+void preserveShuffleKeyColumn(ActionsDAG & actions, const QueryPlan & query_plan)
+{
+    const auto * key_column = query_plan.getCurrentHeader()->findByName(String(ShuffleStep::internal_key_column_name));
+    if (!key_column)
+        return;
+
+    for (const auto * output : actions.getOutputs())
+        if (output->result_name == key_column->name)
+            return;
+
+    const auto & input = actions.addInput(key_column->name, key_column->type);
+    actions.getOutputs().push_back(&input);
 }
 
 template<size_t size>
@@ -1738,7 +1790,7 @@ void addLimitRangeStep(
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
     bool always_read_till_end = settings[Setting::exact_rows_before_limit];
-    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
+    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy() && !query_node.isShuffle())
         always_read_till_end = true;
     if (!query_node.isGroupByWithTotals() && query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree)
         always_read_till_end = true;
@@ -1905,6 +1957,17 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 
     if (expressions_analysis_result.hasSort())
         addSortingStep(query_plan, query_analysis_result, planner_context);
+    else if (query_node.isShuffle() && query_processing_info.isIntermediateStage())
+        /// With nested `Distributed` tables, the incoming streams are already shuffled by the shards below
+        /// and sorted by the internal key column. Merging them by this key keeps the result uniformly shuffled
+        /// and lets the initiator merge the streams of this server in the same way.
+        addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge shuffled streams for SHUFFLE");
+    else if (query_node.isShuffle())
+        addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
+
+    /// Keep every candidate for the global `DISTINCT` followed by a fresh `SHUFFLE` on the initiator.
+    if (query_node.isShuffle() && query_node.isDistinct())
+        return;
 
     /** For DISTINCT step, pre_distinct = false, because if we have limit and distinct,
       * we need to merge streams to one and calculate overall distinct.
@@ -1925,6 +1988,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
     if (expressions_analysis_result.hasLimitBy())
     {
         auto & limit_by_analysis_result = expressions_analysis_result.getLimitBy();
+        preserveShuffleKeyColumn(limit_by_analysis_result.before_limit_by_actions->dag, query_plan);
         addExpressionStep(
             planner_context,
             query_plan,
@@ -2528,16 +2592,6 @@ void Planner::buildQueryPlanIfNeeded()
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
-/// Returns true if the Planner-level query result cache (with `is_subquery = true` key) should be used.
-/// For actual subqueries (is_subquery=true): explicit SETTINGS `use_query_cache` on the node wins.
-/// For all Planner invocations: `query_cache_for_subqueries` propagation from outer query.
-/// By default, `use_query_cache` does NOT propagate.
-///
-/// Regardless of opt-in, never use the cache for execution kinds where caching is unsafe:
-/// internal queries (e.g. background system queries) and non-initial queries (e.g. `SECONDARY_QUERY`
-/// executed by a replica as part of a distributed query). Caching in those kinds would write/read
-/// per-replica or per-internal entries that the outer query already manages or that bypass the
-/// safety gate `executeQuery` applies via `Context::setCanUseQueryResultCache`.
 /// Gate every Planner-level cache use by the query kind, so an explicit `SETTINGS use_query_cache`
 /// on a subquery cannot bypass the safety check that `executeQuery` performs for the outer query.
 /// Caching internal queries (e.g. background system queries) or non-initial queries (e.g. a
@@ -2548,6 +2602,31 @@ static bool isQueryKindEligibleForSubqueryCache(const ContextPtr & query_context
 {
     return !query_context->isInternalQuery()
         && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+}
+
+/// Never use the cache in plans that are serialized for remote execution: logical plans are
+/// shipped to another node by parallel replicas with `serialize_query_plan = 1` (see
+/// `createRemotePlanForParallelReplicas`). The cache steps hold node-local state - a
+/// `QueryResultCacheWriter` or the cached chunks themselves - which has no serialized
+/// representation. The cache is populated and read by the plan the initiator executes itself.
+///
+/// Plan-based parallel replicas (`parallel_replicas_plan_based`) are another such case: the plan is
+/// built locally, and `QueryPlanOptimizations::applyParallelReplicas` later serializes a fragment of
+/// it - including the plans of `IN` subquery sets - for the replicas. A fragment holding a cache step
+/// is kept local instead, so the cache would silently disable parallel replicas, and on a warm cache
+/// the remote/local decision would depend on cache contents. The setting is checked on both the local
+/// and the query-level context, so a subquery cannot escape the ban with its own SETTINGS clause.
+static bool isPlanEligibleForSubqueryCache(const SelectQueryOptions & select_query_options, const ContextPtr & query_context)
+{
+    if (select_query_options.build_logical_plan)
+        return false;
+
+    const auto uses_plan_based_parallel_replicas = [](const ContextPtr & context)
+    {
+        return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
+    };
+    return !uses_plan_based_parallel_replicas(query_context)
+        && !(query_context->hasQueryContext() && uses_plan_based_parallel_replicas(query_context->getQueryContext()));
 }
 
 /// Returns the explicit `use_query_cache` opt-in / opt-out carried by a node's own query-level
@@ -2602,16 +2681,22 @@ static std::optional<bool> explicitUseQueryCacheSetting(const Node & node)
     return node_context->getSettingsRef()[Setting::use_query_cache];
 }
 
+/// Returns true if the Planner-level query result cache (with `is_subquery = true` key) should be used.
+/// For actual subqueries (is_subquery=true): explicit SETTINGS `use_query_cache` on the node wins.
+/// For all Planner invocations: `query_cache_for_subqueries` propagation from outer query.
+/// By default, `use_query_cache` does NOT propagate.
 static bool shouldUseQueryCacheForSubquery(
     const QueryNode & query_node,
     bool outer_can_use_cache,
     const Settings & settings,
-    bool is_subquery,
+    const SelectQueryOptions & select_query_options,
     bool allow_propagation,
     const ContextPtr & query_context)
 {
-    if (!isQueryKindEligibleForSubqueryCache(query_context))
+    if (!isQueryKindEligibleForSubqueryCache(query_context) || !isPlanEligibleForSubqueryCache(select_query_options, query_context))
         return false;
+
+    const bool is_subquery = select_query_options.is_subquery;
 
     /// Only check explicit per-node `use_query_cache` for actual subqueries.
     /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
@@ -2772,6 +2857,7 @@ void Planner::buildPlanForUnionNode()
 
     bool should_cache = select_query_options.is_subquery && query_result_cache != nullptr
         && isQueryKindEligibleForSubqueryCache(query_context)
+        && isPlanEligibleForSubqueryCache(select_query_options, query_context)
         && explicit_use_query_cache.value_or(false);
 
     /// An explicit opt-out covers the whole set operation: its arms must not be cached through the
@@ -2938,7 +3024,7 @@ void Planner::buildPlanForQueryNode()
     /// 2. `query_cache_for_subqueries` propagates from outer query (applies to all Planner invocations)
     /// 3. By default, `use_query_cache` does NOT propagate from outer query to subqueries
     bool should_cache = shouldUseQueryCacheForSubquery(query_node, can_use_query_result_cache, settings,
-        select_query_options.is_subquery, allow_query_cache_for_subqueries_propagation, query_context);
+        select_query_options, allow_query_cache_for_subqueries_propagation, query_context);
 
     /// Query result cache must actually exist
     if (should_cache && !query_result_cache)
@@ -2971,7 +3057,8 @@ void Planner::buildPlanForQueryNode()
     select_query_info.local_storage_limits = buildStorageLimits(*query_context, select_query_options);
     current_storage_limits.push_back(select_query_info.local_storage_limits);
     select_query_info.storage_limits = std::make_shared<StorageLimitsList>(current_storage_limits);
-    select_query_info.has_order_by = query_node.hasOrderBy();
+    /// `SHUFFLE` reorders the rows like `ORDER BY`, so the storage must not stop reading after `LIMIT` rows.
+    select_query_info.has_order_by = query_node.hasOrderBy() || query_node.isShuffle();
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
@@ -3424,7 +3511,23 @@ void Planner::buildPlanForQueryNode()
             /// There are no aggregation or windows, all expressions before ORDER BY executed on shards
         }
 
-        if (expression_analysis_result.hasSort())
+        const bool distinct_shuffle = query_node.isShuffle() && query_node.isDistinct();
+        const bool finalize_distinct_shuffle = distinct_shuffle && query_processing_info.isFinalizingStage();
+
+        if (finalize_distinct_shuffle)
+        {
+            /// Sample distinct result rows, not occurrences in individual streams or shards.
+            /// Incoming shard keys are not part of the projection columns used for deduplication.
+            addDistinctStep(query_plan,
+                query_analysis_result,
+                planner_context,
+                expression_analysis_result.getProjection().projection_column_names,
+                query_node,
+                true /*before_order*/,
+                false /*pre_distinct*/);
+            addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
+        }
+        else if (expression_analysis_result.hasSort() || query_node.isShuffle())
         {
             /** If there is an ORDER BY for distributed query processing,
               * but there is no aggregation, then on the remote servers ORDER BY was made
@@ -3441,6 +3544,8 @@ void Planner::buildPlanForQueryNode()
                 !expression_analysis_result.hasWindow() &&
                 !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
                 addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge sorted streams for ORDER BY, without aggregation");
+            else if (query_node.isShuffle())
+                addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
             else
                 addSortingStep(query_plan, query_analysis_result, planner_context);
         }
@@ -3456,7 +3561,7 @@ void Planner::buildPlanForQueryNode()
             select_query_options);
 
         //// If there was more than one stream, then DISTINCT needs to be performed once again after merging all streams.
-        if (!query_processing_info.isFromAggregationState() && query_node.isDistinct())
+        if (!finalize_distinct_shuffle && !query_processing_info.isFromAggregationState() && query_node.isDistinct())
         {
             addDistinctStep(query_plan,
                 query_analysis_result,
@@ -3467,9 +3572,11 @@ void Planner::buildPlanForQueryNode()
                 false /*pre_distinct*/);
         }
 
-        if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())
+        if ((!query_processing_info.isFromAggregationState() || finalize_distinct_shuffle)
+            && (!distinct_shuffle || finalize_distinct_shuffle) && expression_analysis_result.hasLimitBy())
         {
             auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
+            preserveShuffleKeyColumn(limit_by_analysis_result.before_limit_by_actions->dag, query_plan);
             addExpressionStep(
                 planner_context,
                 query_plan,

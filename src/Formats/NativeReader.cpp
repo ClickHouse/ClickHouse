@@ -13,6 +13,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Formats/NativeReader.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -41,7 +42,20 @@ NativeReader::NativeReader(
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
     ISerialization::KindSet allowed_kinds_)
-    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_), allowed_kinds(allowed_kinds_)
+    : istr(istr_)
+    , server_revision(server_revision_)
+    , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
+    , allowed_kinds(allowed_kinds_)
+{
+}
+
+NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_)
+    : NativeReader(istr_, server_revision_, std::nullopt)
+{
+}
+
+NativeReader::NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_)
+    : NativeReader(istr_, header_, server_revision_, std::nullopt)
 {
 }
 
@@ -54,7 +68,7 @@ NativeReader::NativeReader(
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
-    , format_settings(std::move(format_settings_))
+    , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
     , block_missing_values(block_missing_values_)
 {
 }
@@ -255,7 +269,7 @@ Block NativeReader::read()
         /// If no rows, nothing to read.
         if (rows)
         {
-            const auto * format = format_settings ? &*format_settings : nullptr;
+            const auto * format = format_settings.get();
             NameAndTypePair name_and_type = {column.name, column.type};
             readData(*serialization, *read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
         }
