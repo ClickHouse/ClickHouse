@@ -1,7 +1,8 @@
 """A row policy on the TimeSeries table filters the Prometheus HTTP API and remote read.
 
-The inner tags table inherits the SELECT row policies of its TimeSeries table, so every endpoint
-which selects time series through that table returns only the series the policy lets through."""
+The TimeSeries table pushes a translated form of its SELECT row policy into every tags-table read
+it generates, so every endpoint which selects time series through that path returns only the series
+the policy lets through."""
 
 import pytest
 import requests
@@ -122,6 +123,58 @@ def test_metadata():
     }
     assert get_json_from_api("/api/v1/metadata?metric=secret", auth=TENANT_A) == {}
     assert sorted(get_json_from_api("/api/v1/metadata")) == ["secret", "untagged", "up"]
+
+
+def test_metadata_version9_external_tags():
+    """A version-9 table with an external tags target still filters /api/v1/metadata."""
+    node.query(
+        "CREATE TABLE ext_samples_v9_rls (id UUID, timestamp DateTime64(3), value Float64) "
+        "ENGINE = MergeTree ORDER BY (id, timestamp)"
+    )
+    node.query(
+        "CREATE TABLE ext_tags_v9_rls (id UUID, metric_name String, tags Map(String, String)) "
+        "ENGINE = ReplacingMergeTree ORDER BY (metric_name, id)"
+    )
+    node.query(
+        "CREATE TABLE ext_metrics_v9_rls (metric_family String, type String, unit String, help String) "
+        "ENGINE = ReplacingMergeTree ORDER BY metric_family"
+    )
+    node.query(
+        "CREATE TABLE prometheus_v9_rls ENGINE = TimeSeries "
+        "SETTINGS version = 9, store_time_ranges = 0, recent_samples_ttl_seconds = 0 "
+        "SAMPLES ext_samples_v9_rls TAGS ext_tags_v9_rls METRICS ext_metrics_v9_rls"
+    )
+    try:
+        node.query(
+            "INSERT INTO prometheus_v9_rls (metric_name, tags, samples) VALUES"
+            f" ('up', {{'tenant': 'a', 'instance': 'a1'}}, [(toDateTime64({T - 60}, 3), 1), (toDateTime64({T}, 3), 1)]),"
+            f" ('secret', {{'tenant': 'b', 'secret_only': 'yes'}}, [(toDateTime64({T - 60}, 3), 42), (toDateTime64({T}, 3), 43)])"
+        )
+        node.query(
+            "INSERT INTO prometheus_v9_rls (metric_family, type, unit, help) VALUES"
+            " ('up', 'gauge', '', 'up'), ('secret', 'gauge', '', 'secret')"
+        )
+        node.query(
+            "CREATE ROW POLICY tenant_a_v9_rls ON prometheus_v9_rls "
+            "FOR SELECT USING tags['tenant'] = 'a' TO tenant_a"
+        )
+        node.query(
+            "CREATE ROW POLICY everything_v9_rls ON prometheus_v9_rls "
+            "FOR SELECT USING 1 TO ALL EXCEPT tenant_a"
+        )
+
+        assert get_json_from_api("/v9_rls/api/v1/metadata", auth=TENANT_A) == {
+            "up": [{"type": "gauge", "help": "up", "unit": ""}]
+        }
+        assert get_json_from_api("/v9_rls/api/v1/metadata?metric=secret", auth=TENANT_A) == {}
+        assert sorted(get_json_from_api("/v9_rls/api/v1/metadata")) == ["secret", "up"]
+    finally:
+        node.query("DROP ROW POLICY IF EXISTS tenant_a_v9_rls ON prometheus_v9_rls")
+        node.query("DROP ROW POLICY IF EXISTS everything_v9_rls ON prometheus_v9_rls")
+        node.query("DROP TABLE IF EXISTS prometheus_v9_rls")
+        node.query("DROP TABLE IF EXISTS ext_samples_v9_rls")
+        node.query("DROP TABLE IF EXISTS ext_tags_v9_rls")
+        node.query("DROP TABLE IF EXISTS ext_metrics_v9_rls")
 
 
 def test_remote_read():

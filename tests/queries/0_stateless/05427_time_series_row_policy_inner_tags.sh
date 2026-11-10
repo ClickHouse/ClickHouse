@@ -9,6 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The name is unique per run, so the test can run in parallel with itself.
 user="user_05427_$CLICKHOUSE_DATABASE"
 T=1700000000
+db="$CLICKHOUSE_DATABASE"
 
 CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 --session_timezone=UTC"
 TENANT="$CLIENT --user $user"
@@ -42,10 +43,10 @@ function check_table()
 
     echo "--- $table: the tenant reads only its own series ---"
     $TENANT -q "SELECT metric_name, tags FROM $table ORDER BY metric_name, tags"
-    echo "-- timeSeriesTags"
-    $TENANT -q "SELECT metric_name, tags FROM timeSeriesTags($table) ORDER BY metric_name, tags"
-    echo "-- inner tags table"
-    $TENANT -q "SELECT metric_name, tags FROM \`$tags_table\` ORDER BY metric_name, tags"
+    echo "-- timeSeriesTags is refused under a row policy"
+    $TENANT -q "SELECT metric_name, tags FROM timeSeriesTags($db.$table) ORDER BY metric_name, tags -- { serverError ACCESS_DENIED }"
+    echo "-- inner tags table is not filtered by the owner's policy"
+    $TENANT -q "SELECT count() FROM \`$tags_table\`"
     echo "-- prometheusQuery"
     $TENANT -q "SELECT * FROM prometheusQuery($table, '{__name__=~\".+\"}', $T) ORDER BY 1"
     echo "-- prometheusQueryRange"
@@ -53,7 +54,7 @@ function check_table()
     echo "-- promql dialect"
     $TENANT --dialect promql --promql_table "$table" --promql_evaluation_time "$T" -q 'count(up)'
     echo "-- samples table is not filtered"
-    $TENANT -q "SELECT count() FROM timeSeriesSamples($table)"
+    $TENANT -q "SELECT count() FROM timeSeriesSamples($db.$table)"
 
     echo "--- $table: the default user reads everything ---"
     $CLIENT -q "SELECT metric_name, tags FROM $table ORDER BY metric_name, tags"
@@ -65,18 +66,18 @@ function check_table()
     $CLIENT -q "SYSTEM FLUSH LOGS query_log"
     $CLIENT -q "SELECT arrayMap(x -> replaceAll(x, currentDatabase(), '<db>'), used_row_policies) FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'"
 
-    echo "--- $table: a policy on the inner tags table combines with the inherited one ---"
+    echo "--- $table: a policy on the tags target combines with the owner's pushed policy ---"
     $CLIENT -q "CREATE ROW POLICY only_up ON \`$tags_table\` FOR SELECT USING metric_name = 'up' TO $user"
-    $TENANT -q "SELECT metric_name, tags FROM timeSeriesTags($table) ORDER BY metric_name, tags"
+    $TENANT -q "SELECT metric_name, tags FROM timeSeriesTags($db.$table) ORDER BY metric_name, tags -- { serverError ACCESS_DENIED }"
     $TENANT -q "SELECT count() FROM prometheusQuery($table, '{__name__=~\".+\"}', $T)"
     $CLIENT -q "DROP ROW POLICY only_up ON \`$tags_table\`"
 
-    echo "--- $table: a policy on a column the inner tags table lacks works for SELECT and fails closed for PromQL ---"
+    echo "--- $table: a policy on a column the tags target lacks works for SELECT and fails closed for PromQL ---"
     $CLIENT -q "DROP ROW POLICY tenant_a ON $table"
     $CLIENT -q "CREATE ROW POLICY has_samples ON $table FOR SELECT USING length(samples) > 0 TO $user"
     $TENANT -q "SELECT count() FROM $table"
     $TENANT -q "SELECT count() FROM prometheusQuery($table, 'up', $T) -- { serverError UNKNOWN_IDENTIFIER }"
-    $TENANT -q "SELECT count() FROM timeSeriesTags($table) -- { serverError UNKNOWN_IDENTIFIER }"
+    $TENANT -q "SELECT count() FROM timeSeriesTags($db.$table) -- { serverError ACCESS_DENIED }"
     $CLIENT -q "DROP ROW POLICY has_samples, everything ON $table"
 }
 
@@ -87,6 +88,44 @@ fill ts_promoted
 
 check_table ts
 check_table ts_promoted
+
+echo "--- version-9 external tags target: the owner's policy filters PromQL ---"
+$CLIENT -q "
+    CREATE TABLE ext_samples (id UUID, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
+    CREATE TABLE ext_tags (id UUID, metric_name String, tags Map(String, String)) ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
+    CREATE TABLE ext_metrics (metric_family String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family;
+    CREATE TABLE ts9 ENGINE = TimeSeries SETTINGS version = 9, store_time_ranges = 0, recent_samples_ttl_seconds = 0
+        SAMPLES ext_samples TAGS ext_tags METRICS ext_metrics;
+"
+fill ts9
+$CLIENT -q "CREATE ROW POLICY tenant_a ON ts9 FOR SELECT USING tags['tenant'] = 'a' TO $user"
+$CLIENT -q "CREATE ROW POLICY everything ON ts9 FOR SELECT USING 1 TO ALL EXCEPT $user"
+$TENANT -q "SELECT * FROM prometheusQuery(ts9, '{__name__=~\".+\"}', $T) ORDER BY 1"
+$TENANT -q "SELECT count() FROM prometheusQuery(ts9, 'secret', $T)"
+$CLIENT -q "DROP ROW POLICY tenant_a, everything ON ts9"
+$CLIENT -q "DROP TABLE ts9, ext_samples, ext_tags, ext_metrics"
+
+echo "--- older partial tags map: a negative policy predicate uses the dedicated column ---"
+# Version 10 stores one sample per row, which makes a direct tags/samples seed straightforward.
+$CLIENT -q "CREATE TABLE ts_partial ENGINE = TimeSeries SETTINGS version = 10, tags_to_columns = {'tenant': 'tenant'}, recent_samples_ttl_seconds = 0"
+$CLIENT -q "
+    INSERT INTO ts_partial (metric_name, tags, samples) VALUES
+        ('up', {'tenant': 'a', 'instance': 'a1'}, [(toDateTime64($T - 60, 3), 1), (toDateTime64($T, 3), 1)]);
+    -- Seed a row the way an older build wrote it: the dedicated tenant column is set, the map has no tenant key.
+    INSERT INTO FUNCTION timeSeriesTags(ts_partial) (id, metric_name, tenant, tags) VALUES
+        ((toUInt64(1), reinterpretAsUUID(unhex('00000000000000000000000000000002'))), 'up', 'b', map('instance', 'b1'));
+    INSERT INTO FUNCTION timeSeriesSamples(ts_partial) (id, timestamp, value) VALUES
+        ((toUInt64(1), reinterpretAsUUID(unhex('00000000000000000000000000000002'))), toDateTime64($T - 60, 3), 1),
+        ((toUInt64(1), reinterpretAsUUID(unhex('00000000000000000000000000000002'))), toDateTime64($T, 3), 1);
+    INSERT INTO FUNCTION timeSeriesTimeRanges(ts_partial) (id, min_time, max_time) VALUES
+        ((toUInt64(1), reinterpretAsUUID(unhex('00000000000000000000000000000002'))), toDateTime64($T - 60, 3), toDateTime64($T, 3));
+"
+$CLIENT -q "CREATE ROW POLICY not_tenant_b ON ts_partial FOR SELECT USING tags['tenant'] != 'b' TO $user"
+$CLIENT -q "CREATE ROW POLICY everything ON ts_partial FOR SELECT USING 1 TO ALL EXCEPT $user"
+$TENANT -q "SELECT * FROM prometheusQuery(ts_partial, '{__name__=~\".+\"}', $T) ORDER BY 1"
+$TENANT -q "SELECT count() FROM prometheusQuery(ts_partial, 'up{instance=\"b1\"}', $T)"
+$CLIENT -q "DROP ROW POLICY not_tenant_b, everything ON ts_partial"
+$CLIENT -q "DROP TABLE ts_partial"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ts, ts_promoted"
