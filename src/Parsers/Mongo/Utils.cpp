@@ -38,7 +38,11 @@ std::pair<const char *, const char *> getMetadataSubstring(const char * begin, c
     return {begin, metadata_end};
 }
 
-const char * findMatchingParenthesis(const char * begin, const char * end)
+namespace
+{
+
+/// The parenthesis that closes the one at `begin`, or `end` if there is none.
+const char * findMatchingParenthesisOrEnd(const char * begin, const char * end)
 {
     /// The parenthesis that closes the one at `begin`, and not the first one in the text: a
     /// parenthesis inside a string literal - a regular expression such as `(?:www\.)?` for
@@ -72,7 +76,17 @@ const char * findMatchingParenthesis(const char * begin, const char * end)
         }
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in your query ");
+    return end;
+}
+
+}
+
+const char * findMatchingParenthesis(const char * begin, const char * end)
+{
+    const char * position = findMatchingParenthesisOrEnd(begin, end);
+    if (position == end)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in your query ");
+    return position;
 }
 
 std::pair<const char *, const char *> getSettingsSubstring(const char * begin, const char * end)
@@ -704,16 +718,13 @@ std::optional<std::string> MongoQueryKeyNameExtractor::extractString(const char 
     {
         return std::nullopt;
     }
-    auto start_position = *maybe_start_position;
-    std::string result;
-    while (begin + start_position != end && begin[start_position] != ')')
-    {
-        result.push_back(begin[start_position]);
-        ++start_position;
-    }
-    if (begin + start_position == end)
+    /// The argument ends at the parenthesis that closes the one after the pattern, and not at the
+    /// first `)`: a field name such as `x)y` in the sort document is a string literal.
+    const char * argument_begin = begin + *maybe_start_position;
+    const char * argument_end = findMatchingParenthesisOrEnd(argument_begin - 1, end);
+    if (argument_end == end)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' is not closed", pattern);
-    return result;
+    return std::string(argument_begin, argument_end);
 }
 
 }
