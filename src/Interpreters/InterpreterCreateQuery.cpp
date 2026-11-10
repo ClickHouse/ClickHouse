@@ -2588,6 +2588,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), database.get());
         assertOrSetUUID(create, database);
         guard->releaseTableLock();
+        bindQualifiedNamesOfSelectBeforeShipping(create);
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup }, std::move(guard));
     }
 
@@ -4196,19 +4197,24 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     }
 }
 
-BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
+void InterpreterCreateQuery::bindQualifiedNamesOfSelectBeforeShipping(ASTCreateQuery & create) const
 {
-    prepareOnClusterQuery(create, getContext(), create.cluster);
-
     /// The qualified names of the `SELECT` of `CREATE TABLE ... AS SELECT` are bound to the tables they denote here (`db.ns.src`
-    /// to `db`.`ns.src`): the hosts take a qualified name exactly as shipped (see `DatabaseCatalog::isBoundHierarchicalName`).
-    /// The unqualified names are left to the default database of each host, as before. A view is bound in `createTable`.
+    /// to `db`.`ns.src`) before the query is shipped `ON CLUSTER` or enqueued by a `Replicated` database: the hosts take a
+    /// qualified name exactly as shipped (see `DatabaseCatalog::isBoundHierarchicalName`). The unqualified names are left
+    /// to the default database of each host, as before. A view is bound in `createTable`.
     if (create.select && !create.isView())
     {
         AddDefaultDatabaseVisitor visitor(getContext(), getContext()->getCurrentDatabase());
         visitor.onlyBindQualifiedNames();
         visitor.visit(*create.select);
     }
+}
+
+BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
+{
+    prepareOnClusterQuery(create, getContext(), create.cluster);
+    bindQualifiedNamesOfSelectBeforeShipping(create);
 
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();

@@ -207,6 +207,7 @@ private:
     void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
+    void bindQualifiedNamesOfSelectBeforeShipping(ASTCreateQuery & create) const;
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
 
