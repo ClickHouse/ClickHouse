@@ -9,6 +9,9 @@ one source part is fully dropped
 1000
 1000
 1000
+0
+one source part is fully dropped: merged index equals rebuilt index
+1
 incorrect sign values are detected during the merge
 2
 shadowing columns

@@ -57,8 +57,35 @@ SELECT count() FROM t_drops_part WHERE hasToken(text, 'doomed');
 SELECT count() FROM t_drops_part WHERE hasToken(text, 'survivor');
 SELECT count() FROM mergeTreeProjection(currentDatabase(), t_drops_part, p);
 SELECT sum(l._part_offset = r._parent_part_offset) FROM t_drops_part l JOIN mergeTreeProjection(currentDatabase(), t_drops_part, p) r USING (id);
+SELECT count() FROM mergeTreeTextIndex(currentDatabase(), t_drops_part, idx_text) WHERE token = 'doomed';
+
+DROP TABLE IF EXISTS t_drops_part_rebuilt;
+
+CREATE TABLE t_drops_part_rebuilt
+(
+    id UInt64,
+    sign Int8,
+    text String,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1,
+    PROJECTION p (SELECT id, _part_offset ORDER BY id)
+)
+ENGINE = CollapsingMergeTree(sign) ORDER BY id
+SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, merge_text_indexes_and_projections_on_delete_only_merges = 0, deduplicate_merge_projection_mode = 'rebuild';
+
+INSERT INTO t_drops_part_rebuilt SELECT number, 1, 'doomed row' || toString(number) FROM numbers(1000);
+INSERT INTO t_drops_part_rebuilt SELECT number, -1, 'doomed row' || toString(number) FROM numbers(1000);
+INSERT INTO t_drops_part_rebuilt SELECT number, 1, 'survivor row' || toString(number) FROM numbers(1000, 1000);
+
+OPTIMIZE TABLE t_drops_part_rebuilt FINAL;
+
+SELECT 'one source part is fully dropped: merged index equals rebuilt index';
+SELECT
+    (SELECT groupArray((token, row_id)) FROM (SELECT token, row_id FROM mergeTreeTextIndex(currentDatabase(), t_drops_part, idx_text) ORDER BY token, row_id))
+    =
+    (SELECT groupArray((token, row_id)) FROM (SELECT token, row_id FROM mergeTreeTextIndex(currentDatabase(), t_drops_part_rebuilt, idx_text) ORDER BY token, row_id));
 
 DROP TABLE t_drops_part;
+DROP TABLE t_drops_part_rebuilt;
 
 SELECT 'incorrect sign values are detected during the merge';
 

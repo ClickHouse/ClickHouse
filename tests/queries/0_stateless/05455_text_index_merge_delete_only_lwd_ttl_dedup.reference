@@ -31,3 +31,5 @@ OPTIMIZE DEDUPLICATE
 3000
 1
 1	0
+OPTIMIZE DEDUPLICATE: merged index equals rebuilt index
+1

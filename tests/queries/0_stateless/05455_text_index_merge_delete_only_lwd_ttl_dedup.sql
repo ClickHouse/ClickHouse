@@ -208,4 +208,27 @@ SELECT ProfileEvents['MergedTextIndexes'], ProfileEvents['RebuiltTextIndexes'] F
 WHERE database = currentDatabase() AND table = 't_text_dedup' AND event_type = 'MergeParts' AND error = 0
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
+DROP TABLE IF EXISTS t_text_dedup_rebuilt;
+
+CREATE TABLE t_text_dedup_rebuilt
+(
+    id UInt64,
+    text String,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, merge_text_indexes_and_projections_on_delete_only_merges = 0;
+
+INSERT INTO t_text_dedup_rebuilt SELECT number, 'payload row' || toString(number) FROM numbers(3000);
+INSERT INTO t_text_dedup_rebuilt SELECT number, 'payload row' || toString(number) FROM numbers(0, 3000, 2);
+
+OPTIMIZE TABLE t_text_dedup_rebuilt FINAL DEDUPLICATE;
+
+SELECT 'OPTIMIZE DEDUPLICATE: merged index equals rebuilt index';
+SELECT
+    (SELECT groupArray((token, row_id)) FROM (SELECT token, row_id FROM mergeTreeTextIndex(currentDatabase(), t_text_dedup, idx_text) ORDER BY token, row_id))
+    =
+    (SELECT groupArray((token, row_id)) FROM (SELECT token, row_id FROM mergeTreeTextIndex(currentDatabase(), t_text_dedup_rebuilt, idx_text) ORDER BY token, row_id));
+
 DROP TABLE t_text_dedup;
+DROP TABLE t_text_dedup_rebuilt;
