@@ -533,11 +533,11 @@ SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating,
         return blocked("aggregation with overflow row is not supported");
     if (params.top_k.has_value())
         return blocked("top-K aggregation is not supported");
+    if (params.only_merge)
+        return blocked("merging pre-aggregated states is not supported");
 
     substrait::Rel aggregate_rel;
     auto * aggregate = aggregate_rel.mutable_aggregate();
-
-    SubstraitSchema direct_schema;
 
     auto * grouping = aggregate->add_groupings();
     for (size_t i = 0; i < params.keys.size(); ++i)
@@ -547,7 +547,7 @@ SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating,
             return blocked(fmt::format("grouping key {} is not present in the child schema", params.keys[i]));
         *aggregate->add_grouping_expressions() = makeColumnReference(*position);
         grouping->add_expression_references(static_cast<UInt32>(i));
-        direct_schema.append(params.keys[i], child.schema.columns[*position].type);
+        out.schema.append(params.keys[i], child.schema.columns[*position].type);
     }
 
     for (const auto & description : params.aggregates)
@@ -575,36 +575,11 @@ SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating,
         measure->set_phase(substrait::AGGREGATION_PHASE_INITIAL_TO_RESULT);
         measure->set_invocation(mapping->invocation);
         *measure->mutable_output_type() = mapping->output_type;
-        direct_schema.append(description.column_name, std::move(mapping->output_type));
+        out.schema.append(description.column_name, std::move(mapping->output_type));
     }
 
-    const auto & header = *aggregating.getOutputHeader();
-    if (header.columns() != direct_schema.size())
-        return blocked("aggregation output header does not match the converted schema");
-
-    /// Align the direct output (keys, then measures) with the step's output header.
-    /// TODO: remove duplicate logic with convertProjection.
-    bool identity = true;
-    std::vector<Int32> mapping_to_header;
-    for (size_t i = 0; i < header.columns(); ++i)
-    {
-        const auto position = direct_schema.positionByName(header.getByPosition(i).name);
-        if (!position)
-            return blocked(fmt::format("aggregation output column {} was not produced by the conversion", header.getByPosition(i).name));
-        identity &= *position == i;
-        mapping_to_header.push_back(static_cast<Int32>(*position));
-        out.schema.append(header.getByPosition(i).name, direct_schema.columns[*position].type);
-    }
-
-    if (identity)
-        aggregate->mutable_common()->mutable_direct();
-    else
-    {
-        auto * emit = aggregate->mutable_common()->mutable_emit();
-        for (const auto position : mapping_to_header)
-            emit->add_output_mapping(position);
-    }
-
+    /// Without only_merge the step's output header is keys, then aggregates. The relation produces the same order.
+    aggregate->mutable_common()->mutable_direct();
     aggregate->mutable_input()->Swap(&child.rel);
     out.rel = std::move(aggregate_rel);
     return out;
