@@ -85,64 +85,7 @@ LOCALES = ["ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"]
 CLOUD_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start"
 INSTALL_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-install-page-banner"
 EXPECTED_LOCALIZED_HOMEPAGE_LINKS = 43
-LOCALIZED_QUICKSTART_GROUPS = {
-    "ar": [
-        "الأدلة السريعة",
-        "جميع حالات الاستخدام",
-        "التحليلات في الوقت الفعلي",
-        "مستودعات البيانات",
-        "أوبزرفابيليتي",
-    ],
-    "es": [
-        "Guías de inicio rápido",
-        "Todos los casos de uso",
-        "Análisis en tiempo real",
-        "Almacenamiento de datos",
-        "Observabilidad",
-    ],
-    "fr": [
-        "Guides de démarrage rapide",
-        "Tous les cas d’usage",
-        "Analytique en temps réel",
-        "Entrepôt de données",
-        "Observabilité",
-    ],
-    "ja": [
-        "クイックスタート",
-        "すべてのユースケース",
-        "リアルタイム分析",
-        "データウェアハウジング",
-        "オブザーバビリティ",
-    ],
-    "ko": [
-        "빠른 시작",
-        "모든 사용 사례",
-        "실시간 분석",
-        "데이터 웨어하우징",
-        "관측성",
-    ],
-    "pt-BR": [
-        "Guias de início rápido",
-        "Todos os casos de uso",
-        "Analytics em tempo real",
-        "Armazenamento de dados",
-        "Observabilidade",
-    ],
-    "ru": [
-        "Быстрый старт",
-        "Все сценарии использования",
-        "Аналитика в реальном времени",
-        "Хранилище данных",
-        "Обсервабилити",
-    ],
-    "zh": [
-        "快速入门",
-        "所有用例",
-        "实时分析",
-        "数据仓库",
-        "可观测性",
-    ],
-}
+QUICKSTART_NAVIGATION_LABELS_PATH = "_site/quickstart-navigation-labels.json"
 LOCALIZED_CLOUD_SETUP_SIDEBAR_TITLES = {
     "ar": "البدء السريع عبر Cloud",
     "es": "Inicio rápido en Cloud",
@@ -292,6 +235,10 @@ def generated_paths(docs_root: Path) -> list:
     paths = list(all_quickstart_pages(docs_root))
     paths += sorted(docs_root.glob("snippets/components/QuickStartsGrid/quickstarts-data.jsx"))
     paths += sorted(docs_root.glob("snippets/*/components/QuickStartsGrid/quickstarts-data.jsx"))
+    paths += [
+        docs_root / locale / "get-started" / "navigation.json"
+        for locale in LOCALES
+    ]
     return paths
 
 
@@ -896,6 +843,16 @@ def navigation_groups(node):
 def check_localized_quickstart_navigation(docs_root: Path) -> list:
     """Ensure the new quickstart groups are translated in every locale."""
     errors = []
+    labels_path = docs_root / QUICKSTART_NAVIGATION_LABELS_PATH
+    try:
+        expected_groups = json.loads(labels_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as ex:
+        return [f"could not read Quickstarts navigation labels: {ex}"]
+    if set(expected_groups) != set(LOCALES):
+        return [
+            "Quickstarts navigation labels must cover exactly: "
+            + ", ".join(LOCALES)
+        ]
     for locale in LOCALES:
         path = docs_root / locale / "get-started" / "navigation.json"
         navigation = json.loads(path.read_text(encoding="utf-8"))
@@ -919,7 +876,7 @@ def check_localized_quickstart_navigation(docs_root: Path) -> list:
             for page in quickstarts_group["pages"]
             if isinstance(page, dict) and "group" in page
         ]
-        expected = LOCALIZED_QUICKSTART_GROUPS[locale]
+        expected = expected_groups[locale]
         if labels != expected:
             errors.append(
                 f"{path.relative_to(docs_root)}: localized quickstart groups "
