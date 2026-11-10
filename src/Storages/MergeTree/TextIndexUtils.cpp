@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <deque>
 #include <limits>
 #include <memory>
 #include <numeric>
@@ -398,9 +399,8 @@ private:
         /// Decoded block of `next_rank`, split by `offsets`.
         PaddedPODArray<UInt32> offsets;
         PaddedPODArray<UInt32> positions;
-        /// Ranks of the position lists of rows dropped by the merge, and the next one to skip.
-        PaddedPODArray<UInt32> dropped_ranks;
-        size_t next_dropped = 0;
+        /// Runs [begin, end) of ranks of the position lists of rows dropped by the merge that are not skipped yet.
+        std::deque<std::pair<UInt32, UInt32>> dropped_runs;
     };
 
     MergeTextIndexesTask & task;
@@ -422,8 +422,7 @@ void MergeTextIndexesTask::PositionsMerge::start()
         auto & reader = readers[i];
         reader.in = nullptr;
         reader.next_rank = 0;
-        reader.dropped_ranks.clear();
-        reader.next_dropped = 0;
+        reader.dropped_runs.clear();
 
         const auto & info = sources[i].info;
         if (info.cardinality == 0)
@@ -449,9 +448,13 @@ void MergeTextIndexesTask::PositionsMerge::start()
 
 void MergeTextIndexesTask::PositionsMerge::addDroppedRank(size_t source_idx, size_t rank)
 {
-    auto & reader = readers[source_idx];
-    chassert(reader.dropped_ranks.empty() || reader.dropped_ranks.back() < rank);
-    reader.dropped_ranks.push_back(static_cast<UInt32>(rank));
+    auto & runs = readers[source_idx].dropped_runs;
+    chassert(runs.empty() || runs.back().second <= rank);
+
+    if (!runs.empty() && runs.back().second == rank)
+        ++runs.back().second;
+    else
+        runs.emplace_back(static_cast<UInt32>(rank), static_cast<UInt32>(rank + 1));
 }
 
 void MergeTextIndexesTask::PositionsMerge::append(size_t source_idx, size_t count)
@@ -487,9 +490,11 @@ void MergeTextIndexesTask::PositionsMerge::append(size_t source_idx, size_t coun
         }
 
         /// The row of this position list was dropped by the merge.
-        if (reader.next_dropped < reader.dropped_ranks.size() && reader.dropped_ranks[reader.next_dropped] == reader.next_rank)
+        if (!reader.dropped_runs.empty() && reader.dropped_runs.front().first == reader.next_rank)
         {
-            ++reader.next_dropped;
+            auto & run = reader.dropped_runs.front();
+            if (++run.first == run.second)
+                reader.dropped_runs.pop_front();
             continue;
         }
 
@@ -507,7 +512,9 @@ void MergeTextIndexesTask::PositionsMerge::finish(TokenPostingsInfo & token_info
     for (const auto & reader : readers)
     {
         /// The position lists of rows dropped after the last merged one are not read.
-        size_t num_docs_consumed = reader.next_rank + (reader.dropped_ranks.size() - reader.next_dropped);
+        size_t num_docs_consumed = reader.next_rank;
+        for (const auto & [begin, end] : reader.dropped_runs)
+            num_docs_consumed += end - begin;
 
         if (reader.in && num_docs_consumed != reader.directory.num_docs)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
