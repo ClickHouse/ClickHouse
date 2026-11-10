@@ -96,7 +96,7 @@ void StorageGCSConfiguration::fromDisk(const String & disk_name, ASTs & args, Co
         structure = *parsing_result.structure;
 
     setPathForRead(key);
-    keys = {key};
+    setPaths({key});
 }
 
 void StorageGCSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
@@ -143,30 +143,6 @@ void StorageGCSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with
 
     if (auto it = key_value_args.find("use_environment_credentials"); it != key_value_args.end())
         auth[S3AuthSetting::use_environment_credentials] = it->second.safeGet<UInt64>() != 0;
-
-    applyGCSVirtualHostedStyle();
-}
-
-void StorageGCSConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
-{
-    StorageS3Configuration::fromNamedCollection(collection, context);
-    applyGCSVirtualHostedStyle();
-}
-
-void StorageGCSConfiguration::applyGCSVirtualHostedStyle()
-{
-    const String & host = url.uri.getHost();
-    if (!isDefaultGCSEndpoint(url.endpoint) || !isDefaultGCSHost(host) || host == "storage.googleapis.com")
-        return;
-
-    /// The same decoded path `S3::URI` takes the key from, only without splitting the bucket off it.
-    String key = url.uri.getPath();
-    if (key.starts_with('/'))
-        key = key.substr(1);
-
-    url.bucket = host.substr(0, host.size() - std::string_view(".storage.googleapis.com").size());
-    url.key = std::move(key);
-    keys = {url.key};
 }
 
 ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
