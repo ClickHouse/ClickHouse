@@ -38,7 +38,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
-#include <Formats/FormatSettingsEnums.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/DivisionUtils.h>
 #include <Functions/FunctionFactory.h>
@@ -82,7 +82,7 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
-FormatSettingsEnums::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context);
+FormatSettings::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context);
 
 namespace traits_
 {
@@ -912,6 +912,11 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
 
     bool check_decimal_overflow = true;
 
+    /// `String +/- Interval` is executed by parsing the String (see `getFunctionForIntervalArithmetic`).
+    /// The value behind a NULL in a `Nullable(String)` is not a date, so such a function must not be
+    /// executed on those rows: see `canBeExecutedOnDefaultArguments`.
+    bool parses_string_operand = false;
+
     /// Whether the operation is a division with a Nullable denominator (needs the division-by-zero
     /// protection in executeImpl2). Decided by the overload resolver from the original argument
     /// types. A runtime flag instead of a template parameter: making it a template parameter would
@@ -921,7 +926,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     /// Date/Time overflow behavior, captured from the query context at construction time so that
     /// executeImpl does not have to consult the context (which may have been destroyed by the time a
     /// stored expression - e.g. a sorting key - is re-executed during a merge). See #54890.
-    FormatSettingsEnums::DateTimeOverflowBehavior date_time_overflow_behavior{};
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior{};
 
     /// Builders for the interval/tuple special cases, resolved from the argument types at construction
     /// time while the context is alive (see the constructor). At most one is non-null for a given
@@ -1493,7 +1498,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             if (wide_result >= result_min && wide_result <= result_max) [[likely]]
                 return static_cast<Int64>(wide_result);
 
-            if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
+            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
                 if (result_is_datetime64)
                     throw Exception(
@@ -1507,7 +1512,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
                         "Value {} is out of bounds of type DateTime",
                         static_cast<Int64>(wide_result));
             }
-            else if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
+            else if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
             {
                 return static_cast<Int64>(std::clamp<Int128>(wide_result, result_min, result_max));
             }
@@ -1866,7 +1871,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             if (wide_result >= result_min && wide_result <= result_max) [[likely]]
                 return static_cast<Int64>(wide_result);
 
-            if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
+            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
                 if (result_is_datetime64)
                     throw Exception(
@@ -1879,7 +1884,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
                         "Value {} is out of bounds of type DateTime",
                         static_cast<Int64>(wide_result));
             }
-            else if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
+            else if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
             {
                 return static_cast<Int64>(std::clamp<Int128>(wide_result, result_min, result_max));
             }
@@ -2370,6 +2375,7 @@ public:
             const DataTypePtr type0 = normalize(left_type);
             const DataTypePtr type1 = normalize(right_type);
             prepared_interval_function = getFunctionForIntervalArithmetic(type0, type1, context_);
+            parses_string_operand = prepared_interval_function && (isString(type0) || isString(type1));
             prepared_date_tuple_of_intervals_function = getFunctionForDateTupleOfIntervalsArithmetic(type0, type1, context_);
             prepared_merge_intervals_function = getFunctionForMergeIntervalsArithmetic(type0, type1, context_);
             prepared_tuple_function = getFunctionForTupleArithmetic(type0, type1, context_);
@@ -3860,7 +3866,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
     }
 #endif
 
-    bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
+    bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments && !parses_string_operand; }
 };
 
 
