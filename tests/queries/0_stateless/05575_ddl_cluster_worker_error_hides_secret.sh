@@ -68,7 +68,7 @@ $CLICKHOUSE_CLIENT --user "$READER" --password p --query "
         countIf(position(concat(exception, query, formatted_query, stack_trace), '${CANARY}') > 0),
         countIf(position(exception, '[HIDDEN]') > 0 AND exception_code = 62)
     FROM system.query_log
-    WHERE query_id = '${QUERY_ID}' AND type = 'ExceptionWhileProcessing' AND event_date >= yesterday()
+    WHERE current_database = currentDatabase() AND query_id = '${QUERY_ID}' AND type = 'ExceptionWhileProcessing' AND event_date >= yesterday()
     SETTINGS enable_parallel_replicas = 0
 "
 $CLICKHOUSE_CLIENT --user "$READER" --password p --query "
