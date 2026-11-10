@@ -4,7 +4,6 @@
 
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_map_buffer;
 DROP TABLE IF EXISTS t_map_mv;

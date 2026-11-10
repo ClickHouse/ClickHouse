@@ -6,6 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 opts=(
+  --enable_analyzer=1
   --enable_parallel_replicas=1
   --automatic_parallel_replicas_mode=0
   --parallel_replicas_for_non_replicated_merge_tree=1
@@ -13,7 +14,6 @@ opts=(
   --max_parallel_replicas=3
   --parallel_replicas_min_number_of_granules_to_enable=0
   --parallel_replicas_min_number_of_rows_per_replica=0
-  --optimize_move_to_prewhere=1
 )
 
 ${CLICKHOUSE_CLIENT} -nq "
