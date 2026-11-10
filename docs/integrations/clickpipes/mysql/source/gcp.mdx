@@ -26,7 +26,7 @@ The PITR feature determines whether binary logging is turned on or off for MySQL
 Setting the value to a reasonably long value depending on the replication use-case is advisable.
 
 If not already configured, make sure to set these in the database flags section by editing the Cloud SQL:
-1. `binlog_expire_logs_seconds` to a value >= `86400` (1 day).
+1. `binlog_expire_logs_seconds` to a value >= `259200` (3 days).
 2. `binlog_row_metadata` to `FULL`
 3. `binlog_row_image` to `FULL`
 
