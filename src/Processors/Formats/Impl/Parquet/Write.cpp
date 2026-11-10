@@ -2042,7 +2042,7 @@ void writeFileFooter(FileWriteState & file,
     const WriteOptions & options,
     WriteBuffer & out,
     const Block & header,
-    const std::vector<std::pair<String, String>> & key_value_metadata)
+    const std::vector<std::pair<String, String>> & key_value_metadata) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     chassert(file.offset != 0);
     chassert(file.current_row_group.row_group.columns.empty());
