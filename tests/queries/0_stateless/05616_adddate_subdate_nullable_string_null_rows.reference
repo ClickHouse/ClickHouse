@@ -16,11 +16,24 @@ formatDateTime over Nullable(DateTime64) with NULL rows
 1	1
 1	1
 1	1
+plus/minus operators and date_add
+0
+1
+0
+1
+0
+1
+0
+1
+1	1
+1	1
+1	1
 date arguments keep working with NULL rows
 0
 1
 0
 1
 no NULL in the input
+0
 0
 0
