@@ -42,6 +42,11 @@ protocol or the inter-server replication protocol.
 Query-type routing (see below) applies to the HTTP protocol only. On a TLS-terminating `native`
 listener, `host` rules match the server name (SNI) the client sent in the TLS handshake.
 
+Each HTTP request is routed on its own. The proxy forwards a request with `Connection: close` (replacing
+the client's `Connection` headers), so the backend closes the connection after the response, and the
+client sends its next request on a new connection, which is routed again. HTTP keep-alive between the
+client and the proxy is therefore not available.
+
 ## PostgreSQL {#postgresql}
 
 The proxy reads the user and the database from the cleartext `StartupMessage`, as the server does: a

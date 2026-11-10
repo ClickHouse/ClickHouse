@@ -52,6 +52,34 @@ void sendResponse(FiberSocket & client, int code, const String & reason, const S
     }
 }
 
+/// Returns the received bytes with the `Connection` headers of the request head `[0, head_end)` removed
+/// and `Connection: close` added after the request line. The bytes after the head (the body) are kept as is.
+String forceConnectionClose(const String & received, size_t head_end)
+{
+    const size_t request_line_end = received.find('\n');
+    if (request_line_end == String::npos || request_line_end >= head_end)
+        return received;
+
+    String result = received.substr(0, request_line_end + 1);
+    result += "Connection: close\r\n";
+    size_t line_begin = request_line_end + 1;
+    while (line_begin < head_end)
+    {
+        size_t line_end = received.find('\n', line_begin);
+        if (line_end == String::npos || line_end >= head_end)
+            line_end = head_end - 1;
+        const std::string_view line(received.data() + line_begin, line_end + 1 - line_begin);
+        const size_t colon = line.find(':');
+        const bool is_connection = colon != std::string_view::npos
+            && Poco::icompare(Poco::trim(String(line.substr(0, colon))), "connection") == 0;
+        if (!is_connection)
+            result.append(line);
+        line_begin = line_end + 1;
+    }
+    result.append(received, head_end, String::npos);
+    return result;
+}
+
 String stripPort(const String & host)
 {
     /// Strip ":port" but keep bracketed IPv6 literals intact.
@@ -337,6 +365,8 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
         else if (name == "authorization")
             assign_first(header_authorization, value);
     }
+    /// The end of the request head in the received bytes (just after the empty line).
+    const size_t request_head_end = reader.position();
 
     /// The user from the `Authorization` header, parsed as in `authenticateUserByHTTP`:
     /// `Poco::Net::HTTPRequest::getCredentials` splits the first header into a scheme and the rest
@@ -484,7 +514,14 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     }
 
     /// Forward the request head (and any buffered body). Optionally announce the client address.
-    String initial = reader.received();
+    ///
+    /// Only the first request on the client connection is routed: afterwards both sockets are relayed
+    /// byte for byte. A later request on a keep-alive connection could carry another `Host`, user,
+    /// database, `session_id` or query, and must not reach the backend chosen for the first one.
+    /// So the client's `Connection` headers are replaced by `Connection: close`: the backend closes
+    /// the connection after the response (and tells the client so), and the client opens a new
+    /// connection, which is routed again, for its next request.
+    String initial = forceConnectionClose(reader.received(), request_head_end);
     if (ctx.config.http.add_x_forwarded_for && !attributes.peer_address.empty())
     {
         const size_t line_end = initial.find('\n');
