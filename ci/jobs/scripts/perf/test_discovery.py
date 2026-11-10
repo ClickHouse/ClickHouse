@@ -82,7 +82,7 @@ def _iter_elements(parent, source_dir, stack, tag):
 
 
 def test_has_shell_query(test_path):
-    """Whether a test contains a `<query type="shell">`, including via `<include>`.
+    """Whether a test contains a `<query type="shell">` that is not disabled, including via `<include>`.
 
     Profile collection runs each test against a single instrumented server started
     without an HTTP port, invoking perf.py without `--binary` / `--http-port`. Shell
@@ -99,7 +99,7 @@ def test_has_shell_query(test_path):
         return False
     source_dir = os.path.dirname(os.path.abspath(test_path))
     return any(
-        q.get("type") == "shell"
+        q.get("type") == "shell" and q.get("disabled", "0") in ("0", "false", "")
         for q in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "query")
     )
 
