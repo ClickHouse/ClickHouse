@@ -8028,8 +8028,7 @@ This is an expert-level setting which should only be used for debugging by devel
 )", 0, \
         {"26.9", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."}) \
     DECLARE(Bool, query_plan_lower_array_join_function, true, R"(
-Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+Runs the `arrayJoin` function in the same way as the `ARRAY JOIN` clause: as a separate `ARRAY JOIN` step of the query plan. When disabled, the function is calculated inside the expression that contains it, as in older versions.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -9315,9 +9314,6 @@ SELECT * FROM test_table
 │ 1 │
 └───┘
 ```
-)", 0) \
-    DECLARE(Bool, count_distinct_optimization, false, R"(
-Rewrite count distinct to subquery of group by
 )", 0) \
     DECLARE(Bool, optimize_inverse_dictionary_lookup, true, R"(
 Avoid repeated inverse dictionary lookup by doing faster lookups into a precomputed set of possible key values.
@@ -11842,6 +11838,8 @@ Enable table function `eval`.
     MAKE_OBSOLETE(M, Bool, query_plan_aggregation_in_order, true, \
         {"26.10", true, true, "Obsolete setting: the aggregation-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation was removed. Use `optimize_aggregation_in_order` to toggle the optimization."}, \
         {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
+    MAKE_OBSOLETE(M, Bool, count_distinct_optimization, false, \
+        {"26.11", false, false, "Obsolete setting: a single `uniqExact` or `count(DISTINCT)` without `GROUP BY` is computed by radix partitioning (`optimize_uniq_exact_radix_partitioning`), which made the rewrite to a `GROUP BY` subquery unnecessary."}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_insert_select_local_pipeline, true, \
         {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
         {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
