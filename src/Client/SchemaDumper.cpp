@@ -4522,14 +4522,18 @@ ReplayGateNeeds collectReplayGateNeeds(
         /// A plain view's SELECT is parsed only when the view is read, under the reader's setting.
         if (create->as_table_function && mayNameArchivePath(*create->as_table_function, /* is_engine= */ false, named_collections))
             needs.archive_path = true;
+        auto find_archive_path = [&](const IAST & node)
+        {
+            const auto * table_expression = node.as<ASTTableExpression>();
+            if (table_expression && table_expression->table_function
+                && mayNameArchivePath(*table_expression->table_function, /* is_engine= */ false, named_collections))
+                needs.archive_path = true;
+        };
         if (create->select)
-            forEachNode(*create->select, [&](const IAST & node)
-            {
-                const auto * table_expression = node.as<ASTTableExpression>();
-                if (table_expression && table_expression->table_function
-                    && mayNameArchivePath(*table_expression->table_function, /* is_engine= */ false, named_collections))
-                    needs.archive_path = true;
-            }, unread_select);
+            forEachNode(*create->select, find_archive_path, unread_select);
+        /// CREATE runs the scalar subqueries of a constraint, which parse their table functions too.
+        if (create->columns_list && create->columns_list->constraints)
+            forEachNode(*create->columns_list->constraints, find_archive_path);
 
         /// A table, or a database, builds a `disk = disk(...)` of its SETTINGS at CREATE.
         if (create->storage && create->storage->settings)

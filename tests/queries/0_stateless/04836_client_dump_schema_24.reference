@@ -11,3 +11,4 @@ alias_file: dump rc=0
 constraint_subquery: replay rc=0 
 constraint_gate: gate emitted: 1
 constraint_gate: replay rc=0 
+eager_dictionary: source loaded: 0

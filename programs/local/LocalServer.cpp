@@ -31,6 +31,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/SystemLog.h>
@@ -2076,7 +2077,11 @@ void LocalServer::processConfig()
     /// A refreshable materialized view would otherwise refresh, and write its target, as soon as it is loaded.
     /// Set after the command-line settings, which must not turn it back off.
     if (dump_schema)
+    {
         global_context->setSetting("stop_refreshable_materialized_views_on_startup", true);
+        /// A dictionary with `dictionary_lazy_load = 0` would otherwise load its source as soon as it is attached.
+        global_context->getExternalDictionariesLoader().enableAutomaticLoading(false);
+    }
 
     /// After the default profile and command-line settings: the first access to `MergeTreeSettings`
     /// caches them, and it must see the final `compatibility` value.

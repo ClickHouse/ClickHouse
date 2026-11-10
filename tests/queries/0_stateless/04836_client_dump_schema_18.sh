@@ -145,3 +145,19 @@ named_collection_round_trip() {
 named_collection_round_trip collection_archive 'http://127.0.0.1:1/d/*.tar :: data.csv' shown
 named_collection_round_trip collection_plain 'http://127.0.0.1:1/d/*.csv' shown
 named_collection_round_trip collection_masked 'http://127.0.0.1:1/d/*.csv' masked
+
+# CREATE runs the subquery of a constraint, which splits its archive path too. Only the server loads such a table.
+archive_dir="${CLICKHOUSE_USER_FILES_UNIQUE}"
+rm -rf "$archive_dir"
+mkdir -p "$archive_dir"
+trap 'rm -rf "$work" "$archive_dir"' EXIT
+printf '5\n' > "$archive_dir/data.tsv"
+tar -cf "$archive_dir/a.tar" -C "$archive_dir" data.tsv
+rm "$archive_dir/data.tsv"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE constraint_archive (x UInt64,
+    CONSTRAINT c CHECK x <= (SELECT max(v) FROM file('$archive_dir/a.tar :: data.tsv', 'TSV', 'v UInt64'))) ENGINE = Memory"
+$CLICKHOUSE_CLIENT --dump-schema "${CLICKHOUSE_DATABASE}" > "$work/constraint.sql" 2>/dev/null
+echo "constraint: dump rc=$?, archive gate: $(grep -c '^SET allow_archive_path_syntax = 1;' "$work/constraint.sql")"
+$CLICKHOUSE_LOCAL --path "$work/constraint_dst" --allow_archive_path_syntax=0 -n --queries-file "$work/constraint.sql" 2>&1 \
+    | grep -o 'Code: [0-9]*' | head -1
+echo "constraint: replay rc=${PIPESTATUS[0]}"

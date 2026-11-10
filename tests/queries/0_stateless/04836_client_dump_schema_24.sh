@@ -114,3 +114,14 @@ $CLICKHOUSE_CLIENT --dump-schema "${CLICKHOUSE_DATABASE}" > "$work/gate.sql" 2> 
 echo "constraint_gate: gate emitted: $(grep -c '^SET allow_suspicious_types_in_group_by = 1;' "$work/gate.sql")"
 $CLICKHOUSE_LOCAL --path "$work/gate_dst" -n --queries-file "$work/gate.sql" > "$work/gate.out" 2>&1
 echo "constraint_gate: replay rc=$? $(head -c 200 "$work/gate.out")"
+
+# A dictionary with `dictionary_lazy_load = 0` loads its source when it is attached, unless the dump stops it.
+$CLICKHOUSE_LOCAL --path "$work/dict" -n -q "
+CREATE DATABASE d;
+CREATE DICTIONARY d.eager (id UInt64, val String) PRIMARY KEY id
+    SOURCE(EXECUTABLE(COMMAND 'touch $work/dict_marker' FORMAT 'TabSeparated'))
+    LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 0);"
+rm -f "$work/dict_marker"
+$CLICKHOUSE_LOCAL --path "$work/dict" --dump-schema d > /dev/null 2> "$work/dict.err" \
+    || echo "eager_dictionary: dump failed: $(cat "$work/dict.err")"
+echo "eager_dictionary: source loaded: $([ -e "$work/dict_marker" ] && echo 1 || echo 0)"
