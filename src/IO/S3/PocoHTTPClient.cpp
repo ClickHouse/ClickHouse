@@ -27,7 +27,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/S3/ProviderType.h>
-#include <IO/SocketPeerClosed.h>
 #include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
@@ -677,7 +676,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
             latency_recorded = true;
 
-            /// Set when the server has already answered: before the request body, or while it was being sent.
+            /// Set when the server answered `Expect: 100-continue` with a final response, so the body is not sent.
             std::unique_ptr<HTTPResponseReadBuffer> response_body;
 
             if (expect_continue)
@@ -726,25 +725,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request.GetContentBody()->seekg(0);
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
-                try
-                {
-                    auto size = copyFromIStreamToWriteBuffer(*request.GetContentBody(), *request_body);
-                    request_body->finalize();
-                    if (enable_s3_requests_logging)
-                        LOG_TEST(log, "Written {} bytes to request body", size);
-                }
-                catch (const Poco::IOException &)
-                {
-                    /// A server may answer with an error and close the connection before reading the whole body.
-                    /// TLS allows no I/O after a failed write.
-                    if (session->secure()
-                        || DB::getSocketState(session->socket()) != DB::SocketState::DataPending
-                        || !(response_body = receiveEarlyHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE))
-                        || poco_response.getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
-                        throw;
-                    LOG_DEBUG(log, "Failed to send the request body to {}, using the response the server has already sent: {}",
-                        uri, getCurrentExceptionMessage(/* with_stacktrace */ false));
-                }
+                auto size = copyFromIStreamToWriteBuffer(*request.GetContentBody(), *request_body);
+                request_body->finalize();
+                if (enable_s3_requests_logging)
+                    LOG_TEST(log, "Written {} bytes to request body", size);
             }
 
             if (!response_body)

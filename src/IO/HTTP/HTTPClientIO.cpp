@@ -638,13 +638,4 @@ waitForHTTPContinue(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, 
     return makeHTTPResponseReadBuffer(std::move(session), session_ref, response, buf_size);
 }
 
-std::unique_ptr<HTTPResponseReadBuffer>
-receiveEarlyHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size)
-{
-    if (!session->receiveEarlyResponse(response))
-        return nullptr;
-    auto & session_ref = *session;
-    return makeHTTPResponseReadBuffer(std::move(session), session_ref, response, buf_size);
-}
-
 }
