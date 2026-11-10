@@ -1,0 +1,16 @@
+<clickhouse>
+    <!-- Explicit credentials make the configuration static: its client is never rebuilt from query settings later. -->
+    <named_collections>
+        <broken_s3_collection>
+            <url>http://resolver:8083/root/data/</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+        </broken_s3_collection>
+        <broken_s3_collection_without_expect>
+            <url>http://resolver:8083/root/data/</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            <expect_continue_min_body_size>0</expect_continue_min_body_size>
+        </broken_s3_collection_without_expect>
+    </named_collections>
+</clickhouse>

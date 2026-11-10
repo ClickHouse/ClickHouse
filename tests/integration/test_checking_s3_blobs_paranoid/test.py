@@ -45,7 +45,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/ssl_client.xml"],
+            main_configs=["configs/ssl_client.xml", "configs/named_collections.xml"],
             user_configs=[
                 "configs/setting.xml",
                 "configs/s3_retries.xml",
@@ -517,6 +517,47 @@ def test_expect_100_continue_not_answered(
     assert create_multipart == 1
     assert upload_parts == 2
     assert s3_errors == 0, s3_errors
+
+
+@pytest.mark.parametrize(
+    "collection, extra_settings, expect_sent",
+    [
+        ("broken_s3_collection", "", True),
+        ("broken_s3_collection", ", s3_expect_continue_min_body_size = 0", False),
+        ("broken_s3_collection", ", compatibility = '26.10'", False),
+        ("broken_s3_collection_without_expect", "", False),
+    ],
+)
+def test_expect_100_continue_settings_with_named_collection(
+    cluster, broken_s3, collection, extra_settings, expect_sent
+):
+    # A named collection with credentials takes `s3_expect_continue_*` from the query, from
+    # `compatibility`, and from the collection itself.
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_multpartuploads()
+
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                {collection},
+                filename = 'test_expect_100_continue_settings_with_named_collection',
+                format = 'CSV'
+            )
+        SELECT number, randomString(1000) FROM numbers(40000)
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=33554432,
+            s3_max_inflight_parts_for_one_file=1,
+            s3_truncate_on_insert=1,
+            s3_check_objects_after_upload=0
+            {extra_settings}
+        """
+    )
+
+    expect_count = broken_s3.get_expect_count()
+    assert (expect_count > 0) == expect_sent, expect_count
 
 
 @pytest.mark.parametrize("send_something", [True, False])

@@ -112,6 +112,8 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
     "upload_checksum_algorithm",
     "use_idempotency_id",
+    "expect_continue_min_body_size",
+    "expect_continue_timeout_ms",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials

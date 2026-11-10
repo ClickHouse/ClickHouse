@@ -100,6 +100,15 @@ class MockControl:
             f"http://localhost:{self._port}/mock_settings/setup_fake_multpartuploads?"
         )
 
+    def get_expect_count(self):
+        # The number of requests with `Expect: 100-continue` since the last reset.
+        return int(
+            self._cluster.exec_in_container(
+                self._cluster.get_container_id(self._container),
+                ["curl", "-s", f"http://localhost:{self._port}/mock_settings/expect_count"],
+            )
+        )
+
     def setup_expect_100(self, mode, late_ms=None):
         url = f"http://localhost:{self._port}/mock_settings/expect_100?mode={mode}"
         if late_ms is not None:
@@ -500,6 +509,7 @@ class _ServerRuntime:
         self.at_complete_multi_part_upload = None
         self.expect_100_mode = "lazy"
         self.expect_100_late_ms = 0
+        self.expect_count = 0
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -527,6 +537,7 @@ class _ServerRuntime:
             self.at_object_get_by_key = {}
             self.expect_100_mode = "lazy"
             self.expect_100_late_ms = 0
+        self.expect_count = 0
 
 
 _runtime = _ServerRuntime()
@@ -584,6 +595,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         # `late` sends `100 Continue` only after `late_ms`, `never` does not send it at all, and
         # `reject` refuses the expectation with `417 Expectation Failed`. `reject_late` does not send
         # `100 Continue` and answers an upload with `417` only after it has read the body.
+        with _runtime.lock:
+            _runtime.expect_count += 1
         mode = _runtime.expect_100_mode
         if mode == "reject":
             self.send_response_only(417)
@@ -809,6 +822,15 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 _runtime.at_object_get_by_key[key] = rule
             self.log_message("set at_object_get %s for key %s", rule, key)
             return self._ok()
+
+        if path[1] == "expect_count":
+            data = str(_runtime.expect_count).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.write_body(data)
+            return
 
         if path[1] == "expect_100":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)

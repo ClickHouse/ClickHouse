@@ -39,6 +39,8 @@ namespace Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
+    extern const SettingsUInt64 s3_expect_continue_min_body_size;
+    extern const SettingsUInt64 s3_expect_continue_timeout_ms;
 }
 
 namespace ServerSetting
@@ -148,6 +150,15 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     if (!for_disk_s3 && local_settings.isChanged("enable_s3_requests_logging"))
         enable_s3_requests_logging = local_settings[Setting::enable_s3_requests_logging];
 
+    /// The request settings of a named collection come from the collection only.
+    UInt64 s3_expect_continue_min_body_size = request_settings[S3RequestSetting::expect_continue_min_body_size];
+    if (!for_disk_s3 && local_settings.isChanged("s3_expect_continue_min_body_size"))
+        s3_expect_continue_min_body_size = local_settings[Setting::s3_expect_continue_min_body_size];
+
+    UInt64 s3_expect_continue_timeout_ms = request_settings[S3RequestSetting::expect_continue_timeout_ms];
+    if (!for_disk_s3 && local_settings.isChanged("s3_expect_continue_timeout_ms"))
+        s3_expect_continue_timeout_ms = local_settings[Setting::s3_expect_continue_timeout_ms];
+
     S3::PocoHTTPClientConfiguration::RetryStrategy retry_strategy;
     retry_strategy.max_retries = s3_retry_attempts;
     retry_strategy.initial_delay_ms = static_cast<unsigned int>(request_settings[S3RequestSetting::retry_initial_delay_ms]);
@@ -181,8 +192,8 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
-    client_configuration.s3_expect_continue_min_body_size = request_settings[S3RequestSetting::expect_continue_min_body_size];
-    client_configuration.s3_expect_continue_timeout_ms = request_settings[S3RequestSetting::expect_continue_timeout_ms];
+    client_configuration.s3_expect_continue_min_body_size = s3_expect_continue_min_body_size;
+    client_configuration.s3_expect_continue_timeout_ms = s3_expect_continue_timeout_ms;
 
     if (request_settings.proxy_resolver)
     {
