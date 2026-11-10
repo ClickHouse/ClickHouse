@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/ORC/Writer.h>
 #include <Processors/Formats/Impl/ORC/RLE.h>
+#include <Processors/Formats/Impl/ORC/Timezone.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -51,7 +52,7 @@ struct WriterContext
     size_t block_size = 0;
     bool enable_index = false;
     double dictionary_key_size_threshold = 0;
-    const DateLUTImpl * timezone = nullptr;
+    std::optional<TimezoneOffset> timezone_offset;
     bool timezone_is_utc = true;
     /// 2015-01-01 00:00:00 in the time zone of the writer, as seconds since the epoch.
     Int64 epoch_offset = 0;
@@ -1104,7 +1105,7 @@ public:
             Int64 utc_seconds = secs;
             Int64 millis = 0;
             Int64 encoded_seconds = 0;
-            if ((!is_utc && common::addOverflow(secs, static_cast<Int64>(context.timezone->timezoneOffset(secs)), utc_seconds))
+            if ((!is_utc && common::addOverflow(secs, (*context.timezone_offset)(secs), utc_seconds))
                 || common::mulOverflow(utc_seconds, Int64{1000}, millis)
                 || common::addOverflow(millis, nano_millis, millis)
                 || common::subOverflow(secs + (secs < 0 && nano > 999999), epoch_offset, encoded_seconds))
@@ -1337,10 +1338,10 @@ Writer::Writer(const Type & schema_, const DataTypes & column_types, OutputStrea
     context->block_size = options.compression_block_size;
     context->enable_index = options.row_index_stride > 0;
     context->dictionary_key_size_threshold = options.dictionary_key_size_threshold;
-    context->timezone = &DateLUT::instance(options.timezone_name);
+    context->timezone_offset.emplace(DateLUT::instance(options.timezone_name));
     context->timezone_is_utc = options.timezone_name == "GMT" || options.timezone_name == "UTC";
     static constexpr Int64 UTC_2015_01_01 = 1420070400;
-    context->epoch_offset = UTC_2015_01_01 - context->timezone->timezoneOffset(UTC_2015_01_01);
+    context->epoch_offset = UTC_2015_01_01 - (*context->timezone_offset)(UTC_2015_01_01);
 
     if (schema->getKind() != STRUCT)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The root type of ORC file must be a struct");
