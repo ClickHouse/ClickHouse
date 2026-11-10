@@ -259,7 +259,7 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
     inner_context->setClientInfo(outer_context->getClientInfo());
     inner_context->setProgressCallback(outer_context->getProgressCallback());
     inner_context->setProcessListElement(outer_context->getProcessListElement());
-    /// The scan becomes a part of the outer pipeline: plan it with the outer query's free memory and fair share of CPU slots.
+    /// A part of the outer query: plan it from the same snapshot.
     if (const auto & snapshot = outer_context->getQueryMaxThreadsSnapshot())
         inner_context->setQueryMaxThreadsSnapshot(snapshot);
     inner_context->setNormalizedQueryHash(outer_context->getNormalizedQueryHash());

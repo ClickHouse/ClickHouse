@@ -19,9 +19,8 @@ ContextMutablePtr makeQueryContext()
 
 }
 
-/// The body of a `DEFINER` or `NONE` view runs under a context created from the global context, but it is a part
-/// of the outer query, so it must be planned with the outer query's snapshot of free memory and CPU slots.
-/// A materialized view is planned while its parent `INSERT` already runs: a fresh snapshot would count the parent.
+/// The body of a `DEFINER` or `NONE` view gets a context made from the global context, but it is a part of the
+/// outer query and shares its snapshot.
 TEST(SQLSecurityContext, SharesQueryMaxThreadsSnapshot)
 {
     auto query_context = makeQueryContext();

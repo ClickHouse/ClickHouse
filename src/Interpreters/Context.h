@@ -2175,7 +2175,6 @@ public:
     /// Shared across all read pools of the query so the write budgets apply per query.
     ColumnsCacheWriteBudgetPtr getColumnsCacheWriteBudget() const;
 
-    /// See `getEffectiveMaxThreads`. `nullptr` if this is not a query context.
     const QueryMaxThreadsSnapshotPtr & getQueryMaxThreadsSnapshot() const;
     void setQueryMaxThreadsSnapshot(const QueryMaxThreadsSnapshotPtr & snapshot);
 

@@ -11,10 +11,8 @@ namespace DB
 
 class Context;
 
-/// The server state that the number of threads of a query depends on: the free memory and the fair share
-/// of CPU slots. Each value is taken once per query, on first use, so that every part of the query (all table
-/// expressions, aggregations, subqueries, sets and pipeline resizes) is planned from the same values.
-/// Created by `makeQueryContext` and shared by every context copied from the query context.
+/// The free memory and the fair share of CPU slots, each taken once per query on first use, so that all parts
+/// of the query are planned from the same values. Created by `makeQueryContext`, shared by copies of the query context.
 class QueryMaxThreadsSnapshot
 {
 public:
@@ -38,7 +36,7 @@ using QueryMaxThreadsSnapshotPtr = std::shared_ptr<QueryMaxThreadsSnapshot>;
 /// It is `max_threads` lowered under memory pressure (see `max_threads_min_free_memory_per_thread`)
 /// and, if `max_threads` is auto, to the fair share of CPU slots of the concurrency control
 /// (see `use_concurrency_control_for_max_threads`). The server state is read from the snapshot of the query
-/// of `context`, so the result is the same in every part of the query with the same settings.
+/// of `context`.
 size_t getEffectiveMaxThreads(const Context & context);
 
 /// `threads` lowered so that every thread has at least `min_free_per_thread` bytes of free memory (at least 1),

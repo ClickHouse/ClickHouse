@@ -182,7 +182,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
-    /// The body is a part of the outer query: plan it with the same free memory and fair share of CPU slots.
+    /// A part of the outer query: plan it from the same snapshot.
     if (const auto & snapshot = context->getQueryMaxThreadsSnapshot())
         new_context->setQueryMaxThreadsSnapshot(snapshot);
     /// Carry the outer query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas keep bucketing
