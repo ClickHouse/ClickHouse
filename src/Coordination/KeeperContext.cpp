@@ -15,7 +15,6 @@
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
@@ -862,23 +861,6 @@ bool isOpNumSupported(const KeeperFeatureFlags & feature_flags, Coordination::Op
 bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
 {
     return isOpNumSupported(feature_flags, operation);
-}
-
-bool KeeperContext::isOperationSupported(const Coordination::ZooKeeperRequest & request) const
-{
-    if (!isOperationSupported(request.getOpNum()))
-        return false;
-
-    if (const auto * multi = dynamic_cast<const Coordination::ZooKeeperMultiRequest *>(&request))
-    {
-        for (const auto & subrequest : multi->requests)
-        {
-            if (!isOperationSupported(*subrequest))
-                return false;
-        }
-    }
-
-    return true;
 }
 
 uint64_t KeeperContext::lastCommittedIndex() const

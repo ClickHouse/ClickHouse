@@ -92,8 +92,8 @@ bool KeeperOverDispatcher::isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) 
 
 void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCallback callback)
 {
-    if (auto ctx = keeper_dispatcher->getKeeperContext(); ctx && !ctx->isOperationSupported(*request))
-        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}, Path: '{}'", request->getOpNum(), request->getPath());
+        if (auto ctx = keeper_dispatcher->getKeeperContext(); ctx && !ctx->isOperationSupported(request->getOpNum()))
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}, Path: '{}'", request->getOpNum(), request->getPath());
 
     request->xid = next_xid++;
 

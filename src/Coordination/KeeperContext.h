@@ -14,11 +14,6 @@
 #include <memory>
 #include <variant>
 
-namespace Coordination
-{
-struct ZooKeeperRequest;
-}
-
 namespace DB
 {
 
@@ -136,9 +131,6 @@ public:
     void setBlockACL(bool block_acl_);
 
     bool isOperationSupported(Coordination::OpNum operation) const;
-
-    /// Opcode feature flags plus nested `Multi` / `MultiRead` children.
-    bool isOperationSupported(const Coordination::ZooKeeperRequest & request) const;
 
     bool shouldLogRequests() const;
     void setLogRequests(bool log_requests_);
