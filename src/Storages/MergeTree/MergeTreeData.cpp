@@ -94,6 +94,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/RenameColumnVisitor.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -1451,6 +1452,11 @@ static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & in
         /// The same dry run a merge performs: it rebuilds this expression's AST under the storage
         /// context and hands the result to `ExpressionTransform::transformHeader`, which is this call.
         index.expression->getActionsDAG().updateHeader(header);
+    }
+    catch (const Exception & e)
+    {
+        rethrowIfQueryCancelled(e);
+        return std::current_exception();
     }
     catch (...)
     {
