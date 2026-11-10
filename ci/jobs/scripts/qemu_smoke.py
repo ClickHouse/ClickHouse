@@ -81,6 +81,10 @@ TARGETS = {
         library_path="/lib64",
         empty_files=("etc/ld.so.cache",),
     ),
+    BuildTypes.LOONGARCH64: Target(
+        qemu="qemu-loongarch64-static",
+        sysroot="contrib/sysroot/linux-loongarch64",
+    ),
 }
 
 
