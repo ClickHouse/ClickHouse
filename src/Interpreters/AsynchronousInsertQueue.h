@@ -4,7 +4,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
 #include <Common/Logger.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SharedMutex.h>
@@ -16,7 +15,6 @@
 #include <base/defines.h>
 
 #include <future>
-#include <optional>
 #include <variant>
 
 namespace DB
@@ -78,7 +76,7 @@ public:
     void flush(const std::vector<StorageID> & tables);
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
-    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker = nullptr);
+    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
 
     /// This method should be called manually because it's not flushed automatically in dtor
@@ -117,18 +115,6 @@ public:
         String current_user;
         String initial_user;
         String authenticated_user;
-        /// Client quota key, so `KEYED BY client_key` quotas bill separate buckets per key.
-        String quota_key;
-        /// Client address and the last forwarded address of the originating INSERT query, so that quotas keyed by
-        /// `ip_address` or `forwarded_ip_address` are checked on submission and charged on flush in the same bucket.
-        /// Empty unless a quota of the inserting user is keyed by an address: otherwise the address does not matter,
-        /// and inserts from different clients are coalesced into one flush. Part of the batching key.
-        String quota_client_address;
-        String quota_forwarded_address;
-        /// The normalized hash of the originating INSERT query, so that quotas keyed by `normalized_query_hash` are checked
-        /// on submission and charged on flush in the same bucket. Unset unless a quota of the inserting user is keyed by it.
-        /// Part of the batching key.
-        std::optional<UInt64> quota_normalized_query_hash;
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
@@ -144,12 +130,8 @@ public:
             const String & current_user_,
             const String & initial_user_,
             const String & authenticated_user_,
-            const String & quota_key_,
             const Settings & settings_,
-            AsynchronousInsertQueueDataKind data_kind_,
-            const String & quota_client_address_ = {},
-            const String & quota_forwarded_address_ = {},
-            std::optional<UInt64> quota_normalized_query_hash_ = {});
+            AsynchronousInsertQueueDataKind data_kind_);
 
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
@@ -159,7 +141,7 @@ public:
     private:
         /// `authentication_grants` is compared by content in `operator==` (a shared_ptr would compare
         /// identity, which is inconsistent with the content-based hash), so it is not part of this tuple.
-        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address, quota_normalized_query_hash, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -211,8 +193,7 @@ private:
             const String query_id;
             const String async_dedup_token;
             const String format;
-            /// Keeps the queued bytes charged to the user that pushed them until the flush frees them.
-            const std::unique_ptr<MemoryTracker> queued_data_tracker;
+            MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
 
@@ -221,16 +202,11 @@ private:
                 String && query_id_,
                 const String & async_dedup_token_,
                 const String & format_,
-                std::unique_ptr<MemoryTracker> queued_data_tracker_);
+                MemoryTracker * user_memory_tracker_);
 
             void resetChunk();
             void finish(ResultProgress result = {});
             void finish(std::exception_ptr exception_);
-
-            /// Increments `FailedAsyncInsertQuery` for this entry, at most once. `finish` with an exception
-            /// calls it too; calling it earlier attributes the failure to the current thread group, e.g. to
-            /// the flush query, before the flush takes the snapshot of its profile events for the quotas.
-            void countFailure();
 
             std::future<ResultProgress> getFuture() { return promise.get_future(); }
             bool isFinished() const { return finished; }
@@ -238,7 +214,6 @@ private:
         private:
             std::promise<ResultProgress> promise;
             std::atomic_bool finished = false;
-            std::atomic_bool failure_counted = false;
         };
 
         InsertData()
@@ -252,14 +227,14 @@ private:
 
         ~InsertData()
         {
-            /// Each entry's data already went back to whoever is charged for it (see `resetChunk`); what remains,
-            /// the entries and list themselves, is queue bookkeeping not charged to whichever query flushes it.
-            for (auto & entry : entries)
-                entry->resetChunk();
-
+            auto it = entries.begin();
+            // Entries must be destroyed in context of user who runs async insert.
+            // Each entry in the list may correspond to a different user,
+            // so we need to switch current thread's MemoryTracker parent on each iteration.
+            while (it != entries.end())
             {
-                MemoryTrackerBlockerInThread queued_data_not_charged_to_the_flush;
-                entries.clear();
+                MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
+                it = entries.erase(it);
             }
 
             ready_promise.set_value();
@@ -363,7 +338,7 @@ private:
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
-    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker);
+    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context);
 
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,
@@ -376,13 +351,8 @@ private:
     void processBatchDeadlines(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group = nullptr);
 
-    /// Call it for every entry that leaves the queue, whether it is flushed or dropped.
-    /// 'AsynchronousInsertQueueSize' and 'AsynchronousInsertQueueBytes' are increased when
-    /// an entry enters the queue, so a caller that forgets this leaves both metrics too high.
-    static void discountFromQueueMetrics(const InsertData & data);
-
     void processData(
-        const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
+        InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(
@@ -400,8 +370,6 @@ private:
         const ContextPtr & context_,
         LoggerPtr logger,
         LogFunc && add_to_async_insert_log);
-
-    static void countFailureOfUnfinishedEntries(const InsertData & data);
 
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);

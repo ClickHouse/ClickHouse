@@ -12,7 +12,7 @@ namespace DB
 ///////////////////////////////////////////////////////////////////////////////////
 struct WatermarkSettings
 {
-    String time_attribute_column;
+    String column;
     ASTPtr expression;
     std::chrono::milliseconds idle_timeout{0};
 

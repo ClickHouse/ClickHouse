@@ -13,7 +13,8 @@ INNER JOIN
     SELECT 1
     GROUP BY 1
         WITH TOTALS
-) AS t2 USING (a);
+) AS t2 USING (a)
+SETTINGS enable_analyzer=1;
 
 SELECT a
 FROM

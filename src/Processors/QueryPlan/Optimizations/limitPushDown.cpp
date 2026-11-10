@@ -5,8 +5,6 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/ShuffleStep.h>
-#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -122,8 +120,7 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
         return 0;
     }
 
-    /// `SHUFFLE` must see the complete population, even when it preserves the row count.
-    if (typeid_cast<const SortingStep *>(child.get()) || typeid_cast<const ShuffleStep *>(child.get()))
+    if (typeid_cast<const SortingStep *>(child.get()))
         return 0;
 
     /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
@@ -133,11 +130,6 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     /// Disable for WindowStep.
     /// TODO: we can push down limit in some cases if increase the limit value.
     if (typeid_cast<const WindowStep *>(child.get()))
-        return 0;
-
-    /// The query result cache must store the complete result of the (sub)query below it.
-    /// A LIMIT pushed below the cache step would truncate the cached entry.
-    if (typeid_cast<const StreamInQueryResultCacheStep *>(child.get()))
         return 0;
 
     /// Now we should decide if pushing down limit possible for this step.
@@ -199,8 +191,7 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// However, if data is somewhat randomly distributed and high cardinality, then each stream will have a hash table
     /// whose size is the number of unique keys, and this can cause OOM.
     const auto & limit_by_columns = limit_by->getColumns();
-    if (getCollationAwareSortPrefixInColumns(sort->getSortDescription(), limit_by_columns, *limit_by->getInputHeaders().front()).size()
-        != limit_by_columns.size())
+    if (getCollationAwareSortPrefixInColumns(sort->getSortDescription(), limit_by_columns).size() != limit_by_columns.size())
         return;
 
     const UInt64 length = limit_by->getGroupLength();
