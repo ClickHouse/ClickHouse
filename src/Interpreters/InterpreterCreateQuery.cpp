@@ -34,10 +34,12 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
@@ -146,6 +148,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
@@ -987,6 +990,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
+
+    /// Authorize the text index transforms of every definition the user supplies now. A replay of stored
+    /// metadata is not checked, so such a table still attaches.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    {
+        for (const auto & index : properties.indices)
+            checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+    }
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
@@ -2505,6 +2516,20 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
+    params.additional_access_check = [captured_query_ptr = query_ptr](bool throw_if_unresolved)
+    {
+        /// `throw_if_unresolved` means the hosts do not run the query as this user.
+        if (!throw_if_unresolved)
+            return;
+
+        const auto & captured_create = captured_query_ptr->as<const ASTCreateQuery &>();
+        if (!captured_create.columns_list || !captured_create.columns_list->indices)
+            return;
+
+        for (const auto & index : captured_create.columns_list->indices->children)
+            if (const auto * declaration = index->as<ASTIndexDeclaration>())
+                rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+    };
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
 }
 
@@ -2559,6 +2584,31 @@ BlockIO InterpreterCreateQuery::execute()
 
                 /// the worker inherits the move destination of the source too, and runs with no user
                 checkExportAccess(inherited);
+
+                /// A worker copies the source's indices with no user, so declare their transforms here.
+                if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
+                {
+                    /// Before resolving it: an error below would otherwise disclose a source the user
+                    /// cannot see.
+                    getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
+                    StoragePtr as_storage = resolveStorageProxyLoading(
+                        DatabaseCatalog::instance().getTable({create.as_database, create.as_table}, getContext()));
+                    /// The query dispatches `AS src`, so each host materializes its own source, which
+                    /// may define the transform differently from the one authorized here.
+                    const bool workers_use_initiator_user
+                        = getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]
+                        && on_cluster_version >= DDLLogEntry::INITIATOR_USER_VERSION;
+
+                    auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
+                    for (const auto & index : as_storage_metadata->getSecondaryIndices())
+                    {
+                        if (index.isImplicitlyCreated())
+                            continue;
+                        if (!workers_use_initiator_user)
+                            rejectTextIndexTransformWithoutInitiatorUser(index);
+                        checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+                    }
+                }
             }
 
             return executeQueryOnCluster(create);
