@@ -20,7 +20,6 @@
 #include "Poco/ErrorHandler.h"
 #include <sstream>
 #include <ctime>
-#include <memory>
 
 #include <base/defines.h>
 #include <Common/ThreadStatus.h>
@@ -239,14 +238,21 @@ void PooledThread::run()
 
 struct ThreadReaper: public Runnable
 {
-	std::vector<PooledThread*> threads;
-
-	void run() override
+	explicit ThreadReaper(size_t capacity)
 	{
-		for (PooledThread* pThread : threads)
-			pThread->release();
+		threads.reserve(capacity);
+	}
+
+	void run()
+	{
+		for (std::vector<PooledThread*>::iterator it = threads.begin(); it != threads.end(); ++it)
+		{
+			(*it)->release();
+		}
 		delete this;
 	}
+
+	std::vector<PooledThread*> threads;
 };
 
 
@@ -408,6 +414,10 @@ void ThreadPool::joinAll()
 {
 	FastMutex::ScopedLock lock(_mutex);
 
+	for (ThreadVec::iterator it = _threads.begin(); it != _threads.end(); ++it)
+	{
+		(*it)->join();
+	}
 	housekeep();
 	for (ThreadVec::iterator it = _threads.begin(); it != _threads.end(); ++it)
 	{
@@ -450,8 +460,7 @@ void ThreadPool::housekeep()
 	int limit = (int) idleThreads.size() + n;
 	if (limit < _minCapacity) limit = _minCapacity;
 	idleThreads.insert(idleThreads.end(), expiredThreads.begin(), expiredThreads.end());
-	auto pTarget = std::make_unique<ThreadReaper>();
-	pTarget->threads.reserve(expiredThreads.size());
+	ThreadReaper* pReaper = new ThreadReaper(expiredThreads.size());
 	_threads.clear();
 	for (ThreadVec::iterator it = idleThreads.begin(); it != idleThreads.end(); ++it)
 	{
@@ -460,12 +469,16 @@ void ThreadPool::housekeep()
 			_threads.push_back(*it);
 			++n;
 		}
-		else pTarget->threads.push_back(*it);
+		else pReaper->threads.push_back(*it);
 	}
-	if (!pTarget->threads.empty())
+	if (!pReaper->threads.empty())
 	{
 		_threads.back()->activate();
-		_threads.back()->start(Thread::PRIO_NORMAL, *pTarget.release());
+		_threads.back()->start(Thread::PRIO_NORMAL, *pReaper);
+	}
+	else
+	{
+		delete pReaper;
 	}
 	_threads.insert(_threads.end(), activeThreads.begin(), activeThreads.end());
 }
