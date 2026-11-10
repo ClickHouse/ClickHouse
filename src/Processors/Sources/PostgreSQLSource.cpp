@@ -48,7 +48,7 @@ void PostgreSQLCancelDeleter::operator()(pg_cancel * cancel) const noexcept
 namespace
 {
 
-/// pqxx hands the libpq connection only to its large-object API.
+/// pqxx hands the libpq connection only to its large-object API, as an opaque `void *`.
 struct LibpqConnection : pqxx::largeobject
 {
     using pqxx::largeobject::raw_connection;
@@ -56,7 +56,7 @@ struct LibpqConnection : pqxx::largeobject
 
 std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> makeCancelHandle(const pqxx::dbtransaction & tx)
 {
-    std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> handle(PQgetCancel(LibpqConnection::raw_connection(tx)));
+    std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> handle(PQgetCancel(static_cast<PGconn *>(LibpqConnection::raw_connection(tx))));
     if (!handle)
         throw Exception(ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, "Cannot prepare the cancellation of the PostgreSQL query");
     return handle;
