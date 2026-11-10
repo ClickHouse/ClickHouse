@@ -266,6 +266,8 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 ///
 /// Keep this guard identical to the one in `programs/keeper/keeper_main.cpp`.
 #if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || USE_GPU || defined(OS_WASM))
+/// Exported even under `-fvisibility=hidden`: otherwise libc would use its real `dlopen`.
+#pragma GCC visibility push(default)
 extern "C"
 {
     void * dlopen(const char *, int);
@@ -293,6 +295,7 @@ extern "C"
         return "ClickHouse does not allow dynamic library loading";
     }
 }
+#pragma GCC visibility pop
 #endif
 
 #if USE_JEMALLOC && defined(OS_LINUX) && !defined(USE_MUSL)
