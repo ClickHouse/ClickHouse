@@ -16,9 +16,9 @@ namespace DB
 /// for every other format (they return near `min_bytes`, so the coarse check already stops them).
 static thread_local const std::atomic<bool> * segmentator_parsing_finished = nullptr;
 
-const std::atomic<bool> * currentSegmentatorParsingFinishedFlag()
+bool isSegmentatorParsingFinished()
 {
-    return segmentator_parsing_finished;
+    return segmentator_parsing_finished && segmentator_parsing_finished->load();
 }
 
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)

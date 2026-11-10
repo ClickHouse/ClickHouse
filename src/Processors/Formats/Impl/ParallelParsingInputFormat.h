@@ -26,10 +26,10 @@ namespace ErrorCodes
 
 class Context;
 
-/// While the current thread is running a parallel-parsing segmentator, returns the format's
-/// `parsing_finished` flag so a `FileSegmentationEngine` that reads far past `min_bytes` in a single
-/// call (Avro reads a whole OCF block) can poll it and stop mid-read; nullptr otherwise.
-const std::atomic<bool> * currentSegmentatorParsingFinishedFlag();
+/// True if the current thread is a parallel-parsing segmentator whose format has finished parsing; false on
+/// any other thread. A `FileSegmentationEngine` that reads far past `min_bytes` in a single call (Avro reads
+/// a whole OCF block) polls it to stop mid-read.
+bool isSegmentatorParsingFinished();
 
 /**
  * ORDER-PRESERVING parallel parsing of data formats.

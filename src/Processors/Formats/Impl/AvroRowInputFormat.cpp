@@ -1760,17 +1760,20 @@ Int64 copyAvroLong(ReadBuffer & in, String & raw)
 constexpr size_t AVRO_SEGMENT_COPY_STEP = 1 << 20;
 
 /// `Dst` is the header `String` or the segment `Memory`, which needs `resizeAmortized` to grow cheaply.
+/// Returns false if parallel parsing finished before all `n` bytes were copied; the caller drops the partial data.
+/// The stop checks run even for `n == 0`, so a long run of empty strings or empty blocks stays stoppable.
 template <typename Dst>
-bool copyAvroBytes(ReadBuffer & in, Dst & dst, size_t n, const std::atomic<bool> * segmentation_finished = nullptr)
+bool copyAvroBytes(ReadBuffer & in, Dst & dst, size_t n)
 {
-    while (n)
+    while (true)
     {
         CurrentThread::checkIfNotCancelled();
-        /// A block is read as a unit but can be far larger than `min_bytes`, so also stop on a non-kill
-        /// pipeline stop (LIMIT, `timeout_overflow_mode='break'`, a background exception) that
-        /// `checkIfNotCancelled` does not see; the caller discards the partial block.
-        if (segmentation_finished && segmentation_finished->load())
+        /// Check non-kill pipeline stop (e.g. LIMIT).
+        if (isSegmentatorParsingFinished())
             return false;
+
+        if (n == 0)
+            return true;
 
         size_t step = std::min(n, AVRO_SEGMENT_COPY_STEP);
         size_t old = dst.size();
@@ -1781,20 +1784,20 @@ bool copyAvroBytes(ReadBuffer & in, Dst & dst, size_t n, const std::atomic<bool>
         readAvroStrict(in, dst.data() + old, step);
         n -= step;
     }
-    return true;
 }
 
-/// An Avro `bytes`/`string`: a `long` length followed by that many bytes.
-void copyAvroString(ReadBuffer & in, String & raw)
+/// An Avro `bytes`/`string`: a `long` length followed by that many bytes. Returns false if parsing finished.
+bool copyAvroString(ReadBuffer & in, String & raw)
 {
     Int64 len = copyAvroLong(in, raw);
     if (len < 0)
         throw Exception(ErrorCodes::AVRO_EXCEPTION, "Negative length in Avro header string");
-    copyAvroBytes(in, raw, static_cast<size_t>(len));
+    return copyAvroBytes(in, raw, static_cast<size_t>(len));
 }
 
 /// Copy the OCF header verbatim (magic + metadata map + 16-byte sync) into `state`.
-void readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
+/// Returns false, leaving `header_read` unset, if parsing finished before the header was read.
+bool readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
 {
     String & h = state.header;
     h.clear();
@@ -1822,11 +1825,10 @@ void readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
         }
         for (Int64 i = 0; i < count; ++i)
         {
-            /// A declared entry count is untrusted and can be huge, so stay cancellable here too.
-            CurrentThread::checkIfNotCancelled();
-
-            copyAvroString(in, h); /// key
-            copyAvroString(in, h); /// value
+            if (!copyAvroString(in, h)) /// key
+                return false;
+            if (!copyAvroString(in, h)) /// value
+                return false;
         }
     }
 
@@ -1835,6 +1837,7 @@ void readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
     h.append(sync, sizeof(sync));
     memcpy(state.sync.data(), sync, sizeof(sync));
     state.header_read = true;
+    return true;
 }
 
 void appendToMemory(const char * src, size_t n, DB::Memory<> & memory)
@@ -1857,28 +1860,18 @@ Int64 copyAvroLongToMemory(ReadBuffer & in, DB::Memory<> & memory)
 std::pair<bool, size_t> fileSegmentationEngineAvro(
     ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, AvroSegmentationState & state)
 {
-    if (!state.header_read)
-        readAvroOCFHeader(in, state);
+    /// Stopped before the header was read: return an empty last segment, which is never parsed because
+    /// parser threads check `parsing_finished` before reading.
+    if (!state.header_read && !readAvroOCFHeader(in, state))
+        return {false, 0};
 
     appendToMemory(state.header.data(), state.header.size(), memory);
-
-    /// Set only while this thread runs a parallel-parsing segmentator. An Avro block is read as a unit
-    /// and can be far larger than `min_bytes`, so the between-calls `while (!parsing_finished)` check is
-    /// too coarse; poll this to stop mid-block when the pipeline finishes.
-    const std::atomic<bool> * segmentation_finished = currentSegmentatorParsingFinishedFlag();
 
     size_t rows_in_segment = 0;
     bool eof = false;
     bool stopped = false;
     while (true)
     {
-        /// Stop before the next block when the pipeline is finishing (killed, LIMIT, break, background
-        /// exception) so a stopped query does not keep segmenting; return the whole blocks read so far.
-        if (segmentation_finished && segmentation_finished->load())
-        {
-            stopped = true;
-            break;
-        }
         /// The only legal EOF place: a well-formed file ends right after a block's sync marker.
         /// Inside a block, throw on unexpected EOF
         if (in.eof())
@@ -1898,7 +1891,7 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
 
         /// A single block can be far larger than `min_bytes`; if the pipeline stops mid-block, drop this
         /// partial block (its header varints and the bytes copied so far) and return the earlier blocks.
-        if (!copyAvroBytes(in, memory, static_cast<size_t>(byte_count), segmentation_finished))
+        if (!copyAvroBytes(in, memory, static_cast<size_t>(byte_count)))
         {
             memory.resize(block_start);
             stopped = true;
@@ -1920,7 +1913,7 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
     }
 
     /// No more data when at EOF or stopped; the latter leaves `in` mid-stream, but the segmentator will
-    /// not call again once `segmentation_finished` is set.
+    /// not call again once `parsing_finished` is set.
     return {!eof && !stopped, rows_in_segment};
 }
 
