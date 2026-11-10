@@ -14,6 +14,7 @@ DROP TABLE IF EXISTS tab_pre_lower;
 DROP TABLE IF EXISTS tab_pre_nul;
 DROP TABLE IF EXISTS tab_string;
 DROP TABLE IF EXISTS tab_nullable;
+DROP TABLE IF EXISTS tab_post_throw;
 
 -- The postprocessor maps every token without a lowercase letter to '#', including the default's '\0\0\0'.
 -- The last column adds a condition the index is used for.
@@ -289,6 +290,32 @@ SELECT 'nullable', groupArray(id) FROM (SELECT id FROM tab_nullable WHERE hasAny
 SELECT 'nullable pruned', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT id FROM tab_nullable WHERE hasAnyTokens(m['k'], '123')) WHERE explain LIKE '%Granules: 0/2%';
 
+-- Every row holds the key, and the postprocessor rejects the default '\0\0\0' but no stored value.
+-- The needle '223' matches row 1 only through the postprocessor ('123' and '223' both give '23').
+CREATE TABLE tab_post_throw (id UInt32, m Map(String, FixedString(3)),
+    INDEX tix mapValues(m) TYPE text(tokenizer = ngrams(3), postprocessor = toString(toUInt64(mapValues(m)) % 100)))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_post_throw VALUES (1, map('k', '123')), (2, map('k', '456'));
+
+SELECT 'post throw', 'subcolumns=1',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_throw WHERE hasAnyTokens(m['k'], '223') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_throw WHERE hasAllTokens(m['k'], '223') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_throw WHERE hasPhrase(m['k'], '223') ORDER BY id)),
+    (SELECT groupArray(h) FROM (SELECT hasAnyTokens(m['k'], '223') AS h FROM tab_post_throw ORDER BY id))
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'post throw', 'subcolumns=0',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_throw WHERE hasAnyTokens(m['k'], '223') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_throw WHERE hasAllTokens(m['k'], '223') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_throw WHERE hasPhrase(m['k'], '223') ORDER BY id)),
+    (SELECT groupArray(h) FROM (SELECT hasAnyTokens(m['k'], '223') AS h FROM tab_post_throw ORDER BY id))
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'post throw', 'no index',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_throw WHERE hasAnyTokens(m['k'], '223') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_throw WHERE hasAllTokens(m['k'], '223') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_throw WHERE hasPhrase(m['k'], '223') ORDER BY id)),
+    (SELECT groupArray(h) FROM (SELECT hasAnyTokens(m['k'], '223') AS h FROM tab_post_throw ORDER BY id))
+SETTINGS use_skip_indexes = 0;
+
 DROP TABLE tab_post;
 DROP TABLE tab_post_lc;
 DROP TABLE tab_phrase;
@@ -299,3 +326,4 @@ DROP TABLE tab_pre_lower;
 DROP TABLE tab_pre_nul;
 DROP TABLE tab_string;
 DROP TABLE tab_nullable;
+DROP TABLE tab_post_throw;

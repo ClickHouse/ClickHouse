@@ -1300,7 +1300,17 @@ bool MergeTreeIndexConditionText::absentMapValueMatches(const String & function_
     VectorWithMemoryTracking<String> terms;
     tokenizer->stringToTokens(default_value.data(), default_value.size(), terms);
     if (has_postprocessor)
-        terms = postprocessor->processTokens(std::move(terms));
+    {
+        try
+        {
+            terms = postprocessor->processTokens(std::move(terms));
+        }
+        catch (const Exception &)
+        {
+            /// A postprocessor that rejects the default leaves such rows to the predicate.
+            return true;
+        }
+    }
 
     if (terms.empty())
         return false;

@@ -49,3 +49,6 @@ string	no index	[]
 string pruned	1
 nullable	[]
 nullable pruned	1
+post throw	subcolumns=1	[1]	[1]	[1]	[1,0]
+post throw	subcolumns=0	[1]	[1]	[1]	[1,0]
+post throw	no index	[1]	[1]	[1]	[1,0]
