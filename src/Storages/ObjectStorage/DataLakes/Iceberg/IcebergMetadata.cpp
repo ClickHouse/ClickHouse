@@ -133,7 +133,7 @@ extern const int SUPPORT_IS_DISABLED;
 namespace Setting
 {
 extern const SettingsNonZeroUInt64 max_block_size;
-extern const SettingsBool use_iceberg_manifest_statistics;
+extern const SettingsBool use_datalake_metadata_statistics;
 extern const SettingsBool use_statistics;
 extern const SettingsUInt64 max_bytes_in_set;
 extern const SettingsUInt64 max_rows_in_set;
@@ -1694,7 +1694,7 @@ std::optional<DataLakeReadEstimate>
 IcebergMetadata::estimateRead(
     StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const
 {
-    if (!context->getSettingsRef()[Setting::use_iceberg_manifest_statistics] || !context->getSettingsRef()[Setting::use_statistics])
+    if (!context->getSettingsRef()[Setting::use_datalake_metadata_statistics] || !context->getSettingsRef()[Setting::use_statistics])
         return std::nullopt;
 
     auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);

@@ -26,7 +26,7 @@ $CLICKHOUSE_LOCAL --query "DESCRIBE icebergLocal('$T') SETTINGS describe_compact
 $CLICKHOUSE_LOCAL --query "SELECT id, u, later, s, _file LIKE '%.avro' FROM icebergLocal('$T') ORDER BY id"
 $CLICKHOUSE_LOCAL --query "SELECT id, u, later, s.v FROM icebergLocal('$T') WHERE coalesce(u, later, s.v, id) > 2 ORDER BY id SETTINGS optimize_move_to_prewhere = 1"
 # Reading `later` in a join makes the planner read its manifest statistics.
-$CLICKHOUSE_LOCAL --query "SELECT a.id, a.later FROM icebergLocal('$T') AS a INNER JOIN icebergLocal('$T') AS b ON a.id = b.id ORDER BY a.id SETTINGS use_iceberg_manifest_statistics = 1, use_statistics = 1"
+$CLICKHOUSE_LOCAL --query "SELECT a.id, a.later FROM icebergLocal('$T') AS a INNER JOIN icebergLocal('$T') AS b ON a.id = b.id ORDER BY a.id SETTINGS use_datalake_metadata_statistics = 1, use_statistics = 1"
 
 echo "--- schemas without data"
 python3 - "$TABLES" <<'EOF'

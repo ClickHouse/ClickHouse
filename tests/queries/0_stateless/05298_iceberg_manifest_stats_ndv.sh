@@ -2,7 +2,7 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
-# Issue 120440: the NDV of an Iceberg read with `use_iceberg_manifest_statistics`, by the first rule applying:
+# Issue 120440: the NDV of an Iceberg read with `use_datalake_metadata_statistics`, by the first rule applying:
 # 1. identity partition values, 2. `max - min + 1` of integer bounds, 3. 10% of rows.
 # Each join with a MergeTree table of 10 (or 1) keys estimates `rows * rows_dim / max(ndv, ndv_dim)`.
 # - T1: rule 1 on an identity partition.
@@ -27,8 +27,8 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
     --query_plan_propagate_predicate_across_join=0 --materialize_statistics_on_insert=1
     --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1 --max_block_size=1000000
     --allow_insert_into_iceberg=1"
-ON="--use_iceberg_manifest_statistics=1 --use_statistics=1"
-NO_STATS="--use_iceberg_manifest_statistics=1 --use_statistics=0"
+ON="--use_datalake_metadata_statistics=1 --use_statistics=1"
+NO_STATS="--use_datalake_metadata_statistics=1 --use_statistics=0"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"
