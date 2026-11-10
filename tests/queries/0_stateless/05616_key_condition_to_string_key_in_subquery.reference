@@ -10,7 +10,12 @@ nullable	1
 low cardinality	1
 date	1
 the primary key prunes
-707
+u64	707
+cast	707
+alias column	707
+nullable	707
+low cardinality	707
+date	2020-03-01
 the index keeps every matching row
 u64	1	1
 alias	1	1

@@ -56,7 +56,22 @@ SELECT 'date', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_date WHER
 
 -- A full scan reads all 200 rows; with the key the read stays far below the limit.
 SELECT 'the primary key prunes';
-SELECT k FROM t_u64 WHERE toString(k) IN (SELECT toUInt64(707))
+SELECT 'u64', k FROM t_u64 WHERE toString(k) IN (SELECT toUInt64(707))
+    SETTINGS max_rows_to_read = 100, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0,
+        enable_parallel_replicas = 0;
+SELECT 'cast', k FROM t_u64 WHERE CAST(k AS String) IN (SELECT toUInt64(707))
+    SETTINGS max_rows_to_read = 100, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0,
+        enable_parallel_replicas = 0;
+SELECT 'alias column', k FROM t_alias WHERE s IN (SELECT toUInt64(707))
+    SETTINGS max_rows_to_read = 100, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0,
+        enable_parallel_replicas = 0;
+SELECT 'nullable', k FROM t_null WHERE toString(k) IN (SELECT toUInt64(707))
+    SETTINGS max_rows_to_read = 100, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0,
+        enable_parallel_replicas = 0;
+SELECT 'low cardinality', k FROM t_lc WHERE toString(k) IN (SELECT toUInt64(707))
+    SETTINGS max_rows_to_read = 100, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0,
+        enable_parallel_replicas = 0;
+SELECT 'date', d FROM t_date WHERE toString(d) IN (SELECT toDate('2020-03-01'))
     SETTINGS max_rows_to_read = 100, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0,
         enable_parallel_replicas = 0;
 
