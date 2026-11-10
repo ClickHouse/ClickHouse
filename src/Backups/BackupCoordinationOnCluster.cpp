@@ -1020,10 +1020,8 @@ void BackupCoordinationOnCluster::addFileInfos(BackupFileInfos && file_infos_)
     /// Serialize `file_infos_` and write it to ZooKeeper's nodes.
     String file_infos_str = FileInfos::serialize(file_infos_);
 
-    /// This takes ownership of the infos, so release them as soon as they are serialized rather than
-    /// leaving them to the caller: for a backup of millions of files they are gigabytes, the write below
-    /// holds a serialized copy of them anyway, and the caller goes on to write the backup, where the
-    /// coordinated infos are read back. Swapping, not `clear`, because `clear` keeps the capacity.
+    /// Release the infos as soon as they are serialized: for millions of files they are gigabytes, and the
+    /// caller reads them back from the coordination. `swap`, not `clear`, which keeps the capacity.
     BackupFileInfos{}.swap(file_infos_);
 
     serializeToMultipleZooKeeperNodes(zookeeper_path + "/file_infos/" + current_host, file_infos_str, "addFileInfos");
