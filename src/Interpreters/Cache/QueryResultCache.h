@@ -222,10 +222,6 @@ public:
         std::condition_variable completed;
         State state = State::Running; /// Protected by `mutex`.
 
-        /// Set when a waiter times out and removes this token. Lets other waiters bail out immediately
-        /// instead of waiting for their own timeout to elapse.
-        std::atomic<bool> abandoned{false};
-
         /// Query id of the token owner. Prevents a query from waiting on itself (e.g. same subquery appears twice).
         const String owner_query_id;
 
@@ -248,7 +244,7 @@ public:
         /// The caller must not wait and should execute the query independently (without a token). This happens when
         /// the query already owns the token for `key` (the same subquery appears twice in a query), when the query owns
         /// a token of another subquery (waiting could deadlock with a query which acquires the same subqueries in a
-        /// different order), when the wait timed out or another waiter gave up on the same token, or when
+        /// different order), when the wait of this caller timed out (the token stays registered for the others), or when
         /// `is_cancelled` returned true. In the latter case the caller is expected to detect and report the
         /// cancellation itself (e.g. via `QueryStatus::throwIfKilled`), the same way it would without coalescing.
         Independent,

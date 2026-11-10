@@ -894,23 +894,14 @@ QueryResultCache::HerdWaitResult QueryResultCache::acquireOrWaitHerdToken(
         if (state == HerdToken::State::Failed)
             return {HerdWaitOutcome::OwnerFailed, nullptr};
 
-        if (existing_token->abandoned.load())
-            return {HerdWaitOutcome::Independent, nullptr}; /// another waiter already gave up on this exact token
-
         /// Called without holding any lock, it may throw (e.g. when the client cancelled the query).
         if (is_cancelled())
             return {HerdWaitOutcome::Independent, nullptr};
     }
 
-    /// Timed out: remove the token (if still current) and mark it abandoned so other waiters bail out immediately.
-    {
-        std::lock_guard lock(mutex);
-        auto it = herd_tokens.find(key);
-        if (it != herd_tokens.end() && it->second == existing_token)
-            eraseHerdToken(it);
-        existing_token->abandoned.store(true);
-    }
-
+    /// Timed out. Only this waiter stops waiting: the executor may still be healthy, and the other waiters (which may have
+    /// larger timeouts, as `query_cache_herd_wait_timeout` is not a part of the key) and the later arrivals keep waiting for it.
+    /// The token stays registered until the executor releases it.
     return {HerdWaitOutcome::Independent, nullptr};
 }
 

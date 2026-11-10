@@ -97,25 +97,42 @@ TEST(QueryResultCacheHerdTakeover, WaiterTakesOverAfterTheExecutorFailed)
     cache.releaseHerdToken(key, takeover.token, /*succeeded=*/ true);
 }
 
-TEST(QueryResultCacheHerdTakeover, TimedOutWaiterDropsTheStaleToken)
+TEST(QueryResultCacheHerdTakeover, TimedOutWaiterKeepsTheExecutorToken)
 {
     QueryResultCache cache = makeCache();
     const auto key = makeKey();
 
-    /// The executor is presumed dead: it does not release its token in time.
-    auto executor = cache.acquireOrWaitHerdToken(key, long_timeout, "dead_executor", neverCancelled());
+    /// The executor is still running: it does not release its token before the waiter's timeout.
+    auto executor = cache.acquireOrWaitHerdToken(key, long_timeout, "executor", neverCancelled());
     ASSERT_EQ(executor.outcome, Outcome::Acquired);
 
-    /// The waiter times out, drops the stale token and runs independently.
-    EXPECT_EQ(cache.acquireOrWaitHerdToken(key, std::chrono::milliseconds(1), "waiter", neverCancelled()).outcome, Outcome::Independent);
+    /// The waiter with a short timeout gives up and runs independently.
+    EXPECT_EQ(cache.acquireOrWaitHerdToken(key, std::chrono::milliseconds(1), "impatient_waiter", neverCancelled()).outcome, Outcome::Independent);
 
-    /// A later query becomes the new executor.
-    auto later = cache.acquireOrWaitHerdToken(key, long_timeout, "later", neverCancelled());
-    ASSERT_EQ(later.outcome, Outcome::Acquired);
-    cache.releaseHerdToken(key, later.token, /*succeeded=*/ true);
+    /// That does not dismantle the group: the token of the executor stays registered, so a later query does not become
+    /// a second executor but waits for the first one (and runs independently only once its own, short, timeout elapses).
+    EXPECT_EQ(cache.acquireOrWaitHerdToken(key, std::chrono::milliseconds(1), "later", neverCancelled()).outcome, Outcome::Independent);
 
-    /// Releasing the stale token does not affect the map anymore.
+    /// A waiter with a long timeout learns that the executor succeeded once it releases its token.
+    std::atomic<Outcome> patient_outcome{Outcome::Acquired};
+    std::atomic<bool> patient_started{false};
+    std::thread patient([&]
+    {
+        patient_started = true;
+        patient_outcome = cache.acquireOrWaitHerdToken(key, long_timeout, "patient_waiter", neverCancelled()).outcome;
+    });
+    while (!patient_started)
+        std::this_thread::yield();
+
+    /// Still the executor's token: an impatient waiter can't acquire it even while the patient waiter is waiting.
+    EXPECT_EQ(cache.acquireOrWaitHerdToken(key, std::chrono::milliseconds(1), "impatient_waiter_2", neverCancelled()).outcome, Outcome::Independent);
+
     cache.releaseHerdToken(key, executor.token, /*succeeded=*/ true);
+    patient.join();
+
+    /// The patient waiter either waited for the executor or, if it was scheduled only after the release, became the next executor.
+    const Outcome outcome = patient_outcome;
+    EXPECT_TRUE(outcome == Outcome::OwnerSucceeded || outcome == Outcome::Acquired);
 }
 
 TEST(QueryResultCacheHerdTakeover, CancelledWaiterReturnsImmediately)
