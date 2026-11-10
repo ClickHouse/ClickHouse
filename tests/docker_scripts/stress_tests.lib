@@ -168,7 +168,9 @@ function configure()
     # The server inherits it from this shell (`clickhouse start` does not read /etc/environment).
     if [[ "${TSAN_OPTIONS:-}" != *memory_limit_mb=* ]]; then
         local tsan_total_mem tsan_cgroup_mem
-        tsan_total_mem=$(awk '/MemTotal/ { print $(NF-1) * 1024 }' /proc/meminfo)
+        # Multiply in Bash: `mawk` prints large products in scientific notation, which Bash rejects.
+        tsan_total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
+        tsan_total_mem=$(( tsan_total_mem * 1024 )) # bytes
         tsan_cgroup_mem=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo max)
         if [[ "$tsan_cgroup_mem" =~ ^[0-9]+$ ]] && (( tsan_cgroup_mem < tsan_total_mem )); then
             tsan_total_mem=$tsan_cgroup_mem
