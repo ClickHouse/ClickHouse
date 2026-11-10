@@ -1738,8 +1738,12 @@ bool IcebergStorageSink::initializeMetadata()
     catch (...)
     {
         /// The catalog may have published the new snapshot, which then references these files.
+        /// Mark the files as committed so the destructor does not remove them either.
         if (getCurrentExceptionCode() == ErrorCodes::DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN)
+        {
+            committed = true;
             persistent_table_components.invalidateMetadataCache();
+        }
         else
             cleanup(false);
         throw;
