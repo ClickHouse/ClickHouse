@@ -1299,31 +1299,27 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
                 const size_t key_index = key_name && value_name && items.fieldName(1) == "key" ? 1 : 0;
                 auto first_reader = createReader(items.child(0), key_index == 0 ? map_type.getKeyType() : map_type.getValueType());
                 auto second_reader = createReader(items.child(1), key_index == 1 ? map_type.getKeyType() : map_type.getValueType());
-                /// The key and the value have a reader and a column each: one that only appends defaults appends them all at
-                /// once, and the other one is called for each entry.
-                const bool first_defaults = first_reader.defaults_only.has_value();
-                const bool second_defaults = second_reader.defaults_only.has_value();
-                return [this, offsets, key_index, first_defaults, second_defaults, first = std::move(first_reader),
-                        second = std::move(second_reader)](IColumn & column)
+                /// A key and a value that are both defaults (`null`s) are appended at once.
+                const bool defaults = first_reader.defaults_only && second_reader.defaults_only;
+                return [this, offsets, key_index, defaults, first = std::move(first_reader), second = std::move(second_reader)](IColumn & column)
                 {
                     auto & map = assert_cast<ColumnMap &>(column);
                     const UInt64 count = nextCount(offsets);
                     auto & first_column = map.getNestedData().getColumn(key_index == 0 ? 0 : 1);
                     auto & second_column = map.getNestedData().getColumn(key_index == 1 ? 0 : 1);
-                    if (first_defaults)
+                    if (defaults)
+                    {
                         insertDefaults(first_column, count);
-                    if (second_defaults)
                         insertDefaults(second_column, count);
-                    if (!first_defaults || !second_defaults)
+                    }
+                    else
                     {
                         forEachItem(
                             count,
                             [&]
                             {
-                                if (!first_defaults)
-                                    first(first_column);
-                                if (!second_defaults)
-                                    second(second_column);
+                                first(first_column);
+                                second(second_column);
                             });
                     }
                     auto & ends = map.getNestedColumn().getOffsets();
@@ -1340,16 +1336,11 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
             {
                 addNode(node, AVRO_ACTION_UNION, AVRO_NO_SINK, AVRO_NO_SINK, 0, 1);
                 auto nested_reader = createReader(node.child(0), type);
-                const bool defaults = nested_reader.defaults_only.has_value();
-                Reader reader = [nested = std::move(nested_reader)](IColumn & column)
+                return [nested = std::move(nested_reader)](IColumn & column)
                 {
                     nested(column);
                     return true;
                 };
-                /// The union has one branch, so it always has the value, whatever the branch returns.
-                if (defaults)
-                    reader.defaults_only = true;
-                return reader;
             }
             if (value_validator)
             {
@@ -1584,15 +1575,14 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
                 throw Exception(ErrorCodes::INCORRECT_DATA, "The number of leaves in record doesn't match the number of elements in tuple");
             addNode(node, AVRO_ACTION_RECORD, AVRO_NO_SINK, AVRO_NO_SINK, 0, info.child_count);
             VectorWithMemoryTracking<std::pair<Reader, size_t>> element_readers;
-            /// Every element of the tuple has a reader (the record has as many fields as the tuple has elements) and each reader
-            /// only appends its default: so does the whole record.
-            UnorderedSetWithMemoryTracking<size_t> positions;
+            /// A record of fields that are all defaults (an empty one too) is a tuple of defaults. Field names are unique,
+            /// so every element of the tuple has a reader.
             bool defaults = true;
             for (UInt32 i = 0; i < info.child_count; ++i)
             {
                 const size_t position = tuple_type.getPositionByName(std::string(node.fieldName(i)));
                 element_readers.emplace_back(createReader(node.child(i), tuple_type.getElements()[position]), position);
-                defaults = defaults && element_readers.back().first.defaults_only.has_value() && positions.insert(position).second;
+                defaults = defaults && element_readers.back().first.defaults_only;
             }
             Reader tuple_reader = [readers = std::move(element_readers)](IColumn & column)
             {
@@ -1774,34 +1764,28 @@ Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, con
                     may_miss[index] = 1;
                     nested_readers.emplace_back(index, std::move(reader));
                 }
-                return [this, offsets, readers = std::move(nested_readers)](MutableColumns & columns, VectorWithMemoryTracking<UInt8> & read)
+                const bool defaults = std::all_of(nested_readers.begin(), nested_readers.end(), [](const auto & entry) { return entry.second.defaults_only.has_value(); });
+                return [this, offsets, defaults, readers = std::move(nested_readers)](MutableColumns & columns, VectorWithMemoryTracking<UInt8> & read)
                 {
                     const UInt64 count = nextCount(offsets);
-                    /// Each field has a column and a reader of its own: the fields that only append defaults append all of them
-                    /// at once, and the others go over the items. Each of them leaves in `read` what its reader returned last.
-                    bool all_defaults = true;
-                    for (const auto & [index, reader] : readers)
+                    if (defaults)
                     {
-                        if (reader.defaults_only)
+                        /// A row without items leaves `read` as it is, otherwise each field has what its reader returns.
+                        for (const auto & [index, reader] : readers)
                         {
                             if (count)
-                            {
                                 read[index] = *reader.defaults_only;
-                                insertDefaults(assert_cast<ColumnArray &>(*columns[index]).getData(), count);
-                            }
+                            insertDefaults(assert_cast<ColumnArray &>(*columns[index]).getData(), count);
                         }
-                        else
-                            all_defaults = false;
                     }
-                    if (!all_defaults)
+                    else
                     {
                         forEachItem(
                             count,
                             [&]
                             {
                                 for (const auto & [index, reader] : readers)
-                                    if (!reader.defaults_only)
-                                        read[index] = reader(assert_cast<ColumnArray &>(*columns[index]).getData());
+                                    read[index] = reader(assert_cast<ColumnArray &>(*columns[index]).getData());
                             });
                     }
                     for (const auto & entry : readers)
