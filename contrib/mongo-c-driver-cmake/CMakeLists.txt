@@ -6,12 +6,21 @@ endif()
 
 set(libbson_VERSION_MAJOR 2)
 set(libbson_VERSION_MINOR 5)
+<<<<<<< HEAD
 set(libbson_VERSION_PATCH 8)
 set(libbson_VERSION 2.5.8)
 set(libmongoc_VERSION_MAJOR 2)
 set(libmongoc_VERSION_MINOR 5)
 set(libmongoc_VERSION_PATCH 8)
 set(libmongoc_VERSION 2.5.8)
+=======
+set(libbson_VERSION_PATCH 8)
+set(libbson_VERSION 2.5.8)
+set(libmongoc_VERSION_MAJOR 2)
+set(libmongoc_VERSION_MINOR 5)
+set(libmongoc_VERSION_PATCH 8)
+set(libmongoc_VERSION 2.5.8)
+>>>>>>> origin/backport/26.8/130323
 
 set(LIBBSON_SOURCES_ROOT "${ClickHouse_SOURCE_DIR}/contrib/mongo-c-driver/src")
 set(LIBBSON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/libbson/src")

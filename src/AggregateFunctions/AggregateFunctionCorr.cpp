@@ -19,9 +19,9 @@ $$
 
 <br/>
 
-<Note>
+:::note
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`corrStable`](/reference/functions/aggregate-functions/corrStable) function. It is slower but provides a more accurate result.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax = "corr(x, y)";
     FunctionDocumentation::Arguments arguments = {
@@ -57,7 +57,7 @@ FROM series
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("corr", {createAggregateFunctionStatisticsBinary<AggregateFunctionCorr, StatisticsFunctionKind::corr>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("corr", {createAggregateFunctionStatisticsBinary<AggregateFunctionCorr, StatisticsFunctionKind::corr>, documentation }, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }
