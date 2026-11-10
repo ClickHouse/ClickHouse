@@ -18,6 +18,16 @@ for test_case in "${tests_with_query_log[@]}"; do
     } || echo "Query to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
 
+# Queries to system.text_log should have an event_time condition: the table is large on CI servers,
+# and a full scan exceeds max_rows_to_read of the test profile.
+tests_with_text_log=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep --with-filename -E 'system\.text_log\b' | grep -vE '^[^:]*:\s*(--|#)' | cut -d: -f1 | sort -u
+) )
+for test_case in "${tests_with_text_log[@]}"; do
+    grep -qE 'event_time' "$test_case" || echo "Query to system.text_log does not have an event_time condition in $test_case"
+done
+
 grep -iE 'SYSTEM STOP MERGES;?$' -R $ROOT_PATH/tests/queries && echo "Merges cannot be disabled globally in fast/stateless tests, because it will break concurrently running queries"
 
 
