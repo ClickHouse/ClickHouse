@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 
@@ -796,16 +797,21 @@ def main():
         # is exercised by every amd test lane.
         target_is_arm = "amd" not in build_type
         if target_is_arm == Utils.is_arm() or build_type == BuildTypes.AMD_COMPAT:
-            smoke_dir = f"{temp_dir}/self_extracting_smoke"
+            # The commands run through a shell, and the directory comes from the checkout path.
+            smoke_dir = shlex.quote(f"{temp_dir}/self_extracting_smoke")
+            smoke_binary = shlex.quote(f"{temp_dir}/self_extracting_smoke/clickhouse")
+            stripped_binary = shlex.quote(
+                f"{build_dir_normalized}/programs/self-extracting/clickhouse-stripped"
+            )
             results.append(
                 Result.from_commands_run(
                     name="self-extracting binary smoke test",
                     command=[
-                        f"rm -rf {smoke_dir} && mkdir -p {smoke_dir}",
-                        f"cp {build_dir_normalized}/programs/self-extracting/clickhouse-stripped {smoke_dir}/clickhouse",
-                        f"{smoke_dir}/clickhouse --version",
-                        f'{smoke_dir}/clickhouse local --query "SELECT 1"',
-                        f"rm -rf {smoke_dir}",
+                        f"rm -rf -- {smoke_dir} && mkdir -p -- {smoke_dir}",
+                        f"cp -- {stripped_binary} {smoke_binary}",
+                        f"{smoke_binary} --version",
+                        f'{smoke_binary} local --query "SELECT 1"',
+                        f"rm -rf -- {smoke_dir}",
                     ],
                 )
             )
