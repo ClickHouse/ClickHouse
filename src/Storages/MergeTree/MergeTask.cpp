@@ -937,7 +937,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// A merge only drops source rows if every mechanism that may reduce rows deletes them verbatim:
     /// values of the surviving rows and their relative order within one part are preserved.
     /// Excluded: modes that synthesize rows (Summing, Aggregating, etc.), patch parts (rewrite values),
-    /// GROUP BY TTL (aggregates rows) and column TTL (rewrites expired values).
+    /// GROUP BY TTL (aggregates rows) and column TTL (rewrites expired values, also when TTL merges are stopped).
     /// Also excluded: a `_part_offset` or `_part_index` column in the table or a source part shadows the virtual column the mapping reads.
     const auto merging_mode = global_ctx->merging_params.mode;
     bool merging_mode_only_drops_rows =
@@ -956,7 +956,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && (*global_ctx->data_settings)[MergeTreeSetting::merge_text_indexes_and_projections_on_delete_only_merges]
         && merging_mode_only_drops_rows
         && patch_parts.empty()
-        && (!ctx->need_remove_expired_values
+        && (!has_due_ttl
             || (!global_ctx->metadata_snapshot->hasAnyGroupByTTL() && !global_ctx->metadata_snapshot->hasAnyColumnTTL()))
         && !has_shadowing_column(global_ctx->metadata_snapshot->getColumns())
         && std::ranges::none_of(global_ctx->future_part->parts, [&](const auto & part) { return has_shadowing_column(part->getColumnsDescription()); });

@@ -26,6 +26,12 @@ column TTL falls back to rebuild
 4000
 4000
 0	1
+column TTL with stopped TTL merges falls back to rebuild
+['fresh','fresh']
+2
+['fresh']
+['fresh','fresh']
+0	1	0	1
 OPTIMIZE DEDUPLICATE
 3000
 3000

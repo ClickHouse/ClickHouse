@@ -180,6 +180,46 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE t_text_column_ttl;
 
+SELECT 'column TTL with stopped TTL merges falls back to rebuild';
+
+DROP TABLE IF EXISTS t_text_column_ttl_stopped;
+
+CREATE TABLE t_text_column_ttl_stopped
+(
+    id UInt64,
+    d DateTime,
+    text String DEFAULT 'fresh' TTL d,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1,
+    PROJECTION p (SELECT id, text, _part_offset ORDER BY text)
+)
+ENGINE = ReplacingMergeTree ORDER BY id
+SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, merge_text_indexes_and_projections_on_delete_only_merges = 1,
+    enable_vertical_merge_algorithm = 0, deduplicate_merge_projection_mode = 'rebuild';
+
+SYSTEM STOP TTL MERGES t_text_column_ttl_stopped;
+
+INSERT INTO t_text_column_ttl_stopped VALUES (1, '2001-01-01 00:00:00', 'old');
+INSERT INTO t_text_column_ttl_stopped VALUES (2, '2001-01-01 00:00:00', 'old');
+
+-- A column missing from every part adds the TTL step to the merge, which applies the expired column TTL.
+ALTER TABLE t_text_column_ttl_stopped ADD COLUMN missing UInt64;
+
+OPTIMIZE TABLE t_text_column_ttl_stopped FINAL;
+
+SELECT groupArray(text) FROM (SELECT text FROM t_text_column_ttl_stopped ORDER BY id);
+SELECT count() FROM t_text_column_ttl_stopped WHERE hasToken(text, 'fresh') SETTINGS force_data_skipping_indices = 'idx_text', optimize_use_projections = 0;
+SELECT groupArray(token) FROM (SELECT DISTINCT token FROM mergeTreeTextIndex(currentDatabase(), t_text_column_ttl_stopped, idx_text) ORDER BY token);
+SELECT groupArray(text) FROM (SELECT text FROM mergeTreeProjection(currentDatabase(), t_text_column_ttl_stopped, p) ORDER BY id);
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT ProfileEvents['MergedTextIndexes'], ProfileEvents['RebuiltTextIndexes'], ProfileEvents['MergedProjections'], ProfileEvents['RebuiltProjections']
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_text_column_ttl_stopped' AND event_type = 'MergeParts' AND error = 0 AND part_name NOT LIKE '%.proj'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+DROP TABLE t_text_column_ttl_stopped;
+
 SELECT 'OPTIMIZE DEDUPLICATE';
 
 DROP TABLE IF EXISTS t_text_dedup;
