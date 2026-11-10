@@ -5213,7 +5213,7 @@ The preliminary merge (`read_in_order_two_level_merge_threshold`) is disabled in
 Read `MergeTree` tables in the order of the primary key with a shared pool of reading threads instead of one reading thread per data part.
 Parts are cut into slices which are handed out to the threads as the merge demands data, so a single part can be read by several threads when a filter discards most of its rows, while parts whose data is not needed yet are not touched.
 At every slice the primary key the part's next rows start at is announced to the merge, so the merge steps past a part whose rows are filtered out as soon as that key is past the rows it needs, without reading the part to its end.
-Requires `read_in_order_use_virtual_row`. Applies to local reading only, and not when the streams are merged in two levels (see `read_in_order_two_level_merge_threshold`). When the pool is used, `read_in_order_use_buffering` is not applied, because the pool buffers rows per part itself.
+Requires `read_in_order_use_virtual_row`. Applies to local reading only, and not when the streams are merged in two levels (see `read_in_order_two_level_merge_threshold`). When the pool is used, `read_in_order_use_buffering` is not applied, because the pool buffers rows per part itself, and the reading is not gated on the seal of a join (see `enable_join_seal_gated_reading`).
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting: read `MergeTree` tables in the order of the primary key with a shared pool of threads that read slices of parts on demand, instead of one thread per part."}) \
     DECLARE(UInt64, read_in_order_virtual_row_block_interval, 8, R"(
