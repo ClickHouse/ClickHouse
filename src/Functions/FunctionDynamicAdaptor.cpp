@@ -1,4 +1,5 @@
 #include <Functions/FunctionDynamicAdaptor.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/TypeMismatchStrictness.h>
 #include <Functions/castNestedResult.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
