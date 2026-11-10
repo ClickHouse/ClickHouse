@@ -1,0 +1,3 @@
+deep, max_parser_depth = 0: rejected
+deep, max_parser_depth = 1000: rejected
+0

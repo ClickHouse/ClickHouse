@@ -246,6 +246,10 @@ void SchemaConverter::checkSchemaReadDepth(size_t depth) const
             "Maximum parse depth ({}) exceeded while traversing `Parquet` schema. Consider raising `max_parser_depth` setting.",
             options.format.max_parser_depth);
     }
+    /// Every recursive schema traversal (including the pre-scans `collectSchemaElementPaths`,
+    /// `schemaIdxAfterSubtree` and `skipSchemaSubtree`) goes through this helper, so the stack
+    /// backstop here protects all of them when the depth limit is disabled or raised.
+    checkStackSize();
 }
 
 void SchemaConverter::checkHasColumns()
