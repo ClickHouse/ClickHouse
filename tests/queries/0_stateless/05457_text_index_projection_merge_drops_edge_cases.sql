@@ -78,7 +78,7 @@ SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, m
 -- A row with an invalid sign is emitted by the collapsing algorithm out of source order.
 -- With the offset mapping active it is detected as corrupted data instead of
 -- silently producing a text index with wrong row ids.
--- INSERT validates the sign, so the invalid value is injected by attaching a part
+-- An INSERT with the default optimize_on_insert = 1 validates the sign, so the invalid value is injected by attaching a part
 -- prepared in a table without the validation.
 -- Only the horizontal merge emits the rows out of order: the vertical merge keeps the source order and merges the
 -- index correctly, so it is disabled here.
@@ -121,3 +121,56 @@ SELECT count() FROM t_invalid_sign;
 
 DROP TABLE t_invalid_sign;
 DROP TABLE t_sign_source;
+
+-- A table column named `_part_offset` or `_part_index` shadows the virtual column read by the offset mapping,
+-- so such merges keep rebuilding text indexes, and the column keeps its values.
+DROP TABLE IF EXISTS t_shadow_offset;
+DROP TABLE IF EXISTS t_shadow_index;
+
+CREATE TABLE t_shadow_offset
+(
+    id UInt64,
+    version UInt64,
+    _part_offset UInt64,
+    text String,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+)
+ENGINE = ReplacingMergeTree(version) ORDER BY id
+SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, merge_text_indexes_and_projections_on_delete_only_merges = 1;
+
+CREATE TABLE t_shadow_index
+(
+    id UInt64,
+    version UInt64,
+    _part_index UInt64,
+    text String,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+)
+ENGINE = ReplacingMergeTree(version) ORDER BY id
+SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, merge_text_indexes_and_projections_on_delete_only_merges = 1;
+
+INSERT INTO t_shadow_offset SELECT number, 1, 7, 'old row' || toString(number) FROM numbers(1000);
+INSERT INTO t_shadow_offset SELECT number, 2, 7, 'new row' || toString(number) FROM numbers(0, 1000, 2);
+INSERT INTO t_shadow_index SELECT number, 1, 0, 'old row' || toString(number) FROM numbers(1000);
+INSERT INTO t_shadow_index SELECT number, 2, 0, 'new row' || toString(number) FROM numbers(0, 1000, 2);
+
+OPTIMIZE TABLE t_shadow_offset FINAL;
+OPTIMIZE TABLE t_shadow_index FINAL;
+
+SELECT 'shadowing columns';
+SELECT count(), sum(_part_offset) FROM t_shadow_offset;
+SELECT count(), sum(_part_index) FROM t_shadow_index;
+SELECT count() FROM t_shadow_offset WHERE hasToken(text, 'old') SETTINGS force_data_skipping_indices = 'idx_text';
+SELECT count() FROM t_shadow_offset WHERE hasToken(text, 'new') SETTINGS force_data_skipping_indices = 'idx_text';
+SELECT count() FROM t_shadow_index WHERE hasToken(text, 'old') SETTINGS force_data_skipping_indices = 'idx_text';
+SELECT count() FROM t_shadow_index WHERE hasToken(text, 'new') SETTINGS force_data_skipping_indices = 'idx_text';
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'shadowing columns: text indexes rebuilt';
+SELECT table, ProfileEvents['MergedTextIndexes'], ProfileEvents['RebuiltTextIndexes'] FROM system.part_log
+WHERE database = currentDatabase() AND table IN ('t_shadow_offset', 't_shadow_index') AND event_type = 'MergeParts' AND error = 0
+ORDER BY table;
+
+DROP TABLE t_shadow_offset;
+DROP TABLE t_shadow_index;

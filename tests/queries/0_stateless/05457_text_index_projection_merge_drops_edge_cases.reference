@@ -11,3 +11,13 @@ one source part is fully dropped
 1000
 incorrect sign values are detected during the merge
 2
+shadowing columns
+1000	7000
+1000	0
+500
+500
+500
+500
+shadowing columns: text indexes rebuilt
+t_shadow_index	0	1
+t_shadow_offset	0	1

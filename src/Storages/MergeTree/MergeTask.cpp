@@ -938,6 +938,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// values of the surviving rows and their relative order within one part are preserved.
     /// Excluded: modes that synthesize rows (Summing, Aggregating, etc.), patch parts (rewrite values),
     /// GROUP BY TTL (aggregates rows) and column TTL (rewrites expired values).
+    /// Also excluded: tables with a column named `_part_offset` or `_part_index`, which shadows the virtual column the mapping reads.
     const auto merging_mode = global_ctx->merging_params.mode;
     bool merging_mode_only_drops_rows =
         merging_mode == MergeTreeData::MergingParams::Ordinary ||
@@ -951,7 +952,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && merging_mode_only_drops_rows
         && patch_parts.empty()
         && (!ctx->need_remove_expired_values
-            || (!global_ctx->metadata_snapshot->hasAnyGroupByTTL() && !global_ctx->metadata_snapshot->hasAnyColumnTTL()));
+            || (!global_ctx->metadata_snapshot->hasAnyGroupByTTL() && !global_ctx->metadata_snapshot->hasAnyColumnTTL()))
+        && !global_ctx->metadata_snapshot->getColumns().has("_part_offset")
+        && !global_ctx->metadata_snapshot->getColumns().has("_part_index");
 
     /// If every source part of a TTLDrop merge has a calculated rows TTL that has expired, all rows are dropped.
     /// Skip creating the read pipeline to avoid opening source parts
