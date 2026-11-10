@@ -8,11 +8,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Utils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 
@@ -707,32 +704,6 @@ HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtr
     return result;
 }
 
-NodeSet findReachableNodes(
-    const ActionsDAG::NodeRawConstPtrs & roots,
-    const std::function<bool(const ActionsDAG::Node *)> & is_barrier)
-{
-    NodeSet visited;
-    std::stack<const ActionsDAG::Node *> stack;
-    for (const auto * root : roots)
-        if (visited.insert(root).second)
-            stack.push(root);
-
-    while (!stack.empty())
-    {
-        const auto * current = stack.top();
-        stack.pop();
-
-        if (is_barrier && is_barrier(current))
-            continue;
-
-        for (const auto * child : current->children)
-            if (visited.insert(child).second)
-                stack.push(child);
-    }
-
-    return visited;
-}
-
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
     if (node->function_base->isInjective(getFunctionArgumentColumns(*node)))
@@ -857,27 +828,6 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 }
 
 
-/// Whether a cast keeps every value. Besides `canBeSafelyCast`, accepts the promotions it rejects that are the common
-/// type of two join keys: an unsigned integer widened into a larger signed one, and a date or time widened into a
-/// type with a range that contains it.
-static bool isValuePreservingCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
-{
-    if (canBeSafelyCast(from_type, to_type))
-        return true;
-    if (isNullableOrLowCardinalityNullable(from_type) && !isNullableOrLowCardinalityNullable(to_type))
-        return false;
-    const auto from = removeNullable(removeLowCardinality(from_type));
-    const auto to = removeNullable(removeLowCardinality(to_type));
-    if (isUInt(from) && isInt(to))
-        return to->getSizeOfValueInMemory() > from->getSizeOfValueInMemory();
-    if (isDate(from) && isDate32(to))
-        return true;
-    /// `DateTime64` covers the range of `Date` and `DateTime` at any scale, and the range of `Date32` up to scale 8.
-    if (const auto * to_date_time64 = typeid_cast<const DataTypeDateTime64 *>(to.get()))
-        return isDate(from) || isDateTime(from) || (isDate32(from) && to_date_time64->getScale() <= 8);
-    return false;
-}
-
 std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
 {
     std::vector<RuntimeFilterIndexAnalysisDescriptor> res;
@@ -915,27 +865,26 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
             continue;
         String filter_id(label->column->getDataAt(0));
 
-        /// Argument 1: the probe key column, possibly wrapped in a CAST and/or aliases
+        /// Argument 1: the probe key column, possibly wrapped in at most one CAST and/or aliases
         /// (composing the filter through expression steps turns a renamed key into an alias
         /// of the physical column - looking through it reports the physical name).
+        /// A key under nested casts, e.g. `_CAST(CAST(k, 'UInt8'), 'UInt64')`, is not reported: the pruning
+        /// predicate re-applies only the cast to the filter type, so the inner cast would be lost.
         const auto * key_arg = node->children[1];
-        bool lossy_cast = false;
-        while ((key_arg->type == ActionsDAG::ActionType::ALIAS
-                || (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
-                    && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")))
-               && !key_arg->children.empty())
+        size_t casts = 0;
+        while (!key_arg->children.empty())
         {
-            /// A cast that can change values (e.g. narrowing) maps rows to keys the pruning would not see.
-            if (key_arg->type == ActionsDAG::ActionType::FUNCTION
-                && !isValuePreservingCast(key_arg->children.front()->result_type, key_arg->result_type))
+            if (key_arg->type == ActionsDAG::ActionType::ALIAS)
+                key_arg = key_arg->children.front();
+            else if (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+                     && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST"))
             {
-                lossy_cast = true;
-                break;
+                ++casts;
+                key_arg = key_arg->children.front();
             }
-            key_arg = key_arg->children.front();
+            else
+                break;
         }
-        if (lossy_cast)
-            continue;
 
         /// Only bare key columns are reported. This intentionally excludes the `tuple(key1, key2, ...)`
         /// argument built for multi-key LEFT ANTI joins: that filter has NOT IN semantics, so a positive
@@ -943,6 +892,9 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
         /// (Multi-key non-ANTI joins are unaffected: they build one per-column filter per key, and each
         /// is reported here. Single-key ANTI filters reported here stay fail-open at read time:
         /// the negating filter exposes neither recorded key values nor a key range.)
+        if (casts > 1)
+            continue;
+
         /// The global row index of the read, `_part_starting_offset + _part_offset` in either order, is reported
         /// as a global row index key: it is not a column, but granules can be skipped easily using that.
         if (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
