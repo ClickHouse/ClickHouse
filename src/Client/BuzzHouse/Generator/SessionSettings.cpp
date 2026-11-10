@@ -649,6 +649,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_statistics", trueOrFalseSetting},
        {"use_statistics_for_min_max_aggregation", trueOrFalseSetting},
        {"use_statistics_for_part_pruning", trueOrFalseSetting},
+       {"use_statistics_for_sum_avg_aggregation", trueOrFalseSetting},
        {"use_streaming_marks_compression", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering_for_single_string_sort_column", trueOrFalseSetting},
@@ -2334,7 +2335,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"remote_filesystem_read_method",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {}, false)},
              {"wait_for_async_insert", trueOrFalseSettingNoOracle}}); /// breaks table dump oracle
-        nonzero_block_sizes.emplace_back("max_distributed_connections");
+        nonzero_rows_values.emplace_back("max_distributed_connections");
         max_block_sizes.insert(
             max_block_sizes.end(),
             {/*"max_analyze_depth",
