@@ -118,7 +118,12 @@ DiskPtr StorageFactory::Arguments::getDisk(const String & name) const
 {
     auto disk = getContext()->getDisk(name);
     if (!isLoadingFromExistingMetadata(mode))
+    {
         DiskFromAST::ensureDiskIsAllowed(disk, getLocalContext());
+        /// A short `ATTACH` uses the disk of its own stored definition, which is exempt like loading at start.
+        if (!query.attach_short_syntax)
+            DiskFromAST::ensureDiskHostsAreAllowed(disk, getLocalContext());
+    }
     return disk;
 }
 

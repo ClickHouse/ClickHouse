@@ -18,6 +18,8 @@ namespace DiskFromAST
     /// credentials, or a storage policy with one. For a table definition selecting a disk or a policy by name.
     void ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context);
     void ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context);
+    /// Refuse a custom disk whose endpoint `remote_url_allow_hosts` does not allow.
+    void ensureDiskHostsAreAllowed(const DiskPtr & disk, ContextPtr context);
     /// Refuse a storage policy with a custom disk whose endpoint `remote_url_allow_hosts` does not allow.
     void ensureStoragePolicyHostsAreAllowed(const std::string & storage_policy_name, ContextPtr context);
     /// `stored_definition`: the definition was read from the metadata the server stored for the table (short `ATTACH`),

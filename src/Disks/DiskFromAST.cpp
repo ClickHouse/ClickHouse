@@ -564,6 +564,11 @@ void DiskFromAST::ensureStoragePolicyIsAllowed(const std::string & storage_polic
     }
 }
 
+void DiskFromAST::ensureDiskHostsAreAllowed(const DiskPtr & disk, ContextPtr context)
+{
+    checkCustomDiskRemoteHosts(disk, context);
+}
+
 void DiskFromAST::ensureStoragePolicyHostsAreAllowed(const std::string & storage_policy_name, ContextPtr context)
 {
     for (const auto & disk : context->getStoragePolicy(storage_policy_name)->getDisks())

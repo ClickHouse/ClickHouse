@@ -510,6 +510,7 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         for wrapper in wrapper_disks:
             assert_rejected(wrapper)
         # The policy of a custom disk selects that disk, so its endpoint is checked like the disk itself.
+        # Engines other than MergeTree also take a custom disk by name.
         # `Distributed` checks its policy before it resolves the cluster, which is not defined here.
         for query in [
             "CREATE TABLE t_rejected_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x "
@@ -517,6 +518,9 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
             "CREATE TABLE t_rejected_hdfs_disk (x UInt32) "
             "ENGINE = Distributed(no_cluster, default, t_default_policy, rand(), '__old_hdfs')",
             "ALTER TABLE t_default_policy MODIFY SETTING storage_policy = '__old_hdfs'",
+            "CREATE TABLE t_rejected_hdfs_disk (x UInt32) ENGINE = Set SETTINGS disk = 'old_hdfs'",
+            "CREATE TABLE t_rejected_hdfs_disk (x UInt32) "
+            "ENGINE = Log SETTINGS storage_policy = '__old_hdfs'",
         ]:
             error = node.query_and_get_error(query)
             assert "UNACCEPTABLE_URL" in error, error
