@@ -219,18 +219,20 @@ bool icebergBoundLess(const Field & lhs, const Field & rhs)
     return Range::less(lhs, rhs);
 }
 
+/// `ColumnNullable::getExtremes` returns `POSITIVE_INFINITY` as both ends for a column with only NULL.
+static bool isAllNullRange(const Range & range)
+{
+    return range.left.isPositiveInfinity() && range.right.isPositiveInfinity();
+}
+
 Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
 {
-    /// `Range::less` ranks NaN above every real value, so an all-NaN range would win the upper bound.
-    /// Iceberg bounds exclude NaN, so such a range is skipped instead of compared.
-    bool left_is_nan = isNaNRange(left);
-    bool right_is_nan = isNaNRange(right);
-    if (left_is_nan && right_is_nan)
+    /// An all-NULL range and an all-NaN range (Iceberg bounds exclude NaN) have no bounds to unite:
+    /// `Range::less` ranks them above every real value, so they would win the upper bound.
+    if (isAllNullRange(right) || isNaNRange(right))
         return left;
-    if (left_is_nan)
+    if (isAllNullRange(left) || isNaNRange(left))
         return right;
-    if (right_is_nan)
-        return left;
 
     return Range(
         icebergBoundLess(left.left, right.left) ? left.left : right.left,

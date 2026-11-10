@@ -708,10 +708,11 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 namespace
 {
 
-/// The gate guards only new declarations; tables that have them load, are restored and are altered without it.
+/// The gate guards only new declarations; tables that have them load, are restored, are altered and are refreshed without it.
 void checkSubcolumnCodecsAreEnabled(const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
 {
-    if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && !context->getSettingsRef()[Setting::enable_subcolumn_codecs])
+    if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && !context->getParentTable()
+        && !context->getSettingsRef()[Setting::enable_subcolumn_codecs])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
 }
 
@@ -2976,21 +2977,40 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.storage && create.storage->engine && !isLoadingFromExistingMetadata(mode) && !create.attach_short_syntax)
             throwIfNestedTableFunctionDependsOnCurrentUserGrants(create.storage->engine->ptr(), getContext());
 
-        res = StorageFactory::instance().get(create,
-            data_path,
-            getContext(),
-            getContext()->getGlobalContext(),
-            properties.columns,
-            properties.constraints,
-            mode,
-            is_restore_from_backup);
+        /// Some databases create the table in an external catalog. Otherwise the storage factory creates it.
+        if (mode == LoadingStrictnessLevel::CREATE)
+        {
+            try
+            {
+                res = database->maybeCreateTableInExternalCatalog(getContext(), create, properties.columns);
+            }
+            catch (const Exception & e)
+            {
+                /// A query on another server can create the table in the catalog after the existence check above.
+                if (e.code() == ErrorCodes::TABLE_ALREADY_EXISTS && create.if_not_exists)
+                    return false;
+                throw;
+            }
+        }
 
-        /// If schema was inferred while storage creation, add columns description to create query.
-        auto & create_query = query_ptr->as<ASTCreateQuery &>();
-        addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
-        /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
-        if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
-            res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
+        if (!res)
+        {
+            res = StorageFactory::instance().get(create,
+                data_path,
+                getContext(),
+                getContext()->getGlobalContext(),
+                properties.columns,
+                properties.constraints,
+                mode,
+                is_restore_from_backup);
+
+            /// If schema was inferred while storage creation, add columns description to create query.
+            auto & create_query = query_ptr->as<ASTCreateQuery &>();
+            addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
+            /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
+            if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
+                res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
+        }
     }
 
     validateStorage(*res, create, mode, getContext(), create.isTemporary());
@@ -4440,6 +4460,17 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
+    /// A short `ATTACH` carries no engine of its own, so `getRequiredAccess` requires no `TABLE ENGINE` grant for it, and
+    /// `getTablePropertiesAndNormalizeCreateQuery` checks the grant for the converted engine only after the side effects
+    /// below, which cannot be rolled back. So the converted engine is checked here, before them, as a `CREATE` with that
+    /// engine would be checked. A converted engine that is not registered is refused first: a grant such as
+    /// `TABLE ENGINE ON *` would cover it, and the rewritten definition could not be attached.
+    const String converted_engine_name = DatabaseOrdinary::getConvertedMergeTreeEngineName(engine_name, to_replicated);
+    if (!StorageFactory::instance().getAllStorages().contains(converted_engine_name))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Table engine conversion is not supported for {}: there is no table engine {}", engine_name, converted_engine_name);
+    getContext()->checkAccess(AccessType::TABLE_ENGINE, converted_engine_name);
+
     /// `table_readonly` is not supported for `ReplicatedMergeTree` and the conversion keeps the
     /// settings of the table it converts, so it would produce a table in that unsupported state.
     /// The startup `convert_to_replicated` flag only logs and leaves such a table alone, because
@@ -4502,6 +4533,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
 
     /// Set new engine
     DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated, temporary_uuid ? &*znode_info : nullptr);
+    chassert(create.storage->engine->name == converted_engine_name);
     if (temporary_uuid)
     {
         create.uuid = UUIDHelpers::Nil;
