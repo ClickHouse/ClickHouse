@@ -3,7 +3,6 @@
 -- one reaches 119s against a 10.3s median, close enough to the 180s verdict to be exempted from it.
 
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';

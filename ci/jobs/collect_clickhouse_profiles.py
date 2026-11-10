@@ -20,11 +20,12 @@ import platform
 import shutil
 import subprocess
 import time
+from shlex import quote
 
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
-    iceberg_database_ddl_commands,
+    iceberg_database_queries,
 )
 from ci.jobs.scripts.perf import test_discovery
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
@@ -309,7 +310,10 @@ def start_server(server_dir, port=9000, keeper_port=9181, raft_port=9234):
     )
 
     if wait_for_server_ready(proc, server_dir, port, log_file):
-        return proc, log_fd
+        # Create the Iceberg datasets as databases, so the Iceberg performance tests exercise their read paths here instead of failing on a missing database.
+        client = f"{server_dir}/clickhouse-client --port {port}"
+        if all(Shell.check(f"{client} --query {quote(query)}", verbose=True) for query in iceberg_database_queries(server_dir)):
+            return proc, log_fd
 
     # `shell=True` means `proc` is the wrapper shell, not `clickhouse-server`.
     # Tear down the whole process group via `stop_server` so the server itself
@@ -388,6 +392,10 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
         # TODO: opt into S3 coverage by provisioning the endpoint via s3_service.ensure and dropping this skip.
         if test_discovery.test_requires_s3(f"{repo_path}/tests/performance/{test_file}"):
             print(f"  Skipping {test_name}: uses the job-local S3 endpoint, which profile collection does not provision")
+            continue
+        # SIGKILL bypasses failpoint cleanup, and later tests reuse this server.
+        if test_discovery.test_has_failpoint(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: server-wide failpoints cannot be cleaned up after a hard timeout")
             continue
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -503,10 +511,6 @@ def configure_datasets(server_dir, port=9000):
         f'for f in {repo_path}/tests/performance/user_files/*; do [ -e "$f" ] || continue; '
         f'ln -sf "$(readlink -f "$f")" {server_dir}/db/user_files/; done'
     )
-    # Attach the Iceberg datasets as databases, so the Iceberg performance tests exercise their read paths here instead of failing on a missing database.
-    for command in iceberg_database_ddl_commands(server_dir):
-        if not Shell.check(command, verbose=True):
-            return False
     return True
 
 
@@ -600,6 +604,7 @@ def main():
                     name="Build (PGO instrumented)",
                     command="command time -v ninja clickhouse",
                     workdir=PGO_BUILD_DIR,
+                    info_extractor=Result.cpp_build_info_extractor,
                 )
             )
             res = results[-1].is_ok()
