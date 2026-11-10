@@ -20,6 +20,7 @@
 #include "Poco/ErrorHandler.h"
 #include <sstream>
 #include <ctime>
+#include <memory>
 
 #include <base/defines.h>
 #include <Common/ThreadStatus.h>
@@ -236,22 +237,16 @@ void PooledThread::run()
 }
 
 
-class ThreadReaper: public Runnable
+struct ThreadReaper: public Runnable
 {
-public:
-	explicit ThreadReaper(std::vector<PooledThread*>&& threads): _threads(std::move(threads))
-	{
-	}
+	std::vector<PooledThread*> threads;
 
 	void run() override
 	{
-		for (PooledThread* pThread : _threads)
+		for (PooledThread* pThread : threads)
 			pThread->release();
 		delete this;
 	}
-
-private:
-	std::vector<PooledThread*> _threads;
 };
 
 
@@ -455,30 +450,24 @@ void ThreadPool::housekeep()
 	int limit = (int) idleThreads.size() + n;
 	if (limit < _minCapacity) limit = _minCapacity;
 	idleThreads.insert(idleThreads.end(), expiredThreads.begin(), expiredThreads.end());
-	ThreadVec retiredThreads;
-	retiredThreads.reserve(expiredThreads.size());
+	auto pTarget = std::make_unique<ThreadReaper>();
+	pTarget->threads.reserve(expiredThreads.size());
 	_threads.clear();
 	for (ThreadVec::iterator it = idleThreads.begin(); it != idleThreads.end(); ++it)
 	{
-		if (n < limit)
+		if (n <= limit)
 		{
 			_threads.push_back(*it);
 			++n;
 		}
-		else retiredThreads.push_back(*it);
+		else pTarget->threads.push_back(*it);
+	}
+	if (!pTarget->threads.empty())
+	{
+		_threads.back()->activate();
+		_threads.back()->start(Thread::PRIO_NORMAL, *pTarget.release());
 	}
 	_threads.insert(_threads.end(), activeThreads.begin(), activeThreads.end());
-	if (retiredThreads.empty())
-		return;
-	PooledThread* pReaper = retiredThreads.back();
-	retiredThreads.pop_back();
-	_threads.push_back(pReaper);
-	if (!retiredThreads.empty())
-	{
-		Runnable* pTarget = new ThreadReaper(std::move(retiredThreads));
-		pReaper->activate();
-		pReaper->start(Thread::PRIO_NORMAL, *pTarget);
-	}
 }
 
 
