@@ -1226,13 +1226,11 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperL
 /// LIST Request ///
 
 template <typename Storage, typename Request>
-static Coordination::ZooKeeperResponsePtr processLocal(
+static Coordination::ZooKeeperResponsePtr processLocalListWithOptions(
     const Request & zk_request,
     Storage & storage,
     int64_t session_id,
     bool check_acl)
-requires std::derived_from<Request, Coordination::ListWithOptionsRequest>
-    && std::derived_from<Request, Coordination::ZooKeeperRequest>
 {
     ProfileEvents::increment(ProfileEvents::KeeperListWithOptionsRequest);
     auto response = std::static_pointer_cast<Coordination::ZooKeeperListWithOptionsResponse>(zk_request.makeResponse());
@@ -1502,6 +1500,20 @@ requires std::derived_from<Request, Coordination::ListWithOptionsRequest>
 
     response->error = Coordination::Error::ZOK;
     return response;
+}
+
+template <typename Storage>
+static Coordination::ZooKeeperResponsePtr processLocal(
+    const Coordination::ZooKeeperListWithOptionsRequest & zk_request, Storage & storage, int64_t session_id, bool check_acl)
+{
+    return processLocalListWithOptions(zk_request, storage, session_id, check_acl);
+}
+
+template <typename Storage>
+static Coordination::ZooKeeperResponsePtr processLocal(
+    const Coordination::ZooKeeperListWithOptionsV2Request & zk_request, Storage & storage, int64_t session_id, bool check_acl)
+{
+    return processLocalListWithOptions(zk_request, storage, session_id, check_acl);
 }
 
 template <typename Storage>
