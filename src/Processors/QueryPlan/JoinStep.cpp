@@ -547,6 +547,16 @@ QueryPlanStepPtr JoinStep::clone() const
     if (!join->isCloneSupported())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone is not supported for {}", join->getName());
 
+    /// A physical plan is already optimized, so its runtime filters already have their identities: the
+    /// `BuildRuntimeFilterStep` under this join, the `__applyFilter` conditions on the probe side, the
+    /// shared fixed hash table descriptors and the seal gate all name the same random lookup key, and
+    /// cloning copies that key into the clone. Two executions of the original and the clone would then
+    /// register the same filter twice in the query-wide lookup, and the second run would insert into a
+    /// filter the first one already finished. Such a plan stays non-clonable until the identities can be
+    /// isolated per execution. A logical plan is not affected: it gets fresh keys when it is optimized.
+    if (has_runtime_filters)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone is not supported for a JOIN with runtime filters");
+
     auto cloned = std::make_unique<JoinStep>(*this);
 
     /// When `swap_streams` is set (e.g. after `optimizeJoinLegacy`), the underlying `IJoin` was
@@ -573,6 +583,7 @@ void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
     estimation = logical_join_info.estimation;
     locality = logical_join_info.locality;
     cluster_id = logical_join_info.cluster_id;
+    has_runtime_filters = logical_join_info.has_runtime_filters;
 }
 
 void JoinStep::updateOutputHeader()

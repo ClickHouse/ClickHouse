@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -17,12 +18,19 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /// `JoinStep::clone` is what lets `FutureSetFromSubquery::buildOrderedSetInplace` run the speculative
 /// in-place build of an `IN` subquery against a copy of the source plan and keep the original for the
 /// deferred build. The analyzer stores the source plan with a `JoinStepLogical`, which becomes a physical
-/// `JoinStep` only during optimization, after the clone, so no SQL query reaches the physical clone; it
-/// is exercised here on the step directly. As in the real path, the step is cloned before it is executed:
-/// a filled `HashJoin` does not support cloning at all.
+/// `JoinStep` only during optimization, after the clone, so a SQL query reaches the physical clone only
+/// through a plan that is optimized in advance, such as the plan of a sealed view (see
+/// `04650_not_ready_set_with_sealed_view_join`). The clone and its limits are exercised here on the step
+/// directly. As in the real path, the step is cloned before it is executed: a filled `HashJoin` does not
+/// support cloning at all.
 
 namespace
 {
@@ -35,8 +43,7 @@ SharedHeader keyHeader(const String & name)
 const SharedHeader left_header = keyHeader("lk");
 const SharedHeader right_header = keyHeader("rk");
 
-/// `INNER ALL JOIN ON lk = rk` with a `HashJoin`, the shape `convertLogicalJoinToPhysical` produces.
-std::unique_ptr<JoinStep> makeJoinStep()
+std::shared_ptr<TableJoin> makeTableJoin()
 {
     Settings settings;
     auto table_join = std::make_shared<TableJoin>(settings, JoinAnalyzeMode::None, nullptr, nullptr);
@@ -46,8 +53,11 @@ std::unique_ptr<JoinStep> makeJoinStep()
     table_join->getClauses().back().addKey("lk", "rk", /*null_safe_comparison=*/false);
     table_join->setColumnsFromJoinedTable(right_header->getNamesAndTypesList(), {"lk"}, "", left_header->getNamesAndTypesList());
     table_join->setColumnsAddedByJoin(right_header->getNamesAndTypesList());
+    return table_join;
+}
 
-    auto join = HashJoin::create(table_join, right_header, HashJoinBuildLayout::oneBucket(1));
+std::unique_ptr<JoinStep> makeJoinStep(JoinPtr join)
+{
     return std::make_unique<JoinStep>(
         left_header,
         right_header,
@@ -58,6 +68,25 @@ std::unique_ptr<JoinStep> makeJoinStep()
         /*max_streams_=*/1,
         NameSet{"lk", "rk"},
         /*use_new_analyzer_=*/true);
+}
+
+/// `INNER ALL JOIN ON lk = rk` with a `HashJoin`, the shape `convertLogicalJoinToPhysical` produces.
+std::unique_ptr<JoinStep> makeJoinStep()
+{
+    return makeJoinStep(HashJoin::create(makeTableJoin(), right_header, HashJoinBuildLayout::oneBucket(1)));
+}
+
+void expectCloneNotImplemented(const JoinStep & step)
+{
+    try
+    {
+        step.clone();
+        FAIL() << "clone must throw NOT_IMPLEMENTED";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED) << e.message();
+    }
 }
 
 /// What `optimizeJoinLegacy` does to swap the build side: a join over swapped sides, built with the
@@ -149,4 +178,22 @@ TEST(JoinStepClone, CloneKeepsSwappedBuildSide)
     EXPECT_EQ(execute(cloned_step), expected_rows);
     EXPECT_EQ(typeid_cast<const HashJoin &>(*step->getJoin()).getTotalRowCount(), 0u);
     EXPECT_EQ(execute(*step), expected_rows);
+}
+
+TEST(JoinStepClone, UnsupportedAlgorithmIsNotCloned)
+{
+    /// `MergeJoin` does not implement `IJoin::clone`; the caller has to see `NOT_IMPLEMENTED` and take
+    /// its non-clonable fallback rather than run two plans on one join.
+    expectCloneNotImplemented(*makeJoinStep(std::make_shared<MergeJoin>(makeTableJoin(), right_header)));
+}
+
+TEST(JoinStepClone, JoinWithRuntimeFiltersIsNotCloned)
+{
+    /// The clone of an optimized plan would keep the runtime filter keys of the original, so two runs
+    /// would register one filter twice.
+    auto step = makeJoinStep();
+    LogicalJoinInfo logical_join_info;
+    logical_join_info.has_runtime_filters = true;
+    step->setLogicalJoinInfo(std::move(logical_join_info));
+    expectCloneNotImplemented(*step);
 }

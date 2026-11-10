@@ -3,22 +3,17 @@
 -- - no-fasttest - tests that run alone are kept out of the fast test
 
 -- Regression test for "Not-ready Set is passed as the second argument" when the `IN` subquery
--- source plan contains a regular `JoinStep`, exercising `JoinStep::clone` in the non-destructive
--- in-place set build.
+-- source plan contains a `JOIN`.
 --
 -- `FutureSetFromSubquery::buildOrderedSetInplace` speculatively builds the set during primary key
--- analysis of an `IN` subquery. This change makes it run against a clone of the subquery `source`
--- plan instead of consuming it, so a silent in-place build failure (forced here once by the
--- failpoint) can still be recovered by the deferred `DelayedCreatingSetsStep::makePlansForSets`.
--- `JoinStep::clone` deep-clones the underlying `IJoin` (a shared `JoinPtr` would let the in-place
--- and the deferred build accumulate join state), so a subquery whose source contains a join needs
--- its own coverage: the complementary tests `04489_not_ready_set_inplace_build` (plain
--- `ReadFromMergeTree`) and `04492_not_ready_set_with_fill_subquery` (`FillingStep`) do not reach it.
+-- analysis of an `IN` subquery against a clone of the subquery `source` plan, so a silent in-place
+-- build failure (forced here once by the failpoint) can still be recovered by the deferred
+-- `DelayedCreatingSetsStep::makePlansForSets`.
 --
--- If the join step were not clonable, `source->clone()` would throw `NOT_IMPLEMENTED`,
--- `buildOrderedSetInplace` would consume `source` via the destructive fallback, and the forced
--- in-place failure would leave the set permanently unbuilt so `FunctionIn` would throw. A correct
--- result under the failpoint therefore proves the join source went through `JoinStep::clone`.
+-- The analyzer stores this source with a `JoinStepLogical`, which is converted to a physical
+-- `JoinStep` only when the cloned plan is optimized, so this test covers the clone of the logical
+-- join step with each build side. The clone of the physical `JoinStep`, reached through a plan
+-- optimized in advance, is covered by `05618_not_ready_set_with_sealed_view_join`.
 
 DROP TABLE IF EXISTS t_outer;
 DROP TABLE IF EXISTS t_small;
@@ -33,30 +28,27 @@ CREATE TABLE t_big (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_big SELECT number FROM numbers(1000);
 
 SET use_index_for_in_with_subqueries = 1;
--- The non-destructive clone path for join sources exists on the analyzer plan (`JoinStepLogical`
--- converted to a physical `JoinStep`); force it so the coverage is deterministic regardless of the
--- old-analyzer CI job.
+-- Force the analyzer plan so the coverage is deterministic regardless of the old-analyzer CI job.
 SET enable_analyzer = 1;
 
 -- The `IN` subquery is an INNER JOIN of `t_small` and `t_big` on `k`, matching the 10 values in
 -- [0, 10), so the outer count is 10. `query_plan_join_swap_table` selects which side is the build
--- (right) table, so the `IJoin` `JoinStep::clone` rebuilds is constructed with each header order:
--- 'false' keeps the right table (`t_big`) as the build side, 'true' swaps so the smaller `t_small`
--- becomes the build side.
+-- (right) table: 'false' keeps the right table (`t_big`) as the build side, 'true' swaps so the
+-- smaller `t_small` becomes the build side.
 
 -- Build side = t_big (no swap).
 SET query_plan_join_swap_table = 'false';
 SELECT count() FROM t_outer WHERE k IN (SELECT s.k FROM t_small AS s INNER JOIN t_big AS b ON s.k = b.k);
 
 -- The failpoint fires ONCE: it skips `finishInsert` on the first `CreatingSetsTransform` pass (the
--- in-place build during primary key analysis), so `buildOrderedSetInplace` returns nullptr. With
--- `JoinStep::clone` the cloned source plan lets `makePlansForSets` rebuild the set in the deferred
--- pipeline, where the failpoint is already consumed.
+-- in-place build during primary key analysis), so `buildOrderedSetInplace` returns nullptr. The
+-- preserved source plan lets `makePlansForSets` rebuild the set in the deferred pipeline, where the
+-- failpoint is already consumed.
 SYSTEM ENABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 SELECT count() FROM t_outer WHERE k IN (SELECT s.k FROM t_small AS s INNER JOIN t_big AS b ON s.k = b.k);
 SYSTEM DISABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 
--- Build side = t_small (swapped): the join is cloned with the reversed header order.
+-- Build side = t_small (swapped).
 SET query_plan_join_swap_table = 'true';
 SELECT count() FROM t_outer WHERE k IN (SELECT s.k FROM t_small AS s INNER JOIN t_big AS b ON s.k = b.k);
 

@@ -17,6 +17,8 @@ struct LogicalJoinInfo
     JoinEstimation estimation;
     JoinLocality locality{};
     UInt64 cluster_id = 0;
+    /// See `JoinStepLogical::hasRuntimeFilters`.
+    bool has_runtime_filters = false;
 };
 
 /// Join two data streams.
@@ -147,6 +149,9 @@ private:
 
     /// See enableSealGatedProbeReading.
     std::optional<String> seal_gate;
+
+    /// Runtime filters were installed for this join, see `clone`.
+    bool has_runtime_filters = false;
 
 public:
     /// Check if disjunction optimization was already applied to this JoinStep

@@ -150,6 +150,11 @@ public:
     /// `tryAddJoinRuntimeFilter`.
     bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
+
+    /// Whether the runtime filter pass installed `BuildRuntimeFilterStep` / `__applyFilter` for this join.
+    /// The physical `JoinStep` inherits it and refuses `clone` because of it, see `JoinStep::clone`.
+    bool hasRuntimeFilters() const { return has_runtime_filters; }
+    void setHasRuntimeFilters() { has_runtime_filters = true; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     std::optional<double> getEstimatedCost() const { return estimated_cost; }
     std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
@@ -292,6 +297,10 @@ protected:
     /// (`join_runtime_filter_min_probe_rows`). Travels with the step for the same reason `optimized`
     /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
     bool runtime_filter_declined_small_probe = false;
+
+    /// Whether the runtime filter pass added runtime filters for this join. Travels with the step, so that
+    /// the physical step built from a copy also knows that its plan carries runtime filter identities.
+    bool has_runtime_filters = false;
 
     /// Runtime info, do not serialize
 

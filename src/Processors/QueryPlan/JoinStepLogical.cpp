@@ -2656,7 +2656,8 @@ void JoinStepLogical::buildPhysicalJoin(
         .readable_relation_name = join_step->getReadableRelationName(),
         .estimation = join_step->getEstimation(),
         .locality = join_step->join_operator.locality,
-        .cluster_id = join_step->getClusterId()
+        .cluster_id = join_step->getClusterId(),
+        .has_runtime_filters = join_step->hasRuntimeFilters(),
     };
 
     auto new_node = buildPhysicalJoinImpl(
@@ -2995,6 +2996,8 @@ void JoinStepLogical::serialize(Serialization & ctx) const
         /// Only `full_sorting_merge` is ever planned.
         if (planned_algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
             optimizer_flags |= 4;
+        if (has_runtime_filters)
+            optimizer_flags |= 8;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3071,6 +3074,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
         if (optimizer_flags & 4)
             step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
+        step->has_runtime_filters = bool(optimizer_flags & 8);
     }
     return step;
 }
@@ -3115,6 +3119,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    result_step->has_runtime_filters = has_runtime_filters;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->estimated_cost = estimated_cost;
     result_step->estimated_selectivity = estimated_selectivity;
