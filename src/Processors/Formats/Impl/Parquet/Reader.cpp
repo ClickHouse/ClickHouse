@@ -3694,22 +3694,17 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (subchunk.dictionary_values)
     {
         /// `dictionary_values` is still shared with the column chunk (other row subgroups read it too),
-        /// so it must not be aliased as mutable: `IColumn::mutate` copies a shared column. A fresh
-        /// result of `filter` is exclusively owned here, and `IColumn::mutate` does not copy it.
+        /// so it must not be aliased as mutable, and copying it for every row subgroup would be
+        /// expensive. Use the immutable `ColumnReplicated::create` overload, which shares the values.
+        /// The resulting `ColumnReplicated` itself is exclusively owned, so the outer `assumeMutable`
+        /// is sound; any later mutation has to go through `IColumn::mutate`, which unshares the values.
+        ColumnPtr values = std::move(subchunk.dictionary_values);
+        subchunk.dictionary_values = nullptr;
+        ColumnIndex indexes(std::move(subchunk.column));
+        /// Drop the values no read row references: the step must not evaluate them.
         if (column_info.last_step_can_throw)
-        {
-            /// Drop the values no read row references: the step must not evaluate them.
-            ColumnIndex indexes(std::move(subchunk.column));
-            ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
-            subchunk.dictionary_values = nullptr;
-            subchunk.column = ColumnReplicated::create(IColumn::mutate(std::move(values)), indexes.detachIndexes());
-        }
-        else
-        {
-            ColumnPtr values = std::move(subchunk.dictionary_values);
-            subchunk.dictionary_values = nullptr;
-            subchunk.column = ColumnReplicated::create(IColumn::mutate(std::move(values)), std::move(subchunk.column));
-        }
+            values = indexes.removeUnusedRowsInIndexedData(values);
+        subchunk.column = ColumnReplicated::create(values, std::move(indexes))->assumeMutable();
         ProfileEvents::increment(ProfileEvents::ParquetRowsDecodedAsDictionaryIndexes, row_subgroup.filter.rows_pass);
     }
 
