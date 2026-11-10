@@ -3319,6 +3319,23 @@ bool hasSameFunctionSemantics(const ActionsDAG::Node * query_node, const Matched
         it->second.node->function_base->updateHash(index_hash);
         if (query_hash.get128() != index_hash.get128())
             return false;
+
+        /// matchTrees() compares constants as Fields, which equates 0. and -0., so compare their bytes too.
+        const auto & index_children = it->second.node->children;
+        for (size_t i = 0; i < node->children.size() && i < index_children.size(); ++i)
+        {
+            const auto & query_column = node->children[i]->column;
+            const auto & index_column = index_children[i]->column;
+            if (!query_column || !index_column || !isColumnConst(*query_column) || !isColumnConst(*index_column))
+                continue;
+
+            SipHash query_value_hash;
+            SipHash index_value_hash;
+            query_column->updateHashWithValue(0, query_value_hash);
+            index_column->updateHashWithValue(0, index_value_hash);
+            if (query_value_hash.get128() != index_value_hash.get128())
+                return false;
+        }
     }
     return true;
 }
