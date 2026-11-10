@@ -32,6 +32,10 @@ struct GPUKernel : private boost::noncopyable
     std::vector<GPUElementType> column_types;
     size_t ptx_size = 0;
 
+    /// The next kernel in the list of the evicted ones of `GPUKernelCache`, guarded by its `evicted_mutex`. The list is
+    /// linked through the kernels so that an eviction allocates nothing, see `GPUKernelCache::onEntryRemoval`.
+    std::shared_ptr<GPUKernel> next_evicted;
+
     static std::shared_ptr<GPUKernel> load(const std::string & name, const std::string & ptx, std::vector<GPUElementType> column_types);
 
     /// Unloads the library without waiting for the device. Whoever launches the kernel holds it (through
@@ -67,18 +71,23 @@ public:
         return result;
     }
 
-    void set(const Key & key, const MappedPtr & mapped);
+    /// A kernel set again after its eviction could be linked twice into the list of the evicted ones, so the kernels
+    /// are put in the cache only by `getOrSet`.
+    void set(const Key & key, const MappedPtr & mapped) = delete;
+
     void setMaxSizeInBytes(size_t max_size_in_bytes);
     void setMaxCount(size_t max_count);
 
 private:
-    /// Runs under the mutex of the cache, so it only keeps the kernel for `unloadEvicted`.
+    /// Runs under the mutex of the cache, so it only keeps the kernel for `unloadEvicted`. It must not throw: the policy
+    /// has already subtracted the weight of the entry and erases it only after this returns. So it allocates nothing,
+    /// it links the kernel into a list through `GPUKernel::next_evicted`.
     void onEntryRemoval(size_t weight_loss, const MappedPtr & kernel) override;
 
     void unloadEvicted();
 
     std::mutex evicted_mutex;
-    std::vector<MappedPtr> evicted TSA_GUARDED_BY(evicted_mutex);
+    MappedPtr evicted TSA_GUARDED_BY(evicted_mutex);
 };
 
 }
