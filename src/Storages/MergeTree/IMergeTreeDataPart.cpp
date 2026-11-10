@@ -1389,11 +1389,18 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
 static std::unordered_map<String, NameSet> getRequiredJSONPaths(const NameSet & required_columns, const ColumnsDescription & all_columns)
 {
     std::unordered_map<String, NameSet> result;
-    for (const auto & name : required_columns)
+    auto add = [&](const String & name)
     {
         auto column = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
         if (column && column->isSubcolumn() && isObject(column->getTypeInStorage()))
             result[column->getNameInStorage()].insert(column->getSubcolumnName());
+    };
+    for (const auto & name : required_columns)
+    {
+        add(name);
+        /// `<path>.null` may stand for a `Nullable` path, like `<col>.null` in `getStatisticsFilesToLoad`.
+        if (name.ends_with(".null"))
+            add(name.substr(0, name.size() - std::string_view(".null").size()));
     }
     return result;
 }
