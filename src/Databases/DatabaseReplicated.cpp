@@ -2794,6 +2794,10 @@ void DatabaseReplicated::dropDetachedTable(
     auto txn = local_context->getZooKeeperMetadataTransaction();
     auto drop_info = prepareDropDetachedTable(local_context, table_name);
 
+    /// Drop inner tables while the metadata transaction is available, before locking `metadata_mutex`.
+    /// Preparation waits for storage users first, so cancellation during that wait preserves inner tables.
+    detached_table->dropInnerTableIfAny(sync, local_context);
+
     /// Only update local digest if table is still in table_name_to_path (still counted in digest).
     /// adjustDigestOnTableLostFromRestart already subtracted for tables lost during failed RESTART REPLICA.
     /// detachTablePermanently already subtracted when table was properly detached.

@@ -1651,10 +1651,10 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         {
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
-        /// A table recovered after a restart has no live object in the catalog, but `dropTableFinally`
-        /// still requires a UUID mapping to finish cleanup. Keep a strong reservation until final removal.
-        if (!hasUUIDMapping(table_id.uuid))
-            static_cast<void>(reserveUUID(table_id.uuid).release());
+        /// Reject UUIDs owned by other metadata before reserving this recovered table for cleanup.
+        /// Keep the reservation until `dropTableFinally` removes the mapping.
+        addUUIDMapping(table_id.uuid);
+        static_cast<void>(reserveUUID(table_id.uuid).release());
         drop_time = db_disk->getLastModified(dropped_metadata_path).epochTime();
     }
 

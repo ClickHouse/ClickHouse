@@ -1,6 +1,7 @@
 # Tag no-fasttest: requires S3
 
 import logging
+import os
 import time
 
 import pytest
@@ -312,7 +313,7 @@ def test_drop_detached_cancel_keeps_timeseries_inner_tables_attachable(start_clu
 
     replica1.query(f"CREATE TABLE {table_name} ENGINE = TimeSeries", settings=time_series_settings)
     replica1.query(
-        f"INSERT INTO {table_name} (metric_name, tags, time_series) "
+        f"INSERT INTO {table_name} (metric_name, tags, samples) "
         "VALUES ('metric', map(), [(toDateTime64(1, 3), 1.)])",
         settings=time_series_settings,
     )
@@ -370,10 +371,14 @@ def test_drop_detached_cancel_keeps_timeseries_inner_tables_attachable(start_clu
         # did not drop them while the outer TimeSeries table remained detached.
         replica1.query(f"ATTACH TABLE {table_name}", settings=time_series_settings)
         replica1.query(
-            f"INSERT INTO {table_name} (metric_name, tags, time_series) "
+            f"INSERT INTO {table_name} (metric_name, tags, samples) "
             "VALUES ('metric', map(), [(toDateTime64(2, 3), 2.)])",
             settings=time_series_settings,
         )
+        assert replica1.query(
+            f"SELECT sum(length(samples)) FROM {table_name}",
+            settings=time_series_settings,
+        ).strip() == "2"
     finally:
         if not select_finished:
             replica1.query(
@@ -545,6 +550,76 @@ def test_drop_detached_in_replicated_database(start_cluster):
     replica1.query("DROP DATABASE test_r SYNC")
 
 
+def test_drop_detached_timeseries_in_replicated_database(start_cluster):
+    database = "test_drop_detached_timeseries_replicated"
+    table = "metrics"
+    keeper_path = f"/clickhouse/{database}"
+    settings = {
+        "allow_experimental_time_series_table": 1,
+        "allow_experimental_drop_detached_table": 1,
+    }
+
+    try:
+        for replica, name in ((replica1, "r1"), (replica2, "r2")):
+            replica.query(
+                f"CREATE DATABASE {database} ENGINE=Replicated('{keeper_path}', '{name}')"
+            )
+        replica1.query(f"CREATE TABLE {database}.{table} ENGINE=TimeSeries", settings=settings)
+        assert_eq_with_retry(replica2, f"EXISTS TABLE {database}.{table}", "1")
+        inner_tables_query = (
+            "SELECT name FROM system.tables "
+            f"WHERE database = '{database}' AND startsWith(name, '.inner_id.') ORDER BY name"
+        )
+        inner_tables = replica1.query(inner_tables_query).strip()
+        assert inner_tables
+        assert_eq_with_retry(replica2, inner_tables_query, inner_tables)
+
+        data_paths = {}
+        for replica in (replica1, replica2):
+            data_paths[replica] = replica.query(
+                "SELECT arrayJoin(data_paths) FROM system.tables "
+                f"WHERE database = '{database}' AND startsWith(name, '.inner_id.')"
+            ).splitlines()
+            assert data_paths[replica]
+            for path in data_paths[replica]:
+                assert replica.exec_in_container(["test", "-d", path]) == ""
+
+        replica1.query(f"DETACH TABLE {database}.{table} PERMANENTLY")
+        for replica in (replica1, replica2):
+            assert_detached_table_count(replica, table, "1")
+
+        # Inner drops must use the worker's metadata transaction before background cleanup.
+        replica1.query(
+            f"DROP DETACHED TABLE {database}.{table} SYNC",
+            settings=settings,
+            timeout=30,
+        )
+        for replica in (replica1, replica2):
+            assert_eq_with_retry(
+                replica,
+                f"SELECT count() FROM system.tables WHERE database = '{database}'",
+                "0",
+            )
+            check_no_table_in_detached_table(replica, table)
+            for path in data_paths[replica]:
+                assert replica.exec_in_container(["test", "!", "-d", path]) == ""
+
+        zk = cluster.get_kazoo_client("zoo1")
+        try:
+            zk.sync(f"{keeper_path}/metadata")
+            assert zk.get_children(f"{keeper_path}/metadata") == []
+        finally:
+            zk.stop()
+            zk.close()
+
+        # A later DDL entry must still execute on both replicas.
+        replica1.query(f"CREATE TABLE {database}.after_drop (x UInt64) ENGINE=MergeTree ORDER BY x")
+        assert_eq_with_retry(replica2, f"EXISTS TABLE {database}.after_drop", "1")
+    finally:
+        for replica in (replica1, replica2):
+            replica.query(f"DROP DATABASE IF EXISTS {database} SYNC", timeout=30, ignore_error=True)
+
+
 def test_drop_s3_table(start_cluster):
     objects_before = list_objects(cluster, "data/")
     table_name = "test_replicated_table"
@@ -603,6 +678,47 @@ def test_drop_detached_access_control(start_cluster):
         f"DROP DETACHED TABLE {table_name} SYNC"
     )
     replica1.query("DROP USER IF EXISTS test_user")
+
+
+@pytest.mark.parametrize("permanently_detached", [False, True])
+def test_dropped_metadata_rejects_uuid_collision(start_cluster, permanently_detached):
+    table = f"drop_detached_uuid_collision_{int(permanently_detached)}"
+    replica1.query(f"CREATE TABLE system.{table} (x UInt64) ENGINE=MergeTree ORDER BY x")
+    replica1.query(f"INSERT INTO system.{table} VALUES (42)")
+    uuid, metadata_path = replica1.query(
+        "SELECT uuid, metadata_path FROM system.tables "
+        f"WHERE database = 'system' AND name = '{table}'"
+    ).strip().split("\t")
+    dropped_path = f"/var/lib/clickhouse/metadata_dropped/system.{table}.{uuid}.sql"
+
+    if permanently_detached:
+        replica1.query(f"DETACH TABLE system.{table} PERMANENTLY")
+    replica1.stop_clickhouse()
+    try:
+        # System metadata loads before dropped metadata. Recovery must reject a UUID
+        # owned by another metadata file instead of queuing its data for deletion.
+        replica1.exec_in_container(["mkdir", "-p", "/var/lib/clickhouse/metadata_dropped"])
+        replica1.exec_in_container(
+            ["cp", os.path.join("/var/lib/clickhouse", metadata_path), dropped_path]
+        )
+        replica1.start_clickhouse(
+            start_wait_sec=10, retry_start=False, expected_to_fail=True
+        )
+        assert replica1.contains_in_log(
+            f"Mapping for table with UUID={uuid} already exists"
+        )
+    finally:
+        if replica1.get_process_pid("clickhouse") is not None:
+            replica1.stop_clickhouse(kill=True)
+        replica1.exec_in_container(["rm", "-f", dropped_path])
+        replica1.start_clickhouse()
+
+    try:
+        if permanently_detached:
+            replica1.query(f"ATTACH TABLE system.{table}")
+        assert replica1.query(f"SELECT x FROM system.{table}") == "42\n"
+    finally:
+        replica1.query(f"DROP TABLE system.{table} SYNC")
 
 
 def test_drop_detached_with_undrop(start_cluster):
