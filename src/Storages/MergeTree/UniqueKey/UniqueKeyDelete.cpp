@@ -4,12 +4,16 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSubquery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -53,7 +57,9 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -98,12 +104,58 @@ std::vector<String> partitionsToVisit(const MergeTreeData & storage, const ASTDe
     return {partition_ids->begin(), partition_ids->end()};
 }
 
+/// The predicate reads only the deleted table: a subquery, or a table on the right of `IN`, brings in SQL with its
+/// own settings, whose limits could end it early and leave a `NOT IN` set incomplete.
+/// A column with an expression brings it in: an `ALIAS` column on every read, a `DEFAULT` or `MATERIALIZED` one in a
+/// part written before it was added. So the expressions of the columns it names are checked too.
+void throwIfPredicateReadsTables(const IAST & ast, const ColumnsDescription & columns, NameSet & expanded_columns)
+{
+    if (ast.as<ASTSubquery>())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DELETE on a UNIQUE KEY table does not support subqueries");
+
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        /// Every dotted run of the parts, for a column qualified with its table or one whose subcolumn is named.
+        const auto & parts = identifier->name_parts;
+        for (size_t begin = 0; begin < parts.size(); ++begin)
+        {
+            String name;
+            for (size_t end = begin; end < parts.size(); ++end)
+            {
+                name += (end == begin ? "" : ".") + parts[end];
+                if (const auto * column = columns.tryGet(name);
+                    column && column->default_desc.expression && expanded_columns.insert(column->name).second)
+                    throwIfPredicateReadsTables(*column->default_desc.expression, columns, expanded_columns);
+            }
+        }
+        return;
+    }
+
+    if (const auto * function = ast.as<ASTFunction>();
+        function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
+    {
+        const auto & rhs = function->arguments->children[1];
+        if ((rhs->as<ASTIdentifier>() && !columns.has(rhs->as<ASTIdentifier>()->name())) || rhs->as<ASTTableIdentifier>())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DELETE on a UNIQUE KEY table does not support a table on the right of `{}`", function->name);
+    }
+
+    for (const auto & child : ast.children)
+        throwIfPredicateReadsTables(*child, columns, expanded_columns);
+}
+
 /// `READ_COLUMN _part, _part_offset` plus an `UPDATE _row_exists = 0 IN PARTITION ID ... WHERE <predicate>`
 /// that is never applied: it only carries the predicate and the partition to `MutationsInterpreter`.
 /// An UPDATE because a DELETE stage reads every column; the UPDATE reads only the predicate's.
 MutationCommands scanCommands(
     const ASTDeleteQuery & query, const StorageInMemoryMetadata & metadata, const String & partition_id, const ContextPtr & context)
 {
+    /// `READ_COLUMN` and the `IN PARTITION ID` filter on `_partition_id` resolve their column by name,
+    /// where a table column of the same name wins.
+    for (const auto * name : {"_part", "_part_offset", "_partition_id"})
+        if (metadata.getColumns().has(name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "DELETE on a UNIQUE KEY table reads the virtual column `{}`, which a table column of the same name shadows", name);
+
     MutationCommands commands;
     for (const auto * name : {"_part", "_part_offset"})
     {
@@ -158,22 +210,26 @@ struct DeleteStatement
     StorageMergeTree & storage;
     const ASTDeleteQuery & query;
     const ContextPtr query_context;
+    /// The one the predicate was checked against.
+    const StorageMetadataPtr metadata_snapshot;
     const LoggerPtr log;
 
     /// The rows of one partition the predicate matches at `txn`'s snapshot. Scanned like a lightweight
-    /// update: the storage is read directly, so only `ALTER DELETE` is checked, and the predicate's own
-    /// subqueries still check `SELECT` on what they read.
+    /// update: the storage is read directly, so only `ALTER DELETE` is checked.
     DeleteRowsByPart findRowsInPartition(const MergeTreeTransactionPtr & txn, const String & partition_id) const
     {
         auto scan_context = Context::createCopy(query_context);
         scan_context->makeQueryContext();
         scan_context->setCurrentTransaction(txn);
 
+        /// The DELETE ignores the query's read limits; in `throw` mode the scan's index analysis would check them.
+        for (const auto * name : {"max_rows_to_read", "max_bytes_to_read", "max_rows_to_read_leaf", "max_bytes_to_read_leaf"})
+            scan_context->setSetting(name, Field(UInt64(0)));
+
         MutationsInterpreter::Settings settings(/*can_execute_=*/true);
         settings.return_mutated_rows = true;
         settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
 
-        const auto metadata_snapshot = storage.getInMemoryMetadataPtr(scan_context, /*bypass_metadata_cache=*/false);
         MutationsInterpreter interpreter(
             storage.shared_from_this(),
             metadata_snapshot,
@@ -254,10 +310,15 @@ void StorageMergeTree::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr qu
     throwIfInsideTransaction(query_context->getCurrentTransaction(), "DELETE");
 
     const auto & query = query_ptr->as<ASTDeleteQuery &>();
+    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/false);
+    NameSet expanded_columns;
+    throwIfPredicateReadsTables(*query.predicate, metadata_snapshot->getColumns(), expanded_columns);
+
     const DeleteStatement statement{
         .storage = *this,
         .query = query,
         .query_context = query_context,
+        .metadata_snapshot = metadata_snapshot,
         .log = getLogger(getLogName())};
 
     const auto partition_ids = partitionsToVisit(*this, query, query_context);

@@ -131,6 +131,11 @@ public:
 
     void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr context) override;
 
+    /// Called when the deferred fsync of an inserted part failed, see `DeferredPartsSync`. Its data may not be durable,
+    /// so the part is moved to `detached` with the prefix `fsync-failed`, and it is removed from the deduplication log,
+    /// so that a retry of the insert writes the data again, even after a restart of the server.
+    void detachPartAfterFailedFsync(const DataPartPtr & part);
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait

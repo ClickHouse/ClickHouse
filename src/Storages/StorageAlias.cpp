@@ -1,4 +1,5 @@
 #include <Storages/StorageAlias.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -21,6 +22,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -318,6 +320,26 @@ SinkToStoragePtr StorageAlias::write(
     return std::make_shared<AliasSink>(*this, local_context, target_metadata, async_insert);
 }
 
+void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+{
+    /// `InterpreterAlterQuery` checks the export grants (`SELECT` on the table and its row policy) on the name in the query,
+    /// which is the alias, not the target. The refusal does not need the user, so it also holds on the hosts of `ON CLUSTER`.
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::MODIFY_SETTING && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes).empty())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Changing the settings that send the data of a table elsewhere through an alias is not supported. "
+                "Execute the ALTER directly on the target table: {}.{}",
+                backQuoteIfNeed(target_database),
+                backQuoteIfNeed(target_table));
+        }
+    }
+
+    getTargetTable()->checkAlterIsPossible(commands, local_context);
+}
+
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
@@ -444,6 +466,13 @@ QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands,
     return pipeline;
 }
 
+bool StorageAlias::hasUniqueKey() const
+{
+    /// A lazily loaded target reports no keys until it is loaded.
+    auto target = tryGetTargetTable();
+    return target && resolveStorageProxyLoading(target)->hasUniqueKey();
+}
+
 void StorageAlias::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
@@ -452,12 +481,13 @@ void StorageAlias::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr local_
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "DELETE on UNIQUE KEY tables is not supported inside a Replicated database");
 
-    /// The caller locks the alias, not the target.
-    auto lock = target_storage->lockForShare(
-        local_context->getCurrentQueryId(),
-        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    /// The caller locks the alias, not the target. A lazy target is locked both as the catalog holds it and as loaded.
+    const auto & settings = local_context->getSettingsRef();
+    auto lock = target_storage->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    auto loaded_target = resolveStorageProxyLoading(target_storage);
+    auto loaded_lock = loaded_target->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
 
-    target_storage->deleteByUniqueKey(query_ptr, local_context);
+    loaded_target->deleteByUniqueKey(query_ptr, local_context);
 }
 
 CancellationCode StorageAlias::killMutation(const String & mutation_id)
@@ -515,7 +545,7 @@ CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
 
 void StorageAlias::updateExternalDynamicMetadataIfExists(ContextPtr local_context)
 {
-    getTargetTable()->updateExternalDynamicMetadataIfExists(local_context);
+    resolveStorageProxyLoading(getTargetTable())->updateExternalDynamicMetadataIfExists(local_context);
 }
 
 std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)

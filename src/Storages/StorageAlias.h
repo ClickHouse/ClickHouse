@@ -43,11 +43,7 @@ public:
 
     /// The alias holds no metadata of its own, so the answer is the target's. Without this a
     /// unique-key table read through an alias would look unconstrained to the planner.
-    bool hasUniqueKey() const override
-    {
-        auto target = tryGetTargetTable();
-        return target && target->hasUniqueKey();
-    }
+    bool hasUniqueKey() const override;
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
@@ -87,7 +83,7 @@ public:
     /// Distributed write to target table
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr local_context) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override { getTargetTable()->checkAlterIsPossible(commands, local_context); }
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
     /// Alter target table
     void alter(
@@ -183,6 +179,11 @@ public:
     {
         auto target = tryGetTargetTable();
         return target && target->supportsOptimizationToTupleElementSubcolumns();
+    }
+    bool hasBucketedMapSerialization() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->hasBucketedMapSerialization();
     }
     bool supportsParallelInsert() const override
     {
