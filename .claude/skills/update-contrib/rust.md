@@ -33,9 +33,9 @@ Update build integration:
 3. If headers are copied into the build directory at configure time, changes to submodule headers may require
    re-running CMake or manually refreshing the copied headers for incremental verification.
 4. Regenerate `contrib/rust-contrib-workspace/Cargo.lock` if dependency resolution changed. Cargo environment a build
-   script needs (such as the OpenSSL paths) goes into `clickhouse_config_crate_flags` in
-   `contrib/corrosion-cmake/CMakeLists.txt`, the same for every member. Do not edit `contrib/delta-kernel-rs/Cargo.lock`:
-   the pin brings its own and vendoring reads it `--locked`.
+   script needs (such as the OpenSSL paths) goes into `clickhouse_config_crate_env` in
+   `contrib/corrosion-cmake/CMakeLists.txt`, the same for every member and for the root package. Do not edit
+   `contrib/delta-kernel-rs/Cargo.lock`: the pin brings its own and vendoring reads it `--locked`.
 5. Re-vendor crates (see "Vendoring" below).
 
 ## Vendoring

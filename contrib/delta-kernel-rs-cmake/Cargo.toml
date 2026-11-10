@@ -4,9 +4,6 @@ name = "_ch_rust_delta_kernel"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-crate-type = ["staticlib"]
-
 [dependencies]
 # Ideally we would disable all features to remove dependencies but:
 # * default-engine: Needed for its s3 client (we can't pass our own s3 client via ffi)

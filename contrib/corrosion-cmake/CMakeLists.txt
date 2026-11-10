@@ -314,8 +314,17 @@ function(clickhouse_import_crate)
         endif()
     endif()
 
+    # The crates are plain libraries, made static only by their own run: cargo writes every crate type of a manifest for
+    # a dependency too, and the root package of the workspace depends on all of them.
+    cmake_parse_arguments(_arg "" "" "CRATES" ${ARGN})
+    set(override_crate_types "")
+    foreach (crate IN LISTS _arg_CRATES)
+        list(APPEND override_crate_types "${crate}=staticlib")
+    endforeach()
+
     disable_dummy_launchers_if_needed()
     corrosion_import_crate(${ARGN}
+            OVERRIDE_CRATE_TYPE ${override_crate_types}
             # We set manually the cargo config flags via command line `--config` option
             # We have to do it this way because workspaces are built from source folder and we can't place the `config.toml`
             # there, as it would conflict if you have multiple build folders
@@ -334,8 +343,12 @@ function(clickhouse_import_crate)
     enable_dummy_launchers_if_needed()
 endfunction()
 
-# Configure a Rust crate target with ClickHouse-specific flags.
-function(clickhouse_config_crate_flags target_name)
+# Not the target directory of cargo (corrosion passes `--target-dir`): only build scripts read it, the one of
+# `delta_kernel_ffi` writes its headers there.
+set(RUST_BUILD_SCRIPT_TARGET_DIR "${CMAKE_BINARY_DIR}/contrib/delta-kernel-rs/include" CACHE INTERNAL "Rust config")
+
+# The environment of a cargo run in the workspace.
+function(clickhouse_config_crate_env target_name)
     # Every member of the workspace gets the same environment: they share one target directory, and a build script whose
     # environment differs between two of them reruns, with everything depending on it, on every build.
     #
@@ -378,6 +391,12 @@ function(clickhouse_config_crate_flags target_name)
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
         "OPENSSL_INCLUDE_DIR=${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include/")
+    corrosion_set_env_vars(${target_name} "CARGO_TARGET_DIR=${RUST_BUILD_SCRIPT_TARGET_DIR}")
+endfunction()
+
+# Configure a Rust crate target with ClickHouse-specific flags.
+function(clickhouse_config_crate_flags target_name)
+    clickhouse_config_crate_env(${target_name})
     corrosion_link_libraries(${target_name} cxx)
 
     # Localize all C-namespace symbols from Rust static libraries so they

@@ -4,8 +4,5 @@ name = "_ch_rust_chdig"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-crate-type = ["staticlib"]
-
 [dependencies]
 chdig = { path = "../chdig", default-features = false, features = ["tls"] }

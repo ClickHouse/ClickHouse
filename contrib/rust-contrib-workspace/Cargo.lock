@@ -74,6 +74,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "_ch_rust_workspace"
+version = "0.1.0"
+dependencies = [
+ "_ch_rust_chdig",
+ "_ch_rust_delta_kernel",
+ "_ch_rust_pco",
+ "_ch_rust_polyglot",
+ "_ch_rust_prql",
+ "_ch_rust_skim_rust",
+ "_ch_rust_vortex",
+ "_ch_rust_wasmtime",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
