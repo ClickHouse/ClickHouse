@@ -674,7 +674,7 @@ std::vector<std::string> getNeededLibraries(const std::string & path)
     std::vector<std::string> libraries;
     for (const char * entry_pos = dynamic->begin(); entry_pos + sizeof(ElfDyn) <= dynamic->end(); entry_pos += sizeof(ElfDyn))
     {
-        ElfDyn entry;
+        ElfDyn entry{};
         memcpy(&entry, entry_pos, sizeof(entry));
         if (entry.tag == DynamicTableTag::Null)
             break;
@@ -699,7 +699,7 @@ std::vector<std::string> getNameServiceModules(const std::vector<std::string> & 
     std::vector<std::string> directories;
     for (const auto & file : mapped_files)
     {
-        if (fs::path(file).filename().string().find(".so") == std::string::npos)
+        if (!fs::path(file).filename().string().contains(".so"))
             continue;
         std::string directory = fs::path(file).parent_path().string();
         if (std::find(directories.begin(), directories.end(), directory) == directories.end())
@@ -839,10 +839,10 @@ std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths
         if (!fs::path(path.path).is_absolute())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The path {} ({}) to keep visible in the isolated filesystem is not absolute", path.path, path.source);
 
-        if (path.access == FilesystemIsolationPath::Access::ReadWrite)
+        /// The server would create it anyway, and there is no way to do it from inside. An existing path, which can be
+        /// a file, such as a device for a log, is left as it is.
+        if (std::error_code error; path.access == FilesystemIsolationPath::Access::ReadWrite && !fs::exists(path.path, error))
         {
-            /// The server would create it anyway, and there is no way to do it from inside.
-            std::error_code error;
             fs::create_directories(path.path, error);
             if (error)
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot create the directory {} ({}): {}", path.path, path.source, error.message());
@@ -854,6 +854,19 @@ std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths
         /// Visible anyway, and links into them, such as `/etc/mtab`, are recreated.
         if (isSameOrInside(*real_path, "/proc") || isSameOrInside(*real_path, "/sys"))
             continue;
+        /// The isolated filesystem has its own `/dev`, with the devices every program expects and a private `devpts`,
+        /// which are made visible anyway. A path to one of them, such as `/dev/null` for a log, is not mounted again.
+        if (*real_path == "/dev/ptmx" || isSameOrInside(*real_path, "/dev/pts")
+            || std::any_of(devices.begin(), devices.end(), [&](const char * device) { return *real_path == fmt::format("/dev/{}", device); }))
+            continue;
+        /// The other devices of the host must stay invisible: a disk is readable and writable through its device
+        /// without any capability, and the mounts in `/dev` keep their devices usable.
+        if (*real_path == "/dev")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot isolate the filesystem, because the path {} ({}) is `/dev`, and keeping it visible would expose "
+                "every device of the host. Add the devices that are needed one by one",
+                path.path, path.source);
         if (*real_path == "/")
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -894,7 +907,7 @@ std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths
 
 }
 
-FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const std::vector<FilesystemIsolationPath> & paths)
+FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector & collect_paths)
 {
     requested_mode.store(static_cast<int>(mode), std::memory_order_relaxed);
 
@@ -938,7 +951,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
 
     /// Everything that needs the original filesystem is done before entering the namespaces.
     std::vector<SymbolicLink> links;
-    std::vector<FilesystemIsolationPath> all_paths = paths;
+    std::vector<FilesystemIsolationPath> all_paths = collect_paths ? collect_paths() : std::vector<FilesystemIsolationPath>{};
     const std::vector<std::string> mapped_files = getMappedFiles();
     for (const auto & file : mapped_files)
         all_paths.push_back({file, FilesystemIsolationPath::Access::ReadOnly, "mapped into the process"});
@@ -1073,7 +1086,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
 namespace DB
 {
 
-FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const std::vector<FilesystemIsolationPath> &)
+FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector &)
 {
     requested_mode.store(static_cast<int>(mode), std::memory_order_relaxed);
 

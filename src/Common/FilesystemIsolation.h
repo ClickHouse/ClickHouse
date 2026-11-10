@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -57,7 +58,7 @@ struct FilesystemIsolationStatus
 };
 
 /// Moves the current process into a new mount namespace whose root is an empty read-only `tmpfs`, with only
-/// `paths` (and a few things every process needs: `/proc`, `/sys`, a handful of devices in `/dev`, a private
+/// the paths from `collect_paths` (and a few things every process needs: `/proc`, `/sys`, a handful of devices in `/dev`, a private
 /// `/tmp`, the files mapped into the process, which include its executable) bind-mounted into it, and removes
 /// the access to the original root. Then drops the capabilities that would let the process undo it.
 ///
@@ -73,7 +74,10 @@ struct FilesystemIsolationStatus
 /// them (which is checked in a child process first, so that the current process is not left in a half-made
 /// namespace), returns a status with `isolated = false` and the reason. Any later failure, for example a path that
 /// cannot be mounted, throws in both modes, because the process cannot go back to the original filesystem.
-FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const std::vector<FilesystemIsolationPath> & paths);
+/// `collect_paths` is called only once the namespaces are known to be available, so that the work to find the paths
+/// is not done, and cannot fail, when the filesystem is not going to be isolated anyway.
+using FilesystemIsolationPathsCollector = std::function<std::vector<FilesystemIsolationPath>()>;
+FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector & collect_paths);
 
 /// The mode `isolateFilesystem` was called with, or nothing if it has not been called.
 std::optional<FilesystemIsolationMode> getRequestedFilesystemIsolationMode();

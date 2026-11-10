@@ -5,11 +5,13 @@
 #include <Common/Jemalloc.h>
 #include <Common/filesystemHelpers.h>
 
+#include <Poco/Exception.h>
 #include <Poco/Glob.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <filesystem>
@@ -35,10 +37,15 @@ constexpr std::array system_paths = {
     "/etc/gai.conf",
     "/etc/services",
     "/etc/protocols",
-    /// The sockets of the services that the modules of the Name Service Switch connect to: `systemd-resolved` for
-    /// `nss-resolve`, and the caching daemon `nscd`. A socket on a read-only mount can still be connected to.
-    "/run/systemd/resolve/io.systemd.Resolve",
-    "/run/nscd/socket",
+    /// The directories of the sockets of the services that the modules of the Name Service Switch connect to:
+    /// `systemd-resolved` for `nss-resolve`, and the caching daemon `nscd`. A socket on a read-only mount can still
+    /// be connected to. The directories rather than the sockets, because a service that restarts binds a new socket,
+    /// and a bind mount of the old one would keep pointing at the old, closed one. The same for the files that
+    /// `systemd-resolved` replaces, such as `stub-resolv.conf`, which `/etc/resolv.conf` is often a link to. Their
+    /// parents are not visible, because they contain other sockets, such as the one of the service manager in
+    /// `/run/systemd`; the directories themselves are kept when the services restart.
+    "/run/systemd/resolve",
+    "/run/nscd",
     /// The names of users and groups.
     "/etc/passwd",
     "/etc/group",
@@ -56,6 +63,12 @@ constexpr std::array system_paths = {
     /// The separate debug info of the executable, for the symbols in stack traces.
     "/usr/lib/debug",
 };
+
+/// Whether `path` is `ancestor` or is inside it.
+bool isSameOrInside(const fs::path & path, const fs::path & ancestor)
+{
+    return std::mismatch(path.begin(), path.end(), ancestor.begin(), ancestor.end()).second == ancestor.end();
+}
 
 /// A path with a wildcard in it means every file matching it, so the directory up to the first wildcard is needed.
 bool hasWildcard(const std::string & component)
@@ -141,6 +154,15 @@ private:
             add(path, access, source);
             return;
         }
+        /// A device or a standard stream, such as `/dev/null` or `/dev/stderr` for a log, on its own: the isolated
+        /// filesystem has its own `/dev` with only a few devices, and the one of the host must stay invisible. A file
+        /// that does not exist is not created there, and it cannot be created inside either.
+        if (isSameOrInside(path, "/dev"))
+        {
+            if (fs::exists(path, error))
+                add(path, access, source);
+            return;
+        }
         add(path.parent_path(), access, source);
 
         /// The same limit on the number of links as in the kernel, against a loop.
@@ -173,12 +195,30 @@ private:
                 Poco::Glob::glob(pattern.string(), files, 0);
                 for (const auto & file : files)
                     if (!ConfigProcessor::isPreprocessedFile(file))
-                        addIndependentConfigFile(file, fmt::format("{} matching {}", file, source));
+                        addDefinitionConfigFile(file, fmt::format("{} matching {}", file, source));
                 return;
             }
             prefix /= component;
         }
-        addIndependentConfigFile(pattern, source);
+        addDefinitionConfigFile(pattern, source);
+    }
+
+    /// A file with definitions of dictionaries or executable functions. `ExternalLoader` logs a file it cannot load
+    /// and goes on with the others, so such a file does not prevent the server from starting here either: its own
+    /// substitutions file is not known then, and the loader reports the error later, as it does without the isolation.
+    void addDefinitionConfigFile(const fs::path & file, const std::string & source)
+    {
+        addConfigFileWithMergeFiles(file, source);
+        try
+        {
+            addIncludeFrom(file, source);
+        }
+        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
+        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
     }
 
     /// Every key `name` and `name[N]` under `prefix`.
@@ -222,6 +262,11 @@ private:
     void addIndependentConfigFile(const fs::path & file, const std::string & source)
     {
         addConfigFileWithMergeFiles(file, source);
+        addIncludeFrom(file, source);
+    }
+
+    void addIncludeFrom(const fs::path & file, const std::string & source)
+    {
         if (file == config_file)
             return;
         std::error_code error;
@@ -270,7 +315,11 @@ private:
                 addKey(key, Access::ReadWrite, working_directory);
         }
 
-        for (const auto * name : {"dictionaries_config", "user_defined_executable_functions_config", "user_defined_executable_function_drivers_config"})
+        std::vector<std::string> definitions = {"dictionaries_config", "user_defined_executable_functions_config"};
+        /// The drivers are loaded only with this setting, as in `Context::loadUserDefinedExecutableFunctionDrivers`.
+        if (config.getBool("allow_experimental_executable_udf_drivers", false))
+            definitions.emplace_back("user_defined_executable_function_drivers_config");
+        for (const auto & name : definitions)
             for (const auto & key : getMultipleKeys("", name))
                 if (const auto pattern = config.getString(key); !pattern.empty())
                     addIndependentConfigPattern(absolute(pattern, config_directory), fmt::format("`{}`", key));

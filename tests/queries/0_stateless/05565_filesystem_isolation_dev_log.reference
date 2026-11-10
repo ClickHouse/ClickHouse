@@ -1,0 +1,2 @@
+dev: fd full null ptmx pts random stderr stdin stdout urandom zero
+dev/pts: ptmx
