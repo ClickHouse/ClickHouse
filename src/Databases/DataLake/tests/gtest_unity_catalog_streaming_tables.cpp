@@ -233,7 +233,7 @@ private:
         Poco::JSON::Parser parser;
         const auto object = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
 
-        size_t request_number;
+        size_t request_number = 0;
         {
             std::lock_guard lock(credentials_log->mutex);
             credentials_log->requests.push_back(
@@ -434,8 +434,8 @@ TEST(UnityCatalogStreamingTables, UnknownSecurableKindNotReadable)
 
     EXPECT_FALSE(result.readable);
     EXPECT_TRUE(
-        result.unreadable_reason.find("unsupported securable_kind") != std::string::npos
-        || result.unreadable_reason.find("TABLE_VIEW") != std::string::npos);
+        result.unreadable_reason.contains("unsupported securable_kind")
+        || result.unreadable_reason.contains("TABLE_VIEW"));
 }
 
 /// DataLakeCatalog enables vended credentials by default, so real reads do
