@@ -222,7 +222,7 @@ void DistributedSink::consume(Chunk & chunk)
 {
     if (is_first_chunk)
     {
-        storage.delayInsertOrThrowIfNeeded();
+        storage.delayInsertOrThrowIfNeeded(getCancellationFlag());
         is_first_chunk = false;
     }
 
