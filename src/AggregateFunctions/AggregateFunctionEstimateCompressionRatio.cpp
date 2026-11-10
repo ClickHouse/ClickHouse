@@ -384,7 +384,9 @@ public:
         if (anyInTypeTree(*target_type, has_dynamic_structure))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} does not support target type {}", getName(), target_type->getName());
-        if (anyInTypeTree(*source_type, has_dynamic_structure))
+        /// Also a source with `LowCardinality`, which the factory removes from the arguments except inside a `Variant`: it writes
+        /// a dictionary with each serialization, so the numerator would depend on where the target's granules end.
+        if (anyInTypeTree(*source_type, [&](const IDataType & type) { return has_dynamic_structure(type) || type.lowCardinality(); }))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Aggregate function {} with a target type does not support argument type {}; convert the argument in the query first",
@@ -667,7 +669,7 @@ private:
     /// The first `limit` rows serialized in their own type, as the function measures them without a target type. The prefix and
     /// the suffix (the mode of `Variant` discriminators) are counted once per part, as one stream has them, so that the numerator
     /// does not depend on where the granules of the target end. The rows themselves write nothing per call: the types that do
-    /// (`LowCardinality`, sparse, `Dynamic`) never reach here.
+    /// (`LowCardinality`, sparse, `Dynamic`) are removed or rejected before.
     UInt64 sourceBytes(const IColumn & rows, size_t limit, bool first_in_part) const
     {
         NullWriteBufferWithMemory out(16384);
@@ -883,7 +885,8 @@ the first rows of a state, 8192 or the rows of 1 MiB, where a part decides from 
 converted as `accurateCast` converts them, so a value that `target_type` cannot hold is an error. The numerator of a
 `LowCardinality` column is the size of its values, not of its dictionary. Every thread of a query estimates its rows as a
 separate part, so use `max_threads = 1` for a stable result. `Dynamic` and `JSON` are not supported as target types, nor as
-arguments with `target_type` (convert them in the query first).
+arguments with `target_type`, and neither is an argument with `LowCardinality` inside a `Variant` (convert them in the query
+first).
 
 <Note>
 For the examples below, the result will differ based on the default compression codec of the server.

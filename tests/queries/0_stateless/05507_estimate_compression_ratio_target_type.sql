@@ -79,6 +79,9 @@ SELECT estimateCompressionRatio('Map(String, JSON)')(map('a', s)) FROM src; -- {
 -- Nor as arguments: the rows would carry the dynamic structure of the blocks they came in. Converted in the query, they work.
 SELECT estimateCompressionRatio('LZ4', 'String')(s::JSON) FROM src; -- { serverError NOT_IMPLEMENTED }
 SELECT estimateCompressionRatio('LZ4', 'String')(tuple(n::Dynamic)) FROM src; -- { serverError NOT_IMPLEMENTED }
+-- A `LowCardinality` inside a `Variant` (the only place where it reaches the function) writes a dictionary with every piece.
+SELECT estimateCompressionRatio('LZ4', 'String')(s::Variant(LowCardinality(String))) FROM src; -- { serverError NOT_IMPLEMENTED }
+SELECT estimateCompressionRatio('LZ4', 'String')(toLowCardinality(s)) > 0, estimateCompressionRatio('LZ4', 'Array(String)')([toLowCardinality(s)]) > 0 FROM src;
 SELECT estimateCompressionRatio('LZ4', 'String')(toString(toJSONString(map('a', n))::JSON)) > 0 FROM src;
 
 SELECT 'numerator';
