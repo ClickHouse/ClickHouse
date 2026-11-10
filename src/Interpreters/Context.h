@@ -1070,21 +1070,16 @@ public:
     /// Scheduling group of the query, see `QuerySchedulingGroup`. For a copy of a query context, the
     /// group of that query context. Otherwise the parent group if there is one, or a group created on
     /// the first call from the `workload` and scheduling settings, so planning may still change them.
-    /// A part of a query cannot have scheduling settings of its own, see `checkSchedulingSettingsOfQueryPart`.
+    /// The `workload` and scheduling settings of a part of a query are not used for scheduling.
     /// NOTE: Workload cannot be changed after the group is created.
     QuerySchedulingGroupPtr getSchedulingGroup() const;
     /// Makes this query context a part of the query that owns `group`: the query is scheduled together
-    /// with the other parts of `group`, under the workload and scheduling settings of `group`. A part
-    /// whose own values of them differ is rejected, see `checkSchedulingSettingsOfQueryPart`.
+    /// with the other parts of `group`, under the workload and scheduling settings of `group`. Its own
+    /// values of them are not used for scheduling.
     /// Call after `makeQueryContext` and before the group is created.
     void setParentSchedulingGroup(QuerySchedulingGroupPtr group);
     /// The group set by `setParentSchedulingGroup`, or `nullptr` if this query context is not a part of another query.
     QuerySchedulingGroupPtr getParentSchedulingGroup() const;
-    /// Throws if this context is a part of a query (a copy of a query context, or a query context with a
-    /// parent scheduling group), `changes` or `reset_settings` (`SETTINGS name = DEFAULT`) touch its
-    /// `workload` or scheduling settings, and their effective values differ from the query's. Called after
-    /// the `SETTINGS` clause of a part, with its resets, is applied, so such a query is rejected before it runs.
-    void checkSchedulingSettingsOfQueryPart(const SettingsChanges & changes, const std::vector<String> & reset_settings = {}) const;
     /// Release the query slot early so the client can reuse it for its next query.
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.

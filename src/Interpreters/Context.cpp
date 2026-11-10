@@ -2927,10 +2927,9 @@ ClassifierPtr Context::getWorkloadClassifier() const
 namespace
 {
 
-/// The query settings that a query is scheduled under, each with the `ClassifierSettings` field it sets
-/// and the type of that field. All parts of a query have the same values of them. Together with
-/// `workload`, which selects the workload itself, this is the only list of them: the helpers below are
-/// generated from it, so a new scheduling setting is added here and in `ClassifierSettings` only.
+/// The query settings that a query is scheduled under, besides `workload`, each with the
+/// `ClassifierSettings` field it sets and the type of that field. A new scheduling setting is added
+/// here and in `ClassifierSettings`.
 #define APPLY_FOR_QUERY_SCHEDULING_SETTINGS(M) \
     M(weight, weight, Float64) \
     M(weight_lowering_factor, weight_lowering_factor, Float64) \
@@ -2938,14 +2937,6 @@ namespace
     M(weight_lowering_cpu_seconds, weight_lowering_cpu_seconds, Float64) \
     M(weight_lowering_io_bytes, weight_lowering_io_bytes, Float64) \
     M(workload_priority, priority, Priority)
-
-/// Whether `name` is `workload` or a setting from `APPLY_FOR_QUERY_SCHEDULING_SETTINGS`.
-bool isQuerySchedulingSetting(std::string_view name)
-{
-#define M(SETTING, FIELD, TYPE) || name == #SETTING
-    return name == "workload" APPLY_FOR_QUERY_SCHEDULING_SETTINGS(M);
-#undef M
-}
 
 ClassifierSettings makeClassifierSettings(const Settings & query_settings, bool throw_on_unknown_workload)
 {
@@ -2955,13 +2946,6 @@ ClassifierSettings makeClassifierSettings(const Settings & query_settings, bool 
     APPLY_FOR_QUERY_SCHEDULING_SETTINGS(M)
 #undef M
     return result;
-}
-
-bool sameScheduling(const String & workload, const ClassifierSettings & settings, const String & other_workload, const ClassifierSettings & other)
-{
-#define M(SETTING, FIELD, TYPE) && settings.FIELD == other.FIELD
-    return workload == other_workload APPLY_FOR_QUERY_SCHEDULING_SETTINGS(M);
-#undef M
 }
 
 #undef APPLY_FOR_QUERY_SCHEDULING_SETTINGS
@@ -3003,46 +2987,6 @@ QuerySchedulingGroupPtr Context::getParentSchedulingGroup() const
 {
     std::lock_guard lock(mutex);
     return parent_scheduling_group;
-}
-
-void Context::checkSchedulingSettingsOfQueryPart(const SettingsChanges & changes, const std::vector<String> & reset_settings) const
-{
-    /// A settings profile can set any of them too.
-    auto may_change_scheduling = [](std::string_view name) { return isQuerySchedulingSetting(name) || name == "profile"; };
-    if (!std::ranges::any_of(changes, [&](const SettingChange & change) { return may_change_scheduling(change.name); })
-        && !std::ranges::any_of(reset_settings, [&](const String & name) { return may_change_scheduling(name); }))
-        return;
-
-    QuerySchedulingGroupPtr parent;
-    {
-        std::lock_guard lock(mutex);
-        parent = parent_scheduling_group;
-    }
-
-    String expected_workload;
-    ClassifierSettings expected_settings;
-    if (parent)
-    {
-        expected_workload = parent->getWorkload();
-        expected_settings = parent->getSettings();
-    }
-    else if (auto query_context_ptr = query_context.lock(); query_context_ptr && query_context_ptr.get() != this)
-    {
-        const auto & query_settings = query_context_ptr->getSettingsRef();
-        expected_workload = query_settings[Setting::workload];
-        expected_settings = makeClassifierSettings(query_settings, false);
-    }
-    else
-        return; /// Not a part of another query.
-
-    /// The callers have applied the clause, including its resets and the clamping to the settings
-    /// constraints, so compare the effective values.
-    const auto & own_settings = getSettingsRef();
-    if (!sameScheduling(own_settings[Setting::workload], makeClassifierSettings(own_settings, false), expected_workload, expected_settings))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "A part of a query, such as a subquery or a `PARALLEL WITH` subquery, cannot set `workload`, `weight`, "
-            "`weight_lowering_*` or `workload_priority` to a value that differs from the query's: all parts of a query "
-            "are scheduled under the settings of the query. Set them for the whole query instead");
 }
 
 void Context::releaseQuerySlot() const
