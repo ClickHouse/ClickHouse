@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
@@ -793,6 +794,11 @@ bool ReadFromObjectStorageStep::requestReadingInOrder(int direction, const Query
     /// The merge is over the storage sorting key, so its expression must be computable from the
     /// header this step emits.
     if (!sortingKeyIsComputableFromSourceHeader())
+        return false;
+
+    /// Enumerating evaluates the filter now, so it must not see a set that only the pipeline builds
+    /// (`GLOBAL IN`, see `applyFilters`): that would run its subquery during planning, or fail.
+    if (filter_actions_dag && QueryPlanOptimizations::dagContainsNonReadySet(*filter_actions_dag))
         return false;
 
     createIterator();

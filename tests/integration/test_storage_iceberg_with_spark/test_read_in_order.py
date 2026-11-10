@@ -242,6 +242,17 @@ def test_read_in_order_more_files_than_streams(started_cluster_iceberg_with_spar
         settings = f"max_threads={max_threads}, read_in_order_two_level_merge_threshold={threshold}"
         assert (count_in_pipeline(instance, q, "PartialSortingTransform", settings) > 0) == declined, settings
 
+    # A GLOBAL IN set is built only when the pipeline runs, so deciding the in-order read, which
+    # evaluates the filter during planning, must decline and keep the sort instead.
+    q_global_in = f"SELECT id FROM {TABLE_NAME} WHERE _path GLOBAL IN (SELECT _path FROM {TABLE_NAME}) ORDER BY id"
+    assert get_array_as_returned(instance.query(f"{q_global_in} SETTINGS max_threads=4")) == expected
+    assert count_in_pipeline(instance, q_global_in, "PartialSortingTransform", "max_threads=4") > 0
+    # Planning alone must not run the subquery.
+    instance.query(
+        f"EXPLAIN SELECT id FROM {TABLE_NAME} "
+        f"WHERE _path GLOBAL IN (SELECT toString(throwIf(1, 'subquery ran during planning'))) ORDER BY id"
+    )
+
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_read_in_order_complex_key_more_files_than_streams(started_cluster_iceberg_with_spark, storage_type):
