@@ -47,6 +47,7 @@ public:
 	void activate();
 	void release();
 	void run();
+	void waitTargetStarted();
 
 private:
 	volatile bool        _idle;
@@ -55,6 +56,7 @@ private:
 	std::string          _name;
 	Thread               _thread;
 	Event                _targetReady;
+	Event                _targetStarted;
 	Event                _targetCompleted;
 	Event                _started;
 	FastMutex            _mutex;
@@ -73,6 +75,7 @@ PooledThread::PooledThread(
 	_pTarget(0),
 	_name(name),
 	_thread(name),
+	_targetStarted(false),
 	_targetCompleted(false),
 	_globalProfilerRealTimePeriodNs(globalProfilerRealTimePeriodNs_),
 	_globalProfilerCPUTimePeriodNs(globalProfilerCPUTimePeriodNs_)
@@ -163,6 +166,7 @@ void PooledThread::activate()
 
 	poco_assert (_idle);
 	_idle = false;
+	_targetStarted.reset();
 	_targetCompleted.reset();
 }
 
@@ -187,6 +191,12 @@ void PooledThread::release()
 }
 
 
+void PooledThread::waitTargetStarted()
+{
+	_targetStarted.wait();
+}
+
+
 void PooledThread::run()
 {
     DB::ThreadStatus thread_status;
@@ -202,6 +212,7 @@ void PooledThread::run()
 		{
 			Runnable* pTarget = _pTarget;
 			_mutex.unlock();
+			_targetStarted.set();
 			try
 			{
 				pTarget->run();
@@ -475,6 +486,7 @@ void ThreadPool::housekeep()
 	{
 		_threads.back()->activate();
 		_threads.back()->start(Thread::PRIO_NORMAL, *pReaper);
+		_threads.back()->waitTargetStarted();
 	}
 	else
 	{
