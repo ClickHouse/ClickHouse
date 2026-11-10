@@ -69,6 +69,16 @@ namespace ErrorCodes
 namespace
 {
 
+/// Whether a value of type `from_type_hint` can be returned untouched as a value of `type`.
+/// `IDataType::equals` ignores custom names, so it also holds for `Bool` and its storage type `UInt8`
+/// (and for composites such as `Tuple(UInt8)` and `Tuple(Bool)`); a `UInt8` value 2 must still be
+/// normalized to `true` for `Bool`. Like the identity check of `CAST`, require the full names to match
+/// too, which covers every nesting level.
+bool isIdentityConversion(const IDataType * from_type_hint, const IDataType & type)
+{
+    return from_type_hint && from_type_hint->equals(type) && from_type_hint->getName() == type.getName();
+}
+
 template <typename From, typename To>
 Field convertNumericTypeImpl(const Field & from, bool strict, bool convert_inexact_floats)
 {
@@ -661,7 +671,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             from_type_hint = unwrapped_hint;
     }
 
-    if (from_type_hint && from_type_hint->equals(type))
+    if (isIdentityConversion(from_type_hint, type))
     {
         return src;
     }
@@ -1766,7 +1776,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (from_value.isNull())
         return from_value;
 
-    if (from_type_hint && from_type_hint->equals(to_type))
+    if (isIdentityConversion(from_type_hint, to_type))
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
@@ -1779,7 +1789,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         if (WhichDataType(nested_type).isNothing())
             return {};
 
-        if (from_type_hint && from_type_hint->equals(nested_type))
+        if (isIdentityConversion(from_type_hint, nested_type))
             return from_value;
         return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict, convert_inexact_floats);
     }
