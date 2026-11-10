@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-shared-merge-tree
+# no-shared-merge-tree: it records even a metadata-only ALTER in system.mutations
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
