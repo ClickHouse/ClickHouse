@@ -564,15 +564,6 @@ private:
     std::optional<BoolMask> checkRangeAtomInKeyRange(
         const RPNElement & element, const Range & key_column_range, const DataTypes & key_types, size_t key_position) const;
 
-    /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value.
-    /// A NULL satisfies neither a comparison nor its negation, which the two-valued range algebra of
-    /// `checkInHyperrectangle` cannot express, so it costs the analysis its `can_be_false` claim.
-    bool mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const;
-    bool mayReadNullKeyValue(
-        const std::vector<int> & key_col_to_sparse_pos,
-        const Hyperrectangle & sparse_hyperrectangle,
-        const DataTypes & sparse_key_types) const;
-
     /// The atoms extracted from one predicate leaf, which become one element of the RPN: none makes
     /// `FUNCTION_UNKNOWN`, one is the element itself, and several make a `FUNCTION_ATOM_GROUP` (see
     /// `extractAtomFromTree`).
