@@ -36,15 +36,32 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "ClickHouse Cloud"
+          "item": "عمليات النشر"
         },
         {
           "$ref": "./products/cloud/navigation.json"
         },
         {
+          "item": "BYOC",
+          "pages": [
+            "ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+          ]
+        },
+        {
+          "href": "#",
+          "icon": "/images/icons/section-header.svg",
+          "item": "التطبيقات"
+        },
+        {
+          "$ref": "./clickstack/navigation.json"
+        },
+        {
           "href": "https://langfuse.com/docs",
-          "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Langfuse"
+          "item": "هندسة الذكاء الاصطناعي"
+        },
+        {
+          "href": "https://docs.runreveal.com/",
+          "item": "الأمان"
         },
         {
           "href": "#",
@@ -52,13 +69,20 @@
           "item": "مفتوح المصدر"
         },
         {
-          "$ref": "./clickstack/navigation.json"
+          "item": "ClickStack",
+          "pages": [
+            "ar/clickstack/index"
+          ]
         },
         {
           "$ref": "./chdb/navigation.json"
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
+        },
+        {
+          "href": "https://www.librechat.ai/docs",
+          "item": "LibreChat"
         }
       ],
       "tab": "المنتجات"

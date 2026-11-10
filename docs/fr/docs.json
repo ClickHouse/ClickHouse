@@ -36,15 +36,32 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "ClickHouse Cloud"
+          "item": "Déploiements"
         },
         {
           "$ref": "./products/cloud/navigation.json"
         },
         {
+          "item": "BYOC",
+          "pages": [
+            "fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+          ]
+        },
+        {
+          "href": "#",
+          "icon": "/images/icons/section-header.svg",
+          "item": "Applications"
+        },
+        {
+          "$ref": "./clickstack/navigation.json"
+        },
+        {
           "href": "https://langfuse.com/docs",
-          "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Langfuse"
+          "item": "Ingénierie IA"
+        },
+        {
+          "href": "https://docs.runreveal.com/",
+          "item": "Sécurité"
         },
         {
           "href": "#",
@@ -52,13 +69,20 @@
           "item": "Open source"
         },
         {
-          "$ref": "./clickstack/navigation.json"
+          "item": "ClickStack",
+          "pages": [
+            "fr/clickstack/index"
+          ]
         },
         {
           "$ref": "./chdb/navigation.json"
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
+        },
+        {
+          "href": "https://www.librechat.ai/docs",
+          "item": "LibreChat"
         }
       ],
       "tab": "Produits"

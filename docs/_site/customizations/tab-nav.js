@@ -95,7 +95,18 @@
   }
 
   // ── Mobile section header styling ─────────────────────────────────────────
-  var SECTION_HEADERS = ['ClickHouse', 'Deployments', 'Applications', 'Open source'];
+  var SECTION_HEADERS = [
+    'ClickHouse',
+    'Deployments', 'Applications', 'Open source',
+    'عمليات النشر', 'التطبيقات', 'مفتوح المصدر',
+    'Implementaciones', 'Aplicaciones', 'Código abierto',
+    'Déploiements', 'Applications', 'Open source',
+    'デプロイメント', 'アプリケーション', 'オープンソース',
+    '배포', '애플리케이션', '오픈 소스',
+    'Implantações', 'Aplicações', 'Código aberto',
+    'Развертывания', 'Приложения', 'С открытым исходным кодом',
+    '部署', '应用', '开源'
+  ];
 
   function styleDropdownHeaders() {
     document.querySelectorAll('a.mobile-nav-tabs-item').forEach(function (a) {
