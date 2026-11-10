@@ -3,6 +3,7 @@
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
