@@ -2419,6 +2419,14 @@ void Context::setUserFilesPolicy(const String & policy_name, const String & path
                     "its path `{}` is not inside the path `{}` of the wrapped disk",
                     disk->getName(), policy_name, layer_path, wrapped_path);
             const String layer_relative_path = layer_path.substr(wrapped_path.size());
+            /// A path configured as absolute (e.g. `/encrypted/`) is advertised under the path of the
+            /// wrapped disk, but `DiskEncryptedTransaction::wrappedPath` sends it as is, and a local
+            /// wrapped disk then opens it as an absolute path outside of its own directory.
+            if (layer_relative_path.starts_with('/'))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot use disk `{}` for the user files policy `{}`: "
+                    "the path `{}` of the encrypted disk inside its wrapped disk is absolute",
+                    disk->getName(), policy_name, layer_relative_path);
             const String sent_prefix = sub_path.empty() ? received_prefix : received_prefix + sub_path + '/';
             if (!layer_relative_path.empty()
                 && (sent_prefix.starts_with(layer_relative_path) || layer_relative_path.starts_with(sent_prefix)))
