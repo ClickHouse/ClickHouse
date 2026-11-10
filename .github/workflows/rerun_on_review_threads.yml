@@ -217,13 +217,14 @@ jobs:
             # the candidates against the run's own head branch and repository
             # instead of trusting the first one. `workflow_run.pull_requests`
             # names the PRs of this repository; it is empty for fork PRs, so
-            # then look the PRs up through the head commit.
+            # then look the PRs up through the head branch. The head commit
+            # does not work: `commits/<sha>/pulls` is empty for fork commits.
             candidates=$(echo "$WR_PULL_REQUESTS" \
               | jq -c --arg ref "$WR_HEAD_BRANCH" --arg repo_id "$WR_HEAD_REPO_ID" \
                 '[(. // [])[] | select(.head.ref == $ref and (.head.repo.id | tostring) == $repo_id)
                   | .number] | unique')
             if [ "$(echo "$candidates" | jq 'length')" -eq 0 ]; then
-              candidates=$(api_with_retries "repos/$GH_REPO/commits/$WR_HEAD_SHA/pulls" \
+              candidates=$(api_with_retries "repos/$GH_REPO/pulls?state=open&head=${WR_HEAD_REPO%%/*}:$WR_HEAD_BRANCH&per_page=100" \
                 | jq -c --arg ref "$WR_HEAD_BRANCH" --arg repo "$WR_HEAD_REPO" \
                   '[.[] | select(.state == "open" and .head.ref == $ref and .head.repo.full_name == $repo)
                     | .number] | unique')
@@ -340,10 +341,24 @@ jobs:
           # finish step would write one) could clear the block of another PR.
           # The gate in `can_be_merged.py` blocks such PRs as well. A new block
           # is still recorded below - it only adds a block to the other PRs.
+          #
+          # `commits/<sha>/pulls` is empty for fork commits, so also search the
+          # PRs by the commit. Keep the query in sync with
+          # SEARCH_PRS_BY_COMMIT_QUERY in ci/jobs/scripts/workflow_hooks/review_threads.py.
           if [ "$desired_blocked" != "true" ]; then
-            shared_sha_prs=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/pulls" \
+            commit_prs=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/pulls" \
               | jq -c --arg sha "$head_sha" \
-                '[.[] | select(.state == "open" and .head.sha == $sha) | .number] | unique')
+                '[.[] | select(.state == "open" and .head.sha == $sha) | .number]')
+            search_prs=$(api_with_retries graphql \
+              -f query='query($q: String!) {
+                search(query: $q, type: ISSUE, first: 100) {
+                  nodes { ... on PullRequest { number state headRefOid } }
+                }
+              }' \
+              -f q="repo:$GH_REPO is:pr is:open $head_sha" \
+              | jq -c --arg sha "$head_sha" \
+                '[.data.search.nodes[] | select(.state == "OPEN" and .headRefOid == $sha) | .number]')
+            shared_sha_prs=$(jq -nc --argjson a "$commit_prs" --argjson b "$search_prs" '$a + $b | unique')
             if [ "$(echo "$shared_sha_prs" | jq 'length')" -gt 1 ]; then
               echo "Head commit $head_sha is the head of several open PRs ($shared_sha_prs) -" \
                    "not clearing the review-thread block, push a distinct commit."
