@@ -1,5 +1,6 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-random-detach
 -- no-parallel-replicas: the test checks EXPLAIN of plans with reading steps replaced by prepared sources.
+-- no-random-detach: after the table is reattached, the part kept with the old enum type is no longer pruned by statistics, so the `EXPLAIN` check differs.
 
 -- Column statistics of a part that stores a column with a type different from the current metadata
 -- stay usable when the conversion keeps the representation (an extended `Enum`), and are not used
