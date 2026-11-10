@@ -36,7 +36,7 @@ using RowDataStorePtr = std::shared_ptr<RowDataStore>;
 
 struct RowStoreFieldLayout
 {
-    DataTypePtr type;
+    DataTypePtr type = nullptr;
     size_t offset = 0;
     size_t size = 0;
     bool is_nullable = false;
