@@ -287,10 +287,37 @@ std::vector<uintptr_t> checkLoadedObjects()
         }
     }
 
+    auto display_name = [](const LoadedObject & object) { return object.path.empty() ? object.name : object.path; };
+
+    /// The dynamic loader resolves a dependency by its name to the first loaded object with this name,
+    /// so in a clean process every name is unique. An injected object can claim the name of a genuine dependency
+    /// (e.g., `ld.so --preload /lib/libm.so.6:/tmp/injected.so`, where `injected.so` has `DT_SONAME` `libm.so.6`),
+    /// and it would be accepted by the name-based closure above. Refuse to run if two loaded objects have the same name.
+    std::vector<std::string_view> duplicates;
+    for (size_t i = 0; i < objects.size(); ++i)
+    {
+        if (objects[i].is_main_executable || objects[i].name.empty())
+            continue;
+        for (size_t j = 0; j < objects.size(); ++j)
+        {
+            if (j != i && !objects[j].is_main_executable && objects[j].name == objects[i].name)
+            {
+                duplicates.push_back(display_name(objects[i]));
+                break;
+            }
+        }
+    }
+
+    if (!duplicates.empty())
+        printErrorAndExit(
+            "Several shared objects with the same name are loaded into the process: {}. "
+            "Some of them were possibly injected with `LD_PRELOAD` or `/etc/ld.so.preload`. {}",
+            fmt::join(duplicates, ", "), injected_objects_are_not_supported_message);
+
     std::vector<std::string_view> unexpected;
     for (size_t i = 0; i < objects.size(); ++i)
         if (!expected[i])
-            unexpected.push_back(objects[i].path.empty() ? objects[i].name : objects[i].path);
+            unexpected.push_back(display_name(objects[i]));
 
     if (!unexpected.empty())
         printErrorAndExit(
