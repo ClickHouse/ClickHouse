@@ -70,8 +70,11 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
 /// `Distributed` that reads tables not named in the query), in which case every entry may apply.
 /// `seed_names` are matchable from the start, so the filters keyed by them and the tables those filters
 /// read are part of the closure, e.g. the names of the view whose stored query `ast` is. `ast` can be null
-/// when only the closure of `seed_names` is needed.
-std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast, ContextPtr context, const NameSet * seed_names = nullptr);
+/// when only the closure of `seed_names` is needed. `additional_result_filter` of `context` is walked
+/// only with `include_additional_result_filter`: it is applied by a planner of the read, not by a storage
+/// that pushes its read into another one.
+std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(
+    ASTPtr ast, ContextPtr context, const NameSet * seed_names = nullptr, bool include_additional_result_filter = true);
 
 /// Returns the names an `additional_table_filters` key can match for the table `storage_id` read under
 /// `context`: the qualified name, and the bare table name only when the table is in the current database
@@ -79,10 +82,9 @@ std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast,
 NameSet getNamesMatchableByAdditionalTableFilters(const StorageID & storage_id, const ContextPtr & context);
 
 /// Hashes the dependencies of the `additional_table_filters` entries of `context` that apply when a storage
-/// is read under one of `seed_names` (and of the entries reachable through their subqueries), and of
-/// `additional_result_filter`, and stores the closure of matchable names in `matchable_names`. Used by
+/// is read under one of `seed_names` (and of the entries reachable through their subqueries), and stores the closure of matchable names in `matchable_names`. Used by
 /// a storage that reads no query of its own, e.g. a materialized view, whose read is pushed into its
-/// target. Returns nullopt when the dependencies cannot be enumerated or hashed.
+/// target. Such a read is not planned, so `additional_result_filter` of `context` never applies to it. Returns nullopt when the dependencies cannot be enumerated or hashed.
 std::optional<UInt128> computeAdditionalFiltersModificationHash(ContextPtr context, const NameSet & seed_names, NameSet & matchable_names);
 
 /// Computes the modification hash of a single table, folded together with the table identity (database,

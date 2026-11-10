@@ -66,7 +66,6 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
-    extern const SettingsString additional_result_filter;
     extern const SettingsMap additional_table_filters;
 }
 
@@ -1322,13 +1321,15 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         if (caller_checked_target)
         {
             const auto & effective_settings = effective_context->getSettingsRef();
-            if (!effective_settings[Setting::additional_result_filter].value.empty())
-                return {};
             for (const auto & entry : effective_settings[Setting::additional_table_filters].value)
                 if (additional_table_filters_matchable_names.contains(entry.safeGet<Tuple>().at(0).safeGet<String>()))
                     return {};
         }
-        updateHashWithRowAffectingSettings(hash, effective_context->getSettingsRef(), &additional_table_filters_matchable_names);
+        /// `additional_result_filter` is applied by the planner of the query reading this view, from its
+        /// own settings, never by this read, which has no planner: a change of the effective reader's
+        /// filter does not change a row, so it is left out (and is not walked by the filters hash above).
+        updateHashWithRowAffectingSettings(
+            hash, effective_context->getSettingsRef(), &additional_table_filters_matchable_names, /*include_additional_result_filter=*/ false);
         hash.update(*filters_hash);
         hash.update(*target_hash);
         return hash.get128();

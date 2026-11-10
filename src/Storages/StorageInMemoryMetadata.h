@@ -418,7 +418,13 @@ void updateHashWithQueryIgnoringOperationalSettings(
 /// `collectNamesMatchableByAdditionalTableFilters`), only the `additional_table_filters` entries whose
 /// key is in it are folded, as they are the only ones that can apply to the query; otherwise the
 /// whole map is. The folded entries keep their order: the first entry matching a table wins.
+/// Without `include_additional_result_filter`, `additional_result_filter` is left out: the caller reads
+/// without a planner of its own (a materialized view pushes its read into the target), so the filter
+/// of these settings is never applied.
 void updateHashWithRowAffectingSettings(
-    SipHash & hash, const Settings & settings, const NameSet * additional_table_filters_matchable_names = nullptr);
+    SipHash & hash,
+    const Settings & settings,
+    const NameSet * additional_table_filters_matchable_names = nullptr,
+    bool include_additional_result_filter = true);
 
 }

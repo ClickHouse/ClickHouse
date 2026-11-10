@@ -693,7 +693,11 @@ static bool collectFiltersFromQuerySettings(
 /// has to see them too. A filter can carry filters of its own in the `SETTINGS` clause of a subquery,
 /// so these are collected as well. Returns false when a filter cannot be parsed (the query itself will
 /// fail on it later with the same error) - the caller then fails closed.
-static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filter_asts, const NameSet * additional_table_filters_matchable_names = nullptr)
+static bool parseFilterASTsInjectedFromSettings(
+    ContextPtr context,
+    ASTs & filter_asts,
+    const NameSet * additional_table_filters_matchable_names = nullptr,
+    bool include_additional_result_filter = true)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -726,7 +730,7 @@ static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filte
         }
 
         const String & additional_result_filter = settings[Setting::additional_result_filter];
-        if (!additional_result_filter.empty() && !parse_filter(additional_result_filter))
+        if (include_additional_result_filter && !additional_result_filter.empty() && !parse_filter(additional_result_filter))
             return false;
     }
     catch (...)
@@ -910,7 +914,8 @@ static bool collectFiltersFromQuerySettings(
     return true;
 }
 
-std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast, ContextPtr context, const NameSet * seed_names)
+std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(
+    ASTPtr ast, ContextPtr context, const NameSet * seed_names, bool include_additional_result_filter)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -934,7 +939,8 @@ std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast,
     /// filter that applies can match an entry as well. Only the filters keyed by an already collected
     /// name (including the seed names, e.g. of a view whose own entry applies to the rows it returns, so
     /// the closure also covers the filters reachable only through that entry), and
-    /// `additional_result_filter`, which always applies, are walked, until the set stops growing: a filter
+    /// `additional_result_filter`, which always applies (unless the caller says it is not applied to the
+    /// read, see `include_additional_result_filter`), are walked, until the set stops growing: a filter
     /// of an unrelated table never runs, so the tables it reads cannot match anything.
     static constexpr size_t max_iterations = 32;
     for (size_t iteration = 0;; ++iteration)
@@ -943,7 +949,7 @@ std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast,
             return {};
 
         ASTs filters;
-        if (!parseFilterASTsInjectedFromSettings(context, filters, &names))
+        if (!parseFilterASTsInjectedFromSettings(context, filters, &names, include_additional_result_filter))
             return {};
         if (ast && !collectFiltersFromQuerySettings(*ast, settings, filters, &names))
             return {};
@@ -979,12 +985,15 @@ static std::optional<std::vector<UInt128>> computeFiltersModificationHashes(cons
 
 std::optional<UInt128> computeAdditionalFiltersModificationHash(ContextPtr context, const NameSet & seed_names, NameSet & matchable_names)
 {
-    auto names = collectNamesMatchableByAdditionalTableFilters(nullptr, context, &seed_names);
+    /// The storage that calls this pushes its read straight into another storage, without a planner of
+    /// its own, so `additional_result_filter` of `context` is never applied to that read (the planner
+    /// of the reading query applies the filter of its own settings, and hashes it itself).
+    auto names = collectNamesMatchableByAdditionalTableFilters(nullptr, context, &seed_names, /*include_additional_result_filter=*/ false);
     if (!names)
         return {};
 
     ASTs filter_asts;
-    if (!parseFilterASTsInjectedFromSettings(context, filter_asts, &*names))
+    if (!parseFilterASTsInjectedFromSettings(context, filter_asts, &*names, /*include_additional_result_filter=*/ false))
         return {};
 
     auto filter_hashes = computeFiltersModificationHashes(filter_asts, context);

@@ -1285,7 +1285,8 @@ bool settingCanAffectQueryRows(std::string_view setting_name)
     return true;
 }
 
-void updateHashWithRowAffectingSettings(SipHash & hash, const Settings & settings, const NameSet * additional_table_filters_matchable_names)
+void updateHashWithRowAffectingSettings(
+    SipHash & hash, const Settings & settings, const NameSet * additional_table_filters_matchable_names, bool include_additional_result_filter)
 {
     /// `changedToFlatMap` returns the changed settings in declaration order, which shifts whenever a
     /// setting is added in the middle of `Settings.cpp`. A refresh watermark outlives an upgrade, so
@@ -1303,6 +1304,9 @@ void updateHashWithRowAffectingSettings(SipHash & hash, const Settings & setting
     changed.forEach([&](std::string_view name, std::string_view value)
     {
         if (!settingCanAffectQueryRows(name))
+            return;
+
+        if (!include_additional_result_filter && name == "additional_result_filter")
             return;
 
         /// An `additional_table_filters` entry only takes effect on a table whose name or alias matches
