@@ -2,8 +2,9 @@
 //! links it with the static library this package builds, and runs it. Skipped
 //! (loudly) when no C compiler is available, unless AVRO_REQUIRE_FIXTURES is set.
 
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// `env` (`CC` or `CXX`) names the compiler when it is set, as it does for the `cc` crate: the CI
 /// image has only the versioned `clang-N`, which none of the default names find.
@@ -23,27 +24,37 @@ fn find_compiler(env: &str, names: &[&str]) -> Option<String> {
     None
 }
 
-/// Builds the static library with the same cargo, profile and target directory as this test and
-/// returns its path. (`cargo test` itself only builds the rlib.)
+/// Use cargo's reported artifact filename: the build directory that the test runs in may differ
+/// from the selected target directory (CMake below `build/.../out/`, cargo elsewhere).
 fn static_lib() -> Option<PathBuf> {
-    // target/<profile>/deps/<test exe>
-    let exe = std::env::current_exe().ok()?;
-    let profile_dir = exe.parent()?.parent()?;
-    let target_dir = profile_dir.parent()?;
     let mut cmd = Command::new(std::env::var_os("CARGO")?);
-    cmd.args(["build", "--lib", "--offline", "--manifest-path"])
-        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
-        .arg("--target-dir")
-        .arg(target_dir);
-    if profile_dir.file_name()? == "release" {
+    cmd.args(["build", "--lib", "--offline", "--message-format=json", "--manifest-path"])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"));
+    if !cfg!(debug_assertions) {
         cmd.arg("--release");
     }
-    assert!(
-        cmd.status().ok()?.success(),
-        "building the static library failed"
-    );
-    let lib = profile_dir.join("lib_ch_rust_avro.a");
-    lib.exists().then_some(lib)
+    cmd.stdout(Stdio::piped()).stderr(Stdio::inherit());
+    let mut child = cmd.spawn().ok()?;
+    let stdout = BufReader::new(child.stdout.take()?);
+    let mut library = None;
+    for line in stdout.lines().map_while(Result::ok) {
+        let Some(filenames) = line
+            .split(r#""reason":"compiler-artifact""#)
+            .nth(1)
+            .and_then(|line| line.split(r#""filenames":["#).nth(1))
+            .and_then(|line| line.split(']').next())
+        else {
+            continue;
+        };
+        library = filenames
+            .split(',')
+            .map(|name| PathBuf::from(name.trim_matches('"')))
+            .find(|path| path.file_name().is_some_and(|name| name == "lib_ch_rust_avro.a"));
+    }
+    let status = child.wait().ok()?;
+    assert!(status.success(), "building the static library failed");
+    let library = library?;
+    library.exists().then_some(library)
 }
 
 #[test]
