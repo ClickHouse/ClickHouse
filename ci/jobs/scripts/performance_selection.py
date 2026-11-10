@@ -70,7 +70,10 @@ def full_suite_reason(info, build_type):
         return "Not a pull request"
     if "ci-force-all" in info.pr_labels:
         return "Requested by ci-force-all"
-    if build_type == "arm_release" and "pr-performance" in info.pr_labels:
+    # Labels and automatic full-suite requests use ARM; AMD keeps query coverage selection.
+    if build_type != "arm_release":
+        return ""
+    if "pr-performance" in info.pr_labels:
         return "Requested by pr-performance"
     # Missing inputs fail in `select`, not in the pre-hook that starts the whole workflow.
     changed = [f.removeprefix("./") for f in info.get_changed_files() or []]
@@ -78,11 +81,20 @@ def full_suite_reason(info, build_type):
         _has_submodule_changes(changed)
         or _has_uncounted_build_changes(changed)
         or _has_arch_sensitive_changes(changed)
-        or any(f.startswith(BUILD_PATHS) or f.endswith((".cmake", "CMakeLists.txt")) for f in changed)
+        or any(
+            f.startswith(BUILD_PATHS) or f.endswith((".cmake", "CMakeLists.txt"))
+            for f in changed
+        )
     ):
-        return "Build change: submodules, build files and compiler images have no coverage"
+        return (
+            "Build change: submodules, build files and compiler images have no coverage"
+        )
     if any(f.startswith(HARNESS_PATHS) for f in changed):
         return "Performance harness, fixtures or server configuration changed"
+    # Settings can keep the same default expression while a constant it uses changes.
+    # These definitions have no executable coverage regions of their own.
+    if "src/Core/Defines.h" in changed:
+        return "Setting default definitions changed"
     # `src/Core/Settings.cpp` is excluded from coverage: every test reads settings.
     settings = info.get_kv_data("settings_declaration_changes") or {"declarations": []}
     if any(d["default_changed"] for d in settings["declarations"]):
@@ -483,7 +495,9 @@ class PerformanceSelection(Targeting):
         if self.info.get_changed_files() is None or self.info.get_kv_data(
             "settings_history_fetch_error"
         ):
-            raise RuntimeError("Changed files or setting default changes are unavailable")
+            raise RuntimeError(
+                "Changed files or setting default changes are unavailable"
+            )
         snapshots, covered_tests, binary_sha = self.snapshot()
         metadata = self._github_get(f"pulls/{self.pr_number}").json()
         if metadata["head"]["sha"] != self.info.sha:

@@ -1100,7 +1100,11 @@ def should_skip_job(job_name):
         and "amd" in job_name
         and _info_cache.pr_number  # run all performance jobs on master
     ):
-        return True, "Skipped, not labeled with 'pr-performance'"
+        from ci.jobs.scripts.performance_selection import full_suite_reason
+
+        # Automatic full ARM runs enable selected AMD runs, just like pr-performance.
+        if not full_suite_reason(_info_cache, "arm_release"):
+            return True, "Skipped, not labeled with 'pr-performance'"
 
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
