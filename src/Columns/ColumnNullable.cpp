@@ -1068,14 +1068,14 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
+void ColumnNullable::fillFromRowStorePtrs(const RowStorePointers & row_store_ptrs, const RowStoreFieldLayout & field, size_t begin, size_t count, PaddedPODArray<UInt8> *)
 {
-    getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
+    getNestedColumn().fillFromRowStorePtrs(row_store_ptrs, field, begin, count, &getNullMapData());
 }
 
-void ColumnNullable::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 *) const
+void ColumnNullable::gatherRangeIntoRows(char * rows, size_t row_length, const RowStoreFieldLayout & field, size_t start, size_t count, char *& overflow_cursor, const UInt8 *) const
 {
-    getNestedColumn().gatherRangeIntoRows(rows, row_length, field_offset, start, count, overflow_cursor, getNullMapData().data());
+    getNestedColumn().gatherRangeIntoRows(rows, row_length, field, start, count, overflow_cursor, getNullMapData().data());
 }
 
 void ColumnNullable::gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 *) const

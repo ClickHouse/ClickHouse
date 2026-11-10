@@ -3,6 +3,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/IColumnImpl.h>
 #include <Core/Field.h>
+#include <Interpreters/RowDataStore.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -886,6 +887,33 @@ void ColumnTuple::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallb
         callback(*column);
         column->forEachMutableSubcolumnRecursively(callback);
     }
+}
+
+void ColumnTuple::fillFromRowStorePtrs(const RowStorePointers & row_store_ptrs, const RowStoreFieldLayout & field, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
+{
+    /// The null byte comes first in the field and the elements follow it.
+    if (null_map)
+    {
+        const size_t old_size = null_map->size();
+        null_map->resize(old_size + count);
+        UInt8 * out = null_map->data() + old_size;
+        for (size_t i = 0; i < count; ++i)
+        {
+            const char * row_store_ptr = row_store_ptrs.base_ptr ? row_store_ptrs.base_ptr + (begin + i) * row_store_ptrs.row_length : row_store_ptrs.ptrs[begin + i];
+            out[i] = static_cast<UInt8>(row_store_ptr[field.offset]);
+        }
+    }
+    for (size_t i = 0; i < columns.size(); ++i)
+        columns[i]->fillFromRowStorePtrs(row_store_ptrs, field.elements[i], begin, count);
+}
+
+void ColumnTuple::gatherRangeIntoRows(char * rows, size_t row_length, const RowStoreFieldLayout & field, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const
+{
+    if (null_map)
+        for (size_t row = 0; row < count; ++row)
+            rows[row * row_length + field.offset] = static_cast<char>(null_map[start + row]);
+    for (size_t i = 0; i < columns.size(); ++i)
+        columns[i]->gatherRangeIntoRows(rows, row_length, field.elements[i], start, count, overflow_cursor, /*null_map=*/ nullptr);
 }
 
 void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const

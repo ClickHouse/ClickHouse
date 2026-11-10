@@ -223,8 +223,8 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
-    void gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const override;
+    void fillFromRowStorePtrs(const RowStorePointers & row_store_ptrs, const RowStoreFieldLayout & field, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
+    void gatherRangeIntoRows(char * rows, size_t row_length, const RowStoreFieldLayout & field, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const override;
 
     size_t rowStoreOverflowBytes(size_t start, size_t count) const override;
 

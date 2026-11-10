@@ -12,24 +12,35 @@
 
     <create_query>CREATE TABLE rst_right_10m (k UInt64, a Tuple(Int32, Int64, Float64), b Tuple(UInt32, Int16, UInt8)) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE rst_right_nullable_10m (k UInt64, a Nullable(Tuple(Int32, Int64, Float64)), b Nullable(Tuple(UInt32, Int16, UInt8))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rst_right_nullable_elements_10m (k UInt64, a Tuple(Nullable(Int32), Nullable(Int64), Nullable(Float64)), b Tuple(Nullable(UInt32), Nullable(Int16), Nullable(UInt8))) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <!-- 10 matches per key -->
     <create_query>CREATE TABLE rst_right_1m_x10 (k UInt64, a Tuple(Int32, Int64, Float64), b Tuple(UInt32, Int16, UInt8)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <!-- One wide tuple: 10 elements, some of them nullable -->
+    <create_query>CREATE TABLE rst_right_wide_10m (k UInt64, w Nullable(Tuple(Nullable(Int64), Int64, Nullable(Int32), Int32, Float64, Nullable(Float32), UInt16, Nullable(UInt8), Int64, Float64))) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <create_query>CREATE TABLE rst_probe_100m (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <fill_query>INSERT INTO rst_right_10m SELECT number, (number, number, number), (number, number, number) FROM numbers(10000000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO rst_right_nullable_10m SELECT number, if(number % 7 = 0, NULL, (number, number, number)), if(number % 5 = 0, NULL, (number, number, number)) FROM numbers(10000000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO rst_right_nullable_elements_10m SELECT number, (if(number % 7 = 0, NULL, number), if(number % 11 = 0, NULL, number), if(number % 3 = 0, NULL, number)), (if(number % 13 = 0, NULL, number), if(number % 5 = 0, NULL, number), if(number % 2 = 0, NULL, number)) FROM numbers(10000000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO rst_right_1m_x10 SELECT number % 1000000, (number, number, number), (number, number, number) FROM numbers(10000000) ORDER BY rand()</fill_query>
+
+    <fill_query>INSERT INTO rst_right_wide_10m SELECT number, if(number % 11 = 0, NULL, (if(number % 7 = 0, NULL, number), number, if(number % 3 = 0, NULL, number), number, number, if(number % 5 = 0, NULL, number), number, if(number % 2 = 0, NULL, number), number, number)) FROM numbers(10000000) ORDER BY rand()</fill_query>
 
     <fill_query>INSERT INTO rst_probe_100m SELECT rand64() FROM numbers(100000000)</fill_query>
 
     <query>SELECT * FROM rst_probe_100m l JOIN rst_right_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
     <query>SELECT * FROM rst_probe_100m l JOIN rst_right_nullable_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rst_probe_100m l JOIN rst_right_nullable_elements_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rst_probe_100m l JOIN rst_right_wide_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
     <query>SELECT * FROM (SELECT * FROM rst_probe_100m LIMIT 20000000) l JOIN rst_right_1m_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS rst_probe_100m</drop_query>
     <drop_query>DROP TABLE IF EXISTS rst_right_10m</drop_query>
     <drop_query>DROP TABLE IF EXISTS rst_right_nullable_10m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rst_right_nullable_elements_10m</drop_query>
     <drop_query>DROP TABLE IF EXISTS rst_right_1m_x10</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rst_right_wide_10m</drop_query>
 </test>

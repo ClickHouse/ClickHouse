@@ -12,6 +12,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/RowDataStore.h>
 #include <base/PackedStringRef.h>
 #include <base/unaligned.h>
 
@@ -409,8 +410,9 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     offsets.push_back(new_size);
 }
 
-void ColumnString::fillFromRowStorePtrs(const DataTypePtr &, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
+void ColumnString::fillFromRowStorePtrs(const RowStorePointers & row_store_ptrs, const RowStoreFieldLayout & field, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
 {
+    const size_t field_offset = field.offset;
     auto row_at = [&](size_t i)
     {
         return row_store_ptrs.base_ptr ? row_store_ptrs.base_ptr + (begin + i) * row_store_ptrs.row_length : row_store_ptrs.ptrs[begin + i];
@@ -449,12 +451,12 @@ void ColumnString::fillFromRowStorePtrs(const DataTypePtr &, const RowStorePoint
         out_chars = unalignedLoad<UnhashedPackedStringRef>(row_at(i) + offset).copyTo(out_chars);
 }
 
-void ColumnString::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const
+void ColumnString::gatherRangeIntoRows(char * rows, size_t row_length, const RowStoreFieldLayout & field, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const
 {
     const auto gather = [&]<bool has_null_map>
     {
         /// The ref of a value is written right after its null byte.
-        const size_t ref_offset = field_offset + has_null_map;
+        const size_t ref_offset = field.offset + has_null_map;
         const char * src_chars = reinterpret_cast<const char *>(chars.data());
         constexpr size_t chunk_rows = 256;
         UInt32 long_rows[chunk_rows];
@@ -464,7 +466,7 @@ void ColumnString::gatherRangeIntoRows(char * rows, size_t row_length, size_t fi
             size_t num_long = 0;
             for (size_t row = chunk_begin; row < chunk_end; ++row)
             {
-                char * dst = rows + row * row_length + field_offset;
+                char * dst = rows + row * row_length + field.offset;
                 const size_t source_row = start + row;
                 if constexpr (has_null_map)
                     *dst = static_cast<char>(null_map[source_row]);

@@ -38,58 +38,12 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename ColumnsContainer>
-void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, const ColumnsContainer & columns, size_t start, size_t length, char * dst, char *& overflow_cursor)
+void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, const Columns & columns, size_t start, size_t length, char * dst, char *& overflow_cursor)
 {
     for (size_t i = 0; i < layout.size(); ++i)
-    {
-        const auto & field_layout = layout[i];
-        if (field_layout.elements.empty())
-        {
-            columns[i]->gatherRangeIntoRows(dst, row_length, field_layout.offset, start, length, overflow_cursor, /*null_map=*/ nullptr);
-            continue;
-        }
-
-        const IColumn * tuple_column = columns[i].get();
-        if (field_layout.is_nullable)
-        {
-            const auto & nullable_column = assert_cast<const ColumnNullable &>(*tuple_column);
-            nullable_column.getNullMapColumn().gatherRangeIntoRows(
-                dst, row_length, field_layout.offset, start, length, overflow_cursor, /*null_map=*/ nullptr);
-            tuple_column = &nullable_column.getNestedColumn();
-        }
-        const auto & elements = assert_cast<const ColumnTuple &>(*tuple_column).getColumns();
-        doGatherRows(field_layout.elements, row_length, elements, start, length, dst, overflow_cursor);
-    }
+        columns[i]->gatherRangeIntoRows(dst, row_length, layout[i], start, length, overflow_cursor, /*null_map=*/ nullptr);
 }
 
-
-void fillFieldFromRowStorePtrs(IColumn & column, const RowDataStore::FieldLayout & field, const RowStorePointers & row_store_ptrs, size_t begin, size_t count)
-{
-    if (field.elements.empty())
-    {
-        column.fillFromRowStorePtrs(field.type, row_store_ptrs, field.offset, field.size, begin, count);
-        return;
-    }
-
-    IColumn * tuple_column = &column;
-    if (field.is_nullable)
-    {
-        auto & nullable_column = assert_cast<ColumnNullable &>(column);
-        auto & null_map = nullable_column.getNullMapData();
-        null_map.reserve(null_map.size() + count);
-        for (size_t row = begin; row < begin + count; ++row)
-        {
-            const char * row_store_ptr = row_store_ptrs.base_ptr ? row_store_ptrs.base_ptr + row * row_store_ptrs.row_length : row_store_ptrs.ptrs[row];
-            null_map.push_back(static_cast<UInt8>(row_store_ptr ? row_store_ptr[field.offset] : 1));
-        }
-        tuple_column = &nullable_column.getNestedColumn();
-    }
-
-    auto & tuple = assert_cast<ColumnTuple &>(*tuple_column);
-    for (size_t i = 0; i < field.elements.size(); ++i)
-        fillFieldFromRowStorePtrs(tuple.getColumn(i), field.elements[i], row_store_ptrs, begin, count);
-}
 
 MutableColumns doScatterRows(const RowDataStore::RowLayout & layout, std::optional<size_t> batch_size_opt, const RowStorePointers & row_store_ptrs, size_t count)
 {
@@ -108,7 +62,7 @@ MutableColumns doScatterRows(const RowDataStore::RowLayout & layout, std::option
     {
         const size_t remaining_batch_size = std::min(batch_size, count - batch_start);
         for (size_t i = 0; i < layout.size(); ++i)
-            fillFieldFromRowStorePtrs(*columns[i], layout[i], row_store_ptrs, batch_start, remaining_batch_size);
+            columns[i]->fillFromRowStorePtrs(row_store_ptrs, layout[i], batch_start, remaining_batch_size);
     }
     return columns;
 }

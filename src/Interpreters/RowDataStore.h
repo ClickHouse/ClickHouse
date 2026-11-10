@@ -34,18 +34,20 @@ class Block;
 class TableJoin;
 using RowDataStorePtr = std::shared_ptr<RowDataStore>;
 
+struct RowStoreFieldLayout
+{
+    DataTypePtr type;
+    size_t offset = 0;
+    size_t size = 0;
+    bool is_nullable = false;
+    bool is_string = false;
+    std::vector<RowStoreFieldLayout> elements = {};
+};
+
 class RowDataStore
 {
 public:
-    struct FieldLayout
-    {
-        DataTypePtr type;
-        size_t offset;
-        size_t size;
-        bool is_nullable;
-        bool is_string = false;
-        std::vector<FieldLayout> elements;
-    };
+    using FieldLayout = RowStoreFieldLayout;
 
     struct FieldPlanes
     {

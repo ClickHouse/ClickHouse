@@ -132,6 +132,9 @@ public:
     void forEachMutableSubcolumn(MutableColumnCallback callback) override;
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     ColumnPlanes getPlanes() const override;
+    void fillFromRowStorePtrs(const RowStorePointers & row_store_ptrs, const RowStoreFieldLayout & field, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
+    void gatherRangeIntoRows(char * rows, size_t row_length, const RowStoreFieldLayout & field, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const override;
+
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     bool structureEquals(const IColumn & rhs) const override;
