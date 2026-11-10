@@ -2055,7 +2055,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
     return {schema, current_schema_id};
 }
 
-KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
+KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description)
 {
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
@@ -2084,6 +2084,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     }
 
     String order_by_str;
+    std::vector<int> nulls_directions;
 
     for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
     {
@@ -2095,6 +2096,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             return KeyDescription{};
         const auto & column_name = column->second;
         int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+        nulls_directions.push_back(field->optValue<String>(f_null_order, "") == "nulls-first" ? -direction : direction);
         auto iceberg_transform_name = field->getValue<String>(f_transform);
         std::optional<TransformAndArgument> clickhouse_transform_name;
         try
@@ -2135,7 +2137,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             order_by_str += fmt::format("{} DESC,", full_argument);
     }
     order_by_str.pop_back();
-    return KeyDescription::parse(order_by_str, ColumnsDescription(ch_schema), {}, local_context, true);
+    auto key = KeyDescription::parse(order_by_str, ColumnsDescription(ch_schema), {}, local_context, true);
+    if (sort_description)
+        for (size_t i = 0; i < key.column_names.size(); ++i)
+            sort_description->emplace_back(key.column_names[i], key.reverse_flags.empty() || !key.reverse_flags[i] ? 1 : -1, nulls_directions[i]);
+    return key;
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)
@@ -2145,7 +2151,7 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
     return std::make_shared<DataTypeInt32>();
 }
 
-void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context)
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, const SortDescription & result_sort_description, ContextPtr context)
 {
     std::vector<String> initial_column_names;
     std::unordered_set<String> initial_column_names_set;
@@ -2173,14 +2179,6 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
             reordered_columns.push_back(column);
 
     block = Block(reordered_columns);
-    SortDescription result_sort_description;
-    for (size_t i = 0; i < sort_description.column_names.size(); ++i)
-    {
-        if (sort_description.reverse_flags.empty() || !sort_description.reverse_flags[i])
-            result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i]));
-        else
-            result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i], -1));
-    }
     sortBlock(block, result_sort_description);
 }
 

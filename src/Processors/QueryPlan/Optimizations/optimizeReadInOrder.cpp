@@ -1523,6 +1523,9 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         if (order_info.input_order)
         {
+            /// The files are read only in the order of the sorting key, not in reverse.
+            if (order_info.input_order->direction != 1)
+                return nullptr;
             bool can_read = object_storage_step->requestReadingInOrder();
             if (!can_read)
                 return nullptr;

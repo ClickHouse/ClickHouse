@@ -194,8 +194,14 @@ private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
-    std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
-    std::unordered_map<String, size_t> column_name_to_column_index;
+    /// The sorted chunks of a partition's next data file, merged when it is written.
+    struct PendingFile
+    {
+        Chunks sorted_chunks;
+        size_t rows = 0;
+        size_t bytes = 0;
+    };
+    std::unordered_map<ChunkPartitioner::PartitionKey, PendingFile, ChunkPartitioner::PartitionKeyHasher> pending_file_per_partition_key;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
     Int64 current_schema_id;
@@ -203,9 +209,17 @@ private:
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
     KeyDescription sort_description;
+    /// The order data is sorted in, NULLs placed as the table's sort order says.
+    SortDescription sort_order_description;
+    /// The sample block with the key columns `sortBlockByKeyDescription` appends.
+    SharedHeader header_with_sort_columns;
+    /// Set iff the data files are written sorted; recorded in their manifest entries.
+    std::optional<Int32> data_file_sort_order_id;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
 
+    MultipleFileWriter & getWriter(const ChunkPartitioner::PartitionKey & partition_key);
+    void writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, PendingFile & pending_file);
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
