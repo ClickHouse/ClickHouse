@@ -938,13 +938,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// values of the surviving rows and their relative order within one part are preserved.
     /// Excluded: modes that synthesize rows (Summing, Aggregating, etc.), patch parts (rewrite values),
     /// GROUP BY TTL (aggregates rows) and column TTL (rewrites expired values).
-    /// Also excluded: tables with a column named `_part_offset` or `_part_index`, which shadows the virtual column the mapping reads.
+    /// Also excluded: a column named `_part_offset` or `_part_index` in the table or stored in a source part, which shadows the virtual column the mapping reads.
     const auto merging_mode = global_ctx->merging_params.mode;
     bool merging_mode_only_drops_rows =
         merging_mode == MergeTreeData::MergingParams::Ordinary ||
         merging_mode == MergeTreeData::MergingParams::Replacing ||
         merging_mode == MergeTreeData::MergingParams::Collapsing ||
         merging_mode == MergeTreeData::MergingParams::VersionedCollapsing;
+
+    auto has_shadowing_column = [](const ColumnsDescription & columns)
+    {
+        return columns.has("_part_offset") || columns.has("_part_index");
+    };
 
     global_ctx->merge_only_drops_rows =
         global_ctx->merge_may_reduce_rows
@@ -953,8 +958,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && patch_parts.empty()
         && (!ctx->need_remove_expired_values
             || (!global_ctx->metadata_snapshot->hasAnyGroupByTTL() && !global_ctx->metadata_snapshot->hasAnyColumnTTL()))
-        && !global_ctx->metadata_snapshot->getColumns().has("_part_offset")
-        && !global_ctx->metadata_snapshot->getColumns().has("_part_index");
+        && !has_shadowing_column(global_ctx->metadata_snapshot->getColumns())
+        && std::ranges::none_of(global_ctx->future_part->parts, [&](const auto & part) { return has_shadowing_column(part->getColumnsDescription()); });
 
     /// If every source part of a TTLDrop merge has a calculated rows TTL that has expired, all rows are dropped.
     /// Skip creating the read pipeline to avoid opening source parts
