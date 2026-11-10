@@ -88,12 +88,6 @@ TARGETS = {
 }
 
 
-def ensure_qemu(qemu):
-    if shutil.which(qemu):
-        return
-    subprocess.run("apt-get update -qq && apt-get install -y -qq qemu-user-static", shell=True, check=True)
-
-
 def overlay_sysroot(sysroot, links, empty_files, work):
     """A sysroot made of symlinks to `sysroot`, plus `links` and `empty_files`, for QEMU's -L; the real one is left untouched."""
     if not links and not empty_files:
@@ -241,10 +235,8 @@ def check(build_dir, repo_dir, work_dir, build_type, starts=STARTS):
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     sysroot = overlay_sysroot(str(repo / target.sysroot), target.links, target.empty_files, work)
-    try:
-        ensure_qemu(target.qemu)
-    except (subprocess.CalledProcessError, OSError) as e:
-        return Result(name=NAME, status=Result.Status.ERROR, info=f"Failed to install QEMU: {e}")
+    if not shutil.which(target.qemu):
+        return Result(name=NAME, status=Result.Status.ERROR, info=f"{target.qemu} is not installed in the builder image")
 
     results = []
     config_file = write_config(repo / "programs" / "server", work)

@@ -34,6 +34,7 @@ RUN apt-get update \
         yasm \
         zstd \
         zip \
+        qemu-user-static \
         clang-tidy-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         bolt-${LLVM_VERSION} \
