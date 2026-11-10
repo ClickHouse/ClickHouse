@@ -1439,6 +1439,16 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         metadata_disk_list.insert(std::move(db_disk));
     }
 
+    /// Startup may already have dropped tables, e.g. `SystemLog::prepareUnionTable` replaces union tables.
+    /// They are queued with their storage and their UUID mapping is still registered, so only drops of previous runs are loaded here.
+    auto is_drop_queued = [this](const DiskPtr & disk, const String & metadata_path)
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        return std::ranges::any_of(tables_marked_dropped, [&](const TableMarkedAsDropped & dropped)
+        {
+            return dropped.metadata_path == metadata_path && dropped.db_disk->getName() == disk->getName();
+        });
+    };
 
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
@@ -1479,6 +1489,12 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
             dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
             String full_path = path + sub_path_filename;
+            if (is_drop_queued(db_disk, full_path))
+            {
+                LOG_DEBUG(log, "Table {} was dropped during this startup and is already queued for removal", dropped_id.getNameForLogs());
+                continue;
+            }
+
             dropped_metadata.emplace(std::move(full_path), std::pair{std::move(dropped_id), db_disk});
         }
     }
@@ -1648,6 +1664,11 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
+        /// A lookup by `UUID` ignores the database name, so the table may have been dropped from another database.
+        if (it_dropped_table->table_id.database_name != table_id.database_name)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                "Table {} was dropped from database {}, UNDROP into a different database is not supported",
+                table_id.getNameForLogs(), backQuoteIfNeed(it_dropped_table->table_id.database_name));
         /// Check the limit before moving the metadata file: a table that cannot be attached must
         /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
         if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))

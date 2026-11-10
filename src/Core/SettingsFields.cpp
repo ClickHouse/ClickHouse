@@ -1,4 +1,5 @@
 #include <Core/ProtocolDefines.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/SettingsFields.h>

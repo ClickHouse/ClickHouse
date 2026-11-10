@@ -139,7 +139,7 @@ struct AggregateFunctionSumData
     template <typename Value>
     void NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(ptr, start, end);
@@ -238,7 +238,7 @@ struct AggregateFunctionSumData
     template <typename Value, bool add_if_zero>
     void NO_INLINE addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalInternalImpl_x86_64_v4<Value, add_if_zero>(ptr, condition_map, start, end);
@@ -608,6 +608,14 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).read(buf);
+    }
+
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 /*count*/) const override
+    {
+        if constexpr (is_decimal<TResult>)
+            this->data(place).add(sum.safeGet<DecimalField<TResult>>().getValue());
+        else
+            this->data(place).add(static_cast<TResult>(sum.safeGet<NearestFieldType<TResult>>()));
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

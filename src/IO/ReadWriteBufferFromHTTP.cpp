@@ -730,7 +730,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
                 }
                 else
                 {
-                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+                    setWorkingBuffer(impl->buffer(), impl->offset());
                 }
             }
 
@@ -745,7 +745,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
 
             next_result = impl->next();
 
-            BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+            setWorkingBuffer(impl->buffer(), impl->offset());
 
             offset_from_begin_pos += working_buffer.size();
 

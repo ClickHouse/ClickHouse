@@ -18,6 +18,7 @@ class SettingsChanges;
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, DatabaseDataLakeCatalogType) \
+    M(CLASS_NAME, DatabaseDataLakeSnapshotLoadingMode) \
     M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SecretString) \
 
@@ -29,6 +30,7 @@ class SettingsChanges;
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DatabaseDataLakeCatalogType) \
+    M(CLASS_NAME, DatabaseDataLakeSnapshotLoadingMode) \
     M(CLASS_NAME, DateTimeInputFormat) \
     M(CLASS_NAME, DateTimeOutputFormat) \
     M(CLASS_NAME, DateTimeOverflowBehavior) \

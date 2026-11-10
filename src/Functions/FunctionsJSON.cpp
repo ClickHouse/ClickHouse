@@ -41,6 +41,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include "config.h"
 
@@ -52,6 +53,7 @@ namespace Setting
     extern const SettingsBool allow_simdjson;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
     extern const SettingsBool json_extract_named_tuples_as_objects;
+    extern const SettingsBool json_extract_use_cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -242,6 +244,9 @@ public:
                         "Function {} with JSON type input supports only constant string path arguments",
                         String(TName::name));
                 }
+
+                if (format_settings.json.json_type_escape_dots_in_keys)
+                    key = escapeDotInJSONKey(key);
 
                 if (!path.empty())
                     path += '.';
@@ -781,7 +786,9 @@ public:
     {
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
         /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
-        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+        /// Before 26.8 it followed `date_time_input_format`, which `compatibility` restores.
+        if (context->getSettingsRef()[Setting::json_extract_use_cast_string_to_date_time_mode])
+            format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
 
         /// Not a format setting: it governs these functions, so it is applied here rather than in
         /// `getFormatSettings`, which would also reach the `JSON` data type.
