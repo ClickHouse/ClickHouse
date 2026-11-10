@@ -7,22 +7,22 @@
 
 SET allow_introspection_functions = 0;
 
--- {CLICKHOUSE_DATABASE_2} is shared by every test in the client, hence the DROP.
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier}
+-- {CLICKHOUSE_DATABASE_1} may be left over from a previous run, hence the DROP.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
 ENGINE = Replicated('/clickhouse/02346_text_index_transform_access/{database}', 'shard1', 'replica1') FORMAT Null;
 
-CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab (id UInt64, val String)
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tab (id UInt64, val String)
 ENGINE = MergeTree ORDER BY id FORMAT Null;
 
 SELECT '1. ALTER ADD INDEX is denied.';
 
-ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tab
     ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
 
 SELECT '2. CREATE TABLE is denied.';
 
-CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab_denied
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tab_denied
 (
     id UInt64,
     val String,
@@ -34,7 +34,7 @@ SELECT '3. Accepted with the privilege.';
 
 SET allow_introspection_functions = 1;
 
-ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tab
     ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1 FORMAT Null;
 
-DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier} FORMAT Null;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} FORMAT Null;
