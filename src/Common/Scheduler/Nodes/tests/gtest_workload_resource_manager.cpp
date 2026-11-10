@@ -1408,7 +1408,7 @@ struct TestQuery {
         threads.resize(max_threads);
         metrics.resize(max_threads);
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, max_threads);
-        master_thread = t.async(workload, t.storage.getWorkerThreadResourceName(),
+        master_thread = t.async(workload, t.storage.getCPUResourceName(),
             [&, type, workload] (ResourceLink link)
             {
                 setThreadName(ThreadName::TEST_SCHEDULER);
@@ -1448,7 +1448,7 @@ TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
     // query must finish cleanly.
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 4");
 
     auto q = std::make_shared<TestQuery>(t);
@@ -1471,7 +1471,7 @@ TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
 TEST(SchedulerWorkloadResourceManager, CPULeaseWaitTimerOutlivesCreatingThread)
 {
     ResourceTest t;
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 1");
     ClassifierPtr c = t.manager->acquire("all");
     ResourceLink link = c->get("cpu");
@@ -1505,7 +1505,7 @@ TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     // Only max_cpu_share is set, max_cpus is unset
     t.query("CREATE WORKLOAD all SETTINGS max_cpu_share = 0.5");
     ClassifierPtr c = t.manager->acquire("all");
@@ -1555,7 +1555,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingPreemption)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all");
@@ -1588,7 +1588,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingFairness)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all");
@@ -1615,7 +1615,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingFairnessIsQuantumI
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all");
@@ -1642,7 +1642,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingFairnessIsQueryNum
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all");
@@ -1695,7 +1695,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingWeights)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all SETTINGS weight = 3");
@@ -1722,7 +1722,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingMaxMinFairness)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 10");
     t.query("CREATE WORKLOAD A IN all SETTINGS weight = 6");
     t.query("CREATE WORKLOAD B IN all");
@@ -1762,7 +1762,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingDownscaling)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all");
@@ -1799,7 +1799,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingUpscaling)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all");
@@ -1839,7 +1839,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingHalfCore
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8, max_cpus = 0.5, max_burst_cpu_seconds = 0.05");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all");
@@ -1873,7 +1873,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingTwoCore)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8, max_cpus = 2, max_burst_cpu_seconds = 0.2");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all");
@@ -1907,7 +1907,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingAndFairn
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 8");
     t.query("CREATE WORKLOAD A IN all SETTINGS max_cpus = 2");
     t.query("CREATE WORKLOAD B IN all");
@@ -2442,7 +2442,7 @@ TEST(SchedulerWorkloadResourceManager, ShadowingByRole)
     t.query("CREATE RESOURCE sql_cpu (MASTER THREAD, WORKER THREAD)");
 
     size_t count = transactions.size();
-    t.loadConfig("CREATE RESOURCE cfg_cpu (MASTER THREAD)");
+    t.loadConfig("CREATE RESOURCE cfg_cpu (CONSUME CPU)");
     ASSERT_EQ(transactions.size(), count + 1);
     EXPECT_EQ(transactions.back().size(), 2); // drop `sql_cpu` and create `cfg_cpu`
 
@@ -2451,9 +2451,7 @@ TEST(SchedulerWorkloadResourceManager, ShadowingByRole)
     EXPECT_TRUE(t.manager->hasResource("cfg_cpu"));
     EXPECT_EQ(t.storage.getEntitySource(RESOURCE, "cfg_cpu"), "configuration");
     EXPECT_EQ(t.storage.getEntitySource(RESOURCE, "sql_cpu"), "");
-    // Shadowing hides the whole entity: WORKER THREAD is not served by `sql_cpu` either
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cfg_cpu");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getCPUResourceName(), "cfg_cpu");
 
     // The shadowed entity stays stored and returns once the configuration drops its resource
     count = transactions.size();
@@ -2461,15 +2459,14 @@ TEST(SchedulerWorkloadResourceManager, ShadowingByRole)
     ASSERT_EQ(transactions.size(), count + 1);
     EXPECT_TRUE(t.manager->hasResource("sql_cpu"));
     EXPECT_FALSE(t.manager->hasResource("cfg_cpu"));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "sql_cpu");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "sql_cpu");
+    EXPECT_EQ(t.storage.getCPUResourceName(), "sql_cpu");
 
     // A shadowed entity can be dropped
-    t.loadConfig("CREATE RESOURCE cfg_cpu (MASTER THREAD)");
+    t.loadConfig("CREATE RESOURCE cfg_cpu (CONSUME CPU)");
     t.query("DROP RESOURCE sql_cpu");
     t.loadConfig("");
     EXPECT_FALSE(t.storage.has(RESOURCE, "sql_cpu"));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getCPUResourceName(), "");
 
     // An unchanged reload produces no transaction
     count = transactions.size();
@@ -2604,7 +2601,7 @@ TEST(SchedulerWorkloadResourceManager, ShadowingConflictsThrow)
 TEST(SchedulerWorkloadResourceManager, ReservedEntityNamesRejected)
 {
     ResourceTest t;
-    EXPECT_ANY_THROW(t.query("CREATE RESOURCE __server_cpu__ (MASTER THREAD, WORKER THREAD)"));
+    EXPECT_ANY_THROW(t.query("CREATE RESOURCE __server_cpu__ (CONSUME CPU)"));
     EXPECT_ANY_THROW(t.query("CREATE WORKLOAD __server_memory__"));
     EXPECT_THROW(t.sql_storage->loadFromString("CREATE RESOURCE __server_memory__ (MEMORY RESERVATION); CREATE RESOURCE io (READ DISK d)"), DB::Exception);
     EXPECT_FALSE(t.storage.has(RESOURCE, "io"));
@@ -2659,7 +2656,7 @@ TEST(SchedulerWorkloadResourceManager, ImplicitEntitiesCannotBeReferenced)
     EXPECT_TRUE(t.storage.has(WORKLOAD, "default"));
 
     // A shadowed implicit resource cannot be dropped either
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     ASSERT_FALSE(t.storage.has(RESOURCE, String(IMPLICIT_CPU_RESOURCE_NAME)));
     expect_drop_error("DROP RESOURCE __server_cpu__", "workloads_respect_server_cpu_limit");
     t.query("DROP RESOURCE cpu");
@@ -2744,7 +2741,7 @@ TEST(SchedulerWorkloadResourceManager, LoadRejectsConflictsAndBrokenReferences)
     const WorkloadEntities entities = t.storage.getAllEntities();
 
     for (const char * data : {
-        "CREATE RESOURCE s2 (MASTER THREAD); CREATE RESOURCE s1 (MASTER THREAD, WORKER THREAD)",
+        "CREATE RESOURCE s2 (WORKER THREAD); CREATE RESOURCE s1 (CONSUME CPU)",
         "CREATE RESOURCE y (READ DISK d); CREATE RESOURCE y (WRITE DISK d)",
         "CREATE WORKLOAD w; CREATE WORKLOAD w SETTINGS weight = 2",
         "CREATE WORKLOAD sql_child IN missing",
@@ -2806,8 +2803,7 @@ TEST(SchedulerWorkloadResourceManager, ServerLimitsAutoCreateAndRemove)
     const String memory(IMPLICIT_MEMORY_RESOURCE_NAME);
 
     t.setImplicitEntities({.respect_cpu_limit = true, .respect_memory_limit = true, .cpu_slots = 4, .memory_bytes = 1000});
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), cpu);
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), cpu);
+    EXPECT_EQ(t.storage.getCPUResourceName(), cpu);
     EXPECT_EQ(t.storage.getMemoryReservationResourceName(), memory);
     EXPECT_EQ(t.storage.getEntitySource(RESOURCE, cpu), "implicit");
     EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, ""), "implicit");
@@ -2825,8 +2821,7 @@ TEST(SchedulerWorkloadResourceManager, ServerLimitsAutoCreateAndRemove)
 
     t.setImplicitEntities({.respect_memory_limit = true, .memory_bytes = 1000});
     EXPECT_FALSE(t.manager->hasResource(cpu));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getCPUResourceName(), "");
     EXPECT_EQ(t.storage.get(WORKLOAD, "")->formatForLogging(), "CREATE WORKLOAD `` SETTINGS max_memory = 1000");
     EXPECT_TRUE(hasSchedulerNode(t, memory, "/limit"));
 
@@ -2876,12 +2871,12 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitAggregateCap)
 
     // A query in workload A saturates the shared budget of 4 slots.
     auto query_a = std::make_shared<TestQuery>(t);
-    query_a->start("A", 8);
+    query_a->start(TestQuery::AllocateLease, "A", 8);
     query_a->waitStartedThreads(4);
 
     // A query in workload B cannot start any thread while A holds the whole budget.
     auto query_b = std::make_shared<TestQuery>(t);
-    query_b->start("B", 4);
+    query_b->start(TestQuery::AllocateLease, "B", 4);
     query_b->waitEnqueued();
 
     // Releasing A frees the shared slots so B proceeds under the same aggregate budget.
@@ -2900,12 +2895,11 @@ TEST(SchedulerWorkloadResourceManager, ServerLimitsOperatorResource)
     const String implicit_cpu(IMPLICIT_CPU_RESOURCE_NAME);
     const String implicit_memory(IMPLICIT_MEMORY_RESOURCE_NAME);
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all");
     t.setImplicitEntities({.respect_cpu_limit = true, .respect_memory_limit = true, .cpu_slots = 4, .memory_bytes = 100});
     EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "cpu");
+    EXPECT_EQ(t.storage.getCPUResourceName(), "cpu");
     EXPECT_TRUE(hasSchedulerNode(t, "cpu", "/semaphore"));
     EXPECT_TRUE(t.manager->hasResource(implicit_memory));
 
@@ -2918,40 +2912,74 @@ TEST(SchedulerWorkloadResourceManager, ServerLimitsOperatorResource)
 
     t.query("DROP RESOURCE cpu");
     t.query("DROP RESOURCE memory");
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), implicit_cpu);
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), implicit_cpu);
+    EXPECT_EQ(t.storage.getCPUResourceName(), implicit_cpu);
     EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_memory);
     EXPECT_TRUE(hasSchedulerNode(t, implicit_cpu, "/semaphore"));
     EXPECT_TRUE(hasSchedulerNode(t, implicit_memory, "/limit"));
 
     // Disabling the limit keeps the operator resource, without a root limit
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     EXPECT_TRUE(hasSchedulerNode(t, "cpu", "/semaphore"));
     t.setImplicitEntities({});
     EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
+    EXPECT_EQ(t.storage.getCPUResourceName(), "cpu");
     EXPECT_FALSE(hasSchedulerNode(t, "cpu", "/semaphore"));
 }
 
-// A CPU resource holding only MASTER THREAD shadows the whole implicit resource and gets the root limit. Split CPU
-// resources (separate MASTER THREAD and WORKER THREAD resources) get the root limit each.
+// A resource with only the deprecated MASTER THREAD takes no CPU role, so the implicit resource stays visible and
+// schedules CPU. A WORKER THREAD resource takes the CPU role and shadows the implicit one. The root limit applies to
+// every CPU resource.
 TEST(SchedulerWorkloadResourceManager, ServerCPULimitPartialOrSplitResource)
 {
     ResourceTest t;
+    const String implicit_cpu(IMPLICIT_CPU_RESOURCE_NAME);
 
     t.query("CREATE RESOURCE cpu_master (MASTER THREAD)");
     t.query("CREATE WORKLOAD all");
     t.setImplicitEntities({.respect_cpu_limit = true, .cpu_slots = 4});
-    EXPECT_FALSE(t.manager->hasResource(String(IMPLICIT_CPU_RESOURCE_NAME)));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu_master");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+    EXPECT_TRUE(t.manager->hasResource(implicit_cpu));
+    EXPECT_EQ(t.storage.getCPUResourceName(), implicit_cpu);
     EXPECT_EQ(t.storage.get(WORKLOAD, "")->formatForLogging(), "CREATE WORKLOAD `` SETTINGS max_concurrent_threads = 4");
     EXPECT_TRUE(hasSchedulerNode(t, "cpu_master", "/semaphore"));
 
     t.query("CREATE RESOURCE cpu_worker (WORKER THREAD)");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "cpu_worker");
+    EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
+    EXPECT_EQ(t.storage.getCPUResourceName(), "cpu_worker");
     EXPECT_TRUE(hasSchedulerNode(t, "cpu_master", "/semaphore"));
     EXPECT_TRUE(hasSchedulerNode(t, "cpu_worker", "/semaphore"));
+}
+
+// Stored metadata with the deprecated MASTER THREAD / WORKER THREAD forms loads in every combination, keeps its
+// spelling and the references of workloads. The WORKER THREAD resource schedules all threads of a query.
+TEST(SchedulerWorkloadResourceManager, DeprecatedCPUResourceSyntax)
+{
+    ResourceTest t;
+    auto has_warning = []
+    {
+        return Context::getGlobalContextInstance()->getWarnings().contains(Context::WarningType::DEPRECATED_CPU_RESOURCE_SYNTAX);
+    };
+
+    t.sql_storage->loadFromString(
+        "CREATE RESOURCE master_cpu (MASTER THREAD); "
+        "CREATE RESOURCE worker_cpu (WORKER THREAD); "
+        "CREATE WORKLOAD all SETTINGS max_concurrent_threads = 10 FOR master_cpu, max_concurrent_threads = 2 FOR worker_cpu");
+    EXPECT_EQ(t.storage.getCPUResourceName(), "worker_cpu");
+    EXPECT_TRUE(t.manager->hasResource("master_cpu"));
+    EXPECT_EQ(t.storage.get(RESOURCE, "master_cpu")->formatForLogging(), "CREATE RESOURCE master_cpu (MASTER THREAD)");
+    EXPECT_TRUE(has_warning());
+
+    // A second CPU resource is rejected, a MASTER THREAD one is not
+    EXPECT_THROW(t.query("CREATE RESOURCE cpu (CONSUME CPU)"), DB::Exception);
+    t.query("CREATE RESOURCE another_master_cpu (MASTER THREAD)");
+
+    // The warning is gone once only the new syntax is used
+    t.query("DROP RESOURCE another_master_cpu");
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_concurrent_threads = 2 FOR worker_cpu");
+    t.query("DROP RESOURCE master_cpu");
+    t.query("CREATE OR REPLACE RESOURCE worker_cpu (CONSUME CPU)");
+    EXPECT_EQ(t.storage.getCPUResourceName(), "worker_cpu");
+    EXPECT_EQ(t.storage.get(RESOURCE, "worker_cpu")->formatForLogging(), "CREATE RESOURCE worker_cpu (CONSUME CPU)");
+    EXPECT_FALSE(has_warning());
 }
 
 // The manager applies the root workload entity to resources created after it.
@@ -2965,7 +2993,7 @@ TEST(SchedulerWorkloadResourceManager, RootWorkloadSettingsAppliedToResourcesCre
     EXPECT_TRUE(t.storage.has(WORKLOAD, ""));
     EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, ""), "sql");
 
-    t.loadConfig("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD); CREATE WORKLOAD all");
+    t.loadConfig("CREATE RESOURCE cpu (CONSUME CPU); CREATE WORKLOAD all");
     EXPECT_TRUE(hasSchedulerNode(t, "cpu", "/semaphore"));
 
     t.sql_storage->injectOwnEntities({});
@@ -2980,7 +3008,7 @@ TEST(SchedulerWorkloadResourceManager, ImplicitDefaultWorkload)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     EXPECT_FALSE(t.manager->acquire("default")->has("cpu"));
 
     t.setImplicitEntities({.implicit_default_workload = true});
@@ -4665,14 +4693,14 @@ TEST(SchedulerWorkloadResourceManager, CreateOrReplaceResourceChangesRoleAndReje
 {
     ResourceTest t;
 
-    // Initial: r1 owns MASTER THREAD (CostUnit::CPUNanosecond).
-    t.query("CREATE RESOURCE r1 (MASTER THREAD)");
+    // Initial: r1 owns the CPU role (CostUnit::CPUNanosecond).
+    t.query("CREATE RESOURCE r1 (CONSUME CPU)");
 
-    // Replace within the same unit. The fix must drop r1's MASTER THREAD ownership; without it
-    // `master_thread_resource` would still point to "r1" and r2 below could not claim the role.
-    t.query("CREATE OR REPLACE RESOURCE r1 (WORKER THREAD)");
+    // Replace within the same unit. The fix must drop r1's CPU ownership; without it
+    // `cpu_resource` would still point to "r1" and r2 below could not claim the role.
+    t.query("CREATE OR REPLACE RESOURCE r1 (MASTER THREAD)");
 
-    t.query("CREATE RESOURCE r2 (MASTER THREAD)");
+    t.query("CREATE RESOURCE r2 (CONSUME CPU)");
 
     t.query("DROP RESOURCE r1");
     t.query("DROP RESOURCE r2");
@@ -4854,7 +4882,7 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
         // Bad value in a `... FOR <resource>` clause (the reported case).
         EXPECT_THROW(
             t.loadConfig(
-                "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+                "CREATE RESOURCE cpu (CONSUME CPU);\n"
                 "CREATE WORKLOAD all SETTINGS scheduler = 'bogus' FOR cpu"),
             DB::Exception);
     }
@@ -4870,7 +4898,7 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
         // A valid config loads without error.
         EXPECT_NO_THROW(
             t.loadConfig(
-                "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+                "CREATE RESOURCE cpu (CONSUME CPU);\n"
                 "CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR cpu"));
     }
     {
@@ -4937,7 +4965,7 @@ namespace
 TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazyStartsAtInitialMax)
 {
     ResourceTest t;
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all");
 
     t.async("all", "cpu", [&](ResourceLink link)
@@ -4976,7 +5004,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazyStartsAtInitia
 TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxGrows)
 {
     ResourceTest t;
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all");
 
     t.async("all", "cpu", [&](ResourceLink link)
@@ -5014,7 +5042,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxGrows)
 TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxClampedByMaxThreads)
 {
     ResourceTest t;
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all");
 
     t.async("all", "cpu", [&](ResourceLink link)
@@ -5062,7 +5090,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxClampedB
 TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxShrinkDoesNotReclaim)
 {
     ResourceTest t;
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all");
 
     t.async("all", "cpu", [&](ResourceLink link)
@@ -5113,7 +5141,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxShrinkDo
 TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingEagerDefaultIsUnchanged)
 {
     ResourceTest t;
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE RESOURCE cpu (CONSUME CPU)");
     t.query("CREATE WORKLOAD all");
 
     t.async("all", "cpu", [&](ResourceLink link)

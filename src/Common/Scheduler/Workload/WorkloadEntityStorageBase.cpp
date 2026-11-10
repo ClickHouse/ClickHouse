@@ -20,10 +20,12 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 
 #include <filesystem>
 
 #include <boost/range/algorithm/copy.hpp>
+#include <fmt/ranges.h>
 
 #include <mutex>
 #include <queue>
@@ -125,6 +127,7 @@ String roleToString(ResourceAccessMode mode)
     {
         case ResourceAccessMode::DiskRead: return "READ DISK";
         case ResourceAccessMode::DiskWrite: return "WRITE DISK";
+        case ResourceAccessMode::CPU: return "CPU";
         case ResourceAccessMode::MasterThread: return "MASTER THREAD";
         case ResourceAccessMode::WorkerThread: return "WORKER THREAD";
         case ResourceAccessMode::Query: return "QUERY";
@@ -140,21 +143,28 @@ std::vector<ClaimKey> getClaimKeys(const WorkloadEntityKey & key, const ASTPtr &
     {
         for (const auto & operation : resource->operations)
         {
+            std::optional<ResourceAccessMode> role;
             switch (operation.mode)
             {
-                case ResourceAccessMode::MasterThread:
+                case ResourceAccessMode::CPU:
                 case ResourceAccessMode::WorkerThread:
+                    role = ResourceAccessMode::CPU;
+                    break;
                 case ResourceAccessMode::Query:
                 case ResourceAccessMode::MemoryReservation:
-                {
-                    ClaimKey claim{operation.mode};
-                    if (std::find(keys.begin(), keys.end(), claim) == keys.end())
-                        keys.push_back(std::move(claim));
+                    role = operation.mode;
                     break;
-                }
+                case ResourceAccessMode::MasterThread:
+                    break; // Deprecated, claims nothing, so old metadata with a separate master resource loads
                 case ResourceAccessMode::DiskRead:
                 case ResourceAccessMode::DiskWrite:
                     break; // Several resources may serve one disk
+            }
+            if (role)
+            {
+                ClaimKey claim{*role};
+                if (std::find(keys.begin(), keys.end(), claim) == keys.end())
+                    keys.push_back(std::move(claim));
             }
         }
     }
@@ -672,16 +682,10 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
     return result;
 }
 
-String WorkloadEntityStorageBase::getMasterThreadResourceName()
+String WorkloadEntityStorageBase::getCPUResourceName()
 {
     std::lock_guard lock{mutex};
-    return master_thread_resource;
-}
-
-String WorkloadEntityStorageBase::getWorkerThreadResourceName()
-{
-    std::lock_guard lock{mutex};
-    return worker_thread_resource;
+    return cpu_resource;
 }
 
 String WorkloadEntityStorageBase::getQueryResourceName()
@@ -698,10 +702,10 @@ String WorkloadEntityStorageBase::getMemoryReservationResourceName()
 
 void WorkloadEntityStorageBase::updateRoleResources()
 {
-    master_thread_resource.clear();
-    worker_thread_resource.clear();
+    cpu_resource.clear();
     query_resource.clear();
     memory_reservation_resource.clear();
+    std::vector<String> deprecated_cpu_resources;
 
     // Visible entities never conflict, so every role is served by at most one visible resource
     for (const auto & [key, entity] : visible_entities)
@@ -709,12 +713,14 @@ void WorkloadEntityStorageBase::updateRoleResources()
         auto * resource = typeid_cast<ASTCreateResourceQuery *>(entity.get());
         if (!resource)
             continue;
+        bool deprecated_cpu = false;
         for (const auto & operation : resource->operations)
         {
             switch (operation.mode)
             {
-                case ResourceAccessMode::MasterThread: master_thread_resource = key.name; break;
-                case ResourceAccessMode::WorkerThread: worker_thread_resource = key.name; break;
+                case ResourceAccessMode::CPU: cpu_resource = key.name; break;
+                case ResourceAccessMode::WorkerThread: cpu_resource = key.name; deprecated_cpu = true; break;
+                case ResourceAccessMode::MasterThread: deprecated_cpu = true; break;
                 case ResourceAccessMode::Query: query_resource = key.name; break;
                 case ResourceAccessMode::MemoryReservation: memory_reservation_resource = key.name; break;
                 case ResourceAccessMode::DiskRead:
@@ -722,6 +728,22 @@ void WorkloadEntityStorageBase::updateRoleResources()
                     break;
             }
         }
+        if (deprecated_cpu)
+            deprecated_cpu_resources.push_back(backQuote(key.name));
+    }
+
+    if (publishes_warnings && global_context)
+    {
+        if (deprecated_cpu_resources.empty())
+            global_context->removeWarningMessage(Context::WarningType::DEPRECATED_CPU_RESOURCE_SYNTAX);
+        else
+            global_context->addOrUpdateWarningMessage(
+                Context::WarningType::DEPRECATED_CPU_RESOURCE_SYNTAX,
+                PreformattedMessage::create(
+                    "These resources use the deprecated `MASTER THREAD` / `WORKER THREAD` syntax: {}. "
+                    "One resource with `CONSUME CPU` schedules all query threads, and a resource with only `MASTER THREAD` schedules nothing. "
+                    "Use `CREATE OR REPLACE RESOURCE <name> (CONSUME CPU)` instead.",
+                    fmt::join(deprecated_cpu_resources, ", ")));
     }
 }
 

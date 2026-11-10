@@ -71,7 +71,7 @@ WorkloadEntities makeImplicitEntities(const ImplicitWorkloadEntitiesConfig & con
     entities.emplace(WorkloadEntityKey{WorkloadEntityType::Workload, ""}, makeWorkload("", std::move(root_changes)));
     if (config.respect_cpu_limit)
         entities.emplace(WorkloadEntityKey{WorkloadEntityType::Resource, String(IMPLICIT_CPU_RESOURCE_NAME)},
-            makeResource(IMPLICIT_CPU_RESOURCE_NAME, {ResourceAccessMode::MasterThread, ResourceAccessMode::WorkerThread}));
+            makeResource(IMPLICIT_CPU_RESOURCE_NAME, {ResourceAccessMode::CPU}));
     if (config.respect_memory_limit)
         entities.emplace(WorkloadEntityKey{WorkloadEntityType::Resource, String(IMPLICIT_MEMORY_RESOURCE_NAME)},
             makeResource(IMPLICIT_MEMORY_RESOURCE_NAME, {ResourceAccessMode::MemoryReservation}));
@@ -87,6 +87,7 @@ WorkloadEntityImplicitStorage::WorkloadEntityImplicitStorage(const ContextPtr & 
     : WorkloadEntityStorageBase(global_context_, std::move(next_storage_))
 {
     log = getLogger("WorkloadEntityImplicitStorage");
+    publishes_warnings = true;
     if (!getNextStorage())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Implicit workload entity storage requires a next storage");
 

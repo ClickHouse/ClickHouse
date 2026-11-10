@@ -30,6 +30,8 @@ bool parseOneOperation(ASTCreateResourceQuery::Operation & operation, IParser::P
         mode = ResourceAccessMode::DiskWrite;
     else if (ParserKeyword(Keyword::READ).ignore(pos, expected))
         mode = ResourceAccessMode::DiskRead;
+    else if (ParserKeyword(Keyword::CONSUME_CPU).ignore(pos, expected))
+        mode = ResourceAccessMode::CPU;
     else if (ParserKeyword(Keyword::MASTER_THREAD).ignore(pos, expected))
         mode = ResourceAccessMode::MasterThread;
     else if (ParserKeyword(Keyword::WORKER_THREAD).ignore(pos, expected))

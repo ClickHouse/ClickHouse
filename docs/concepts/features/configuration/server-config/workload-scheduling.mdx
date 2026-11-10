@@ -12,10 +12,10 @@ When ClickHouse executes multiple queries simultaneously, they use shared resour
 
 By default, workload scheduling is disabled. To enable it you have to create resources that will be used for scheduling and at least one workload. All resources are independent and could be used in any combination.
 
-To enable CPU scheduling, you have to create CPU resource for MASTER or WORKER threads (see [CPU scheduling](#cpu_scheduling) for details):
+To enable CPU scheduling, you have to create a CPU resource (see [CPU scheduling](#cpu_scheduling) for details):
 
 ```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE cpu (CONSUME CPU)
 ```
 
 To enable memory reservation for workloads, you have to create MEMORY resource (see [Memory reservations](#memory-reservations) for details):
@@ -56,7 +56,7 @@ ClickHouse provides convenient SQL syntax to define scheduling hierarchy. All re
 Here is an example of a hierarchy that divides all resources between "user" and "system" workloads with a guarantee of 90% and 10% correspondingly. Note that weights defined for workloads are used for max-min fairness and thus only provide best-effort guarantee from below (not a limit or quota from above). All the scheduling is done on every host independently and thus limits defined by `max_*` settings are per host. Workload "user" subdivides its resources between "development" and "production" workloads with "production" having 3 times more resources than "development":
 
 ```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE cpu (CONSUME CPU)
 CREATE RESOURCE memory (MEMORY RESERVATION)
 CREATE RESOURCE s3_read (READ DISK s3)
 CREATE RESOURCE s3_write (WRITE DISK s3)
@@ -155,7 +155,7 @@ It is possible to assign a `workload` setting for background activities. Merges 
 To enable CPU scheduling for workloads create CPU resource and set a limit for the number of concurrent threads:
 
 ```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE cpu (CONSUME CPU)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
@@ -163,10 +163,14 @@ When ClickHouse server executes many concurrent queries with [multiple threads](
 
 CPU time is consumed by threads when they are not blocked and work on CPU-intensive tasks. One CPU resource covers all threads of a query. The first thread of a query (the master thread) spawns the additional worker threads. It is never downscaled, but it can be preempted like the others.
 
+<Note>
+The older syntax `MASTER THREAD` / `WORKER THREAD` is deprecated, but still accepted. A resource with `WORKER THREAD` (with or without `MASTER THREAD`) acts as `CONSUME CPU`. A resource with only `MASTER THREAD` schedules nothing. While such resources exist, `system.warnings` shows a deprecation warning.
+</Note>
+
 Separate thread concurrency limits could be used for workloads:
 
 ```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE cpu (CONSUME CPU)
 CREATE WORKLOAD all
 CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 10
 CREATE WORKLOAD production IN all SETTINGS max_concurrent_threads = 100
@@ -239,7 +243,7 @@ While holding a CPU slot, a thread can be in one of three main states:
 Let's consider an example of configuration that combines both CPU throttling and thread number limits:
 
 ```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE cpu (CONSUME CPU)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads_ratio_to_cores = 2
 CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 2, priority = -1
 CREATE WORKLOAD production IN all SETTINGS weight = 4

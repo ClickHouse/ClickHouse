@@ -612,7 +612,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
             auto workload_storage = query_context->getWorkloadEntityStoragePtr();
             if (workload_storage)
             {
-                String cpu_resource_name = workload_storage->getWorkerThreadResourceName();
+                String cpu_resource_name = workload_storage->getCPUResourceName();
                 if (!cpu_resource_name.empty())
                 {
                     cpu_link = query_context->getWorkloadClassifier()->get(cpu_resource_name);

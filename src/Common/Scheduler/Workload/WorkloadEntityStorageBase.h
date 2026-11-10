@@ -56,8 +56,7 @@ public:
     scope_guard getAllEntitiesAndSubscribe(
         const OnChangedHandler & handler) override;
 
-    String getMasterThreadResourceName() override;
-    String getWorkerThreadResourceName() override;
+    String getCPUResourceName() override;
     String getQueryResourceName() override;
     String getMemoryReservationResourceName() override;
 
@@ -180,8 +179,7 @@ private:
     // storage -- are captured from the same view (see backup()).
     mutable std::unordered_map<UUID, WorkloadEntities> entities_to_backup;
 
-    String master_thread_resource; /// visible resource for master threads
-    String worker_thread_resource; /// visible resource for worker threads
+    String cpu_resource; /// visible resource for CPU
     String query_resource; /// visible resource for queries
     String memory_reservation_resource; /// visible resource for memory reservations
 
@@ -192,6 +190,9 @@ private:
 protected:
     ContextPtr global_context;
     LoggerPtr log;
+
+    /// The outermost layer reports deprecated syntax of its visible entities to `system.warnings`
+    bool publishes_warnings = false;
 };
 
 }

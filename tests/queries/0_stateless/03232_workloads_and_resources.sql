@@ -43,11 +43,11 @@ create or replace resource 03232_write (write disk 03232_fake_disk_2);
 create or replace resource 03232_read (read disk 03232_fake_disk_2);
 
 -- CREATE OR REPLACE RESOURCE clears role-name fields when operations change.
--- Without the fix, after the OR REPLACE below `master_thread_resource` would still point to
--- `03232_role_a`, so `03232_role_b` could not claim MASTER THREAD.
-create resource 03232_role_a (master thread);
-create or replace resource 03232_role_a (worker thread);
-create resource 03232_role_b (master thread);
+-- Without the fix, after the OR REPLACE below `cpu_resource` would still point to
+-- `03232_role_a`, so `03232_role_b` could not claim the CPU role.
+create resource 03232_role_a (consume cpu);
+create or replace resource 03232_role_a (master thread);
+create resource 03232_role_b (consume cpu);
 drop resource 03232_role_a;
 drop resource 03232_role_b;
 
