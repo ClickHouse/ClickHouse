@@ -279,12 +279,68 @@ void MergeTreeReadPoolInOrderSliced::finishLaneUnlocked(size_t lane)
     lane_state.parked_readers.clear();
 }
 
+std::optional<MergeTreeReadPoolInOrderSliced::QueuedSlice>
+MergeTreeReadPoolInOrderSliced::takeSlice(size_t task_idx, std::optional<MarkRanges> & lane_to_refine)
+{
+    std::unique_lock lock(mutex);
+    while (true)
+    {
+        if (fifo.empty())
+            return std::nullopt;
+
+        /// A slice of the lane the source read last continues with the readers the source holds.
+        const auto & source = sources[task_idx];
+        auto pick = fifo.end();
+        for (auto it = fifo.begin(); it != fifo.end(); ++it)
+        {
+            if (lanes[it->slice.lane].refining)
+                continue;
+            if (pick == fifo.end())
+                pick = it;
+            if (source.lane == it->slice.lane)
+            {
+                pick = it;
+                break;
+            }
+        }
+
+        if (pick == fifo.end())
+        {
+            /// Every queued slice belongs to a lane being refined: their ranges are about to change.
+            refined_cv.wait(lock);
+            continue;
+        }
+
+        QueuedSlice taken = std::move(*pick);
+        fifo.erase(pick);
+
+        auto & lane_state = lanes[taken.slice.lane];
+        /// The router does not wait for the slices of a lane it finished.
+        if (lane_state.finished)
+            continue;
+
+        /// The first slice of a lane refines the whole lane: the index result is built once per part
+        /// anyway, and the slices cut afterwards skip the granules the index drops instead of being
+        /// read to find nothing. Every mark of the lane not yet handed to a reader is refined, once:
+        /// the slices of the lane still in the FIFO wait for the result (see above), so that no mark
+        /// is accounted by the refiner twice.
+        if (ranges_refiner && !lane_state.refined)
+        {
+            lane_state.refining = true;
+            lane_to_refine = unionRanges(taken.ranges, lane_state.unread);
+            for (const auto & queued : fifo)
+                if (queued.slice.lane == taken.slice.lane)
+                    lane_to_refine = unionRanges(*lane_to_refine, queued.ranges);
+        }
+        return taken;
+    }
+}
+
 MergeTreeReadTaskPtr MergeTreeReadPoolInOrderSliced::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
     MergeTreeReadTaskInfoPtr info;
     MarkRanges ranges;
     MergeTreeSliceTag slice;
-    std::optional<MarkRanges> lane_to_refine;
 
     {
         std::lock_guard lock(mutex);
@@ -298,56 +354,73 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrderSliced::getTask(size_t task_idx, Me
             read_bytes += previous_task->getNumReadBytes();
             read_marks += source.reading_marks;
         }
-
-        if (fifo.empty())
-            return nullptr;
-
-        /// A slice of the lane the source read last continues with the readers the source holds.
-        auto queued = fifo.begin();
-        if (source.lane)
-        {
-            auto own = std::find_if(fifo.begin(), fifo.end(), [&](const QueuedSlice & other) { return other.slice.lane == *source.lane; });
-            if (own != fifo.end())
-                queued = own;
-        }
-        slice = queued->slice;
-        ranges = std::move(queued->ranges);
-        fifo.erase(queued);
-
-        info = per_part_infos[slice.lane];
-        if (ranges_refiner && !lanes[slice.lane].refined)
-            lane_to_refine = lanes[slice.lane].unread;
     }
 
-    if (lane_to_refine)
+    while (true)
     {
-        /// The first slice of a lane refines the whole lane: the index result is built once per part
-        /// anyway, and the slices cut afterwards skip the granules the index drops instead of being
-        /// read to find nothing. May block, so it runs outside of the mutex.
-        MarkRanges refined = refineReadRanges(*info, unionRanges(ranges, *lane_to_refine));
+        std::optional<MarkRanges> lane_to_refine;
+        auto taken = takeSlice(task_idx, lane_to_refine);
+        if (!taken)
+            return nullptr;
 
-        /// A slice the index leaves nothing of is read as cut: the router waits for every slice that was
-        /// cut, and the filter drops the rows.
-        auto refine = [&](MarkRanges & slice_ranges)
+        slice = taken->slice;
+        ranges = std::move(taken->ranges);
+        info = per_part_infos[slice.lane];
+        if (!lane_to_refine)
+            break;
+
+        /// The refinement may block, so it runs outside of the mutex.
+        MarkRanges refined;
+        try
         {
-            MarkRanges result = intersectRanges(slice_ranges, refined);
-            if (!result.empty())
-                slice_ranges = std::move(result);
-        };
+            refined = refineReadRanges(*info, std::move(*lane_to_refine));
+        }
+        catch (...)
+        {
+            std::lock_guard lock(mutex);
+            lanes[slice.lane].refining = false;
+            refined_cv.notify_all();
+            throw;
+        }
 
         std::lock_guard lock(mutex);
         auto & lane_state = lanes[slice.lane];
-        if (!lane_state.refined && !lane_state.finished)
+        lane_state.refining = false;
+        lane_state.refined = true;
+        refined_cv.notify_all();
+
+        if (!lane_state.finished)
         {
-            lane_state.refined = true;
             dequeueLane(slice.lane);
             lane_state.unread = intersectRanges(lane_state.unread, refined);
             enqueueLane(slice.lane);
-            for (auto & queued : fifo)
-                if (queued.slice.lane == slice.lane)
-                    refine(queued.ranges);
+
+            /// A queued slice the index leaves nothing of is not read: the router drops it.
+            for (auto it = fifo.begin(); it != fifo.end();)
+            {
+                if (it->slice.lane != slice.lane)
+                {
+                    ++it;
+                    continue;
+                }
+                const size_t marks_before = it->ranges.getNumberOfMarks();
+                it->ranges = intersectRanges(it->ranges, refined);
+                if (it->ranges.getNumberOfMarks() != marks_before)
+                    refined_slices.push_back(SliceRefinement{.slice = it->slice, .marks = it->ranges.getNumberOfMarks()});
+                if (it->ranges.empty())
+                    it = fifo.erase(it);
+                else
+                    ++it;
+            }
         }
-        refine(ranges);
+
+        const size_t marks_before = ranges.getNumberOfMarks();
+        ranges = intersectRanges(ranges, refined);
+        if (ranges.getNumberOfMarks() != marks_before)
+            refined_slices.push_back(SliceRefinement{.slice = slice, .marks = ranges.getNumberOfMarks()});
+        if (!ranges.empty())
+            break;
+        /// Nothing left of this slice either: the source takes the next one.
     }
 
     const auto & data_part = info->data_part_info->getDataPart();
@@ -487,6 +560,12 @@ size_t MergeTreeReadPoolInOrderSliced::fifoSize() const
 {
     std::lock_guard lock(mutex);
     return fifo.size();
+}
+
+std::vector<MergeTreeReadPoolInOrderSliced::SliceRefinement> MergeTreeReadPoolInOrderSliced::takeRefinedSlices()
+{
+    std::lock_guard lock(mutex);
+    return std::exchange(refined_slices, {});
 }
 
 std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextUnreadMark(size_t lane) const

@@ -112,6 +112,20 @@ IProcessor::Status MergeTreeInOrderSliceRouter::prepare()
         }
     }
 
+    /// The refiner shrank these slices after they were cut: fewer marks are in flight, and a slice it left
+    /// nothing of is never read, so it leaves its lane without being evidence of anything.
+    for (const auto & refinement : pool->takeRefinedSlices())
+    {
+        auto & slices = lanes[refinement.slice.lane].slices;
+        auto it = slices.find(refinement.slice.seq);
+        if (it == slices.end())
+            continue;
+        marks_in_flight -= it->second.marks - refinement.marks;
+        it->second.marks = refinement.marks;
+        if (refinement.marks == 0)
+            slices.erase(it);
+    }
+
     bool asked = false;
     MergeTreeReadPoolInOrderSliced::Demand demand;
     for (size_t lane = 0; lane < lane_outputs.size(); ++lane)

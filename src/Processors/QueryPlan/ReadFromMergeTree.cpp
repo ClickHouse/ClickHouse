@@ -1357,6 +1357,7 @@ Pipe ReadFromMergeTree::readInOrderSliced(
         dataflow_cache_updater,
         num_sources,
         pk_header,
+        storage_snapshot->metadata->getSortingKeyReverseFlags(),
         read_in_reverse_order);
 
     pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));

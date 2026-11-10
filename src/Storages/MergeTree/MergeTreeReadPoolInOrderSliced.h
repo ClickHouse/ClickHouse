@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 #include <Storages/MergeTree/MergeTreeSliceInfo.h>
 
+#include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <optional>
@@ -71,6 +72,7 @@ public:
 
     /// The next slice from the FIFO, preferring one of the lane the source read last. Nothing if the FIFO
     /// is empty: the source then reports idle and is parked until the router has a slice for it.
+    /// The first slice taken from a lane refines the whole lane with the ranges refiner (see the .cpp).
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
     bool mayHaveMoreTasks() const override;
 
@@ -112,6 +114,17 @@ public:
     Scheduled schedule(const Demand & demand, const std::vector<size_t> & parked_sources);
     size_t fifoSize() const;
 
+    /// A slice cut and then shrunk by the ranges refiner: its marks after the refinement, zero when it was
+    /// refined away and is never read.
+    struct SliceRefinement
+    {
+        MergeTreeSliceTag slice;
+        size_t marks = 0;
+    };
+
+    /// The refinements since the last call, for the router to correct the marks in flight.
+    std::vector<SliceRefinement> takeRefinedSlices();
+
     /// The mark the lane's rows start at once every slice cut so far is read; nothing when the lane is
     /// cut to its end.
     std::optional<size_t> nextUnreadMark(size_t lane) const;
@@ -132,8 +145,10 @@ private:
         MarkRanges unread;
         /// Slices cut so far: the number of the next one, and the ramp.
         size_t slices_cut = 0;
-        /// The ranges refiner was applied to the whole lane.
+        /// The ranges refiner was applied to the whole lane, or a source is applying it right now: its slices
+        /// in the FIFO wait for the result, so that every mark is refined once.
         bool refined = false;
+        bool refining = false;
         /// Readers of sources that moved on to other lanes.
         std::vector<MergeTreeReadTask::Readers> parked_readers = {};
         bool finished = false;
@@ -172,6 +187,11 @@ private:
     };
 
     size_t nextSliceMarks(size_t lane) const TSA_REQUIRES(mutex);
+    /// The slice for the source to read next (see getTask); nothing when the FIFO is empty. Waits while the
+    /// FIFO holds only slices of lanes being refined. When the slice's lane is not refined yet, claims its
+    /// refinement for the caller and returns the lane's marks to refine. Locks the mutex itself, with a
+    /// lock the analysis does not follow, hence exempt from it.
+    std::optional<QueuedSlice> takeSlice(size_t task_idx, std::optional<MarkRanges> & lane_to_refine) TSA_NO_THREAD_SAFETY_ANALYSIS;
     /// Whether the lane may get a slice while it has slices in flight: the slice must be worth a request
     /// of its own.
     bool canShare(size_t lane, const Demand & demand) const TSA_REQUIRES(mutex);
@@ -193,12 +213,15 @@ private:
     const bool reverse;
 
     mutable std::mutex mutex;
+    /// A lane's refinement is applied, see Lane::refining.
+    std::condition_variable refined_cv;
     std::vector<Lane> lanes TSA_GUARDED_BY(mutex);
     LaneQueue queue TSA_GUARDED_BY(mutex);
     /// Where each lane with unread marks sits in the queue.
     std::vector<std::optional<LaneQueue::iterator>> queue_position TSA_GUARDED_BY(mutex);
     /// Slices cut and not yet taken by a source, in the order they were cut.
     std::deque<QueuedSlice> fifo TSA_GUARDED_BY(mutex);
+    std::vector<SliceRefinement> refined_slices TSA_GUARDED_BY(mutex);
     std::vector<Source> sources TSA_GUARDED_BY(mutex);
     /// Bytes the slices read so far cost and their marks: what a mark costs to read in this query, see canShare.
     size_t read_bytes TSA_GUARDED_BY(mutex) = 0;
