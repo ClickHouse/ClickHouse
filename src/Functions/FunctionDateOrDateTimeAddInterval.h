@@ -1226,6 +1226,14 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// The first argument may be a String, which is parsed as a date/date with time. The value behind a
+    /// NULL in a `Nullable(String)` is not a date (typically the empty string), so the function must not
+    /// be executed on those rows. Declining makes `defaultImplementationForNulls` filter them out first;
+    /// their result is masked as NULL anyway, and inputs without NULLs are not affected.
+    /// This is asked without the arguments, so it also applies to date arguments, where it is harmless.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
