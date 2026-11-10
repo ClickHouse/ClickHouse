@@ -7,9 +7,7 @@ sidebarTitle: '개요'
 doc_type: 'guide'
 ---
 
-<div id="why-use-clickhouse-over-postgres">
-  ## Postgres 대신 ClickHouse를 사용하는 이유
-</div>
+## Postgres 분석에 ClickHouse를 사용하는 이유 {#why-use-clickhouse-over-postgres}
 
 요약: ClickHouse는 빠른 분석, 특히 `GROUP BY` 쿼리에 최적화된 OLAP 데이터베이스인 반면, Postgres는 트랜잭션 워크로드를 처리하도록 설계된 OLTP 데이터베이스이기 때문입니다.
 
@@ -21,33 +19,33 @@ ClickHouse와 PostgreSQL의 차이점을 더 자세히 비교한 내용은 [여�
 
 분석 쿼리에서 ClickHouse와 Postgres 간에 발생할 수 있는 성능 차이를 확인하려면 [Rewriting PostgreSQL Queries in ClickHouse](/ko/get-started/migrate/postgres/migration-guide/migration-guide-part2)를 참조하십시오.
 
-<div id="migration-strategies">
-  ## 마이그레이션 전략
-</div>
+<Tip>
+  **트랜잭션은 Postgres에 그대로 두고, 분석용으로 ClickHouse를 추가하십시오**
+
+  Postgres를 애플리케이션의 트랜잭션 기록 시스템으로 유지하면서 분석 쿼리만 ClickHouse로 옮길 수 있습니다. 커밋된 변경 사항은 CDC로 ClickHouse에 복제하고, 애플리케이션 트랜잭션은 계속 Postgres에서 실행하십시오.
+
+  기존 Postgres 배포를 사용하거나 [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview)를 사용할 수 있습니다. 아키텍처와 복제 보장에 대해서는 [Postgres와 ClickHouse가 함께 동작하는 방식](/ko/products/managed-postgres/overview#transactions-and-analytics)을 참조하십시오.
+</Tip>
+
+## 마이그레이션 전략 {#migration-strategies}
 
 PostgreSQL에서 ClickHouse로 마이그레이션할 때 적절한 전략은 사용 사례, 인프라, 데이터 요구 사항에 따라 달라집니다. 일반적으로 대부분의 최신 사용 사례에서는 실시간 변경 데이터 캡처(CDC)가 가장 적합하며, 수동 대량 적재 후 주기적으로 업데이트하는 방식은 더 단순한 시나리오나 일회성 마이그레이션에 적합합니다.
 
 아래 섹션에서는 마이그레이션을 위한 두 가지 주요 전략인 **실시간 CDC**와 **수동 대량 적재 + 주기적 업데이트**를 설명합니다.
 
-<div id="real-time-replication-cdc">
-  ### 실시간 복제(CDC)
-</div>
+### 실시간 복제(CDC) {#real-time-replication-cdc}
 
 변경 데이터 캡처(Change Data Capture, CDC)는 두 데이터베이스 간에 테이블을 동기화된 상태로 유지하는 프로세스입니다. PostgreSQL에서의 대부분의 마이그레이션에 가장 효율적인 방식이지만, PostgreSQL의 삽입, 업데이트, 삭제를 ClickHouse로 거의 실시간에 가깝게 반영하므로 그만큼 더 복잡합니다. 실시간 분석이 중요한 사용 사례에 특히 적합합니다.
 
 실시간 변경 데이터 캡처(CDC)는 ClickHouse Cloud를 사용하는 경우 [ClickPipes](/ko/integrations/clickpipes/postgres/deduplication), 온프레미스에서 ClickHouse를 실행하는 경우 [PeerDB](https://github.com/PeerDB-io/peerdb)를 사용해 ClickHouse에서 구현할 수 있습니다. 이러한 솔루션은 초기 적재를 포함한 실시간 데이터 동기화의 복잡한 작업을 처리하며, PostgreSQL의 삽입, 업데이트, 삭제를 캡처해 ClickHouse에 복제합니다. 이 방식을 사용하면 수동 개입 없이도 ClickHouse의 데이터를 항상 최신 상태로 정확하게 유지할 수 있습니다.
 
-<div id="manual-bulk-load-periodic-updates">
-  ### 수동 대량 적재 + 주기적 업데이트
-</div>
+### 수동 대량 적재 + 주기적 업데이트 {#manual-bulk-load-periodic-updates}
 
 경우에 따라 수동으로 대량 적재한 뒤 주기적으로 업데이트하는 더 단순한 방식으로도 충분할 수 있습니다. 이 전략은 일회성 마이그레이션이나 실시간 복제가 필요하지 않은 상황에 적합합니다. 이 방식에서는 직접 SQL `INSERT` 명령을 사용하거나 CSV 파일을 내보내고 가져오는 방법으로 PostgreSQL의 데이터를 ClickHouse로 대량 적재합니다. 초기 마이그레이션이 끝난 후에는 일정한 간격으로 PostgreSQL의 변경 사항을 동기화하여 ClickHouse의 데이터를 주기적으로 업데이트할 수 있습니다.
 
 대량 적재 과정은 단순하고 유연하지만, 실시간 업데이트가 없다는 단점이 있습니다. 초기 데이터가 ClickHouse에 들어간 이후에는 업데이트가 즉시 반영되지 않으므로, PostgreSQL의 변경 사항을 동기화하도록 주기적 업데이트를 예약해야 합니다. 이 방식은 시간 민감도가 낮은 사용 사례에 잘 맞지만, PostgreSQL에서 데이터가 변경되는 시점과 그 변경 사항이 ClickHouse에 반영되는 시점 사이에 지연이 발생합니다.
 
-<div id="which-strategy-to-choose">
-  ### 어떤 전략을 선택해야 할까요?
-</div>
+### 어떤 전략을 선택해야 할까요? {#which-strategy-to-choose}
 
 대부분의 애플리케이션에서 ClickHouse에 신선한 최신 데이터가 필요하다면, ClickPipes를 통한 실시간 CDC를 권장합니다. 이 방식은 최소한의 설정과 유지 관리로 지속적인 데이터 동기화를 제공합니다. 반면, 수동 대량 적재와 주기적인 업데이트는 더 단순한 일회성 migration이나 실시간 업데이트가 중요하지 않은 워크로드에 적합한 선택지입니다.
 

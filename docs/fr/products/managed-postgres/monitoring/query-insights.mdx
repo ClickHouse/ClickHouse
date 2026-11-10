@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Query insights pour Postgres'
-description: 'Télémétrie par instruction pour Managed Postgres : chaque query pattern exécuté par votre base de données, classé par impact, avec les compteurs de diagnostic qui expliquent pourquoi chacun est lent'
+description: 'Télémétrie par instruction pour ClickHouse Managed Postgres : chaque pattern de requête exécuté par votre base de données, classé par impact, avec les compteurs de diagnostic qui expliquent pourquoi chacun est lent'
 keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'slow queries', 'p99 latency', 'query patterns', 'postgres performance', 'temp blocks', 'parallel workers', 'wal']
 doc_type: 'guide'
 ---
@@ -13,7 +13,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 Query Insights recueille la télémétrie de chaque instruction de votre
-instance [Managed Postgres](/fr/products/managed-postgres/overview) et classe chaque
+instance [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview) et classe chaque
 pattern de requête par impact, afin de vous permettre de passer de &quot;le p99 dérive
 à la hausse&quot; à &quot;ce pattern écrit sur disque&quot; sans quitter la console Cloud.
 
@@ -27,12 +27,12 @@ valeurs exactes utilisées dans vos requêtes n’entrent jamais dans le flux de
   ## Ouvrir Query insights
 </div>
 
-Ouvrez votre instance Managed Postgres dans la Cloud Console, puis cliquez sur
+Ouvrez votre instance ClickHouse Managed Postgres dans la Cloud Console, puis cliquez sur
 **Query insights** dans la barre latérale gauche. La page se divise en quatre
 zones, dans l&#39;ordre où vous les utiliserez réellement :
 
 * Un **vue d’ensemble** qui affiche sur un seul écran un aperçu de l&#39;état de santé de la base de données.
-* Une table **requête lente récurrente** qui classe chaque query pattern exécuté par votre base de données,
+* Une table **requête lente récurrente** qui classe chaque pattern de requête exécuté par votre base de données,
   triée selon le critère qui vous semble pertinent.
 * Un panneau **requête récente** qui répertorie les exécutions individuelles dans l&#39;ordre
   chronologique inverse.
@@ -257,6 +257,6 @@ ClickHouse. Le code source et les tickets sont disponibles sur
 
 * [Tableau de bord Monitoring](/fr/products/managed-postgres/monitoring/dashboard) — graphiques intégrés sur les ressources et l’activité
 * [Prometheus endpoint](/fr/products/managed-postgres/monitoring/prometheus) — scraper les métriques au niveau de l’hôte dans votre propre stack d’observability
-* [Managed Postgres OpenAPI](/fr/products/managed-postgres/openapi#query-insights) — interroger par programmation les requête lente récurrente et les exécutions récentes
-* [Extensions](/fr/products/managed-postgres/extensions) — les extensions disponibles sur les instances Managed Postgres
+* [ClickHouse Managed Postgres OpenAPI](/fr/products/managed-postgres/openapi#query-insights) — interroger par programmation les requête lente récurrente et les exécutions récentes
+* [Extensions](/fr/products/managed-postgres/extensions) — les extensions disponibles sur les instances ClickHouse Managed Postgres
 * [`pg_stat_ch` sur GitHub](https://github.com/clickhouse/pg_stat_ch) — l’extension open-source sur laquelle repose Query Insights

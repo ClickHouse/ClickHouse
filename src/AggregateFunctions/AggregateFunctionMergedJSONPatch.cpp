@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <AggregateFunctions/FactoryHelpers.h>
@@ -604,8 +605,8 @@ SELECT mergedJSONPatch(json, sort_key) FROM
             )",
             R"(
 ┌─mergedJSONPatch(json, sort_key)─┐
-│ {"a":3,"b":2,"c":4}              │
-└──────────────────────────────────┘
+│ {"a":3,"b":2,"c":4}             │
+└─────────────────────────────────┘
             )"
         }
     };

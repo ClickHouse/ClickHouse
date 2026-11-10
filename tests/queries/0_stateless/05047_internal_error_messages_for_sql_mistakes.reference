@@ -1,0 +1,15 @@
+=== a string that a number cannot be parsed from is reported the same way whether it is empty or not
+--- SELECT toInt32(1) = 'abc'
+Code: 53. Cannot convert string 'abc' to type Int32
+--- SELECT toInt32(1) = '12abc'
+Code: 53. Cannot convert string '12abc' to type Int32
+--- SELECT toInt32(1) = ''
+Code: 53. Cannot convert string '' to type Int32
+--- SELECT toUInt8(1) IN ('', '1')
+Code: 53. Cannot convert string '' to type UInt8. (TYPE_MISMATCH)
+--- SELECT toDate('2020-01-01') = ''
+Code: 38. Cannot parse date: <reason>: while converting '' to Date
+
+=== a correlated subquery of several columns where a single value is expected
+--- SELECT a FROM outer_table WHERE NOT (SELECT * FROM inner_table WHERE b = a)
+Code: 20. A correlated subquery used as an expression must return exactly one column, but it returns 2. (NUMBER_OF_COLUMNS_DOESNT_MATCH)

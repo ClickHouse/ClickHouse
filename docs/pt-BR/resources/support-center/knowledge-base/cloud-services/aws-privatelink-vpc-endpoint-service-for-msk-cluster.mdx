@@ -1,6 +1,6 @@
 ---
-title: Serviço de endpoint de VPC do AWS PrivateLink para cluster MSK
-description: Etapas de configuração para expor um cluster MSK ao ClickPipes por meio de serviços de endpoint de VPC do AWS PrivateLink.
+title: serviço de endpoint da VPC do AWS PrivateLink para cluster MSK
+description: Etapas de configuração para expor um cluster MSK ao ClickPipes por meio de serviços de endpoint da VPC do AWS PrivateLink.
 date: 2026-07-09
 tags: ['Segurança e autenticação', 'Gerenciamento de Cloud']
 keywords: ['AWS PrivateLink', 'serviço de endpoint da VPC', 'MSK', 'Kafka', 'ClickPipes']
@@ -10,9 +10,9 @@ keywords: ['AWS PrivateLink', 'serviço de endpoint da VPC', 'MSK', 'Kafka', 'Cl
   ## Visão geral
 </div>
 
-Este guia explica como expor um cluster do Amazon MSK para o ClickPipes com [serviços de endpoint de VPC do AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
+Este guia explica como expor um cluster do Amazon MSK para o ClickPipes com [serviços de endpoint da VPC do AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
 
-Use essa abordagem quando a [MSK multi-VPC connectivity](/pt-BR/integrations/clickpipes/aws-privatelink#msk-multi-vpc) não estiver disponível ou não for suficiente, por exemplo:
+Use essa abordagem quando a [MSK multi-VPC connectivity](/pt-BR/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc) não estiver disponível ou não for suficiente, por exemplo:
 
 * Conectividade entre regiões do ClickPipes com o MSK.
 * Clusters MSK Express.
@@ -146,7 +146,7 @@ No console do ClickHouse Cloud, crie um endpoint privado reverso para cada servi
 Repita o processo até que cada hostname de broker tenha um RPE correspondente.
 
 Para saber mais sobre o comportamento do DNS privado personalizado, as regras de nomenclatura e as opções de API/Terraform, consulte
-[Custom private DNS](/pt-BR/integrations/clickpipes/aws-privatelink#custom-private-dns).
+[Custom private DNS](/pt-BR/integrations/clickpipes/networking/aws-privatelink#custom-private-dns).
 
 Você também pode criar os endpoints privados reversos com [OpenAPI](/pt-BR/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) ou Terraform.
 
@@ -171,7 +171,7 @@ No Terraform, use [`clickhouse_clickpipes_reverse_private_endpoint`](https://reg
   ## Crie o ClickPipe do Kafka
 </div>
 
-Siga o [guia do AWS PrivateLink do ClickPipes](/pt-BR/integrations/clickpipes/aws-privatelink#creating-clickpipe)
+Siga o [guia do AWS PrivateLink do ClickPipes](/pt-BR/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
 para criar o ClickPipe com endpoints privados reversos.
 
 Ao criar o ClickPipe do Kafka:

@@ -1,0 +1,110 @@
+---
+description: '前払いクレジット残高を確認し、確約契約のクレジットを ClickHouse 組織間で移管します。'
+sidebarTitle: 'セルフサービスによる前払いクレジット管理'
+slug: /cloud/manage/billing/self-service-prepaid-credit-management
+title: 'セルフサービスによる前払いクレジット管理'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+確約契約で前払いクレジットを購入した場合、そのクレジットを ClickHouse 組織間でどのように割り当てるかを管理できます。
+残高の確認や組織間でのクレジットの移動には、**Prepaid credits** ページを使用します。
+
+## 前払いクレジットへのアクセス {#access-prepaid-credits}
+
+ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Prepaid credits** を選択します。
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="Prepaid credits under Account in the Settings sidebar" size="sm" />
+
+前払いクレジットの残高を表示するには、確約契約のクレジットが割り当てられた組織で、次のいずれかのロールを持っている必要があります。
+
+* [Admin](/ja/products/cloud/reference/security/console-roles#organization-roles)
+* [Billing](/ja/products/cloud/reference/security/console-roles#organization-roles)
+* [請求情報の表示または管理](/ja/products/cloud/reference/security/console-roles#console-permissions)の権限を付与する[カスタムロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#create-custom-role)
+
+このページには、これらのロールまたはアクセス許可を持つすべての組織が表示されます。前払いクレジットのない組織も含まれます。
+
+<Note>
+  いずれの組織にも前払いクレジットがない場合、このタブは空の状態となり、pricing calculator と営業へのお問い合わせフォームへのリンクが表示されます。
+</Note>
+
+## クレジット残高を表示する {#view-credit-balances}
+
+サマリーには、上記のアクセス権を持つ組織全体の前払いクレジットの合計が表示されます。
+
+| Metric                    | Description                                        |
+| ------------------------- | -------------------------------------------------- |
+| **Total Credits Granted** | 有効なクレジットと期限切れのクレジットを含む、これらの組織に割り当てられたすべての前払いクレジット。 |
+| **Expired Credits**       | これらの組織における期限切れの前払いクレジットの合計。                        |
+| **Credits Used**          | これらの組織が消費したすべての前払いクレジット。                           |
+| **Credits Available**     | これらの組織がまだ消費していない、有効な前払いクレジットの合計。                   |
+
+<Note>
+  前払い契約でクレジットが割り当てられている組織のすべてにアクセス権がない場合、合計値が契約上のクレジット総量よりも少なく表示されることがあります。
+</Note>
+
+すべての金額は ClickHouse Credits (CHC) で表されます。1 CHC は利用量 $1 に相当します。割引価格でクレジットを購入した場合、支払った金額 (ドル) よりも多くの CHC が付与されることがあります。
+
+### 組織の残高 {#organization-balances}
+
+サマリーの下にあるテーブルの各行は 1 つの組織を表し、その組織のすべての前払い残高を反映したデータが表示されます。
+
+* **Organization** には、組織名、一部がマスクされた組織 ID、およびクレジット残高の内訳を確認できる Billing ページへのリンクが表示されます。
+* **Credits granted**、**Expired credits**、**Credits used**、**Credits available** の定義はサマリーと同じですが、対象はその組織の前払いクレジットになります。
+* **Credit status** には、以下で説明する組織の前払い残高の状態が表示されます。
+* **Expiration Date** には、前払い残高の有効期限が表示されます。残高が複数ある場合は、最も遅い有効期限が表示されます。
+
+| ステータス                  | 説明                                                                  |
+| ---------------------- | ------------------------------------------------------------------- |
+| **Active**             | 組織に、有効期限が切れていない前払いクレジット残高が 1 つ以上あります。                               |
+| **Expires soon**       | 組織に有効な前払い残高が 1 つだけあり、60 日以内に有効期限が切れます。このステータスは、残高の有効期限が切れるまで維持されます。 |
+| **Expired**            | 組織のすべての前払い残高の終了日が過去の日付になっています。                                      |
+| **Spent**              | 組織のすべての前払い残高が消費済みですが、有効期限は切れていません。このステータスは **Active** よりも優先されます。    |
+| **No Prepaid Credits** | 組織に前払いクレジットがありません。                                                  |
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Prepaid credit summary metrics and balances by organization" size="lg" />
+
+## クレジットの移管 {#transfer-credits}
+
+クレジットの移管は分割 (split) とも呼ばれ、前払いクレジットを移管元の組織から移管先の組織へ移動する操作です。
+
+クレジットを移管するには、[Manage billing details](/ja/products/cloud/reference/security/console-roles#console-permissions) のアクセス許可が必要です。View billing details のアクセス許可では、残高の閲覧はできますが移管はできません。
+
+1. 移管元の組織の行にある **Transfer** をクリックします。
+2. 有効なクレジットグラントを選択します。パネルには、移管元の組織の有効なグラントとその有効期限が一覧表示されます。
+3. アクセス権を持つ組織の中から移管先の組織を選択します。
+4. 移管する金額を入力します。
+5. 移管後の残高を確認し、**Transfer credits** をクリックします。
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="移管元のグラント、移管先の組織、移管金額、移管後の残高を表示したクレジット移管パネル" size="md" />
+
+### 移管のルール {#transfer-rules}
+
+* 移管できるのは**有効な 前払いクレジット** のみです。trial credits は移管できません。
+* クレジットの移管により、移管元および移管先の組織で利用可能な 前払いクレジット が変動します。確約契約に基づいて付与された有効なクレジットの合計は変わりません。
+* trial 中の組織、または未払いによる猶予期間中の組織に 前払いクレジット を移管すると、その組織は prepaid 組織となり、移管したクレジットの消費を開始します。
+* 移管元組織から残りのすべての 前払いクレジット を移管できるのは、その組織に[バックアップの支払い方法](/ja/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org)が設定されている場合、またはサービスが存在しない場合のみです。それ以外の場合、移管の上限は移管元組織のクレジット残高の 75% となります。
+* ClickHouse Cloud と [Bring Your Own Cloud (BYOC)](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) の組織間でクレジットを移管することはできません。
+* AWS Marketplace と Google Cloud Marketplace のように、異なるクラウドマーケットプレイス経由で請求されている組織間でクレジットを移管することはできません。
+
+### 移管後のマーケットプレイス請求 {#marketplace-billing-after-a-transfer}
+
+移管元の組織が有効な AWS、Google Cloud、または Azure Marketplace の契約を通じて請求されている場合、移管先の組織の請求設定によって次のように動作が異なります。
+
+| 移管先組織の請求設定                   | 結果                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------- |
+| **マーケットプレイスサブスクリプションなし**     | 移管先の組織は、移管元の組織のサブスクリプションに自動的にリンクされます。すべてのクレジットが消費または失効した後、超過分はそのマーケットプレイスアカウントに請求されます。 |
+| **同一マーケットプレイスのサブスクリプションあり**  | 移管は完了し、移管先の組織は超過分について既存のサブスクリプションを引き続き使用します。移管元の組織のサブスクリプションはコピーされません。                 |
+| **異なるマーケットプレイスのサブスクリプションあり** | 移管はブロックされます。                                                                           |
+
+両方の組織の超過分を同一のマーケットプレイスサブスクリプションで請求するには、[他の組織のマーケットプレイスサブスクリプションを使用する方法](/ja/products/cloud/reference/billing/managing-payment-methods#steps-switch-org-different-org)を参照してください。
+
+## 移管履歴と通知の確認 {#review-transfer-history-and-notifications}
+
+移管が完了すると、次のようになります。
+
+* 組織テーブルの下にある **Transfer History** テーブルに新しいエントリが追加されます。
+* 移管元と移管先の両方の組織に、UI、メール、Slack で通知が届きます。これらの通知を受け取れるのは、[請求通知へのアクセス権](/ja/products/cloud/features/monitoring/notifications#customizing-notifications)を持つユーザーのみです。
+
+移管の一部でも失敗した場合は、トランザクション全体がブロックされ、エラーが表示されます。変更が部分的に適用されることはありません。

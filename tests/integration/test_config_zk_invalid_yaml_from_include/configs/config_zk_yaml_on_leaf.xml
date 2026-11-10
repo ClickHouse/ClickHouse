@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <invalid_yaml_attribute>
+            <log_comment from_zk="/value" yaml="true" />
+        </invalid_yaml_attribute>
+    </profiles>
+</clickhouse>

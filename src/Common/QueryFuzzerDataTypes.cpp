@@ -62,6 +62,27 @@ const std::unordered_set<String> & QueryFuzzer::geoAliasNames()
     return names;
 }
 
+/// `Nullable`, `LowCardinality(Nullable)`, `Variant` and `Dynamic` are not allowed inside `Variant`,
+/// and the constructor of `DataTypeVariant` throws on them. The fuzzer may produce such a type for a
+/// variant alternative, so coerce it into something the type is allowed to hold.
+static DataTypePtr makeTypeAllowedInsideVariant(const DataTypePtr & type)
+{
+    if (isNullableOrLowCardinalityNullable(type))
+        return makeTypeAllowedInsideVariant(removeNullableOrLowCardinalityNullable(type));
+
+    const auto type_id = type->getTypeId();
+    if (type_id == TypeIndex::Variant || type_id == TypeIndex::Dynamic)
+        return std::make_shared<DataTypeString>();
+
+    return type;
+}
+
+static void makeTypesAllowedInsideVariant(DataTypes & types)
+{
+    for (auto & type : types)
+        type = makeTypeAllowedInsideVariant(type);
+}
+
 DataTypePtr QueryFuzzer::fuzzContainerChildren(const DataTypePtr & type)
 {
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
@@ -76,6 +97,7 @@ DataTypePtr QueryFuzzer::fuzzContainerChildren(const DataTypePtr & type)
     {
         DataTypes variants = type_variant->getVariants();
         fuzzDataTypes(variants);
+        makeTypesAllowedInsideVariant(variants);
         return std::make_shared<DataTypeVariant>(variants);
     }
     return nullptr;
@@ -281,13 +303,14 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         /// Occasionally drop an alternative (keep at least 1)
         if (variants.size() > 1 && fuzz_rand() % 4 == 0)
             variants.erase(variants.begin() + fuzz_rand() % variants.size());
+        makeTypesAllowedInsideVariant(variants);
         return std::make_shared<DataTypeVariant>(variants);
     }
 
     const auto * type_object = typeid_cast<const DataTypeObject *>(type.get());
     if (type_object && fuzz_rand() % 4 != 0)
     {
-        std::unordered_map<String, DataTypePtr> typed_paths = type_object->getTypedPaths();
+        auto typed_paths = type_object->getTypedPaths();
         for (auto & [path, path_type] : typed_paths)
             path_type = fuzzDataType(path_type);
         try
@@ -297,7 +320,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
                 fuzzObjectPathsToSkip(type_object->getPathsToSkip()),
                 fuzzObjectPathRegexpsToSkip(type_object->getPathRegexpsToSkip()),
                 type_object->getMaxDynamicPaths(),
-                type_object->getMaxDynamicTypes());
+                type_object->getMaxDynamicTypes(),
+                type_object->getSharedTypedPaths());
         }
         catch (...) // NOLINT(bugprone-empty-catch) Ok: a fuzzed typed-path type may violate an Object invariant
         {
@@ -450,13 +474,15 @@ std::vector<String> QueryFuzzer::fuzzObjectPathRegexpsToSkip(std::vector<String>
 }
 
 DataTypePtr QueryFuzzer::makeRandomObject(
-    std::unordered_map<String, DataTypePtr> typed_paths,
+    DataTypeObject::TypedPathsMap typed_paths,
     std::unordered_set<String> paths_to_skip,
     std::vector<String> path_regexps_to_skip,
     std::optional<size_t> source_max_dynamic_paths,
-    std::optional<size_t> source_max_dynamic_types)
+    std::optional<size_t> source_max_dynamic_types,
+    std::unordered_set<String> shared_typed_paths)
 {
-    /// Only the numeric parameters are randomized here; the typed paths and SKIP lists are used as given.
+    /// Only the numeric parameters are randomized here; the typed paths, their SHARED marks and the SKIP lists
+    /// are used as given.
     /// An unfired roll keeps the source limit, so mutating one part of the type does not reset the others.
     const size_t max_dynamic_paths = (fuzz_rand() % 4 == 0)
         ? fuzz_rand() % (DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT + 1)
@@ -470,7 +496,8 @@ DataTypePtr QueryFuzzer::makeRandomObject(
         std::move(paths_to_skip),
         std::move(path_regexps_to_skip),
         max_dynamic_paths,
-        max_dynamic_types);
+        max_dynamic_types,
+        std::move(shared_typed_paths));
 }
 
 DataTypePtr QueryFuzzer::makeAggregateFunctionType(
@@ -573,7 +600,7 @@ DataTypePtr QueryFuzzer::getRandomType()
             const size_t tuple_size = fuzz_rand() % 6 + 1;
             DataTypes elements;
             for (size_t i = 0; i < tuple_size; ++i)
-                elements.push_back(getRandomType());
+                elements.push_back(makeTypeAllowedInsideVariant(getRandomType()));
             return std::make_shared<DataTypeVariant>(elements);
         }
         case TypeIndex::Array: return std::make_shared<DataTypeArray>(getRandomType());

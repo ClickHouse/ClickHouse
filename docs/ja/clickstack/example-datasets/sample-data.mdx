@@ -71,31 +71,31 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       </Step>
 
       <Step title="セッションを確認する" id="explore-sessions-managed">
-        ユーザーから、商品の支払い時に問題が発生しているという報告があるとします。HyperDX の session replay 機能を使えば、そのときのユーザー体験を確認できます。
+        ユーザーから、商品の支払い時に問題が発生しているという報告があるとします。HyperDX のセッションリプレイ機能を使って、そのときの体験を確認できます。
 
         左側のメニューから `Client Sessions` を選択します。
 
         <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="Sessions" size="lg" />
 
-        このビューでは、EC ストアのフロントエンドセッションを確認できます。ユーザーがチェックアウトして購入を完了しようとするまで、セッションは Anonymous のままです。
+        このビューでは、e コマースストアのフロントエンドセッションを確認できます。セッションは、ユーザーがチェックアウトして購入完了を試みるまで Anonymous のままです。
 
-        メールアドレスが付いている一部のセッションには関連するエラーもあり、決済失敗の報告を裏付けている可能性があります。
+        メールアドレスが付いている一部のセッションには関連するエラーもあり、取引失敗の報告を裏付けている可能性があります。
 
-        失敗していてメールアドレスにも紐づいているトレースを選択します。次のビューでは、ユーザーのセッションをリプレイして問題の内容を確認できます。play を押してセッションを再生してください。
+        失敗しているトレースと、それに関連付けられたメールアドレスを選択します。次のビューでは、ユーザーのセッションを再生して問題を確認できます。play を押してセッションを再生してください。
 
         <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="Session replay" size="lg" />
 
-        リプレイでは、ユーザーがサイト内を移動し、商品をカートに追加していく様子を確認できます。支払いを完了しようとする場面までスキップしてかまいません。
+        リプレイでは、ユーザーがサイト内を移動し、商品をカートに追加していく様子が表示されます。必要に応じて、支払い完了を試みる場面までスキップしてください。
 
         <Tip>
-          エラーはタイムライン上で赤く注記されます。
+          すべてのエラーは、タイムライン上に赤色で注記されます。
         </Tip>
 
-        ユーザーは注文を完了できませんでしたが、目立ったエラーはありません。左側のパネルの一番下までスクロールすると、ユーザーのブラウザーから送信されたネットワークイベントとコンソールイベントが表示されます。`/api/checkout` の呼び出し時に 500 エラーが発生していたことがわかります。
+        ユーザーは注文を完了できませんでしたが、明らかなエラーは見当たりません。左側パネルの一番下までスクロールすると、ユーザーのブラウザーから取得したネットワークイベントとコンソールイベントが表示されます。`/api/checkout` の呼び出し時に 500 エラーが発生していることがわかります。
 
         <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="Error in session" size="lg" />
 
-        この `500` エラーを選択します。`概要` にも `Column Values` にも、エラーが想定外で `Internal Error` を引き起こしていること以外、問題の原因を示す情報はありません。
+        この `500` エラーを選択します。`Overview` と `Column Values` のどちらを見ても、想定外のエラーによって `Internal Error` が発生していること以外に、問題の原因は示されていません。
       </Step>
 
       <Step title="トレースを確認する" id="explore-traces-managed">
@@ -118,7 +118,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
         payment サービスで cache が埋まりつつあり、そのため支払いを完了できなくなっていることが分かりました。
       </Step>
 
-      <Step title="Explore でログを確認する" id="explore-logs-managed">
+      <Step title="ログを確認する" id="explore-logs-managed">
         さらに詳しく確認するには、`Search` に戻ります。
 
         sources から `Logs` を選択し、`payment` サービスにフィルタを適用します。
@@ -139,7 +139,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Tab>
 
   <Tab title="ClickStack Open Source">
-    以下の例では、[オールインワンイメージの手順](/ja/clickstack/getting-started/oss)に従ってオープンソース版 ClickStack を起動し、[ローカルの ClickHouse インスタンス](/ja/clickstack/getting-started/oss#complete-connection-credentials)に接続済みであることを前提とします。
+    以下の例では、[オールインワンイメージ](/ja/clickstack/getting-started/oss)を使用して ClickStack Open Source を起動し、[インジェスト API キー](/ja/clickstack/getting-started/oss#copy-ingestion-api-key)をコピー済みであることを前提とします。
 
     <Steps>
       <Step title="ClickStack UI (HyperDX) にアクセスする" id="navigate-to-the-hyperdx-ui">

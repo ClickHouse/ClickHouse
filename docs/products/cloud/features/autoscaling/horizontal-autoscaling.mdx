@@ -7,8 +7,12 @@ title: 'Horizontal autoscaling'
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge/>
+
 <Note>
-Horizontal autoscaling is in Private Preview and is available on the Scale and Enterprise plans. To request access, contact your ClickHouse account team or support.
+Horizontal autoscaling is in Beta and is available on the Scale and Enterprise plans. Its behavior and capabilities may change before general availability.
 </Note>
 
 Horizontal autoscaling automatically adds or removes replicas in your service in response to workload demand. Where vertical autoscaling changes the size of each replica, horizontal autoscaling changes the number of replicas, making it well suited to workloads where demand comes from more queries rather than heavier queries.
@@ -38,7 +42,7 @@ To enable it:
 2. Set maximum replicas greater than minimum replicas. The autoscaler operates within these bounds. Setting the two values equal pins the service to a fixed replica count and disables horizontal autoscaling.
 
 <Note>
-Services can scale horizontally to a maximum of 20 replicas. If you need additional replicas, contact our support team.
+For the replica limits that apply to your service, see [Usage limits](/cloud/bestpractices/usage-limits). Contact our support team if you need additional replicas.
 </Note>
 
 ## Configure your clients {#configure-your-clients}
@@ -74,7 +78,6 @@ Scaling events are visible on the service's metrics dashboard in the ClickHouse 
 
 ## Known limitations {#known-limitations}
 
-- Horizontal autoscaling is in Private Preview and must be enabled for your organization by the ClickHouse support team.
 - The vertical replica size must be pinned by setting minimum memory equal to maximum memory.
-- Each service is limited to a maximum of 20 replicas. Contact support if you need additional replicas.
+- Replica limits apply; see [Usage limits](/cloud/bestpractices/usage-limits) for the limits that apply to your service, and contact support if you need additional replicas.
 - Recommendations are made every 10 minutes; horizontal autoscaling isn't designed to absorb sub-minute spikes. For predictable peaks, consider [scheduled scaling](/products/cloud/features/autoscaling/scheduled-scaling).

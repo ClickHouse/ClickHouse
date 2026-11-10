@@ -14,6 +14,9 @@ using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
+/// Builds the plan fragment shipped to the other replicas, with its coordinated read marked.
+/// Returns null when that read cannot be marked - the caller must then send the query text instead,
+/// because a plan with no read marked makes every replica read the whole table.
 std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     const QueryTreeNodePtr & query_tree,
     const Block & header,
@@ -29,7 +32,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     QueryPlanStepPtr read_from_merge_tree,
     size_t replica_number);
 
-std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree);
+std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool * right_branch_selected = nullptr);
 
 QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
     ContextPtr context,

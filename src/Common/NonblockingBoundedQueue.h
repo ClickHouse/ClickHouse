@@ -4,6 +4,7 @@
 #include <vector>
 #include <base/defines.h>
 #include <Common/BitHelpers.h>
+#include <Common/CacheLine.h>
 
 /// Vyukov queue.
 /// https://web.archive.org/web/20170205113402/http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
@@ -163,6 +164,17 @@ public:
         size_t x = enqueue_pos.load(std::memory_order_relaxed);
         return x - std::min(x, y); // max(0, x - y)
     }
+
+    /// Number of pushes ever started. Unlike `size`, this is an exact boundary for a drain, but only
+    /// through happens-before: producers advance the counter with a relaxed CAS, so this load alone does
+    /// not synchronize with them. If a completed `tryPush` happens-before this load (e.g. the caller
+    /// requested a flush after the push, and the draining thread read that request before this call),
+    /// read-write coherence guarantees the returned value covers that push's position. Slot contents don't
+    /// need to be visible at this point: `tryPop` synchronizes with each push via acquire on the slot,
+    /// waiting out a slot whose position is taken but not yet published.
+    size_t enqueuePosition() const { return enqueue_pos.load(std::memory_order_acquire); }
+    /// Number of pops ever completed. Only meaningful to the (single) consumer, which owns dequeue_pos.
+    size_t dequeuePosition() const { return dequeue_pos.load(std::memory_order_relaxed); }
 
 private:
     struct alignas(DB::CH_CACHE_LINE_SIZE) Slot

@@ -9,6 +9,7 @@
         <server_id>2</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
         <four_letter_word_white_list>*</four_letter_word_white_list>
 
         <coordination_settings>
@@ -39,6 +40,6 @@
             </server>
         </raft_configuration>
     </keeper_server>
-    <global_profiler_real_time_period_ns>1000000000</global_profiler_real_time_period_ns>
-    <global_profiler_cpu_time_period_ns>1000000000</global_profiler_cpu_time_period_ns>
+    <global_profiler_real_time_period_ns>0</global_profiler_real_time_period_ns>
+    <global_profiler_cpu_time_period_ns>0</global_profiler_cpu_time_period_ns>
 </clickhouse>

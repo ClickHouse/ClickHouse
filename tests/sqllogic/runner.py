@@ -8,9 +8,12 @@ import json
 import logging
 import multiprocessing
 import os
+import sys
 from functools import reduce
 
 from deepdiff import DeepDiff  # pylint:disable=import-error; for style check
+
+sys.path.insert(0, os.path.dirname(__file__))
 
 from connection import Engines, default_clickhouse_native_conn_args, setup_connection
 from test_runner import RequestType, Status, TestRunner
@@ -34,6 +37,10 @@ def setup_logger(args):
         file_handler.setLevel(args.log_level.upper())
         file_handler.setFormatter(formatter)
         logging.getLogger().addHandler(file_handler)
+        stderr_handler = logging.StreamHandler()
+        stderr_handler.setLevel(logging.ERROR)
+        stderr_handler.setFormatter(formatter)
+        logger.addHandler(stderr_handler)
     else:
         stream_handler = logging.StreamHandler()
         stream_handler.setLevel(logging.INFO)
@@ -164,7 +171,9 @@ def run_all_tests_in_parallel(setup_kwargs, runner_kwargs, input_dir, output_dir
             try:
                 reports.append(ar.get())
             except Exception as e:
-                logger.error("Child process failed for %s: %s", test, e)
+                logger.error(
+                    "Child process failed for %s: %s", test, e, exc_info=not failed_tests
+                )
                 failed_tests.append((test, e))
 
     if failed_tests:
@@ -180,6 +189,11 @@ def run_all_tests_in_parallel(setup_kwargs, runner_kwargs, input_dir, output_dir
 
     report = reduce(lambda x, y: x.combine_with(y), reports)
     report.write_report(output_dir)
+    if failed_tests:
+        test, e = failed_tests[0]
+        raise RuntimeError(
+            f"{len(failed_tests)} of {len(tests)} test file(s) failed to run, the first one {test}: {e}"
+        )
     return report
 
 

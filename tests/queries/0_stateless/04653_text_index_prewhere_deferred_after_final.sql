@@ -1,7 +1,6 @@
 -- Direct read from text index must not rewrite a PREWHERE that is deferred after FINAL,
 -- otherwise the post-FINAL filter keeps the old DAG while the read step switches to index columns
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET apply_prewhere_after_final = 1;
 
@@ -61,5 +60,15 @@ SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1;
 
 SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'hello world') SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1) WHERE explain LIKE '%Deferred prewhere filter column%';
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'hello world') SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1) WHERE explain LIKE '%Name: idx%';
+
+SELECT '= a deferred prewhere applies the preprocessor too =';
+
+SELECT count() FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'world')
+SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1;
+
+SELECT count() FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'World') WHERE hasPhrase(text, 'world')
+SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1;
+
+SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'world') SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1) WHERE explain LIKE '%FUNCTION hasPhrase(lower(text)%hello world%';
 
 DROP TABLE t_text_defer_final_pp;

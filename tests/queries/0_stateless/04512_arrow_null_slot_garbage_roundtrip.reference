@@ -1,0 +1,11 @@
+-- { echoOn }
+
+SELECT * FROM file(currentDatabase() || '_04512_plain.arrow', 'Arrow');
+\N
+SELECT * FROM file(currentDatabase() || '_04512_plain.arrowstream', 'ArrowStream');
+\N
+SELECT * FROM file(currentDatabase() || '_04512_struct.arrow', 'Arrow');
+\N
+SELECT * FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toInt32(d) FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow', 'd Date32') SETTINGS date_time_overflow_behavior = 'saturate';
+2932896

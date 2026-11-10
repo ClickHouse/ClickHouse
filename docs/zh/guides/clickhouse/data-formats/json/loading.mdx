@@ -42,7 +42,7 @@ doc_type: 'guide'
 
   如果你的列名和类型都是固定的，且预计不会新增列，那么在生产环境中应始终优先使用静态定义的 schema。
 
-  对于动态性很高的数据，JSON type 是首选，因为列名和类型可能会发生变化。这种类型在原型设计和数据探索中也很有用。
+  对于动态性很高的数据，JSON 类型是首选，因为列名和类型可能会发生变化。这种类型在原型设计和数据探索中也很有用。
 </Info>
 
 下面展示了一个简单的 schema，其中 **JSON 键映射到列名**：
@@ -72,7 +72,7 @@ ClickHouse 支持以多种格式加载 JSON 数据，并根据文件扩展名和
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 LIMIT 1
 ```
 
@@ -87,7 +87,7 @@ LIMIT 1
 请注意，此处无需指定文件格式。我们使用 glob pattern 读取存储桶中所有 `*.json.gz` 文件，ClickHouse 会根据文件扩展名和内容自动推断格式为 `JSONEachRow` (ndjson) 。若 ClickHouse 无法自动检测格式，可通过参数函数手动指定。
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 ```
 
 <Info>
@@ -99,7 +99,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 要加载这些文件中的数据行，可以使用 [`INSERT INTO SELECT`](/zh/reference/statements/insert-into#inserting-the-results-of-select)：
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 ```
 
 ```response
@@ -183,12 +183,12 @@ ORDER BY (project, date);
 我们采用与原始数据集相同的方法来填充该表：
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```response
@@ -210,7 +210,7 @@ LIMIT 2
 │ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"4zD5MYQz4JkP1QqsJIS":"0","name":"8881321089124243208"} │
 └────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┴──────────────────────────────────────────────────────────┘
 
-2 行。耗时：0.149 秒。
+2 rows in set. Elapsed: 0.149 sec.
 ```
 
 请注意此处加载数据时的性能差异。JSON 列在写入时需要进行类型推断；如果某些列存在多种类型，还需要额外的存储空间。虽然 JSON 类型 可以通过配置 (参见[设计 JSON schema](/zh/guides/clickhouse/data-formats/json/schema)) 达到与显式声明列相当的性能，但它默认就是为灵活性而设计的。不过，这种灵活性也并非没有代价。

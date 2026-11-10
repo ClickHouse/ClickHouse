@@ -132,7 +132,7 @@ ClickHouse 在数据传输过程中支持多种压缩编解码器。常见的两
 
 **将压缩、批处理和高效的输入格式 (如 Native) 结合使用，可获得最佳摄取性能。**
 
-使用原生接口 (例如 [clickhouse-client](/zh/concepts/features/interfaces/cli)) 时，默认启用 LZ4 压缩。你也可以通过设置切换为 ZSTD。
+使用原生接口 (例如 [clickhouse-client](/zh/concepts/features/interfaces/client)) 时，默认启用 LZ4 压缩。你也可以通过设置切换为 ZSTD。
 
 使用 [HTTP 接口](/zh/concepts/features/interfaces/http) 时，可通过 Content-Encoding 请求头启用压缩 (例如 Content-Encoding: lz4) 。整个载荷必须在发送前完成压缩。
 
@@ -162,7 +162,7 @@ ClickHouse 在数据传输过程中支持多种压缩编解码器。常见的两
   ### 原生接口
 </div>
 
-ClickHouse 为数据摄取提供了两种主要接口：**原生接口**和**HTTP 接口**——两者在性能与灵活性之间各有取舍。原生接口由 [clickhouse-client](/zh/concepts/features/interfaces/cli) 以及 Go、C++ 等部分语言的客户端使用，专为高性能而设计。它始终以 ClickHouse 高效的 Native 格式 传输数据，支持使用 LZ4 或 ZSTD 进行按块压缩，并通过将解析、格式转换等工作卸载到客户端，尽量减少服务端处理。
+ClickHouse 为数据摄取提供了两种主要接口：**原生接口**和**HTTP 接口**——两者在性能与灵活性之间各有取舍。原生接口由 [clickhouse-client](/zh/concepts/features/interfaces/client) 以及 Go、C++ 等部分语言的客户端使用，专为高性能而设计。它始终以 ClickHouse 高效的 Native 格式 传输数据，支持使用 LZ4 或 ZSTD 进行按块压缩，并通过将解析、格式转换等工作卸载到客户端，尽量减少服务端处理。
 
 它甚至支持在客户端计算 MATERIALIZED 和 DEFAULT 列值，使服务端能够完全跳过这些步骤。因此，在效率至关重要的高吞吐量摄取场景中，原生接口是理想选择。
 

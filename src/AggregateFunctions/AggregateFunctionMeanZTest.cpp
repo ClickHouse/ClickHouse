@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <cmath>
+#include <Common/NaNUtils.h>
 
 
 namespace ErrorCodes
@@ -124,8 +125,9 @@ public:
         auto [z_stat, p_value] = this->data(place).getResult(pop_var_x, pop_var_y);
         auto [ci_low, ci_high] = this->data(place).getConfidenceIntervals(pop_var_x, pop_var_y, confidence_level);
 
-        /// Because p-value is a probability.
-        p_value = std::min(1.0, std::max(0.0, p_value));
+        /// Because p-value is a probability. A NaN p-value is kept, as `std::max` would turn it into zero.
+        if (!isNaN(p_value))
+            p_value = std::min(1.0, std::max(0.0, p_value));
 
         auto & column_tuple = assert_cast<ColumnTuple &>(to);
         auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
@@ -214,9 +216,10 @@ INSERT INTO mean_ztest VALUES (20.3, 0), (21.9, 0), (22.1, 0), (18.9, 1), (19, 1
 SELECT meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index) FROM mean_ztest;
         )",
         R"(
-┌─meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index)───────────────────────────────┐
-│ (3.2841296025548123, 0.0010229786769086013, 0.8198428246768334, 3.2468238419898365) │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+┌─meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index)───────────────────────────────────────────┐
+├────────z_statistic─┬───────────────p_value─┬─confidence_interval_low─┬─confidence_interval_high─┤
+│ 3.2841296025548123 │ 0.0010229786769086016 │      0.8198428246768337 │        3.246823841989836 │
+└────────────────────┴───────────────────────┴─────────────────────────┴──────────────────────────┘
         )"
     }
     };

@@ -3,6 +3,8 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
+#include <Common/filesystemHelpers.h>
+#include <Interpreters/FileCache/FileCacheUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
@@ -23,8 +25,6 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
-    extern const Event FilesystemCacheLockKeyMicroseconds;
-    extern const Event FilesystemCacheLockMetadataMicroseconds;
     extern const Event FilesystemCacheLockOriginPoolMicroseconds;
     extern const Event FilesystemCacheCreatedKeyDirectories;
 }
@@ -64,8 +64,12 @@ FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
 
 size_t FileSegmentMetadata::size() const
 {
+    auto metadata = file_segment->tryGetKeyMetadata();
+    if (metadata && metadata->useRealDiskSize())
+        return metadata->alignFileSize(file_segment->getReservedSize());
     return file_segment->getReservedSize();
 }
+
 
 KeyMetadata::KeyMetadata(
     const Key & key_,
@@ -153,7 +157,6 @@ LockedKeyPtr KeyMetadata::tryLock()
 
 LockedKeyPtr KeyMetadata::lockNoStateCheck()
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
     return std::make_unique<LockedKey>(shared_from_this());
 }
 
@@ -214,22 +217,59 @@ LoggerPtr KeyMetadata::logger() const
     return cache_metadata->log;
 }
 
+size_t KeyMetadata::alignFileSize(size_t file_size) const
+{
+    return cache_metadata->alignFileSize(file_size);
+}
+
+bool KeyMetadata::useRealDiskSize() const
+{
+    return cache_metadata->useRealDiskSize();
+}
+
 CacheMetadata::CacheMetadata(
     const std::string & path_,
     size_t background_download_queue_size_limit_,
     size_t background_download_threads_,
-    bool write_cache_per_user_directory_)
+    bool write_cache_per_user_directory_,
+    bool use_real_disk_size_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , write_cache_per_user_directory(write_cache_per_user_directory_)
+    , use_real_disk_size(use_real_disk_size_)
     , log(getLogger("CacheMetadata"))
     , origins(ProfileEvents::FilesystemCacheLockOriginPoolMicroseconds)
     , download_threads_num(background_download_threads_)
 {
+
 }
 
 CacheMetadata::~CacheMetadata() = default;
+
+size_t CacheMetadata::alignFileSize(size_t file_size) const
+{
+    const size_t block_size = fs_block_size.load(std::memory_order_acquire);
+    if (block_size == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem block size is not initialized for cache path {}", path);
+    return FileCacheUtils::roundUpToMultiple(file_size, block_size);
+}
+
+bool CacheMetadata::useRealDiskSize() const
+{
+    return use_real_disk_size;
+}
+
+void CacheMetadata::fillStatVFS()
+{
+    const auto stat = getStatVFS(path);
+    /// Use `f_frsize` (the fundamental filesystem block/fragment size), not `f_bsize` (the preferred I/O
+    /// block size), because on-disk space is accounted in `f_frsize` units (`f_blocks`, `f_bfree`, `f_bavail`
+    /// are all counted in `f_frsize`), and `FileCacheSettings` already computes total space via `f_frsize`.
+    /// Fall back to `f_bsize` when `f_frsize` is reported as zero.
+    const size_t block_size = stat.f_frsize != 0 ? stat.f_frsize : stat.f_bsize;
+    fs_block_size.store(block_size, std::memory_order_release);
+}
 
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size)
 {
@@ -263,14 +303,18 @@ String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) con
     const auto key_str = key.toString();
     const auto key_type_prefix = getKeyTypePrefix(origin.segment_type);
     if (write_cache_per_user_directory)
+    {
+        /// The id is a single path component: every carrier of a non-internal id rejects a NUL and
+        /// a '/' up front via `DistributedCache::getClientIDRejectionReason`.
+        chassert(!origin.user_id.contains('\0') && !origin.user_id.contains('/'));
         return fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str;
+    }
 
     return fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str;
 }
 
 CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockMetadataMicroseconds);
     return guard.lock();
 }
 
@@ -355,8 +399,9 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
 
     /// Refresh idle-client TTL after releasing the bucket lock: prevents
     /// lock-order inversion with the eviction task. Skip internal/common ids
-    /// and probe-only lookups (result == nullptr).
-    if (result && on_client_access)
+    /// and probe-only lookups (result == nullptr). The startup load is not a client
+    /// access, so it must not pass for one (the TTL counts from the load regardless).
+    if (result && on_client_access && !is_initial_load)
     {
         const auto & user_id = origin.user_id;
         if (!user_id.empty()
@@ -999,6 +1044,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (offset != static_cast<size_t>(buf->getPosition()))
         buf->seek(offset, SEEK_SET);
 
+    FileCacheReserveAhead reserve_ahead;
     while (size_to_download && !buf->eof())
     {
         const auto available = buf->available();
@@ -1008,7 +1054,11 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         size_to_download -= size;
 
         std::string failure_reason;
-        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
+        /// Don't reserve ahead past this background pass.
+        const size_t reserve_hint = size + size_to_download;
+        if (!file_segment.reserve(
+                size, reserve_space_lock_wait_timeout_milliseconds, failure_reason,
+                /* reserve_stat */nullptr, reserve_hint, &reserve_ahead))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "

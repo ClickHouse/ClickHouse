@@ -13,6 +13,7 @@ class ParserParallelWithQuery : public IParserBase
 {
 public:
     ParserParallelWithQuery(IParser & subquery_parser_, ASTPtr first_subquery_);
+    std::map<String, Documentation> getDocumentation() const override;
 
 protected:
     const char * getName() const override { return "ParallelWithClause"; }

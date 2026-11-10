@@ -187,6 +187,7 @@ Positions: 2 1
       sum(__table2.y)
         Function: sum(UInt32) → UInt64
         Arguments: __table2.y
+  Mode: memory-efficient
     Union
       Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names))
       Actions: INPUT : 0 -> __table1.x UInt32 : 0

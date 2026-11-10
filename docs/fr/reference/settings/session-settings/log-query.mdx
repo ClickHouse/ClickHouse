@@ -28,7 +28,7 @@ Consigner les paramètres de la requête dans le query&#95;log et dans le journa
 
 Active la journalisation des threads de requête.
 
-Les threads de requête sont consignés dans la table [system.query&#95;thread&#95;log](/fr/reference/system-tables/query_thread_log). Ce paramètre ne prend effet que lorsque [log&#95;queries](/fr/reference/settings/session-settings/log-queries#log_queries) vaut true. Les threads des requêtes exécutées par ClickHouse avec ce paramétrage sont consignés conformément aux règles définies par le paramètre de configuration du serveur [query&#95;thread&#95;log](/fr/reference/settings/server-settings/settings#query_thread_log).
+Les threads de requête sont consignés dans la table [system.query&#95;thread&#95;log](/fr/reference/system-tables/query_thread_log). Ce paramètre ne prend effet que lorsque [log&#95;queries](/fr/reference/settings/session-settings/log-queries#log_queries) vaut true. Les threads des requêtes exécutées par ClickHouse avec ce paramétrage sont consignés conformément aux règles définies par le paramètre de configuration du serveur [query&#95;thread&#95;log](/fr/reference/settings/server-settings/settings/query#query_thread_log).
 
 Valeurs possibles :
 
@@ -49,7 +49,7 @@ log_query_threads=1
 
 Configure la journalisation des vues de requête.
 
-Lorsqu’une requête exécutée par ClickHouse avec ce paramètre activé possède des vues associées (vues matérialisées ou live views), celles-ci sont consignées dans le paramètre de configuration du serveur [query&#95;views&#95;log](/fr/reference/settings/server-settings/settings#query_views_log).
+Lorsqu’une requête exécutée par ClickHouse avec ce paramètre activé possède des vues associées (vues matérialisées ou live views), celles-ci sont consignées dans le paramètre de configuration du serveur [query&#95;views&#95;log](/fr/reference/settings/server-settings/settings/query#query_views_log).
 
 Exemple :
 

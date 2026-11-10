@@ -1,4 +1,4 @@
--- Error paths and rarely-tested code paths for tumble/tumbleStart/tumbleEnd/hop/hopStart/hopEnd/windowID.
+-- Error paths and rarely-tested code paths for tumble/tumbleStart/tumbleEnd/hop/hopStart/hopEnd.
 
 SELECT '--- tumble: error paths ---';
 SELECT tumble(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -35,17 +35,6 @@ SELECT hopStart('abc'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hopEnd('abc'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hopStart(toDateTime('2020-01-01 00:00:00', 'UTC'), INTERVAL 0 DAY, INTERVAL 1 DAY); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT hopEnd(toDateTime('2020-01-01 00:00:00', 'UTC'), INTERVAL 0 DAY, INTERVAL 1 DAY); -- { serverError ARGUMENT_OUT_OF_BOUND }
-
-SELECT '--- windowID ---';
--- 2 args (tumble-like)
-SELECT windowID(toDateTime('2020-01-02 00:00:01', 'UTC'), INTERVAL 1 HOUR);
--- 4 args (hop-like with timezone)
-SELECT windowID(toDateTime('2020-01-02 00:00:01', 'UTC'), INTERVAL 1 HOUR, INTERVAL 3 HOUR, 'UTC');
--- Interval kind mismatch between window and hop
-SELECT windowID(toDateTime('2020-01-02 00:00:01', 'UTC'), INTERVAL 1 DAY, INTERVAL 1 HOUR); -- { serverError ILLEGAL_COLUMN }
--- Wrong number of arguments
-SELECT windowID(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT windowID(toDateTime('2020-01-01 00:00:00', 'UTC'), INTERVAL 1 SECOND, INTERVAL 2 SECOND, 'UTC', 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 SELECT '--- Tuple extraction via tumbleStart/tumbleEnd pass-through ---';
 -- Verify single-arg Tuple form: extracts start/end element

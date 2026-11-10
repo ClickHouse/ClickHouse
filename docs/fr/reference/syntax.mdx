@@ -32,7 +32,7 @@ et les données `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` sont analysées pa
 
 <Accordion title="Activer le parseur complet">
   Vous pouvez également activer le parseur complet pour les données
-  en utilisant le paramètre [`input_format_values_interpret_expressions`](/fr/reference/settings/formats#input_format_values_interpret_expressions).
+  en utilisant le paramètre [`input_format_values_interpret_expressions`](/fr/reference/settings/formats/input-format#input_format_values_interpret_expressions).
 
   Lorsque le paramètre mentionné ci-dessus est défini sur `1`,
   ClickHouse essaie d’abord d’analyser les valeurs avec le parseur de flux rapide.
@@ -40,7 +40,7 @@ et les données `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` sont analysées pa
 </Accordion>
 
 Les données peuvent avoir n’importe quel format.
-Lorsqu’une query est reçue, le server ne charge en RAM que [max&#95;query&#95;size](/fr/reference/settings/session-settings#max_query_size) octets au plus de la requête
+Lorsqu’une query est reçue, le server ne charge en RAM que [max&#95;query&#95;size](/fr/reference/settings/session-settings/max#max_query_size) octets au plus de la requête
 (par défaut, 1 Mo), et le reste est analysé en flux.
 Cela permet d’éviter les problèmes liés aux requêtes `INSERT` volumineuses, qui constituent la méthode recommandée pour insérer vos données dans ClickHouse.
 
@@ -536,7 +536,7 @@ ClickHouse a remplacé le littéral `b` dans l’expression `argMax(a, b)` par l
 Cette substitution a provoqué l’exception.
 
 <Note>
-  Vous pouvez modifier ce comportement par défaut en définissant [prefer&#95;column&#95;name&#95;to&#95;alias](/fr/reference/settings/session-settings#prefer_column_name_to_alias) sur `1`.
+  Vous pouvez modifier ce comportement par défaut en définissant [prefer&#95;column&#95;name&#95;to&#95;alias](/fr/reference/settings/session-settings/prefer#prefer_column_name_to_alias) sur `1`.
 </Note>
 
 <div id="asterisk">

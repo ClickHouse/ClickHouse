@@ -422,9 +422,15 @@ T&#95;PAAMAYIM&#95;NEKUDOTAYIM는 안 됩니다.
 
 줄인 형태가 일반적으로 쓰인다면 완전한 단어가 아니어도 허용됩니다.
 
-주석에 전체 이름이 함께 적혀 있다면 약어를 사용할 수도 있습니다.
+Comments에 전체 이름이 함께 적혀 있다면 약어를 사용할 수도 있습니다.
 
 **17.** C++ 소스 코드 파일 이름은 `.cpp` 확장자를 사용해야 합니다. 헤더 파일은 `.h` 확장자를 사용해야 합니다.
+
+**18.** 제품 이름은 대문자 `C`와 대문자 `H`를 사용하여 한 단어로 `ClickHouse`라고 작성합니다. `clickhouse_spelling` 스타일 검사는 일반적인 토큰 표기인 `clickhouse`와 `CLICKHOUSE`도 허용하며, 그 외 모든 변형은 오타로 간주합니다. 이 검사는 코드, Comments, 메시지, 문서, 파일 이름을 확인합니다. 패키지, 바이너리, 호스트 이름처럼 소문자만 사용하는 토큰에는 `clickhouse`를 사용하고, CamelCase 식별자에는 `ClickHouse`를 사용하며, 매크로와 환경 변수에는 `CLICKHOUSE`를 사용합니다.
+
+`ClickHouse`, `clickhouse-client`, `CLICKHOUSE_DATABASE`
+
+`Clickhouse`, `clickHouse`, `click_house`, `CLICK_HOUSE`, `click-house`, `Click House`는 안 됩니다.
 
 <div id="how-to-write-code">
   ## 코드 작성 방법

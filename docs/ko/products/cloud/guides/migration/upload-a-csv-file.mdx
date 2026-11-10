@@ -6,101 +6,116 @@ doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
+import UploadCsvCLI from "/snippets/ko/cloud/migration/_upload_csv_cli.mdx";
 
-ClickHouse Cloud는 파일을 쉽게 가져올 수 있도록 지원하며, 다음 포맷을
-지원합니다:
+<Visibility for="agents">
+  <UploadCsvCLI />
+</Visibility>
 
-| Format                          |
-| ------------------------------- |
-| `CSV`                           |
-| `CSVWithNamesAndTypes`          |
-| `CSVWithNames`                  |
-| `JSONEachRow`                   |
-| `TabSeparated`                  |
-| `TabSeparatedWithNames`         |
-| `TabSeparatedWithNamesAndTypes` |
+<Visibility for="humans">
+  <View title="Cloud UI">
+    ClickHouse Cloud는 파일을 쉽게 가져올 수 있도록 지원하며, 다음 포맷을
+    지원합니다:
 
-<Steps>
-  <Step title="파일 업로드" id="upload-file">
-    아래와 같이 Cloud 홈페이지에서 서비스를 선택하십시오:
+    | Format                          |
+    | ------------------------------- |
+    | `CSV`                           |
+    | `CSVWithNamesAndTypes`          |
+    | `CSVWithNames`                  |
+    | `JSONEachRow`                   |
+    | `TabSeparated`                  |
+    | `TabSeparatedWithNames`         |
+    | `TabSeparatedWithNamesAndTypes` |
 
-    <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
+    <Steps>
+      <Step title="파일 업로드" id="upload-file">
+        아래와 같이 Cloud 홈페이지에서 서비스를 선택하십시오:
 
-    서비스가 유휴 상태이면 먼저 실행 상태로 전환해야 합니다.
+        <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
 
-    아래와 같이 왼쪽 탭에서 `Data sources`를 선택하십시오:
+        서비스가 유휴 상태이면 먼저 실행 상태로 전환해야 합니다.
 
-    <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
+        아래와 같이 왼쪽 탭에서 `Data sources`를 선택하십시오:
 
-    다음으로 data sources 페이지 오른쪽에서 `Upload a file`을 선택하십시오:
+        <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
 
-    <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
+        다음으로 data sources 페이지 오른쪽에서 `Upload a file`을 선택하십시오:
 
-    파일 대화상자가 열리면 Cloud 서비스의 테이블에 데이터를 삽입하는 데 사용할
-    파일을 선택할 수 있습니다.
+        <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
 
-    <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
-  </Step>
+        파일 대화상자가 열리면 Cloud 서비스의 테이블에 데이터를 삽입하는 데 사용할
+        파일을 선택할 수 있습니다.
 
-  <Step title="테이블 구성" id="configure-table">
-    파일 업로드가 완료되면 데이터를 삽입할 테이블을 구성할 수 있습니다.
-    처음 3개의 행이 포함된 테이블 미리보기도 표시됩니다.
+        <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
+      </Step>
 
-    <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
+      <Step title="테이블 구성" id="configure-table">
+        파일 업로드가 완료되면 데이터를 삽입할 테이블을 구성할 수 있습니다.
+        처음 3개의 행이 포함된 테이블 미리보기도 표시됩니다.
 
-    이제 대상 테이블을 선택할 수 있습니다. 옵션은 다음과 같습니다:
+        <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
 
-    * 새 테이블
-    * 기존 테이블
+        이제 대상 테이블을 선택할 수 있습니다. 옵션은 다음과 같습니다:
 
-    <br />
+        * 새 테이블
+        * 기존 테이블
 
-    데이터를 업로드할 데이터베이스를 지정할 수 있으며, 새 테이블인 경우
-    생성할 테이블 이름도 지정할 수 있습니다. 또한 정렬 키도 선택할 수 있습니다:
+        <br />
 
-    <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
+        데이터를 업로드할 데이터베이스를 지정할 수 있으며, 새 테이블인 경우
+        생성할 테이블 이름도 지정할 수 있습니다. 또한 정렬 키도 선택할 수 있습니다:
 
-    파일에서 읽은 컬럼은 `Source field`로 표시되며, 각 필드에 대해 다음을
-    변경할 수 있습니다:
+        <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
 
-    * 추론된 타입
-    * 기본값
-    * 해당 컬럼을 [널 허용](/ko/reference/data-types/nullable)으로 설정할지 여부
+        파일에서 읽은 컬럼은 `Source field`로 표시되며, 각 필드에 대해 다음을
+        변경할 수 있습니다:
 
-    <Image img="/images/cloud/migrate/csv_06.webp" alt="upload_file_06" />
+        * 추론된 타입
+        * 기본값
+        * 해당 컬럼을 [널 허용](/ko/reference/data-types/nullable)으로 설정할지 여부
 
-    <Info>
-      **필드 제외**
+        <Image img="/images/cloud/migrate/csv_06.webp" alt="upload_file_06" />
 
-      가져오기에 포함하지 않으려는 경우 필드를 제거할 수도 있습니다.
-    </Info>
+        <Info>
+          **필드 제외**
 
-    사용할 테이블 엔진 유형을 지정할 수 있습니다:
+          가져오기에 포함하지 않으려는 경우 필드를 제거할 수도 있습니다.
+        </Info>
 
-    * `MergeTree`
-    * `ReplacingMergeTree`
-    * `SummingMergeTree`
-    * `Null`
+        사용할 테이블 엔진 유형을 지정할 수 있습니다:
 
-    <br />
+        * `MergeTree`
+        * `ReplacingMergeTree`
+        * `SummingMergeTree`
+        * `Null`
 
-    파티셔닝 키 표현식과 프라이머리
-    키 표현식을 지정할 수 있습니다.
+        <br />
 
-    <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
+        파티셔닝 키 표현식과 프라이머리
+        키 표현식을 지정할 수 있습니다.
 
-    데이터를 가져오려면 `Import to ClickHouse`(위에 표시됨)를 클릭하십시오. 데이터 가져오기는
-    아래와 같이 `Status` 컬럼의 `queued` 상태 배지로 표시되며 큐에 추가됩니다. 또한
-    `Open as query`(위에 표시됨)를 클릭하여 SQL 콘솔에서 삽입 쿼리를 열 수도 있습니다. 이 쿼리는
-    `URL` 테이블 함수를 사용하여 S3 버킷에 업로드된 파일의 데이터를 삽입합니다.
+        <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
 
-    <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
+        데이터를 가져오려면 `Import to ClickHouse`(위에 표시됨)를 클릭하십시오. 데이터 가져오기는
+        아래와 같이 `Status` 컬럼의 `queued` 상태 배지로 표시되며 큐에 추가됩니다. 또한
+        `Open as query`(위에 표시됨)를 클릭하여 SQL 콘솔에서 삽입 쿼리를 열 수도 있습니다. 이 쿼리는
+        `URL` 테이블 함수를 사용하여 S3 버킷에 업로드된 파일의 데이터를 삽입합니다.
 
-    작업이 실패하면 `Data upload history` 탭의 `Status` 컬럼에 `failed`
-    상태 배지가 표시됩니다. 업로드 실패 원인에 대한 자세한 정보를 보려면
-    `View Details`를 클릭할 수 있습니다. 실패한 삽입의 오류 메시지에 따라
-    테이블 구성을 수정하거나 데이터를 정리해야 할 수 있습니다.
+        <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
 
-    <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
-  </Step>
-</Steps>
+        작업이 실패하면 `Data upload history` 탭의 `Status` 컬럼에 `failed`
+        상태 배지가 표시됩니다. 업로드 실패 원인에 대한 자세한 정보를 보려면
+        `View Details`를 클릭할 수 있습니다. 실패한 삽입의 오류 메시지에 따라
+        테이블 구성을 수정하거나 데이터를 정리해야 할 수 있습니다.
+
+        <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
+      </Step>
+    </Steps>
+  </View>
+
+  <View title="CLI">
+    이 절차를 직접 따라 하거나, 스크립트로 작성하거나, AI 에이전트에 맡길 수 있습니다. 콘솔 버전을 보려면 **Cloud UI** 뷰로 전환하십시오.
+
+    <UploadCsvCLI />
+  </View>
+</Visibility>

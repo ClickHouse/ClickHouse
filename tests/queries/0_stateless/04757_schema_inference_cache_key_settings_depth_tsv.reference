@@ -1,0 +1,4 @@
+-- TSV depth, high limit then low limit must throw
+1
+-- TSV depth, low limit alone throws (control)
+1

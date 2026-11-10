@@ -1,11 +1,23 @@
 #include <gtest/gtest.h>
 
+#include <Columns/IColumn.h>
+#include <Core/Block.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
+}
 
 using namespace DB::Iceberg;
 
@@ -185,6 +197,162 @@ TEST(IcebergSchemaProcessor, RebindingSchemaIdToDifferentTypeStillRejected)
     EXPECT_THROW(processor.addIcebergTableSchema(second), DB::Exception);
 }
 
+/// The manifest header 'schema' key is only a copy of the table schema at write time; metadata.json
+/// is authoritative. Broken writers (observed with AWS S3 Tables maintenance jobs) store degraded
+/// copies in manifest headers under an already-used schema-id, e.g. `timestamp` instead of
+/// `timestamptz`. With toleration enabled (the default of `iceberg_tolerate_conflicting_manifest_schemas`),
+/// the divergent manifest copy must be ignored and the metadata.json schema kept.
+TEST(IcebergSchemaProcessor, ConflictingManifestSchemaToleratedWhenEnabled)
+{
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_metadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(
+        from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true));
+
+    /// The metadata.json copy must win: the field keeps the timestamptz type.
+    auto schema = processor.getClickHouseTableSchemaById(0);
+    ASSERT_EQ(schema->size(), 1u);
+    EXPECT_EQ(schema->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+}
+
+/// With toleration disabled (`compatibility` below 26.9), the same conflict must still fail.
+TEST(IcebergSchemaProcessor, ConflictingManifestSchemaRejectedWhenDisabled)
+{
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_metadata);
+    EXPECT_THROW(
+        processor.addIcebergTableSchema(
+            from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/false),
+        DB::Exception);
+}
+
+/// Toleration only applies to manifest header copies: two conflicting metadata.json definitions of
+/// the same schema-id are genuine catalog corruption and must always be rejected.
+TEST(IcebergSchemaProcessor, ConflictingMetadataSchemaAlwaysRejected)
+{
+    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(first);
+    EXPECT_THROW(
+        processor.addIcebergTableSchema(
+            second, IcebergSchemaProcessor::SchemaSource::Metadata, /*tolerate_conflicting_manifest_schemas=*/true),
+        DB::Exception);
+}
+
+/// A manifest header carrying a schema-id NOT registered from metadata.json (e.g. an expired schema
+/// still referenced by an old manifest) must register normally regardless of the toleration flag.
+TEST(IcebergSchemaProcessor, ManifestSchemaWithNewIdRegistersNormally)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":5,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    IcebergSchemaProcessor processor;
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(
+        from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true));
+    EXPECT_TRUE(processor.hasClickHouseTableSchemaById(5));
+}
+
+/// The maintenance entrypoints (`remove_orphan_files`, `expire_snapshots`, manifest compaction) can
+/// register a schema that came from a manifest before metadata.json is read. Such a schema is never
+/// authoritative: the metadata.json copy of the same schema-id must replace it, together with the
+/// per-field lookups and the cached transformation DAGs derived from it.
+TEST(IcebergSchemaProcessor, ManifestHeaderRegisteredFirstIsReplacedByMetadata)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto other = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"},{"id":2,"name":"v","required":false,"type":"int"}]})json");
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+    processor.addIcebergTableSchema(other);
+
+    /// Populate everything derived from the schema that came from the manifest.
+    EXPECT_EQ(processor.getFieldCharacteristics(0, 1).type->getName(), "Nullable(DateTime64(6))");
+    auto stale_dag = processor.getSchemaTransformationDagByIds(0, 1);
+    ASSERT_NE(stale_dag, nullptr);
+
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(from_metadata));
+
+    auto schema = processor.getClickHouseTableSchemaById(0);
+    ASSERT_EQ(schema->size(), 1u);
+    EXPECT_EQ(schema->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+    EXPECT_EQ(processor.getFieldCharacteristics(0, 1).type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+    EXPECT_NE(processor.getSchemaTransformationDagByIds(0, 1).get(), stale_dag.get());
+
+    /// Once metadata.json has settled the schema-id, a later divergent schema from a manifest is handled like
+    /// any header conflicting with a known metadata.json copy: ignored when tolerated, rejected otherwise.
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(
+        from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true));
+    EXPECT_THROW(
+        processor.addIcebergTableSchema(
+            from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/false),
+        DB::Exception);
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+}
+
+/// An identical metadata.json copy confirms a schema that came from a manifest and was registered before it; the schema-id then
+/// behaves as if it had been registered from metadata.json in the first place.
+TEST(IcebergSchemaProcessor, ManifestHeaderRegisteredFirstIsConfirmedByIdenticalMetadata)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto degraded = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(from_metadata));
+
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(
+        degraded, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true));
+    EXPECT_THROW(
+        processor.addIcebergTableSchema(
+            degraded, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/false),
+        DB::Exception);
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+}
+
+/// Two manifest headers that disagree on a schema-id metadata.json has not defined leave no
+/// authoritative copy to decide between them, so this is a specification violation even when
+/// conflicts with metadata.json are tolerated. Other schema-ids are unaffected.
+TEST(IcebergSchemaProcessor, ConflictingManifestHeadersWithoutMetadataSchemaRejected)
+{
+    auto first = parseSchema(R"json({"schema-id":5,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto second = parseSchema(R"json({"schema-id":5,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto other = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(other);
+    processor.addIcebergTableSchema(first, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+    try
+    {
+        processor.addIcebergTableSchema(second, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+        FAIL() << "expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION);
+    }
+    EXPECT_TRUE(processor.hasClickHouseTableSchemaById(0));
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+}
+
+/// Databricks UniForm writes a placeholder schema without fields into manifest headers, under the schema-id of the
+/// real schema in metadata.json. The placeholder is ignored whether it is read before or after the real schema.
+TEST(IcebergSchemaProcessor, EmptyManifestSchemaIsIgnored)
+{
+    auto placeholder = parseSchema(R"json({"schema-id":0,"fields":[]})json");
+    auto real = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"int"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(
+        placeholder, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/false);
+    EXPECT_FALSE(processor.hasClickHouseTableSchemaById(0));
+
+    processor.addIcebergTableSchema(real);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(
+        placeholder, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/false));
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().name, "a");
+}
+
 /// A renamed field bound to the same schema-id must still be rejected (issue #107316).
 TEST(IcebergSchemaProcessor, RebindingSchemaIdToRenamedFieldStillRejected)
 {
@@ -227,8 +395,8 @@ TEST(IcebergSchemaProcessor, MapKeyValueDecimalWhitespaceIsInsensitive)
 /// different spacing must not be rejected.
 TEST(IcebergSchemaProcessor, GeographyTypeWhitespaceIsInsensitive)
 {
-    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C,A)"}]})json");
-    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C, A)"}]})json");
+    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(OGC:CRS84,spherical)"}]})json");
+    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(OGC:CRS84, spherical)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
     processor.addIcebergTableSchema(first);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
@@ -240,8 +408,8 @@ TEST(IcebergSchemaProcessor, GeographyTypeWhitespaceIsInsensitive)
 /// instead of one skipping aliasing (staying "geography") and the other becoming "binary".
 TEST(IcebergSchemaProcessor, GeographyTypeEdgeWhitespaceIsInsensitive)
 {
-    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":" geography(C,A) "}]})json");
-    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C, A)"}]})json");
+    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":" geography(OGC:CRS84,spherical) "}]})json");
+    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(OGC:CRS84, spherical)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
     processor.addIcebergTableSchema(first);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
@@ -253,8 +421,8 @@ TEST(IcebergSchemaProcessor, GeographyTypeEdgeWhitespaceIsInsensitive)
 /// unchanged and the DAG would still expose the old name.
 TEST(IcebergSchemaProcessor, RenameGeoFieldAcrossSchemaIdsWithWhitespaceIsRename)
 {
-    auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"geography(C,A)"}]})json");
-    auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"b","required":false,"type":"geography(C, A)"}]})json");
+    auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"geography(OGC:CRS84,spherical)"}]})json");
+    auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"b","required":false,"type":"geography(OGC:CRS84, spherical)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
     processor.addIcebergTableSchema(old_schema);
     processor.addIcebergTableSchema(new_schema);
@@ -292,6 +460,33 @@ TEST(IcebergSchemaProcessor, WidenDecimalAcrossSchemaIdsWithInnerWhitespace)
     const auto & outputs = dag->getOutputs();
     ASSERT_EQ(outputs.size(), 1u);
     EXPECT_EQ(outputs[0]->result_type->getName(), "Nullable(Decimal(20, 2))");
+}
+
+/// Iceberg writers refuse map key updates, but a promoted map key from other metadata is converted like a map value.
+TEST(IcebergSchemaProcessor, WidenMapKeyDecimalAcrossSchemaIds)
+{
+    auto old_schema = parseSchema(
+        R"json({"schema-id":0,"fields":[{"id":1,"name":"m","required":false,"type":{"type":"map","key-id":2,"key":"decimal(9, 2)","value-id":3,"value-required":false,"value":"int"}}]})json");
+    auto new_schema = parseSchema(
+        R"json({"schema-id":1,"fields":[{"id":1,"name":"m","required":false,"type":{"type":"map","key-id":2,"key":"decimal(18, 2)","value-id":3,"value-required":false,"value":"int"}}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(old_schema);
+    processor.addIcebergTableSchema(new_schema);
+
+    auto dag = processor.getSchemaTransformationDagByIds(0, 1);
+    ASSERT_TRUE(dag);
+
+    auto old_type = DB::DataTypeFactory::instance().get("Map(Decimal(9, 2), Nullable(Int32))");
+    auto column = old_type->createColumn();
+    column->insert(DB::Map{DB::Tuple{DB::DecimalField<DB::Decimal32>(125, 2), DB::Field(Int64(7))}});
+    DB::Block block{{std::move(column), old_type, "m"}};
+    size_t num_rows = 1;
+    DB::ExpressionActions(dag->clone()).execute(block, num_rows);
+
+    const auto & result = block.getByName("m");
+    EXPECT_EQ(result.type->getName(), "Map(Decimal(18, 2), Nullable(Int32))");
+    DB::Field expected = DB::Map{DB::Tuple{DB::DecimalField<DB::Decimal64>(125, 2), DB::Field(Int64(7))}};
+    EXPECT_EQ(DB::applyVisitor(DB::FieldVisitorToString(), (*result.column)[0]), DB::applyVisitor(DB::FieldVisitorToString(), expected));
 }
 
 /// A genuinely different nested type inside a list wrapper must still be rejected.
@@ -367,4 +562,59 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalEmptyScaleThrows)
 TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
 {
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)"), DB::Exception);
+}
+
+TEST(IcebergSchemaProcessor, GetSimpleTypeRejectsInvalidGeoParameters)
+{
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geography(OGC:CRS84, bogus)"), DB::Exception);
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geography(, spherical)"), DB::Exception);
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geometry()"), DB::Exception);
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geometryfoo"), DB::Exception);
+    EXPECT_NO_THROW(IcebergSchemaProcessor::getSimpleType("geography(OGC:CRS84, Karney)"));
+}
+
+/// A manifest header copy is checked only for what reading data needs: AWS S3 Tables writes copies with only some
+/// of the columns, whose `identifier-field-ids` can then name a field that is not there. A metadata.json schema is not.
+TEST(IcebergSchemaProcessor, ManifestHeaderSchemaSkipsTableRules)
+{
+    Poco::JSON::Parser parser;
+    const std::string json = R"json({"schema-id":0,"identifier-field-ids":[2],"fields":[{"id":1,"name":"ts","required":true,"type":"timestamptz"}]})json";
+    IcebergSchemaProcessor from_manifest;
+    EXPECT_NO_THROW(from_manifest.addIcebergTableSchema(
+        parser.parse(json).extract<Poco::JSON::Object::Ptr>(), IcebergSchemaProcessor::SchemaSource::ManifestFile, true));
+    EXPECT_TRUE(from_manifest.hasClickHouseTableSchemaById(0));
+
+    auto metadata = parser
+        .parse(R"json({"format-version":2,"schemas":[{"type":"struct","schema-id":0,"identifier-field-ids":[2],"fields":[{"id":1,"name":"ts","required":true,"type":"timestamptz"}]}]})json")
+        .extract<Poco::JSON::Object::Ptr>();
+    try
+    {
+        IcebergSchemaProcessor::checkTableSchemas(*metadata);
+        FAIL() << "expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION) << e.message();
+        EXPECT_NE(e.message().find("identifier field id 2 does not exist"), std::string::npos) << e.message();
+    }
+}
+
+/// A manifest header copy still gets the structural rules: a list without `element-id` is rejected.
+TEST(IcebergSchemaProcessor, ManifestHeaderSchemaStructuralRulesAreChecked)
+{
+    Poco::JSON::Parser parser;
+    const std::string json = R"json({"schema-id":1,"fields":[{"id":1,"name":"l","required":false,"type":{"type":"list","element-required":false,"element":"long"}}]})json";
+    IcebergSchemaProcessor from_manifest;
+    try
+    {
+        from_manifest.addIcebergTableSchema(
+            parser.parse(json).extract<Poco::JSON::Object::Ptr>(), IcebergSchemaProcessor::SchemaSource::ManifestFile, true);
+        FAIL() << "expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION) << e.message();
+        EXPECT_NE(e.message().find("has no 'element-id'"), std::string::npos) << e.message();
+    }
+    EXPECT_FALSE(from_manifest.hasClickHouseTableSchemaById(1));
 }

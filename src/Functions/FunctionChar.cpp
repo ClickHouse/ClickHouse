@@ -11,9 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionChar final : public IFunction
@@ -32,22 +30,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                            "Number of arguments for function {} can't be {}, should be at least 1",
-                            getName(), arguments.size());
-
-        for (const auto & arg : arguments)
-        {
-            WhichDataType which(arg);
-            if (!(which.isInt() || which.isUInt() || which.isFloat()))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of argument of function {}, must be Int, UInt or Float number",
-                                arg->getName(), getName());
-        }
-        return std::make_shared<DataTypeString>();
+        return "(Integer | Float, ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

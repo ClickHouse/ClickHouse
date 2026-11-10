@@ -3,7 +3,9 @@ select value from system.settings where name = 'interval_output_format';
 {% for format in ['kusto', 'numeric'] -%}
 select '{{ format }}';
 set interval_output_format = '{{ format }}';
+{% if format == 'numeric' -%}
 select toIntervalNanosecond(99);
+{% endif -%}
 select toIntervalNanosecond(100);
 select toIntervalMillisecond(1);
 select toIntervalSecond(42);

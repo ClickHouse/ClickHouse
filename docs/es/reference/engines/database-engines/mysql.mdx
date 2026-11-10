@@ -58,29 +58,54 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="data_types-support">
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+Las credenciales de una conexión cifrada a MySQL se proporcionan como claves de una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections) (o como argumentos de clave-valor):
+
+| Parámetro      | Descripción                                                                               |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| `ssl_ca_pem`   | Contenido del certificado de CA con el que se verifica el certificado del servidor MySQL. |
+| `ssl_cert_pem` | Contenido del certificado de client para la autenticación basada en certificados.         |
+| `ssl_key_pem`  | Contenido de la clave privada asociada a `ssl_cert_pem`.                                  |
+
+Los valores corresponden al contenido de los archivos PEM respectivos, que se puede copiar en una colección con nombre o en una consulta. Se enmascaran en los registros y en las consultas `SHOW`, al igual que las contraseñas.
+
+Las mismas credenciales también se pueden proporcionar como rutas de archivos en el servidor, mediante `ssl_ca`, `ssl_cert` y `ssl_key`, pero **solo en una colección con nombre definida en el archivo de configuración del servidor**; dicho valor no se puede sobrescribir en una consulta. El servidor abre esos archivos con sus propios privilegios, por lo que aceptar una ruta desde SQL permitiría a cualquier usuario que pueda definir una fuente MySQL explorar el sistema de archivos local y autenticarse con un certificado y una clave que no tiene permiso de leer.
+
+<a id="data_types-support" />
+
+<div id="data-types-support">
   ## Compatibilidad de tipos de datos
 </div>
 
-| MySQL                            | ClickHouse                                       |
-| -------------------------------- | ------------------------------------------------ |
-| UNSIGNED TINYINT                 | [UInt8](/es/reference/data-types/int-uint)          |
-| TINYINT                          | [Int8](/es/reference/data-types/int-uint)           |
-| UNSIGNED SMALLINT                | [UInt16](/es/reference/data-types/int-uint)         |
-| SMALLINT                         | [Int16](/es/reference/data-types/int-uint)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/es/reference/data-types/int-uint)         |
-| INT, MEDIUMINT                   | [Int32](/es/reference/data-types/int-uint)          |
-| UNSIGNED BIGINT                  | [UInt64](/es/reference/data-types/int-uint)         |
-| BIGINT                           | [Int64](/es/reference/data-types/int-uint)          |
-| FLOAT                            | [Float32](/es/reference/data-types/float)           |
-| DOUBLE                           | [Float64](/es/reference/data-types/float)           |
-| DATE                             | [Date](/es/reference/data-types/date)               |
-| DATETIME, TIMESTAMP              | [DateTime](/es/reference/data-types/datetime)       |
-| BINARY                           | [FixedString](/es/reference/data-types/fixedstring) |
+| MySQL                            | ClickHouse                                                   |
+| -------------------------------- | ------------------------------------------------------------ |
+| UNSIGNED TINYINT                 | [UInt8](/es/reference/data-types/int-uint)                      |
+| TINYINT                          | [Int8](/es/reference/data-types/int-uint)                       |
+| UNSIGNED SMALLINT                | [UInt16](/es/reference/data-types/int-uint)                     |
+| SMALLINT                         | [Int16](/es/reference/data-types/int-uint)                      |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/es/reference/data-types/int-uint)                     |
+| INT, MEDIUMINT                   | [Int32](/es/reference/data-types/int-uint)                      |
+| UNSIGNED BIGINT                  | [UInt64](/es/reference/data-types/int-uint)                     |
+| BIGINT                           | [Int64](/es/reference/data-types/int-uint)                      |
+| FLOAT                            | [Float32](/es/reference/data-types/float)                       |
+| DOUBLE                           | [Float64](/es/reference/data-types/float)                       |
+| DATE                             | [Date](/es/reference/data-types/date)                           |
+| DATETIME, TIMESTAMP              | [DateTime](/es/reference/data-types/datetime)                   |
+| BINARY                           | [FixedString](/es/reference/data-types/fixedstring)             |
+| POINT                            | [Point](/es/reference/data-types/geo#point)                     |
+| LINESTRING                       | [LineString](/es/reference/data-types/geo#linestring)           |
+| POLYGON                          | [Polygon](/es/reference/data-types/geo#polygon)                 |
+| MULTILINESTRING                  | [MultiLineString](/es/reference/data-types/geo#multilinestring) |
+| MULTIPOLYGON                     | [MultiPolygon](/es/reference/data-types/geo#multipolygon)       |
+| MULTIPOINT                       | [MultiPoint](/es/reference/data-types/geo#multipoint)           |
+| GEOMETRY                         | [Geometry](/es/reference/data-types/geo#geometry)               |
 
-Todos los demás tipos de datos de MySQL se convierten a [String](/es/reference/data-types/string).
+La conversión de los tipos espaciales (excepto `POINT`, que siempre se convierte) se controla mediante el indicador `geometry` de la configuración [`mysql_datatypes_support_level`](/es/reference/settings/session-settings/mysql#mysql_datatypes_support_level), habilitada de forma predeterminada. El tipo de columna genérico `GEOMETRY` se asigna al tipo abarcador [`Geometry`](/es/reference/data-types/geo#geometry) (un `Variant` sobre los tipos geométricos concretos). Dado que dicha columna puede contener un valor de cualquier subtipo, leer un valor cuyo subtipo no tiene equivalente en ClickHouse (`GEOMETRYCOLLECTION`) genera una excepción durante la lectura; esta incompatibilidad se acepta a cambio de disponer de un tipo geométrico adecuado. Las columnas declaradas con el tipo `GEOMETRYCOLLECTION` se convierten a [String](/es/reference/data-types/string), al igual que todos los demás tipos de datos de MySQL.
 
-Se admite [Nullable](/es/reference/data-types/nullable).
+Se admite [Nullable](/es/reference/data-types/nullable). Una columna espacial se asigna a `String` (`Nullable(String)` si admite valores nulos) en tres casos: se declara como `GEOMETRYCOLLECTION`; el indicador `geometry` está deshabilitado y el tipo no es `POINT`; o la columna admite valores nulos y el tipo no es `POINT`, ya que `Point` es el único tipo geométrico que puede anidarse dentro de `Nullable`. En los tres casos, la cadena contiene el valor exactamente como lo devuelve MySQL: un prefijo SRID de 4 bytes seguido de la carga útil WKB, por lo que debe eliminar esos 4 bytes iniciales antes de pasarlo a un decodificador WKB.
 
 <div id="global-variables-support">
   ## Compatibilidad con las variables globales

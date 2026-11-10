@@ -24,6 +24,8 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <base/arithmeticOverflow.h>
+
 #include <type_traits>
 
 constexpr size_t AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE = 0xFFFFFF;
@@ -89,6 +91,17 @@ struct GroupArraySamplerData
     Array value;
     size_t total_values = 0;
     pcg32_fast rng;
+
+    /// The counter may come from a deserialized state, so it can be arbitrarily large,
+    /// and wrapping it around would make `genRandom` divide by zero.
+    void addTotalValues(UInt64 count)
+    {
+        UInt64 new_total_values = 0;
+        if (common::addOverflow(static_cast<UInt64>(total_values), count, new_total_values))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The number of values in groupArraySample state overflows: {} + {}", total_values, count);
+        total_values = new_total_values;
+    }
 
     UInt64 genRandom(size_t lim)
     {
@@ -158,9 +171,13 @@ public:
 
     String getName() const override { return getNameByTrait<Trait>(); }
 
+    /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
+    /// evaluation of the same expression draws differently.
+    bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
+
     void insertWithSampler(Data & a, const T & v, Arena * arena) const
     {
-        ++a.total_values;
+        a.addTotalValues(1);
         if (a.value.size() < max_elems)
             a.value.push_back(v, arena);
         else
@@ -183,7 +200,10 @@ public:
         const auto & row_value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
         auto & cur_elems = this->data(place);
 
-        ++cur_elems.total_values;
+        if constexpr (Trait::sampler == Sampler::NONE)
+            ++cur_elems.total_values;
+        else
+            cur_elems.addTotalValues(1);
 
         if constexpr (Trait::sampler == Sampler::NONE)
         {
@@ -275,8 +295,8 @@ public:
         }
         else
         {
+            cur_elems.addTotalValues(rhs_elems.total_values);
             cur_elems.randomShuffle();
-            cur_elems.total_values += rhs_elems.total_values;
             for (size_t i = 0; i < max_elems; ++i)
             {
                 UInt64 rnd = cur_elems.genRandom(cur_elems.total_values);
@@ -523,9 +543,13 @@ public:
 
     String getName() const override { return getNameByTrait<Trait>(); }
 
+    /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
+    /// evaluation of the same expression draws differently.
+    bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
+
     void insertWithSampler(Data & a, const Node * v, Arena * arena) const
     {
-        ++a.total_values;
+        a.addTotalValues(1);
         if (a.value.size() < max_elems)
             a.value.push_back(v->clone(arena), arena);
         else
@@ -547,7 +571,10 @@ public:
     {
         auto & cur_elems = data(place);
 
-        ++cur_elems.total_values;
+        if constexpr (Trait::sampler == Sampler::NONE)
+            ++cur_elems.total_values;
+        else
+            cur_elems.addTotalValues(1);
 
         if constexpr (Trait::sampler == Sampler::NONE)
         {
@@ -642,8 +669,8 @@ public:
         }
         else
         {
+            cur_elems.addTotalValues(rhs_elems.total_values);
             cur_elems.randomShuffle();
-            cur_elems.total_values += rhs_elems.total_values;
             for (size_t i = 0; i < max_elems; ++i)
             {
                 UInt64 rnd = cur_elems.genRandom(cur_elems.total_values);
@@ -885,7 +912,10 @@ groupArray(max_size)(x)
     {
         "Basic usage",
         R"(
-SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+CREATE TABLE ck (id UInt8, name String) ENGINE = Memory;
+INSERT INTO ck VALUES (1, 'zhangsan'), (1, 'lisi'), (2, 'wangwu');
+
+SELECT id, groupArray(10)(name) FROM ck GROUP BY id ORDER BY id;
         )",
         R"(
 ┌─id─┬─groupArray(10)(name)─┐
@@ -918,7 +948,7 @@ groupArraySample(max_size[, seed])(x)
     };
     FunctionDocumentation::Parameters parameters_groupArraySample = {
         {"max_size", "Maximum size of the resulting array.", {"UInt64"}},
-        {"seed", "Optional. Seed for the random number generator. Default value: 123456.", {"UInt64"}},
+        {"seed", "Optional. Seed for the random number generator. When omitted, every aggregation state seeds itself from a thread-local generator, so the sample is different for every evaluation and the function is non-deterministic. Pass a seed for a reproducible sample.", {"UInt64"}},
         {"x", "Argument (column name or expression).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_groupArraySample = {
@@ -929,19 +959,19 @@ groupArraySample(max_size[, seed])(x)
     {
          "Usage example",
          R"(
-CREATE TABLE default.colors (
+CREATE TABLE colors (
     id Int32,
     color String
 ) ENGINE = Memory;
 
-INSERT INTO default.colors VALUES
+INSERT INTO colors VALUES
 (1, 'red'),
 (2, 'blue'),
 (3, 'green'),
 (4, 'white'),
 (5, 'orange');
 
-SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(color) as newcolors FROM colors;
          )",
          R"(
 ┌─newcolors──────────────────┐
@@ -953,19 +983,19 @@ SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
          "Example using a seed",
          R"(
 -- Query with column name and different seed
-SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
         )",
         R"(
-┌─newcolors──────────────────┐
-│ ['red','orange','green']   │
-└────────────────────────────┘
+┌─newcolors────────────────┐
+│ ['red','orange','green'] │
+└──────────────────────────┘
         )"
     },
     {
          "Using an expression as an argument",
          R"(
 -- Query with expression as argument
-SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
         )",
         R"(
 ┌─newcolors───────────────────────────────────┐

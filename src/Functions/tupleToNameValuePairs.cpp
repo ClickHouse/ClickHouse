@@ -43,6 +43,19 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// The Tuple element ellipsis requires every subsequent element to match the
+    /// captured `T`, enforcing the runtime invariant that all values share a type.
+    /// Nullable(Tuple(...)) is also accepted by the runtime (the override below
+    /// strips Nullable before extracting the element type), so a second alternative
+    /// covers that input shape. The result is never wrapped in Nullable in either
+    /// case — the runtime always returns Array(Tuple(String, T)).
+    String getSignatureString() const override
+    {
+        return
+            "(Tuple(T, T, ...)) -> Array(Tuple(String, T))"
+            " OR (Nullable(Tuple(T, T, ...))) -> Array(Tuple(String, T))";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const DataTypePtr col = arguments[0].type;
@@ -144,8 +157,8 @@ All values in the tuple must be of the same type.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with `(name, value)` pairs.", {"Array(Tuple(String, T))"}};
     FunctionDocumentation::Examples examples = {
-        {"Named tuple", "SELECT tupleToNameValuePairs(tuple(1593 AS user_ID, 2502 AS session_ID))", "[('1', 1593), ('2', 2502)]"},
-        {"Unnamed tuple", "SELECT tupleToNameValuePairs(tuple(3, 2, 1))", "[('1', 3), ('2', 2), ('3', 1)]"}
+        {"Named tuple", "SELECT tupleToNameValuePairs(tuple(1593 AS user_ID, 2502 AS session_ID))", "[('1',1593),('2',2502)]"},
+        {"Unnamed tuple", "SELECT tupleToNameValuePairs(tuple(3, 2, 1))", "[('1',3),('2',2),('3',1)]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;

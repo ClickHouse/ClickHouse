@@ -1,5 +1,8 @@
 <clickhouse>
     <create_union_system_log_tables>
+        <!-- The default `config.xml` enables `merge_rotated_tables`; this node tests the
+             cluster-only definition, so the default is turned off explicitly. -->
+        <merge_rotated_tables>false</merge_rotated_tables>
         <cluster>system_logs_cluster</cluster>
     </create_union_system_log_tables>
 </clickhouse>

@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## サポートされているPostgresのバージョン
@@ -103,18 +104,11 @@ postgres=> SHOW rds.logical_replication ;
   ### IAM認証を使用する (任意)
 </div>
 
-パスワードの代わりに、AWS IAM のロールベースアクセスを使用して ClickPipes ユーザーを認証できます。次のようにユーザーを作成し、その後、上記で示したものと同じスキーマおよびレプリケーションの権限を付与してください。
-
-```sql
-CREATE USER clickpipes_iam_user;
-GRANT rds_iam TO clickpipes_iam_user;
-```
-
-<Note>
-  レプリケーションで IAM認証 を使用するには、`rds.iam_auth_for_replication` パラメータを `1` に設定する必要があります。これは PostgreSQL バージョン 11 以降でサポートされています。以前のバージョンでは、`Initial Load Only` の ClickPipes のみ実行できます。
-</Note>
-
-ClickPipes がこの方法で認証するために必要な IAM role と policy の設定手順全体については、[AWS IAM DB認証 (RDS/Aurora)](/ja/integrations/clickpipes/postgres/auth) を参照してください。
+<IAMAuthentication engine="postgres" service="rds">
+  <Note>
+    レプリケーションで IAM認証 を使用するには、`rds.iam_auth_for_replication` パラメータを `1` に設定する必要があります。これは PostgreSQL バージョン 11 以降でサポートされています。以前のバージョンでは、`Initial Load Only` の ClickPipes のみ実行できます。
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## ネットワークアクセスを設定する
@@ -124,7 +118,7 @@ ClickPipes がこの方法で認証するために必要な IAM role と policy 
   ### IP ベースのアクセス制御
 </div>
 
-RDS インスタンスへのトラフィックを制限する場合は、RDS のセキュリティグループの `Inbound rules` に、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/home#list-of-static-ips) を追加してください。
+RDS インスタンスへのトラフィックを制限する場合は、RDS のセキュリティグループの `Inbound rules` に、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を追加してください。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="RDS Postgres でセキュリティグループはどこにありますか？" size="lg" border />
 

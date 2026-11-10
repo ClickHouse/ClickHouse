@@ -7,7 +7,7 @@ import pytest
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-upstream_node = cluster.add_instance("upstream_node", use_old_analyzer=True)
+upstream_node = cluster.add_instance("upstream_node")
 old_node = cluster.add_instance(
     "old_node",
     image="clickhouse/clickhouse-server",

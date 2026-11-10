@@ -8,7 +8,6 @@
 -- `join_any_take_last_row = 1` would reuse the entry collected under `= 0` and report 0.
 
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
@@ -16,6 +15,13 @@ SET parallel_replicas_prefer_local_join=1;
 
 -- Keep the parallelized side oriented as written (the randomizer may flip this).
 SET query_plan_join_swap_table='false';
+-- Keep the plan identical between the collect and apply runs: randomized join-order statistics
+-- (query_plan_optimize_join_order_randomize) produce different cardinality estimates in different
+-- plan builds (and can flip the join_runtime_filter_min_probe_rows threshold in only one of them),
+-- so AutoPR skips the statistics collection (fail-closed) and stats_collected stays 0. Pin the
+-- runtime filter settings to their defaults instead of disabling them, so the default code path
+-- stays covered.
+SET query_plan_optimize_join_order_randomize=0, enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows=1000;
 
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
 SET merge_tree_min_bytes_per_task_for_remote_reading=0;

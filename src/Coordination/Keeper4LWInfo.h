@@ -24,6 +24,11 @@ struct Keeper4LWInfo
     bool has_leader;
     bool is_exceeding_mem_soft_limit;
 
+    /// Whether this node is waiting for replicas that cannot keep up. Only a
+    /// leader ever holds the setting, so a follower always reports `false`:
+    /// ask the leader, which `zk_server_state` in `mntr` identifies.
+    bool is_slow_member_backpressure;
+
     uint64_t alive_connections_count;
     uint64_t outstanding_requests_count;
 
@@ -31,6 +36,14 @@ struct Keeper4LWInfo
     uint64_t follower_count;
     uint64_t synced_follower_count;
     uint64_t synced_non_voting_follower_count;
+
+    std::optional<uint64_t> leader_uptime_ms;
+    uint64_t sum_leader_unavailable_time_ms;
+    uint64_t cnt_leader_unavailable_time;
+    std::optional<uint64_t> last_leader_unavailable_time_ms;
+    uint64_t sum_election_time_ms;
+    uint64_t cnt_election_time;
+    std::optional<uint64_t> last_leader_election_time_ms;
 
     String getRole() const
     {
