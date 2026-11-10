@@ -353,6 +353,72 @@ std::vector<InsertHandler::DocumentField> inferSchema(
     return fields;
 }
 
+/** An integer of any magnitude a value may hold: `$numberDecimal` and a numeric string can be the
+  * text of an integer of any number of digits, and a column may be of an integer type of up to 256
+  * bits. It is the sign and the magnitude, with a flag for a magnitude that does not fit 256 bits,
+  * which is out of the range of every integer type, and the text it was read from, for a message.
+  */
+struct WideInteger
+{
+    bool negative = false;
+    UInt256 magnitude = 0;
+    bool magnitude_overflow = false;
+    String text;
+
+    static WideInteger fromInt128(Int128 value)
+    {
+        WideInteger result;
+        result.negative = value < 0;
+        /// The magnitude of the smallest `Int128` does not fit it, but fits a `UInt256`.
+        result.magnitude = value < 0 ? UInt256(0) - static_cast<UInt256>(value) : static_cast<UInt256>(value);
+        result.text = toString(value);
+        return result;
+    }
+
+    static WideInteger fromInt256(Int256 value)
+    {
+        WideInteger result;
+        result.negative = value < 0;
+        result.magnitude = value < 0 ? UInt256(0) - static_cast<UInt256>(value) : static_cast<UInt256>(value);
+        result.text = toString(value);
+        return result;
+    }
+
+    static WideInteger fromUInt256(UInt256 value)
+    {
+        WideInteger result;
+        result.magnitude = value;
+        result.text = toString(value);
+        return result;
+    }
+
+    /// The integer as an `Int128`, nothing when it is out of its range.
+    std::optional<Int128> toInt128() const
+    {
+        static const UInt256 max_magnitude = static_cast<UInt256>(std::numeric_limits<Int128>::max());
+        if (magnitude_overflow || magnitude > max_magnitude)
+            return std::nullopt;
+        Int128 value = static_cast<Int128>(magnitude);
+        return negative ? -value : value;
+    }
+
+    /// A signed key of the order of the integers: a negative number with a larger magnitude is smaller.
+    bool operator<(const WideInteger & other) const
+    {
+        const bool this_negative = negative && (magnitude != 0 || magnitude_overflow);
+        const bool other_negative = other.negative && (other.magnitude != 0 || other.magnitude_overflow);
+        if (this_negative != other_negative)
+            return this_negative;
+        const auto magnitude_less = [](const WideInteger & lhs, const WideInteger & rhs)
+        {
+            if (lhs.magnitude_overflow != rhs.magnitude_overflow)
+                return rhs.magnitude_overflow;
+            return !lhs.magnitude_overflow && lhs.magnitude < rhs.magnitude;
+        };
+        return this_negative ? magnitude_less(other, *this) : magnitude_less(*this, other);
+    }
+};
+
 /** The smallest and the largest integer among the values of one field, see `checkValuesFitColumns`,
   * the first of its string values that is not the text of an integer, if any, and the first of its
   * integers that a `Float64` and a `Float32` do not hold exactly, if any. The latter are recorded
@@ -360,39 +426,43 @@ std::vector<InsertHandler::DocumentField> inferSchema(
   */
 struct IntegerRange
 {
-    std::optional<Int128> min;
-    std::optional<Int128> max;
+    std::optional<WideInteger> min;
+    std::optional<WideInteger> max;
     std::optional<String> non_integer;
-    std::optional<Int128> inexact_in_float64;
-    std::optional<Int128> inexact_in_float32;
+    std::optional<String> inexact_in_float64;
+    std::optional<String> inexact_in_float32;
 };
 
 /** The integer a string is the text of: the `JSONEachRow` reader reads a quoted number into a number
-  * column, and the serialization of a `$numberDecimal` is such a string. Its magnitude is saturated
-  * at `10^30`, which is out of the range of every integer type checked here anyway.
+  * column, and the serialization of a `$numberDecimal` is such a string. A magnitude that does not
+  * fit 256 bits is only marked as such, it is out of the range of every integer type.
   */
-std::optional<Int128> parseIntegerText(std::string_view text)
+std::optional<WideInteger> parseIntegerText(std::string_view text)
 {
-    bool negative = false;
+    WideInteger number;
+    number.text = String(text);
     if (!text.empty() && (text.front() == '-' || text.front() == '+'))
     {
-        negative = text.front() == '-';
+        number.negative = text.front() == '-';
         text.remove_prefix(1);
     }
     if (text.empty())
         return std::nullopt;
 
-    static constexpr Int128 saturation = Int128(1'000'000'000'000'000ULL) * Int128(1'000'000'000'000'000ULL);
-    Int128 number = 0;
+    static const UInt256 max_magnitude = std::numeric_limits<UInt256>::max();
     for (char c : text)
     {
         if (!isNumericASCII(c))
             return std::nullopt;
-        if (number < saturation)
-            number = number * 10 + (c - '0');
+        if (number.magnitude_overflow)
+            continue;
+        const UInt256 digit = static_cast<UInt256>(c - '0');
+        if (number.magnitude > (max_magnitude - digit) / 10)
+            number.magnitude_overflow = true;
+        else
+            number.magnitude = number.magnitude * 10 + digit;
     }
-    number = std::min(number, saturation);
-    return negative ? -number : number;
+    return number;
 }
 
 /** The scale a decimal column needs to hold the number that `text` is exactly, `max` when no
@@ -451,11 +521,11 @@ void recordNumbers(
         return;
     }
 
-    std::optional<Int128> number;
+    std::optional<WideInteger> number;
     if (value.IsInt64())
-        number = value.GetInt64();
+        number = WideInteger::fromInt128(value.GetInt64());
     else if (value.IsUint64())
-        number = value.GetUint64();
+        number = WideInteger::fromInt128(value.GetUint64());
     else if (value.IsDouble())
     {
         rapidjson::StringBuffer buffer;
@@ -481,13 +551,22 @@ void recordNumbers(
         return;
 
     auto & range = integer_ranges[name];
-    range.min = range.min ? std::min(*range.min, *number) : *number;
-    range.max = range.max ? std::max(*range.max, *number) : *number;
-    /// The magnitude is at most `10^30` (see `parseIntegerText`), so it converts back from a float.
-    if (!range.inexact_in_float64 && static_cast<Int128>(static_cast<Float64>(*number)) != *number)
-        range.inexact_in_float64 = *number;
-    if (!range.inexact_in_float32 && static_cast<Int128>(static_cast<Float32>(*number)) != *number)
-        range.inexact_in_float32 = *number;
+    if (!range.min || *number < *range.min)
+        range.min = *number;
+    if (!range.max || *range.max < *number)
+        range.max = *number;
+    /** An integer of a magnitude of `10^30` or more is taken as one that a float does not hold
+      * exactly: a few of them are, but none is needed for a value that Mongo itself keeps, an
+      * `int64` or a `$numberDecimal` of 34 digits, while a smaller magnitude converts back from a
+      * float within the range of an `Int128`.
+      */
+    static constexpr Int128 float_check_limit = Int128(1'000'000'000'000'000ULL) * Int128(1'000'000'000'000'000ULL);
+    const auto small = number->toInt128();
+    const bool checkable = small && *small < float_check_limit && *small > -float_check_limit;
+    if (!range.inexact_in_float64 && (!checkable || static_cast<Int128>(static_cast<Float64>(*small)) != *small))
+        range.inexact_in_float64 = number->text;
+    if (!range.inexact_in_float32 && (!checkable || static_cast<Int128>(static_cast<Float32>(*small)) != *small))
+        range.inexact_in_float32 = number->text;
 }
 
 /** Records the range of the integers of every field of an already flattened document, including
@@ -504,30 +583,45 @@ void recordNumberRanges(
         recordNumbers(it->name.GetString(), it->value, integer_ranges, decimal_scales);
 }
 
-/// The range of the values of an integer type of at most 64 bits, nothing for any other type.
-std::optional<std::pair<Int128, Int128>> getIntegerTypeRange(const DataTypePtr & type)
+/// The range of the values of an integer type, nothing for any other type.
+std::optional<std::pair<WideInteger, WideInteger>> getIntegerTypeRange(const DataTypePtr & type)
 {
+    const auto make = [](auto min, auto max)
+    {
+        return std::pair<WideInteger, WideInteger>(WideInteger::fromInt128(min), WideInteger::fromInt128(max));
+    };
+
     /// `Bool` is a `UInt8` that holds only `0` and `1`.
     if (isBool(type))
-        return std::pair<Int128, Int128>(0, 1);
+        return make(0, 1);
 
     WhichDataType which(type);
     if (which.isInt8())
-        return std::pair<Int128, Int128>(std::numeric_limits<Int8>::min(), std::numeric_limits<Int8>::max());
+        return make(std::numeric_limits<Int8>::min(), std::numeric_limits<Int8>::max());
     if (which.isInt16())
-        return std::pair<Int128, Int128>(std::numeric_limits<Int16>::min(), std::numeric_limits<Int16>::max());
+        return make(std::numeric_limits<Int16>::min(), std::numeric_limits<Int16>::max());
     if (which.isInt32())
-        return std::pair<Int128, Int128>(std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
+        return make(std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
     if (which.isInt64())
-        return std::pair<Int128, Int128>(std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max());
+        return make(std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max());
+    if (which.isInt128())
+        return make(std::numeric_limits<Int128>::min(), std::numeric_limits<Int128>::max());
     if (which.isUInt8())
-        return std::pair<Int128, Int128>(0, std::numeric_limits<UInt8>::max());
+        return make(0, std::numeric_limits<UInt8>::max());
     if (which.isUInt16())
-        return std::pair<Int128, Int128>(0, std::numeric_limits<UInt16>::max());
+        return make(0, std::numeric_limits<UInt16>::max());
     if (which.isUInt32())
-        return std::pair<Int128, Int128>(0, std::numeric_limits<UInt32>::max());
+        return make(0, std::numeric_limits<UInt32>::max());
     if (which.isUInt64())
-        return std::pair<Int128, Int128>(0, std::numeric_limits<UInt64>::max());
+        return make(0, std::numeric_limits<UInt64>::max());
+    if (which.isUInt128())
+        return std::pair<WideInteger, WideInteger>(
+            WideInteger::fromInt128(0), WideInteger::fromUInt256(static_cast<UInt256>(std::numeric_limits<UInt128>::max())));
+    if (which.isInt256())
+        return std::pair<WideInteger, WideInteger>(
+            WideInteger::fromInt256(std::numeric_limits<Int256>::min()), WideInteger::fromInt256(std::numeric_limits<Int256>::max()));
+    if (which.isUInt256())
+        return std::pair<WideInteger, WideInteger>(WideInteger::fromInt128(0), WideInteger::fromUInt256(std::numeric_limits<UInt256>::max()));
     return std::nullopt;
 }
 
@@ -623,7 +717,7 @@ void checkValuesFitColumns(
           * it, e.g. `9007199254740993` in the `Float64` column inferred from a first value `1.0`
           * becomes `9007199254740992`, and the stored number is not the one acknowledged.
           */
-        std::optional<Int128> inexact;
+        std::optional<String> inexact;
         if (WhichDataType(value_type).isFloat64())
             inexact = range.inexact_in_float64;
         else if (WhichDataType(value_type).isFloat32())
@@ -653,13 +747,13 @@ void checkValuesFitColumns(
                 *range.non_integer,
                 it->second);
 
-        if (*range.min < type_min || *range.max > type_max)
+        if (*range.min < type_min || type_max < *range.max)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The field '{}' holds the integer value {}, which is out of the range of its column of the type {}: the value cannot "
                 "be stored",
                 name,
-                *range.min < type_min ? *range.min : *range.max,
+                *range.min < type_min ? range.min->text : range.max->text,
                 it->second);
     }
 
