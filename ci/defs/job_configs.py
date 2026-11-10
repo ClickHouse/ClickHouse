@@ -267,11 +267,8 @@ common_unit_test_job_config = Job.Config(
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/unit_tests_job.py",
-            # `unit_tests_dbms` links the whole `dbms` library and the gtest sources under
-            # `src/**/tests/`, so a change anywhere in `src` can change a unit test result.
-            # Without this the change-based job filter treats `Unit tests` as unaffected and
-            # skips it whenever a PR touches only `src` (e.g. a backport of a gtest plus its
-            # code), so a broken test surfaces only post-merge in Master/ReleaseBranchCI.
+            # `unit_tests_dbms` links the whole `dbms` library, so a change anywhere in `src`
+            # can change a result; without this the change filter skips the job on a `src`-only PR.
             "./src/",
         ],
     ),
