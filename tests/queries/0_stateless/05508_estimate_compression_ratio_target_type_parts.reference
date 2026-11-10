@@ -15,3 +15,5 @@ t_sparse	str_zstd lc_zstd str_lz4 lc_lz4	1	1
 t_strings	lc_zstd lc_lz4 str_zstd str_lz4	1	1
 t_unique	str_zstd lc_zstd lc_lz4 str_lz4	1	1
 t_wide	lc_zstd lc_lz4 str_zstd str_lz4	1	1
+1
+1

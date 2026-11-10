@@ -40,7 +40,6 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Arena.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/assert_cast.h>
@@ -410,9 +409,7 @@ public:
         own_conversion->validation_settings = std::move(validation_settings_);
         if (!source_type->equals(*target_type))
         {
-            ContextPtr query_context;
-            if (CurrentThread::isInitialized())
-                query_context = CurrentThread::get().tryGetQueryContext();
+            const ContextPtr query_context = CurrentThread::tryGetQueryContext();
             const auto overflow_behavior = query_context
                 ? query_context->getSettingsRef()[Setting::date_time_overflow_behavior].value
                 : FormatSettings::DateTimeOverflowBehavior::Ignore;
@@ -555,18 +552,17 @@ private:
         return *data_ref.pending;
     }
 
-    static bool completesGranule(const Data & data_ref)
+    /// `pending_bytes` is the byte size of the pending rows, which callers that check every row compute once.
+    static bool completesGranule(const Data & data_ref, size_t pending_bytes)
     {
-        return data_ref.granule_rows + data_ref.pending->size() >= GRANULE_ROWS
-            || data_ref.granule_bytes + data_ref.pending->byteSize() >= GRANULE_BYTES;
+        return data_ref.granule_rows + data_ref.pending->size() >= GRANULE_ROWS || data_ref.granule_bytes + pending_bytes >= GRANULE_BYTES;
     }
 
     /// `completesGranule`, or the pending rows take `PENDING_BYTES`. Checked for every row added one at a time.
     static bool isPendingFull(const Data & data_ref)
     {
-        const size_t bytes = data_ref.pending->byteSize();
-        return data_ref.granule_rows + data_ref.pending->size() >= GRANULE_ROWS || data_ref.granule_bytes + bytes >= GRANULE_BYTES
-            || bytes >= PENDING_BYTES;
+        const size_t pending_bytes = data_ref.pending->byteSize();
+        return completesGranule(data_ref, pending_bytes) || pending_bytes >= PENDING_BYTES;
     }
 
     void addRows(Data & data_ref, const IColumn & column, size_t row_begin, size_t row_end) const
@@ -590,9 +586,12 @@ private:
             const size_t bytes = pending.byteSize();
             if (rows > 1 && (bytes >= PENDING_BYTES || data_ref.granule_bytes + bytes >= GRANULE_BYTES))
             {
+                /// As `add`: a row goes in, then the rows are checked. At least one row goes in, also when a column keeps some
+                /// bytes of the rows it gives back.
                 pending.popBack(rows);
-                while (row_begin < row_end && !isPendingFull(data_ref))
+                do
                     pending.insertFrom(column, row_begin++);
+                while (row_begin < row_end && !isPendingFull(data_ref));
             }
             else
             {
@@ -607,7 +606,7 @@ private:
     void writePending(Data & data_ref) const
     {
         throwIfBroken(data_ref);
-        const bool ends_granule = completesGranule(data_ref);
+        const bool ends_granule = completesGranule(data_ref, data_ref.pending->byteSize());
 
         /// As `CAST`, which rejects suspicious and experimental types the settings do not allow. Here and not when the function is
         /// created, so that a state type that names such a type can still be read and merged (`ATTACH`, `-Merge`).

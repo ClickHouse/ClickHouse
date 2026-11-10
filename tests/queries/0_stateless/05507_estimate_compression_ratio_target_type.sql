@@ -111,12 +111,19 @@ INSERT INTO results SELECT estimateCompressionRatio('ZSTD(3)', 'LowCardinality(S
 INSERT INTO results SELECT estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) FROM src SETTINGS max_block_size = 8192;
 INSERT INTO results SELECT estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) FROM src SETTINGS max_block_size = 65409;
 SELECT uniqExact(r), count() FROM results;
--- Also with rows wide enough to end granules by bytes, of varying width.
+-- Also with rows of varying width that make a granule wider than a state holds, so that it is written in pieces.
 TRUNCATE TABLE results;
 INSERT INTO results SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(if(intDiv(number, 3000) % 2 = 0, repeat('a', 10 + number % 7), repeat(toString(number % 97), 40 + number % 300))) FROM numbers(20000) SETTINGS max_block_size = 1000;
 INSERT INTO results SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(if(intDiv(number, 3000) % 2 = 0, repeat('a', 10 + number % 7), repeat(toString(number % 97), 40 + number % 300))) FROM numbers(20000) SETTINGS max_block_size = 8192;
 INSERT INTO results SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(if(intDiv(number, 3000) % 2 = 0, repeat('a', 10 + number % 7), repeat(toString(number % 97), 40 + number % 300))) FROM numbers(20000) SETTINGS max_block_size = 65409;
 INSERT INTO results SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(if(intDiv(number, 3000) % 2 = 0, repeat('a', 10 + number % 7), repeat(toString(number % 97), 40 + number % 300))) FROM numbers(20000) GROUP BY number % 1;
+SELECT uniqExact(r), count() FROM results;
+-- And with rows of 1.5 to 3 KB, whose granules end at `index_granularity_bytes` (10 MiB) before 8192 rows.
+TRUNCATE TABLE results;
+INSERT INTO results SELECT estimateCompressionRatio('ZSTD(1)', 'String')(repeat(toString(number % 89), 1500 + number % 1500)) FROM numbers(15000) SETTINGS max_block_size = 1000;
+INSERT INTO results SELECT estimateCompressionRatio('ZSTD(1)', 'String')(repeat(toString(number % 89), 1500 + number % 1500)) FROM numbers(15000) SETTINGS max_block_size = 8192;
+INSERT INTO results SELECT estimateCompressionRatio('ZSTD(1)', 'String')(repeat(toString(number % 89), 1500 + number % 1500)) FROM numbers(15000) SETTINGS max_block_size = 65409;
+INSERT INTO results SELECT estimateCompressionRatio('ZSTD(1)', 'String')(repeat(toString(number % 89), 1500 + number % 1500)) FROM numbers(15000) GROUP BY number % 1;
 SELECT uniqExact(r), count() FROM results;
 
 SELECT 'aggregation';

@@ -145,6 +145,26 @@ INNER JOIN
 GROUP BY tbl
 ORDER BY tbl;
 
+-- Rows of 1.5 to 3 KB: the part ends its granules at `index_granularity_bytes` (10 MiB) before 8192 rows, and the estimate
+-- writes each granule in pieces. The estimated size (the second number of the state, a varint) against the part, within 1%.
+CREATE TABLE t_wide_granules (x String CODEC(ZSTD(1))) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 8192, index_granularity_bytes = '10Mi',
+    use_const_adaptive_granularity = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576,
+    ratio_of_defaults_for_sparse_serialization = 0.9375, compute_exact_num_defaults_for_sparse_columns = 1, serialization_info_version = 'with_types',
+    string_serialization_version = 'with_size_stream', min_columns_to_activate_adaptive_write_buffer = 500;
+INSERT INTO t_wide_granules SELECT repeat(toString(number % 89), 1500 + number % 1500) FROM numbers(12000);
+SELECT marks > 3 FROM system.parts WHERE database = currentDatabase() AND table = 't_wide_granules' AND active;
+SELECT abs(estimated / stored - 1) < 0.01 FROM
+(
+    SELECT
+        (SELECT arraySum(arrayMap((c, i) -> bitShiftLeft(toUInt64(bitAnd(reinterpretAsUInt8(c), 127)), 7 * i), splitByString('', b), range(length(b))))
+         FROM (SELECT unhex(extract(hex(estimateCompressionRatioState('ZSTD(1)', 'String')(x)), '^(?:[89A-F][0-9A-F])*[0-7][0-9A-F]((?:[89A-F][0-9A-F])*[0-7][0-9A-F])$')) AS b
+               FROM t_wide_granules)) AS estimated,
+        (SELECT sum(column_data_compressed_bytes) FROM system.parts_columns
+         WHERE database = currentDatabase() AND table = 't_wide_granules' AND active) AS stored
+);
+DROP TABLE t_wide_granules;
+
 DROP TABLE t_strings;
 DROP TABLE t_unique;
 DROP TABLE t_ints;
