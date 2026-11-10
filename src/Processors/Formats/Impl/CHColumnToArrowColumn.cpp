@@ -1511,7 +1511,7 @@ namespace DB
             {
                 if (settings.output_fixed_string_as_fixed_byte_array)
                     fillArrowArrayWithFixedStringColumnData(column, null_bytemap, format_name, array_builder, start, end);
-                else if (settings.output_string_as_string)
+                else if (settings.output_string_as_string && settings.output_fixed_string_as_string)
                     fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::StringBuilder>(column, null_bytemap, format_name, array_builder, start, end);
                 else
                     fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::BinaryBuilder>(column, null_bytemap, format_name, array_builder, start, end);
@@ -1891,7 +1891,8 @@ namespace DB
             return arrow::fixed_size_binary(static_cast<int32_t>(fixed_length));
         }
 
-        if (isStringOrFixedString(column_type) && settings.output_string_as_string)
+        if (settings.output_string_as_string
+            && (isString(column_type) || (isFixedString(column_type) && settings.output_fixed_string_as_string)))
             return arrow::utf8();
 
         if (isBool(column_type))
