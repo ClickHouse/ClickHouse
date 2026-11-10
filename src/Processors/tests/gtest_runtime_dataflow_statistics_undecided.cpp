@@ -6,6 +6,11 @@
 
 using namespace DB;
 
+namespace ProfileEvents
+{
+extern const Event AutoParallelReplicasNoStatistics;
+}
+
 namespace
 {
 
@@ -29,8 +34,6 @@ void measureSomething(RuntimeDataflowStatisticsBlock & block)
     output.compressed_bytes = 100;
 }
 
-using Reason = RuntimeDataflowStatisticsCache::UndecidedReason;
-
 }
 
 /// A collection that a step could not take part in is remembered, so that the plan is not built again for it, and a
@@ -46,7 +49,7 @@ TEST(RuntimeDataflowStatisticsUndecided, FailedCollectionIsRememberedUntilOneSuc
     }
     const auto undecided = cache.getUndecided(undecided_key);
     ASSERT_NE(undecided, nullptr);
-    EXPECT_EQ(undecided->reason, Reason::CollectorUnsupported);
+    EXPECT_EQ(undecided->outcome_event, ProfileEvents::AutoParallelReplicasNoStatistics);
 
     {
         RuntimeDataflowStatisticsBlock succeeded(statistics_key, /*total_rows_to_read_=*/100, undecided_key);

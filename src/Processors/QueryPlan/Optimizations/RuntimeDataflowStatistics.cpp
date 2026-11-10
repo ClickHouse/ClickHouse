@@ -20,6 +20,7 @@
 
 namespace ProfileEvents
 {
+extern const Event AutoParallelReplicasNoStatistics;
 extern const Event RuntimeDataflowStatisticsInputBytes;
 extern const Event RuntimeDataflowStatisticsOutputBytes;
 extern const Event RuntimeDataflowStatisticsInputNanoseconds;
@@ -53,10 +54,10 @@ std::shared_ptr<const RuntimeDataflowStatisticsCache::Undecided> RuntimeDataflow
     return undecided_cache->get(root_key);
 }
 
-void RuntimeDataflowStatisticsCache::setUndecided(UInt64 root_key, UndecidedReason reason)
+void RuntimeDataflowStatisticsCache::setUndecided(UInt64 root_key, ProfileEvents::Event outcome_event)
 {
     auto undecided = std::make_shared<Undecided>();
-    undecided->reason = reason;
+    undecided->outcome_event = outcome_event;
     /// Two executions can race here, and then both entries count as the first, which costs one more build.
     undecided->first = !undecided_cache->get(root_key);
     undecided_cache->set(root_key, undecided);
@@ -82,7 +83,7 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
     {
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "Unsupported case encountered, skipping statistics update.");
         if (undecided_key)
-            dataflow_cache.setUndecided(undecided_key, RuntimeDataflowStatisticsCache::UndecidedReason::CollectorUnsupported);
+            dataflow_cache.setUndecided(undecided_key, ProfileEvents::AutoParallelReplicasNoStatistics);
         return;
     }
 

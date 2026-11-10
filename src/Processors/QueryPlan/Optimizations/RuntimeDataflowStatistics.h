@@ -12,6 +12,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
+#include <Common/ProfileEvents.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <atomic>
@@ -89,21 +90,15 @@ public:
 
     void setBoundary(UInt64 root_key, Boundary boundary);
 
-    /// Why building the plan with parallel replicas for a plan ended without a decision.
-    enum class UndecidedReason : uint8_t
-    {
-        PlansNotComparable,
-        PlanWithoutParallelReplicas,
-        /// A step that was asked to collect statistics could not (`RuntimeDataflowStatisticsCacheUpdater::markUnsupportedCase`).
-        CollectorUnsupported,
-    };
-
     /// The last build of the plan with parallel replicas for a plan ended without a decision, so that the next
     /// executions can skip building it. It is not a verdict: nothing proves the outcome permanent, so a number of
     /// executions skip, and the one after them builds again.
     struct Undecided
     {
-        UndecidedReason reason = UndecidedReason::PlansNotComparable;
+        /// The event the outcome was counted in, which a skipped execution counts again: the plans could not be
+        /// compared, the planner used no parallel replicas in the plan built with them, or a step could not collect
+        /// statistics (`RuntimeDataflowStatisticsCacheUpdater::markUnsupportedCase`).
+        ProfileEvents::Event outcome_event{};
         /// The executions since, counted on the shared entry so that concurrent ones take turns: every one in
         /// `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan, the others skip.
         mutable std::atomic<UInt64> executions{0};
@@ -117,7 +112,7 @@ public:
     /// Under the same key as the boundary.
     std::shared_ptr<const Undecided> getUndecided(UInt64 root_key) const;
 
-    void setUndecided(UInt64 root_key, UndecidedReason reason);
+    void setUndecided(UInt64 root_key, ProfileEvents::Event outcome_event);
 
     void forgetUndecided(UInt64 root_key);
 
