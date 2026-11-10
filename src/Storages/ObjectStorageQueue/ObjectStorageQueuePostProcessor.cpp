@@ -607,7 +607,8 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                 try
                 {
                     auto source_metadata = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/false);
-                    if (source_metadata && !isSameGeneration(type, source_metadata->etag, object_from.etag))
+                    if (source_metadata && !(settings.url_selects_version && !object_from.version_id.empty())
+                        && !isSameGeneration(type, source_metadata->etag, object_from.etag))
                         throw Exception(
                             type == ObjectStorageType::Azure ? ErrorCodes::FILE_CHANGED_DURING_READ
                                                              : ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
@@ -650,9 +651,10 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                             /// generation that was ingested, so the source is looked up whatever the guard is.
                             auto source_metadata
                                 = object_storage->tryGetObjectMetadata(source_object.remote_path, /*with_tags=*/false);
-                            /// Only the generation the rows were read from may be moved. Rethrown once the
-                            /// batch is done, so the file is not committed and the newer generation is ingested.
-                            if (source_metadata && !isSameGeneration(type, source_metadata->etag, source_object.etag))
+                            /// Only the generation the rows were read from may be moved; a newer one is ingested first.
+                            /// A URL that selects a version never ingests a newer one, so the version lookup below decides.
+                            if (source_metadata && !(settings.url_selects_version && !source_object.version_id.empty())
+                                && !isSameGeneration(type, source_metadata->etag, source_object.etag))
                                 throw Exception(
                                     type == ObjectStorageType::Azure ? ErrorCodes::FILE_CHANGED_DURING_READ
                                                                      : ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,

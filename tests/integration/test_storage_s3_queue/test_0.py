@@ -2442,10 +2442,11 @@ def test_null_version_in_the_url_reads_the_listed_generation(started_cluster):
     assert client.get_object(Bucket=bucket, Key=source_key, VersionId="null")["Body"].read() == b"1,2,3\n"
 
 
-def test_explicit_version_in_the_url_moves_the_selected_version(started_cluster):
+@pytest.mark.parametrize("destination", ["other_bucket", "same_bucket"])
+def test_explicit_version_in_the_url_moves_the_selected_version(started_cluster, destination):
     """An explicit `versionId` selects an older version than the one the listing describes. The `ETag` that
     post-processing checks must be the one of the version that was read, not the listed one, otherwise every
-    move to another bucket is refused after the rows were inserted, and the file is ingested again and again."""
+    move is refused after the rows were inserted, and the file is ingested again and again."""
     node = started_cluster.instances["instance"]
     token = generate_random_string().lower()
     bucket = f"versioned-{token}"
@@ -2470,15 +2471,20 @@ def test_explicit_version_in_the_url_moves_the_selected_version(started_cluster)
 
     url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*?versionId={selected_version}"
     move_uri = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{destination_bucket}"
+    move_settings = ""
+    if destination == "other_bucket":
+        move_settings = f"""
+            after_processing_move_uri = '{move_uri}',
+            after_processing_move_access_key_id = '{started_cluster.minio_access_key}',
+            after_processing_move_secret_access_key = '{started_cluster.minio_secret_key}',"""
+    else:
+        destination_bucket = bucket
     node.query(
         f"""
         CREATE TABLE {table_name} (column1 UInt32, column2 UInt32, column3 UInt32)
         ENGINE = S3Queue('{url}', '{started_cluster.minio_access_key}', '{started_cluster.minio_secret_key}', CSV)
         SETTINGS mode = 'unordered', after_processing = 'move', keeper_path = '/clickhouse/test_{table_name}',
-            s3queue_loading_retries = 0,
-            after_processing_move_uri = '{move_uri}',
-            after_processing_move_access_key_id = '{started_cluster.minio_access_key}',
-            after_processing_move_secret_access_key = '{started_cluster.minio_secret_key}',
+            s3queue_loading_retries = 0,{move_settings}
             after_processing_move_prefix = '{processed_prefix}',
             after_processing_move_preserve_path = 1
         """

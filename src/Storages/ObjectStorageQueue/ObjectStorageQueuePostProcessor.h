@@ -29,6 +29,8 @@ public:
         String after_processing_move_container;
         String after_processing_tag_key;
         String after_processing_tag_value;
+        /// The URL selects one version (`?versionId=`), so the queue never reads a newer one at the key.
+        bool url_selects_version = false;
     };
 
     /// `keeper_identity_` identifies the queue (shared by its replicas) that stamps and recognizes its

@@ -60,6 +60,11 @@
 
 #include <fmt/ranges.h>
 
+#include "config.h"
+#if USE_AWS_S3
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -397,6 +402,10 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::StorageObjectStorageQueue");
+#if USE_AWS_S3
+    if (const auto * s3_configuration = dynamic_cast<const StorageS3Configuration *>(configuration.get()))
+        after_processing_settings.url_selects_version = !s3_configuration->url.version_id.empty();
+#endif
     const auto & read_path = configuration->getPathForRead();
     if (read_path.path.empty())
     {
@@ -1119,7 +1128,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
     const auto & table_metadata = metadata->getTableMetadata();
     const size_t processing_threads_num = table_metadata.processing_threads_num;
     const bool parallel_inserts = runsParallelInserts(*metadata);
-    const size_t threads = parallel_inserts ? 1 : processing_threads_num;
+    /// A queue migrated to buckets keeps the single task it was created with, so that task runs all threads.
+    const size_t threads = parallel_inserts && streaming_tasks.size() > 1 ? 1 : processing_threads_num;
 
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
