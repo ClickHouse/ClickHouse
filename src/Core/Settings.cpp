@@ -10938,7 +10938,7 @@ DETACH TABLE test_table;
 DROP DETACHED TABLE test_table SYNC;
 ```
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to enable `DROP DETACHED TABLE`."}) \
+        {"26.11", false, false, "New setting to enable `DROP DETACHED TABLE`."}) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \

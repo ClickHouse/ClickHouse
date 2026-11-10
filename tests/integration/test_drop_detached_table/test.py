@@ -74,8 +74,6 @@ def start_cluster():
     try:
         cluster.start()
         yield cluster
-    except Exception as ex:
-        print(ex)
     finally:
         cluster.shutdown()
 
@@ -89,7 +87,7 @@ def create_replicated_table(node, table_name):
         CREATE TABLE {table_name} ON CLUSTER test_cluster
         (
             number UInt64
-        ) 
+        )
         ENGINE={engine}
         ORDER BY number
         """)
@@ -111,10 +109,10 @@ def create_distributed_table(node, table_name):
 
 def create_s3_table(node, table_name):
     node.query_with_retry("""
-        CREATE TABLE {table_name} 
+        CREATE TABLE {table_name}
         (
             number UInt64
-        ) 
+        )
         ENGINE=MergeTree
         ORDER BY number
         SETTINGS disk='s3'
