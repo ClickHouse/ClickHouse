@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
@@ -38,6 +39,7 @@ namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 template <is_decimal T>
@@ -658,6 +660,30 @@ template <is_decimal T>
 bool ColumnDecimal<T>::hasOnlyTypeDefaults() const
 {
     return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+}
+
+template <is_decimal T>
+ColumnPtr ColumnDecimal<T>::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+{
+    if (offsets.size() + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+
+    auto res = this->create(total_rows, scale);
+    auto & res_data = res->getData();
+
+    T default_value = assert_cast<const Self &>(column_with_default_value.getDataColumn()).getElement(0);
+    std::fill(res_data.begin(), res_data.end(), default_value);
+
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        const size_t position = offsets[i];
+        if (position >= total_rows) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset of a non-default value {} is out of range [0, {})", position, total_rows);
+        res_data[position] = data[i + shift];
+    }
+
+    return res;
 }
 
 template <is_decimal T>

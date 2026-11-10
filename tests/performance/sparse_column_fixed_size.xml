@@ -1,0 +1,42 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>serialization</name>
+            <values>
+                <value>sparse</value>
+                <value>full</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE test_fixed_size_full (id UInt64, fs FixedString(16), d64 Decimal64(4), d128 Decimal128(10))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 1
+    </create_query>
+
+    <create_query>
+        CREATE TABLE test_fixed_size_sparse (id UInt64, fs FixedString(16), d64 Decimal64(4), d128 Decimal128(10))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.8
+    </create_query>
+
+    <create_query>SYSTEM STOP MERGES test_fixed_size_{serialization}</create_query>
+
+    <fill_query>
+        INSERT INTO test_fixed_size_{serialization} SELECT
+            number,
+            number % 10 = 0 ? toFixedString(concat('k', toString(intHash64(number) % 1000)), 16) : toFixedString('', 16),
+            number % 10 = 0 ? toDecimal64(intHash64(number) % 1000 + 1, 4) : toDecimal64(0, 4),
+            number % 10 = 0 ? toDecimal128(intHash64(number) % 1000 + 1, 10) : toDecimal128(0, 10)
+        FROM numbers(100000000)
+    </fill_query>
+
+    <query>SELECT fs, count() FROM test_fixed_size_{serialization} GROUP BY fs FORMAT Null</query>
+    <query>SELECT count() FROM test_fixed_size_{serialization} WHERE bitNot(fs) != bitNot(toFixedString('', 16))</query>
+    <query>SELECT d64, count() FROM test_fixed_size_{serialization} GROUP BY d64 FORMAT Null</query>
+    <query>SELECT count() FROM test_fixed_size_{serialization} WHERE d64 + 1 > 500</query>
+    <query>SELECT count() FROM test_fixed_size_{serialization} WHERE d128 + 1 > 500</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_fixed_size_{serialization}</drop_query>
+</test>
