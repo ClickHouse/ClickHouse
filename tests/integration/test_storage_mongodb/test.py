@@ -1052,9 +1052,16 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                 "flag != 2": "4\n",
                 "flag = -1": "0\n",
                 "flag != 256": "4\n",
+                "flag = 2.0": "0\n",
+                "flag != 2.0": "4\n",
+                "flag != toFloat32(2)": "4\n",
+                "flag != -1.0": "4\n",
                 "flag IN (1, 2)": "2\n",
                 "flag NOT IN (2)": "4\n",
                 "flag NOT IN (0, 2)": "2\n",
+                "flag IN (2.0)": "0\n",
+                "flag NOT IN (2.0)": "4\n",
+                "flag NOT IN (0, toFloat32(2))": "2\n",
                 "n IN (true)": "2\n",
                 "n NOT IN (true)": "2\n",
             }
@@ -1066,6 +1073,8 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
 
             for predicate, count in {
                 "flag < 2": "4\n",
+                "flag < 2.0": "4\n",
+                "flag < toFloat32(2)": "4\n",
                 "flag > -1": "4\n",
                 "flag > 0.5": "2\n",
             }.items():

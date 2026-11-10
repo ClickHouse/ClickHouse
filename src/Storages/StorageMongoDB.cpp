@@ -45,6 +45,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 
+#include <cmath>
 #include <memory>
 
 using bsoncxx::builder::basic::document;
@@ -378,6 +379,23 @@ static bool isBoolNumberComparison(const DataTypePtr & lhs, const DataTypePtr & 
     return lhs && boolDiffers(lhs, rhs) && isNativeNumber(removeNullable(lhs)) && isNativeNumber(removeNullable(rhs));
 }
 
+/// Conversion checks the `Bool` domain only for integers, so a floating constant such as `2.0` converts to a `Bool`
+/// column as the `UInt8` 2, which `fieldAsBSONValue` would write as `true`.
+static bool isOutsideBoolDomain(const Field & value, const DataTypePtr & type)
+{
+    return isBool(removeNullable(type)) && value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() > 1;
+}
+
+static bool isWholeNumber(const Field & value, const DataTypePtr & type)
+{
+    if (isInteger(removeNullable(type)))
+        return true;
+    if (value.getType() != Field::Types::Float64)
+        return false;
+    const auto number = value.safeGet<Float64>();
+    return std::isfinite(number) && number == std::trunc(number);
+}
+
 static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const JoinNode * join_node, const StorageID & storage_id)
 {
     const auto * column = node->as<ColumnNode>();
@@ -500,6 +518,9 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
             }
             if (isBoolNumberComparison(element_type, column_type))
                 other_encodings.emplace_back(elements[i], element_type);
+            /// A member such as `2.0` only matches a BSON number stored in a `Bool` column, which the reader takes as it is.
+            if (isOutsideBoolDomain(converted, column_type))
+                continue;
             converted_elements.push_back(std::move(converted));
         }
 
@@ -514,11 +535,13 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     {
         /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
         auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, conversionHint(const_type, column_type));
+        if (isOutsideBoolDomain(converted_value, column_type))
+            converted_value = Field();
 
-        /// No BSON bool equals an integer that has no `Bool` value, but a BSON number stored in a `Bool` column is read
-        /// as it is. `=` and `!=` then keep the integer in its own BSON type, as for a numeric column.
+        /// No BSON bool equals a whole number that has no `Bool` value, but a BSON number stored in a `Bool` column is
+        /// read as it is. `=` and `!=` then keep the number in its own BSON type, as for a numeric column.
         const bool keep_own_encoding = converted_value.isNull() && isBoolNumberComparison(const_type, column_type)
-            && isInteger(removeNullable(const_type)) && (func_name == "$eq" || func_name == "$ne");
+            && isWholeNumber(const_value, const_type) && (func_name == "$eq" || func_name == "$ne");
 
         if (converted_value.isNull() && !keep_own_encoding)
         {
