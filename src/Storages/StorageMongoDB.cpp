@@ -515,17 +515,25 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
         /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
         auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, conversionHint(const_type, column_type));
 
-        if (converted_value.isNull())
+        /// No BSON bool equals an integer that has no `Bool` value, but a BSON number stored in a `Bool` column is read
+        /// as it is. `=` and `!=` then keep the integer in its own BSON type, as for a numeric column.
+        const bool keep_own_encoding = converted_value.isNull() && isBoolNumberComparison(const_type, column_type)
+            && isInteger(removeNullable(const_type)) && (func_name == "$eq" || func_name == "$ne");
+
+        if (converted_value.isNull() && !keep_own_encoding)
         {
             auto value_string = applyVisitor(FieldVisitorToString(), const_value);
             LOG_DEBUG(log, "Cannot convert constant value {} to column type {}", value_string, column_type->getName());
             return {};
         }
 
-        if (isBoolNumberComparison(const_type, column_type))
-            other_encodings.emplace_back(const_value, const_type);
-        const_type = column_type;
-        const_value = std::move(converted_value);
+        if (!keep_own_encoding)
+        {
+            if (isBoolNumberComparison(const_type, column_type))
+                other_encodings.emplace_back(const_value, const_type);
+            const_type = column_type;
+            const_value = std::move(converted_value);
+        }
     }
 
     const bool is_oid = configuration.isOidColumn(column_node->getColumnName());
