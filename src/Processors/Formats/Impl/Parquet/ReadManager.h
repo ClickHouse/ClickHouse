@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/SharedMutex.h>
 
 namespace DB::Parquet
@@ -8,7 +9,7 @@ namespace DB::Parquet
 
 struct AtomicBitSet
 {
-    std::vector<std::atomic<UInt64>> a;
+    VectorWithMemoryTracking<std::atomic<UInt64>> a;
 
     void resize(size_t bits);
 
@@ -50,7 +51,12 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    void init(FormatParserSharedResourcesPtr parser_shared_resources_, RowGroupSelection row_groups_to_read_);
+    /// `other_row_groups_are_read_by_other_readers` means that the row groups not in `row_groups_to_read_`
+    /// are read by other readers of the same query, so they are not counted as pruned by this one.
+    void init(
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        RowGroupSelection row_groups_to_read_,
+        bool other_row_groups_are_read_by_other_readers = false);
 
     ~ReadManager();
 
@@ -111,7 +117,7 @@ private:
         /// So each pair <row group, stage> is a sequence of groups of tasks, and their scheduling
         /// doesn't need any mutexes.
         AtomicBitSet schedulable_row_groups;
-        std::vector<std::vector<Task>> row_group_tasks_to_schedule;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<Task>> row_group_tasks_to_schedule;
     };
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -123,7 +129,7 @@ private:
     std::atomic<size_t> first_incomplete_row_group {0};
 
     std::mutex delivery_mutex;
-    std::priority_queue<Task, std::vector<Task>, Task::Comparator> delivery_queue;
+    std::priority_queue<Task, VectorWithMemoryTracking<Task>, Task::Comparator> delivery_queue;
     std::condition_variable delivery_cv;
     std::exception_ptr exception;
     RowGroupSelection row_groups_to_read;
@@ -148,11 +154,11 @@ private:
     /// was not scheduled yet. Modified with column_data_prefetch_mutex locked.
     AtomicBitSet column_data_read_ahead_row_groups;
     /// Depth slots held by each such row group; set by readAheadColumnData, zeroed by the admission round that unsets its bit.
-    std::vector<size_t> column_data_read_ahead_run_slots;
+    VectorWithMemoryTracking<size_t> column_data_read_ahead_run_slots;
     /// Slots held by all row groups.
     std::atomic<size_t> column_data_read_ahead_count {0};
 
-    void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
+    void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, VectorWithMemoryTracking<Task> & out_tasks);
     /// The estimated memory of the output of the primitive column `column_idx` in the row subgroup.
     MemoryUsageToken reserveOutputColumnMemory(size_t column_idx, const RowGroup & row_group, const RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
@@ -165,17 +171,17 @@ private:
     /// across all row groups pruning in parallel (see `PruningMemoryReservation` and
     /// `Reader::applyBloomAndDictionaryFilters`).
     PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
-    void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
+    void runBatchOfTasks(const VectorWithMemoryTracking<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
     void readAheadColumnData();
-    void addColumnDataPrefetches(const Task & task, std::vector<PrefetchHandle *> & out);
+    void addColumnDataPrefetches(const Task & task, VectorWithMemoryTracking<PrefetchHandle *> & out);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
     void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     /// Free some memory ColumnChunk that's not needed after decoding is done in all row sugroups.
     /// Call sites should be careful to not call it from multiple threads in parallel.
     void clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff);
     void clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
-    void setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff);
+    void setTasksToSchedule(size_t row_group_idx, ReadStage stage, VectorWithMemoryTracking<Task> add_tasks, MemoryUsageDiff & diff);
     void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     void advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDiff & diff);
     void admitTopKRowGroups(MemoryUsageDiff & diff);

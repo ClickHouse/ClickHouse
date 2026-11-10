@@ -1287,7 +1287,7 @@ void Aggregator::executeImpl(
             /// smaller threshold.
             const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
             const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes);
+                && (bytesForPrefetch(method.data) > min_bytes);
 
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -2645,7 +2645,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// external-aggregation threshold the table is written to disk once the write frees enough memory, whether it
         /// is learning or frozen, and its producer learns again.
         if (over_external_threshold && adaptiveTableWorthSpilling(result, *adaptive))
-            spillAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
+            spillAdaptiveTable(result, *adaptive, result.memoryUsage() + params.min_free_disk_space);
         return true;
     }
 
@@ -2681,8 +2681,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space);
         reseedKeptKeysAfterSpill(result);
     }
 
@@ -6165,8 +6164,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space);
         reseedKeptKeysAfterSpill(result);
     }
 

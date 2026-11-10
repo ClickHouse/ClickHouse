@@ -484,12 +484,61 @@ def sparseOverReplicatedScenario():
         print("sparse over replicated: caught expected exception INCORRECT_DATA")
 
 
+def expectException(s, expected_code, must_contain):
+    packet_type = readVarUInt(s)
+    assert packet_type == 2, "Expected Exception packet, got {}".format(packet_type)
+    code, text = readException(s)
+    assert code == expected_code, "Expected code {}, got {}: {}".format(expected_code, code, text)
+    assert must_contain in text, text
+
+
+def sendReplicatedBlockWithHugeElementCount(s):
+    # The element count is read straight off the wire and the nested column is sized from it
+    # before any element is read, so an implausibly large count must be rejected up front.
+    limit = 4
+    num_elements = 779583733922149480
+
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)  # table name
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(limit, ba)  # rows
+    writeStringBinary("x", ba)
+    writeStringBinary("UInt64", ba)
+    ba.append(1)  # has_custom serialization
+    ba.append(4)  # KindStackBinarySerializationType::REPLICATED
+
+    # ReplicatedIndexes substream: all indexes are in [0, num_elements).
+    writeVarUInt(limit, ba)
+    ba.append(1)  # size_of_index_type = sizeof(UInt8)
+    for _ in range(limit):
+        ba.append(0)
+
+    # ReplicatedElements substream: a huge element count and no element data.
+    writeVarUInt(num_elements, ba)
+
+    s.sendall(ba)
+    s.shutdown(socket.SHUT_WR)
+
+
+def hugeElementCountScenario():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        connectAndStartInsert(s)
+        sendReplicatedBlockWithHugeElementCount(s)
+        expectException(s, 128, "Suspiciously many elements")
+        print("huge element count: caught expected exception TOO_LARGE_ARRAY_SIZE")
+
+
 def main():
     outOfBoundsIndexScenario()
     truncatedElementsScenario()
     invalidIndexTypeSizeScenario()
     indexRowCountMismatchScenario()
     sparseOverReplicatedScenario()
+    hugeElementCountScenario()
 
 
 if __name__ == "__main__":
