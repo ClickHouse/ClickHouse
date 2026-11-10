@@ -7,9 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A frozen table of the adaptive aggregator thaws under the top-K pruning of `ORDER BY count() DESC LIMIT n`,
 # and the pruning still holds: a producer that froze counts the groups of its own table into its bins at its
 # finish. In each lane the first block holds 4096 distinct keys, which reach the freeze threshold. The next
-# 150000 rows are the middle of the lane, whose rows miss the frozen table, all of them or half. The last
-# 150000 rows carry the 10 keys of the top, which only the staged records or a thawed table hold. Each lane is
-# a single stream, so it feeds a producer of its own.
+# 150000 rows are the middle of the lane, whose rows miss the frozen table, all of them or half. Of the last
+# 150000 rows, three in four carry the 10 keys of the top, which only the staged records or a thawed table
+# hold, and the fourth carries 30 keys of a second tier, each with a ninth of the rows of a key of the top.
+# Each lane is a single stream, so it feeds a producer of its own.
 #
 # With other aggregates, a repeating middle thaws the tables on the evidence alone, and
 # `adaptive_aggregator_disable_thaw` keeps them frozen. A lone `count()` thaws only when the pruning is
@@ -20,7 +21,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # bins of all producers, so a producer counts a bin as pruned only below its top divided by their number.
 # With 16 lanes, each with 10 keys of its own that are 12 times as frequent as the keys that all lanes share,
 # the shared keys sit below an eighth of a lane's top but above a sixteenth, so the tables thaw. These lanes
-# are shorter, 90112 rows in the middle and 8192 for the top, to keep the cell as light as the others.
+# are shorter, 90112 rows in the middle and 16384 at the end, to keep the cell as light as the others.
 #
 # Every cell compares the rows of the top with those of the same query with the feature off, as a multiset:
 # the top has no tie at its boundary. Reading every column keeps the other aggregate, whose records do not
@@ -28,6 +29,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # in the full aggregation. The last three columns say whether a table thawed and whether the merge skipped
 # units and staged records. Each cell runs in its own clickhouse-local process, so the counters in
 # `system.events` belong to it alone.
+#
+# The second tier keeps the pruning independent of how the merge threads are scheduled. The merge takes the
+# buckets with the largest bins first and prunes by the smallest of the 10 best counts converted so far. The
+# top alone would leave that threshold low until the last of its 10 keys is converted, which a slow thread
+# can delay past every other bucket. With 40 keys, at most one bucket per thread is unfinished when a thread
+# takes a bucket without them, so at least 10 of the 40 are converted by then, and the merge skips what the
+# bucket holds below them: the keys of the first blocks and the less frequent keys of the middle.
 #
 # The last block keeps the hash-table statistics on. A top-K run whose tables thaw records the verdict, so the
 # next run of the same query does not use the adaptive aggregator. The pruning and its limit are part of the
@@ -43,6 +51,9 @@ SETTINGS="SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_b
     SET optimize_aggregation_in_order = 0, optimize_injective_functions_in_group_by = 0;
     SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1;"
 
+# The last rows of a lane: every fourth row goes to the second tier.
+top='if(number % 4 = 3, 2100000 + intDiv(number, 4) % 30, 2000000 + intDiv(number, 4) % 10)'
+
 function check()
 {
     local label=$1 disable_thaw=$2 keys=$3 aggregates=$4
@@ -52,7 +63,7 @@ function check()
     for ((lane = 0; lane < lanes; ++lane))
     do
         source+="${source:+ UNION ALL }SELECT multiIf(number < 4096, number, number < 4096 + $middle_rows,
-            ${middle//\{lane\}/$lane}, 2000000 + number % 10) AS k, number FROM numbers(4096 + $middle_rows + $top_rows)"
+            ${middle//\{lane\}/$lane}, $top) AS k, number FROM numbers(4096 + $middle_rows + $top_rows)"
     done
     local query="SELECT $keys, $aggregates FROM ($source) GROUP BY $keys ORDER BY c DESC LIMIT $limit"
     local full="SELECT $keys, $aggregates FROM ($source) GROUP BY $keys SETTINGS enable_adaptive_aggregator = 0"
@@ -84,10 +95,10 @@ check 'Lone count, uniform staged keys' 0 'toString(k) AS sk' 'count() AS c' "$u
 check 'Lone count, cold staged keys' 0 'toString(k) AS sk' 'count() AS c' "$cold_staged"
 check 'Lone count, hot keys staged' 0 'toString(k) AS sk' 'count() AS c' "$hot_staged"
 check 'Lone count, fewer groups than the limit' 0 'toString(k) AS sk' 'count() AS c' "$cold_staged" 60000
-check 'Lone count, hot keys of each lane' 0 'toString(k) AS sk' 'count() AS c' "$own_hot" 10 16 90112 8192
+check 'Lone count, hot keys of each lane' 0 'toString(k) AS sk' 'count() AS c' "$own_hot" 10 16 90112 16384
 
 LANE="SELECT multiIf(number < 4096, number, number < 154096, 1000000 + toUInt64(sqrt(number % 10000)),
-    2000000 + number % 10) AS k, number FROM numbers(304096)"
+    $top) AS k, number FROM numbers(304096)"
 FULL="SELECT toString(k) AS sk, count() AS c, min(number) AS m
     FROM ($LANE UNION ALL $LANE UNION ALL $LANE UNION ALL $LANE) GROUP BY sk"
 # Each array is [local freezes, thaws], taken after each of five runs. The checks, in order: the first top-K
