@@ -161,7 +161,7 @@ private:
 struct LoopbackExchange
 {
     ExchangeConnectionsPtr connections = std::make_shared<ExchangeConnections>();
-    ExchangeServer server{"127.0.0.1", 0, connections};
+    ExchangeServer server{"127.0.0.1", 0, /*listen_backlog=*/ 64, connections};
 
     LoopbackExchange() { server.start(); }
 };
@@ -689,8 +689,8 @@ std::function<void(Poco::Net::StreamSocket &)> sendAfterHandshake(std::string by
         ExchangeTest::completeSinkHandshake(socket);
         StreamingExchangeProtocol::sendAll(socket, packet_bytes.data(), packet_bytes.size(), "test packet");
         if (then == ThenPeer::Resets)
-            socket.setLinger(true, 0);
-        if (then != ThenPeer::KeepsOpen)
+            ExchangeTest::resetAfterDelivery(socket);
+        else if (then == ThenPeer::Closes)
             socket.close();
     };
 }
