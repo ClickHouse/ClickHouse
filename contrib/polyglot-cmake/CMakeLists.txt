@@ -11,7 +11,7 @@ add_library(ch_rust::polyglot ALIAS _ch_rust_polyglot)
 
 if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN
     AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
-    find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+    ch_find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     if (_LLD_FOR_STRIP)
         set(_polyglot_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_polyglot.a")
         add_custom_target(strip_polyglot_symbols
