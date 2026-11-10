@@ -617,10 +617,12 @@ private:
             if (!rows_conversion.cast)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Aggregate function {} has rows to convert but was created without settings", getName());
+            /// With the types the cast was built for, not this function's: a `DateTime` without a time zone takes the session's
+            /// when the type is created, and a function created by another query that reads the state may have another.
             ColumnsWithTypeAndName arguments{
-                {rows, source_type, ""},
+                {rows, rows_conversion.cast->getArgumentTypes()[0], ""},
                 {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
-            converted = rows_conversion.cast->execute(arguments, target_type, rows->size(), /*dry_run=*/false);
+            converted = rows_conversion.cast->execute(arguments, rows_conversion.cast->getResultType(), rows->size(), /*dry_run=*/false);
         }
 
         /// The writer sizes granules on the rows it writes, which are in the target type: a granule ends after `GRANULE_ROWS`

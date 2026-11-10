@@ -212,6 +212,20 @@ SELECT k, uniqExact(r), count() FROM overflow_results GROUP BY k ORDER BY k;
 SELECT uniqExact(r) FROM overflow_results;
 DROP TABLE overflow_states;
 DROP TABLE overflow_results;
+-- And with the time zone of that query: a `DateTime` without one takes the session's. A state added under UTC, merged first
+-- by a query under another time zone, gives what UTC gives.
+DROP TABLE IF EXISTS tz_states;
+DROP TABLE IF EXISTS tz_results;
+CREATE TABLE tz_states (st AggregateFunction(estimateCompressionRatio('ZSTD(3)', 'DateTime'), String)) ENGINE = Memory;
+CREATE TABLE tz_results (kind String, r Float64) ENGINE = Memory;
+INSERT INTO tz_states SELECT estimateCompressionRatioState('ZSTD(3)', 'DateTime')(toString(toDateTime('1970-01-01 01:00:00', 'UTC') + number))
+FROM numbers(1000) SETTINGS session_timezone = 'UTC';
+INSERT INTO tz_results SELECT 'merged', estimateCompressionRatioMerge('ZSTD(3)', 'DateTime')(st) FROM tz_states SETTINGS session_timezone = 'Asia/Tokyo';
+INSERT INTO tz_results SELECT 'direct', estimateCompressionRatio('ZSTD(3)', 'DateTime')(toString(toDateTime('1970-01-01 01:00:00', 'UTC') + number))
+FROM numbers(1000) SETTINGS session_timezone = 'UTC';
+SELECT uniqExact(r), count() FROM tz_results;
+DROP TABLE tz_states;
+DROP TABLE tz_results;
 -- The validation of the target type is the one of the query that added the rows, too.
 DROP TABLE IF EXISTS lc_memory_states;
 CREATE TABLE lc_memory_states (st AggregateFunction(estimateCompressionRatio('LowCardinality(UInt8)'), UInt8)) ENGINE = Memory;
