@@ -8,9 +8,25 @@
 namespace DB
 {
 
+/// Set to the running format's `parsing_finished` only while this thread is inside
+/// `segmentatorThreadFunction`. A `FileSegmentationEngine` that may read far past `min_bytes` in one
+/// call -- Avro reads a whole OCF block, which cannot be split across segments -- polls it to stop
+/// mid-read when the pipeline finishes (LIMIT, `timeout_overflow_mode='break'`, a background exception);
+/// the between-calls `while (!parsing_finished)` check is too coarse for it. Null on other threads and
+/// for every other format (they return near `min_bytes`, so the coarse check already stops them).
+static thread_local const std::atomic<bool> * segmentator_parsing_finished = nullptr;
+
+const std::atomic<bool> * currentSegmentatorParsingFinishedFlag()
+{
+    return segmentator_parsing_finished;
+}
+
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
 {
     ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_PARSING_SEGMENTATOR);
+
+    segmentator_parsing_finished = &parsing_finished;
+    SCOPE_EXIT({ segmentator_parsing_finished = nullptr; });
 
     try
     {
@@ -36,7 +52,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
             unit.segment.resize(0);
 
             size_t segment_start = getDataOffsetMaybeCompressed(*in);
-            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size, parsing_finished);
+            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size);
 
             unit.original_segment_size = getDataOffsetMaybeCompressed(*in) - segment_start;
             unit.offset = successfully_read_rows_count;

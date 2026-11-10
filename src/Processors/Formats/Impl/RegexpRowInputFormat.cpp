@@ -1,4 +1,3 @@
-#include <atomic>
 #include <cstdlib>
 #include <base/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
@@ -301,7 +300,7 @@ When working with the `Regexp` format, you can use the following settings:
 )DOCS_MD"});
 }
 
-static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
+static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
 {
     char * pos = in.position();
     bool need_more_data = true;

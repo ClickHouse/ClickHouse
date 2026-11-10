@@ -1,4 +1,3 @@
-#include <atomic>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -913,7 +912,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
         static constexpr size_t min_rows = 3; /// Make it 3 for header auto detection (first 3 rows must be always in the same segment).
         factory.registerFileSegmentationEngineCreator(format_name, [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
         {
-            return [settings] (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
+            return [settings] (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
             {
                 return fileSegmentationEngineCSVImpl(in, memory, min_bytes, min_rows, max_rows, settings);
             };

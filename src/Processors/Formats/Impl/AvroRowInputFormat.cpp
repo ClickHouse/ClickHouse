@@ -45,6 +45,7 @@
 #include <memory>
 #include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
+#include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <base/EnumReflection.h>
 #include <Poco/JSON/Array.h>
@@ -1854,13 +1855,17 @@ Int64 copyAvroLongToMemory(ReadBuffer & in, DB::Memory<> & memory)
 /// Cut the OCF into segments on block (sync) boundaries. Each segment is `header + N whole blocks`,
 /// a standalone OCF. Rows never straddle a boundary, so there is no stitch step.
 std::pair<bool, size_t> fileSegmentationEngineAvro(
-    ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, AvroSegmentationState & state,
-    const std::atomic<bool> & segmentation_finished)
+    ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, AvroSegmentationState & state)
 {
     if (!state.header_read)
         readAvroOCFHeader(in, state);
 
     appendToMemory(state.header.data(), state.header.size(), memory);
+
+    /// Set only while this thread runs a parallel-parsing segmentator. An Avro block is read as a unit
+    /// and can be far larger than `min_bytes`, so the between-calls `while (!parsing_finished)` check is
+    /// too coarse; poll this to stop mid-block when the pipeline finishes.
+    const std::atomic<bool> * segmentation_finished = currentSegmentatorParsingFinishedFlag();
 
     size_t rows_in_segment = 0;
     bool eof = false;
@@ -1869,7 +1874,7 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
     {
         /// Stop before the next block when the pipeline is finishing (killed, LIMIT, break, background
         /// exception) so a stopped query does not keep segmenting; return the whole blocks read so far.
-        if (segmentation_finished.load())
+        if (segmentation_finished && segmentation_finished->load())
         {
             stopped = true;
             break;
@@ -1893,7 +1898,7 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
 
         /// A single block can be far larger than `min_bytes`; if the pipeline stops mid-block, drop this
         /// partial block (its header varints and the bytes copied so far) and return the earlier blocks.
-        if (!copyAvroBytes(in, memory, static_cast<size_t>(byte_count), &segmentation_finished))
+        if (!copyAvroBytes(in, memory, static_cast<size_t>(byte_count), segmentation_finished))
         {
             memory.resize(block_start);
             stopped = true;
@@ -1940,9 +1945,9 @@ void registerInputFormatAvro(FormatFactory & factory)
     factory.registerFileSegmentationEngineCreator("Avro", [](const FormatSettings &) -> FormatFactory::FileSegmentationEngine
     {
         auto state = std::make_shared<AvroSegmentationState>();
-        return [state](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> & segmentation_finished)
+        return [state](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
         {
-            return fileSegmentationEngineAvro(in, memory, min_bytes, max_rows, *state, segmentation_finished);
+            return fileSegmentationEngineAvro(in, memory, min_bytes, max_rows, *state);
         };
     });
 

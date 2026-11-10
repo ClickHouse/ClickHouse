@@ -1,4 +1,3 @@
-#include <atomic>
 #include <Processors/Formats/Impl/LineAsStringRowInputFormat.h>
 #include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
@@ -177,7 +176,7 @@ Peter    35
 }
 
 
-static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
+static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
 {
     char * pos = in.position();
     bool need_more_data = true;

@@ -1,4 +1,3 @@
-#include <atomic>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
 #include <Common/assert_cast.h>
@@ -80,7 +79,7 @@ void registerFileSegmentationEngineHiveText(FormatFactory & factory)
     factory.registerFileSegmentationEngineCreator(
         "HiveText",
         [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine {
-            return [settings] (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
+            return [settings] (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
             {
                 return fileSegmentationEngineCSVImpl(in, memory, min_bytes, 0, max_rows, settings);
             };
