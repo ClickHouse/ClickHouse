@@ -2425,6 +2425,36 @@ TEST(SchedulerSpaceShared, ImpossibleGrowsWhileEvictionIsInFlightAreKilledOnce)
 }
 
 
+/// Dropping the workload of a victim frees its memory, so the blocked increase that selected it must be granted.
+TEST(SchedulerSpaceShared, BlockedIncreaseIsGrantedWhenVictimWorkloadIsDetached)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100);
+    FairAllocation * fair = r.addFair("/fair", limit);
+    AllocationQueue * queue = r.addQueueUnder("/fair/queue", fair);
+    AllocationQueue * other = r.addQueueUnder("/fair/other", fair);
+    r.registerResource();
+
+    ManualAllocation victim(other, "victim", 60);
+    ManualAllocation requester(queue, "requester", 30);
+
+    requester.increaseAsync(20); // 90 + 20 > 100: `victim` is selected and keeps its memory for now
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (victim.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(victim.killCount(), 1u);
+
+    r.execute([&] { fair->removeChild(other); }); // destroys `other`, failing `victim`
+
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (requester.size() != 50 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_EQ(requester.size(), 50) << "The blocked increase must be re-evaluated after the victim's workload is detached";
+    EXPECT_EQ(requester.killCount(), 0u);
+}
+
+
 /// An impossible grow — the requester's own reservation exceeds the limit, so no eviction can make it fit —
 /// must fail the requester's own request rather than evict a peer. `AllocationLimit` (the limit-enforcing
 /// node) selects the requester before descending to a victim.

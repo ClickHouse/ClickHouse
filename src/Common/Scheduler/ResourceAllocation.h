@@ -1,6 +1,7 @@
 #pragma once
 
 #include <exception>
+#include <utility>
 #include <Common/Scheduler/IncreaseRequest.h>
 #include <Common/Scheduler/DecreaseRequest.h>
 
@@ -49,6 +50,10 @@ public:
     /// IMPORTANT: it is called from the scheduler thread and must be fast - just record the request
     virtual void spillAllocation(ResourceCost additional_bytes) = 0;
 
+    /// Marks that the scheduler has asked this allocation to be killed. Returns false if it already has, so
+    /// `killAllocation` is signalled at most once. Scheduler thread only.
+    bool requestKill() noexcept { return !std::exchange(kill_requested, true); }
+
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
     Int32 const eviction_score; /// Eviction priority: higher values are evicted first when the resource is under pressure (0 by default). Immutable after construction, so the scheduler thread can read it safely.
@@ -56,6 +61,7 @@ public:
 private:
     friend class AllocationQueue;
 
+    bool kill_requested = false; /// See `requestKill`.
     ResourceCost allocated = 0; /// Currently allocated.
     ResourceCost reclaiming = 0; /// Bytes requested for spilling but not yet settled, including requests not yet executing.
     /// Last absolute estimate, including outstanding requests; retained even when larger than `allocated`.

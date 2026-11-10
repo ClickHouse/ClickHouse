@@ -248,7 +248,8 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     }
     if (update.increase || reapply_constraint)
     {
-        if (setIncrease(update.increase ? *update.increase : increase, reapply_constraint))
+        // Without an explicit increase, re-evaluate the child's current one: a blocked increase is not in `increase`.
+        if (setIncrease(update.increase ? *update.increase : child->increase, reapply_constraint))
             update.setIncrease(increase);
         else
             update.resetIncrease();
@@ -262,6 +263,9 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
 
 void AllocationLimit::kill(IncreaseRequest & killer, ResourceAllocation & victim, const String & details)
 {
+    // Another limit, or an earlier decision of this one, may have already asked this allocation to release.
+    if (!victim.requestKill())
+        return;
     SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
         getPath(), allocated, killer.size, max_allocated, killer.allocation.id, victim.id);
     victim.killAllocation(std::make_exception_ptr(
