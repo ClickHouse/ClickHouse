@@ -125,15 +125,15 @@ struct MergeTreeIndexTextParams
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
 
-/// Builds per-row weights of one token during the index build, parallel to the posting-list builder's
-/// buffered row ids. With BM25 scoring the weight is the term frequency, so the builder is created lazily
+/// Builds per-row term frequencies of one token during the index build, parallel to the posting-list builder's
+/// buffered row ids. With BM25 scoring the term frequency is the weight, so the builder is created lazily
 /// on the token's first in-row repeat.
-class WeightsBuilder
+class BM25WeightsBuilder
 {
 public:
     /// Created on the first in-row repeat: all `num_buffered_rows` rows so far
     /// have `weight == 1`, except the last one, which just repeated (`weight == 2`).
-    explicit WeightsBuilder(size_t num_buffered_rows)
+    explicit BM25WeightsBuilder(size_t num_buffered_rows)
     {
         chassert(num_buffered_rows != 0);
         weights.resize_fill(num_buffered_rows, 1u);
@@ -198,7 +198,7 @@ public:
         /// Positions of the token for phrase search. Null unless positions are enabled.
         std::unique_ptr<PositionListBuilder> positions;
         /// Per-row weights for BM25 scoring. Created lazily on the token's first in-row repeat.
-        std::unique_ptr<WeightsBuilder> weights;
+        std::unique_ptr<BM25WeightsBuilder> weights;
 
         /// Flushes all buffered row ids into the encoder and clears the buffer.
         /// The caller should control the flush size.

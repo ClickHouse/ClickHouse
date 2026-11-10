@@ -2156,7 +2156,7 @@ void PostingListBuilder::Large::addRowRepeat(UInt32 row_id)
     chassert(!values.empty() && values.back() == row_id);
 
     if (!weights)
-        weights = std::make_unique<WeightsBuilder>(values.size());
+        weights = std::make_unique<BM25WeightsBuilder>(values.size());
     else
         weights->incrementLastWeight();
 }
