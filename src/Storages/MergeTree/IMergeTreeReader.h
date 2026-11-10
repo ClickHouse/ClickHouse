@@ -313,6 +313,7 @@ private:
     {
         NameAndTypePair column;
         SerializationPtr serialization;
+        bool frozen = false; /// absent from the part, with a marker of the type whose default the values are
     };
 
     /// Resolves both at once: they share the lookup of the column in the part and, for a subcolumn, the
@@ -337,6 +338,18 @@ private:
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
+
+    /// A requested column that the part omits with a frozen default (see `SerializationInfoByName::MissingColumnInfo`).
+    struct FrozenColumn
+    {
+        size_t index; /// position in `converted_requested_columns`
+        String name_in_storage; /// the current name of the column
+        ColumnPtr default_row; /// one row of the default of the requested column or subcolumn
+    };
+
+    /// Resolved once per reader, from the lookup of the columns in the part: `fillMissingColumns` only replicates the
+    /// one-row defaults on every read step.
+    VectorWithMemoryTracking<FrozenColumn> frozen_columns;
 
     mutable std::optional<bool> may_evaluate_missing_defaults;
 

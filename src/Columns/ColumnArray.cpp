@@ -1461,6 +1461,11 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
     if (replicate_offsets.empty() || replicate_offsets.back() == 0)
         return cloneEmpty();
 
+    /// All arrays are empty, as in a default value materialized from a `ColumnConst`: the result is `replicate_offsets.back()`
+    /// empty arrays and no element is copied. The size check keeps a mismatch on the path below, which reports it.
+    if (size() == replicate_offsets.size() && data->empty())
+        return ColumnArray::create(data->cloneEmpty(), ColumnOffsets::create(replicate_offsets.back(), 0));
+
     if (typeid_cast<const ColumnUInt8 *>(data.get()))
         return replicateNumber<UInt8>(replicate_offsets);
     if (typeid_cast<const ColumnUInt16 *>(data.get()))

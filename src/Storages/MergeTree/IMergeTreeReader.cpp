@@ -88,11 +88,27 @@ IMergeTreeReader::IMergeTreeReader(
     columns_to_read.reserve(getColumns().size());
     serializations.reserve(getColumns().size());
 
+    const bool share_nested_offsets_setting = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
     for (const auto & column : getColumns())
     {
         auto column_and_serialization_in_part = getColumnAndSerializationInPart(column);
         const auto & column_to_read = columns_to_read.emplace_back(std::move(column_and_serialization_in_part.column));
         auto & serialization = column_and_serialization_in_part.serialization;
+
+        /// DROP/CLEAR invalidates both the physical and the current name; such a column is not filled from the marker.
+        const bool dropped = alter_conversions
+            && (alter_conversions->isColumnDropped(column_to_read.getNameInStorage(), share_nested_offsets_setting)
+                || alter_conversions->isColumnDropped(column.getNameInStorage(), share_nested_offsets_setting));
+        if (column_and_serialization_in_part.frozen && !dropped)
+        {
+            /// The subcolumn is taken from a one-row constant, so the whole frozen type is never materialized.
+            const auto & frozen_type = column_to_read.getTypeInStorage();
+            ColumnPtr default_row = frozen_type->createColumnConstWithDefaultValue(1);
+            if (column_to_read.isSubcolumn())
+                default_row = frozen_type->getSubcolumn(column_to_read.getSubcolumnName(), default_row);
+            frozen_columns.push_back({columns_to_read.size() - 1, column.getNameInStorage(), default_row->convertToFullColumnIfConst()});
+        }
+
         if (data_part_info_for_read->isCompactPart()
             && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams)
         {
@@ -263,7 +279,13 @@ void IMergeTreeReader::fillMissingColumns(
 {
     try
     {
-        /// Do a quick check to see if doing any work is necessary to begin with
+        for (const auto & frozen : frozen_columns)
+            if (!res_columns[frozen.index])
+                res_columns[frozen.index] = ColumnConst::create(frozen.default_row, num_rows)->convertToFullColumnIfConst();
+
+        /// Do a quick check to see if doing any work is necessary to begin with. The frozen columns are filled before it:
+        /// when they were all that was missing, the generic filler is skipped, as it walks the streams of every available
+        /// array column to collect their offsets.
         size_t num_columns_to_read = res_columns.size();
         bool missing = false;
         auto requested_column = converted_requested_columns.begin();
@@ -284,44 +306,11 @@ void IMergeTreeReader::fillMissingColumns(
         {
             NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
 
-            /// Markers use part-time physical names; reads expose current names.
-            const auto & part_missing_columns = data_part_info_for_read->getSerializationInfos().getMissingColumns();
-            NameSet missing_column_names;
-            if (!part_missing_columns.empty())
-            {
-                size_t column_index = 0;
-                for (const auto & column : converted_requested_columns)
-                {
-                    auto name_in_part = column.getNameInStorage();
-                    if (alter_conversions->isColumnRenamed(name_in_part))
-                        name_in_part = alter_conversions->getColumnOldName(name_in_part);
+            NameSet frozen_column_names;
+            for (const auto & frozen : frozen_columns)
+                frozen_column_names.insert(frozen.name_in_storage);
 
-                    /// DROP/CLEAR invalidates both the physical and current name.
-                    bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
-                    if (alter_conversions->isColumnDropped(name_in_part, share_nested)
-                        || alter_conversions->isColumnDropped(column.getNameInStorage(), share_nested))
-                    {
-                        ++column_index;
-                        continue;
-                    }
-
-                    if (const auto * missing_info = data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_part))
-                    {
-                        missing_column_names.insert(column.getNameInStorage());
-                        if (!res_columns[column_index] && !missing_info->type_name.empty())
-                        {
-                            auto frozen_type = DataTypeFactory::instance().get(missing_info->type_name);
-                            auto frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
-                            if (column.isSubcolumn())
-                                frozen_column = frozen_type->getSubcolumn(column.getSubcolumnName(), frozen_column);
-                            res_columns[column_index] = std::move(frozen_column);
-                        }
-                    }
-                    ++column_index;
-                }
-            }
-
-            bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
+            const bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
             DB::fillMissingColumns(
                 res_columns,
                 num_rows,
@@ -331,7 +320,7 @@ void IMergeTreeReader::fillMissingColumns(
                 : available_columns,
                 partially_read_columns,
                 storage_snapshot,
-                missing_column_names,
+                frozen_column_names,
                 share_nested,
                 previous_step_columns);
 
@@ -614,16 +603,18 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
     {
         DataTypePtr type_in_part = required_column.getTypeInStorage();
         DataTypePtr requested_type_in_part = required_column.type;
+        bool frozen = false;
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
         {
             type_in_part = DataTypeFactory::instance().get(missing->type_name);
             requested_type_in_part = name_pair.second.empty()
                 ? type_in_part
                 : type_in_part->getSubcolumnType(name_pair.second);
+            frozen = true;
         }
 
         NameAndTypePair missed_column{name_pair.first, name_pair.second, type_in_part, requested_type_in_part};
-        return {missed_column, IDataType::getSerialization(missed_column)};
+        return {missed_column, IDataType::getSerialization(missed_column), frozen};
     }
 
     /// The `Quantize` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,

@@ -1,0 +1,75 @@
+<test iceberg="0">
+    <!--
+        With `skip_empty_columns_on_insert`, a part omits a column whose values were all type defaults and records
+        only its type. Every read step of such a part fills the column from that type, so the per-step cost of the fill
+        is visible when the column has many substreams and a granule holds little data. The minmax index selects
+        alternating granules, which makes every granule a range of its own; the last query gets the same effect from
+        `max_block_size`. The second query reads one subcolumn of the omitted column, and the last one reads the
+        omitted column next to physical ones, as a query that does some work besides filling the defaults.
+    -->
+    <create_query>
+        CREATE TABLE missing_column_steps
+        (
+            id UInt64,
+            skip UInt8,
+            v Float64,
+            omitted Array(Tuple(
+                f0 Int64, f1 UInt64, f2 Float64, f3 UInt64, f4 Float64, f5 Int8, f6 Float64, f7 Float64,
+                f8 UInt8, f9 UInt32, f10 UInt8, f11 Float64, f12 Float64, f13 UInt8,
+                a0 Array(Tuple(x Int32, y UInt32)), a1 Array(Tuple(x Int32, y UInt32)),
+                a2 Array(Tuple(x Int32, y UInt32)), a3 Array(Tuple(x Int32, y UInt32)))),
+            INDEX idx_skip skip TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns'
+    </create_query>
+    <fill_query>
+        INSERT INTO missing_column_steps (id, skip, v) SELECT number, intDiv(number, 8192) % 2, number / 7 FROM numbers(24000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE missing_column_steps FINAL</fill_query>
+
+    <query>SELECT omitted FROM missing_column_steps WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT omitted.f0 FROM missing_column_steps WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT omitted FROM missing_column_steps WHERE id &lt; 16000000 FORMAT Null SETTINGS max_threads = 1, max_block_size = 8192</query>
+    <query>SELECT sum(id), sum(v), sum(length(omitted)) FROM missing_column_steps WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1</query>
+
+    <!--
+        The samples table of a `TimeSeries` table whose series have no native histograms: `histograms` is omitted from
+        every part, and a PromQL selector reads `samples` together with `histograms.timestamp` to tell the kinds of
+        samples apart. `MergeTree` with plain arrays reads the same as `AggregatingMergeTree` with the
+        `SimpleAggregateFunction` columns of the engine. The last query is the control that reads `samples` alone.
+    -->
+    <create_query>
+        CREATE TABLE ts_samples_no_histograms
+        (
+            id Tuple(UInt64, LowCardinality(UUID)),
+            samples Array(Tuple(timestamp DateTime64(3), value Float64)),
+            histograms Array(Tuple(
+                timestamp DateTime64(3), flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64,
+                count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64,
+                positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)),
+                positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)),
+                custom_values Array(Float64))),
+            bucket DateTime64(3),
+            min_time DateTime64(3),
+            max_time DateTime64(3)
+        )
+        ENGINE = MergeTree ORDER BY (id, bucket)
+        SETTINGS min_bytes_for_wide_part = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns'
+    </create_query>
+    <fill_query>
+        INSERT INTO ts_samples_no_histograms (id, samples, bucket, min_time, max_time)
+        SELECT
+            (series, reinterpretAsUUID(sipHash128(intDiv(series, 1000)))),
+            arrayMap(i -> (addSeconds(b, i * 60), (series * 1000 + i) / 7), range(60)),
+            b, b, addSeconds(b, 59 * 60)
+        FROM (SELECT number % 10000 AS series, addHours(toDateTime64('2026-01-01 00:00:00', 3), intDiv(number, 10000)) AS b FROM numbers(480000))
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE ts_samples_no_histograms FINAL</fill_query>
+
+    <query>SELECT id, samples, `histograms.timestamp` FROM ts_samples_no_histograms WHERE bucket >= toDateTime64('2026-01-02 00:00:00', 3) FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT id, samples FROM ts_samples_no_histograms WHERE bucket >= toDateTime64('2026-01-02 00:00:00', 3) FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS missing_column_steps</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ts_samples_no_histograms</drop_query>
+</test>
