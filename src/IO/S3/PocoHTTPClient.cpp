@@ -94,6 +94,7 @@ namespace DB::ErrorCodes
     extern const int DNS_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int S3_ERROR;
 }
 
 namespace DB::FailPoints
@@ -248,6 +249,8 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_fields(client_configuration.http_max_fields)
     , http_max_field_name_size(client_configuration.http_max_field_name_size)
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
+    , s3_expect_continue_min_body_size(client_configuration.s3_expect_continue_min_body_size)
+    , s3_expect_continue_timeout_ms(client_configuration.s3_expect_continue_timeout_ms)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
     , publish_connection_info(client_configuration.publish_connection_info)
@@ -645,6 +648,17 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 }
             }
 
+            /// With `Expect: 100-continue` the server can reject the request, for example an upload to
+            /// an expired multipart upload, before the body is sent. Without it, a server that answers
+            /// early and closes the connection makes the body write fail, and over TLS its answer cannot
+            /// be read anymore. The header is decided here and not by the SDK, because only the
+            /// transport can wait for the answer; the SDK would add it to streaming requests, which
+            /// `ExtendedRequest::IsStreaming` turns off.
+            const bool expect_continue = s3_expect_continue_min_body_size > 0 && request.GetContentBody()
+                && poco_request.hasContentLength()
+                && static_cast<UInt64>(poco_request.getContentLength64()) >= s3_expect_continue_min_body_size;
+            poco_request.setExpectContinue(expect_continue);
+
             Poco::Net::HTTPResponse poco_response;
             poco_response.setFieldLimit(static_cast<int>(http_max_fields));
             poco_response.setNameLengthLimit(static_cast<int>(http_max_field_name_size));
@@ -659,10 +673,36 @@ void PocoHTTPClient::makeRequestInternalImpl(
             observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
             latency_recorded = true;
 
-            /// Set when the server has already answered while the request body was being sent.
+            /// Set when the server has already answered: before the request body, or while it was being sent.
             std::unique_ptr<HTTPResponseReadBuffer> response_body;
 
-            if (request.GetContentBody())
+            if (expect_continue)
+            {
+                response_body = waitForHTTPContinue(
+                    session,
+                    poco_response,
+                    Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(s3_expect_continue_timeout_ms) * 1000));
+
+                if (response_body)
+                {
+                    /// Fail closed: the SDK must never take an upload whose body was not sent for a success.
+                    if (poco_response.getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
+                        throw Exception(
+                            ErrorCodes::S3_ERROR,
+                            "S3 server answered {} {} to a request with `Expect: 100-continue` before its body was sent",
+                            static_cast<int>(poco_response.getStatus()),
+                            poco_response.getReason());
+
+                    LOG_DEBUG(
+                        log,
+                        "Server answered {} {} to {} before the request body was sent",
+                        static_cast<int>(poco_response.getStatus()),
+                        poco_response.getReason(),
+                        uri);
+                }
+            }
+
+            if (request.GetContentBody() && !response_body)
             {
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Writing request body.");

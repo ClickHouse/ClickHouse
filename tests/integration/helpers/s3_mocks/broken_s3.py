@@ -1,10 +1,11 @@
+import argparse
 import http.server
 import random
 import socket
 import socketserver
+import ssl
 import string
 import struct
-import sys
 import threading
 import time
 import urllib.parse
@@ -94,6 +95,12 @@ class MockControl:
         self._apply(
             f"http://localhost:{self._port}/mock_settings/setup_fake_multpartuploads?"
         )
+
+    def setup_expect_100(self, mode, late_ms=None):
+        url = f"http://localhost:{self._port}/mock_settings/expect_100?mode={mode}"
+        if late_ms is not None:
+            url += f"&late_ms={late_ms}"
+        self._apply(url)
 
     def setup_slow_answers(
         self, minimal_length=0, timeout=None, probability=None, count=None
@@ -369,6 +376,7 @@ class _ServerRuntime:
     class BrokenPipeAction:
         def inject_error(self, request_handler):
             # partial read
+            request_handler.send_continue_if_expected()
             request_handler.rfile.read(50)
 
             time.sleep(1)
@@ -486,6 +494,8 @@ class _ServerRuntime:
         self.at_object_get = None
         self.at_object_get_by_key = {}
         self.at_complete_multi_part_upload = None
+        self.expect_100_mode = "lazy"
+        self.expect_100_late_ms = 0
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -511,6 +521,8 @@ class _ServerRuntime:
             self.at_listing = None
             self.at_object_get = None
             self.at_object_get_by_key = {}
+            self.expect_100_mode = "lazy"
+            self.expect_100_late_ms = 0
 
 
 _runtime = _ServerRuntime()
@@ -555,7 +567,25 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def _ping(self):
         self._ok()
 
+    def parse_request(self):
+        self.continue_pending = False
+        return super().parse_request()
+
+    def handle_expect_100(self):
+        # Answer `Expect: 100-continue` the way Go's `net/http` (MinIO) does: `100 Continue` goes out
+        # only when the handler starts to read the body. A handler that answers without reading the
+        # body sends its final response instead, and the client must not send the body.
+        self.continue_pending = True
+        return True
+
+    def send_continue_if_expected(self):
+        if self.continue_pending:
+            self.continue_pending = False
+            self.send_response_only(100)
+            self.end_headers()
+
     def read_all_input(self):
+        self.send_continue_if_expected()
         content_length = int(self.headers.get("Content-Length", 0))
         to_read = content_length
         while to_read > 0:
@@ -749,6 +779,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.log_message("set at_object_get %s for key %s", rule, key)
             return self._ok()
 
+        if path[1] == "expect_100":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            mode = params.get("mode", ["lazy"])[0]
+            if mode not in ("lazy",):
+                return self.write_error(400, f"_mock_settings: unknown expect_100 mode {mode}")
+            _runtime.expect_100_mode = mode
+            _runtime.expect_100_late_ms = int(params.get("late_ms", ["0"])[0])
+            self.log_message("set expect_100 %s", mode)
+            return self._ok()
+
         if path[1] == "reset":
             _runtime.reset()
             self.log_message("reset")
@@ -900,9 +940,25 @@ class _ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 if __name__ == "__main__":
-    httpd = _ThreadedHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
-    if len(sys.argv) == 4:
-        httpd.set_upstream(sys.argv[2], sys.argv[3])
-    else:
-        httpd.set_upstream("minio1", 9001)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("port", type=int)
+    parser.add_argument("upstream_host", nargs="?", default="minio1")
+    parser.add_argument("upstream_port", nargs="?", default="9001")
+    # The same mock, with the same state, also listens with TLS on this port.
+    parser.add_argument("--tls-port", type=int)
+    parser.add_argument("--tls-cert")
+    parser.add_argument("--tls-key")
+    args = parser.parse_args()
+
+    httpd = _ThreadedHTTPServer(("0.0.0.0", args.port), RequestHandler)
+    httpd.set_upstream(args.upstream_host, args.upstream_port)
+
+    if args.tls_port is not None:
+        tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls_context.load_cert_chain(args.tls_cert, args.tls_key)
+        httpsd = _ThreadedHTTPServer(("0.0.0.0", args.tls_port), RequestHandler)
+        httpsd.socket = tls_context.wrap_socket(httpsd.socket, server_side=True)
+        httpsd.set_upstream(args.upstream_host, args.upstream_port)
+        threading.Thread(target=httpsd.serve_forever, daemon=True).start()
+
     httpd.serve_forever()

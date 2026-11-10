@@ -276,10 +276,18 @@ namespace Net
         /// `setRequestBodyComplete`, so that connection reuse can tell a fully sent
         /// request from an interrupted one.
         ///
-        /// A request with `Expect: 100-continue` is rejected with `NotImplementedException`:
-        /// waiting for `100 Continue` is only possible with `peekResponse` after `sendRequest`.
+        /// For a request with `Expect: 100-continue`, the caller waits for the answer with
+        /// `waitForResponseData` before it writes the body.
 
         BodyInfo sendRequestHeaders(HTTPRequest & request) { return sendRequestHeaders(request, nullptr, nullptr); }
+
+        bool waitForResponseData(const Poco::Timespan & timeout);
+        /// Waits up to `timeout` until the server sends a response or closes the connection,
+        /// without consuming anything. Returns `true` when something can be read, and `false`
+        /// when nothing arrived within `timeout`. The receive timeout of the session is kept.
+        ///
+        /// For a request sent with `Expect: 100-continue` by `sendRequestHeaders`: the server
+        /// answers either `100 Continue` or a final response, or ignores the expectation.
 
         BodyInfo onResponseHeadersReceived(const HTTPResponse & response);
         /// Performs the keep-alive bookkeeping that follows the parsing of a response

@@ -663,6 +663,19 @@ The maximum number of retries in case of unexpected errors during Azure blob sto
     DECLARE(UInt64, s3_max_unexpected_write_error_retries, S3::DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES, R"(
 The maximum number of retries in case of unexpected errors during S3 write.
 )", 0) \
+    DECLARE(UInt64, s3_expect_continue_min_body_size, S3::DEFAULT_EXPECT_CONTINUE_MIN_BODY_SIZE, R"(
+The minimum size of the body of an S3 request, in bytes, for which ClickHouse sends the `Expect: 100-continue` header
+and waits for the server to accept the request before it sends the body. The server can then reject the request,
+for example an upload to an expired multipart upload, without receiving the body. Without it, a server that answers
+before reading the body and closes the connection makes the error look like a network error, which is retried.
+`0` disables the header.
+)", 0, \
+        {"26.11", 0, 262144, "New setting"}) \
+    DECLARE(UInt64, s3_expect_continue_timeout_ms, S3::DEFAULT_EXPECT_CONTINUE_TIMEOUT_MS, R"(
+How long ClickHouse waits for the answer to the `Expect: 100-continue` header (see `s3_expect_continue_min_body_size`)
+before it sends the body of an S3 request anyway. Some servers and proxies do not answer the header.
+)", 0, \
+        {"26.11", 1000, 1000, "New setting"}) \
     DECLARE(UInt64, azure_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
 Max number of azure redirects hops allowed.
 )", 0, \

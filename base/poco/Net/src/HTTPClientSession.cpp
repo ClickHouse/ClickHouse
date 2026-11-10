@@ -377,11 +377,6 @@ HTTPClientSession::BodyInfo HTTPClientSession::sendRequestHeaders(HTTPRequest& r
 {
 	/// Keep in sync with sendRequest() above: this is the same method without the iostream layer.
 
-	/// Waiting for `100 Continue` is only possible through `peekResponse`, which needs the request
-	/// body stream that this method does not create.
-	if (request.getExpectContinue())
-		throw Poco::NotImplementedException("Expect: 100-continue is not supported by HTTPClientSession::sendRequestHeaders");
-
 	_pRequestStream = 0;
 	_pResponseStream = 0;
 	clearException();
@@ -622,6 +617,34 @@ bool HTTPClientSession::peekResponse(HTTPResponse& response)
 	}
 	_responseReceived = response.getStatus() != HTTPResponse::HTTP_CONTINUE;
 	return !_responseReceived;
+}
+
+
+bool HTTPClientSession::waitForResponseData(const Poco::Timespan& timeout)
+{
+	if (buffered() > 0)
+		return true;
+
+	/// Reading through the socket, not polling its descriptor: a TLS socket can receive records
+	/// that carry no data, such as a TLS 1.3 session ticket, and only the TLS layer skips them.
+	socket().setReceiveTimeout(timeout);
+	try
+	{
+		peek();
+	}
+	catch (Poco::TimeoutException&)
+	{
+		socket().setReceiveTimeout(getReceiveTimeout());
+		clearException();
+		return false;
+	}
+	catch (...)
+	{
+		socket().setReceiveTimeout(getReceiveTimeout());
+		throw;
+	}
+	socket().setReceiveTimeout(getReceiveTimeout());
+	return true;
 }
 
 

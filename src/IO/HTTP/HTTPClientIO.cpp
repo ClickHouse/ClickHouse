@@ -580,16 +580,12 @@ static std::unique_ptr<HTTPResponseReadBuffer> makeHTTPResponseReadBuffer(
     return std::make_unique<HTTPResponseReadBuffer>(session, std::move(session_holder), body_info, buf_size);
 }
 
-static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
-    HTTPSessionPtr session_holder, Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response, size_t buf_size)
+static void readHTTPResponseHeaderOrReset(Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response)
 {
     try
     {
-        do
-        {
-            response.clear();
-            readHTTPResponseHeader(session, response);
-        } while (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE);
+        response.clear();
+        readHTTPResponseHeader(session, response);
     }
     catch (const Poco::Exception &)
     {
@@ -602,6 +598,15 @@ static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
             network_exception->rethrow();
         throw;
     }
+}
+
+static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
+    HTTPSessionPtr session_holder, Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response, size_t buf_size)
+{
+    do
+    {
+        readHTTPResponseHeaderOrReset(session, response);
+    } while (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE);
 
     return makeHTTPResponseReadBuffer(std::move(session_holder), session, response, buf_size);
 }
@@ -617,6 +622,20 @@ receiveHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, 
 {
     auto & session_ref = *session;
     return receiveHTTPResponseImpl(std::move(session), session_ref, response, buf_size);
+}
+
+std::unique_ptr<HTTPResponseReadBuffer>
+waitForHTTPContinue(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, Poco::Timespan timeout, size_t buf_size)
+{
+    if (!session->waitForResponseData(timeout))
+        return nullptr;
+
+    readHTTPResponseHeaderOrReset(*session, response);
+    if (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE)
+        return nullptr;
+
+    auto & session_ref = *session;
+    return makeHTTPResponseReadBuffer(std::move(session), session_ref, response, buf_size);
 }
 
 std::unique_ptr<HTTPResponseReadBuffer>

@@ -38,6 +38,10 @@ inline static constexpr uint64_t DEFAULT_RETRY_ATTEMPTS = 500;
 inline static constexpr uint64_t DEFAULT_RETRY_INITIAL_DELAY_MS = 25;
 inline static constexpr uint64_t DEFAULT_RETRY_MAX_DELAY_MS = 5000;
 inline static constexpr uint64_t DEFAULT_RETRY_JITTER_FACTOR = 0;
+/// A Go `net/http` server, such as MinIO, drains an unread request body only below 256 KiB
+/// (`maxPostHandlerReadBytes`); a larger one is cut off with a connection reset.
+inline static constexpr uint64_t DEFAULT_EXPECT_CONTINUE_MIN_BODY_SIZE = 256 * 1024;
+inline static constexpr uint64_t DEFAULT_EXPECT_CONTINUE_TIMEOUT_MS = 1000;
 inline static constexpr uint64_t DEFAULT_MIN_BYTES_FOR_SEEK = 1024 * 1024;
 inline static constexpr uint64_t DEFAULT_OBJECTS_CHUNK_SIZE_TO_DELETE = 1000;
 

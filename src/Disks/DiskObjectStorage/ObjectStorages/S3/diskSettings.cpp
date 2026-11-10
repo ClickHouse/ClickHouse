@@ -85,6 +85,8 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 retry_attempts;
     extern const S3RequestSettingsUInt64 retry_initial_delay_ms;
     extern const S3RequestSettingsUInt64 retry_max_delay_ms;
+    extern const S3RequestSettingsUInt64 expect_continue_min_body_size;
+    extern const S3RequestSettingsUInt64 expect_continue_timeout_ms;
     extern const S3RequestSettingsBool slow_all_threads_after_network_error;
     extern const S3RequestSettingsBool enable_request_logging;
 }
@@ -179,6 +181,8 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
+    client_configuration.s3_expect_continue_min_body_size = request_settings[S3RequestSetting::expect_continue_min_body_size];
+    client_configuration.s3_expect_continue_timeout_ms = request_settings[S3RequestSetting::expect_continue_timeout_ms];
 
     if (request_settings.proxy_resolver)
     {

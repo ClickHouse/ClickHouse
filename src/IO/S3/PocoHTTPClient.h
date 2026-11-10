@@ -105,6 +105,11 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     UInt64 http_max_field_name_size = 128 * 1024;
     UInt64 http_max_field_value_size = 128 * 1024;
 
+    /// `Expect: 100-continue` is sent for request bodies of at least this size, `0` disables it.
+    UInt64 s3_expect_continue_min_body_size = DEFAULT_EXPECT_CONTINUE_MIN_BODY_SIZE;
+    /// How long to wait for the answer to `Expect: 100-continue` before the body is sent anyway.
+    UInt64 s3_expect_continue_timeout_ms = DEFAULT_EXPECT_CONTINUE_TIMEOUT_MS;
+
     /// Whether the requests sent by this client are the ones `system.blob_storage_log` logs, so they
     /// may publish their connection to it. Set only for the client of the object storage itself, not
     /// for the clients of its credentials providers, whose requests can share a scope with a logged
@@ -268,6 +273,8 @@ protected:
     const UInt64 http_max_fields = 1000000;
     const UInt64 http_max_field_name_size = 128 * 1024;
     const UInt64 http_max_field_value_size = 128 * 1024;
+    const UInt64 s3_expect_continue_min_body_size = DEFAULT_EXPECT_CONTINUE_MIN_BODY_SIZE;
+    const UInt64 s3_expect_continue_timeout_ms = DEFAULT_EXPECT_CONTINUE_TIMEOUT_MS;
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
     bool publish_connection_info = false;

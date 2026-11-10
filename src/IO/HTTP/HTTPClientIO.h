@@ -139,6 +139,19 @@ std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
 std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
     HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
+/// Waits for the answer to a request sent with `Expect: 100-continue`, before its body is written.
+///
+/// Returns `nullptr` when the body has to be sent now: the server answered `100 Continue`, or sent
+/// nothing within `timeout` (a server or proxy can ignore the expectation, and RFC 9110 lets the
+/// client send the body without waiting). The final response is then read by `receiveHTTPResponse`,
+/// which also skips a `100 Continue` that comes late.
+///
+/// Otherwise returns the final response the server sent instead, with `response` filled in: the body
+/// must not be sent. The request stays incomplete, so the connection is not reused. The returned
+/// buffer keeps the session alive.
+std::unique_ptr<HTTPResponseReadBuffer> waitForHTTPContinue(
+    HTTPSessionPtr session, Poco::Net::HTTPResponse & response, Poco::Timespan timeout, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+
 /// Reads the response that the server has sent before reading the whole request body, after
 /// writing the body failed: a server may answer a request it rejects right after its headers and
 /// close the connection with the body unread. The caller checks that data is pending on the socket.
