@@ -321,5 +321,11 @@ fn compatibility_ledger_script_fixtures_match_reference() {
             );
         }
     }
+    let rep_bytes = std::fs::read(dir.join("repeated_line_strp.elf")).unwrap();
+    let rep_file = TestFile::open(rep_bytes).unwrap();
+    let mut rep_st = Collector::new();
+    let (rep_d, _) = read_unit(&rep_file, 0, ALL_COLS, 65536, &mut rep_st).unwrap();
+    assert_eq!(rep_d.rows.to_string(), ref_lines[12]);
+    assert!(rep_st.polls >= 1);
     let _ = std::fs::remove_dir_all(&dir);
 }

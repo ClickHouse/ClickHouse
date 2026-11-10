@@ -866,7 +866,7 @@ if (TARGET ch_rust::dwarf)
     target_link_libraries(dbms PRIVATE ch_rust::dwarf)
     set_source_files_properties(
         Processors/Formats/Impl/DWARFBlockInputFormat.cpp
-        PROPERTIES INCLUDE_DIRECTORIES "${ClickHouse_SOURCE_DIR}/rust/workspace/dwarf/include"
+        PROPERTIES INCLUDE_DIRECTORIES "${ClickHouse_SOURCE_DIR}/contrib/dwarf-cmake/include"
     )
 endif ()
 
