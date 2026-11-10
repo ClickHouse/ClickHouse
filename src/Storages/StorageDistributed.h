@@ -40,6 +40,7 @@ class ConnectionPoolWithFailover;
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
 
 class IStorageCluster;
+struct DistributedBucketMap;
 class DistributedBucketMapWatcher;
 
 /** A distributed table that resides on multiple servers.
@@ -157,6 +158,9 @@ public:
     /// The index of the shard of every sharding key slot: from the bucket map of the table if it has one,
     /// otherwise from the shard weights of `cluster`. `cluster` must be the full cluster of the table.
     std::shared_ptr<const Cluster::SlotToShard> getSlotToShard(const ClusterPtr & cluster) const;
+
+    /// The latest bucket map of the table, checked to fit `cluster`, or nullptr if the table does not have a bucket map.
+    std::shared_ptr<const DistributedBucketMap> getBucketMap(const ClusterPtr & cluster) const;
 
     /// Used by StorageSystemDistributedBucketMaps. Returns nullptr if the table does not have a bucket map.
     DistributedBucketMapWatcher * getBucketMapWatcher() const { return bucket_map_watcher.get(); }

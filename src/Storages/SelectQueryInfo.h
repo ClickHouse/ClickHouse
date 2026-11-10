@@ -31,6 +31,8 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
+struct DistributedBucketMap;
+
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
@@ -183,6 +185,8 @@ struct SelectQueryInfo
     ///
     /// Configured in StorageDistributed::getQueryProcessingStage() together with `optimized_cluster`.
     std::shared_ptr<const std::vector<UInt64>> slot_to_shard;
+    /// The bucket map `slot_to_shard` comes from, if the table has one. Its previous shards were also chosen to be read.
+    std::shared_ptr<const DistributedBucketMap> bucket_map;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 

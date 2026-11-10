@@ -27,9 +27,14 @@ ColumnsDescription StorageSystemDistributedBucketMaps::getColumnsDescription()
         {"version", std::make_shared<DataTypeInt32>(), "Version of the ZooKeeper node of the loaded map, or -1 if the map has not been loaded."},
         {"buckets", std::make_shared<DataTypeUInt64>(), "Number of buckets of the loaded map."},
         {"ranges", std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
-            DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt32>()},
-            Names{"first", "last", "shard_num"})),
-            "Ranges of buckets of the loaded map: the first and the last bucket of every range and the shard number it is assigned to."},
+            DataTypes{
+                std::make_shared<DataTypeUInt64>(),
+                std::make_shared<DataTypeUInt64>(),
+                std::make_shared<DataTypeUInt32>(),
+                std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>())},
+            Names{"first", "last", "shard_num", "previous_shard_nums"})),
+            "Ranges of buckets of the loaded map: the first and the last bucket of every range, the shard number it is assigned to, "
+            "and the shard numbers it was assigned to before, which queries that skip shards read too."},
         {"last_exception", std::make_shared<DataTypeString>(), "Error of the last attempt to load the map, or an empty string if it succeeded."},
     };
 }
@@ -74,7 +79,8 @@ void StorageSystemDistributedBucketMaps::fillData(MutableColumns & res_columns, 
             Array ranges;
             if (status.map)
                 for (const auto & range : status.map->ranges)
-                    ranges.push_back(Tuple{range.first, range.last, range.shard_num});
+                    ranges.push_back(Tuple{
+                        range.first, range.last, range.shard_num, Array(range.previous_shard_nums.begin(), range.previous_shard_nums.end())});
 
             size_t col_num = 0;
             res_columns[col_num++]->insert(database_name);

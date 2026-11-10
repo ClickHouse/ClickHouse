@@ -639,6 +639,7 @@ void executeQuery(
                 sharding_key_column_name,
                 shard_info,
                 *query_info.slot_to_shard,
+                query_info.bucket_map.get(),
             };
             optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), query_info.table_expression->getAlias(), new_context);
         }

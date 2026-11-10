@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -40,7 +41,8 @@ DistributedBucketMap DistributedBucketMap::createEven(UInt64 buckets, size_t num
         map.ranges.push_back({
             .first = buckets * i / num_shards,
             .last = buckets * (i + 1) / num_shards - 1,
-            .shard_num = static_cast<UInt32>(i + 1)});
+            .shard_num = static_cast<UInt32>(i + 1),
+            .previous_shard_nums = {}});
 
     map.validateAndBuildSlots();
     return map;
@@ -58,6 +60,18 @@ DistributedBucketMap DistributedBucketMap::parse(const String & data)
     {
         Range range;
         in >> range.first >> " " >> range.last >> " " >> range.shard_num;
+        if (checkString(" previous", in))
+        {
+            while (checkChar(' ', in))
+            {
+                UInt32 previous_shard_num = 0;
+                in >> previous_shard_num;
+                range.previous_shard_nums.push_back(previous_shard_num);
+            }
+
+            if (range.previous_shard_nums.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "No previous shards are listed for bucket range {}-{}", range.first, range.last);
+        }
         if (!in.eof())
             in >> "\n";
         map.ranges.push_back(range);
@@ -73,7 +87,16 @@ String DistributedBucketMap::toString() const
     out << "format version: 1\n";
     out << "buckets: " << buckets << "\n";
     for (const auto & range : ranges)
-        out << range.first << " " << range.last << " " << range.shard_num << "\n";
+    {
+        out << range.first << " " << range.last << " " << range.shard_num;
+        if (!range.previous_shard_nums.empty())
+        {
+            out << " previous";
+            for (const auto previous_shard_num : range.previous_shard_nums)
+                out << " " << previous_shard_num;
+        }
+        out << "\n";
+    }
     return out.str();
 }
 
@@ -84,6 +107,7 @@ void DistributedBucketMap::validateAndBuildSlots()
 
     slot_to_shard.assign(buckets, 0);
     max_shard_num = 0;
+    has_previous_shards = false;
 
     UInt64 next_bucket = 0;
     for (const auto & range : ranges)
@@ -97,6 +121,18 @@ void DistributedBucketMap::validateAndBuildSlots()
         if (range.shard_num == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Shard numbers start from 1, got 0 for bucket range {}-{}", range.first, range.last);
 
+        for (auto it = range.previous_shard_nums.begin(); it != range.previous_shard_nums.end(); ++it)
+        {
+            if (*it == 0 || *it == range.shard_num || std::find(range.previous_shard_nums.begin(), it, *it) != it)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Previous shard {} of bucket range {}-{} is invalid: previous shards must be distinct shard numbers "
+                    "other than the shard of the range",
+                    *it, range.first, range.last);
+
+            max_shard_num = std::max(max_shard_num, *it);
+            has_previous_shards = true;
+        }
+
         std::fill_n(slot_to_shard.data() + range.first, range.last - range.first + 1, range.shard_num - 1);
         max_shard_num = std::max(max_shard_num, range.shard_num);
         next_bucket = range.last + 1;
@@ -104,6 +140,14 @@ void DistributedBucketMap::validateAndBuildSlots()
 
     if (next_bucket != buckets)
         throw Exception(ErrorCodes::INCORRECT_DATA, "The bucket ranges cover {} of {} buckets", next_bucket, buckets);
+
+    slot_to_range.clear();
+    if (has_previous_shards)
+    {
+        slot_to_range.resize(buckets);
+        for (size_t i = 0; i < ranges.size(); ++i)
+            std::fill_n(slot_to_range.data() + ranges[i].first, ranges[i].last - ranges[i].first + 1, i);
+    }
 }
 
 

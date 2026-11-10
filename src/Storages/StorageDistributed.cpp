@@ -938,6 +938,13 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
         && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
+    /// The rows of a bucket with previous shards are on several shards, so no shard has all rows of a value of the sharding key.
+    if (optimize_sharding_key_aggregation && bucket_map_watcher)
+    {
+        auto bucket_map = query_info.bucket_map ? query_info.bucket_map : bucket_map_watcher->get();
+        optimize_sharding_key_aggregation = !bucket_map->has_previous_shards;
+    }
+
     QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
     if (settings[Setting::distributed_push_down_limit])
         default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
@@ -2195,8 +2202,15 @@ ClusterPtr StorageDistributed::getCluster() const
 
 std::shared_ptr<const Cluster::SlotToShard> StorageDistributed::getSlotToShard(const ClusterPtr & cluster) const
 {
+    if (auto map = getBucketMap(cluster))
+        return std::shared_ptr<const Cluster::SlotToShard>(map, &map->slot_to_shard);
+    return std::shared_ptr<const Cluster::SlotToShard>(cluster, &cluster->getSlotToShard());
+}
+
+DistributedBucketMapPtr StorageDistributed::getBucketMap(const ClusterPtr & cluster) const
+{
     if (!bucket_map_watcher)
-        return std::shared_ptr<const Cluster::SlotToShard>(cluster, &cluster->getSlotToShard());
+        return nullptr;
 
     auto map = bucket_map_watcher->get();
     size_t num_shards = cluster->getShardsInfo().size();
@@ -2205,7 +2219,7 @@ std::shared_ptr<const Cluster::SlotToShard> StorageDistributed::getSlotToShard(c
             "Version {} of bucket map {} assigns buckets to shard {}, but cluster {} has {} shards",
             map->version, bucket_map_watcher->getFullZooKeeperPath(), map->max_shard_num, getClusterName(), num_shards);
 
-    return std::shared_ptr<const Cluster::SlotToShard>(map, &map->slot_to_shard);
+    return map;
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(
@@ -2305,7 +2319,10 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
         return nullptr;
 
     /// Taken only now, so a table with a bucket map does not need it for queries that cannot skip shards anyway.
-    auto slot_to_shard = getSlotToShard(cluster);
+    auto bucket_map = getBucketMap(cluster);
+    auto slot_to_shard = bucket_map
+        ? std::shared_ptr<const Cluster::SlotToShard>(bucket_map, &bucket_map->slot_to_shard)
+        : std::shared_ptr<const Cluster::SlotToShard>(cluster, &cluster->getSlotToShard());
 
     std::set<int> shards;
 
@@ -2313,10 +2330,17 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     {
         const auto selector = createSelector(*slot_to_shard, variant.at(0));
         shards.insert(selector.begin(), selector.end());
+
+        /// The rows inserted before a bucket was assigned to its shard stay on its previous shards.
+        if (bucket_map && bucket_map->has_previous_shards)
+            for (const auto range_index : createSelector(bucket_map->slot_to_range, variant.at(0)))
+                for (const auto previous_shard_num : bucket_map->ranges[range_index].previous_shard_nums)
+                    shards.insert(static_cast<int>(previous_shard_num - 1));
     }
 
     /// The `IN` rewrite for every shard must use the same slots as the choice of the shards.
     query_info.slot_to_shard = std::move(slot_to_shard);
+    query_info.bucket_map = std::move(bucket_map);
     return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
 }
 
@@ -2998,6 +3022,18 @@ buckets: 4
 Every line after the header assigns an inclusive range of buckets to a shard number, as `shard_num` in [system.clusters](/reference/system-tables/clusters). The ranges go in order and cover all buckets. The table watches the node and uses a new version of the map as soon as it is written, for example with `INSERT INTO system.zookeeper`. A new version changes the shard only of the rows inserted after it: the existing rows stay where they are, so the shards of the moved buckets no longer match the map for them, as after a change of the shard weights. The loaded maps are shown in [system.distributed_bucket_maps](/reference/system-tables/distributed_bucket_maps).
 
 `optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. `DROP TABLE` does not remove the map from ZooKeeper.
+
+To keep these settings correct when buckets are assigned to another shard, list the shards that keep their rows after `previous`. For example, to assign bucket 3 of the map above to a new shard 3:
+
+```text
+format version: 1
+buckets: 4
+0 1 1
+2 2 2
+3 3 3 previous 2
+```
+
+New rows of bucket 3 go only to shard 3, and a query that skips shards reads bucket 3 from shards 3 and 2. While any bucket has previous shards, `optimize_distributed_group_by_sharding_key` is not applied to the table, because the rows of a value of the sharding key can be on several shards. Remove a previous shard when it has no rows of the bucket left, for example after they expire by TTL. A server reads the new shard of a bucket only after it loads the new version, so a query that skips shards can miss for a moment the rows inserted through a server that loaded it earlier.
 
 ## Reading data {#distributed-reading-data}
 
