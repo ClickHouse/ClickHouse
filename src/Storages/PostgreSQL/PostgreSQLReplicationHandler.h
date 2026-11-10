@@ -120,6 +120,11 @@ private:
     /// The (schema, table) pairs the publication currently publishes, to be compared with resolveSchemaAndTableName.
     std::set<std::pair<String, String>> fetchPublishedTablePairs(pqxx::nontransaction & tx) const;
 
+    /// The tables with an explicit entry in the publication (`pg_publication_rel`). Unlike fetchPublishedTablePairs,
+    /// this excludes the leaf partitions published only through a published partitioned parent: only an explicit
+    /// entry can be removed by `ALTER PUBLICATION ... DROP TABLE ONLY`.
+    std::set<std::pair<String, String>> fetchExplicitPublicationMembers(pqxx::nontransaction & tx) const;
+
     /// An existing publication may only be resumed through when its definition matches what ClickHouse creates:
     /// all operation types are published, no `FOR ALL TABLES`, and, since PostgreSQL 15, no row filter, no schema-level
     /// membership, and no column list other than the ones `materialized_postgresql_tables_list` requests.
@@ -182,6 +187,10 @@ private:
     /// lose changes. Returns true if the previous run did not materialize any table, so the leftover replication slot
     /// must be dropped and the initial synchronization must run from scratch.
     bool checkReplicationStateOnAttach(pqxx::nontransaction & tx);
+
+    /// Throws if the existing publication reused by a fresh object with a user-managed replication slot does not publish
+    /// all replicated tables, publishes same-name tables from other schemas, or has a filtering definition.
+    void checkPublicationReusableForUserManagedSnapshot(pqxx::nontransaction & tx);
 
     /// See `snapshot_positions_path`.
     struct SnapshotPosition

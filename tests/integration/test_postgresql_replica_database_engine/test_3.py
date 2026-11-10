@@ -3724,6 +3724,13 @@ def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
         replication=True,
         auto_commit=True,
     )
+    # An existing publication with the generated name is reused. With `publish = 'insert'` every update and delete
+    # after the snapshot would be silently omitted, and the publication cannot be fixed by ClickHouse without losing
+    # the changes after the creation of the replication slot: the attach is refused until the operator fixes it.
+    publication = f"postgres_database_public_{table}_ch_publication"
+    cursor.execute(
+        f"CREATE PUBLICATION \"{publication}\" FOR TABLE ONLY {table} WITH (publish = 'insert')"
+    )
     snapshot = create_replication_slot(replication_connection, slot_name=slot_name)
     instance.query(
         f"""
@@ -3738,6 +3745,17 @@ def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
         """
     )
 
+    assert_logs_contain_with_retry(
+        instance,
+        "does not publish all operation types",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # The retried startup takes the initial snapshot from the same exported snapshot once the publication is fixed.
+    cursor.execute(
+        f"ALTER PUBLICATION \"{publication}\" SET (publish = 'insert, update, delete, truncate')"
+    )
     check_tables_are_synchronized(instance, table, materialized_database="default")
     assert 60 == int(instance.query(f"SELECT count() FROM {table}"))
 
@@ -4537,6 +4555,81 @@ def test_detach_table_interrupted_by_server_termination(started_cluster, use_sch
 
     pg_manager.drop_materialized_db(mat_db)
 
+
+
+def test_detach_partition_interrupted_by_server_termination(started_cluster):
+    # A leaf partition stays published through its published partitioned parent after `DETACH TABLE ... PERMANENTLY`
+    # removed its explicit publication entry. Finishing the interrupted detach on attach must not try to remove that
+    # inherited membership again: `ALTER PUBLICATION ... DROP TABLE ONLY` fails for it, and every startup retry would
+    # fail, stopping the replication of the other tables too.
+    mat_db = "interrupted_partition_detach_database"
+    parent = "interrupted_partition_detach_parent"
+    partition = "interrupted_partition_detach_p0"
+    ordinary = "interrupted_partition_detach_ordinary"
+    failpoint = "materialized_postgresql_pause_before_detach_table_drop"
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        f"CREATE TABLE {parent} (key integer NOT NULL, value integer, PRIMARY KEY (key)) PARTITION BY RANGE (key)"
+    )
+    cursor.execute(
+        f"CREATE TABLE {partition} PARTITION OF {parent} FOR VALUES FROM (0) TO (1000)"
+    )
+    pg_manager.create_postgres_table(ordinary)
+    cursor.execute(f"INSERT INTO {parent} SELECT i, i FROM generate_series(0, 9) AS i")
+    cursor.execute(f"INSERT INTO {ordinary} SELECT i, i FROM generate_series(0, 9) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{parent},{partition},{ordinary}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, ordinary, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, partition, materialized_database=mat_db)
+
+    publication = get_single_publication(cursor)
+
+    def has_explicit_entry(table):
+        cursor.execute(
+            "SELECT count(*) FROM pg_publication_rel r JOIN pg_publication p ON r.prpubid = p.oid "
+            "WHERE p.pubname = %s AND r.prrelid = %s::regclass",
+            (publication, table),
+        )
+        return cursor.fetchone()[0] == 1
+
+    def detach_table():
+        try:
+            instance.query(f"DETACH TABLE {mat_db}.{partition} PERMANENTLY")
+        except Exception:
+            pass  # The server is terminated while the query runs.
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    detach_thread = threading.Thread(target=detach_table)
+    detach_thread.start()
+    instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    assert not has_explicit_entry(partition)
+    instance.stop_clickhouse(kill=True)
+    detach_thread.join()
+    instance.start_clickhouse()
+
+    cursor.execute(f"INSERT INTO {ordinary} SELECT i, i FROM generate_series(10, 19) AS i")
+    check_tables_are_synchronized(instance, ordinary, materialized_database=mat_db)
+    assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.{ordinary}"))
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{partition}"))
+
+    # `ATTACH TABLE` adds an explicit entry for the partition, which is published only through its parent now,
+    # so that a later `DETACH TABLE ... PERMANENTLY` or a rollback can remove it.
+    instance.query(f"ATTACH TABLE {mat_db}.{partition}")
+    assert has_explicit_entry(partition)
+    cursor.execute(f"INSERT INTO {parent} SELECT i, i FROM generate_series(10, 19) AS i")
+    check_tables_are_synchronized(instance, partition, materialized_database=mat_db)
+    assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.{partition}"))
+
+    pg_manager.drop_materialized_db(mat_db)
 
 
 def test_whole_schema_with_partitioned_table_resumes_after_restart(started_cluster):

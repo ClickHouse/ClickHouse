@@ -534,7 +534,9 @@ void PostgreSQLReplicationHandler::markSnapshotIncomplete(const String & table_n
 
     postgres::Connection connection(connection_info);
     pqxx::nontransaction tx(connection.getRef());
-    const bool already_published = fetchPublishedTablePairs(tx).contains(resolveSchemaAndTableName(tx, table_name));
+    /// The same decision as in addTableToPublication: only an explicit entry is reused, an entry inherited from
+    /// a published partitioned parent is not, because addTableToPublication adds an explicit entry for it.
+    const bool already_published = fetchExplicitPublicationMembers(tx).contains(resolveSchemaAndTableName(tx, table_name));
 
     auto positions = loadSnapshotPositions();
     positions[table_name] = SnapshotPosition{.start_lsn = "", .completed = false, .owns_publication_entry = !already_published};
@@ -622,7 +624,7 @@ void PostgreSQLReplicationHandler::finishInterruptedDetaches(pqxx::nontransactio
         return;
 
     auto snapshot_positions = loadSnapshotPositions();
-    std::optional<std::set<std::pair<String, String>>> published;
+    std::optional<std::set<std::pair<String, String>>> explicit_members;
 
     for (const auto & table_name : detaching_tables)
     {
@@ -650,13 +652,15 @@ void PostgreSQLReplicationHandler::finishInterruptedDetaches(pqxx::nontransactio
                 /* sync */ true, /* ignore_sync_setting */ true);
         }
 
-        if (!published)
-            published = fetchPublishedTablePairs(tx);
+        /// Only an explicit publication entry can be removed: a leaf partition stays published through its published
+        /// parent, and `ALTER PUBLICATION ... DROP TABLE ONLY` fails for it, which would fail every startup retry.
+        if (!explicit_members)
+            explicit_members = fetchExplicitPublicationMembers(tx);
         const auto resolved_table = resolveSchemaAndTableName(tx, table_name);
-        if (published->contains(resolved_table))
+        if (explicit_members->contains(resolved_table))
         {
             removeTableFromPublication(tx, table_name);
-            published->erase(resolved_table);
+            explicit_members->erase(resolved_table);
         }
 
         snapshot_positions.erase(table_name);
@@ -949,6 +953,9 @@ bool PostgreSQLReplicationHandler::checkReplicationStateOnAttach(pqxx::nontransa
         /// from the snapshot exported for the user-managed replication slot. The replication slot is kept.
         if (user_managed_slot && is_fresh_definition && !user_provided_snapshot.empty())
         {
+            if (publication_exists)
+                checkPublicationReusableForUserManagedSnapshot(tx);
+
             LOG_INFO(
                 log,
                 "The new object will take its initial snapshot from the snapshot {} supplied for the user-managed "
@@ -1064,6 +1071,58 @@ bool PostgreSQLReplicationHandler::checkReplicationStateOnAttach(pqxx::nontransa
 }
 
 
+/// The replication slot and its exported snapshot already exist, so a table missing from the publication cannot be
+/// added without losing the changes between the creation of the slot and `ALTER PUBLICATION`, and the initial
+/// synchronization does not change a publication for a user-managed replication slot. The reused publication
+/// must already publish every replicated table, and nothing that would filter or misdirect their changes.
+void PostgreSQLReplicationHandler::checkPublicationReusableForUserManagedSnapshot(pqxx::nontransaction & tx)
+{
+    std::set<std::pair<String, String>> expected;
+    for (const auto & [table_name, storage] : materialized_storages)
+        expected.insert(resolveSchemaAndTableName(tx, table_name));
+
+    const auto published = fetchPublishedTablePairs(tx);
+
+    String missing;
+    for (const auto & [schema, table] : expected)
+    {
+        if (published.contains(std::make_pair(schema, table)))
+            continue;
+        if (!missing.empty())
+            missing += ", ";
+        missing += schema.empty() ? table : schema + '.' + table;
+    }
+
+    if (!missing.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication from the snapshot supplied for the user-managed replication "
+            "slot {}: the existing publication {} does not publish the following tables: {}. Their changes after the "
+            "snapshot would be silently skipped. Add them to the publication before creating the replication slot, or "
+            "drop the publication. Startup will be retried",
+            replication_slot, doubleQuoteString(publication_name), missing);
+
+    const String colliding = collidingForeignPublishedTables(expected, published);
+    if (!colliding.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication from the snapshot supplied for the user-managed replication "
+            "slot {}: the existing publication {} publishes the following tables from other schemas with the same names "
+            "as replicated tables: {}. Their changes would be applied to the replicated tables. Remove them from the "
+            "publication. Startup will be retried",
+            replication_slot, doubleQuoteString(publication_name), colliding);
+
+    const String definition_conflict = publicationDefinitionConflict(tx);
+    if (!definition_conflict.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication from the snapshot supplied for the user-managed replication "
+            "slot {}: {}. Replicating through this publication would silently filter the replication stream. "
+            "Startup will be retried",
+            replication_slot, definition_conflict);
+}
+
+
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     postgres::Connection replication_connection(connection_info, /* replication */true);
@@ -1174,6 +1233,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         /// `ATTACH TABLE` does. Otherwise every attach would fail on the missing nested table.
         std::vector<std::pair<String, StorageMaterializedPostgreSQL *>> tables_without_nested;
         std::optional<std::set<std::pair<String, String>>> published;
+        std::optional<std::set<std::pair<String, String>>> explicit_members;
 
         auto snapshot_positions = loadSnapshotPositions();
 
@@ -1208,13 +1268,14 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 continue;
             }
 
-            if (!published)
-                published = fetchPublishedTablePairs(tx);
+            /// Only an explicit publication entry can be removed, see finishInterruptedDetaches.
+            if (!explicit_members)
+                explicit_members = fetchExplicitPublicationMembers(tx);
             const auto resolved_table = resolveSchemaAndTableName(tx, table_name);
-            if (published->contains(resolved_table))
+            if (explicit_members->contains(resolved_table))
             {
                 removeTableFromPublication(tx, table_name);
-                published->erase(resolved_table);
+                explicit_members->erase(resolved_table);
             }
         }
 
@@ -1765,8 +1826,11 @@ bool PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & 
             "tables from other schemas with the same name: {}. Their changes would be applied to this table",
             doubleQuoteWithSchema(table_name), doubleQuoteString(publication_name), colliding);
 
-    /// A publication cannot contain the same table twice.
-    if (published.contains(table))
+    /// A publication cannot contain the same table twice. A leaf partition published only through its published
+    /// partitioned parent gets an explicit entry: it can be removed by `DETACH TABLE ... PERMANENTLY` and by the
+    /// rollback of a failed `ATTACH TABLE`, while an inherited membership cannot be removed by
+    /// `ALTER PUBLICATION ... DROP TABLE ONLY`.
+    if (fetchExplicitPublicationMembers(ntx).contains(table))
     {
         LOG_TRACE(log, "Table {} is already in publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
         return false;
@@ -1783,6 +1847,15 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
 {
     try
     {
+        /// `ALTER PUBLICATION ... DROP TABLE ONLY` fails for a table without an explicit publication entry,
+        /// for example a leaf partition published only through its published partitioned parent.
+        if (!fetchExplicitPublicationMembers(ntx).contains(resolveSchemaAndTableName(ntx, table_name)))
+        {
+            LOG_TRACE(log, "Table {} has no explicit entry in publication `{}`, nothing to remove",
+                      doubleQuoteWithSchema(table_name), publication_name);
+            return;
+        }
+
         std::string query_str = fmt::format("ALTER PUBLICATION {} DROP TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), doubleQuoteWithSchema(table_name));
         ntx.exec(query_str);
         LOG_TRACE(log, "Removed table `{}` from publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
@@ -2283,6 +2356,22 @@ std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublished
     {
         tables.emplace(row[0].as<std::string>(), row[1].as<std::string>());
     }
+    return tables;
+}
+
+
+std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchExplicitPublicationMembers(pqxx::nontransaction & tx) const
+{
+    pqxx::result result{tx.exec(fmt::format(
+        "SELECT n.nspname, c.relname FROM pg_publication_rel r "
+        "JOIN pg_publication p ON r.prpubid = p.oid "
+        "JOIN pg_class c ON c.oid = r.prrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE p.pubname = {}",
+        quoteStringPostgreSQL(publication_name)))};
+    std::set<std::pair<String, String>> tables;
+    for (const auto & row : result)
+        tables.emplace(row[0].as<std::string>(), row[1].as<std::string>());
     return tables;
 }
 
