@@ -17,11 +17,13 @@ DATA="$CUR_DIR/data_iceberg/trino"
 # `icebergLocal` refuses a path outside the working directory of `clickhouse local`.
 cd "$DATA" || exit 1
 
+# The table is created in a dedicated `Memory` database, so it cannot clash with a table of the default database.
 $CLICKHOUSE_LOCAL --session_timezone UTC -q "
 SELECT * FROM icebergLocal('timetravel') ORDER BY ALL;
-CREATE TABLE timetravel ENGINE = IcebergLocal('timetravel');
-SELECT made_current_at, snapshot_id, parent_id, is_current_ancestor, summary['added-records'] FROM system.iceberg_history WHERE table = 'timetravel' ORDER BY made_current_at;
-"
+CREATE DATABASE trino ENGINE = Memory;
+CREATE TABLE trino.timetravel ENGINE = IcebergLocal('timetravel');
+SELECT made_current_at, snapshot_id, parent_id, is_current_ancestor, summary['added-records'] FROM system.iceberg_history WHERE database = 'trino' AND table = 'timetravel' ORDER BY made_current_at;
+" || exit 1
 
 # The time zone and the timestamp of every `FOR TIMESTAMP AS OF` of the Trino test, a date means its midnight.
 while read -r tz ts
