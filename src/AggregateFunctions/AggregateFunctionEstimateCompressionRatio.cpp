@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <Formats/FormatSettings.h>
 #include <cstdlib>
 #include <memory>
 #include <mutex>
@@ -23,7 +24,6 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/CastOverloadResolver.h>
-#include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBuffer.h>
