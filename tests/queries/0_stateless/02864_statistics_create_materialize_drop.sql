@@ -19,7 +19,7 @@ CREATE TABLE tab
     d DateTime,
     pk String,
 ) Engine = MergeTree() ORDER BY pk
-SETTINGS auto_statistics_types = 'countmin, basic, tdigest, uniq, uniq_v2', min_bytes_for_wide_part = 0;
+SETTINGS auto_statistics_types = 'countmin, basic, tdigest, uniq, uniq_v2', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
 INSERT INTO tab select number, number, number, toDateTime(number), generateUUIDv4() FROM system.numbers LIMIT 10000;
 SELECT column, length(statistics) FROM system.parts_columns WHERE database = currentDatabase() AND table = 'tab' AND active AND column IN ('a', 'b', 'c', 'd', 'pk') ORDER BY column;
