@@ -1,0 +1,16 @@
+direct	1	1
+invoker	1	1
+none	1	1
+none_sealed	0	0
+sealed	0	0
+transparent	1	1
+transparent_inlined	1	1
+none_sealed	v_none_sealed	Default		SELECT id, name FROM t_private WHERE id > 0	1
+sealed	v_sealed	Default	default	SELECT id, name FROM t_private WHERE id > 0	1
+direct	1
+invoker	1
+none	1
+none_sealed	1
+sealed	1
+transparent	1
+transparent_inlined	1

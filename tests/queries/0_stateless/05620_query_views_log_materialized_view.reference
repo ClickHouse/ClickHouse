@@ -1,0 +1,11 @@
+insert	0	0	1	1
+read_definer	0	0	0	0
+read_legacy	0	0	1	0
+read_target	1	0	0	0
+insert	mv_definer	Materialized	dst_definer	default	SELECT s.id, l.v FROM src AS s INNER JOIN lookup_definer AS l ON s.id = l.id	1	1
+insert	mv_legacy	Materialized	dst_legacy	default	SELECT s.id, l.v FROM src AS s INNER JOIN lookup_legacy AS l ON s.id = l.id	0	0
+read_definer	mv_definer	Materialized	dst_definer	default		1	0
+insert	1
+read_definer	1
+read_legacy	1
+read_target	1

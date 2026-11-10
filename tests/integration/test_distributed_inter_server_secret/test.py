@@ -376,8 +376,10 @@ def test_user_query_log_insecure_cluster_uses_initial_user(user, password):
         query_id=id_,
     )
 
+    # The forwarded query is a SECONDARY_QUERY on n2: it stays in system.query_log for operators,
+    # but system.user_query_log shows a user only their own top-level queries.
     assert get_query_user_info(n2, id_)[0] == ["default", user]
-    assert get_user_query_log_count_by_id(n2, id_, user, password) >= 1
+    assert get_user_query_log_count_by_id(n2, id_, user, password) == 0
     assert get_user_query_log_count_by_id(n2, id_, "default") == 0
 
 
