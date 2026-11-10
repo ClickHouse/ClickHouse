@@ -34,7 +34,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # key of the statistics, so the same aggregation without the `LIMIT`, or with another limit, has a verdict of
 # its own: each of them uses the adaptive aggregator on its first run.
 
+# Every query runs under a throw-mode `max_rows_to_group_by` far above the number of groups, as the server
+# profile of the tests sets it: the top-K pruning and the thaw both hold under such a limit.
 SETTINGS="SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size = 4096;
+    SET max_rows_to_group_by = 10000000000, group_by_overflow_mode = 'throw';
     SET adaptive_aggregator_freeze_threshold = 4096, adaptive_aggregator_freeze_threshold_bytes = 0;
     SET collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
     SET optimize_aggregation_in_order = 0, optimize_injective_functions_in_group_by = 0;
