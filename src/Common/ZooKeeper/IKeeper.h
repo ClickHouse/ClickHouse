@@ -567,12 +567,6 @@ enum class ListRequestType : uint8_t
     EPHEMERAL_ONLY
 };
 
-enum class ListOptionsVersion : int32_t
-{
-    V1 = 1,
-    V2 = 2,
-};
-
 struct ListOptions
 {
     ListRequestType filter = ListRequestType::ALL;
@@ -581,9 +575,9 @@ struct ListOptions
     bool recursive = false;
     uint32_t max_results = 0;
     bool shuffle = false;
-    /// Engaged (including an empty string) requests lexicographic pagination on options version V2:
+    /// Engaged (including an empty string) sends `OpNum::ListWithOptionsV2`:
     /// names strictly greater than the cursor, first page when the cursor is empty.
-    /// Disengaged keeps the legacy V1 unordered `max_results` prefix.
+    /// Disengaged keeps `OpNum::ListWithOptions` and its unordered `max_results` prefix.
     std::optional<String> start_after;
 
     bool paginates() const { return start_after.has_value(); }
@@ -592,7 +586,8 @@ struct ListOptions
     void validate() const;
 };
 
-ListOptionsVersion requiredListOptionsVersion(const ListOptions & options);
+/// `ListWithOptionsV2` when `start_after` is set, otherwise `ListWithOptions`.
+OpNum listWithOptionsOpNum(const ListOptions & options);
 
 struct ListRequest : virtual Request
 {
@@ -635,14 +630,13 @@ struct ListResponse : virtual Response
 struct ListWithOptionsRequest : virtual Request
 {
     String path;
-    ListOptionsVersion options_version = ListOptionsVersion::V1;
     ListOptions options;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
     size_t bytesSize() const override
     {
-        return path.size() + sizeof(options_version) + sizeof(options) + options.startAfter().size();
+        return path.size() + sizeof(options) + options.startAfter().size();
     }
 };
 
@@ -655,7 +649,6 @@ struct ListWithOptionsResponse : virtual Response
     bool truncated = false;
 
     /// Decoder context copied from the matching request. It is not serialized.
-    ListOptionsVersion expected_options_version = ListOptionsVersion::V1;
     bool expected_with_stat = false;
     bool expected_with_data = false;
 

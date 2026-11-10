@@ -554,11 +554,10 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
 {
     ListWithOptionsResponse response;
     response.zxid = zxid;
-    response.expected_options_version = options_version;
     response.expected_with_stat = options.with_stat;
     response.expected_with_data = options.with_data;
 
-    if ((options_version != ListOptionsVersion::V1 && options_version != ListOptionsVersion::V2) || path.empty() || path[0] != '/')
+    if (path.empty() || path[0] != '/')
     {
         response.error = Error::ZMARSHALLINGERROR;
         return { std::make_shared<ListWithOptionsResponse>(response), {} };
@@ -574,7 +573,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
         return { std::make_shared<ListWithOptionsResponse>(response), {} };
     }
 
-    if (options_version == ListOptionsVersion::V2 && (options.shuffle || options.recursive))
+    if (options.paginates() && (options.shuffle || options.recursive))
     {
         response.error = Error::ZBADARGUMENTS;
         return { std::make_shared<ListWithOptionsResponse>(response), {} };
@@ -589,7 +588,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
     response.stat = root->second.stat;
     const String prefix = descendantsPrefix(path);
     std::vector<TestKeeper::Container::const_iterator> candidates;
-    const bool lexicographic = options_version == ListOptionsVersion::V2;
+    const bool lexicographic = options.paginates();
     const std::string_view start_after = options.startAfter();
     bool limit_reached = false;
     for (auto it = container.upper_bound(prefix); it != container.end() && it->first.starts_with(prefix); ++it)
@@ -1260,8 +1259,7 @@ void TestKeeper::listWithOptions(
 
     TestKeeperListWithOptionsRequest request;
     request.path = path;
-    request.options_version = requiredListOptionsVersion(options);
-    if (request.options_version == ListOptionsVersion::V2 && !isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
+    if (options.paginates() && !isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
         throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions start_after pagination is not supported by the server");
     request.options = options;
 

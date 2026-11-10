@@ -947,6 +947,28 @@ struct ZooKeeperListWithOptionsRequest final : ListWithOptionsRequest, ZooKeeper
     size_t bytesSize() const override { return ListWithOptionsRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
 
+struct ZooKeeperListWithOptionsV2Request final : ListWithOptionsRequest, ZooKeeperRequest
+{
+    ZooKeeperListWithOptionsV2Request() = default;
+    explicit ZooKeeperListWithOptionsV2Request(const ListWithOptionsRequest & base) : ListWithOptionsRequest(base) {}
+
+    OpNum getOpNum() const override { return OpNum::ListWithOptionsV2; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    size_t sizeImpl() const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperListWithOptionsV2Request>(*this);
+    }
+
+    size_t bytesSize() const override { return ListWithOptionsRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
+};
+
+ZooKeeperRequestPtr makeZooKeeperListWithOptionsRequest(const String & path, const ListOptions & options);
+
 struct ZooKeeperListWithOptionsResponse : ListWithOptionsResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
@@ -955,6 +977,11 @@ struct ZooKeeperListWithOptionsResponse : ListWithOptionsResponse, ZooKeeperResp
     OpNum getOpNum() const override { return OpNum::ListWithOptions; }
 
     size_t bytesSize() const override { return ListWithOptionsResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+};
+
+struct ZooKeeperListWithOptionsV2Response final : ZooKeeperListWithOptionsResponse
+{
+    OpNum getOpNum() const override { return OpNum::ListWithOptionsV2; }
 };
 class ZooKeeperRequestFactory final : private boost::noncopyable
 {

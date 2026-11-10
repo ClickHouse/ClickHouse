@@ -1922,11 +1922,9 @@ TEST_P(CoordinationTest, ListWithOptionsV2IsRejectedWhenFeatureFlagDisabled)
 
     auto v1 = std::make_shared<ZooKeeperListWithOptionsRequest>();
     v1->path = "/";
-    v1->options_version = ListOptionsVersion::V1;
 
-    auto v2 = std::make_shared<ZooKeeperListWithOptionsRequest>();
+    auto v2 = std::make_shared<ZooKeeperListWithOptionsV2Request>();
     v2->path = "/";
-    v2->options_version = ListOptionsVersion::V2;
     v2->options.start_after = "";
 
     EXPECT_TRUE(this->keeper_context->isOperationSupported(*v1));

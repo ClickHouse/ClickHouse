@@ -817,6 +817,8 @@ bool isOpNumSupported(const KeeperFeatureFlags & feature_flags, Coordination::Op
             return feature_flags.isEnabled(KeeperFeatureFlag::GET_CHILDREN_RECURSIVE);
         case Coordination::OpNum::ListWithOptions:
             return feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS);
+        case Coordination::OpNum::ListWithOptionsV2:
+            return feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
         case Coordination::OpNum::CheckStat:
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Create2:
@@ -857,17 +859,15 @@ bool isOpNumSupported(const KeeperFeatureFlags & feature_flags, Coordination::Op
 
 }
 
+bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
+{
+    return isOpNumSupported(feature_flags, operation);
+}
+
 bool KeeperContext::isOperationSupported(const Coordination::ZooKeeperRequest & request) const
 {
-    if (!isOpNumSupported(feature_flags, request.getOpNum()))
+    if (!isOperationSupported(request.getOpNum()))
         return false;
-
-    if (const auto * list_with_options = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest *>(&request))
-    {
-        if (list_with_options->options_version == Coordination::ListOptionsVersion::V2
-            && !feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
-            return false;
-    }
 
     if (const auto * multi = dynamic_cast<const Coordination::ZooKeeperMultiRequest *>(&request))
     {

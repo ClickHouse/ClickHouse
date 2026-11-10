@@ -1348,10 +1348,7 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
     };
     const auto list = [&](const String & path, const ListOptions & options)
     {
-        auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
-        request->path = path;
-        request->options = options;
-        request->options_version = requiredListOptionsVersion(options);
+        auto request = makeZooKeeperListWithOptionsRequest(path, options);
         request->xid = ++zxid;
         storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*log_idx=*/0);
         const auto responses = storage.processRequest(request, 1, request->xid);
@@ -1493,15 +1490,14 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
 
     {
         SCOPED_TRACE("start_after rejects shuffle and recursive");
-        EXPECT_THROW(requiredListOptionsVersion(ListOptions{.shuffle = true, .start_after = "a"}), Coordination::Exception);
+        EXPECT_THROW(listWithOptionsOpNum(ListOptions{.shuffle = true, .start_after = "a"}), Coordination::Exception);
 
         ListOptions bad_options;
         bad_options.start_after = "a";
         bad_options.shuffle = true;
-        auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+        auto request = std::make_shared<ZooKeeperListWithOptionsV2Request>();
         request->path = "/list_with_options_pagination";
         request->options = bad_options;
-        request->options_version = ListOptionsVersion::V2;
         request->xid = ++zxid;
         storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*log_idx=*/0);
         const auto shuffle_responses = storage.processRequest(request, 1, request->xid);
@@ -1511,7 +1507,6 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
         bad_options.shuffle = false;
         bad_options.recursive = true;
         request->options = bad_options;
-        request->options_version = ListOptionsVersion::V2;
         request->xid = ++zxid;
         storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*log_idx=*/0);
         const auto recursive_responses = storage.processRequest(request, 1, request->xid);
@@ -1609,10 +1604,7 @@ TEST_P(CoordinationTest, TestListWithOptionsAcls)
     };
     const auto list = [&](const String & path, const ListOptions & options, int64_t session_id)
     {
-        const auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
-        request->path = path;
-        request->options = options;
-        request->options_version = requiredListOptionsVersion(options);
+        const auto request = makeZooKeeperListWithOptionsRequest(path, options);
         request->xid = ++zxid;
         KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = session_id, .request = request}};
         const auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);

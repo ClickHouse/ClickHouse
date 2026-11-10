@@ -177,12 +177,10 @@ void ListOptions::validate() const
     throw Exception::fromMessage(Error::ZBADARGUMENTS, "Unknown ListWithOptions filter");
 }
 
-ListOptionsVersion requiredListOptionsVersion(const ListOptions & options)
+OpNum listWithOptionsOpNum(const ListOptions & options)
 {
     options.validate();
-    if (options.paginates())
-        return ListOptionsVersion::V2;
-    return ListOptionsVersion::V1;
+    return options.paginates() ? OpNum::ListWithOptionsV2 : OpNum::ListWithOptions;
 }
 
 size_t ListWithOptionsResponse::bytesSize() const

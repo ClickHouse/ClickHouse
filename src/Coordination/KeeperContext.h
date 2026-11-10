@@ -135,9 +135,9 @@ public:
     bool shouldBlockACL() const;
     void setBlockACL(bool block_acl_);
 
-    /// Opcode feature flags, plus `ListWithOptions` V2 (same opcode as V1) and
-    /// nested `Multi` / `MultiRead` children. Ingress must call this on the
-    /// deserialized request so a disabled V2 is not written to the Raft log.
+    bool isOperationSupported(Coordination::OpNum operation) const;
+
+    /// Opcode feature flags plus nested `Multi` / `MultiRead` children.
     bool isOperationSupported(const Coordination::ZooKeeperRequest & request) const;
 
     bool shouldLogRequests() const;

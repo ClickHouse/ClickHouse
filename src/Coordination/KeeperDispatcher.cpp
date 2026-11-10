@@ -502,9 +502,6 @@ void KeeperDispatcher::waitForFourLetterCommands()
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
 {
-    if (keeper_context && !keeper_context->isOperationSupported(*request))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}, Path: '{}'", request->getOpNum(), request->getPath());
-
     if (dispatcher_old)
         return dispatcher_old->putRequest(request, session_id, use_xid_64);
     else
