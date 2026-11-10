@@ -19,7 +19,13 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05617.orc', 'ORC') SELECT
     [(toInt32(number), 'c')]::Array(Tuple(A Int32, b String)) AS lc,
     CAST((toInt32(number), map('k', (1, 'v'))), 'Tuple(a Int32, m Map(String, Tuple(a Int32, b String)))') AS tm,
     [(1, tuple(2)), (3, tuple(4))]::Array(Tuple(x Int32, z Tuple(w Int32))) AS n,
-    [(1, [(1, 'a'), (2, 'b')])]::Array(Tuple(y Int32, x Array(Tuple(a Int32, b String)))) AS lx
+    [(1, [(1, 'a'), (2, 'b')])]::Array(Tuple(y Int32, x Array(Tuple(a Int32, b String)))) AS lx,
+    if(number = 0, [tuple(tuple(1)), tuple(NULL)], [tuple(NULL)])::Array(Tuple(b Nullable(Tuple(a Int32)))) AS nb,
+    map('k', (if(number = 0, tuple(1), NULL), if(number = 0, NULL, tuple('x'))))::Map(String, Tuple(b Nullable(Tuple(a Int32)), c Nullable(Tuple(x String)))) AS mb,
+    CAST((toInt32(number), [tuple(if(number = 0, tuple(1), NULL))]), 'Tuple(a Int32, l Array(Tuple(b Nullable(Tuple(a Int32)))))') AS tb,
+    if(number = 0, tuple(1, 'a'), NULL)::Nullable(Tuple(a Int32, b String)) AS ts,
+    [CAST(tuple(toDateTime64('3000-01-01 00:00:00', 0, 'UTC')), 'Tuple(a DateTime64(0, \'UTC\'))')] AS ld,
+    CAST([tuple(11, tuple(5))], 'Array(Tuple(w Int32, x Tuple(v Int32)))') AS an
 FROM numbers(2);
 
 -- A list element, a map value and a map key, also nested in a struct, a list or a map, and with NULL elements.
@@ -52,3 +58,50 @@ SELECT id, lc FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, lc
 -- A non-nullable Date32 field gets the same default with and without a field that is in the file, an Enum gets its first value.
 SELECT id, l, m FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, l Array(Tuple(q Date32, e Enum8(\'x\' = 1, \'y\' = 2))), m Map(String, Tuple(q Date32))') ORDER BY id;
 SELECT id, l, m FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, l Array(Tuple(a Int32, q Date32)), m Map(String, Tuple(a Int32, q Date32))') ORDER BY id;
+
+-- A requested struct field of such a struct keeps its presence, the same as when one of its fields is requested.
+SELECT id, nb FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, nb Array(Tuple(b Nullable(Tuple(q Int32))))') ORDER BY id;
+SELECT id, nb FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, nb Array(Tuple(b Nullable(Tuple(a Nullable(Int32), q Int32))))') ORDER BY id;
+SELECT id, mb FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, mb Map(String, Tuple(c Nullable(Tuple(q Int32)), b Nullable(Tuple(r String))))') ORDER BY id;
+SELECT id, mb FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, mb Map(String, Tuple(c Nullable(Tuple(x Nullable(String), q Int32)), b Nullable(Tuple(a Nullable(Int32), r String))))') ORDER BY id;
+
+-- A NULL struct requested as non-Nullable is rejected or read as default, the same as when one of its fields is requested.
+SELECT id, nb FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, nb Array(Tuple(b Tuple(q Int32)))') ORDER BY id SETTINGS input_format_null_as_default = 1;
+SELECT id, nb FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, nb Array(Tuple(b Tuple(a Nullable(Int32), q Int32)))') ORDER BY id SETTINGS input_format_null_as_default = 1;
+SELECT id, nb FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, nb Array(Tuple(b Tuple(q Int32)))') ORDER BY id SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT id, nb FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, nb Array(Tuple(b Tuple(a Nullable(Int32), q Int32)))') ORDER BY id SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+
+-- Two columns reading the same struct with different types get the defaults of their own type.
+SELECT id, t, `t.l` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, t Tuple(l Array(Tuple(q Nullable(Int32)))), `t.l` Array(Tuple(r Nullable(String), s Nullable(Int32)))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, t, `t.l` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, t Tuple(l Array(Tuple(e Enum8(\'x\' = 1)))), `t.l` Array(Tuple(r Nullable(String)))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, `t.l`, t FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `t.l` Array(Tuple(r Nullable(String), s Nullable(Int32))), t Tuple(l Array(Tuple(q Nullable(Int32))))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+
+-- Of two columns reading the same struct, one that requests a nested struct of it keeps that struct's presence.
+SELECT id, tb, `tb.l` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, tb Tuple(l Array(Tuple(q Nullable(Int32)))), `tb.l` Array(Tuple(b Nullable(Tuple(q Int32))))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, `tb.l`, tb FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `tb.l` Array(Tuple(b Nullable(Tuple(q Int32)))), tb Tuple(l Array(Tuple(q Nullable(Int32))))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, tb, `tb.a` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, tb Tuple(l Array(Tuple(q Nullable(Int32)))), `tb.a` Int32') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, `tb.l`, `tb.l.b` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `tb.l` Array(Tuple(q Nullable(Int32))), `tb.l.b` Array(Nullable(Tuple(r Nullable(String), s Nullable(Int32))))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, `tb.l.b`, `tb.l` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `tb.l.b` Array(Nullable(Tuple(r Nullable(String), s Nullable(Int32)))), `tb.l` Array(Tuple(q Nullable(Int32)))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, `tb.l`, `tb.l.b` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `tb.l` Array(Tuple(b Nullable(Tuple(q Nullable(Int32))))), `tb.l.b` Array(Nullable(Tuple(r Nullable(String), s Nullable(Int32))))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+
+-- A top-level struct keeps its presence too, also when missing columns are not allowed.
+SELECT id, ts FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ts Nullable(Tuple(q Int32))') ORDER BY id;
+SELECT id, ts FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ts Nullable(Tuple(a Int32, q Int32))') ORDER BY id;
+SELECT id, ts FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ts Nullable(Tuple(q Int32))') ORDER BY id SETTINGS input_format_orc_allow_missing_columns = 0;
+
+-- A field read only for the size of its struct is not converted.
+SELECT id, ld FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ld Array(Tuple(q Int32))') ORDER BY id;
+
+-- An unnamed Tuple is matched by position and must have as many elements as the struct.
+SELECT id, ts FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ts Nullable(Tuple(Int32, String))') ORDER BY id;
+SELECT id, ts FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ts Nullable(Tuple(Int32, String, Int32))') ORDER BY id; -- { serverError TYPE_MISMATCH }
+SELECT id, l FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, l Array(Tuple(Int32, String, Int32))') ORDER BY id; -- { serverError TYPE_MISMATCH }
+
+-- The same for a Nested column that is not flattened.
+SELECT id, l FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, l Nested(q Int32)') ORDER BY id SETTINGS flatten_nested = 0;
+SELECT id, ln FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ln Nested(q Nullable(Int32))') ORDER BY id SETTINGS flatten_nested = 0;
+SELECT id, ln FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ln Nested(a Nullable(Int32), q Nullable(Int32))') ORDER BY id SETTINGS flatten_nested = 0;
+
+-- A subcolumn of a Nested column that is a path through a struct keeps its values.
+SELECT id, `an.x.v` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `an.x.v` Array(Int32)') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, `an.w`, `an.x.v` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `an.w` Array(Int32), `an.x.v` Array(Int32)') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
