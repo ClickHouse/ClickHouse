@@ -128,16 +128,20 @@ public:
 
     const std::string & getDataPath() const override { return url.key; }
 
-    /// The S3 object storage resolves a fully-qualified path to its own bucket and key.
-    /// A `gs://` path names GCS, so only a GCS client takes it.
+    /// The S3 object storage resolves a fully-qualified path to its own bucket and key. A `gs://` path names GCS,
+    /// so only a GCS client takes it. Another bucket is refused: `remote_url_allow_hosts` and the credentials
+    /// were checked for the table's bucket only.
     std::string resolveDataFilePath(const std::string & path) const override
     {
         auto qualified = DB::trySplitFullyQualifiedObjectPath(path);
-        const bool is_own_scheme = qualified
-            && (qualified->scheme == "s3" || qualified->scheme == "s3a" || qualified->scheme == "s3n"
-                || (is_gcs && (qualified->scheme == "gs" || qualified->scheme == "gcs")));
-        if (!is_own_scheme)
+        if (!qualified)
             return IKernelHelper::resolveDataFilePath(path);
+
+        const bool is_own_scheme = qualified->scheme == "s3" || qualified->scheme == "s3a" || qualified->scheme == "s3n"
+            || (is_gcs && (qualified->scheme == "gs" || qualified->scheme == "gcs"));
+        if (!is_own_scheme || qualified->object_namespace != url.bucket)
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Data file `{}` of the Delta Lake table is not in the bucket `{}` of the table", path, url.bucket);
         return DB::unescapeForFileName(path);
     }
 

@@ -64,4 +64,10 @@ upload "src/$DV" "$SRC/$DV"
 upload "clone/_delta_log/00000000000000000000.json" "$DIR/s3_clone/_delta_log/00000000000000000000.json"
 $CLICKHOUSE_CLIENT -q "SELECT arraySort(groupArray(value)), count() FROM deltaLake(s3_conn, filename = '$S3_DIR/clone/')"
 
+echo '-- s3, another bucket'
+write_clone_log "$DIR/s3_foreign" "s3a://other-bucket/$S3_DIR/src/$PARQUET"
+upload "foreign/_delta_log/00000000000000000000.json" "$DIR/s3_foreign/_delta_log/00000000000000000000.json"
+$CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM deltaLake(s3_conn, filename = '$S3_DIR/foreign/')" 2>&1 \
+    | grep -o -m1 -E 'is not in the bucket|NOT_IMPLEMENTED'
+
 rm -rf "$DIR" "${USER_DIR}_src" "${USER_DIR}_clone" "${USER_DIR}_escape"
