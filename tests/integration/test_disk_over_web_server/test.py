@@ -432,17 +432,19 @@ def test_userinfo_with_forbidden_authorization(cluster):
         SETTINGS disk = disk(type=web, endpoint='http://user:pass@nginx:80/test1/');
     """
     )
+    # The filter makes the query read the column instead of answering it from the part statistics.
+    query = f"SELECT sum(id) FROM {table_name} WHERE id % 2 = 0"
     try:
-        expected = node.query(f"SELECT sum(id) FROM {table_name}")
+        expected = node.query(query)
         assert int(expected) > 0
         node.replace_in_config(FORBID_CONFIG, FORBID_PLACEHOLDER, FORBID_PLACEHOLDER + "<header>Authorization</header>")
         node.query("SYSTEM RELOAD CONFIG")
         try:
-            error = node.query_and_get_error(f"SELECT sum(id) FROM {table_name}")
+            error = node.query_and_get_error(query)
             assert 'HTTP header "Authorization" is forbidden' in error, error
         finally:
             node.replace_in_config(FORBID_CONFIG, "<header>Authorization</header>", "")
             node.query("SYSTEM RELOAD CONFIG")
-        assert node.query(f"SELECT sum(id) FROM {table_name}") == expected
+        assert node.query(query) == expected
     finally:
         node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
