@@ -664,7 +664,7 @@ ColumnPtr buildVariantObjectTypedValueColumnFast(
     return nested_column;
 }
 
-std::optional<Field> tryConvertVariantScalarToShreddedField(const Field & field, const DataTypePtr & type);
+std::optional<Field> tryConvertVariantScalarToShreddedField(const Field & field, const DataTypePtr & type, const DataTypePtr & source_type);
 
 ColumnPtr buildVariantMetadataColumn(size_t num_rows, std::string_view metadata)
 {
@@ -906,10 +906,48 @@ std::optional<Field> tryNormalizeVariantTemporalScalarToString(
     return Field(std::move(json));
 }
 
-std::optional<Field> tryConvertVariantScalarToShreddedField(const Field & field, const DataTypePtr & type)
+/// A `Field` does not carry everything a value's type means: `Float32` and `Float64` share the `Float64`
+/// carrier, `String` and `FixedString(N)` share `String`, decimals and `DateTime64`/`Time64` of any scale
+/// share their width's carrier, and enums are plain integers. For such target types a value is accepted
+/// into the shredded leaf only when its source type guarantees a lossless conversion (the same type, or a
+/// widening such as `Float32` to `Float64`); otherwise it is kept in the residual `value`.
+bool isLosslessVariantShreddedSourceType(const DataTypePtr & normalized_target, const DataTypePtr & source_type)
+{
+    switch (normalized_target->getTypeId())
+    {
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+        case TypeIndex::FixedString:
+        case TypeIndex::Enum8:
+        case TypeIndex::Enum16:
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+        case TypeIndex::DateTime64:
+        case TypeIndex::Time64:
+            break;
+        default:
+            return true;
+    }
+
+    DataTypePtr normalized_source = source_type ? unwrapVariantTypeHint(source_type) : nullptr;
+    if (!normalized_source)
+        return false;
+
+    if (normalized_target->getTypeId() == TypeIndex::Float64 && normalized_source->getTypeId() == TypeIndex::Float32)
+        return true;
+
+    return normalized_source->getName() == normalized_target->getName();
+}
+
+std::optional<Field> tryConvertVariantScalarToShreddedField(const Field & field, const DataTypePtr & type, const DataTypePtr & source_type)
 {
     DataTypePtr normalized_type = unwrapVariantTypeHint(type);
     if (!normalized_type)
+        return std::nullopt;
+
+    if (!isLosslessVariantShreddedSourceType(normalized_type, source_type))
         return std::nullopt;
 
     if (isBool(normalized_type))
@@ -1039,7 +1077,7 @@ void addVariantAnalyzeScalarType(VariantWriteAnalysisNode & node, const DataType
 DataTypePtr getVariantAnalyzeScalarType(const Field & field, const DataTypePtr & type_hint)
 {
     DataTypePtr normalized_type_hint = unwrapVariantTypeHint(type_hint);
-    if (normalized_type_hint && tryConvertVariantScalarToShreddedField(field, normalized_type_hint))
+    if (normalized_type_hint && tryConvertVariantScalarToShreddedField(field, normalized_type_hint, normalized_type_hint))
         return normalized_type_hint;
 
     switch (field.getType())
@@ -3326,7 +3364,7 @@ void encodeVariantShreddedTypedValueColumnar(
         Field leaf = isBool(resolved_normalized)
             ? Field(assert_cast<const ColumnVector<UInt8> &>(*resolved_column).getData()[resolved_row] != 0)
             : (*resolved_column)[resolved_row];
-        if (auto typed_scalar = tryConvertVariantScalarToShreddedField(leaf, normalized_shredded))
+        if (auto typed_scalar = tryConvertVariantScalarToShreddedField(leaf, normalized_shredded, resolved_normalized))
         {
             out.residual_value = std::nullopt;
             out.typed_value = std::move(typed_scalar);
@@ -3498,7 +3536,7 @@ std::optional<PreparedVariantColumns> tryPrepareScalarShreddedVariantColumns(
         Field leaf = isBool(resolved_normalized)
             ? Field(assert_cast<const ColumnVector<UInt8> &>(*resolved_column).getData()[resolved_row] != 0)
             : (*resolved_column)[resolved_row];
-        auto converted = tryConvertVariantScalarToShreddedField(leaf, scalar_shredded);
+        auto converted = tryConvertVariantScalarToShreddedField(leaf, scalar_shredded, resolved_normalized);
         if (!converted.has_value())
             return std::nullopt;
 
