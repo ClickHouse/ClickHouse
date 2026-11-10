@@ -1208,6 +1208,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
+        MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());
+
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
     {
@@ -2612,7 +2615,8 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
     A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
   - for any column: the number of rows equal to the type's default value (`0` for integers and floats, `''` for `String`, `[]` for `Array`, `NULL` for `Nullable`, etc.), which lets the optimizer estimate `col = <default>` predicates and `IS NULL` filters;
   - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
-  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived).
+  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
+  - for integer and `Decimal` columns that are not `Nullable` or `LowCardinality`: the exact sum of values, from which `sum`, `avg` and `sumCount` without `GROUP BY` and filters are answered (see the `use_statistics_for_sum_avg_aggregation` setting).
 
     A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the `NULL` count. Because a default-value count is defined for every column type, `basic` can be declared on any column, including composite types such as `Array`, `Tuple`, and `Map`.
 

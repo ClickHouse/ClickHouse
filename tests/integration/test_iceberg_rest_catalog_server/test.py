@@ -2,6 +2,7 @@
 
 import base64
 import gzip
+import http.client
 import json
 import time
 import uuid
@@ -513,6 +514,32 @@ def test_not_found_shape(started_cluster):
     assert_error_shape(response, "NotFoundException")
 
 
+def test_error_response_keeps_connection_usable(started_cluster):
+    # Routing rejects each POST. Its body must not leak into the next request on the same connection.
+    # http.client never reconnects on its own, so a closed socket fails the follow-up GET.
+    body = json.dumps({"name": "t"})
+    connection = http.client.HTTPConnection(node.ip_address, CATALOG_PORT)
+    try:
+        for path, expected_code in [
+            ("/v1/other_warehouse/namespaces/ns/tables", 404),
+            ("/v1/my_warehouse/namespaces/ns/tables/t/metrics", 406),
+        ]:
+            connection.request(
+                "POST", path, body=body, headers={"Content-Type": "application/json"}
+            )
+            response = connection.getresponse()
+            text = response.read().decode()
+            assert response.status == expected_code, text
+            assert response.getheader("Connection", "").lower() != "close", text
+            connection.request("GET", "/v1/config?warehouse=my_warehouse")
+            response = connection.getresponse()
+            text = response.read().decode()
+            assert response.status == 200, text
+            assert json.loads(text)["overrides"]["prefix"] == "my_warehouse"
+    finally:
+        connection.close()
+
+
 def wait_listening(url, expected):
     for _ in range(100):
         try:
@@ -913,20 +940,24 @@ def test_malformed_create_table(started_cluster):
     duplicate_ids = {"type": "struct", "fields": [{"id": 1, "name": "a", "type": "int"}, {"id": 1, "name": "b", "type": "int"}]}
     bad_spec = {"fields": [{"source-id": 9, "field-id": 1000, "name": "p", "transform": "identity"}]}
     unknown_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": "bogus"}]}
+    unknown_v3_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": False, "type": "unknown"}]}
     numeric_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": 123}]}
     bad_element_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": {"type": "list", "element-id": 2, "element-required": True, "element": "bogus"}}]}
     bad_transform_spec = {"fields": [{"source-id": 1, "name": "p", "transform": "bogus"}]}
     bad_transform_order = {"fields": [{"source-id": 1, "transform": "bucket[x]", "direction": "asc", "null-order": "nulls-first"}]}
     bad_direction_order = {"fields": [{"source-id": 1, "transform": "identity", "direction": "up", "null-order": "nulls-first"}]}
     bad_null_order = {"fields": [{"source-id": 1, "transform": "identity", "direction": "asc", "null-order": "first"}]}
+    optional_identifier = dict(DEFAULT_SCHEMA, **{"identifier-field-ids": [2]})
     bodies = [
         {"schema": DEFAULT_SCHEMA},  # no name
         {"name": "", "schema": DEFAULT_SCHEMA},
         {"name": "t"},  # no schema
         {"name": "t", "schema": duplicate_ids},
         {"name": "t", "schema": unknown_type},
+        {"name": "t", "schema": unknown_v3_type},
         {"name": "t", "schema": numeric_type},
         {"name": "t", "schema": bad_element_type},
+        {"name": "t", "schema": optional_identifier},
         {"name": "t", "schema": DEFAULT_SCHEMA, "stage-create": True},
         {"name": "t", "schema": DEFAULT_SCHEMA, "location": f"s3://{BUCKET}/explicit/t"},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": bad_spec},
