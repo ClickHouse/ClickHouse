@@ -46,9 +46,18 @@ if (STR_CONTRACT_ARCH STREQUAL "amd64")
         "${STR_CONTRACT_SOURCE}/tst/cached_bulk.c" "${STR_CONTRACT_ARCHIVE}"
         -ldl -o "${contract_dir}/cached-bulk")
     run_contract (cached_bulk 300 "${contract_dir}/cached-bulk")
+    foreach (profile IN ITEMS evex512i evex512ri)
+        run_contract (cached_bulk_${profile} 300 "${contract_dir}/cached-bulk" "${profile}")
+    endforeach ()
     # Include large sizes, overlaps and random inputs for every executable
-    # configuration, followed by all 200 one-slot mixes.
+    # configuration, followed by all one-slot mixes.
     run_contract (api 1800 "${contract_dir}/api")
+    file (STRINGS "${contract_dir}/test_api.log" dispatched_profile REGEX "^dispatched [(]")
+    list (LENGTH dispatched_profile dispatched_profile_count)
+    if (NOT dispatched_profile_count EQUAL 1)
+        message (FATAL_ERROR "Missing or ambiguous native dispatch result in ${contract_dir}/test_api.log")
+    endif ()
+    message (STATUS "pg83str ${dispatched_profile}")
     run_contract (public_api 300 "${contract_dir}/api" --public-quick)
     run_contract (compile_dispatch 120 "${STR_CONTRACT_CC}" ${test_flags} -pthread
         "${STR_CONTRACT_SOURCE}/tst/dispatch_threads.c" "${STR_CONTRACT_ARCHIVE}"
