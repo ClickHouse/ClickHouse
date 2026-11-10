@@ -5,7 +5,6 @@
 -- `arm_darwin`; here we force aggregate JIT compilation from inside scalar subqueries so the
 -- crashing path is exercised. The query result itself is irrelevant - it must just not crash.
 
-SET enable_analyzer = 1;
 SET compile_aggregate_expressions = 1, min_count_to_compile_aggregate_expression = 0;
 SET compile_expressions = 1, min_count_to_compile_expression = 0;
 

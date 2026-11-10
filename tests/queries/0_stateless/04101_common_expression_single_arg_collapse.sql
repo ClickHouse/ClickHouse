@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET optimize_extract_common_expressions = 1;
 
 -- Tests for single-argument collapse after common-expression extraction in

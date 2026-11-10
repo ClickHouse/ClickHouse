@@ -3,7 +3,6 @@
 -- `full_sorting_merge` can run, and it implements neither `SEMI` nor `ANTI`: converting an `ANY` join
 -- into one of them must not happen there, or a query that runs fails with `NOT_IMPLEMENTED`.
 
-SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 -- CI may inject False; pin it so the conversion pass under test always runs.
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;

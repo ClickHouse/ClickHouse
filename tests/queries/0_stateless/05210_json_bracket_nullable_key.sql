@@ -1,8 +1,6 @@
 -- Bracket syntax `json['key']` with a nullable key: `arrayElement` accepts a constant `Nullable(String)`
 -- key and a NULL key for `Array` and `Map`, and the `JSON` overload must keep that contract.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_json_nullable_key;
 CREATE TABLE t_json_nullable_key (json JSON(a UInt32, arr Array(UInt32))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_json_nullable_key VALUES ('{"a": 1, "arr": [1, 2], "b": "x"}'), ('{"a": 2, "arr": [], "b": 5}');

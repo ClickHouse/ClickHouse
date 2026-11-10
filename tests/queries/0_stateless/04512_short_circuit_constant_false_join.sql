@@ -3,7 +3,6 @@
 -- non-contributing side must not be read. The JoinStep is kept in place, so join validation
 -- still runs and results are unchanged.
 
-SET enable_analyzer = 1;
 SET query_plan_short_circuit_constant_false_join = 1;
 
 -- Plan checks: assert the optimization fires. A non-contributing side becomes a `ReadNothing`

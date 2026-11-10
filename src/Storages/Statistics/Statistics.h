@@ -6,6 +6,8 @@
 #include <Storages/StatisticsDescription.h>
 #include <boost/core/noncopyable.hpp>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -84,6 +86,9 @@ public:
 
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
+    /// Returns the exact number of bytes written by serialize(), if it can be computed
+    /// without serializing into a temporary buffer.
+    virtual std::optional<UInt64> getSerializedSize() const { return std::nullopt; }
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
@@ -137,6 +142,7 @@ struct Estimate
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
     std::optional<UInt64> estimated_default_count;
+    std::optional<Field> estimated_sum;
 
     /// Cardinality that would be assumed if all non-NULL values were distinct, the same as
     /// `ColumnStatistics::estimateAssumedDistinctCardinality` of the statistics this estimate was taken from.
@@ -157,6 +163,9 @@ public:
 
     void serialize(WriteBuffer & buf) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
+    /// `Basic` statistics built from the rows, bounds and NULL count of data that was not read.
+    static std::shared_ptr<ColumnStatistics> createBasicFromSummary(
+        const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
 
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);
@@ -169,15 +178,18 @@ public:
     UInt64 getNonNullRowCount() const;
     /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
     bool hasNullCount() const;
+    /// Average byte size of a non-NULL `String` or `FixedString` value when `Basic` statistics are present.
+    std::optional<Float64> getAvgStringBytes() const;
     /// True iff loaded statistics include a source of numeric min/max values
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
     bool hasMinMax() const;
+    bool hasSum() const;
     /// Where the cardinality returned by `estimateCardinality` comes from.
     enum class CardinalitySource : uint8_t
     {
-        /// A `uniq` / `uniq_v2` sketch.
-        Sketch,
-        /// No sketch, but the owner enabled `setAssumeAllDistinct` and the column type qualifies
+        /// Counted: a number set by `setCardinality` (from data lake metadata), otherwise a `uniq` / `uniq_v2` sketch.
+        Counted,
+        /// Not counted, but the owner enabled `setAssumeAllDistinct` and the column type qualifies
         /// (`canAssumeAllDistinctByType`): all non-NULL values are assumed to be distinct, capped using `Basic`.
         AssumedDistinct,
         /// Neither: `estimateCardinality` returns a fixed fraction of the row count.
@@ -185,23 +197,26 @@ public:
     };
     CardinalitySource getCardinalitySource() const;
 
-    /// True iff `estimateCardinality` is backed by a uniq sketch. When it is not, that method returns
-    /// either an assumed cardinality or a fixed fraction of the row count, which callers dividing by
-    /// the cardinality must not mistake for a measurement.
+    /// True iff `estimateCardinality` is counted (`CardinalitySource::Counted`): backed by a uniq sketch or set by
+    /// `setCardinality`. When it is not, that method returns either an assumed cardinality or a fixed fraction of the
+    /// row count, which callers dividing by the cardinality must not mistake for a measurement.
     bool hasCardinality() const;
-    /// The cardinality from a sketch, or the assumed cardinality (`CardinalitySource::AssumedDistinct`),
+    /// The counted cardinality, or the assumed cardinality (`CardinalitySource::AssumedDistinct`),
     /// otherwise a fixed fraction of the row count.
     UInt64 estimateCardinality() const;
     /// Like `estimateCardinality`, but returns std::nullopt instead of the fixed fraction of the row count.
     std::optional<UInt64> tryEstimateCardinality() const;
     /// The cardinality assumed if all non-NULL values are distinct: the non-NULL row count, capped
     /// using `Basic` (rows equal to the type default count as one value, `min == max` means one value).
-    /// Returns std::nullopt if the column has a sketch or its type doesn't qualify. Ignores
+    /// Returns std::nullopt if the cardinality is counted (`hasCardinality`) or the type doesn't qualify. Ignores
     /// `setAssumeAllDistinct`, i.e. the caller decides whether the assumption applies.
     std::optional<UInt64> estimateAssumedDistinctCardinality() const;
     /// Set by owners that know the policy (the table metadata and settings, see `shouldAssumeAllDistinct`).
     /// Off by default, so statistics built for writing, merging and mutating parts are unaffected.
     void setAssumeAllDistinct(bool value) { assume_all_distinct = value; }
+    /// Sets the number of distinct values `estimateCardinality` returns, known outside the statistics objects (from data
+    /// lake metadata).
+    void setCardinality(UInt64 value) { external_cardinality = value; }
     UInt64 estimateDefaults() const;
 
     /// `null_count / rows` when `Basic` statistics are present; otherwise a default factor.
@@ -230,6 +245,8 @@ private:
     StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
     bool assume_all_distinct = false; /// see `setAssumeAllDistinct`
+    /// A number of distinct values set by `setCardinality`.
+    std::optional<UInt64> external_cardinality;
 };
 
 class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>
@@ -315,6 +332,9 @@ bool shouldAssumeAllDistinct(const ColumnDescription & column, bool assume_float
 /// every column type but leaves its min/max sub-statistics unpopulated
 /// (`StatisticsBasic::hasNumericMinMax`).
 bool canStatisticsTrackMinMax(const DataTypePtr & data_type);
+
+/// Whether `basic` statistics record the sum of a column of this type (integers and `Decimal`, exact in any order).
+bool canStatisticsTrackSum(const DataTypePtr & data_type);
 
 
 }

@@ -208,6 +208,8 @@ SET use_statistics = 1;
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
+-- The read is small, so without this the statistics are not loaded and the conditions are not reordered.
+SET min_marks_per_part_to_load_statistics = 0;
 
 CREATE TABLE t_floats_prewhere
 (
