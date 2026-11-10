@@ -3314,9 +3314,6 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     min-height: auto !important;
     padding: 6px 8px 6px 34px !important;
 }
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"])) img {
-    display: none !important;
-}
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) {
     display: flex !important;
     align-items: center;
@@ -3410,9 +3407,6 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) {
     align-items: flex-start;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) img {
-    display: none !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div > span:first-child,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child {
@@ -4177,10 +4171,6 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
     line-height: 20px !important;
     padding: 6px 8px !important;
     border-radius: 4px !important;
-}
-/* Menu links use text labels; retain only the Databases product marks. */
-.nav-dropdown-item > img:not([src$="icon-clickhouse.svg"]):not([src$="icon-postgres.svg"]) {
-    display: none !important;
 }
 .nav-dropdown-item > div > span,
 .nav-dropdown-item > span {
