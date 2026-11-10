@@ -61,12 +61,15 @@ reset hints only break ties between otherwise identical payloads, with unknown p
 The winning histogram payload does not depend on the order of merging. Where merging changes a sample's predecessor or joins separate
 input arrays, its counter reset hint is detected again from the data against the new predecessor by the rules of the inserts into a
 `TimeSeries` table (a decrease of a count is a reset, a change of the schema or of the zero threshold makes the hint unknown), whatever
-hint the sample had: that hint was about another predecessor. Gauge markers are kept. So the hints do not depend on the order of merging
-either. The result type is the type of the argument, so the function can be used in the `SimpleAggregateFunction` data type.
+hint the sample had: that hint was about another predecessor. Gauge markers are kept. The hints of the other samples are kept as they are,
+so the argument arrays must be normalized: every sample but the first of an array must carry the hint these rules detect against its
+predecessor in the array, as the inserts into a `TimeSeries` table store them. Then the hints do not depend on the order of merging
+either; for arrays with other hints they do. The result type is the type of the argument, so the function can be used in the
+`SimpleAggregateFunction` data type.
 )";
     FunctionDocumentation::Syntax syntax = "timeSeriesGroupArrayHistograms(histograms)";
     FunctionDocumentation::Arguments arguments = {
-        {"histograms", "Histogram samples of a time series sorted by timestamp, with the type of the `histograms` column of a TimeSeries table.", {"Array(Tuple(DateTime64, ...))", "Array(Tuple(DateTime, ...))", "Array(Tuple(UInt32, ...))"}},
+        {"histograms", "Histogram samples of a time series sorted by timestamp, with the type of the `histograms` column of a TimeSeries table and with normalized counter reset hints (see above).", {"Array(Tuple(DateTime64, ...))", "Array(Tuple(DateTime, ...))", "Array(Tuple(UInt32, ...))"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same type sorted by timestamp.", {"Array(Tuple(T1, ...))"}};
     FunctionDocumentation::Examples examples = {

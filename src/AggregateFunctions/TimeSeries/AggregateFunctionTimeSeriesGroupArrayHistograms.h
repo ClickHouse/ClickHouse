@@ -105,13 +105,13 @@ struct AggregateFunctionTimeSeriesGroupArrayHistogramsData
 };
 
 /// Aggregate function merging arrays of histogram samples of the shape of the `histograms` column of a TimeSeries table (see
-/// TimeSeriesHistogramsColumns), each sorted by timestamp: the result is sorted and deduplicated by timestamp. Of the samples with
-/// the same timestamp the greatest one under the order of `TimeSeriesDuplicateTimestampRule` wins (the greatest total count,
-/// then the greatest `sum`, then the other elements). Arrays in timestamp order are appended, and overlapping arrays are sorted
-/// and deduplicated. The first sample of every appended array but the first, and every sample but the first of the sorted result, get
-/// the counter reset hint of TimeSeriesHistogramCounterResetRule against their predecessor in the result; the other hints are kept.
-/// For arrays whose hints the sink detected, the result doesn't depend on the order of the merges, as `SimpleAggregateFunction`
-/// requires. A single array is returned as it is. The result type is the argument type.
+/// TimeSeriesHistogramsColumns), each sorted by timestamp, into one sorted and deduplicated. Of samples with equal timestamps the
+/// greatest under `TimeSeriesDuplicateTimestampRule` wins. Arrays in timestamp order are appended, overlapping ones sorted and
+/// deduplicated. The first sample of every appended array but the first, and every sample but the first of the sorted result, get the
+/// hint of TimeSeriesHistogramCounterResetRule against their predecessor in the result; the other hints are kept. The arrays must be
+/// normalized: every sample but the first carries that hint against its predecessor in the array, as the sink stores them. Then the
+/// result doesn't depend on the order of the merges, as `SimpleAggregateFunction` requires. A single array is returned as it is; the
+/// result type is the argument type.
 template <typename TimestampType>
 class AggregateFunctionTimeSeriesGroupArrayHistograms final
     : public IAggregateFunctionDataHelper<AggregateFunctionTimeSeriesGroupArrayHistogramsData<TimestampType>, AggregateFunctionTimeSeriesGroupArrayHistograms<TimestampType>>
