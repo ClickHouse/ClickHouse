@@ -10,6 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -279,13 +280,14 @@ static bool hasNullableLowCardinalityTupleElement(const DataTypePtr & type)
 
 DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
+    auto is_bool = [](const DataTypePtr & t) { return isBool(t) || isSimpleAggregateFunctionOfBool(*t); };
     for (const auto & key_type : {left_type, right_type})
     {
         bool replaced = false;
         auto result = replaceNestedTypesInPair(type, key_type,
             [&](const DataTypePtr & leaf, const DataTypePtr & key_leaf) -> DataTypePtr
             {
-                if (isBool(leaf) && !isBool(key_leaf) && leaf->equals(*key_leaf))
+                if (is_bool(leaf) && !is_bool(key_leaf) && leaf->equals(*key_leaf))
                 {
                     replaced = true;
                     return std::make_shared<DataTypeUInt8>();

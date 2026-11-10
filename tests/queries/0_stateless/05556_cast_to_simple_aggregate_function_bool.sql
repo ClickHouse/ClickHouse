@@ -67,7 +67,33 @@ CREATE TABLE o (u UInt8, k UInt8) ENGINE = MergeTree ORDER BY (u, k);
 INSERT INTO o VALUES (1, 0), (1, 100), (2, 0);
 SELECT CAST(u, 'SimpleAggregateFunction(any, Bool)') AS c, k FROM o ORDER BY c, k LIMIT 2 SETTINGS optimize_read_in_order = 1;
 SELECT DISTINCT CAST(u, 'SimpleAggregateFunction(any, Bool)') AS c, k FROM o ORDER BY c, k SETTINGS optimize_distinct_in_order = 1;
+SELECT CAST(u, 'SimpleAggregateFunction(any, Nullable(Bool))') AS c, k FROM o ORDER BY c, k LIMIT 2 SETTINGS optimize_read_in_order = 1;
+SELECT DISTINCT CAST(u, 'SimpleAggregateFunction(any, Nullable(Bool))') AS c, k FROM o ORDER BY c, k SETTINGS optimize_distinct_in_order = 1;
+SELECT CAST(u, 'Bool') AS c, k FROM o ORDER BY c, k LIMIT 2 SETTINGS optimize_read_in_order = 1;
+SELECT DISTINCT CAST(u, 'Bool') AS c, k FROM o ORDER BY c, k SETTINGS optimize_distinct_in_order = 1;
 DROP TABLE o;
+
+SELECT 'same as bool';
+SELECT groupArray(number) FROM numbers(4) WHERE number IN (SELECT true);
+SELECT groupArray(number) FROM numbers(4) WHERE number IN (SELECT anySimpleState(true));
+DROP TABLE IF EXISTS jb;
+DROP TABLE IF EXISTS js;
+DROP TABLE IF EXISTS ju;
+CREATE TABLE jb (v Nullable(Bool)) ENGINE = Memory;
+CREATE TABLE js (v Nullable(SimpleAggregateFunction(any, Bool))) ENGINE = Memory;
+CREATE TABLE ju (v UInt8) ENGINE = Memory;
+INSERT INTO jb VALUES (true);
+INSERT INTO js VALUES (true);
+INSERT INTO ju VALUES (2);
+SELECT count() FROM jb INNER JOIN ju ON jb.v = ju.v;
+SELECT count() FROM js INNER JOIN ju ON js.v = ju.v;
+SELECT count() FROM ju INNER JOIN jb ON jb.v = ju.v;
+SELECT count() FROM ju INNER JOIN js ON js.v = ju.v;
+DROP TABLE jb;
+DROP TABLE js;
+DROP TABLE ju;
+SELECT toUInt8(JSONExtract('{"a":2}', 'a', 'Bool')), toUInt8(JSONExtract('{"a":2}', 'a', 'SimpleAggregateFunction(any, Bool)'));
+SELECT toUInt8(JSONExtract('{"a":2}', 'a', 'LowCardinality(Bool)')), toUInt8(JSONExtract('{"a":2}', 'a', 'LowCardinality(SimpleAggregateFunction(any, Bool))'));
 
 -- An INSERT from UInt8 stores 2 as is; the correlated equality must not depend on the substitution.
 SELECT 'correlated';

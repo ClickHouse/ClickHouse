@@ -3602,7 +3602,7 @@ FunctionBasePtr createFunctionBaseCast(
         }))
     {
     }
-    else if (isSimpleAggregateFunctionOfBool(*monotonicity_result_type))
+    else if (isBool(monotonicity_result_type) || isSimpleAggregateFunctionOfBool(*monotonicity_result_type))
     {
         /// Every nonzero value becomes 1, so the cast is not injective.
         monotonicity = [](const IDataType & type, const Field & left, const Field & right)
