@@ -370,7 +370,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"compile_sort_description", trueOrFalseSetting},
        {"correlated_subqueries_substitute_equivalent_expressions", trueOrFalseSetting},
        {"correlated_subqueries_use_in_memory_buffer", trueOrFalseSetting},
-       {"count_distinct_optimization", trueOrFalseSetting},
        {"defer_partition_pruning_after_final", trueOrFalseSetting},
        {"enable_adaptive_aggregator", trueOrFalseSetting},
        {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
@@ -462,6 +461,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_group_by_constant_keys", trueOrFalseSetting},
        {"optimize_group_by_function_keys", trueOrFalseSetting},
        {"optimize_if_chain_to_multiif", trueOrFalseSetting},
+       {"optimize_if_transform_const_strings_to_lowcardinality", trueOrFalseSetting},
        {"optimize_if_transform_strings_to_enum", trueOrFalseSetting},
        {"optimize_injective_functions_in_group_by", trueOrFalseSetting},
        {"optimize_injective_functions_in_limit_by", trueOrFalseSetting},
@@ -649,6 +649,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_statistics", trueOrFalseSetting},
        {"use_statistics_for_min_max_aggregation", trueOrFalseSetting},
        {"use_statistics_for_part_pruning", trueOrFalseSetting},
+       {"use_statistics_for_sum_avg_aggregation", trueOrFalseSetting},
        {"use_streaming_marks_compression", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering_for_single_string_sort_column", trueOrFalseSetting},
@@ -1665,6 +1666,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
+    {"output_format_vortex_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_write_statistics", trueOrFalseSettingNoOracle},
     {"page_cache_inject_eviction", trueOrFalseSettingNoOracle},
     {"parallel_distributed_insert_select", CHSetting(zeroOneTwo, {}, false)},
@@ -2333,7 +2335,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"remote_filesystem_read_method",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {}, false)},
              {"wait_for_async_insert", trueOrFalseSettingNoOracle}}); /// breaks table dump oracle
-        nonzero_block_sizes.emplace_back("max_distributed_connections");
+        nonzero_rows_values.emplace_back("max_distributed_connections");
         max_block_sizes.insert(
             max_block_sizes.end(),
             {/*"max_analyze_depth",
