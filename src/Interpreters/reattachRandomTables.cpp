@@ -59,24 +59,34 @@ StoragePtr getForwardedStorage(const StoragePtr & table)
 /// `ActionLocksManager` keeps a lock under the storage it was requested for, but the lock may block the actions
 /// of another storage: `SYSTEM STOP MERGES mv` stops merges of the inner table of `mv`.
 /// So collect the storages with action locks together with all storages they forward to.
-std::unordered_set<const IStorage *> getStoragesWithActionLocks(const DatabasePtr & database, const ContextPtr & context)
+/// The owner of a lock may be in another database (e.g. an `Alias` of a table of the current database),
+/// so look at the tables of all local databases.
+std::unordered_set<const IStorage *> getStoragesWithActionLocks(const ContextPtr & context)
 {
     std::unordered_set<const IStorage *> result;
     const auto action_locks_manager = context->getActionLocksManager();
 
-    for (auto it = database->getTablesIterator(context, {}, /* skip_not_loaded= */ true); it->isValid(); it->next())
-    {
-        const auto & table = it->table();
-        if (!table || !action_locks_manager->hasAny(table))
-            continue;
+    /// Usually there are no action locks at all, then there is no need to look at all tables.
+    if (!action_locks_manager->hasAny())
+        return result;
 
-        /// The set also protects from cycles of aliases.
-        for (StoragePtr storage = table; storage && result.insert(storage.get()).second; storage = getForwardedStorage(storage))
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false, .with_remote_databases = false});
+    for (const auto & [_, database] : databases)
+    {
+        for (auto it = database->getTablesIterator(context, {}, /* skip_not_loaded= */ true); it->isValid(); it->next())
         {
-            /// The catalog may hold the target as a lazily loaded table.
-            if (auto * proxy = dynamic_cast<StorageProxy *>(storage.get()))
-                if (auto nested = proxy->tryGetNested())
-                    result.insert(nested.get());
+            const auto & table = it->table();
+            if (!table || !action_locks_manager->hasAny(table))
+                continue;
+
+            /// The set also protects from cycles of aliases.
+            for (StoragePtr storage = table; storage && result.insert(storage.get()).second; storage = getForwardedStorage(storage))
+            {
+                /// The catalog may hold the target as a lazily loaded table.
+                if (auto * proxy = dynamic_cast<StorageProxy *>(storage.get()))
+                    if (auto nested = proxy->tryGetNested())
+                        result.insert(nested.get());
+            }
         }
     }
 
@@ -164,7 +174,7 @@ void reattachTables(const DatabasePtr & database, const std::vector<String> & ta
 {
     auto log = getLogger("reattachRandomTables");
     const String & database_name = database->getDatabaseName();
-    const auto storages_with_action_locks = getStoragesWithActionLocks(database, context);
+    const auto storages_with_action_locks = getStoragesWithActionLocks(context);
 
     for (const auto & table_name : table_names)
     {

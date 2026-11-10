@@ -77,6 +77,18 @@ bool ActionLocksManager::hasAny(const StoragePtr & table) const
     return false;
 }
 
+bool ActionLocksManager::hasAny() const
+{
+    std::lock_guard lock(mutex);
+
+    for (const auto & [_, locks] : storage_locks)
+        for (const auto & type_and_lock : locks)
+            if (!type_and_lock.second.expired())
+                return true;
+
+    return false;
+}
+
 void ActionLocksManager::cleanExpired()
 {
     std::lock_guard lock(mutex);

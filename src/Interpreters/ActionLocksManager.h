@@ -31,6 +31,9 @@ public:
     /// Returns true if there is a non-expired lock of any type for a table
     bool hasAny(const StoragePtr & table) const;
 
+    /// Returns true if there is a non-expired lock of any type for any table
+    bool hasAny() const;
+
     /// Removes all locks of non-existing tables
     void cleanExpired();
 
