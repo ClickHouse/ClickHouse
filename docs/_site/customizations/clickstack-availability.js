@@ -245,12 +245,6 @@
       "/clickstack/observability/features/alerts"
     ]
   ],
-  "/clickstack/features/anomaly-detection": [
-    [
-      "Open Source",
-      "/clickstack/features/anomaly-detection"
-    ]
-  ],
   "/clickstack/features/dashboards/dashboard-templates": [
     [
       "Open Source",
@@ -1219,6 +1213,12 @@
     [
       "ClickHouse Observability",
       "/clickstack/observability/features/alerts"
+    ]
+  ],
+  "/clickstack/observability/features/anomaly-detection": [
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/features/anomaly-detection"
     ]
   ],
   "/clickstack/observability/features/dashboards/dashboard-templates": [
@@ -2585,7 +2585,9 @@
     ]
   },
   "/clickstack/demo-days/2026/2026-10-15": {
-    "observabilityOnly": [],
+    "observabilityOnly": [
+      "source-level-access-control-for-promql-sources"
+    ],
     "variants": [
       [
         "Open Source",
