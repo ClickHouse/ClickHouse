@@ -8503,8 +8503,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
                 if (matcher_node.isUnqualified())
                     return std::ranges::any_of(scope.table_expression_node_to_data, [&](const auto & table_expression_with_data)
-                        { return table_expression_may_produce_column(
-                            table_expression_with_data.first, table_expression_with_data.second, matcher_node, column_name); });
+                        { return !IdentifierResolver::isTableExpressionHiddenBySemiAntiJoin(table_expression_with_data.first.get(), scope)
+                            && table_expression_may_produce_column(
+                                table_expression_with_data.first, table_expression_with_data.second, matcher_node, column_name); });
 
                 if (is_inside_lambda)
                     return true;
@@ -8610,7 +8611,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 if (matcher_node.isUnqualified())
                 {
                     for (const auto & [table_expression, table_expression_data] : scope.table_expression_node_to_data)
-                        add_table_expression_columns(table_expression, table_expression_data);
+                    {
+                        /// As in `resolveUnqualifiedMatcher`, the side of a SEMI/ANTI JOIN hidden by the compatibility settings
+                        /// (`semi_join_include_columns_from_both_sides`, `anti_join_include_columns_from_both_sides`) is skipped.
+                        if (!IdentifierResolver::isTableExpressionHiddenBySemiAntiJoin(table_expression.get(), scope))
+                            add_table_expression_columns(table_expression, table_expression_data);
+                    }
                     return column_names;
                 }
 
