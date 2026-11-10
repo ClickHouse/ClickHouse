@@ -200,6 +200,7 @@ public:
     void readText(DB::ReadBuffer & rb) { zeroValue()->readText(rb); }
     size_t size() const { return hasZero() ? 1 : 0; }
     bool empty() const { return !hasZero(); }
+    static constexpr size_t initial_buffer_bytes = sizeof(Cell);
     size_t getBufferSizeInBytes() const { return sizeof(Cell); }
     size_t getCollisions() const { return 0; }
 };
@@ -295,6 +296,10 @@ public:
     using mapped_type = typename Ts::mapped_type;
     using value_type = typename Ts::value_type;
     using cell_type = typename Ts::cell_type;
+
+    /// What `getBufferSizeInBytes` returns before any submap grows.
+    static constexpr size_t initial_buffer_bytes = T0::initial_buffer_bytes + T1::initial_buffer_bytes
+        + T2::initial_buffer_bytes + T3::initial_buffer_bytes + Ts::initial_buffer_bytes;
 
     using LookupResult = StringHashTableLookupResult<typename cell_type::mapped_type>;
     using ConstLookupResult = StringHashTableLookupResult<const typename cell_type::mapped_type>;
@@ -526,6 +531,24 @@ public:
         return key.size() > 24 || (!key.empty() && key.back() == 0);
     }
 
+    /// Emplaces a key that the iteration of a string table handed out, with its hash from `forEachValueWithHash`. A
+    /// key packed into an integer of a fixed-size submap is handed out as a view of that integer in its cell, which
+    /// the packing must not read around (see `hash`), so it is packed again from a padded copy, which the table does
+    /// not keep. A key of `ms` is stored through its view: the memory that holds it for the table it came from,
+    /// usually an arena, must outlive this table.
+    void ALWAYS_INLINE emplaceIteratedKey(std::string_view key, LookupResult & it, bool & inserted, size_t hash_value)
+    {
+        if (key.empty() || usesStringViewSubmap(key))
+        {
+            emplace(key, it, inserted, hash_value);
+            return;
+        }
+        /// The packing reads 8 bytes at a time, as far as 7 bytes before a key of up to 8 bytes.
+        alignas(8) char padded[8 + sizeof(StringKey24) + 8]{};
+        memcpy(padded + 8, key.data(), key.size());
+        emplace(std::string_view(padded + 8, key.size()), it, inserted, hash_value);
+    }
+
     void reserveAdditionalStringViewKeys(size_t additional) { ms.reserve(ms.size() + additional); }
 
     struct PrefetchCallable
@@ -685,7 +708,7 @@ public:
 
     void clear()
     {
-        m1.clearHasZero();
+        m0.clearHasZero();
         m1.clear();
         m2.clear();
         m3.clear();
@@ -694,7 +717,7 @@ public:
 
     void clearAndShrink()
     {
-        m1.clearHasZero();
+        m0.clearHasZero();
         m1.clearAndShrink();
         m2.clearAndShrink();
         m3.clearAndShrink();
