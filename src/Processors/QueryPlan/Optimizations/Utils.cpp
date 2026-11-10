@@ -447,8 +447,9 @@ FilterResult filterResultForNotMatchedRows(
                 /*input_rows_count=*/1,
                 { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments });
         }
-        catch (const Exception &)
+        catch (const Exception & e)
         {
+            rethrowIfQueryCancelled(e);
             return FilterResult::UNKNOWN;
         }
 
