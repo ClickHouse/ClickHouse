@@ -203,6 +203,36 @@ tryResolveViewInnerQueryForInspection(const TableNode & table_node, const Contex
     return result;
 }
 
+/// A view's inner query is resolved for inspection only (`QueryAnalyzer` with `only_analyze`), so its
+/// scalar subqueries are not executed: each one is replaced by a placeholder holding the default value
+/// of its type (see `evaluateScalarSubqueryIfNeeded`). A defining expression that depends on such a
+/// placeholder, e.g. a dictionary or attribute name selected by a scalar subquery, does not describe
+/// what the view reads at execution. Constant folding keeps the folded expression as the source
+/// expression of the resulting `ConstantNode`, so look through it as well.
+bool dependsOnScalarSubquery(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    const auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return true;
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+        return dependsOnScalarSubquery(constant_node->getSourceExpression());
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() == "__getScalar")
+        return true;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (dependsOnScalarSubquery(child))
+            return true;
+    }
+
+    return false;
+}
+
 struct ColumnDefinition
 {
     QueryTreeNodePtr defining_expression;
@@ -245,7 +275,12 @@ tryResolveColumnDefinition(const ColumnNode & column_node, const ContextPtr & co
     for (size_t i = 0; i < projection_columns.size(); ++i)
     {
         if (projection_columns[i].name == column_node.getColumnName() && projection_columns[i].type->equals(*column_node.getColumnType()))
+        {
+            /// Also for a subquery: inside an inspected view it is resolved for inspection only as well.
+            if (dependsOnScalarSubquery(projection_nodes[i]))
+                return std::nullopt;
             return ColumnDefinition{projection_nodes[i], source_query_node};
+        }
     }
 
     return std::nullopt;
