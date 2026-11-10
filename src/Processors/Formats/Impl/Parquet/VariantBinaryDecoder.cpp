@@ -15,7 +15,6 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Core/UUID.h>
@@ -236,19 +235,6 @@ void checkVariantPayloadSize(const FormatSettings & format_settings, UInt64 size
     }
 }
 
-UInt64 checkedVariantBase64EncodedSize(UInt64 decoded_size)
-{
-    UInt64 adjusted_size = 0;
-    if (common::addOverflow(decoded_size, UInt64{2}, adjusted_size))
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too large `Parquet` `VARIANT` binary size: {}", decoded_size);
-
-    UInt64 encoded_size = 0;
-    if (common::mulOverflow(adjusted_size / 3, UInt64{4}, encoded_size))
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too large `Parquet` `VARIANT` binary size: {}", decoded_size);
-
-    return encoded_size;
-}
-
 size_t checkedVariantByteSize(UInt64 count, size_t element_size, std::string_view what)
 {
     UInt64 total = 0;
@@ -289,6 +275,47 @@ void checkVariantCollectionPayloadSize(UInt64 previous_offset, const UInt8 * val
 {
     if (previous_offset != static_cast<UInt64>(end - values))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid {} payload size", what);
+}
+
+/// Byte ranges of the children of a `VARIANT` object within its values section. Object field offsets
+/// follow field-name order while the values may be stored in any physical order, so offsets need not
+/// start at zero or increase. The last offset is the total size of the values section, and each child
+/// extends up to the next greater offset. Children must not share a start position.
+struct VariantObjectChildRanges
+{
+    VectorWithMemoryTracking<std::pair<UInt64, UInt64>> ranges;
+    UInt64 total_size = 0;
+};
+
+VariantObjectChildRanges readVariantObjectChildRanges(
+    const UInt8 * field_offsets, size_t field_offsets_bytes, size_t field_offset_size, UInt64 num_elements, UInt64 available_size)
+{
+    VariantObjectChildRanges result;
+    VectorWithMemoryTracking<UInt64> starts;
+    starts.reserve(static_cast<size_t>(num_elements));
+    const UInt8 * offsets_ptr = field_offsets;
+    for (UInt64 i = 0; i < num_elements; ++i)
+        starts.push_back(readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset"));
+    result.total_size = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
+
+    if (result.total_size > available_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child offset");
+
+    VectorWithMemoryTracking<UInt64> sorted_starts = starts;
+    std::sort(sorted_starts.begin(), sorted_starts.end());
+    for (size_t i = 0; i < sorted_starts.size(); ++i)
+    {
+        if (sorted_starts[i] >= result.total_size || (i > 0 && sorted_starts[i] == sorted_starts[i - 1]))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child offset");
+    }
+
+    result.ranges.reserve(starts.size());
+    for (UInt64 start : starts)
+    {
+        auto next = std::upper_bound(sorted_starts.begin(), sorted_starts.end(), start);
+        result.ranges.emplace_back(start, next == sorted_starts.end() ? result.total_size : *next);
+    }
+    return result;
 }
 
 template <typename T>
@@ -339,27 +366,6 @@ bool hasNestedPathComponent(const ParsedVariantPath & path, size_t step_idx)
 {
     return step_idx + 1 < path.steps.size();
 }
-
-template <typename T>
-struct VariantDecimalFieldTraits;
-
-template <>
-struct VariantDecimalFieldTraits<Int32>
-{
-    using FieldType = Decimal32;
-};
-
-template <>
-struct VariantDecimalFieldTraits<Int64>
-{
-    using FieldType = Decimal64;
-};
-
-template <>
-struct VariantDecimalFieldTraits<Int128>
-{
-    using FieldType = Decimal128;
-};
 
 template <typename ColumnType, typename ValueType>
 ColumnPtr makeSingleValueColumn(const DataTypePtr & type, ValueType value)
@@ -553,12 +559,19 @@ VariantValue makeObjectValue(MapWithMemoryTracking<String, VariantValue> fields,
 }
 
 template <typename T>
-DecodedVariantValue decodeVariantScaledIntegerValue(T value, UInt8 scale)
+DecodedVariantValue decodeVariantScaledIntegerValue(VariantPrimitiveType primitive_type, T value, UInt8 scale)
 {
-    using DecimalFieldType = typename VariantDecimalFieldTraits<T>::FieldType;
-    using DataType = DataTypeDecimal<DecimalFieldType>;
-    auto exact_type = std::make_shared<DataType>(DataType::maxPrecision(), scale);
-    return {.value = makeExactValue(makeSingleValueColumn<ColumnDecimal<DecimalFieldType>>(exact_type, DecimalFieldType(value)), exact_type)};
+    /// The carrier is widened when the scale does not fit the physical width's maximum precision.
+    auto exact_type = getParquetVariantScalarType(primitive_type, scale);
+    switch (getVariantDecimalCarrierWidth(primitive_type, scale))
+    {
+        case 4:
+            return {.value = makeExactValue(makeSingleValueColumn<ColumnDecimal<Decimal32>>(exact_type, Decimal32(static_cast<Int32>(value))), exact_type)};
+        case 8:
+            return {.value = makeExactValue(makeSingleValueColumn<ColumnDecimal<Decimal64>>(exact_type, Decimal64(static_cast<Int64>(value))), exact_type)};
+        default:
+            return {.value = makeExactValue(makeSingleValueColumn<ColumnDecimal<Decimal128>>(exact_type, Decimal128(static_cast<Int128>(value))), exact_type)};
+    }
 }
 
 enum class ScalarExactDecodeStatus
@@ -639,30 +652,36 @@ ScalarExactDecodeStatus tryDecodeScalarExactValueImpl(
             storeScalarPrimitiveValue(result, ScalarExactValue::PrimitiveKind::Float64, readVariantPOD<Float64>(ptr, end, "`VARIANT` `DOUBLE`"));
             return ScalarExactDecodeStatus::Exact;
         case VariantPrimitiveType::Decimal4:
-        {
-            UInt8 scale = readVariantPOD<UInt8>(ptr, end, "`VARIANT` `DECIMAL4` scale");
-            result.exact_type = getParquetVariantScalarType(primitive_type, scale);
-            storeScalarPrimitiveValue(result, ScalarExactValue::PrimitiveKind::Decimal32, readVariantPOD<Int32>(ptr, end, "`VARIANT` `DECIMAL4` value"));
-            return ScalarExactDecodeStatus::Exact;
-        }
         case VariantPrimitiveType::Decimal8:
-        {
-            UInt8 scale = readVariantPOD<UInt8>(ptr, end, "`VARIANT` `DECIMAL8` scale");
-            result.exact_type = getParquetVariantScalarType(primitive_type, scale);
-            storeScalarPrimitiveValue(result, ScalarExactValue::PrimitiveKind::Decimal64, readVariantPOD<Int64>(ptr, end, "`VARIANT` `DECIMAL8` value"));
-            return ScalarExactDecodeStatus::Exact;
-        }
         case VariantPrimitiveType::Decimal16:
         {
-            UInt8 scale = readVariantPOD<UInt8>(ptr, end, "`VARIANT` `DECIMAL16` scale");
+            UInt8 scale = readVariantPOD<UInt8>(ptr, end, "`VARIANT` decimal scale");
+            Int128 unscaled;
+            if (primitive_type == VariantPrimitiveType::Decimal4)
+                unscaled = readVariantPOD<Int32>(ptr, end, "`VARIANT` `DECIMAL4` value");
+            else if (primitive_type == VariantPrimitiveType::Decimal8)
+                unscaled = readVariantPOD<Int64>(ptr, end, "`VARIANT` `DECIMAL8` value");
+            else
+                unscaled = readVariantPOD<Int128>(ptr, end, "`VARIANT` `DECIMAL16` value");
+
+            /// The scale may not fit the physical width's carrier, in which case the value is widened.
             auto exact_type = getParquetVariantScalarType(primitive_type, scale);
             result.exact_type = exact_type;
-            result.primitive_kind = ScalarExactValue::PrimitiveKind::None;
-            result.exact_column = makeSingleValueColumn<ColumnDecimal<Decimal128>>(
-                exact_type,
-                Decimal128(readVariantPOD<Int128>(ptr, end, "`VARIANT` `DECIMAL16` value")));
-            result.exact_row_num = 0;
-            result.exact_string_view.reset();
+            switch (getVariantDecimalCarrierWidth(primitive_type, scale))
+            {
+                case 4:
+                    storeScalarPrimitiveValue(result, ScalarExactValue::PrimitiveKind::Decimal32, static_cast<Int32>(unscaled));
+                    break;
+                case 8:
+                    storeScalarPrimitiveValue(result, ScalarExactValue::PrimitiveKind::Decimal64, static_cast<Int64>(unscaled));
+                    break;
+                default:
+                    result.primitive_kind = ScalarExactValue::PrimitiveKind::None;
+                    result.exact_column = makeSingleValueColumn<ColumnDecimal<Decimal128>>(exact_type, Decimal128(unscaled));
+                    result.exact_row_num = 0;
+                    result.exact_string_view.reset();
+                    break;
+            }
             return ScalarExactDecodeStatus::Exact;
         }
         case VariantPrimitiveType::Date:
@@ -684,14 +703,15 @@ ScalarExactDecodeStatus tryDecodeScalarExactValueImpl(
         {
             UInt32 size = readVariantPOD<UInt32>(ptr, end, "`VARIANT` binary size");
             checkVariantStringSize(format_settings, size);
-            checkVariantStringSize(format_settings, checkedVariantBase64EncodedSize(size));
             ensureVariantRemaining(ptr, end, size, "`VARIANT` binary payload");
-            String encoded = base64Encode(String(reinterpret_cast<const char *>(ptr), size));
+            /// Keep the raw bytes, like the structure-detected reader in `VariantEncoding.cpp`:
+            /// a `String` holds arbitrary bytes, and text encodings belong to the output format.
+            std::string_view bytes(reinterpret_cast<const char *>(ptr), size);
             ptr += size;
             auto exact_type = getParquetVariantScalarType(primitive_type);
             result.exact_type = exact_type;
             result.primitive_kind = ScalarExactValue::PrimitiveKind::None;
-            result.exact_column = makeSingleStringColumn(exact_type, encoded);
+            result.exact_column = makeSingleStringColumn(exact_type, bytes);
             result.exact_row_num = 0;
             result.exact_string_view.reset();
             return ScalarExactDecodeStatus::Exact;
@@ -888,17 +908,17 @@ DecodedVariantValue decodeValueImpl(const VariantMetadata & metadata, const UInt
                 case VariantPrimitiveType::Decimal4:
                 {
                     UInt8 scale = readVariantPOD<UInt8>(ptr, end, "`VARIANT` `DECIMAL4` scale");
-                    return decodeVariantScaledIntegerValue(readVariantPOD<Int32>(ptr, end, "`VARIANT` `DECIMAL4` value"), scale);
+                    return decodeVariantScaledIntegerValue(primitive_type, readVariantPOD<Int32>(ptr, end, "`VARIANT` `DECIMAL4` value"), scale);
                 }
                 case VariantPrimitiveType::Decimal8:
                 {
                     UInt8 scale = readVariantPOD<UInt8>(ptr, end, "`VARIANT` `DECIMAL8` scale");
-                    return decodeVariantScaledIntegerValue(readVariantPOD<Int64>(ptr, end, "`VARIANT` `DECIMAL8` value"), scale);
+                    return decodeVariantScaledIntegerValue(primitive_type, readVariantPOD<Int64>(ptr, end, "`VARIANT` `DECIMAL8` value"), scale);
                 }
                 case VariantPrimitiveType::Decimal16:
                 {
                     UInt8 scale = readVariantPOD<UInt8>(ptr, end, "`VARIANT` `DECIMAL16` scale");
-                    return decodeVariantScaledIntegerValue(readVariantPOD<Int128>(ptr, end, "`VARIANT` `DECIMAL16` value"), scale);
+                    return decodeVariantScaledIntegerValue(primitive_type, readVariantPOD<Int128>(ptr, end, "`VARIANT` `DECIMAL16` value"), scale);
                 }
                 case VariantPrimitiveType::Date:
                 {
@@ -923,12 +943,12 @@ DecodedVariantValue decodeValueImpl(const VariantMetadata & metadata, const UInt
                 {
                     UInt32 size = readVariantPOD<UInt32>(ptr, end, "`VARIANT` binary size");
                     checkVariantStringSize(format_settings, size);
-                    checkVariantStringSize(format_settings, checkedVariantBase64EncodedSize(size));
                     ensureVariantRemaining(ptr, end, size, "`VARIANT` binary payload");
-                    String encoded = base64Encode(String(reinterpret_cast<const char *>(ptr), size));
+                    /// Keep the raw bytes, see the same primitive in `tryDecodeScalarExactValueImpl`.
+                    std::string_view bytes(reinterpret_cast<const char *>(ptr), size);
                     ptr += size;
                     auto exact_type = getParquetVariantScalarType(primitive_type);
-                    return {.value = makeExactValue(makeSingleStringColumn(exact_type, encoded), exact_type)};
+                    return {.value = makeExactValue(makeSingleStringColumn(exact_type, bytes), exact_type)};
                 }
                 case VariantPrimitiveType::String:
                 {
@@ -979,11 +999,8 @@ DecodedVariantValue decodeValueImpl(const VariantMetadata & metadata, const UInt
 
             const UInt8 * values = ptr;
             const UInt8 * field_ids_ptr = field_ids;
-            const UInt8 * offsets_ptr = field_offsets;
-            UInt64 previous_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
-
-            if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child offset");
+            auto child_ranges = readVariantObjectChildRanges(
+                field_offsets, field_offsets_bytes, field_offset_size, num_elements, static_cast<UInt64>(end - values));
 
             MapWithMemoryTracking<String, VariantValue> object;
             UnorderedSetWithMemoryTracking<UInt64> seen_field_ids;
@@ -991,22 +1008,21 @@ DecodedVariantValue decodeValueImpl(const VariantMetadata & metadata, const UInt
             for (UInt64 i = 0; i < num_elements; ++i)
             {
                 UInt64 field_id = readVariantLittleEndianVariable(field_ids_ptr, field_ids + field_ids_bytes, field_id_size, "`VARIANT` object field id");
-                UInt64 next_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
-                if (next_offset < previous_offset || next_offset > static_cast<UInt64>(end - values) || field_id >= metadata.strings.size())
+                if (field_id >= metadata.strings.size())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child metadata");
                 checkUniqueObjectFieldId(seen_field_ids, field_id);
 
-                const UInt8 * child_ptr = values + previous_offset;
-                auto child = decodeValueImpl(metadata, child_ptr, values + next_offset, format_settings, depth + 1);
-                if (child_ptr != values + next_offset)
+                const auto [child_begin, child_end] = child_ranges.ranges[i];
+                const UInt8 * child_ptr = values + child_begin;
+                auto child = decodeValueImpl(metadata, child_ptr, values + child_end, format_settings, depth + 1);
+                if (child_ptr != values + child_end)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child size");
 
                 String field_name(metadata.strings[field_id]);
                 object[std::move(field_name)] = std::move(child.value);
-                previous_offset = next_offset;
             }
 
-            ptr = values + previous_offset;
+            ptr = values + child_ranges.total_size;
             return {.value = makeObjectValue(std::move(object), getParquetVariantJSONObjectType())};
         }
         case VariantBasicType::Array:
@@ -1980,11 +1996,8 @@ static bool tryDecodeValueByPathGeneric(
 
     const UInt8 * values = ptr;
     const UInt8 * field_ids_ptr = field_ids;
-    const UInt8 * offsets_ptr = field_offsets;
-    UInt64 previous_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
-
-    if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child offset");
+    auto child_ranges = readVariantObjectChildRanges(
+        field_offsets, field_offsets_bytes, field_offset_size, num_elements, static_cast<UInt64>(end - values));
 
     const bool has_nested_path = hasNestedPathComponent(Matcher::parsedPathOf(path), step_idx);
     const bool can_match_exact = Matcher::canMatchExact(path, step_idx);
@@ -2000,13 +2013,12 @@ static bool tryDecodeValueByPathGeneric(
     for (UInt64 i = 0; i < num_elements; ++i)
     {
         UInt64 field_id = readVariantLittleEndianVariable(field_ids_ptr, field_ids + field_ids_bytes, field_id_size, "`VARIANT` object field id");
-        UInt64 next_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
-        if (next_offset < previous_offset || next_offset > static_cast<UInt64>(end - values) || field_id >= metadata.strings.size())
+        if (field_id >= metadata.strings.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child metadata");
         checkUniqueObjectFieldId(seen_field_ids, field_id);
 
-        const UInt8 * child_begin = values + previous_offset;
-        const UInt8 * child_end = values + next_offset;
+        const UInt8 * child_begin = values + child_ranges.ranges[i].first;
+        const UInt8 * child_end = values + child_ranges.ranges[i].second;
         std::string_view field_name = metadata.strings[field_id];
 
         if (!exact_begin && can_match_exact && Matcher::matchesExact(path, step_idx, field_id, field_name))
@@ -2020,11 +2032,9 @@ static bool tryDecodeValueByPathGeneric(
             nested_begin = child_begin;
             nested_end = child_end;
         }
-
-        previous_offset = next_offset;
     }
 
-    checkVariantCollectionPayloadSize(previous_offset, values, end, "`object`");
+    checkVariantCollectionPayloadSize(child_ranges.total_size, values, end, "`object`");
 
     if (exact_begin)
         return tryDecodeValueByPathGeneric<Matcher, PathType, scalar_leaf_only>(metadata, exact_begin, exact_end, path, result, format_settings, depth + 1, path.steps.size(), scalar_status);
@@ -2131,36 +2141,31 @@ void collectObjectFieldSlicesByResolvedIds(
 
     const UInt8 * values = ptr;
     const UInt8 * field_ids_ptr = field_ids_data;
-    const UInt8 * offsets_ptr = field_offsets;
-    UInt64 previous_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
-
-    if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child offset");
+    auto child_ranges = readVariantObjectChildRanges(
+        field_offsets, field_offsets_bytes, field_offset_size, num_elements, static_cast<UInt64>(end - values));
 
     UnorderedSetWithMemoryTracking<UInt64> seen_field_ids;
     seen_field_ids.reserve(static_cast<size_t>(num_elements));
     for (UInt64 i = 0; i < num_elements; ++i)
     {
         UInt64 field_id = readVariantLittleEndianVariable(field_ids_ptr, field_ids_data + field_ids_bytes, field_id_size, "`VARIANT` object field id");
-        UInt64 next_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
-        if (next_offset < previous_offset || next_offset > static_cast<UInt64>(end - values) || field_id >= metadata.strings.size())
+        if (field_id >= metadata.strings.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child metadata");
         checkUniqueObjectFieldId(seen_field_ids, field_id);
 
+        const auto [child_begin, child_end] = child_ranges.ranges[i];
         for (size_t requested_idx = 0; requested_idx < field_ids.size(); ++requested_idx)
         {
             if (result_slices[requested_idx].has_value() || field_ids[requested_idx] != field_id)
                 continue;
 
             result_slices[requested_idx] = std::string_view(
-                reinterpret_cast<const char *>(values + previous_offset),
-                static_cast<size_t>(next_offset - previous_offset));
+                reinterpret_cast<const char *>(values + child_begin),
+                static_cast<size_t>(child_end - child_begin));
         }
-
-        previous_offset = next_offset;
     }
 
-    checkVariantCollectionPayloadSize(previous_offset, values, end, "`object`");
+    checkVariantCollectionPayloadSize(child_ranges.total_size, values, end, "`object`");
 }
 
 std::optional<VariantValue> extractSubcolumnValue(const VariantValue & value, const ParsedVariantPath & path, const FormatSettings & format_settings, size_t depth)

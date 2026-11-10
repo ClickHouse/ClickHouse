@@ -1330,6 +1330,11 @@ struct VariantScalarMeasureSink
     {
         size += getVariantEncodedStringSize(value);
     }
+
+    void writeBinary(std::string_view value)
+    {
+        size += 1 + sizeof(UInt32) + value.size();
+    }
 };
 
 struct VariantScalarWriteSink
@@ -1363,6 +1368,17 @@ struct VariantScalarWriteSink
     void writeString(std::string_view value)
     {
         writeVariantStringPayloadToBuffer(value, out);
+    }
+
+    void writeBinary(std::string_view value)
+    {
+        if (value.size() > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Cannot encode `Parquet` `VARIANT` binary value larger than 4 GiB");
+
+        writePrimitiveHeader(VariantPrimitiveType::Binary);
+        writeVariantPODToBuffer(static_cast<UInt32>(value.size()), out);
+        memcpy(out, value.data(), value.size());
+        out += value.size();
     }
 };
 
@@ -1815,7 +1831,12 @@ void encodeVariantScalarFromColumn(
         }
         case TypeIndex::String:
         {
-            sink.writeString(assert_cast<const ColumnString &>(column).getDataAt(row));
+            /// `output_format_parquet_string_as_string = 0` requests binary output, as for the shredded
+            /// `typed_value`: a `String` may hold arbitrary bytes, while `VARIANT` strings must be UTF-8.
+            if (format_settings.parquet.output_string_as_string)
+                sink.writeString(assert_cast<const ColumnString &>(column).getDataAt(row));
+            else
+                sink.writeBinary(assert_cast<const ColumnString &>(column).getDataAt(row));
             return;
         }
         case TypeIndex::FixedString:

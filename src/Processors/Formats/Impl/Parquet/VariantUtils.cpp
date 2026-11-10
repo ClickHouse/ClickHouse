@@ -22,6 +22,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -235,6 +236,24 @@ DataTypePtr makeVariantExactOutputTypeNullable(const DataTypePtr & type)
     return makeNullable(type);
 }
 
+size_t getVariantDecimalCarrierWidth(VariantPrimitiveType primitive_type, UInt8 scale)
+{
+    if (scale > DataTypeDecimal<Decimal128>::maxPrecision())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: decimal scale {} exceeds 38", static_cast<UInt32>(scale));
+
+    size_t physical_width = 16;
+    if (primitive_type == VariantPrimitiveType::Decimal4)
+        physical_width = 4;
+    else if (primitive_type == VariantPrimitiveType::Decimal8)
+        physical_width = 8;
+
+    if (physical_width <= 4 && scale <= DataTypeDecimal<Decimal32>::maxPrecision())
+        return 4;
+    if (physical_width <= 8 && scale <= DataTypeDecimal<Decimal64>::maxPrecision())
+        return 8;
+    return 16;
+}
+
 DataTypePtr getParquetVariantScalarType(VariantPrimitiveType primitive_type, std::optional<UInt8> scale)
 {
     switch (primitive_type)
@@ -316,12 +335,23 @@ DataTypePtr getParquetVariantScalarType(VariantPrimitiveType primitive_type, std
             static const DataTypePtr type = std::make_shared<DataTypeUUID>();
             return type;
         }
+        /// The `VARIANT` specification allows scales 0..38 for every decimal width, so a scale that does
+        /// not fit the physical width's carrier selects a wider carrier (see `getVariantDecimalCarrierWidth`).
         case VariantPrimitiveType::Decimal4:
-            return std::make_shared<DataTypeDecimal<Decimal32>>(DataTypeDecimal<Decimal32>::maxPrecision(), scale.value_or(0));
         case VariantPrimitiveType::Decimal8:
-            return std::make_shared<DataTypeDecimal<Decimal64>>(DataTypeDecimal<Decimal64>::maxPrecision(), scale.value_or(0));
         case VariantPrimitiveType::Decimal16:
-            return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), scale.value_or(0));
+        {
+            UInt8 decimal_scale = scale.value_or(0);
+            switch (getVariantDecimalCarrierWidth(primitive_type, decimal_scale))
+            {
+                case 4:
+                    return std::make_shared<DataTypeDecimal<Decimal32>>(DataTypeDecimal<Decimal32>::maxPrecision(), decimal_scale);
+                case 8:
+                    return std::make_shared<DataTypeDecimal<Decimal64>>(DataTypeDecimal<Decimal64>::maxPrecision(), decimal_scale);
+                default:
+                    return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), decimal_scale);
+            }
+        }
         case VariantPrimitiveType::Null:
             break;
     }

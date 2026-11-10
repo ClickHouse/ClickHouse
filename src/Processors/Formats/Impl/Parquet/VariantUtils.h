@@ -35,6 +35,9 @@ DataTypePtr makeVariantWrappedTypedValueType(const DataTypePtr & type);
 /// `LowCardinality(Nullable)`). Returns nullptr when the type cannot be inside `Nullable`
 /// (`Array`, `Map`, `Dynamic`, `Variant`), i.e. when the array has no exact ClickHouse type.
 DataTypePtr makeVariantExactOutputTypeNullable(const DataTypePtr & type);
+/// Byte width (4, 8 or 16) of the ClickHouse decimal carrier for a `VARIANT` decimal primitive with the
+/// given scale: the physical width, widened when the scale does not fit its maximum precision.
+size_t getVariantDecimalCarrierWidth(VariantPrimitiveType primitive_type, UInt8 scale);
 DataTypePtr getParquetVariantScalarType(VariantPrimitiveType primitive_type, std::optional<UInt8> scale = {});
 DataTypePtr inferVariantMaterializationType(const VariantReader::VariantValue & value, const FormatSettings & format_settings, size_t depth = 1);
 

@@ -748,8 +748,10 @@ static const VariantValue * getOutputValue(
 
     if (parsed_subcolumn_path)
     {
+        /// A projected path that is absent in this row reads as missing. Do not go through
+        /// `getValue` here: with an empty projection it would fall back to the whole parent value.
         prepared_row_value.projected_storage = extractSubcolumnValue(*value, *parsed_subcolumn_path, format_settings);
-        value = prepared_row_value.getValue();
+        return prepared_row_value.projected_storage ? &*prepared_row_value.projected_storage : nullptr;
     }
 
     return value;

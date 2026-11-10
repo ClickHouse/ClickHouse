@@ -1,0 +1,37 @@
+binary primitive written: True
+-- decimal scale wider than the physical carrier
+0.0000000015	Decimal(18, 10)
+0.00000000000000000015	Decimal(38, 20)
+0.0000000015
+-- object offsets in field-name order
+{"a":1,"b":2}	JSON
+1	2
+{"a":1,"b":2}
+-- projected reads of an unshredded JSON column; a row without the path reads as missing
+{"a":1,"b":2}
+{"a":"s"}
+{"c":[1,"x"]}
+1	2
+s	0
+\N	0
+1
+s
+\N
+2	1
+\N	s
+\N	\N
+{"a":1,"b":2}
+{"a":"s"}
+{"c":[1,"x"]}
+1	2
+s	0
+\N	0
+1
+s
+\N
+2	1
+\N	s
+\N	\N
+-- binary residual keeps its raw bytes
+String	00FF01FE
+00FF01FE
