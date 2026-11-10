@@ -1,4 +1,5 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 
 SET explain_query_plan_default = 'legacy';
 SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan

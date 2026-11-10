@@ -56,7 +56,7 @@ std::optional<Field> deserializeIntegerBound(const String & bytes, const IDataTy
 std::optional<std::pair<Field, Field>> boundsOfPartitionFieldSummary(
     const PartitionFieldSummary & summary, const DataTypePtr & type, Int32 partition_spec_id, size_t field_index)
 {
-    if (summary.contains_null || summary.contains_nan || !summary.lower_bound.has_value() || summary.lower_bound->empty()
+    if (summary.contains_nan || !summary.lower_bound.has_value() || summary.lower_bound->empty()
         || !summary.upper_bound.has_value() || summary.upper_bound->empty())
         return {};
 
@@ -134,7 +134,7 @@ ManifestListPruner::ManifestListPruner(
         if (!fields || fields->size() == 0)
             continue;
 
-        auto partition_key = buildPartitionKeyFromSpec(fields, partition_schema_id_, schema_processor_, context);
+        auto partition_key = buildPartitionKeyFromSpec(fields, partition_schema_id_, schema_processor_, context, /* keep_nullable */ true);
         if (!partition_key.key_description.has_value() || partition_key.key_description->data_types.size() != fields->size())
             continue;
 
@@ -168,27 +168,32 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
     if (partition_key.data_types.size() != partition_summaries.size())
         return false;
 
-    std::vector<FieldRef> left_keys(partition_summaries.size());
-    std::vector<FieldRef> right_keys(partition_summaries.size());
+    /// Each summary bounds its field independently, so the manifest's partition tuples lie in the box of these ranges.
+    Hyperrectangle hyperrectangle;
+    hyperrectangle.reserve(partition_summaries.size());
     for (size_t i = 0; i < partition_summaries.size(); ++i)
     {
-        auto bounds
-            = boundsOfPartitionFieldSummary(partition_summaries[i], partition_key.data_types.at(i), partition_spec_id, i);
-
-        left_keys[i] = bounds.has_value() ? FieldRef(bounds->first) : FieldRef(NEGATIVE_INFINITY);
-        right_keys[i] = bounds.has_value() ? FieldRef(bounds->second) : FieldRef(POSITIVE_INFINITY);
+        const auto & summary = partition_summaries[i];
+        auto bounds = boundsOfPartitionFieldSummary(summary, partition_key.data_types.at(i), partition_spec_id, i);
+        if (!bounds)
+            hyperrectangle.push_back(Range::createWholeUniverse());
+        else if (summary.contains_null)
+            /// NULL sorts after every value.
+            hyperrectangle.emplace_back(bounds->first, true, POSITIVE_INFINITY, true);
+        else
+            hyperrectangle.emplace_back(bounds->first, true, bounds->second, true);
     }
 
     for (const auto & [tuple_index, width] : condition_it->second.integer_truncate_fields)
     {
-        auto & lower = left_keys[tuple_index];
+        auto & lower = hyperrectangle[tuple_index].left;
         if (isLegacyTruncateValue(lower, width))
         {
             const auto multiple = floorToMultiple(lower.safeGet<Int64>(), width);
             lower = multiple ? FieldRef(*multiple) : FieldRef(NEGATIVE_INFINITY);
         }
 
-        auto & upper = right_keys[tuple_index];
+        auto & upper = hyperrectangle[tuple_index].right;
         if (isLegacyTruncateValue(upper, width))
         {
             const auto multiple = floorToMultiple(upper.safeGet<Int64>(), width);
@@ -200,8 +205,7 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
         }
     }
 
-    return !condition_it->second.condition.mayBeTrueInRange(
-        partition_summaries.size(), left_keys.data(), right_keys.data(), partition_key.data_types);
+    return !condition_it->second.condition.checkInHyperrectangle(hyperrectangle, partition_key.data_types).can_be_true;
 }
 
 }
