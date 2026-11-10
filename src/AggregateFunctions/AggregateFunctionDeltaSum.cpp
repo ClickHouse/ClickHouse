@@ -160,10 +160,10 @@ void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory)
 Sums the arithmetic difference between consecutive rows.
 If the difference is negative, it is ignored.
 
-<Tip>
+:::tip
 The underlying data must be sorted for this function to work properly.
 If you would like to use this function in a [materialized view](/reference/statements/create/view#materialized-view), you most likely want to use the [`deltaSumTimestamp`](/reference/functions/aggregate-functions/deltaSumTimestamp) function instead.
-</Tip>
+:::
 
 See also:
 - [`runningDifference`](/reference/functions/regular-functions/other-functions#runningDifference)
@@ -203,16 +203,16 @@ SELECT deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]))
 SELECT deltaSum(arrayJoin([2.25, 3, 4.5]))
         )",
         R"(
-┌─deltaSum(arrayJoin([2.25, 3., 4.5]))─┐
-│                                 2.25 │
-└──────────────────────────────────────┘
+┌─deltaSum(arrayJoin([2.25, 3, 4.5]))─┐
+│                                2.25 │
+└─────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
     factory.registerFunction("deltaSum", { createAggregateFunctionDeltaSum, documentation, properties });
 }

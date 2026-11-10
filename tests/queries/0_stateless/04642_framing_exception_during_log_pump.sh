@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # Tag no-parallel: enables the `framing_pump_logs_throw` fail point, which affects the whole server.
 # It fires on the next framing-format log pump anywhere on the server, so a concurrent framing query
 # from another test could consume the injected fault - making this test miss its own exception packet
