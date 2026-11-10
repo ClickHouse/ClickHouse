@@ -69,6 +69,10 @@ SELECT estimateCompressionRatio('Quantized(8)', 'Array(Float32)')([1.0]) FROM sr
 SELECT estimateCompressionRatio('JSON')(s) FROM src; -- { serverError NOT_IMPLEMENTED }
 SELECT estimateCompressionRatio('Tuple(a UInt8, b Dynamic)')(tuple(1, 2)) FROM src; -- { serverError NOT_IMPLEMENTED }
 SELECT estimateCompressionRatio('Map(String, JSON)')(map('a', s)) FROM src; -- { serverError NOT_IMPLEMENTED }
+-- Nor as arguments: the rows would carry the dynamic structure of the blocks they came in. Converted in the query, they work.
+SELECT estimateCompressionRatio('LZ4', 'String')(s::JSON) FROM src; -- { serverError NOT_IMPLEMENTED }
+SELECT estimateCompressionRatio('LZ4', 'String')(tuple(n::Dynamic)) FROM src; -- { serverError NOT_IMPLEMENTED }
+SELECT estimateCompressionRatio('LZ4', 'String')(toString(toJSONString(map('a', n))::JSON)) > 0 FROM src;
 
 SELECT 'numerator';
 -- The first number of the state is the bytes of the rows in their own type: the same for every target and codec, and the same

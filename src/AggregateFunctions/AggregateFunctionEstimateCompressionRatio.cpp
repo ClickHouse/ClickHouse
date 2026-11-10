@@ -366,10 +366,18 @@ public:
         , min_compress_block_size(block_size_bytes.value_or(DEFAULT_MIN_COMPRESS_BLOCK_SIZE))
         , validation_settings(std::move(validation_settings_))
     {
-        /// `Dynamic` and `JSON`, also nested: their substreams depend on the data, and the writer has more rules for them.
-        if (anyInTypeTree(*target_type, [](const IDataType & type) { return isDynamic(type) || isObject(type); }))
+        /// `Dynamic` and `JSON`, also nested. As a target, their substreams depend on the data and the writer has more rules for
+        /// them. As a source, the rows waiting for a granule take the dynamic structure of the blocks they came in, which their
+        /// serialization (the numerator) includes, so the result would depend on the blocks.
+        const auto has_dynamic_structure = [](const IDataType & type) { return isDynamic(type) || isObject(type); };
+        if (anyInTypeTree(*target_type, has_dynamic_structure))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} does not support target type {}", getName(), target_type->getName());
+        if (anyInTypeTree(*source_type, has_dynamic_structure))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Aggregate function {} with a target type does not support argument type {}; convert the argument in the query first",
+                getName(), source_type->getName());
 
         if (codec)
         {
@@ -823,7 +831,8 @@ a `LowCardinality` column), granules of 8192 rows, sparse serialization for colu
 the first rows of a state, 8192 or the rows of 1 MiB, where a part decides from all its rows). It does not read the settings of any table. The values are
 converted as `accurateCast` converts them, so a value that `target_type` cannot hold is an error. The numerator of a
 `LowCardinality` column is the size of its values, not of its dictionary. Every thread of a query estimates its rows as a
-separate part, so use `max_threads = 1` for a stable result. `Dynamic` and `JSON` are not supported as target types.
+separate part, so use `max_threads = 1` for a stable result. `Dynamic` and `JSON` are not supported as target types, nor as
+arguments with `target_type` (convert them in the query first).
 
 <Note>
 For the examples below, the result will differ based on the default compression codec of the server.
