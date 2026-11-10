@@ -50,6 +50,8 @@ NOISE_FRAME_PREFIXES = (
     "isalloc",
     "sdallocx",
     "rallocx",
+    "do_rallocx",
+    "irallocx",
     "mallocx",
     "main",
     "(anonymous namespace)::dumpProfile",
@@ -277,15 +279,40 @@ def is_boost_container_allocation_frame(frame: str) -> bool:
     )
 
 
+def is_allocation_implementation_frame(frame: str) -> bool:
+    """Return whether a leaf frame describes allocation plumbing.
+
+    The release binaries compared by this check are separate ThinLTO links.
+    Inlining and identical-code folding can therefore attribute the same
+    allocation to different container specializations even when the stable
+    ClickHouse caller and the number of live bytes are identical.
+    """
+    signature = frame.split("(", 1)[0]
+    if "std::__1::" in signature or is_boost_container_allocation_frame(frame):
+        return True
+    if signature.startswith("Allocator<"):
+        return True
+    return (
+        ("DB::Column" in signature and signature.endswith("::shrinkToFit"))
+        or ("DB::PODArray" in signature and "::shrink_to_fit" in signature)
+    )
+
+
+def is_clickhouse_call_frame(frame: str) -> bool:
+    """Return whether the demangled function itself is in namespace `DB`."""
+    signature = frame.split("(", 1)[0]
+    return signature.startswith("DB::") or " DB::" in signature
+
+
 def canonicalize_stack_frames(frames: list) -> list:
     """Build a cross-binary stack key from one primary symbol per address.
 
     Master binaries contain DWARF inline frames separated by `--`, while PR
     release binaries are built without debug information. Keeping only the
     primary symbol makes the same physical backtrace comparable on both sides.
-    Ignore a leading sequence of Boost.Container allocation implementation
-    frames when it leads to a ClickHouse frame because their template
-    specialization and inlining can differ between otherwise equivalent builds.
+    Ignore a leading sequence of allocation implementation frames when it leads
+    to a ClickHouse frame because container specialization, inlining, and
+    identical-code folding can differ between otherwise equivalent builds.
     """
     canonical = []
     for frame in filter_stack_frames(frames):
@@ -296,14 +323,14 @@ def canonicalize_stack_frames(frames: list) -> list:
 
     allocation_prefix_size = 0
     for frame in canonical:
-        if not is_boost_container_allocation_frame(frame):
+        if not is_allocation_implementation_frame(frame):
             break
         allocation_prefix_size += 1
 
     if (
         allocation_prefix_size
         and allocation_prefix_size < len(canonical)
-        and canonical[allocation_prefix_size].startswith("DB::")
+        and is_clickhouse_call_frame(canonical[allocation_prefix_size])
     ):
         return canonical[allocation_prefix_size:]
 
