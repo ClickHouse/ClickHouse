@@ -27,6 +27,7 @@ namespace DB
 
 namespace FailPoints
 {
+    extern const char transaction_log_pause_before_loading_entries[];
     extern const char tx_log_abort_cleanup_multi[];
 }
 
@@ -580,6 +581,8 @@ void TransactionLog::evictInMemoryPrefix(const std::vector<RemovableEntry> & rem
 
 std::optional<CSN> TransactionLog::loadNewEntries(const zkutil::ZooKeeperPtr & zookeeper)
 {
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_log_pause_before_loading_entries);
+
     Strings entries_list = zookeeper->getChildren(zookeeper_path_log, nullptr, log_updated_event);
     chassert(!entries_list.empty());
     /// Order and boundary both by CSN, not by name (see `serializeCSN`).
