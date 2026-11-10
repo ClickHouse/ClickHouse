@@ -3586,6 +3586,7 @@ void registerStorageURL(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
+            .supports_temporary = true,
         },
         Documentation{
             .description = R"DOCS_MD(

@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
+    extern const SettingsBool cloud_mode;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
     extern const SettingsBool create_if_not_exists;
@@ -1538,10 +1539,20 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
 namespace
 {
-    void checkTemporaryTableEngineName(const String & name)
+    void checkTemporaryTableEngineName(const String & name, const ContextPtr & context)
     {
-        if (name.starts_with("Replicated") || name.starts_with("Shared") || name == "KeeperMap")
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines");
+        /// An unknown engine will fail during creation
+        const auto * features = StorageFactory::instance().tryGetStorageFeatures(name);
+        if (!features)
+            return;
+
+        if (!features->supports_temporary)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Temporary tables cannot be created with the {} table engine", name);
+
+        if (context->getSettingsRef()[Setting::cloud_mode] && features->stores_data_on_disk)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Temporary tables cannot be created with the {} table engine, because it stores data on the local disk", name);
     }
 
     void setDefaultTableEngine(ASTStorage & storage, DefaultTableEngine engine)
@@ -1744,7 +1755,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (!create.storage->engine)
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_temporary_table_engine].value);
 
-        checkTemporaryTableEngineName(create.storage->engine->name);
+        checkTemporaryTableEngineName(create.storage->engine->name, getContext());
         return;
     }
 
