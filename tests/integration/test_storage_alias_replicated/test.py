@@ -101,6 +101,7 @@ def test_alias_with_parallel_replicas(started_cluster):
             "max_parallel_replicas": 2,
             "cluster_for_parallel_replicas": "test_cluster",
             "log_comment": "test_alias_parallel_replicas",
+            "use_statistics_for_sum_avg_aggregation": 0,
         },
     )
 
