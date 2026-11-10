@@ -2247,8 +2247,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Short syntax ATTACH TABLE t (no definition) reattaches an existing detached table
     if (create.attach && !create.attach_short_syntax
         && !internal && !getContext()->isDDLOrOnClusterInternal()
-        && getContext()->getSettingsRef()[Setting::cloud_mode]
-        && !getContext()->getClientInfo().is_shared_catalog_internal)
+        && getContext()->getSettingsRef()[Setting::cloud_mode])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ATTACH TABLE with a full table definition is not supported. "
             "Use ATTACH TABLE {} to reattach an existing detached table.",
