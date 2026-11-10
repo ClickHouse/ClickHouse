@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1384330",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1415590",
       "email": "support@clickhouse.com"
     }
   },
@@ -1496,7 +1496,7 @@
     "/v1/organizations/{organizationId}/serviceProfiles": {
       "get": {
         "summary": "List available service profiles",
-        "description": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. Some profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).",
+        "description": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. v2-default (Gen 2 hardware) is listed for organizations with Gen 2 enabled and included in their plan (SCALE or ENTERPRISE) or settings, in AWS regions where Gen 2 is available, and never for BYOC infrastructure. Some other profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).",
         "operationId": "serviceProfilesList",
         "parameters": [
           {
@@ -1613,7 +1613,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. Some profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
+          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. v2-default (Gen 2 hardware) is listed for organizations with Gen 2 enabled and included in their plan (SCALE or ENTERPRISE) or settings, in AWS regions where Gen 2 is available, and never for BYOC infrastructure. Some other profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -3014,7 +3014,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/scaling": {
       "patch": {
         "summary": "Update service auto scaling settings",
-        "description": "Updates minimum and maximum total memory limits and idle mode scaling behavior for the service. The memory settings are available only for \"production\" services and must be a multiple of 12 starting from 24GB.",
+        "description": "Updates minimum and maximum total memory limits and idle mode scaling behavior for the service. The memory settings are available only for \"production\" services and must be a multiple of 12 starting from 24GB. Gen 2 (v2-default) services use a fixed size and cannot idle: minTotalMemoryGb must equal maxTotalMemoryGb and idleScaling cannot be true.",
         "operationId": "instanceScalingUpdate",
         "parameters": [
           {
@@ -3135,7 +3135,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/replicaScaling": {
       "patch": {
         "summary": "Update service auto scaling settings",
-        "description": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization. An optional profile changes the custom instance profile in place. Omit it to keep the current profile.",
+        "description": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization. An optional profile changes the custom instance profile in place. Omit it to keep the current profile. Gen 2 (v2-default) services use a fixed size and cannot idle: minReplicaMemoryGb must equal maxReplicaMemoryGb, the replica count is fixed (numReplicas, or equal minReplicas and maxReplicas in either mode), and idleScaling cannot be true.",
         "operationId": "instanceReplicaScalingUpdate",
         "parameters": [
           {
@@ -3251,7 +3251,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization. An optional profile changes the custom instance profile in place. Omit it to keep the current profile.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
+          "content": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization. An optional profile changes the custom instance profile in place. Omit it to keep the current profile. Gen 2 (v2-default) services use a fixed size and cannot idle: minReplicaMemoryGb must equal maxReplicaMemoryGb, the replica count is fixed (numReplicas, or equal minReplicas and maxReplicas in either mode), and idleScaling cannot be true.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -3612,7 +3612,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule": {
       "get": {
         "summary": "Get service autoscaling schedule",
-        "description": "Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization.",
+        "description": "Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization. On a Gen 2 (v2-default) service, no entry has a memory range, a replica range or idling on; fields an entry leaves to the base config are omitted.",
         "operationId": "scalingScheduleGet",
         "parameters": [
           {
@@ -3719,12 +3719,12 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
+          "content": "Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization. On a Gen 2 (v2-default) service, no entry has a memory range, a replica range or idling on; fields an entry leaves to the base config are omitted.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
         "summary": "Create or replace service autoscaling schedule",
-        "description": "Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization.",
+        "description": "Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization. Gen 2 (v2-default) services use a fixed size and cannot idle. An entry may leave out fields it takes from the base config, but each entry combined with those fields must have equal minReplicaMemoryGb and maxReplicaMemoryGb, a fixed replica count (numReplicas, or equal minReplicas and maxReplicas), and idling off; otherwise the request is rejected.",
         "operationId": "scalingScheduleUpsert",
         "parameters": [
           {
@@ -3840,7 +3840,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
+          "content": "Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization. Gen 2 (v2-default) services use a fixed size and cannot idle. An entry may leave out fields it takes from the base config, but each entry combined with those fields must have equal minReplicaMemoryGb and maxReplicaMemoryGb, a fixed replica count (numReplicas, or equal minReplicas and maxReplicas), and idling off; otherwise the request is rejected.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -9206,6 +9206,306 @@
                       "items": {
                         "$ref": "#/components/schemas/NotificationType"
                       }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/members/{userId}/notificationSettings": {
+      "get": {
+        "summary": "List a member's notification settings",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the notification settings an organization member has explicitly chosen. A member who has never changed a setting has none, so an empty list means every notification follows the platform default for their role — it does not mean notifications are off. Settings for notification types the member cannot use are omitted, which depends on their permissions rather than the caller's. Slack is configured for the whole organization and never appears here. A page holds at most `limit` settings (default 100, maximum 250; a larger value is clamped) and the server may return fewer. Every response carries `limit` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
+        "operationId": "memberNotificationSettingsGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization the member belongs to.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "ID of the member whose settings are returned.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 250,
+              "default": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "description": "Filter to settings for this notification type.",
+            "schema": {
+              "type": "string",
+              "example": "service_backup_failed"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "description": "Filter to settings for this resource.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_type",
+            "description": "Filter to settings for resources of this kind. One of 'service', 'organization', 'clickpipe', 'postgres'.",
+            "schema": {
+              "type": "string",
+              "example": "service"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NotificationSetting"
+                      }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "patch": {
+        "summary": "Update a member's notification settings",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Sets the notification settings an organization member has explicitly chosen. Each rule names notification types, resources and channels, and applies one effect to every combination of them. A notification type no rule names keeps the setting it had, so this endpoint never has to carry a member's whole configuration. Three effects: 'enabled' and 'disabled' store an explicit choice, and 'inherit' removes the stored setting so the notification follows the platform default again. Sending the same body twice changes nothing the second time. The request either applies completely or changes nothing: a rule naming a notification type that does not exist, that the member cannot configure, or a resource the caller cannot access is rejected whole, as is a request that names the same type, resource and channel twice. A request carries at most 100 rules, addressing at most 1000 settings in total.",
+        "operationId": "memberNotificationSettingsUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization the member belongs to.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "ID of the member whose settings are updated.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberNotificationSettingsPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/MemberNotificationSettingsPatchResponse"
                     }
                   }
                 }
@@ -18927,6 +19227,247 @@
         ]
       }
     },
+    "/v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}/customerAuthorizedAccess": {
+      "get": {
+        "summary": "Get BYOC infrastructure customer-authorized access",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns the customer setting that controls when ClickHouse personnel may access the BYOC infrastructure, together with the data plane verdict at the time of the request.",
+        "operationId": "organizationByocInfrastructureCustomerAuthorizedAccessGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the BYOC infrastructure.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "byocInfrastructureId",
+            "description": "ID of the BYOC infrastructure.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ByocCustomerAuthorizedAccess"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "patch": {
+        "summary": "Update BYOC infrastructure customer-authorized access",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Replaces the customer setting that controls when ClickHouse personnel may access the BYOC infrastructure. Allow access with `mode: always`, deny it with `mode: never`, or allow it for a single window with `mode: window`, `startTimestamp` and `durationSeconds`. Returns the stored setting together with the data plane verdict.",
+        "operationId": "organizationByocInfrastructureCustomerAuthorizedAccessUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the BYOC infrastructure.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "byocInfrastructureId",
+            "description": "ID of the BYOC infrastructure.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ByocCustomerAuthorizedAccessPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ByocCustomerAuthorizedAccess"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints": {
       "get": {
         "summary": "List reverse private endpoints",
@@ -25275,7 +25816,7 @@
             "type": "integer"
           },
           "idleScaling": {
-            "description": "Whether idle scaling is enabled during this window.",
+            "description": "Whether idle scaling is enabled during this window. Never true on a Gen 2 (v2-default) service.",
             "type": "boolean"
           },
           "idleTimeoutMinutes": {
@@ -25436,7 +25977,7 @@
             "example": 3
           },
           "idleScaling": {
-            "description": "Whether idle scaling is enabled during this window.",
+            "description": "Whether idle scaling is enabled during this window. Cannot be true on a Gen 2 (v2-default) service.",
             "type": "boolean"
           },
           "idleTimeoutMinutes": {
@@ -25796,7 +26337,7 @@
             "type": "boolean"
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "description": "Custom instance profile. Profiles other than v1-default and v2-default are only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v2-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. 'v2-default' is Gen 2 hardware. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
             "type": "string"
           },
           "transparentDataEncryptionKeyId": {
@@ -28045,6 +28586,13 @@
             ],
             "example": ","
           },
+          "skipFirstLines": {
+            "description": "Number of lines to skip at the start of each file. Only for TabSeparated and TabSeparatedWithNames formats. Can only be set at pipe creation.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "example": 1
+          },
           "compression": {
             "description": "Compression algorithm used for the files.",
             "type": [
@@ -28182,6 +28730,13 @@
               "null"
             ],
             "example": ","
+          },
+          "skipFirstLines": {
+            "description": "Number of lines to skip at the start of each file. Only for TabSeparated and TabSeparatedWithNames formats. Can only be set at pipe creation.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "example": 1
           },
           "compression": {
             "description": "Compression algorithm used for the files.",
@@ -31297,6 +31852,7 @@
               "organization_security_contact_remove",
               "organization_security_contact_replace",
               "organization_update_public_preview",
+              "byoc_infrastructure_update_customer_authorized_access",
               "transfer_credits_in",
               "transfer_credits_out",
               "promo_code_claim",
@@ -40271,6 +40827,60 @@
           }
         }
       },
+      "ByocCustomerAuthorizedAccess": {
+        "properties": {
+          "mode": {
+            "description": "When ClickHouse personnel may access the infrastructure. Current values: always, never, window. New values may be added over time. When the setting has never been configured this is `always`, the data plane default",
+            "type": "string",
+            "example": "window"
+          },
+          "startTimestamp": {
+            "description": "Start of the access window. ISO-8601. Present only when `mode` is `window`",
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationSeconds": {
+            "description": "Length of the access window in seconds, counted from `startTimestamp`. Present only when `mode` is `window`",
+            "type": "integer",
+            "example": 14400
+          },
+          "allowed": {
+            "description": "Whether the data plane currently allows ClickHouse personnel access, evaluated at the time of the request",
+            "type": "boolean"
+          },
+          "windowEndTimestamp": {
+            "description": "End of the current access window. ISO-8601. Present only while access is allowed until a deadline",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "mode",
+          "allowed"
+        ]
+      },
+      "ByocCustomerAuthorizedAccessPatchRequest": {
+        "properties": {
+          "mode": {
+            "description": "When ClickHouse personnel may access the infrastructure. Current values: always, never, window. New values may be added over time. `always` allows access, `never` denies it, and `window` allows it during a single time window described by `startTimestamp` and `durationSeconds`",
+            "type": "string",
+            "example": "window"
+          },
+          "startTimestamp": {
+            "description": "Start of the access window. ISO-8601. Required when `mode` is `window`, not allowed otherwise",
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationSeconds": {
+            "description": "Length of the access window in seconds, from 1 to 172800 (48 hours). Required when `mode` is `window`, not allowed otherwise",
+            "type": "integer",
+            "example": 14400
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
       "WhoamiOrganization": {
         "properties": {
           "organizationId": {
@@ -40361,6 +40971,99 @@
           {
             "$ref": "#/components/schemas/WhoamiApiKey"
           }
+        ]
+      },
+      "NotificationSetting": {
+        "properties": {
+          "type": {
+            "description": "Notification type the setting applies to, named as in [List notification types](#tag/Notifications/operation/notificationTypesGetList). New types are added over time, so treat this as an open set.",
+            "type": "string",
+            "example": "service_backup_failed"
+          },
+          "resourceType": {
+            "description": "Kind of resource `resourceId` identifies. Current values: service, organization, clickpipe, postgres. New values may be added over time. [List notification types](#tag/Notifications/operation/notificationTypesGetList) reports the same value for every notification of a given type.",
+            "type": "string",
+            "example": "service"
+          },
+          "resourceId": {
+            "description": "ID of the resource the setting applies to, of the kind `resourceType` gives. Settings that apply to the organization itself, such as billing notifications, carry the organization ID.",
+            "type": "string"
+          },
+          "channelType": {
+            "description": "Delivery channel the setting applies to. One of 'ui', 'email'.",
+            "type": "string",
+            "example": "email"
+          },
+          "effect": {
+            "description": "Whether the member receives this notification on this channel for this resource. One of 'enabled', 'disabled'.",
+            "type": "string",
+            "example": "disabled"
+          }
+        },
+        "required": [
+          "type",
+          "resourceType",
+          "resourceId",
+          "channelType",
+          "effect"
+        ]
+      },
+      "NotificationSettingRule": {
+        "properties": {
+          "effect": {
+            "description": "What the rule does to the settings it names. One of 'enabled', 'disabled', 'inherit'. 'inherit' removes the setting, so the notification follows the platform default for the member's role again, whoever set it.",
+            "type": "string",
+            "example": "enabled"
+          },
+          "notifications": {
+            "type": "array",
+            "description": "Notification types the rule applies to, named as in [List notification types](#tag/Notifications/operation/notificationTypesGetList).",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "service_backup_failed"
+            ],
+            "minItems": 1
+          },
+          "resources": {
+            "type": "array",
+            "description": "IDs of the resources the rule applies to, of the kind each notification type reports as its `resourceType`. Name every ID: there are no wildcards, and a rule covers no resource created afterwards. Notification types that apply to the organization itself, such as billing, take the organization ID.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "channels": {
+            "type": "array",
+            "description": "Delivery channels the rule applies to. One of 'ui', 'email'. Omit to apply the rule to every channel.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "ui",
+              "email"
+            ]
+          }
+        },
+        "required": [
+          "effect",
+          "notifications",
+          "resources"
+        ]
+      },
+      "MemberNotificationSettingsPatchResponse": {
+        "properties": {
+          "settings": {
+            "type": "array",
+            "description": "The member's settings for what the request addressed, after the change. A setting the request set to 'inherit' is absent, because it no longer exists.",
+            "items": {
+              "$ref": "#/components/schemas/NotificationSetting"
+            }
+          }
+        },
+        "required": [
+          "settings"
         ]
       },
       "NotificationType": {
@@ -40520,11 +41223,11 @@
             "type": "string"
           },
           "cpuCores": {
-            "description": "Number of vCPUs per replica.",
+            "description": "Number of vCPUs per replica. For v2-default, ignore this value: a Gen 2 service's size is set by the minReplicaMemoryGb and maxReplicaMemoryGb you send when creating or scaling it, not by the profile.",
             "type": "number"
           },
           "memoryGi": {
-            "description": "Memory per replica in GiB. When creating a BYOC service with this profile, minReplicaMemoryGb and maxReplicaMemoryGb must both equal this value.",
+            "description": "Memory per replica in GiB. When creating a BYOC service with this profile, minReplicaMemoryGb and maxReplicaMemoryGb must both equal this value. For v2-default, ignore this value: a Gen 2 service's size is set by the minReplicaMemoryGb and maxReplicaMemoryGb you send when creating or scaling it, not by the profile.",
             "type": "number"
           }
         }
@@ -43101,7 +43804,7 @@
             }
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "description": "Custom instance profile. Profiles other than v1-default and v2-default are only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v2-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. 'v2-default' is Gen 2 hardware. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization. Creating a 'v2-default' service needs Gen 2 enabled for the organization and included in its plan (SCALE or ENTERPRISE) or settings, an AWS region where Gen 2 is available, and no byocId (BYOC infrastructure is not supported). Gen 2 services use a fixed size: minReplicaMemoryGb must equal maxReplicaMemoryGb and the replica count is fixed (numReplicas, or equal minReplicas and maxReplicas). Gen 2 services cannot idle: send idleScaling as false, since it defaults to true.",
             "type": "string"
           },
           "complianceType": {
@@ -43477,7 +44180,7 @@
             "type": "boolean"
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "description": "Custom instance profile. Profiles other than v1-default and v2-default are only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v2-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. 'v2-default' is Gen 2 hardware. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
             "type": "string"
           },
           "transparentDataEncryptionKeyId": {
@@ -43577,7 +44280,7 @@
             "type": "number"
           },
           "profile": {
-            "description": "Custom instance profile. Omit to leave the current profile unchanged. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. A BYOC profile (e.g. 'v1-standard-byoc-16') is a pin: minReplicaMemoryGb and maxReplicaMemoryGb must both be sent and equal that profile's memory size, and a memory range cannot be combined with it. A non-BYOC custom profile cannot be combined with a memory change; send the profile alone to change only the name. While a schedule entry is active the new profile is stored on the schedule base config and the running service keeps the entry profile until the window ends. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "description": "Custom instance profile. Omit to leave the current profile unchanged. Profiles other than v1-default and v2-default are only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v2-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. A BYOC profile (e.g. 'v1-standard-byoc-16') is a pin: minReplicaMemoryGb and maxReplicaMemoryGb must both be sent and equal that profile's memory size, and a memory range cannot be combined with it. A non-BYOC custom profile other than v2-default cannot be combined with a memory change; send the profile alone to change only the name. The profile cannot switch a service between Gen 1 and Gen 2 hardware (to or from 'v2-default'): the request is rejected with a 400 error; contact support to move it. While a schedule entry is active the new profile is stored on the schedule base config and the running service keeps the entry profile until the window ends. Use the serviceProfiles endpoint to list the profiles available to the organization.",
             "type": "string"
           }
         }
@@ -43839,6 +44542,22 @@
         },
         "required": [
           "email"
+        ]
+      },
+      "MemberNotificationSettingsPatchRequest": {
+        "properties": {
+          "rules": {
+            "type": "array",
+            "description": "Rules to apply. Every rule is applied, in the order given.",
+            "items": {
+              "$ref": "#/components/schemas/NotificationSettingRule"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "rules"
         ]
       },
       "ClickPipePostRequest": {
