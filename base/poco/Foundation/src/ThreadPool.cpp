@@ -236,6 +236,25 @@ void PooledThread::run()
 }
 
 
+class ThreadReaper: public Runnable
+{
+public:
+	explicit ThreadReaper(std::vector<PooledThread*>&& threads): _threads(std::move(threads))
+	{
+	}
+
+	void run() override
+	{
+		for (PooledThread* pThread : _threads)
+			pThread->release();
+		delete this;
+	}
+
+private:
+	std::vector<PooledThread*> _threads;
+};
+
+
 ThreadPool::ThreadPool(int minCapacity,
 	int maxCapacity,
 	int idleTime,
@@ -394,11 +413,11 @@ void ThreadPool::joinAll()
 {
 	FastMutex::ScopedLock lock(_mutex);
 
+	housekeep();
 	for (ThreadVec::iterator it = _threads.begin(); it != _threads.end(); ++it)
 	{
 		(*it)->join();
 	}
-	housekeep();
 }
 
 
@@ -436,6 +455,8 @@ void ThreadPool::housekeep()
 	int limit = (int) idleThreads.size() + n;
 	if (limit < _minCapacity) limit = _minCapacity;
 	idleThreads.insert(idleThreads.end(), expiredThreads.begin(), expiredThreads.end());
+	ThreadVec retiredThreads;
+	retiredThreads.reserve(expiredThreads.size());
 	_threads.clear();
 	for (ThreadVec::iterator it = idleThreads.begin(); it != idleThreads.end(); ++it)
 	{
@@ -444,9 +465,20 @@ void ThreadPool::housekeep()
 			_threads.push_back(*it);
 			++n;
 		}
-		else (*it)->release();
+		else retiredThreads.push_back(*it);
 	}
 	_threads.insert(_threads.end(), activeThreads.begin(), activeThreads.end());
+	if (retiredThreads.empty())
+		return;
+	PooledThread* pReaper = retiredThreads.back();
+	retiredThreads.pop_back();
+	_threads.push_back(pReaper);
+	if (!retiredThreads.empty())
+	{
+		Runnable* pTarget = new ThreadReaper(std::move(retiredThreads));
+		pReaper->activate();
+		pReaper->start(Thread::PRIO_NORMAL, *pTarget);
+	}
 }
 
 
