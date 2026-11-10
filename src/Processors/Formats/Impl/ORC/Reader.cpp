@@ -165,11 +165,11 @@ Proto::StripeFooter Reader::readStripeFooter(size_t stripe_index)
     return result;
 }
 
-std::vector<std::pair<UInt64, UInt64>> Reader::getStripeRanges(
-    size_t stripe_index, const Proto::StripeFooter & stripe_footer, const std::vector<bool> & selected) const
+VectorWithMemoryTracking<std::pair<UInt64, UInt64>> Reader::getStripeRanges(
+    size_t stripe_index, const Proto::StripeFooter & stripe_footer, const VectorWithMemoryTracking<bool> & selected) const
 {
     const auto & stripe = getStripe(stripe_index);
-    std::vector<std::pair<UInt64, UInt64>> ranges;
+    VectorWithMemoryTracking<std::pair<UInt64, UInt64>> ranges;
     UInt64 offset = stripe.offset;
     const UInt64 data_end = stripe.offset + stripe.index_length + stripe.data_length;
     for (const auto & s : stripe_footer.streams)
@@ -186,11 +186,11 @@ std::vector<std::pair<UInt64, UInt64>> Reader::getStripeRanges(
     return ranges;
 }
 
-std::vector<Reader::Slice> Reader::readRanges(const std::vector<std::pair<UInt64, UInt64>> & ranges)
+VectorWithMemoryTracking<Reader::Slice> Reader::readRanges(const VectorWithMemoryTracking<std::pair<UInt64, UInt64>> & ranges)
 {
-    std::vector<Slice> result(ranges.size());
+    VectorWithMemoryTracking<Slice> result(ranges.size());
 
-    std::vector<size_t> order(ranges.size());
+    VectorWithMemoryTracking<size_t> order(ranges.size());
     for (size_t i = 0; i < order.size(); ++i)
         order[i] = i;
     std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return ranges[a].first < ranges[b].first; });
@@ -257,7 +257,7 @@ std::vector<Reader::Slice> Reader::readRanges(const std::vector<std::pair<UInt64
     return result;
 }
 
-void Reader::preBuffer(const std::vector<UInt32> & stripes, const std::vector<UInt64> & include_types)
+void Reader::preBuffer(const VectorWithMemoryTracking<UInt32> & stripes, const VectorWithMemoryTracking<UInt64> & include_types)
 {
     auto selected = selectColumnsByTypeIds(*schema, include_types);
     for (UInt32 stripe_index : stripes)
@@ -337,7 +337,7 @@ public:
         Reader & reader_,
         size_t stripe_index_,
         Proto::StripeFooter footer_,
-        const std::vector<bool> & selected_columns_,
+        const VectorWithMemoryTracking<bool> & selected_columns_,
         const DateLUTImpl & writer_timezone_,
         const DateLUTImpl & reader_timezone_)
         : reader(reader_)
@@ -383,8 +383,8 @@ public:
     /// that are not read are loaded on demand by `getStream`.
     void loadStreams(bool only_index)
     {
-        std::vector<std::pair<UInt64, UInt64>> ranges;
-        std::vector<std::pair<UInt64, UInt32>> keys;
+        VectorWithMemoryTracking<std::pair<UInt64, UInt64>> ranges;
+        VectorWithMemoryTracking<std::pair<UInt64, UInt32>> keys;
         for (const auto & [key, range] : stream_ranges)
         {
             if (streams.contains(key) || (only_index && !isIndexStream(key.second)))
@@ -434,7 +434,7 @@ public:
         return it->second;
     }
 
-    const std::vector<bool> & getSelectedColumns() const override { return selected_columns; }
+    const VectorWithMemoryTracking<bool> & getSelectedColumns() const override { return selected_columns; }
     const DateLUTImpl & getWriterTimezone() const override { return writer_timezone; }
     const DateLUTImpl & getReaderTimezone() const override { return reader_timezone; }
     UInt64 getNumberOfRows() const override { return reader.getStripe(stripe_index).number_of_rows; }
@@ -450,14 +450,14 @@ private:
     Reader & reader;
     size_t stripe_index;
     Proto::StripeFooter footer;
-    const std::vector<bool> & selected_columns;
+    const VectorWithMemoryTracking<bool> & selected_columns;
     const DateLUTImpl & writer_timezone;
     const DateLUTImpl & reader_timezone;
     /// The offset in the file and the length of each selected stream.
-    std::map<std::pair<UInt64, UInt32>, std::pair<UInt64, UInt64>> stream_ranges;
+    MapWithMemoryTracking<std::pair<UInt64, UInt32>, std::pair<UInt64, UInt64>> stream_ranges;
     /// The streams read into memory.
-    std::vector<Reader::Slice> slices;
-    std::map<std::pair<UInt64, UInt32>, std::string_view> streams;
+    VectorWithMemoryTracking<Reader::Slice> slices;
+    MapWithMemoryTracking<std::pair<UInt64, UInt32>, std::string_view> streams;
 };
 
 
@@ -525,10 +525,10 @@ const DateLUTImpl & RowReader::getWriterTimezone(const Proto::StripeFooter & str
     return DateLUT::serverTimezoneInstance();
 }
 
-bool RowReader::evaluateStatistics(const std::vector<Proto::ColumnStatistics> & stats) const
+bool RowReader::evaluateStatistics(const VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const
 {
     const auto & leaves = options.search_argument->getLeaves();
-    std::vector<TruthValue> values(leaves.size(), TruthValue::YES_NO_NULL);
+    VectorWithMemoryTracking<TruthValue> values(leaves.size(), TruthValue::YES_NO_NULL);
     UInt32 writer_version = reader.getPostScript().writer_version;
     for (size_t i = 0; i < leaves.size(); ++i)
     {
@@ -615,7 +615,7 @@ void RowReader::pickRowGroups()
     }
 
     next_skipped_rows.assign(groups, 0);
-    std::vector<TruthValue> values(leaves.size(), TruthValue::YES_NO_NULL);
+    VectorWithMemoryTracking<TruthValue> values(leaves.size(), TruthValue::YES_NO_NULL);
     const UInt32 writer_version = reader.getPostScript().writer_version;
     const Proto::ColumnStatistics empty_statistics;
 
@@ -693,7 +693,7 @@ UInt64 RowReader::computeBatchSize(UInt64 requested, UInt64 current_row) const
 
 void RowReader::seekToRowGroup(size_t row_group)
 {
-    std::unordered_map<UInt64, PositionProvider> positions;
+    RowGroupPositions positions;
     for (const auto & [column, index] : row_indexes)
     {
         if (row_group >= index.entry.size())
