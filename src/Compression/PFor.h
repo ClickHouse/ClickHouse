@@ -29,10 +29,11 @@ inline size_t encodeBlocks(std::span<const T> in, Delta mode, uint8_t * out) noe
 }
 
 /// Inverse of encodeBlocks; returns bytes consumed. Pass `end` to decode fail-closed (reads bounded, returns 0 on corrupt input); nullptr keeps the unchecked fast path.
+/// With a delta mode, `prev` is the value before the stream: the first residual is a delta from it.
 template <typename T>
-inline size_t decodeBlocks(const uint8_t * in, size_t count, Delta mode, T * out, const uint8_t * end = nullptr) noexcept
+inline size_t decodeBlocks(const uint8_t * in, size_t count, Delta mode, T * out, const uint8_t * end = nullptr, T prev = 0) noexcept
 {
-    return detail::bulkDecode<T>(in, count, mode, out, end);
+    return detail::bulkDecode<T>(in, count, mode, out, end, prev);
 }
 
 /// Header of a block of zeros.
