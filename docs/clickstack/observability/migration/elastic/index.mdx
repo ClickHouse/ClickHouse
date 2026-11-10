@@ -1,0 +1,25 @@
+---
+slug: /clickstack/observability/migration/elastic
+title: 'Migrating to ClickHouse Observability from Elastic'
+sidebarTitle: 'Overview'
+description: 'Migrate from Elastic Stack to fully managed ClickHouse Observability, with separate instructions for self-managed deployments.'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'landing-page'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Beta offering" />
+
+Plan your migration from Elastic Stack to **fully managed ClickHouse Observability**, the recommended default experience. Start with the introduction and search comparison, then follow the data, agent, and SDK migration guides. Where the steps differ, use the self-managed tabs for self-managed deployments.
+
+| Section | Description |
+|---------|-------------|
+| [Introduction](/clickstack/observability/migration/elastic/intro) | Migration considerations and differences between the platforms |
+| [Search](/clickstack/observability/migration/elastic/search) | Translate search queries and understand schema and missing-field differences |
+| [Migrating Data](/clickstack/observability/migration/elastic/migrating-data) | Plan parallel ingestion, retention, and historical-data migration |
+| [Migrating Agents](/clickstack/observability/migration/elastic/migrating-agents) | Choose a migration path for Beats, Elastic Agent, or OpenTelemetry collectors |
+| [Migrating SDKs](/clickstack/observability/migration/elastic/migrating-sdks) | Move application instrumentation from Elastic APM to OpenTelemetry |
+
+Fully managed ClickHouse Observability handles the underlying schemas and storage configuration for you. If you manage these internals yourself, review [equivalent concepts](/clickstack/self-configured/migration/elastic/concepts) and [type mappings](/clickstack/self-configured/migration/elastic/types).
