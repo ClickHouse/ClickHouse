@@ -1,7 +1,3 @@
--- This test is about the JSON rendering of named tuples inside a cell,
--- so the display of named Tuple columns as subcolumns is disabled.
-SET output_format_pretty_named_tuples_as_subcolumns = 0;
-
 WITH data AS (
     SELECT
         number AS row_num,

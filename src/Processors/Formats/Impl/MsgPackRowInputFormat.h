@@ -1,7 +1,6 @@
 #pragma once
 
 #include "config.h"
-#include <Common/StackWithMemoryTracking.h>
 
 #if USE_MSGPACK
 
@@ -58,16 +57,16 @@ public:
 
 private:
     /// Stack is needed to process arrays and maps
-    StackWithMemoryTracking<Info> info_stack;
+    std::stack<Info> info_stack;
     bool null_as_default;
 };
 
-class MsgPackRowInputFormat final : public IRowInputFormat
+class MsgPackRowInputFormat : public IRowInputFormat
 {
 public:
     MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
 
-    String getName() const override { return "MsgPackRowInputFormat"; }
+    String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
     void resetReadBuffer() override;
@@ -89,7 +88,7 @@ private:
     const DataTypes data_types;
 };
 
-class MsgPackSchemaReader final : public IRowSchemaReader
+class MsgPackSchemaReader : public IRowSchemaReader
 {
 public:
     MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

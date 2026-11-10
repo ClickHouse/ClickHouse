@@ -1,8 +1,0 @@
--- exhaust the quota
-1
--- enable_analyzer = 1: the scalar subquery is rejected before it reads
-QUOTA_EXCEEDED
-1
--- enable_analyzer = 0: the scalar subquery is rejected before it reads
-QUOTA_EXCEEDED
-1

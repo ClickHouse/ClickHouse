@@ -3,6 +3,7 @@
 -- This can happen when scalar subquery results and join table aliases collide.
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=100398&sha=d69b29735a13a4e8b1c0b95f263a4d962a8943da&name_0=PR&name_1=AST%20fuzzer%20%28amd_debug%2C%20targeted%2C%20old_compatibility%29
 
+SET enable_analyzer = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 SET allow_deprecated_syntax_for_merge_tree = 1;
 

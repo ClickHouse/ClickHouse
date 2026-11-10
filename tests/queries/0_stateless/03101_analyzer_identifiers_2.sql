@@ -1,4 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/23194
+SET enable_analyzer = 1;
 
 CREATE TEMPORARY TABLE test1 (a String, nest Nested(x String, y String));
 
@@ -81,6 +82,4 @@ SELECT arrayMap(x -> [y * 2, (x + 1) AS y, 1 AS z], [1, 2]), y; -- { serverError
 -- TODO: this must work
 --SELECT arrayMap(x -> [y * 2, (x + 1) AS y, 1 AS z], [1, 2]), z;
 
--- The alias `y` is defined by conflicting expressions, but it is not referenced and does not name
--- a projection column, so the query works and each lambda uses its own `y`.
-SELECT arrayMap(x -> (x + 1) AS y, [3, 5]), arrayMap(x -> (x || 'hello') AS y, ['qq', 'ww']);
+SELECT arrayMap(x -> (x + 1) AS y, [3, 5]), arrayMap(x -> (x || 'hello') AS y, ['qq', 'ww']);  -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }

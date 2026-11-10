@@ -1,0 +1,28 @@
+Nullable(Tuple(UInt64, String))	\N
+Nullable(Tuple(UInt64, String))	\N
+Nullable(Tuple(UInt64, String))	\N
+Nullable(Tuple(UInt64, String))	(1,'x')
+Nullable(Tuple(UInt64, String))	\N
+Nullable(Tuple(UInt64, String))	\N
+Nullable(Tuple(UInt64, String))	\N
+Nullable(Tuple(UInt64, String))	(1,'x')
+Nullable(Tuple(UInt64, String))	(1,'x')
+Nullable(Tuple(UInt64, String))	\N
+Nullable(UInt64)	5
+Nullable(UInt64)	\N
+Nullable(Tuple(UInt64, String))	(1,'x')
+Nullable(Tuple(UInt64, String))	\N
+Nullable(UInt64)	5
+Nullable(UInt64)	\N
+Nullable(Tuple(Nullable(UInt64), Nullable(String)))	(1,'x')
+Nullable(Tuple(Nullable(UInt64), Nullable(String)))	\N
+Nullable(UInt64)	10
+Nullable(UInt64)	\N
+Nullable(Tuple(Nullable(UInt64), Nullable(String)))	(1,'x')
+Nullable(Tuple(Nullable(UInt64), Nullable(String)))	\N
+Nullable(UInt64)	10
+Nullable(UInt64)	\N
+LowCardinality(Nullable(String))	x
+LowCardinality(Nullable(String))	x
+LowCardinality(Nullable(String))	x
+LowCardinality(Nullable(String))	x

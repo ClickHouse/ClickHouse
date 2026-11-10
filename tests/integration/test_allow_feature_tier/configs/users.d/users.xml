@@ -1,11 +1,13 @@
 <clickhouse>
     <profiles>
         <default>
-            <!-- To verify it works with compatibility values too: `compatibility` leaves the settings of a
-                disabled tier as they are. -->
+            <!-- To verify it works with compatibility values too (as long as they don't change tiers)
+                In 24.10 allow_experimental_reverse_key was introduced as experimental and it's added to compatibility
+                but it's disabled in all cases
+            -->
             <compatibility>24.10</compatibility>
 
-            <enable_funnel_functions>0</enable_funnel_functions>
+            <allow_experimental_time_series_table>0</allow_experimental_time_series_table>
         </default>
     </profiles>
     <users>
@@ -17,9 +19,5 @@
             <show_named_collections>1</show_named_collections>
             <show_named_collections_secrets>1</show_named_collections_secrets>
         </default>
-        <tier_config_user>
-            <no_password/>
-            <profile>default</profile>
-        </tier_config_user>
     </users>
 </clickhouse>
