@@ -201,3 +201,9 @@ cut needle	[2,3]
 whole character	[2,3]
 whole character	[2,3]
 whole character	[2,3]
+-- A map key the map does not hold
+absent key	[1]
+absent key	[1]
+absent key	[1]
+1
+present key	[2]

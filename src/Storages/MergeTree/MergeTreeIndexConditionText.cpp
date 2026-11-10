@@ -1,9 +1,11 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Formats/FormatSettings.h>
 
 #include "config.h"
 
 #include <algorithm>
 #include <set>
+#include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -42,6 +44,11 @@
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
 
+namespace ProfileEvents
+{
+    extern const Event TextIndexDictionaryDFABuilds;
+}
+
 namespace DB
 {
 
@@ -73,7 +80,8 @@ TextSearchQuery::TextSearchQuery(
     TextIndexDirectReadMode direct_read_mode_,
     VectorWithMemoryTracking<String> tokens_,
     std::vector<OptimizedRegularExpression> patterns_,
-    VectorWithMemoryTracking<String> phrase_tokens_)
+    VectorWithMemoryTracking<String> phrase_tokens_,
+    TextIndexAutomatonBudget * automaton_budget)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
@@ -83,6 +91,74 @@ TextSearchQuery::TextSearchQuery(
 {
     std::sort(tokens.begin(), tokens.end());
     initializeHash();
+
+    for (const auto & pattern : patterns)
+    {
+        std::shared_ptr<const TextIndexDictionaryDFA> automaton;
+
+        const bool is_literal = pattern.getMatchKind() == RegexpMatchKind::Prefix || pattern.getMatchKind() == RegexpMatchKind::Exact;
+        if (!is_literal && !pattern.getRE2())
+        {
+            pattern_automata.push_back(nullptr);
+            continue;
+        }
+
+        /// Other conditions of the same index (e.g. one per partition) compile the same patterns: reuse their automata,
+        /// including the failures. The key contains everything the automaton depends on.
+        String key;
+        if (is_literal)
+            key = fmt::format("{}{}", pattern.getMatchKind() == RegexpMatchKind::Prefix ? 'P' : 'E', pattern.getRequiredSubstring());
+        else
+            key = fmt::format("R{}{}{}", pattern.getRE2()->options().case_sensitive(), static_cast<int>(pattern.getRE2()->options().encoding()), pattern.getRE2()->pattern());
+        if (automaton_budget && automaton_budget->lookup(key, automaton))
+        {
+            pattern_automata.push_back(std::move(automaton));
+            continue;
+        }
+
+        /// Without a budget (no shared condition), only the per-automaton limit applies.
+        const size_t max_memory = automaton_budget ? automaton_budget->available() : TextIndexAutomatonBudget::pattern_limit;
+        /// A failed attempt is charged the full limit: RE2 spends time proportional to its memory budget before it gives up.
+        size_t charge = max_memory;
+        /// If the budget is spent, use the regular dictionary scan.
+        if (max_memory > 0)
+        {
+            if (is_literal)
+            {
+                ProfileEvents::increment(ProfileEvents::TextIndexDictionaryDFABuilds);
+                automaton = TextIndexDictionaryDFA::literal(pattern.getRequiredSubstring(), pattern.getMatchKind() == RegexpMatchKind::Prefix, max_memory);
+            }
+            else
+            {
+                /// The existing SQL surface supplies `LIKE` patterns. Leading wildcards
+                /// cannot prune ASCII prefixes, so avoid determinizing them altogether.
+                std::string prefix;
+                bool fold_case = false;
+                re2::Regexp * suffix = nullptr;
+                const bool has_prefix = pattern.getRE2()->Regexp()->RequiredPrefix(&prefix, &fold_case, &suffix);
+                if (suffix)
+                    suffix->Decref();
+                if (has_prefix && !prefix.empty())
+                {
+                    ProfileEvents::increment(ProfileEvents::TextIndexDictionaryDFABuilds);
+                    automaton = TextIndexDictionaryDFA::fromRegexp(*pattern.getRE2(), max_memory);
+                    if (automaton && !automaton->canSkipPrefixes())
+                        automaton.reset();
+                }
+                else
+                    charge = 0;
+            }
+        }
+        if (automaton)
+            charge = automaton->memoryUsage();
+        if (automaton_budget)
+        {
+            automaton_budget->charge(charge);
+            /// The budget only shrinks, so a failure stays a failure.
+            automaton_budget->store(key, automaton);
+        }
+        pattern_automata.push_back(std::move(automaton));
+    }
 }
 
 void TextSearchQuery::initializeHash()
@@ -190,7 +266,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
     IsShadowingColumn is_column_shadowing_map_subcolumn_,
-    JSONIndexArgumentTypes json_argument_types_)
+    JSONIndexArgumentTypes json_argument_types_,
+    TextIndexAutomatonBudgetPtr automaton_budget_)
     : WithContext(context_)
     , header(index_sample_block)
     , json_argument_types(std::move(json_argument_types_))
@@ -204,6 +281,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , has_preprocessor(preprocessor && preprocessor->hasActions())
     , postprocessor(postprocessor_)
     , has_postprocessor(postprocessor && postprocessor->hasActions())
+    , automaton_budget(automaton_budget_ ? std::move(automaton_budget_) : std::make_shared<TextIndexAutomatonBudget>())
     , has_positions(has_positions_)
 {
     if (!predicate)
@@ -780,7 +858,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
                 String rewritten = likePatternWithCustomEscapeToLikePattern(
                     pattern_field.safeGet<String>(), escape_str[0]);
                 Field rewritten_field(std::move(rewritten));
-                if (traverseFunctionNode(function_name, lhs_argument, pattern_type, rewritten_field, out))
+                if (traverseFunctionNode(function, function_name, lhs_argument, pattern_type, rewritten_field, out))
                     return true;
             }
             return false;
@@ -819,12 +897,12 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
             if (rhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseFunctionNode(function_name, lhs_argument, const_type, const_value, out))
+                if (traverseFunctionNode(function, function_name, lhs_argument, const_type, const_value, out))
                     return true;
             }
             else if (lhs_argument.tryGetConstant(const_value, const_type) && function_name == "equals")
             {
-                if (traverseFunctionNode(function_name, rhs_argument, const_type, const_value, out))
+                if (traverseFunctionNode(function, function_name, rhs_argument, const_type, const_value, out))
                     return true;
             }
         }
@@ -1225,6 +1303,7 @@ static bool isMapValueDefault(std::string_view value, const Block & header)
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
+    const RPNBuilderFunctionTreeNode & function_node,
     const String & function_name,
     const RPNBuilderTreeNode & argument_node,
     DataTypePtr value_type,
@@ -1235,12 +1314,20 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     auto direct_read_mode = getDirectReadMode(function_name);
 
     /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
-    const auto index_column_node = unwrapLosslessConversion(argument_node);
+    auto index_column_node = unwrapLosslessConversion(argument_node);
 
     /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
     /// path. Partition hard, so none of them can emit a token in the pair format.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
         return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
+
+    /// `arrayJoin(arr) = const` needs an element equal to the constant, like `has(arr, const)`; a row answer cannot replace it
+    if (auto array_join_argument = index_column_node.getArrayJoinArgument();
+        function_name == "equals" && array_join_argument && hasIndexForColumn(array_join_argument->getColumnName()))
+    {
+        index_column_node = *array_join_argument;
+        direct_read_mode = TextIndexDirectReadMode::None;
+    }
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
@@ -1248,7 +1335,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
     bool candidate_for_exact_mode = true;
-    if (traverseMapElementValueNode(index_column_node, value_field))
+    if (traverseMapElementValueNode(function_node, index_column_node, value_field))
     {
         has_index_column = true;
 
@@ -1270,23 +1357,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         {
             value_field = serializeFieldAsText(value_field, value_type);
             value_type = std::make_shared<DataTypeString>();
-        }
-    }
-
-    /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
-    if (!has_index_column && !has_map_keys_column && !has_map_values_column)
-    {
-        if (auto parsed = tryParseMapSubcolumnName(index_column_name, is_column_shadowing_map_subcolumn))
-        {
-            auto & [map_column_name, _] = *parsed;
-            if (header.has(fmt::format("mapValues({})", map_column_name))
-                && value_field.getType() == Field::Types::String
-                && !isMapValueDefault(value_field.safeGet<String>(), header))
-            {
-                has_index_column = true;
-                direct_read_mode = getHintOrNoneMode();
-                candidate_for_exact_mode = false;
-            }
         }
     }
 
@@ -1350,7 +1420,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         out.text_search_queries.emplace_back(
             std::make_shared<TextSearchQuery>(
                 function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
-                VectorWithMemoryTracking<String>(), std::move(patterns)));
+                VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
         return true;
     };
 
@@ -1684,7 +1754,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
                         function_name, TextSearchMode::Any, pattern_read_mode,
-                        VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
                 return true;
             }
         }
@@ -1727,7 +1797,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
                         function_name, TextSearchMode::Any, pattern_read_mode,
-                        VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
                 return true;
             }
         }
@@ -1763,7 +1833,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
                     function_name, TextSearchMode::Any, pattern_read_mode,
-                    VectorWithMemoryTracking<String>(), std::move(patterns)));
+                    VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
             return true;
         }
         return false;
@@ -1978,7 +2048,7 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
 
     Field pattern("%" + escapeForLikePattern(needle_string) + "%");
     return traverseFunctionNode(
-        like_function_name, search_function.getArgumentAt(0), std::make_shared<DataTypeString>(), std::move(pattern), out, ascii_case_folding);
+        function_node, like_function_name, search_function.getArgumentAt(0), std::make_shared<DataTypeString>(), std::move(pattern), out, ascii_case_folding);
 }
 
 /// Whether the sub-DAG may be evaluated on a default value to decide if a missing map key or JSON path
@@ -2345,10 +2415,13 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
-    return header.has(fmt::format("mapValues({})", map_column_name));
+    return hasIndexForColumn(fmt::format("mapValues({})", map_column_name));
 }
 
-bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
+bool MergeTreeIndexConditionText::traverseMapElementValueNode(
+    const RPNBuilderFunctionTreeNode & function_node,
+    const RPNBuilderTreeNode & index_column_node,
+    const Field & const_value) const
 {
     /// Here we check whether we can use index defined for `mapValues(m)`
     /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
@@ -2357,7 +2430,79 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
     if (const_value.getType() != Field::Types::String || isMapValueDefault(const_value.safeGet<String>(), header))
         return false;
 
-    return hasIndexForMapElementValue(index_column_node);
+    if (!hasIndexForMapElementValue(index_column_node))
+        return false;
+
+    /// The plan applies the index tokenizer and postprocessor to these only when the index takes them.
+    const auto function_name = function_node.getFunctionName();
+    if (function_name == "hasToken" || function_name == "hasAnyTokens" || function_name == "hasAllTokens"
+        || function_name == "hasPhrase")
+        return true;
+
+    /// A map element reads the value type's default for a key the map does not hold, while the index
+    /// stores terms only for the elements it does hold.
+    const auto * function_dag_node = function_node.getDAGNode();
+    const auto * element_dag_node = index_column_node.getDAGNode();
+
+    if (!function_dag_node || !element_dag_node
+        || !function_dag_node->function_base || !function_dag_node->isDeterministic()
+        || !WhichDataType(removeLowCardinalityAndNullable(function_dag_node->result_type)).isUInt8())
+        return false;
+
+    /// `hasIndexForMapElementValue` matched this index, so its single expression is `mapValues(m)`.
+    const auto * map_values_type = typeid_cast<const DataTypeArray *>(header.getByPosition(0).type.get());
+    if (!map_values_type)
+        return false;
+
+    ActionsDAG::NodeMapping copy_map;
+    auto subdag = ActionsDAG::cloneSubDAG({function_dag_node}, copy_map, /*remove_aliases=*/ true);
+
+    auto copied_element = copy_map.find(element_dag_node);
+    if (copied_element == copy_map.end() || subdag.getOutputs().size() != 1)
+        return false;
+
+    /// The value is the map value type's default, but the type is the map element's own, which a
+    /// Nullable key widens to Nullable without an absent key reading NULL.
+    const auto * element_node = copied_element->second;
+    ColumnWithTypeAndName default_element
+    {
+        element_node->result_type->createColumnConst(1, map_values_type->getNestedType()->getDefault()),
+        element_node->result_type,
+        element_node->result_name,
+    };
+
+    /// `substitute` leaves a replaced INPUT in `inputs`, where `getRequiredColumns` still finds it.
+    if (element_node->type == ActionsDAG::ActionType::INPUT)
+        subdag.substituteInputForConsumersOnly(element_node->result_name, default_element);
+    else
+        subdag.substitute({{element_node, default_element}});
+
+    subdag.removeUnusedActions(/*allow_remove_inputs=*/ true);
+
+    if (!subdag.getRequiredColumns().empty())
+        return false;
+
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
+        return false;
+
+    auto output_column_name = subdag.getOutputs().front()->result_name;
+
+    Block block;
+    size_t num_rows = 1;
+    ExpressionActions actions(std::move(subdag));
+    try
+    {
+        actions.execute(block, num_rows);
+    }
+    catch (const Exception &)
+    {
+        /// Unknown if the predicate throws on the default, e.g. a `CAST` that drops `Nullable` on NULL.
+        return false;
+    }
+    const auto & result_column = block.getByName(output_column_name).column;
+
+    /// A Nullable map value type defaults to NULL, for which the function is NULL and not true.
+    return result_column->isNullAt(0) || !result_column->getBool(0);
 }
 
 bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
@@ -2432,6 +2577,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             has_index_for_map_element_value = true;
             return true;
         }
+        /// `arrayJoin(arr) IN (set)` needs an element in the set, like `hasAny(arr, set)`
+        if (auto array_join_argument = node.getArrayJoinArgument(); array_join_argument && hasIndexForColumn(array_join_argument->getColumnName()))
+            return true;
         return hasIndexForColumn(node.getColumnName())
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
     };

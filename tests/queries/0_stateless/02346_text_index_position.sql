@@ -505,3 +505,30 @@ SELECT 'whole character', arraySort(groupArray(id)) FROM tab WHERE position(mess
 SELECT 'whole character', arraySort(groupArray(id)) FROM tab WHERE position(message, '你') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE tab;
+
+SELECT '-- A map key the map does not hold';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, FixedString(6)),
+    INDEX idx(mapValues(m)) TYPE text(tokenizer = ngrams(3))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, map('other', 'abcdef')), (2, map('k', 'hello'));
+
+-- Row 1 has no key 'k', so m['k'] is six NUL bytes and holds the needle. The index stores no term for it.
+SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], repeat(char(0), 4)) > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], repeat(char(0), 4)) > 0 SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], repeat(char(0), 4)) > 0 SETTINGS optimize_functions_to_subcolumns = 0;
+
+-- A needle the default does not hold still prunes.
+SELECT count() > 0 FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE position(m['k'], 'zzzz') > 0
+) WHERE explain LIKE '%Granules: 0/2%';
+SELECT 'present key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], 'hell') > 0;
+
+DROP TABLE tab;
