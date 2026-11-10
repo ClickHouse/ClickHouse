@@ -3027,6 +3027,88 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
+bool ReadFromMergeTree::hasTextIndexInMetadata() const
+{
+    if (!storage_snapshot || !storage_snapshot->metadata)
+        return false;
+
+    const auto & secondary_indices = storage_snapshot->metadata->getSecondaryIndices();
+    return std::ranges::any_of(secondary_indices, [](const auto & index)
+    {
+        return index.type == "text";
+    });
+}
+
+DataVersion ReadFromMergeTree::getDataVersion() const
+{
+    if (!storage_snapshot || !storage_snapshot->data)
+        return {};
+
+    const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get());
+    if (!snapshot_data)
+        return {};
+
+    return snapshot_data->data_version;
+}
+
+bool ReadFromMergeTree::refreshDataSnapshot(const ContextPtr & query_context)
+{
+    if (!storage_snapshot || !storage_snapshot->metadata || !storage_snapshot->data)
+        return false;
+
+    /// A coordinated read pins block numbers and callbacks, a text-index read keeps a task list built
+    /// from the old parts, and a lazy FINAL/materialization keeps row references into the old parts.
+    /// Replacing the data underneath them would be unsound, so fall back to rebuilding the plan.
+    if (is_parallel_reading_from_replicas || hasPinnedBlockNumbers() || !index_read_tasks.empty() || lazy_materializing_rows)
+        return false;
+
+    auto metadata_snapshot = data.getInMemoryMetadataPtr(query_context, false);
+    if (!metadata_snapshot)
+        return false;
+
+    /// A metadata change can alter the read header and the columns of the parts, so only a pure data
+    /// change is safe to refresh. Schema changes continue through the normal replan path.
+    if (storage_snapshot->metadata->getMetadataVersion() != metadata_snapshot->getMetadataVersion())
+        return false;
+
+    auto new_storage_snapshot = data.getStorageSnapshot(metadata_snapshot, query_context);
+    if (!new_storage_snapshot || !new_storage_snapshot->data)
+        return false;
+
+    const auto * new_snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(new_storage_snapshot->data.get());
+    if (!new_snapshot_data)
+        return false;
+
+    prepared_parts = new_snapshot_data->parts;
+    mutations_snapshot = new_snapshot_data->mutations_snapshot;
+    storage_snapshot = std::move(new_storage_snapshot);
+    /// Force `selectRangesToRead()` on the refreshed parts when the pipeline is built.
+    analyzed_result_ptr.reset();
+
+    /// A read rewritten by the vector-search optimization expects `_distance` read hints for every
+    /// part. A newly inserted part may carry no vector index granule yet, so refreshing its data
+    /// could silently drop that part's rows. Accept the refresh only when the refreshed analysis
+    /// shows that the vector index covers every part to be read; otherwise rebuild the plan.
+    if (vector_search_parameters.has_value())
+    {
+        auto analysis = selectRangesToRead();
+        if (!analysis)
+            return false;
+
+        for (const auto & part_with_ranges : analysis->parts_with_ranges)
+        {
+            if (!part_with_ranges.ranges.empty()
+                && (!part_with_ranges.read_hints.vector_search_results.has_value()
+                    || !part_with_ranges.read_hints.vector_search_results.value().distances.has_value()))
+                return false;
+        }
+
+        analyzed_result_ptr = std::move(analysis);
+    }
+
+    return true;
+}
+
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation(bool allow_query_condition_cache_) const
 {
     /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the

@@ -42,6 +42,7 @@
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Storages/MergeTree/DataVersion.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
@@ -740,6 +741,10 @@ public:
 
         /// Taken no later than `parts`. Null for a table without a unique key.
         DeleteBitmapSnapshotPtr uk_read_snapshot;
+
+        /// Version of the data view captured above. Non-zero only when
+        /// `query_plan_cache_data_version_check` is enabled for the query that created it.
+        DataVersion data_version;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;

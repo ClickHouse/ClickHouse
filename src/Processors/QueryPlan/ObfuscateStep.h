@@ -19,6 +19,7 @@ public:
         ContextPtr context_);
 
     String getName() const override { return "Obfuscate"; }
+    QueryPlanStepPtr clone() const override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

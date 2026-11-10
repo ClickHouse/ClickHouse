@@ -66,6 +66,11 @@ ObfuscateStep::ObfuscateStep(
     Obfuscator validating_obfuscator(*getOutputHeader(), seed, markov_model_params);
 }
 
+QueryPlanStepPtr ObfuscateStep::clone() const
+{
+    return std::make_unique<ObfuscateStep>(*this);
+}
+
 void ObfuscateStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.init(Pipe(std::make_shared<ObfuscateSource>(

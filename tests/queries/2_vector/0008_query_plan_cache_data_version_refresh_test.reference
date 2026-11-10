@@ -1,0 +1,80 @@
+=== I.1 INSERT: cache ON, run BEFORE the mutation (fills the cache) ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== I.2 INSERT: entries after the warm-up ===	1
+=== I.3 INSERT: cache ON, run AFTER the mutation -> refreshed, must be current ===
+10	0
+1000	0
+9	1.7321
+11	1.7321
+8	3.4641
+=== I.4 INSERT: entries after the refresh (not written back) ===	0
+=== I.5 INSERT: cache OFF, SAME query AFTER the mutation ===
+10	0
+1000	0
+9	1.7321
+11	1.7321
+8	3.4641
+=== I.6 INSERT: hits, misses, refreshes, refresh failures, result cache hits ===	1	1	1	0	0
+=== D.1 DELETE: cache ON, run BEFORE the mutation (fills the cache) ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== D.2 DELETE: cache ON, run AFTER the mutation -> refreshed, must be current ===
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+7	5.1962
+=== D.3 DELETE: entries after the refresh (not written back) ===	0
+=== D.4 DELETE: cache OFF, SAME query AFTER the mutation ===
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+7	5.1962
+=== D.5 DELETE: hits, misses, refreshes, refresh failures, result cache hits ===	1	1	1	0	0
+=== U.1 UPDATE: cache ON, run BEFORE the mutation (fills the cache) ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== U.2 UPDATE: cache ON, run AFTER the mutation -> refreshed, must be current ===
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+7	5.1962
+=== U.3 UPDATE: entries after the refresh (not written back) ===	0
+=== U.4 UPDATE: cache OFF, SAME query AFTER the mutation ===
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+7	5.1962
+=== U.5 UPDATE: hits, misses, refreshes, refresh failures, result cache hits ===	1	1	1	0	0
+=== A.1 ALTER: cache ON, run BEFORE the mutation (fills the cache) ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== A.2 ALTER: cache ON, run AFTER the metadata change -> entry invalidated, replanned ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== A.3 ALTER: cache OFF, SAME query AFTER the metadata change ===
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+=== A.4 ALTER: hits, misses, refreshes, refresh failures, result cache hits ===	0	2	0	0	0

@@ -230,6 +230,13 @@
     M(QueryCacheReadBytes, "The number of (uncompressed) bytes read from the query cache.", ValueType::Bytes) \
     M(QueryCacheWrittenRows, "The number of rows saved into the query cache.", ValueType::Number) \
     M(QueryCacheWrittenBytes, "The number of (uncompressed) bytes saved into the query cache", ValueType::Bytes) \
+    /* Vector Query plan cache metrics. */\
+    M(VectorASTCacheHits, "Number of times a AST has been found in the vector query plan cache (and query computation was avoided). Only updated for SELECT queries with SETTING vector_query_plan_cache = 1.", ValueType::Number) \
+    M(VectorASTCacheMisses, "Number of times a AST has not been found in the vector query plan cache (and required query computation). Only updated for SELECT queries with SETTING vector_query_plan_cache = 1.", ValueType::Number) \
+    M(VectorQueryPlanCacheHits, "Number of times a query plan has been found in the vector query plan cache (and query computation was avoided). Only updated for SELECT queries with SETTING vector_query_plan_cache = 1.", ValueType::Number) \
+    M(VectorQueryPlanCacheMisses, "Number of times a query plan has not been found in the vector query plan cache (and required query computation). Only updated for SELECT queries with SETTING vector_query_plan_cache = 1.", ValueType::Number) \
+    M(QueryPlanCacheDataRefresh, "Number of times a cached query plan was kept and only its data snapshot was refreshed after the table data changed (query_plan_cache_data_version_check = 1).", ValueType::Number) \
+    M(QueryPlanCacheDataRefreshFailures, "Number of times a cached query plan could not be refreshed after the table data changed and had to be rebuilt (query_plan_cache_data_version_check = 1).", ValueType::Number) \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.", ValueType::Number) \

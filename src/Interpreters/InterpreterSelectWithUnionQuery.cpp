@@ -22,8 +22,11 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/typeid_cast.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/VectorQueryParameters.h>
+#include <Interpreters/Cache/VectorQueryPlanCache.h>
 #include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <fmt/ranges.h>
@@ -34,6 +37,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_distinct_in_order;
+    extern const SettingsBool vector_query_plan_cache;
+    extern const SettingsBool vector_query_plan_cache_only_vector;
+    extern const SettingsBool vector_only_cache_query_plan;
+    extern const SettingsSeconds vector_query_plan_cache_ttl;
+    extern const SettingsUInt64 vector_query_plan_cache_max_size_in_bytes;
+    extern const SettingsUInt64 vector_query_plan_cache_max_entries;
+    extern const SettingsMilliseconds query_cache_min_query_duration;
+    extern const SettingsBool query_plan_cache_data_version_check;
 }
 
 namespace ErrorCodes
@@ -352,14 +363,134 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 BlockIO InterpreterSelectWithUnionQuery::execute()
 {
     BlockIO res;
-
+    auto logger = getLogger("InterpreterSelectWithUnionQuery");
+    // Stopwatch test_watch{CLOCK_MONOTONIC};
+    // test_watch.restart();
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
+    // LOG_ERROR(logger, "build query plan:{}us", static_cast<double>(test_watch.elapsedNanoseconds()) / 1e3);
+    // test_watch.restart();
+    const auto & settings = context->getSettingsRef();
+    const bool can_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
+    const bool cache_eligible = can_vector_query_plan_cache && !is_internal && is_select
+        && !VectorQueryPlanCache::containsSubquery(query_ptr);
 
-    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    /// Some plan optimizations consume the constants needed to bind the plan to a normalized query
+    /// text: the vector-search rewrite replaces `distance(vec, <literal>)` with the `_distance`
+    /// input, so the reference-vector literal no longer exists in the optimized plan. Keep a
+    /// pre-optimization copy for such plans and bind them from it.
+    std::optional<QueryPlan> pre_optimization_plan;
+    if (cache_eligible && VectorQueryPlanCache::planHasMergeTreeRead(query_plan))
+    {
+        try
+        {
+            pre_optimization_plan.emplace(query_plan.clone());
+        }
+        catch (const Exception & e)
+        {
+            LOG_DEBUG(logger, "Cannot keep a pre-optimization plan copy: {}", e.message());
+        }
+    }
+
+    QueryPlanOptimizationSettings optimization_settings(context);
+    BuildQueryPipelineSettings build_pipeline_settings(context);
+    query_plan.optimize(optimization_settings);
+
+    /// Cache the plan after optimization, so a cache hit does not have to choose data-dependent
+    /// shapes (e.g. a join build side) again, and mode B only refreshes the read steps' data.
+    if (cache_eligible)
+    {
+        auto vector_query_plan_cache = context->getVectorQueryPlanCache();
+        if (vector_query_plan_cache && query_ptr)
+        {
+            const bool vector_query_plan_cache_only_vector = settings[Setting::vector_query_plan_cache_only_vector];
+            const bool vector_only_cache_query_plan = settings[Setting::vector_only_cache_query_plan];
+            auto created_at = std::chrono::system_clock::now();
+            auto expires_at = created_at + std::chrono::seconds(settings[Setting::vector_query_plan_cache_ttl].totalSeconds());
+            String vector_query_string;
+            VectorQueryParameters parameterizer;
+            VectorQueryParameters::NormalizedQueryResult query_result;
+            if (vector_only_cache_query_plan)
+            {
+                query_result = parameterizer.normalizedAST(query_ptr, vector_query_plan_cache_only_vector);
+                if (!query_result.parsed_params.empty() && !query_result.ast_literal_position_list.empty())
+                {
+                   vector_query_string = query_result.normalized_sql.empty() ? query_ptr->formatForLogging() : query_result.normalized_sql;
+                }
+                // LOG_ERROR(logger, "normalizedAST:{}us", test_watch.elapsedMicroseconds());
+                // test_watch.restart();
+            }
+            else
+            {
+                vector_query_string = getVectorQueryString().empty() ? query_ptr->formatForLogging() : getVectorQueryString();
+            }
+
+            if (!vector_query_string.empty())
+            {
+                VectorQueryPlanCache::Key key(
+                    vector_query_string,
+                    context->getCurrentDatabase(),
+                    context->getSettingsCopy(),
+                    Block{},
+                    context->getUserID(),
+                    context->getCurrentRoles(),
+                    false,
+                    expires_at,
+                    false
+                );
+
+                auto vector_query_plan_cache_writer = vector_query_plan_cache->createWriter(
+                    key,
+                    std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                    settings[Setting::vector_query_plan_cache_max_size_in_bytes],
+                    settings[Setting::vector_query_plan_cache_max_entries],
+                    settings[Setting::query_plan_cache_data_version_check]);
+                vector_query_plan_cache_writer.setTableNames(VectorQueryPlanCache::collectTableNames(query_ptr, context));
+
+                if (!vector_only_cache_query_plan)
+                {
+                    query_result.ast_literal_position_list = parameterizer.collectASTLiteralPositions(query_ptr, vector_query_plan_cache_only_vector);
+                    auto parameter_values = parameterizer.buildParameterValuesFromAST(query_ptr, query_result.ast_literal_position_list);
+                    query_result.parsed_params = parameter_values;
+                    query_result.params.reserve(parameter_values.size());
+                    for (const auto & value : parameter_values)
+                        query_result.params.emplace_back(applyVisitor(FieldVisitorToString(), value));
+                    if (!query_result.ast_literal_position_list.empty() && query_result.ast_literal_position_list.size() == params_size)
+                    {
+                        vector_query_plan_cache_writer.setAst(query_ptr);
+                        LOG_DEBUG(logger, "setAst");
+                        // LOG_ERROR(logger, "setAst:{}us", test_watch.elapsedMicroseconds());
+                        // test_watch.restart();
+                    }
+                }
+                vector_query_plan_cache_writer.setAstLiteralPositions(query_result.ast_literal_position_list);
+
+                /// Store one of the candidate plans and collect the constants that bind it to the
+                /// normalized query. `setPlan` runs before the expensive scan, so a plan that
+                /// cannot be cloned (e.g. lazy materialization) is skipped without a full pass.
+                auto cached_plan = parameterizer.prepareCachedPlan(
+                    vector_query_plan_cache_writer,
+                    query_plan,
+                    pre_optimization_plan ? &*pre_optimization_plan : nullptr,
+                    query_result,
+                    vector_query_plan_cache_only_vector);
+
+                if (cached_plan)
+                {
+                    vector_query_plan_cache_writer.setQueryAccessInfo(context->serializeQueryAccessInfo());
+                    vector_query_plan_cache_writer.setPlanConstantBindings(std::move(cached_plan->bindings));
+                    vector_query_plan_cache_writer.setPlanIsOptimized(cached_plan->optimized);
+                    setVectorQueryPlanCacheWriter(std::make_shared<VectorQueryPlanCache::Writer>(std::move(vector_query_plan_cache_writer)));
+                }
+            }
+        }
+    }
+
+    auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false);
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     setQuota(res.pipeline);
+    // LOG_ERROR(logger, "buildQueryPipeline:{}us", test_watch.elapsedMicroseconds());
     return res;
 }
 

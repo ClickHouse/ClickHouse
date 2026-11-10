@@ -25,6 +25,12 @@ ObjectFilterStep::ObjectFilterStep(
     output_header = input_headers.front();
 }
 
+QueryPlanStepPtr ObjectFilterStep::clone() const
+{
+    return std::make_unique<ObjectFilterStep>(
+        getInputHeaders().front(), actions_dag.clone(), filter_column_name);
+}
+
 QueryPipelineBuilderPtr ObjectFilterStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & /* settings */)
 {
     return std::move(pipelines.front());

@@ -32,6 +32,7 @@ public:
     static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
 
     String getName() const override { return "IEJoin"; }
+    QueryPlanStepPtr clone() const override;
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 

@@ -24,6 +24,8 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
+    /// Clone limit step for plan cache reuse.
+    QueryPlanStepPtr clone() const override;
 
     size_t getLimit() const { return limit; }
     size_t getOffset() const { return offset; }
@@ -51,8 +53,6 @@ public:
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
-
-    QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return false; }
 

@@ -20,6 +20,7 @@ public:
         String filter_column_name_);
 
     String getName() const override { return "ObjectFilter"; }
+    QueryPlanStepPtr clone() const override;
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }

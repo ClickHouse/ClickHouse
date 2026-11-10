@@ -51,6 +51,8 @@ SpillingHashJoin::SpillingHashJoin(
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
     , any_take_last_row(any_take_last_row_)
+    , build_layout(build_layout_)
+    , stats_collecting_params(stats_collecting_params_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
     hash_join = HashJoin::create(table_join, right_sample_block_, build_layout_, any_take_last_row, stats_collecting_params_);
@@ -60,6 +62,25 @@ SpillingHashJoin::SpillingHashJoin(
 }
 
 SpillingHashJoin::~SpillingHashJoin() = default;
+
+std::shared_ptr<IJoin> SpillingHashJoin::clone(
+    const std::shared_ptr<TableJoin> & table_join_,
+    SharedHeader left_sample_block_,
+    SharedHeader right_sample_block_) const
+{
+    auto result = std::make_shared<SpillingHashJoin>(
+        table_join_,
+        left_sample_block_,
+        right_sample_block_,
+        tmp_data,
+        initial_num_buckets,
+        max_num_buckets,
+        build_layout,
+        stats_collecting_params,
+        any_take_last_row);
+    result->keep_left_block_order = keep_left_block_order;
+    return result;
+}
 
 bool SpillingHashJoin::addBlockToExternalJoin(const Block & block, size_t num_rows, JoinBuildContext context)
 {

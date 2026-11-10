@@ -27,6 +27,11 @@ ExtractColumnsStep::ExtractColumnsStep(SharedHeader input_header_, const NamesAn
 {
 }
 
+QueryPlanStepPtr ExtractColumnsStep::clone() const
+{
+    return std::make_unique<ExtractColumnsStep>(*this);
+}
+
 void ExtractColumnsStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const SharedHeader & header)

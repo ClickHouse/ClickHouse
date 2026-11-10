@@ -154,6 +154,11 @@ void BlockNestedLoopJoinStep::addUnmatchedBuildRowsStage(
     pipeline.resize(max_streams);
 }
 
+QueryPlanStepPtr BlockNestedLoopJoinStep::clone() const
+{
+    return std::make_unique<BlockNestedLoopJoinStep>(*this);
+}
+
 QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (pipelines.size() != 2)

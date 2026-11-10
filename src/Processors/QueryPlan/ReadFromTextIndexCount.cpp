@@ -437,6 +437,11 @@ ReadFromTextIndexCount::ReadFromTextIndexCount(
 {
 }
 
+QueryPlanStepPtr ReadFromTextIndexCount::clone() const
+{
+    return std::make_unique<ReadFromTextIndexCount>(*this);
+}
+
 void ReadFromTextIndexCount::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto state = std::make_shared<TextIndexCountSource::State>();

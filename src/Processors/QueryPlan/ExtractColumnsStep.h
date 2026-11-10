@@ -11,6 +11,7 @@ public:
 
     explicit ExtractColumnsStep(SharedHeader input_header_, const NamesAndTypesList & requested_columns_);
     String getName() const override { return "ExtractColumns"; }
+    QueryPlanStepPtr clone() const override;
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 

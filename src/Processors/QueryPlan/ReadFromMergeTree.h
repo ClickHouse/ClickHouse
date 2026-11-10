@@ -342,8 +342,15 @@ public:
     /// True if a coordinator-side snapshot boundary is pinned (e.g. select_sequential_consistency).
     /// Such a read cannot be distributed: a worker reads from its own snapshot and cannot reproduce it.
     bool hasPinnedBlockNumbers() const { return max_block_numbers_to_read != nullptr; }
+    bool hasTextIndexInMetadata() const;
 
     StorageID getStorageID() const { return data.getStorageID(); }
+    /// Data version of the storage snapshot this read step was built against.
+    DataVersion getDataVersion() const;
+    /// Plan mode B: replace the data-related state of this read step (parts, mutations snapshot,
+    /// storage snapshot) with the current one while keeping the rest of the plan untouched.
+    /// Returns false when the step cannot be refreshed safely; the caller must then replan instead.
+    bool refreshDataSnapshot(const ContextPtr & query_context);
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }

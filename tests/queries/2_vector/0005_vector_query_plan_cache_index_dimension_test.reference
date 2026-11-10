@@ -1,0 +1,22 @@
+I06 entries after first query	1
+I06 entries after DROP INDEX	0
+I06 after DROP INDEX hits, misses, result cache hits	0	2	0
+I06 entries after query without index	1
+I06 entries after ADD INDEX	0
+I06 after ADD INDEX hits, misses, result cache hits	0	3	0
+I06 after re-hit hits, misses, result cache hits	1	3	0
+I06 top-5 after index rebuild	5	0	4
+I06 entries with L2 and cosine plans	2
+I06 entries after DROP INDEX for cosine	0
+I06 entries after ADD cosine index	0
+I06 after cosine query hits, misses, result cache hits	1	5	0
+I06 after cosine re-hit hits, misses, result cache hits	2	5	0
+I06 top-5 with cosine distance	5	0	4
+I06 entries at end	1
+I03 entries after 8-dimensional query	1
+I03 entries after DROP INDEX	0
+I03 entries after dimension change	0
+I03 entries after INSERT	0
+I03 hits, misses, result cache hits	0	2	0
+I03 top-5 after dimension change	5	1000	1004	0
+I03 entries at end	1

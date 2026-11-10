@@ -45,6 +45,10 @@ public:
 
     String getName() const override { return "Join"; }
 
+    /// Clone the step together with an independent JOIN instance (the hash table is empty until
+    /// execution), so an optimized plan containing a JOIN can be stored in the plan cache.
+    QueryPlanStepPtr clone() const override;
+
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     /// A JoinStep never reads, so it has no meaningful input-byte stats of its own;
@@ -166,6 +170,8 @@ public:
     FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_);
 
     String getName() const override { return "FilledJoin"; }
+    /// The stored JOIN is already filled and immutable, so a clone can share it.
+    QueryPlanStepPtr clone() const override;
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
