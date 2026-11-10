@@ -3288,7 +3288,7 @@ static BlockIO executeQueryImpl(
         {
             const auto * create_query = out_ast->as<ASTCreateQuery>();
             ASTPtr input_function;
-            
+
             auto synthetic_insert = make_intrusive<ASTInsertQuery>();
             synthetic_insert->select = create_query->insert_select;
             synthetic_insert->format = create_query->insert_format;
@@ -3310,7 +3310,7 @@ static BlockIO executeQueryImpl(
                 auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(context, false);
                 auto pipe = getSourceFromASTInsertQuery(
                     synthetic_insert, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
-                
+
                 input_storage.setPipe(std::move(pipe));
             }
         }
