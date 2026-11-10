@@ -1630,6 +1630,12 @@ private:
         PaddedPODArray<Int8> length_cmp;
         /// Total number of gathered element pairs.
         size_t num_elements = 0;
+        /// The side (0 or 1) of a constant array whose elements contain arrays, or -1. Its elements are not gathered,
+        /// because each of them can be large and would be copied once per input row: `element_args` of this side
+        /// holds the elements of the single row of the constant, and `deferred_positions` the position in it of
+        /// every gathered element.
+        int deferred_side = -1;
+        PaddedPODArray<UInt64> deferred_positions;
     };
 
     GatheredArrayElements gatherAlignedArrayElements(
@@ -1703,22 +1709,41 @@ private:
         /// The element types may be wrapped in `LowCardinality` (e.g. `Array(LowCardinality(Nullable(UInt64)))`);
         DataTypePtr nested_type0 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name0.type).getNestedType());
         DataTypePtr nested_type1 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name1.type).getNestedType());
+
+        /// An element of a constant that contains arrays is not copied for every input row (see `deferred_side`).
+        /// Both constants have one row, so there is nothing to defer.
+        auto contains_array = [](const DataTypePtr & type)
+        {
+            return anyInTypeTree(*type, [](const IDataType & t) { return isArray(t) || isMap(t); });
+        };
+        if (is_const0 != is_const1)
+        {
+            if (is_const0 && contains_array(nested_type0))
+                gathered.deferred_side = 0;
+            else if (is_const1 && contains_array(nested_type1))
+                gathered.deferred_side = 1;
+        }
+
         /// Strip it recursively from both the types and the gathered columns so the `Nullable` unwrapping just
         /// below and the scalar comparison see plain columns.
-        gathered.full_elements0 = recursiveRemoveLowCardinality(column_array0.getDataPtr()->index(*indexes0, 0));
-        gathered.full_elements1 = recursiveRemoveLowCardinality(column_array1.getDataPtr()->index(*indexes1, 0));
+        gathered.full_elements0 = recursiveRemoveLowCardinality(
+            gathered.deferred_side == 0 ? column_array0.getDataPtr() : column_array0.getDataPtr()->index(*indexes0, 0));
+        gathered.full_elements1 = recursiveRemoveLowCardinality(
+            gathered.deferred_side == 1 ? column_array1.getDataPtr() : column_array1.getDataPtr()->index(*indexes1, 0));
+        if (gathered.deferred_side >= 0)
+            gathered.deferred_positions = gathered.deferred_side == 0 ? std::move(idx0) : std::move(idx1);
         ColumnPtr elements0 = gathered.full_elements0;
         ColumnPtr elements1 = gathered.full_elements1;
-        auto collect_nulls = [&](const ColumnPtr & elements, const DataTypePtr & nested_type, NullMap & is_null)
+        auto collect_nulls = [&](const ColumnPtr & elements, const DataTypePtr & nested_type, bool deferred, NullMap & is_null)
         {
             if (!canContainNull(*nested_type))
                 return;
             is_null.resize(gathered.num_elements);
             for (size_t j = 0; j < gathered.num_elements; ++j)
-                is_null[j] = elements->isNullAt(j);
+                is_null[j] = elements->isNullAt(deferred ? gathered.deferred_positions[j] : j);
         };
-        collect_nulls(gathered.full_elements0, nested_type0, gathered.is_null0);
-        collect_nulls(gathered.full_elements1, nested_type1, gathered.is_null1);
+        collect_nulls(gathered.full_elements0, nested_type0, gathered.deferred_side == 0, gathered.is_null0);
+        collect_nulls(gathered.full_elements1, nested_type1, gathered.deferred_side == 1, gathered.is_null1);
         if (const auto * nullable0 = checkAndGetColumn<ColumnNullable>(gathered.full_elements0.get()))
             elements0 = nullable0->getNestedColumnPtr();
         if (const auto * nullable1 = checkAndGetColumn<ColumnNullable>(gathered.full_elements1.get()))
@@ -1770,12 +1795,20 @@ private:
         {
             if (DataTypePtr common_type = tryGetLeastSupertype(DataTypes{left.type, right.type}))
             {
-                ColumnPtr left_column = castColumn(left, common_type)->convertToFullColumnIfConst();
-                ColumnPtr right_column = castColumn(right, common_type)->convertToFullColumnIfConst();
+                /// A constant is compared by its single row, without copying it for every row.
+                ColumnPtr left_column = castColumn(left, common_type);
+                ColumnPtr right_column = castColumn(right, common_type);
+                const bool left_is_const = isColumnConst(*left_column);
+                const bool right_is_const = isColumnConst(*right_column);
+                if (left_is_const)
+                    left_column = assert_cast<const ColumnConst &>(*left_column).getDataColumnPtr();
+                if (right_is_const)
+                    right_column = assert_cast<const ColumnConst &>(*right_column).getDataColumnPtr();
                 verdict.resize(rows);
                 for (size_t row = 0; row < rows; ++row)
                 {
-                    int cmp = left_column->compareAt(row, row, *right_column, /*nan_direction_hint=*/ 1);
+                    int cmp = left_column->compareAt(
+                        left_is_const ? 0 : row, right_is_const ? 0 : row, *right_column, /*nan_direction_hint=*/ 1);
                     verdict[row] = cmp == 0 ? 0 : ((order_is_less ? cmp < 0 : cmp > 0) ? 1 : -1);
                 }
                 return;
@@ -1801,12 +1834,17 @@ private:
         if ((left.type->isNullable() || right.type->isNullable()) && !is_always_null(left.type) && !is_always_null(right.type)
             && isTuple(removeNullable(left.type)) && isTuple(removeNullable(right.type)))
         {
-            auto remove_nullable = [](const ColumnWithTypeAndName & argument) -> ColumnWithTypeAndName
+            auto remove_nullable = [rows](const ColumnWithTypeAndName & argument) -> ColumnWithTypeAndName
             {
-                ColumnPtr column = argument.column->convertToFullColumnIfConst();
-                if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+                if (const auto * constant = checkAndGetColumn<ColumnConst>(argument.column.get()))
+                {
+                    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&constant->getDataColumn()))
+                        return {ColumnConst::create(nullable->getNestedColumnPtr(), rows), removeNullable(argument.type), argument.name};
+                    return argument;
+                }
+                if (const auto * nullable = checkAndGetColumn<ColumnNullable>(argument.column.get()))
                     return {nullable->getNestedColumnPtr(), removeNullable(argument.type), argument.name};
-                return {column, argument.type, argument.name};
+                return argument;
             };
             compareElementsForOrder(equals_resolver, order_resolver, remove_nullable(left), remove_nullable(right), rows, verdict);
             apply_null_order();
@@ -1819,10 +1857,13 @@ private:
         const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right.type.get());
         if (left_tuple_type && right_tuple_type && left_tuple_type->getElements().size() == right_tuple_type->getElements().size())
         {
-            ColumnPtr left_column = left.column->convertToFullColumnIfConst();
-            ColumnPtr right_column = right.column->convertToFullColumnIfConst();
-            const auto & left_tuple = assert_cast<const ColumnTuple &>(*left_column);
-            const auto & right_tuple = assert_cast<const ColumnTuple &>(*right_column);
+            /// An element of a constant tuple stays a constant.
+            auto tuple_element = [rows](const IColumn & column, size_t i) -> ColumnPtr
+            {
+                if (const auto * constant = checkAndGetColumn<ColumnConst>(&column))
+                    return ColumnConst::create(assert_cast<const ColumnTuple &>(constant->getDataColumn()).getColumnPtr(i), rows);
+                return assert_cast<const ColumnTuple &>(column).getColumnPtr(i);
+            };
 
             verdict.assign(rows, Int8(0));
             PaddedPODArray<Int8> element_verdict;
@@ -1831,8 +1872,8 @@ private:
                 compareElementsForOrder(
                     equals_resolver,
                     order_resolver,
-                    {left_tuple.getColumnPtr(i), left_tuple_type->getElement(i), ""},
-                    {right_tuple.getColumnPtr(i), right_tuple_type->getElement(i), ""},
+                    {tuple_element(*left.column, i), left_tuple_type->getElement(i), ""},
+                    {tuple_element(*right.column, i), right_tuple_type->getElement(i), ""},
                     rows,
                     element_verdict);
                 for (size_t row = 0; row < rows; ++row)
@@ -1880,6 +1921,63 @@ private:
         apply_null_order();
     }
 
+    /// The verdicts of `compareElementsForOrder` for the gathered element pairs. The elements of a deferred constant
+    /// (see `GatheredArrayElements::deferred_side`) are compared one position of the constant at a time, as a
+    /// `ColumnConst` against the elements of the other side that are paired with it, so they are never copied.
+    static void compareGatheredElements(
+        const FunctionOverloadResolverPtr & equals_resolver,
+        const FunctionOverloadResolverPtr & order_resolver,
+        const GatheredArrayElements & gathered,
+        PaddedPODArray<Int8> & verdict)
+    {
+        if (gathered.deferred_side < 0)
+        {
+            compareElementsForOrder(
+                equals_resolver, order_resolver, gathered.element_args[0], gathered.element_args[1], gathered.num_elements, verdict);
+            return;
+        }
+
+        const size_t const_side = gathered.deferred_side;
+        const size_t other_side = 1 - const_side;
+        const auto & const_elements = gathered.element_args[const_side];
+        const auto & other_elements = gathered.element_args[other_side];
+        const auto & positions = gathered.deferred_positions;
+        const size_t num_positions = const_elements.column->size();
+
+        /// The gathered pairs grouped by the position of the constant element, in their order.
+        std::vector<size_t> group_begin(num_positions + 1, 0);
+        for (size_t j = 0; j < gathered.num_elements; ++j)
+            ++group_begin[positions[j] + 1];
+        for (size_t p = 0; p < num_positions; ++p)
+            group_begin[p + 1] += group_begin[p];
+        std::vector<size_t> group_fill(group_begin.begin(), group_begin.end() - 1);
+        auto grouped = ColumnUInt64::create(gathered.num_elements);
+        auto & grouped_data = grouped->getData();
+        for (size_t j = 0; j < gathered.num_elements; ++j)
+            grouped_data[group_fill[positions[j]]++] = j;
+
+        verdict.resize(gathered.num_elements);
+        PaddedPODArray<Int8> group_verdict;
+        for (size_t p = 0; p < num_positions; ++p)
+        {
+            const size_t begin = group_begin[p];
+            const size_t rows = group_begin[p + 1] - begin;
+            if (rows == 0)
+                continue;
+
+            auto group_indexes = ColumnUInt64::create();
+            group_indexes->getData().assign(grouped_data.begin() + begin, grouped_data.begin() + begin + rows);
+
+            ColumnsWithTypeAndName args(2);
+            args[other_side] = {other_elements.column->index(*group_indexes, 0), other_elements.type, other_elements.name};
+            args[const_side] = {ColumnConst::create(const_elements.column->cut(p, 1), rows), const_elements.type, const_elements.name};
+            compareElementsForOrder(equals_resolver, order_resolver, args[0], args[1], rows, group_verdict);
+
+            for (size_t k = 0; k < rows; ++k)
+                verdict[grouped_data[begin + k]] = group_verdict[k];
+        }
+    }
+
     /// Lexicographic equality of two arrays: they are equal iff their lengths match and all aligned elements are equal
     /// (a NULL element is equal only to another NULL). For `!=` and `isDistinctFrom` (instantiated with `NotEqualsOp`)
     /// the result is inverted into inequality.
@@ -1895,8 +1993,7 @@ private:
 
         /// Per element pair: 0 if equal, nonzero otherwise. The order of the elements does not matter here.
         PaddedPODArray<Int8> element_verdict;
-        compareElementsForOrder(
-            equals_resolver, /*order_resolver=*/ nullptr, gathered.element_args[0], gathered.element_args[1], gathered.num_elements, element_verdict);
+        compareGatheredElements(equals_resolver, /*order_resolver=*/ nullptr, gathered, element_verdict);
 
         /// Fold the unwrapped null maps into element-level equality using array NULL semantics.
         auto elem_is_null = [](const NullMap & is_null, size_t j) -> bool { return !is_null.empty() && is_null[j]; };
@@ -1950,8 +2047,7 @@ private:
 
         /// Per element pair: 0 if equal, 1 if the left element comes first, -1 otherwise.
         PaddedPODArray<Int8> element_verdict;
-        compareElementsForOrder(
-            equals_resolver, order_resolver, gathered.element_args[0], gathered.element_args[1], gathered.num_elements, element_verdict);
+        compareGatheredElements(equals_resolver, order_resolver, gathered, element_verdict);
 
         /// Fold the unwrapped null maps into element-level equality/order using array NULL semantics.
         auto elem_is_null = [](const NullMap & is_null, size_t j) -> bool { return !is_null.empty() && is_null[j]; };
