@@ -4244,8 +4244,18 @@ private:
         else if (!released.wait_for(lock, timeout, is_free))
             return nullptr;
 
+        /// Publish ownership only together with the holder that releases it: if allocating the holder
+        /// throws, roll the insertion back, or the file would stay locked until the server restarts.
         locked_files.insert(key);
-        return std::make_unique<Holder>(*this, std::move(key));
+        try
+        {
+            return std::make_unique<Holder>(*this, key);
+        }
+        catch (...)
+        {
+            locked_files.erase(key);
+            throw;
+        }
     }
 
     void release(const String & key)
