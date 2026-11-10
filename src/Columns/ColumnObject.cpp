@@ -9,6 +9,7 @@
 #include <Columns/ColumnsView.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -73,15 +74,44 @@ const IColumn * getObjectTypedPathSourceColumn(const IColumn * source_column, co
     return assert_cast<const ColumnObject &>(*source_column).getTypedPaths().at(path).get();
 }
 
-const IColumn * getObjectDynamicPathSourceColumnIfExists(const IColumn * source_column, const void * context)
+/// Calls `callback(dynamic_path_column, path_source_columns)` for every dynamic path of `column`, where
+/// `path_source_columns` are the columns of this path in the source Object columns that have it, in the order of the
+/// source columns. It walks the dynamic paths of every source column and looks them up among the dynamic paths of
+/// `column`, instead of looking up every dynamic path of `column` in every source column: with sparse JSON a source
+/// column has only a few of the resulting paths, and most of those lookups would be misses.
+template <typename Callback>
+void forEachDynamicPathWithSourceColumns(ColumnObject & column, const ColumnsView & source_columns, Callback && callback)
 {
-    const auto & path = *static_cast<const String *>(context);
-    const auto & dynamic_paths = assert_cast<const ColumnObject &>(*source_column).getDynamicPaths();
-    auto it = dynamic_paths.find(path);
-    if (it == dynamic_paths.end())
-        return nullptr;
+    auto & dynamic_paths_ptrs = column.getDynamicPathsPtrs();
+    if (dynamic_paths_ptrs.empty())
+        return;
 
-    return it->second.get();
+    /// Open addressing: one allocation instead of one per path. The map carries the group index together with the
+    /// dynamic path column, so the callback loop below reads both from the same cell and cannot misalign them.
+    HashMapWithSavedHash<std::string_view, std::pair<size_t, ColumnDynamic *>, StringViewHash> path_to_group(dynamic_paths_ptrs.size());
+    for (const auto & [path, dynamic_path_column] : dynamic_paths_ptrs)
+    {
+        const size_t group = path_to_group.size();
+        path_to_group[path] = {group, dynamic_path_column};
+    }
+
+    const auto path_source_columns = groupColumns(
+        source_columns,
+        path_to_group.size(),
+        [&](const IColumn * source_column, auto && emit)
+        {
+            for (const auto & [path, source_path_column] : assert_cast<const ColumnObject &>(*source_column).getDynamicPaths())
+            {
+                if (const auto * it = path_to_group.find(path))
+                    emit(it->getMapped().first, source_path_column.get());
+            }
+        });
+
+    for (auto & cell : path_to_group)
+    {
+        const auto & [group, dynamic_path_column] = cell.getMapped();
+        callback(*dynamic_path_column, path_source_columns[group]);
+    }
 }
 
 struct ColumnObjectCheckpoint : public ColumnCheckpoint
@@ -1963,29 +1993,19 @@ void ColumnObject::prepareForSquashing(const ColumnsView & source_columns, size_
     for (auto & [path, column] : typed_paths)
         column->prepareForSquashing(source_columns.project(getObjectTypedPathSourceColumn, &path), factor);
 
-    ColumnRawPtrs source_dynamic_columns;
-    if (!dynamic_paths_ptrs.empty())
-        source_dynamic_columns.reserve(source_columns.size());
-    for (const auto & [path, column] : dynamic_paths_ptrs)
-    {
-        /// ColumnDynamic::prepareForSquashing may not preallocate enough memory for discriminators and offsets
-        /// because source columns may not have this dynamic path (and so dynamic columns filled with nulls).
-        /// For this reason we first call ColumnDynamic::reserve with resulting size to preallocate memory for
-        /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
-        /// for all variants inside Dynamic.
-        column->reserve(total_size * factor);
-
-        /// prepareVariantsForSquashing traverses its source columns once to collect variant sizes and then once
-        /// per resulting variant. Materialize this projection so every traversal doesn't repeat the dynamic path lookup.
-        source_dynamic_columns.clear();
-        source_columns.forEach(
-            [&](const IColumn * source_column)
-            {
-                if (const auto * source_dynamic_column = getObjectDynamicPathSourceColumnIfExists(source_column, &path))
-                    source_dynamic_columns.push_back(source_dynamic_column);
-            });
-        column->prepareVariantsForSquashing(source_dynamic_columns, factor);
-    }
+    forEachDynamicPathWithSourceColumns(
+        *this,
+        source_columns,
+        [&](ColumnDynamic & column, const ColumnsView & path_source_columns)
+        {
+            /// ColumnDynamic::prepareForSquashing may not preallocate enough memory for discriminators and offsets
+            /// because source columns may not have this dynamic path (and so dynamic columns filled with nulls).
+            /// For this reason we first call ColumnDynamic::reserve with resulting size to preallocate memory for
+            /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
+            /// for all variants inside Dynamic.
+            column.reserve(total_size * factor);
+            column.prepareVariantsForSquashing(path_source_columns, factor);
+        });
 }
 
 bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
@@ -2113,11 +2133,11 @@ void ColumnObject::chooseDynamicStructureForMerge(const ColumnsView & source_col
     /// Now we have the resulting set of dynamic paths that will be used in all merged columns.
     /// As we use Dynamic column for dynamic paths, we should call `chooseDynamicStructureForMerge`
     /// on all resulting dynamic columns.
-    for (auto & [path, column] : dynamic_paths)
-    {
-        column->chooseDynamicStructureForMerge(
-            source_columns.filterProject(getObjectDynamicPathSourceColumnIfExists, &path), max_dynamic_subcolumns);
-    }
+    forEachDynamicPathWithSourceColumns(
+        *this,
+        source_columns,
+        [&](ColumnDynamic & column, const ColumnsView & path_source_columns)
+        { column.chooseDynamicStructureForMerge(path_source_columns, max_dynamic_subcolumns); });
 
     /// Typed paths also can contain types with dynamic structure.
     for (auto & [path, column] : typed_paths)
@@ -2284,12 +2304,14 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const ColumnsView & source_colu
         return;
     }
 
-    for (auto & [path, column] : dynamic_paths)
-    {
-        auto dynamic_path_source_columns = source_columns.filterProject(getObjectDynamicPathSourceColumnIfExists, &path);
-        if (!dynamic_path_source_columns.empty())
-            column->takeOrCalculateStatisticsFrom(dynamic_path_source_columns);
-    }
+    forEachDynamicPathWithSourceColumns(
+        *this,
+        source_columns,
+        [&](ColumnDynamic & column, const ColumnsView & path_source_columns)
+        {
+            if (!path_source_columns.empty())
+                column.takeOrCalculateStatisticsFrom(path_source_columns);
+        });
 
     /// Recursively update statistics for typed paths.
     for (auto & [path, column] : typed_paths)

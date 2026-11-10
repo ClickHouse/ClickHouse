@@ -15,6 +15,7 @@
 #include <Common/typeid_cast.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 using namespace DB;
@@ -23,6 +24,8 @@ namespace
 {
 
 constexpr size_t dynamic_path_count = 8;
+/// The number of all dynamic paths in sparse `JSON`, where every source has only `dynamic_path_count` of them.
+constexpr size_t sparse_path_count = 256;
 constexpr size_t max_dynamic_subcolumns = 6;
 
 using SourceColumns = VectorWithMemoryTracking<ColumnPtr>;
@@ -61,7 +64,7 @@ ColumnPtr makeNestedMapColumn(const DataTypePtr & type, size_t source, size_t ro
     return column;
 }
 
-ColumnPtr makeObjectColumn(const DataTypePtr & type, size_t source, size_t rows)
+ColumnPtr makeObjectColumn(const DataTypePtr & type, size_t source, size_t rows, bool sparse = false)
 {
     auto column = type->createColumn();
     for (size_t row = 0; row != rows; ++row)
@@ -70,20 +73,25 @@ ColumnPtr makeObjectColumn(const DataTypePtr & type, size_t source, size_t rows)
         value.emplace("typed", makeNestedMapValue(source, row));
         /// Keep the path set fixed so the source-count dimension does not also change schema complexity.
         /// The merge limit is lower than this path count, which still exercises path ranking and shared-data statistics.
+        /// Sparse `JSON` (like time-clustered events): every source has its own window of `dynamic_path_count` of
+        /// `sparse_path_count` paths, so the result has many paths and every source has only a few of them.
         for (size_t path = 0; path != dynamic_path_count; ++path)
-            value.emplace("dynamic_" + std::to_string(path), makeDynamicValue(source, row, path));
+        {
+            const size_t path_id = sparse ? (source * dynamic_path_count + path) % sparse_path_count : path;
+            value.emplace("dynamic_" + std::to_string(path_id), makeDynamicValue(source, row, path));
+        }
         column->insert(value);
     }
     return column;
 }
 
-SourceColumns makeSources(const DataTypePtr & type, size_t source_count, size_t rows, bool object)
+SourceColumns makeSources(const DataTypePtr & type, size_t source_count, size_t rows, bool object, bool sparse = false)
 {
     SourceColumns sources;
     sources.reserve(source_count);
     for (size_t source = 0; source != source_count; ++source)
     {
-        sources.emplace_back(object ? makeObjectColumn(type, source, rows) : makeNestedMapColumn(type, source, rows));
+        sources.emplace_back(object ? makeObjectColumn(type, source, rows, sparse) : makeNestedMapColumn(type, source, rows));
     }
     return sources;
 }
@@ -132,6 +140,11 @@ DataTypePtr getNestedMapType()
 DataTypePtr getObjectType()
 {
     return DataTypeFactory::instance().get("JSON(max_dynamic_types=8, max_dynamic_paths=8, typed Map(String, Array(Nullable(String))))");
+}
+
+DataTypePtr getSparseObjectType()
+{
+    return DataTypeFactory::instance().get("JSON(max_dynamic_types=8, max_dynamic_paths=256, typed Map(String, Array(Nullable(String))))");
 }
 
 void setJemallocAllocationCounters(benchmark::State & state, const std::optional<JemallocAllocationStats> & allocation_stats)
@@ -221,11 +234,11 @@ void BM_SquashNestedMap(benchmark::State & state)
     }
 }
 
-void BM_PrepareForSquashingObject(benchmark::State & state)
+void prepareForSquashingObject(benchmark::State & state, bool sparse)
 {
-    const auto type = getObjectType();
-    const auto initial_column = makeObjectColumn(type, 0, state.range(1));
-    const auto sources = makeSources(type, state.range(0), state.range(1), true);
+    const auto type = sparse ? getSparseObjectType() : getObjectType();
+    const auto initial_column = makeObjectColumn(type, 0, state.range(1), sparse);
+    const auto sources = makeSources(type, state.range(0), state.range(1), true, sparse);
 
     auto allocation_probe_destination = initial_column->cloneResized(initial_column->size());
     const auto allocation_stats = measureJemallocAllocations([&] { allocation_probe_destination->prepareForSquashing(sources, 1); });
@@ -371,18 +384,24 @@ void BM_TakeStatisticsFromSingleRawPtrObject(benchmark::State & state)
     }
 }
 
-void BM_MergePreparationObject(benchmark::State & state)
+void BM_PrepareForSquashingObject(benchmark::State & state) { prepareForSquashingObject(state, false); }
+
+void BM_PrepareForSquashingSparseObject(benchmark::State & state) { prepareForSquashingObject(state, true); }
+
+void mergePreparationObject(benchmark::State & state, bool sparse)
 {
-    const auto type = getObjectType();
-    auto source_columns = makeSources(type, state.range(0), state.range(1), true);
+    const auto type = sparse ? getSparseObjectType() : getObjectType();
+    auto source_columns = makeSources(type, state.range(0), state.range(1), true, sparse);
     cacheStatistics(source_columns);
     const auto sources = makeRawSources(source_columns);
+    /// Sparse: no limit, so that the result has all paths of the sources and every source only a few of them.
+    const std::optional<size_t> dynamic_subcolumns_limit = sparse ? std::nullopt : std::optional<size_t>(max_dynamic_subcolumns);
 
     auto allocation_probe_destination = type->createColumn();
     const auto allocation_stats = measureJemallocAllocations(
         [&]
         {
-            allocation_probe_destination->chooseDynamicStructureForMerge(sources, max_dynamic_subcolumns);
+            allocation_probe_destination->chooseDynamicStructureForMerge(sources, dynamic_subcolumns_limit);
             allocation_probe_destination->takeOrCalculateStatisticsFrom(sources);
         });
     benchmark::DoNotOptimize(allocation_probe_destination);
@@ -395,7 +414,7 @@ void BM_MergePreparationObject(benchmark::State & state)
         auto destination = type->createColumn();
         state.ResumeTiming();
 
-        destination->chooseDynamicStructureForMerge(sources, max_dynamic_subcolumns);
+        destination->chooseDynamicStructureForMerge(sources, dynamic_subcolumns_limit);
         destination->takeOrCalculateStatisticsFrom(sources);
         benchmark::DoNotOptimize(destination);
 
@@ -405,8 +424,16 @@ void BM_MergePreparationObject(benchmark::State & state)
     }
 }
 
+void BM_MergePreparationObject(benchmark::State & state) { mergePreparationObject(state, false); }
+
+void BM_MergePreparationSparseObject(benchmark::State & state) { mergePreparationObject(state, true); }
+
 #define REGISTER_SOURCE_BENCHMARK(name, source_dimension) \
     BENCHMARK(name)->Args({1, 32})->Args({8, 32})->Args({32, 32})->ArgNames({source_dimension, "rows_per_source"})
+
+/// With 256 sources every one of the 256 paths is in 8 sources.
+#define REGISTER_SPARSE_SOURCE_BENCHMARK(name, source_dimension) \
+    BENCHMARK(name)->Args({8, 32})->Args({32, 32})->Args({256, 32})->ArgNames({source_dimension, "rows_per_source"})
 
 REGISTER_SOURCE_BENCHMARK(BM_PrepareForSquashingNestedMap, "additional_sources");
 REGISTER_SOURCE_BENCHMARK(BM_SquashNestedMap, "additional_chunks");
@@ -414,10 +441,12 @@ REGISTER_SOURCE_BENCHMARK(BM_PrepareForSquashingObject, "additional_sources");
 REGISTER_SOURCE_BENCHMARK(BM_ChooseDynamicStructureForMergeObject, "sources");
 REGISTER_SOURCE_BENCHMARK(BM_TakeOrCalculateStatisticsFromObject, "sources");
 REGISTER_SOURCE_BENCHMARK(BM_MergePreparationObject, "sources");
+REGISTER_SPARSE_SOURCE_BENCHMARK(BM_PrepareForSquashingSparseObject, "additional_sources");
+REGISTER_SPARSE_SOURCE_BENCHMARK(BM_MergePreparationSparseObject, "sources");
 
 BENCHMARK(BM_TakeStatisticsForPartWritingObject)->Arg(32)->ArgName("rows");
 BENCHMARK(BM_TakeStatisticsFromSingleRawPtrObject)->Arg(32)->ArgName("rows");
 
 #undef REGISTER_SOURCE_BENCHMARK
-
+#undef REGISTER_SPARSE_SOURCE_BENCHMARK
 }

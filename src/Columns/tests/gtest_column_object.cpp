@@ -715,3 +715,63 @@ TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
     for (size_t i = 1; i != target_object.size(); ++i)
         ASSERT_EQ(target_object[i], (*sources.front())[(i - 1) % source_rows]);
 }
+
+TEST(ColumnObject, ChooseDynamicStructureAndTakeStatisticsFromSparseSources)
+{
+    /// Every source has only some of the dynamic paths of the result. The structure and the statistics of every
+    /// resulting dynamic path must come from exactly the sources that have this path.
+    /// The numbers need 64 bits, so that their types are UInt64 and Int64, not the smallest types that fit.
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=10)");
+
+    auto first_source = type->createColumn();
+    first_source->insert(Object{{"a", Field(UInt64(10'000'000'001))}, {"b", Field("first")}});
+    first_source->insert(Object{{"a", Field(UInt64(10'000'000'002))}});
+
+    auto second_source = type->createColumn();
+    second_source->insert(Object{{"b", Field(Int64(-10'000'000'001))}, {"c", Field(Array{Field(UInt64(10'000'000'003))})}});
+    second_source->insert(Object{{"b", Field(Int64(-10'000'000'002))}});
+
+    auto third_source = type->createColumn();
+    for (const auto * value : {"x", "y", "z"})
+        third_source->insert(Object{{"c", Field(value)}});
+
+    VectorWithMemoryTracking<ColumnPtr> sources;
+    sources.emplace_back(std::move(first_source));
+    sources.emplace_back(std::move(second_source));
+    sources.emplace_back(std::move(third_source));
+
+    auto result = type->createColumn();
+    result->chooseDynamicStructureForMerge(sources, std::nullopt);
+    result->takeOrCalculateStatisticsFrom(sources);
+
+    const auto & result_object = assert_cast<const ColumnObject &>(*result);
+    const auto & dynamic_paths = result_object.getDynamicPathsPtrs();
+    ASSERT_EQ(dynamic_paths.size(), 3u);
+
+    /// The number of non-null values of every path in all sources.
+    const auto & paths_statistics = result_object.getStatistics()->dynamic_paths_statistics;
+    ASSERT_EQ(paths_statistics.size(), 3u);
+    EXPECT_EQ(paths_statistics.at("a"), 2u);
+    EXPECT_EQ(paths_statistics.at("b"), 3u);
+    EXPECT_EQ(paths_statistics.at("c"), 4u);
+
+    auto check_variants = [&](const String & path, std::initializer_list<std::pair<String, size_t>> expected_variants)
+    {
+        SCOPED_TRACE(path);
+        const auto & dynamic_column = *dynamic_paths.at(path);
+        const auto & variant_info = dynamic_column.getVariantInfo();
+        /// The variants of this path in the sources that have it, and the shared variant.
+        EXPECT_EQ(variant_info.variant_names.size(), expected_variants.size() + 1);
+        ASSERT_TRUE(dynamic_column.getStatistics());
+        const auto & variants_statistics = dynamic_column.getStatistics()->variants_statistics;
+        for (const auto & [variant, size] : expected_variants)
+        {
+            EXPECT_TRUE(variant_info.variant_name_to_discriminator.contains(variant)) << variant;
+            ASSERT_TRUE(variants_statistics.contains(variant)) << variant;
+            EXPECT_EQ(variants_statistics.at(variant), size) << variant;
+        }
+    };
+    check_variants("a", {{"UInt64", 2}});
+    check_variants("b", {{"String", 1}, {"Int64", 2}});
+    check_variants("c", {{"Array(UInt64)", 1}, {"String", 3}});
+}
