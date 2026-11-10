@@ -67,11 +67,14 @@ void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
 
 /// Reject mutation expressions whose `IN` operand is a `Set` with an applicable row policy.
 /// This must run with the submitting context before the mutation is handed to a background context.
+/// `mutated_table` is the table whose columns the expressions may refer to (`x IN a.b` with a subcolumn `a.b`). It is
+/// needed when `mutation_ast` is a command of `ALTER` rather than a whole `DELETE` or `UPDATE` query naming the table.
 void checkNoRowPolicyForSetOperands(
     const ASTPtr & mutation_ast,
     const String & default_database,
     const ContextPtr & context,
-    bool throw_if_unresolved = false);
+    bool throw_if_unresolved = false,
+    const StoragePtr & mutated_table = nullptr);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.

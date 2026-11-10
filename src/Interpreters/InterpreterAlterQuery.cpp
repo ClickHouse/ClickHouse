@@ -787,7 +787,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
 
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
+        params.additional_access_check = [captured_query_ptr = query_ptr, captured_table = table, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
             const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
@@ -795,7 +795,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             {
                 const auto & command = child->as<const ASTAlterCommand &>();
                 if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
-                    checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved);
+                    checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved, captured_table);
             }
 
             /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
@@ -832,7 +832,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
         {
             is_mutation = true;
-            checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
+            checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext(), /*throw_if_unresolved=*/ false, table);
         }
     }
 

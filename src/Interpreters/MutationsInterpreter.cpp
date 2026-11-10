@@ -125,17 +125,20 @@ void checkNoRowPolicyForSetOperands(
     const ASTPtr & mutation_ast,
     const String & default_database,
     const ContextPtr & context,
-    bool throw_if_unresolved)
+    bool throw_if_unresolved,
+    const StoragePtr & mutated_table)
 {
     ASTPtr ast = mutation_ast->clone();
     AddDefaultDatabaseVisitor visitor(context, default_database);
     /// A compound right argument of `IN` that may be a subcolumn of the mutated table (`x IN a.b`) is left as written,
     /// the same as by the binding of the mutation expressions, so that it is not checked as a table here.
-    if (const auto * query = mutation_ast->as<ASTQueryWithTableAndOutput>(); query && !query->getTable().empty())
+    if (mutated_table)
+        visitor.addExpressionSourceTable(mutated_table);
+    else if (const auto * query = mutation_ast->as<ASTQueryWithTableAndOutput>(); query && !query->getTable().empty())
     {
         StorageID mutated_table_id(query->getDatabase().empty() ? default_database : query->getDatabase(), query->getTable());
-        if (auto mutated_table = DatabaseCatalog::instance().tryGetTable(mutated_table_id, context))
-            visitor.addExpressionSourceTable(mutated_table);
+        if (auto table_from_query = DatabaseCatalog::instance().tryGetTable(mutated_table_id, context))
+            visitor.addExpressionSourceTable(table_from_query);
     }
     visitor.visit(ast);
 
