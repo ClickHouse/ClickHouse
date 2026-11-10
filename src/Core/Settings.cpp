@@ -20,6 +20,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Access/resolveSetting.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
@@ -755,6 +756,14 @@ Possible values:
 - 1 — `SELECT` returns empty result for empty file.
 )", 0, \
         {"24.11", false, true, "We hope it will provide better UX"}) \
+    DECLARE(Bool, s3_skip_hidden_files, false, R"(
+Enables or disables skipping hidden paths when listing files by glob in [S3](/reference/engines/table-engines/integrations/s3) engine tables: objects with a path segment starting with `_` or `.` below the non-glob prefix of the path. A segment containing `=` is a partition directory (such as `_p=1` for a partition column `_p`) and is not hidden. Hive-ecosystem writers (Hive, Spark, Trino) stage in-progress output and write marker objects under such paths (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), and reading them races with the writer's commit: the query can return uncommitted data or fail when the writer renames or deletes the staged object mid-read. Segments within the non-glob prefix are not checked. Tables with `partition_strategy = 'hive'` always skip hidden paths regardless of this setting.
+
+Possible values:
+- 0 — every object matched by the glob is read.
+- 1 — objects with a hidden path segment below the non-glob prefix are skipped.
+)", 0, \
+        {"26.11", false, false, "New setting: skip objects with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}) \
     DECLARE(Bool, azure_create_new_file_on_insert, false, R"(
 Enables or disables creating a new file on each insert in azure engine tables
 )", 0) \
@@ -927,6 +936,14 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(Bool, hdfs_skip_hidden_files, false, R"(
+Enables or disables skipping hidden paths when listing files by glob in [HDFS](/reference/engines/table-engines/integrations/hdfs) engine tables: files with a path segment starting with `_` or `.` below the non-glob prefix of the path. A segment containing `=` is a partition directory (such as `_p=1` for a partition column `_p`) and is not hidden. Hive-ecosystem writers (Hive, Spark, Trino) stage in-progress output and write marker files under such paths (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), and reading them races with the writer's commit. Segments within the non-glob prefix are not checked. Tables with `partition_strategy = 'hive'` always skip hidden paths regardless of this setting.
+
+Possible values:
+- 0 — every file matched by the glob is read.
+- 1 — files with a hidden path segment below the non-glob prefix are skipped.
+)", 0, \
+        {"26.11", false, false, "New setting: skip files with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}) \
     DECLARE(Bool, enable_hdfs_pread, true, R"(
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0, \
         {"25.4", true, true, "New setting."}) \
@@ -960,6 +977,14 @@ Possible values:
 - 1 — `SELECT` returns empty result for empty file.
 )", 0, \
         {"24.6", false, false, "Allow to skip empty files in azure table engine"}) \
+    DECLARE(Bool, azure_skip_hidden_files, false, R"(
+Enables or disables skipping hidden paths when listing files by glob in [AzureBlobStorage](/reference/engines/table-engines/integrations/azureBlobStorage) engine tables: blobs with a path segment starting with `_` or `.` below the non-glob prefix of the path. A segment containing `=` is a partition directory (such as `_p=1` for a partition column `_p`) and is not hidden. Hive-ecosystem writers (Hive, Spark, Trino) stage in-progress output and write marker objects under such paths (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), and reading them races with the writer's commit. Segments within the non-glob prefix are not checked. Tables with `partition_strategy = 'hive'` always skip hidden paths regardless of this setting.
+
+Possible values:
+- 0 — every blob matched by the glob is read.
+- 1 — blobs with a hidden path segment below the non-glob prefix are skipped.
+)", 0, \
+        {"26.11", false, false, "New setting: skip blobs with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}) \
     DECLARE(ArrowFlightDescriptorType, arrow_flight_request_descriptor_type, ArrowFlightDescriptorType::Path, R"(
 Type of descriptor to use for Arrow Flight requests. 'path' sends the dataset name as a path descriptor. 'command' sends a SQL query as a command descriptor (required for Dremio).
 
@@ -1883,9 +1908,6 @@ Possible values:
 )", 0) \
     \
     DECLARE(NonZeroUInt64, min_chunk_bytes_for_parallel_parsing, (10 * 1024 * 1024), R"(
-- Type: unsigned int
-- Default value: 1 MiB
-
 The minimum chunk size in bytes, which each thread will parse in parallel.
 )", 0) \
     DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, true, R"(
@@ -2328,6 +2350,7 @@ Answer `min`, `max` and `count` aggregations from per-part column statistics ins
 When enabled, a query of the form `SELECT min(column), max(column), count() FROM table` without `GROUP BY` and filters
 is answered from column statistics (e.g. MinMax statistics, see the `auto_statistics_types` MergeTree setting)
 for the data parts that have them materialized, and only the remaining parts are read.
+`count()` is also answered together with the aggregations of `use_statistics_for_sum_avg_aggregation`.
 
 Possible values:
 
@@ -2335,6 +2358,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.9", false, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."}) \
+    DECLARE(Bool, use_statistics_for_sum_avg_aggregation, true, R"(
+Answer `sum`, `avg` and `sumCount` aggregations over integer and `Decimal` columns that are not `Nullable` or
+`LowCardinality`, without `GROUP BY` and filters, from per-part column statistics (the `basic` statistics type, see the
+`auto_statistics_types` `MergeTree` setting) for the data parts that have them materialized, and read only the remaining
+parts. `count(column)` of a column that is not `Nullable` or `LowCardinality` is answered there from the number of rows.
+The result is exactly the same as when reading the data.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.11", false, true, "New setting to answer `sum`, `avg`, `sumCount` and `count(column)` aggregations without `GROUP BY` and filters from per-part column statistics. previous_value=false so `compatibility` with versions before 26.11 keeps the optimization disabled and restores the pre-existing plan."}) \
     DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
@@ -4594,6 +4630,14 @@ Possible values:
 
 - Any positive integer, starting from 2.
 )", 0) \
+    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
+Initial number of grace hash join buckets
+)", 0, \
+        {"26.11", 1, 1, "The setting is no longer experimental. The default is unchanged."}) \
+    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
+Limit on the number of grace hash join buckets
+)", 0, \
+        {"26.11", 1024, 1024, "The setting is no longer experimental. The default is unchanged."}) \
     DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, R"(
 Maximal size of the set to filter joined tables by each other's row sets before joining.
 
@@ -5239,7 +5283,7 @@ The memory size at which the adaptive aggregator freezes a thread's local hash t
 )", 0, \
         {"26.9", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."}) \
     DECLARE(Bool, adaptive_aggregator_disable_thaw, false, R"(
-Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads have repeat-dominated staged streams, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
+Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads thaw, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
 
 With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. Aggregations with descending top-K pruning already keep their tables frozen independently of this setting. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
 )", 0, \
@@ -6145,6 +6189,16 @@ Replace if(cond1, then1, if(cond2, ...)) chains to multiIf. Currently it's not b
     DECLARE(Bool, optimize_multiif_to_if, true, R"(
 Replace 'multiIf' with only one condition to 'if'.
 )", 0) \
+    DECLARE(Bool, optimize_if_transform_const_strings_to_lowcardinality, false, R"(
+If enabled, the `if`, `multiIf`, and `transform` functions with constant string result branches (and defaults) will return `LowCardinality(String)` instead of `String`.
+Disabled by default because constructing a `LowCardinality` dictionary per block can be slower than a plain `String` result when the dictionary is not reused downstream.
+The optimization is not applied when the whole expression is constant (constant condition or input as well): a constant gains nothing from `LowCardinality`, and functions expecting constant `String` arguments (e.g. `arrayReduce`, `joinGet`, `tupleElement`) keep working.
+
+All the result branches have to be constants, so a nested `if` chain such as `if(cond1, 'a', if(cond2, 'b', 'c'))` keeps plain `String`: the else-branch of the outer `if` is another `if`, not a constant. Write it as `multiIf(cond1, 'a', cond2, 'b', 'c')` to get `LowCardinality(String)`.
+
+This setting has no effect while `optimize_if_transform_strings_to_enum` is enabled: the `Enum` rewrite takes precedence, and the result stays `String` (or `Nullable(String)`) even for the explicit `multiIf` form above.
+)", 0, \
+        {"26.11", false, false, "New setting to allow optimizing results of const branches from `if`/`multiIf`/`transform` into `LowCardinality`. Disabled by default."}) \
     DECLARE(Bool, optimize_if_transform_strings_to_enum, false, R"(
 Replaces string-type arguments in If and Transform to enum. Disabled by default cause it could make inconsistent change in distributed query that would lead to its fail.
 )", 0) \
@@ -8018,8 +8072,7 @@ This is an expert-level setting which should only be used for debugging by devel
 )", 0, \
         {"26.9", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."}) \
     DECLARE(Bool, query_plan_lower_array_join_function, true, R"(
-Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+Runs the `arrayJoin` function in the same way as the `ARRAY JOIN` clause: as a separate `ARRAY JOIN` step of the query plan. When disabled, the function is calculated inside the expression that contains it, as in older versions.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -9305,9 +9358,6 @@ SELECT * FROM test_table
 │ 1 │
 └───┘
 ```
-)", 0) \
-    DECLARE(Bool, count_distinct_optimization, false, R"(
-Rewrite count distinct to subquery of group by
 )", 0) \
     DECLARE(Bool, optimize_inverse_dictionary_lookup, true, R"(
 Avoid repeated inverse dictionary lookup by doing faster lookups into a precomputed set of possible key values.
@@ -10737,6 +10787,10 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
 )", 0, \
         {"26.10", 5.0, 3.0, "Lowered the minimum estimated ratio of join output rows to build-side rows that enables the hash join row store."}, \
         {"26.9", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."}) \
+    DECLARE(UInt64, min_string_column_bytes_for_hash_join_row_store, 8_MiB, R"(
+Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means `String` columns are not stored in the row store.
+)", 0, \
+        {"26.11", 0, 8_MiB, "New setting to control the minimum estimated size of a build-side `String` column to store it in the hash join row store."}) \
     \
     /* ####################################################### */ \
     /* AI function settings */ \
@@ -10914,12 +10968,6 @@ transaction on this replica. On expiry they throw `TIMEOUT_EXCEEDED`.
         {"26.11", 10000, 10000, "New setting bounding how long `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` and `COMMIT` wait for commits to become visible on this replica."}) \
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
-Initial number of grace hash join buckets
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
-Limit on the number of grace hash join buckets
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
@@ -11446,7 +11494,7 @@ When the hash join build side was converted to a FixedHashMap (see `enable_join_
     DECLARE(Bool, enable_join_runtime_filters_index_analysis, true, R"(
 Prune granules on the probe side of a JOIN with the runtime filter collected from the build side, see `enable_join_runtime_filters`.
 Only has an effect if `use_skip_indexes_on_data_read = 1`.
-Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, can be pruned.
+Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, or is the global row index `_part_starting_offset + _part_offset`, can be pruned. A self-join on the global row index, which fetches the rows found by a subquery, reads only the granules of those rows. The global row index identifies a row only within one query, so both sides of the join must read the table in the same query.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
@@ -11837,6 +11885,8 @@ Enable table function `eval`.
     MAKE_OBSOLETE(M, Bool, query_plan_aggregation_in_order, true, \
         {"26.10", true, true, "Obsolete setting: the aggregation-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation was removed. Use `optimize_aggregation_in_order` to toggle the optimization."}, \
         {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
+    MAKE_OBSOLETE(M, Bool, count_distinct_optimization, false, \
+        {"26.11", false, false, "Obsolete setting: a single `uniqExact` or `count(DISTINCT)` without `GROUP BY` is computed by radix partitioning (`optimize_uniq_exact_radix_partitioning`), which made the rewrite to a `GROUP BY` subquery unnecessary."}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_insert_select_local_pipeline, true, \
         {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
         {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
