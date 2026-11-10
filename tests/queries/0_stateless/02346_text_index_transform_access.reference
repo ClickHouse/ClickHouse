@@ -1,0 +1,19 @@
+1. Direct call denied.
+2. Denied in a preprocessor.
+3. Denied when nested under a String result.
+4. Denied via ALTER ADD INDEX.
+5. Unprivileged expression unaffected.
+1
+6. Accepted with the privilege, so not a blocklist.
+1
+7. Existing index stays readable without the privilege.
+1
+8. Unrelated ALTER does not re-authorize.
+1
+9. Neither does DETACH/ATTACH.
+1
+10. Redeclaring with a privileged function is denied.
+11. The transform preflight does not reject what a plain ALTER accepts.
+idx_pre
+12. A statement without a transform is not analyzed at all.
+idx_minmax
