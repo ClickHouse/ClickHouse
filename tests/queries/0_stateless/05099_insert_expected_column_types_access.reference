@@ -1,0 +1,7 @@
+hidden column: ACCESS_DENIED
+missing column: ACCESS_DENIED
+granted column, right type: OK
+granted column, wrong type: INCOMPATIBLE_SCHEMA
+table grant, wrong type: INCOMPATIBLE_SCHEMA
+table grant, right type: OK
+[2,5]

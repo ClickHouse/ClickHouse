@@ -1507,8 +1507,10 @@ namespace
 
 /// What an INSERT may require of the table it names: an engine and column types, each refused when it differs.
 /// Returns the requirements it checked, empty when there were none.
-SettingsChanges checkInsertExpectations(const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, const Settings & settings)
+SettingsChanges checkInsertExpectations(
+    const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const StorageID * table_id_to_check)
 {
+    const Settings & settings = context->getSettingsRef();
     const String expected_engine = settings[Setting::insert_expected_table_engine].value;
     const auto & expected_types = settings[Setting::insert_expected_column_types].value;
     if (expected_engine.empty() && expected_types.empty())
@@ -1521,6 +1523,15 @@ SettingsChanges checkInsertExpectations(const StoragePtr & table, const StorageM
             table->getStorageID().getNameForLogs(),
             table->getName(),
             expected_engine);
+
+    /// A column the user may not see is neither looked up nor named in an error.
+    if (table_id_to_check && !expected_types.empty())
+    {
+        Names expected_names;
+        for (const auto & expected_type : expected_types)
+            expected_names.push_back(expected_type.safeGet<Tuple>().at(0).safeGet<String>());
+        context->checkAccess(AccessType::SHOW_COLUMNS, *table_id_to_check, expected_names);
+    }
 
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & expected_type : expected_types)
@@ -1635,7 +1646,9 @@ BlockIO InterpreterInsertQuery::execute()
     /// The table named is checked and the requirements consumed: the writes it makes on its own, into inner tables
     /// or views, are its own. Only a Distributed table on the first hop forwards them, for each shard to check its table.
     if (table->getName() != "Distributed" || context->getClientInfo().distributed_depth > 0)
-        consumed_insert_expectations = checkInsertExpectations(table, metadata_snapshot, settings);
+        consumed_insert_expectations = checkInsertExpectations(
+            table, metadata_snapshot, context,
+            !query.table_function && !skip_target_insert_access_check ? &query.table_id : nullptr);
     if (!consumed_insert_expectations.empty())
     {
         /// Consumed on a copy: a caller that queues this insert keeps them, for the flush to check its own table.

@@ -318,6 +318,12 @@ void stripInsertExpectations(Settings & settings)
     settings.setDefaultValue("insert_expected_column_types");
 }
 
+void stripInsertExpectationsFromQuery(const ASTPtr & query)
+{
+    static constexpr std::string_view names[] = {"insert_expected_table_engine", "insert_expected_column_types"};
+    removeSettingsFromQuery(query, names);
+}
+
 /// Single source of truth for the initiator-only setting names. MUST list exactly the settings reset by
 /// `stripInitiatorOnlySettings` above. Used both to test membership (`isInitiatorOnlySettingName`) and to
 /// remove these settings from a query's own `SETTINGS` clause before that query *text* is forwarded to a
