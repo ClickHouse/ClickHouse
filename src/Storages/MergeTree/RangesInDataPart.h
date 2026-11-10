@@ -31,6 +31,9 @@ struct RangesInDataPartDescription
     /// The initiator computes this per part after PK analysis and propagates back to replicas in read request responses.
     size_t min_marks_per_task = 0;
 
+    /// `AlterConversions::getReadOverlayHash` of the part. Sent only in `InitialAllRangesAnnouncement`, not by `serialize`.
+    UInt64 read_overlay_hash = 0;
+
     void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
     void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);

@@ -12,6 +12,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -135,6 +136,43 @@ AlterConversions::AlterConversions(
 
     for (const auto & patch : patch_parts_)
         addPatchPart(patch);
+
+    if (!mutation_commands_.empty() || !patch_parts.empty())
+    {
+        SipHash hash;
+        hash.update(mutation_commands_.size());
+        for (const auto & command : mutation_commands_)
+        {
+            hash.update(command.type);
+            hash.update(command.mutation_version.has_value());
+            hash.update(command.mutation_version.value_or(0));
+            hash.update(command.ast_text.size());
+            hash.update(command.ast_text);
+        }
+
+        std::vector<const PatchPartInfoForReader *> sorted_patches;
+        sorted_patches.reserve(patch_parts.size());
+        for (const auto & patch : patch_parts)
+            sorted_patches.push_back(&patch);
+        std::ranges::sort(sorted_patches, {}, [](const auto * patch) -> const String & { return patch->part->getPartName(); });
+
+        hash.update(sorted_patches.size());
+        for (const auto * patch : sorted_patches)
+        {
+            const auto & name = patch->part->getPartName();
+            const auto patch_conversions = patch->part->getAlterConversions();
+            hash.update(name.size());
+            hash.update(name);
+            hash.update(patch->mode);
+            hash.update(patch->perform_alter_conversions);
+            hash.update(patch_conversions ? patch_conversions->getReadOverlayHash() : 0);
+        }
+
+        /// 0 means "no overlay".
+        read_overlay_hash = hash.get64();
+        if (read_overlay_hash == 0)
+            read_overlay_hash = 1;
+    }
 
     /// Do not throw if there are no mutations or patches.
     if (number_of_alter_mutations > 1)

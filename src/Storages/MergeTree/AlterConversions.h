@@ -90,6 +90,9 @@ public:
     PatchPartsForReader getAllPatches() const { return patch_parts; }
     PatchPartsForReader getPatchesForColumns(const NamesAndTypesList & read_columns, bool apply_deleted_mask) const;
 
+    /// Hash of the on-fly mutation commands and patch parts this object was built from; 0 if there are none.
+    UInt64 getReadOverlayHash() const { return read_overlay_hash; }
+
 private:
     void addMutationCommand(const MutationCommand & command, const ContextPtr & context);
     void addPatchPart(PatchPartInfoForReader patch_part);
@@ -156,6 +159,8 @@ private:
 
     /// Non virtual columns stored in patches.
     NameSet columns_updated_in_patches;
+
+    UInt64 read_overlay_hash = 0;
 };
 
 using AlterConversionsPtr = std::shared_ptr<const AlterConversions>;
