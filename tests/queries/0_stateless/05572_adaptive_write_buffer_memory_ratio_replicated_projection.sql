@@ -47,26 +47,8 @@ SELECT 'insert, replicated vs no ratio',
     = (SELECT arraySort(groupArray(tuple(hash_of_uncompressed_files, uncompressed_hash_of_compressed_files))) FROM system.projection_parts
         WHERE database = currentDatabase() AND table = 't_proj_no_ratio_replicated' AND name = 'p1' AND active);
 
-ALTER TABLE t_proj_ratio_replicated ADD PROJECTION p2 (SELECT a, b ORDER BY b, a);
-ALTER TABLE t_proj_no_ratio_replicated ADD PROJECTION p2 (SELECT a, b ORDER BY b, a);
-ALTER TABLE t_proj_ratio_plain ADD PROJECTION p2 (SELECT a, b ORDER BY b, a);
-
-ALTER TABLE t_proj_ratio_replicated MATERIALIZE PROJECTION p2 SETTINGS mutations_sync = 2;
-ALTER TABLE t_proj_no_ratio_replicated MATERIALIZE PROJECTION p2 SETTINGS mutations_sync = 2;
-ALTER TABLE t_proj_ratio_plain MATERIALIZE PROJECTION p2 SETTINGS mutations_sync = 2;
-
-SELECT 'materialize, replicated vs no ratio',
-    (SELECT arraySort(groupArray(tuple(hash_of_uncompressed_files, uncompressed_hash_of_compressed_files))) FROM system.projection_parts
-        WHERE database = currentDatabase() AND table = 't_proj_ratio_replicated' AND name = 'p2' AND active)
-    = (SELECT arraySort(groupArray(tuple(hash_of_uncompressed_files, uncompressed_hash_of_compressed_files))) FROM system.projection_parts
-        WHERE database = currentDatabase() AND table = 't_proj_no_ratio_replicated' AND name = 'p2' AND active);
-
-SELECT 'materialize, plain vs no ratio',
-    (SELECT arraySort(groupArray(tuple(hash_of_uncompressed_files, uncompressed_hash_of_compressed_files))) FROM system.projection_parts
-        WHERE database = currentDatabase() AND table = 't_proj_ratio_plain' AND name = 'p2' AND active)
-    = (SELECT arraySort(groupArray(tuple(hash_of_uncompressed_files, uncompressed_hash_of_compressed_files))) FROM system.projection_parts
-        WHERE database = currentDatabase() AND table = 't_proj_no_ratio_replicated' AND name = 'p2' AND active);
-
+-- `SYSTEM STOP MERGES` also blocks mutations, so merges are started before `MATERIALIZE PROJECTION`. Merge to one
+-- part first, so that background merges do not make the sets of parts differ between the tables.
 SYSTEM START MERGES t_proj_ratio_replicated;
 SYSTEM START MERGES t_proj_no_ratio_replicated;
 SYSTEM START MERGES t_proj_ratio_plain;
@@ -86,6 +68,26 @@ SELECT 'merge, plain vs no ratio',
         WHERE database = currentDatabase() AND table = 't_proj_ratio_plain' AND active)
     = (SELECT arraySort(groupArray(tuple(name, hash_of_uncompressed_files, uncompressed_hash_of_compressed_files))) FROM system.projection_parts
         WHERE database = currentDatabase() AND table = 't_proj_no_ratio_replicated' AND active);
+
+ALTER TABLE t_proj_ratio_replicated ADD PROJECTION p2 (SELECT a, b ORDER BY b, a);
+ALTER TABLE t_proj_no_ratio_replicated ADD PROJECTION p2 (SELECT a, b ORDER BY b, a);
+ALTER TABLE t_proj_ratio_plain ADD PROJECTION p2 (SELECT a, b ORDER BY b, a);
+
+ALTER TABLE t_proj_ratio_replicated MATERIALIZE PROJECTION p2 SETTINGS mutations_sync = 2;
+ALTER TABLE t_proj_no_ratio_replicated MATERIALIZE PROJECTION p2 SETTINGS mutations_sync = 2;
+ALTER TABLE t_proj_ratio_plain MATERIALIZE PROJECTION p2 SETTINGS mutations_sync = 2;
+
+SELECT 'materialize, replicated vs no ratio',
+    (SELECT arraySort(groupArray(tuple(hash_of_uncompressed_files, uncompressed_hash_of_compressed_files))) FROM system.projection_parts
+        WHERE database = currentDatabase() AND table = 't_proj_ratio_replicated' AND name = 'p2' AND active)
+    = (SELECT arraySort(groupArray(tuple(hash_of_uncompressed_files, uncompressed_hash_of_compressed_files))) FROM system.projection_parts
+        WHERE database = currentDatabase() AND table = 't_proj_no_ratio_replicated' AND name = 'p2' AND active);
+
+SELECT 'materialize, plain vs no ratio',
+    (SELECT arraySort(groupArray(tuple(hash_of_uncompressed_files, uncompressed_hash_of_compressed_files))) FROM system.projection_parts
+        WHERE database = currentDatabase() AND table = 't_proj_ratio_plain' AND name = 'p2' AND active)
+    = (SELECT arraySort(groupArray(tuple(hash_of_uncompressed_files, uncompressed_hash_of_compressed_files))) FROM system.projection_parts
+        WHERE database = currentDatabase() AND table = 't_proj_no_ratio_replicated' AND name = 'p2' AND active);
 
 SELECT count(), sum(a), sum(b), sum(length(s)) FROM t_proj_ratio_replicated;
 
