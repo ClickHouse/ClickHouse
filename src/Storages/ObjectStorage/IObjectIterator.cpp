@@ -96,10 +96,12 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
                 file_names.emplace(std::vector<std::string>{object->getFileName()});
             }
 
-            VirtualColumnUtils::filterByPathOrFile(
-                keys, std::vector<std::string>{path}, filter_actions,
-                virtual_columns, hive_partition_columns, getContext(),
-                /*format_settings=*/std::nullopt, file_names ? &*file_names : nullptr);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                keys,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    std::vector<std::string>{path}, filter_actions,
+                    virtual_columns, hive_partition_columns, getContext(),
+                    /*format_settings=*/std::nullopt, file_names ? &*file_names : nullptr));
 
             if (keys.empty())
             {
