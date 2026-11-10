@@ -505,7 +505,7 @@ selectStmt:
 withClause: WITH withExprList;
 withExprList: withExpr (COMMA withExpr)*;
 withExpr
-    : RECURSIVE? identifier AS LPAREN selectUnionStmt RPAREN  # WithExprSubquery
+    : RECURSIVE? identifier AS (LPAREN selectUnionStmt RPAREN | LPAREN explainSelectSubquery RPAREN)  # WithExprSubquery
     | columnExpr AS identifier                                # WithExprExpression
     ;
 topClause: TOP DECIMAL_LITERAL (WITH TIES)?;
