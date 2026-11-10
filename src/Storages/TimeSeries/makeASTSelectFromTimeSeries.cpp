@@ -880,8 +880,8 @@ void assertIdentifiersExistOnTagsTable(const ASTPtr & node, const ColumnsDescrip
         if (!identifier->compound() && !tags_columns.has(identifier->shortName()))
             throw Exception(
                 ErrorCodes::UNKNOWN_IDENTIFIER,
-                "Identifier {} cannot be resolved against the TimeSeries tags table",
-                backQuoteIfNeed(identifier->name()));
+                "Unknown expression or function identifier {}",
+                backQuote(identifier->name()));
     }
 
     for (const auto & child : node->children)
