@@ -212,7 +212,7 @@ static Plan getPlan(
         persistent_table_components.metadata_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_metadata_pointer_overrides */ true);
-    plan.generator.setVersion(metadata_version + 1);
+    plan.generator.continueMetadataChain(metadata_file_path, metadata_version);
 
     Poco::JSON::Object::Ptr initial_metadata_object
         = deepCopy(getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));

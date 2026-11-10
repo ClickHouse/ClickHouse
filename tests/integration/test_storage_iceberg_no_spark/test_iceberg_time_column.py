@@ -362,6 +362,14 @@ def test_iceberg_time_column_equality_delete_and_compaction(started_cluster_iceb
     tables.instance.query(f"ALTER TABLE {table_name} DELETE WHERE id = 0", settings=write_settings)
     tables.instance.query(f"OPTIMIZE TABLE {table_name}", settings=write_settings)
 
+    # `OPTIMIZE` keeps the table's `<N>-<uuid>` naming, so it commits under the name an `INSERT` of that version aims at.
+    metadata_files = [
+        item.object_name.rsplit("/", 1)[1]
+        for item in tables.cluster.minio_client.list_objects(tables.cluster.minio_bucket, f"{key_prefix}/metadata/")
+        if item.object_name.endswith(".metadata.json")
+    ]
+    assert len(metadata_files) == 1 and not metadata_files[0].startswith("v"), metadata_files
+
     # The rows below are read from the files written by `OPTIMIZE`, not from pyiceberg's.
     source = tables.source(key_prefix)
     read_files = set(tables.query(f"SELECT DISTINCT _file FROM {source}").split())

@@ -1121,8 +1121,11 @@ def test_writes_continue_uuid_metadata_naming(started_cluster_iceberg_with_spark
     if use_version_hint:
         env.write_version_hint(name)
 
-    for value in (3, 4):
-        env.instance.query(f"INSERT INTO {env.table_name} VALUES ({value});", settings=ICEBERG_SETTINGS)
+    env.instance.query(f"INSERT INTO {env.table_name} VALUES (3);", settings=ICEBERG_SETTINGS)
+    if use_version_hint:
+        # A hint whose update failed still names the previous commit.
+        env.write_version_hint(name)
+    env.instance.query(f"INSERT INTO {env.table_name} VALUES (4);", settings=ICEBERG_SETTINGS)
     env._n_rows = 4
     env.instance.query(
         f"ALTER TABLE {env.table_name} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);",

@@ -283,6 +283,16 @@ MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
+/// True for the name a commit without a transactional catalog gives version N in a uuid scheme: like `v<N>`, it
+/// is that commit's compare-and-set, so it exists only once N is committed. Another writer's uuid is not.
+static bool isUuidNamedCommit(const String & file_name)
+{
+    if (isVersionNumberedCommitScheme(file_name) || isTemporaryMetadataFile(file_name))
+        return false;
+    const auto info = getMetadataFileAndVersion(file_name);
+    return file_name == FileNamesGenerator::uuidMetadataFileName(info.version, file_name.starts_with('v'), info.compression_method);
+}
+
 /// Resolve metadata filename from version hint content.
 /// Version hint may contain just a version number (e.g. "1") or a full filename (e.g. "v1.metadata.json").
 /// When only a version number is given, we try to find the actual file, which may have a compression suffix.
@@ -2055,13 +2065,14 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         /// Ranking selected another file than the one the table declares current: either the
         /// declaration is stale or that file was never committed, and nothing here tells which.
-        /// Only a higher `v<N>` is no disagreement, that number exists because a commit wrote it.
+        /// Only a higher name that is a commit's compare-and-set (`v<N>`, isUuidNamedCommit) is no
+        /// disagreement, that name exists because a commit wrote it.
         if (declared_target)
         {
-            const bool superseded_in_own_scheme = isVersionNumberedCommitScheme(*declared_target)
-                && latest_metadata_file_info.version > declared_target_version;
-            if (!superseded_in_own_scheme
-                && std::filesystem::path(latest_metadata_file_info.path).filename() != *declared_target)
+            const String latest_name = std::filesystem::path(latest_metadata_file_info.path).filename();
+            const bool superseded_in_own_scheme = latest_metadata_file_info.version > declared_target_version
+                && (isVersionNumberedCommitScheme(*declared_target) || isUuidNamedCommit(latest_name));
+            if (!superseded_in_own_scheme && latest_name != *declared_target)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Iceberg table with path {} declares '{}' as its current metadata file, but ranking selects "

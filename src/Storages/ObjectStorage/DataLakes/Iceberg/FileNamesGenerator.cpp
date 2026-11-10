@@ -72,6 +72,17 @@ void FileNamesGenerator::continueMetadataChain(const String & current_metadata_p
         metadata_naming = MetadataNaming::NumberWithUuid;
 }
 
+String FileNamesGenerator::uuidMetadataFileName(Int32 version, bool version_prefixed, CompressionMethod compression_method)
+{
+    /// The file name is the commit's compare-and-set, so every writer of a version must aim at the same one.
+    auto uuid_str = Poco::UUIDGenerator::defaultGenerator().createFromName(Poco::UUID::uri(), fmt::format("metadata/{}", version)).toString();
+    auto compression_suffix = toIcebergMetadataCompressionExtension(compression_method);
+    if (!compression_suffix.empty())
+        compression_suffix = "." + compression_suffix;
+    return version_prefixed ? fmt::format("v{}-{}{}.metadata.json", version, uuid_str, compression_suffix)
+                            : fmt::format("{:05}-{}{}.metadata.json", version, uuid_str, compression_suffix);
+}
+
 Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateDataFileName()
 {
     auto uuid_str = uuid_generator.createRandom().toString();
@@ -109,11 +120,7 @@ GeneratedMetadataFileWithInfo FileNamesGenerator::generateMetadataPathWithInfo()
                 .compression_method = compression_method};
         }
 
-        /// The file name is the commit's compare-and-set, so every writer of a version must aim at the same one.
-        auto uuid_str = uuid_generator.createFromName(Poco::UUID::uri(), fmt::format("{}metadata/{}", table_location, used_version)).toString();
-        auto file_name = metadata_naming == MetadataNaming::VersionWithUuid
-            ? fmt::format("v{}-{}{}.metadata.json", used_version, uuid_str, compression_suffix)
-            : fmt::format("{:05}-{}{}.metadata.json", used_version, uuid_str, compression_suffix);
+        auto file_name = uuidMetadataFileName(used_version, metadata_naming == MetadataNaming::VersionWithUuid, compression_method);
         return GeneratedMetadataFileWithInfo{
             .path = Iceberg::IcebergPathFromMetadata(fmt::format("{}metadata/{}", table_location, file_name)),
             .version = used_version,
