@@ -1,0 +1,18 @@
+Code: 53 while converting column `m` from type Map(String, String) to type Tuple(value Nullable(String))
+Code: 53 while converting column `m` from type Map(String, String) to type Tuple(value Nullable(String))
+Code: 53 while converting column `l` from type Array(String) to type Tuple(value Nullable(String))
+Code: 53 while converting column `s` from type Tuple(value String) to type Map(String, String)
+Code: 53 while converting column `s` from type Tuple(value String) to type Array(String)
+Code: 53 while converting column `lm` from type Array(Map(String, String)) to type Array(Tuple(value String))
+Code: 53 while converting column `sl` from type Tuple(a Array(String)) to type Tuple(a Map(String, String))
+2	{\'key\':\'profile\'}
+2	[('key','profile')]
+2	{'k':'(\'v\')'}
+['(\'v\')']
+2	{'key':'profile'}	['profile']	('profile')	{'k':('v')}	[{'k':'v'}]	(['x'])
+('profile',0)
+2
+Code: 53 while converting column `m` from type Map(LowCardinality(String), LowCardinality(Nullable(String))) to type Tuple(value Nullable(String))
+Code: 53 while converting column `lm` from type Array(Map(LowCardinality(String), LowCardinality(Nullable(String)))) to type Array(Tuple(value String))
+{\'key\':\'profile\'}
+{'key':'profile'}	[{'k':'v'}]
