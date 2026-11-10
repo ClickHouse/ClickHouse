@@ -217,8 +217,7 @@ void CPUSlotsAllocation::grant()
         }
         catch (...)
         {
-            // Enqueueing may fail, e.g. if the queue was purged by the scheduler thread of another resource.
-            // The scheduler thread must not throw, so the allocation fails as if the request were failed by the queue.
+            // The queue may be purged by another resource's scheduler thread; fail the allocation instead of throwing
             failImpl(lock, std::current_exception());
             return;
         }

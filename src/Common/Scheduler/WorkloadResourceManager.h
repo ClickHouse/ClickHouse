@@ -201,9 +201,8 @@ private:
             return it == node_for_workload.end() ? nullptr : it->second;
         }
 
-        /// Runs `task` in the scheduler thread and waits for it. Exceptions are rethrown in the caller,
-        /// except for a task that modifies the hierarchy: it would leave the hierarchy half-modified,
-        /// so the exception escapes into the scheduler thread, which terminates the server.
+        /// Runs `task` in the scheduler thread and rethrows its exception in the caller. If the task modifies
+        /// the hierarchy, a failure would leave it half-modified, so the exception terminates the server instead.
         template <class Task>
         void executeInSchedulerThread(Task && task, bool modifies_hierarchy = false)
         {

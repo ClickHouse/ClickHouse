@@ -101,16 +101,11 @@ public:
     /// Wait for single event (if not available) and process it
     void process();
 
-    /// Runs `loop` as the scheduler thread attached to this queue.
-    /// The scheduler thread must never throw: the thread would stop, and every queued request and every thread
-    /// waiting for an event to be processed would wait forever. So an exception terminates the server.
-    /// MemoryTracker does not throw in this thread (memory is still accounted).
-    /// Sets `started` once the thread is attached, before running `loop`.
+    /// Runs `loop` as the scheduler thread of this queue and sets `started` once attached.
+    /// An exception would leave every waiter hanging, so it terminates the server. MemoryTracker does not throw here.
     void runSchedulerThread(ThreadName name, std::promise<void> & started, const std::function<void()> & loop) noexcept;
 
-    /// Waits until a scheduler thread is started by `runSchedulerThread`.
-    /// If the thread finishes before that (e.g. its initialization in the thread pool failed), `started` is broken
-    /// and nobody would ever process events, so the server terminates.
+    /// Waits for `runSchedulerThread` to start. Terminates the server if the thread finished without starting.
     static void waitSchedulerThreadStarted(std::future<void> & started) noexcept;
 
     /// Returns current time point

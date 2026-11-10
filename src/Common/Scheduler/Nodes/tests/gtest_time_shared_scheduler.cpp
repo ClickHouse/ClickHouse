@@ -292,19 +292,17 @@ TEST(SchedulerTimeShared, BrokenSchedulerThreadStartupTerminates)
     }, "Scheduler thread failed to start");
 }
 
-/// The injected allocation failure does not happen in sanitizer builds: the thread starts and the test fails to die
+/// The injected allocation failure does not happen in sanitizer builds
 #if !defined(SANITIZER)
 TEST(SchedulerTimeShared, SchedulerThreadStartupFailureTerminates)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
     EXPECT_DEATH(
     {
-        // Every allocation hits the server memory limit, except in this thread. The pool thread fails
-        // while it initializes `ThreadStatus` (before the scheduler loop starts), and nobody would ever process events.
+        // Every allocation outside this thread hits the server memory limit, so the pool thread fails in `ThreadStatus`
         LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
-        // Initialize the thread-local storage of a pool thread first: the scheduler reuses this idle thread,
-        // so its first allocation is in `ThreadStatus`
+        // Warm up an idle pool thread, so the first allocation that fails is the one in `ThreadStatus`
         ThreadFromGlobalPool([] {}).join();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 

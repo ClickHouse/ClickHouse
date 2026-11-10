@@ -571,8 +571,7 @@ void CPULeaseAllocation::grant()
     }
     catch (...)
     {
-        // Enqueueing the next request may fail, e.g. if its queue was purged by the scheduler thread of another resource.
-        // The scheduler thread must not throw, so the allocation fails as if the request were failed by the queue.
+        // The next request's queue may be purged by another resource's scheduler thread; fail the allocation instead of throwing
         failImpl(lock, std::current_exception());
     }
 }

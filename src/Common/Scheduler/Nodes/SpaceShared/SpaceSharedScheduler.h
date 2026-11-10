@@ -37,7 +37,7 @@ public:
     {
         if (!scheduler.joinable())
         {
-            // Only the thread owns the promise: if it finishes without running `schedulerThread`, the promise is broken
+            // Only the thread owns the promise, so it is broken if the thread finishes without starting
             auto started = std::make_shared<std::promise<void>>();
             auto started_future = started->get_future();
             scheduler = ThreadFromGlobalPool([this, name, my_started = std::move(started)] { schedulerThread(name, *my_started); });
@@ -55,7 +55,7 @@ public:
             scheduler.join();
             if (graceful)
             {
-                // Callbacks run in the current thread, which must not throw either (see `EventQueue::runSchedulerThread`)
+                // Callbacks run in this thread, which must not throw either
                 LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
