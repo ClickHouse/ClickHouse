@@ -827,16 +827,7 @@ ProfileEvents::Event eventOf(UndecidedReason reason)
 namespace QueryPlanOptimizations
 {
 
-/// What `decideAtBoundary` made of a boundary: it decided, or it needs the replicas plan to parallelize the query
-/// or to collect statistics.
-enum class BoundaryVerdict : uint8_t
-{
-    Decided,
-    NeedsPlanToParallelize,
-    NeedsPlanToCollect,
-};
-
-static BoundaryVerdict decideAtBoundary(
+static bool decideAtBoundary(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan & query_plan,
     QueryPlan::Node * single_replica_plan_boundary,
@@ -1072,19 +1063,17 @@ void considerEnablingParallelReplicas(
     /// plan. Everything else - adopting, collecting, or no remembered boundary - needs that plan: the cached key
     /// cannot see everything that decides where the replicas' half ends, so the plan names the boundary and the
     /// decision is taken again there.
-    const auto remembered_verdict = remembered_coordinated_read
-        ? decideAtBoundary(
-              optimization_settings,
-              query_plan,
-              single_replica_plan_boundary,
-              single_replica_plan_boundary_hash,
-              remembered_coordinated_read,
-              /*reads=*/nullptr,
-              /*plan_with_parallel_replicas=*/nullptr,
-              /*replicas_plan_boundary=*/nullptr,
-              undecided_key)
-        : BoundaryVerdict::NeedsPlanToCollect;
-    if (remembered_verdict == BoundaryVerdict::Decided)
+    if (remembered_coordinated_read
+        && !decideAtBoundary(
+            optimization_settings,
+            query_plan,
+            single_replica_plan_boundary,
+            single_replica_plan_boundary_hash,
+            remembered_coordinated_read,
+            /*reads=*/nullptr,
+            /*plan_with_parallel_replicas=*/nullptr,
+            /*replicas_plan_boundary=*/nullptr,
+            undecided_key))
     {
         /// Counted here rather than at each decline in `decideAtBoundary`, so that none of them is missed.
         ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasDecidedWithoutBuildingPlan);
@@ -1095,12 +1084,7 @@ void considerEnablingParallelReplicas(
     /// the same way. Nothing makes that certain - the data, the replicas and the statistics the joins are ordered
     /// by all change under the same key - so skip a number of executions rather than for good. Everything above,
     /// which is cheap, is checked every time.
-    ///
-    /// Statistics that favour parallel replicas at the remembered boundary say the plans matched since, whatever the
-    /// entry says: an execution can record an outcome after another one matched and collected, when the two raced.
-    if (undecided_key && remembered_verdict == BoundaryVerdict::NeedsPlanToParallelize)
-        stats_cache.forgetUndecided(undecided_key);
-    else if (undecided_key)
+    if (undecided_key)
     {
         if (const auto undecided = stats_cache.getUndecided(undecided_key))
         {
@@ -1237,7 +1221,7 @@ void considerEnablingParallelReplicas(
              .coordinated_read_hash = nopr_node_hashes.at(findNodeOfStep(*single_replica_plan_boundary, *reads.to_instrument))});
 
     /// The replicas plan exists now, so the decision cannot ask for it again.
-    [[maybe_unused]] const auto verdict = decideAtBoundary(
+    [[maybe_unused]] const bool needs_replicas_plan = decideAtBoundary(
         optimization_settings,
         query_plan,
         single_replica_plan_boundary,
@@ -1247,16 +1231,16 @@ void considerEnablingParallelReplicas(
         plan_with_parallel_replicas,
         replicas_plan_boundary,
         undecided_key);
-    chassert(verdict == BoundaryVerdict::Decided);
+    chassert(!needs_replicas_plan);
 }
 
 /// Prices the query at `single_replica_plan_boundary` and then parallelizes it, leaves it alone, or
 /// instruments it to collect statistics. `source_reading_step` is the read parallel replicas coordinate, as
-/// it stands in this plan. Returns a verdict other than `Decided` only when it is to parallelize or to collect but
-/// there is no replicas plan yet - the boundary came from the cache - so the caller is to build the replicas plan and
-/// call again with the boundary it matches. `reads` comes with the replicas plan, and is null when that is. With a
+/// it stands in this plan. Returns true only when the verdict is to parallelize or to collect but there is no
+/// replicas plan yet - the boundary came from the cache - so the caller is to build the replicas plan and call
+/// again with the boundary it matches. `reads` comes with the replicas plan, and is null when that is. With a
 /// non-zero `undecided_key`, an outcome that leaves no decision is remembered under it, and a decision forgets it.
-static BoundaryVerdict decideAtBoundary(
+static bool decideAtBoundary(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan & query_plan,
     QueryPlan::Node * const single_replica_plan_boundary,
@@ -1281,7 +1265,7 @@ static BoundaryVerdict decideAtBoundary(
             getLogger("AutoParallelReplicas"),
             "The matched node is the reading step itself, cannot estimate the amount of data sent to the initiator. "
             "Skipping optimization");
-        return BoundaryVerdict::Decided;
+        return false;
     }
 
     const auto analysis
@@ -1290,7 +1274,7 @@ static BoundaryVerdict decideAtBoundary(
     {
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
-        return BoundaryVerdict::Decided;
+        return false;
     }
     /// A read served from a projection measures the projection's parts, not the table's, and the two
     /// plans need not agree on using it: `parallel_replicas_support_projection` is honoured only where
@@ -1305,14 +1289,14 @@ static BoundaryVerdict decideAtBoundary(
     {
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "The read is served from a projection. Skipping optimization");
-        return BoundaryVerdict::Decided;
+        return false;
     }
     const auto rows_to_read = analysis->selected_rows;
     if (!rows_to_read)
     {
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "Index analysis result doesn't contain selected rows. Skipping optimization");
-        return BoundaryVerdict::Decided;
+        return false;
     }
 
     bool table_data_drifted_significantly = true;
@@ -1333,7 +1317,7 @@ static BoundaryVerdict decideAtBoundary(
         {
             /// Statistics are recollected only with the replicas plan; the call with it counts the event.
             if (!plan_with_parallel_replicas)
-                return BoundaryVerdict::NeedsPlanToCollect;
+                return true;
 
             /// With the hash: without it there is no way to tell genuine drift on one plan from two
             /// different plans sharing a cache entry, and the two look identical in the log.
@@ -1398,7 +1382,7 @@ static BoundaryVerdict decideAtBoundary(
                 && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica;
             /// Applying needs the replicas plan; the call with it counts the events.
             if (replicas_plan_is_cheaper && !rejected_by_duplicated_reads && !rejected_by_threshold && !plan_with_parallel_replicas)
-                return BoundaryVerdict::NeedsPlanToParallelize;
+                return true;
 
             ProfileEvents::increment(ProfileEvents::AutoParallelReplicasCostModelEvaluated);
             /// A decline is a decision, so whatever ended without one before is resolved. Adopting the replicas plan
@@ -1435,7 +1419,7 @@ static BoundaryVerdict decideAtBoundary(
                     stats->duplicated_bytes,
                     stats->input_bytes,
                     optimization_settings.automatic_parallel_replicas_max_duplicated_read_ratio);
-                return BoundaryVerdict::Decided;
+                return false;
             }
 
             if (replicas_plan_is_cheaper)
@@ -1452,7 +1436,7 @@ static BoundaryVerdict decideAtBoundary(
                         stats->input_bytes,
                         stats->input_bytes / num_replicas,
                         optimization_settings.automatic_parallel_replicas_min_bytes_per_replica);
-                    return BoundaryVerdict::Decided;
+                    return false;
                 }
 
                 /// Every read of the candidate has to be given its analysis. One that is not would read
@@ -1461,7 +1445,7 @@ static BoundaryVerdict decideAtBoundary(
                 {
                     /// `transplantAnalysisToAllReads` has logged which read could not be paired and why.
                     end_undecided();
-                    return BoundaryVerdict::Decided;
+                    return false;
                 }
                 /// The transplant pairs reads by name, while the read the decision stands on was found by
                 /// walking down from the node matched by hash. Identical subtrees hash alike, so that node
@@ -1474,7 +1458,7 @@ static BoundaryVerdict decideAtBoundary(
                         getLogger("AutoParallelReplicas"),
                         "The coordinated read was paired with another single-node read than the one the decision "
                         "was made for. Skipping optimization");
-                    return BoundaryVerdict::Decided;
+                    return false;
                 }
                 /// The candidate's reads have their filter actions only now, so the pass that tags a filter
                 /// step for the query condition cache - which runs early in this same optimization and gives
@@ -1507,7 +1491,7 @@ static BoundaryVerdict decideAtBoundary(
                         getLogger("AutoParallelReplicas"),
                         "A set of the plan with parallel replicas has no counterpart in the single-replica plan. "
                         "Skipping optimization");
-                    return BoundaryVerdict::Decided;
+                    return false;
                 }
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
@@ -1521,7 +1505,7 @@ static BoundaryVerdict decideAtBoundary(
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasApplied);
                 if (undecided_key)
                     stats_cache.forgetUndecided(undecided_key);
-                return BoundaryVerdict::Decided;
+                return false;
             }
             else if (!plan_with_parallel_replicas)
             {
@@ -1545,7 +1529,7 @@ static BoundaryVerdict decideAtBoundary(
     {
         /// Statistics are collected only with the replicas plan; the call with it counts the event.
         if (!plan_with_parallel_replicas)
-            return BoundaryVerdict::NeedsPlanToCollect;
+            return true;
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasNoStatistics);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "No stats found for hash {}", single_replica_plan_boundary_hash);
     }
@@ -1558,7 +1542,7 @@ static BoundaryVerdict decideAtBoundary(
         /// by design, and statistics collected at a wrong node would keep confirming it; going through the replicas
         /// plan here re-checks the mapping whenever the statistics are refreshed anyway.
         if (!plan_with_parallel_replicas)
-            return BoundaryVerdict::NeedsPlanToCollect;
+            return true;
 
         auto statistics_block
             = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read, undecided_key);
@@ -1604,7 +1588,7 @@ static BoundaryVerdict decideAtBoundary(
             read_step->setRuntimeDataflowStatisticsCacheUpdater(duplicated_reads_updater);
         }
     }
-    return BoundaryVerdict::Decided;
+    return false;
 }
 
 }

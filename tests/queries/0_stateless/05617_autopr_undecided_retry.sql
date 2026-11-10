@@ -1,3 +1,6 @@
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None)
+-- The adoption case reads a whole table in one thread with tiny read tasks: small granules make it slow.
+
 -- Automatic parallel replicas skips building the plan with parallel replicas for a number of executions of a plan whose
 -- last build ended without a decision. After the first such build of a plan, the next execution builds it again at once:
 -- the first execution of a join measures the hash tables that join reordering takes row counts from.
@@ -7,6 +10,7 @@ DROP TABLE IF EXISTS t_undecided_o;
 DROP TABLE IF EXISTS t_undecided_wc;
 DROP TABLE IF EXISTS t_undecided_wo;
 DROP TABLE IF EXISTS t_undecided_wl;
+DROP TABLE IF EXISTS t_undecided_s;
 
 CREATE TABLE t_undecided_l (l_orderkey UInt64, l_price Float64, l_discount Float64) ENGINE = MergeTree ORDER BY l_orderkey;
 CREATE TABLE t_undecided_o (o_orderkey UInt64, o_total Float64) ENGINE = MergeTree ORDER BY o_orderkey;
@@ -25,6 +29,10 @@ INSERT INTO t_undecided_wc SELECT number, number % 25 FROM numbers(15000) SETTIN
 INSERT INTO t_undecided_wo SELECT number, number % 15000, toDate('1992-01-01') + number % 2400 FROM numbers(150000)
 SETTINGS materialize_statistics_on_insert = 0;
 INSERT INTO t_undecided_wl SELECT number % 150000, number % 1000 FROM numbers(600000) SETTINGS materialize_statistics_on_insert = 0;
+
+CREATE TABLE t_undecided_s (k String, v UInt64, g UInt8) ENGINE = MergeTree ORDER BY g;
+INSERT INTO t_undecided_s SELECT toString(number % 2000), number % 1000, number % 2 FROM numbers(1000000);
+OPTIMIZE TABLE t_undecided_s FINAL;
 
 SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
     parallel_replicas_local_plan = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -111,6 +119,31 @@ SELECT c_nationkey, sum(l_price) FROM t_undecided_wc, t_undecided_wo, t_undecide
 WHERE c_custkey = o_custkey AND l_orderkey = o_orderkey AND o_orderdate < '1992-03-01'
 GROUP BY c_nationkey FORMAT Null SETTINGS log_comment = 'undecided_warm_3';
 
+-- Statistics that favour parallel replicas do not make the plan usable: as in `05401_autopr_set_transplant_unpaired_sets`,
+-- the set of the `IN` subquery has no counterpart in the plan with parallel replicas, so adopting it fails after the
+-- cost model, every time. The first run collects statistics, the second fails to adopt, the third builds the plan
+-- again at once and fails the same way, and the fourth and the fifth skip it even though the statistics still favour it.
+SELECT g, sumIf(v, k IN (SELECT k FROM t_undecided_s WHERE v < 3 AND k != repeat('x', 300)))
+FROM t_undecided_s GROUP BY g FORMAT Null
+SETTINGS max_threads = 1, merge_tree_min_bytes_per_task_for_remote_reading = 1024, parallel_replicas_plan_based = 0,
+    log_comment = 'undecided_adopt_1';
+SELECT g, sumIf(v, k IN (SELECT k FROM t_undecided_s WHERE v < 3 AND k != repeat('x', 300)))
+FROM t_undecided_s GROUP BY g FORMAT Null
+SETTINGS max_threads = 1, merge_tree_min_bytes_per_task_for_remote_reading = 1024, parallel_replicas_plan_based = 0,
+    log_comment = 'undecided_adopt_2';
+SELECT g, sumIf(v, k IN (SELECT k FROM t_undecided_s WHERE v < 3 AND k != repeat('x', 300)))
+FROM t_undecided_s GROUP BY g FORMAT Null
+SETTINGS max_threads = 1, merge_tree_min_bytes_per_task_for_remote_reading = 1024, parallel_replicas_plan_based = 0,
+    log_comment = 'undecided_adopt_3';
+SELECT g, sumIf(v, k IN (SELECT k FROM t_undecided_s WHERE v < 3 AND k != repeat('x', 300)))
+FROM t_undecided_s GROUP BY g FORMAT Null
+SETTINGS max_threads = 1, merge_tree_min_bytes_per_task_for_remote_reading = 1024, parallel_replicas_plan_based = 0,
+    log_comment = 'undecided_adopt_4';
+SELECT g, sumIf(v, k IN (SELECT k FROM t_undecided_s WHERE v < 3 AND k != repeat('x', 300)))
+FROM t_undecided_s GROUP BY g FORMAT Null
+SETTINGS max_threads = 1, merge_tree_min_bytes_per_task_for_remote_reading = 1024, parallel_replicas_plan_based = 0,
+    log_comment = 'undecided_adopt_5';
+
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -136,3 +169,4 @@ DROP TABLE t_undecided_o;
 DROP TABLE t_undecided_wc;
 DROP TABLE t_undecided_wo;
 DROP TABLE t_undecided_wl;
+DROP TABLE t_undecided_s;
