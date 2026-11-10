@@ -776,12 +776,12 @@ leak_lower_bound, leak_upper_bound = args.time_between_leak_detections
 if args.with_leak_detection:
     leak_detector.reset_and_capture_baseline(cluster)
 # Test timeout if set
-test_limit = None if args.timeout is UNSET else time.time() + args.timeout * 60
+test_limit = None if args.timeout is UNSET else time.monotonic() + args.timeout * 60
 reached_limit = False
 
 
 while all_running and (not reached_limit):
-    start = time.time()
+    start = time.monotonic()
     finish = start + random.randint(lower_bound, upper_bound)
     next_leak_detection = start + random.randint(leak_lower_bound, leak_upper_bound)
     next_monitoring = start + random.randint(
@@ -798,16 +798,16 @@ while all_running and (not reached_limit):
             if pid is None:
                 logger.info(f"The server {server.name} stopped during the workload")
                 all_running = False
-        reached_limit = test_limit is not None and time.time() >= test_limit
+        reached_limit = test_limit is not None and time.monotonic() >= test_limit
         if reached_limit:
             logger.info("Test timeout reached, stopping the load generator and exiting")
         if all_running and (not reached_limit):
-            if args.with_leak_detection and next_leak_detection < time.time():
+            if args.with_leak_detection and next_leak_detection < time.monotonic():
                 leak_detector.run_next_leak_detection(cluster, client)
                 next_leak_detection += random.randint(
                     leak_lower_bound, leak_upper_bound
                 )
-            if args.with_monitoring and next_monitoring < time.time():
+            if args.with_monitoring and next_monitoring < time.monotonic():
                 tables_oracle.run_health_check(cluster, servers, logger)
                 next_monitoring += random.randint(
                     monitoring_lower_bound, monitoring_upper_bound
@@ -994,12 +994,16 @@ for server in servers:
             good_exit = good_exit and exit_code in (-9, -15, 0, 137, 143)
     # A SIGKILL exit code is accepted above because the run kills servers on purpose,
     # so it cannot distinguish a deliberate kill from a shutdown that hung. Only the
-    # escalation flag can, and a final shutdown that had to be forced is a failure.
+    # escalation flag can, and a final shutdown that had to be forced is a failure,
+    # except on sanitizer builds, whose shutdown can outlast the stop window.
     if server.clickhouse_forced_stop:
-        logger.error(
-            f"Server {server.name} did not shut down gracefully and had to be force killed"
-        )
-        good_exit = False
+        # Logged on both paths: the job reads it to tell this kill from an OOM kill.
+        forced_stop = f"Server {server.name} did not shut down gracefully and had to be force killed"
+        if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1":
+            logger.warning(f"{forced_stop}, ignored on a sanitizer build")
+        else:
+            logger.error(forced_stop)
+            good_exit = False
     # The server reports one at `<Error>`, or at `<Fatal>` when it took the process down.
     # Only its own message counts: a fuzzed literal reaches the log through the query text
     # every record quotes, and would otherwise fail a run that never had an exception.
