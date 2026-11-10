@@ -31,6 +31,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
@@ -139,7 +140,8 @@ namespace
     {
         Names result;
 #if USE_AVRO
-        if (Poco::toLower(format_name) != "parquet" || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+        const auto format = Poco::toLower(format_name);
+        if ((format != "parquet" && format != "orc" && format != "avro") || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
             return result;
 
         for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
@@ -734,10 +736,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
-                VirtualColumnUtils::filterByPathOrFile(
-                    paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
-                    /*format_settings=*/std::nullopt,
-                    is_explicit_archive_member ? &archive_member_names : nullptr);
+                VirtualColumnUtils::filterSourcesByIndexes(
+                    paths,
+                    VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                        filter_paths, actions, virtual_columns, hive_columns, local_context,
+                        /*format_settings=*/std::nullopt,
+                        is_explicit_archive_member ? &archive_member_names : nullptr));
             }
             else
             {
@@ -910,10 +914,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
-                VirtualColumnUtils::filterByPathOrFile(
-                    keys, paths, actions, virtual_columns, hive_columns, local_context,
-                    /*format_settings=*/std::nullopt,
-                    is_explicit_archive_member ? &archive_member_names : nullptr);
+                VirtualColumnUtils::filterSourcesByIndexes(
+                    keys,
+                    VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                        paths, actions, virtual_columns, hive_columns, local_context,
+                        /*format_settings=*/std::nullopt,
+                        is_explicit_archive_member ? &archive_member_names : nullptr));
             }
             else
             {
@@ -1418,6 +1424,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     if ((format_filter_info && format_filter_info->condition_hash) || top_k_query_condition_cache_key)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 
+    std::shared_ptr<NamesAndTypesList> initial_schema;
+    bool reads_file_under_own_names = false;
+
     while (true)
     {
         object_info = file_iterator->next(processor);
@@ -1469,7 +1478,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             ? top_k_query_condition_cache_key->format_filter_info_tracking_best_values
             : query_format_filter_info;
 
-        const bool consult_plain_condition = format_filter_info && format_filter_info->condition_hash
+        /// A file with a schema transform is read under the column names it was written with, and the cache entries of the
+        /// plain predicate are not scoped by schema.
+        initial_schema = configuration->getInitialSchemaByPath(context_, object_info);
+        reads_file_under_own_names
+            = initial_schema && object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform;
+
+        const bool consult_plain_condition = !reads_file_under_own_names && format_filter_info && format_filter_info->condition_hash
             && (use_query_condition_cache_for_top_k || !format_filter_info->top_k_filter
                 || !format_filter_info->top_k_filter->filter_rows);
 
@@ -1518,7 +1533,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 const auto & marks = *matching_marks;
                 size_t total_row_groups = marks.size();
-                std::vector<size_t> matching_row_groups;
+                RowGroupIndices matching_row_groups;
                 for (size_t i = 0; i < total_row_groups; ++i)
                     if (marks[i])
                         matching_row_groups.push_back(i);
@@ -1671,7 +1686,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         Block initial_header = read_from_format_info.format_header;
         bool schema_changed = false;
 
-        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
+        if (initial_schema)
         {
             Block sample_header;
             for (const auto & [name, type] : *initial_schema)
@@ -1704,6 +1719,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             if (!format_filter_info)
                 return nullptr;
+
+            /// The filters use the current column names: apply them after the schema transform, not to the columns of the file.
+            if (reads_file_under_own_names)
+            {
+                stripped_row_level_filter = format_filter_info->row_level_filter;
+                stripped_prewhere_info = format_filter_info->prewhere_info;
+                return std::make_shared<FormatFilterInfo>(nullptr, format_filter_info->context.lock(), nullptr, nullptr, nullptr);
+            }
 
             /// Check if the actual file format supports PREWHERE. For mixed-format data lake
             /// tables (e.g. Iceberg with Parquet + ORC files), table-level PREWHERE support
@@ -2034,7 +2057,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_required_names(stripped_row_level_filter->actions);
             if (stripped_prewhere_info)
                 add_filter_required_names(stripped_prewhere_info->prewhere_actions);
-            schema_transform->removeUnusedActions(needed_names);
+            /// A file read under its own schema has all its columns as inputs, as in the `getSchemaTransformer` case below.
+            if (!schema_changed)
+                schema_transform->removeUnusedActions(needed_names);
         }
         if (!schema_transform)
         {
@@ -2156,6 +2181,25 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
                 });
+        }
+
+        /// A file read under its own names yields whole columns, while a tuple element can be requested as a flat
+        /// column (see `filterTupleColumnsToRead`).
+        if (reads_file_under_own_names)
+        {
+            NameSet names_in_storage;
+            for (const auto & column : read_from_format_info.requested_columns)
+                names_in_storage.insert(column.getNameInStorage());
+            auto extract_dag = createSubcolumnsExtractionActions(
+                builder.getHeader(), Names(names_in_storage.begin(), names_in_storage.end()), context_);
+            if (!extract_dag.getNodes().empty())
+            {
+                auto extract_actions = std::make_shared<ExpressionActions>(std::move(extract_dag));
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, extract_actions);
+                });
+            }
         }
 
         source = input_format;
@@ -2610,15 +2654,12 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
                         file_names.push_back(object_info->getFileName());
                 }
 
-                VirtualColumnUtils::filterByPathOrFile(
+                VirtualColumnUtils::filterSourcesByIndexes(
                     new_batch,
-                    paths,
-                    filter_expr,
-                    virtual_columns,
-                    hive_columns,
-                    local_context,
-                    /*format_settings=*/std::nullopt,
-                    match_web_paths_only ? &file_names : nullptr);
+                    VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                        paths, filter_expr, virtual_columns, hive_columns, local_context,
+                        /*format_settings=*/std::nullopt,
+                        match_web_paths_only ? &file_names : nullptr));
             }
 
             after_filter = new_batch.size();
@@ -2729,10 +2770,12 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.push_back(archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filtered_keys,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
+                    /*format_settings=*/std::nullopt,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_keys.empty())
             {
                 if (emit_profile_events)
