@@ -73,3 +73,50 @@ SELECT 'offset filter projection', count() FROM proj_filter WHERE id = 15 AND _b
 SELECT 'offset filter projection filtering', count() FROM proj_filter WHERE id = 15 AND _block_offset = 15 SETTINGS optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 
 DROP TABLE proj_filter;
+
+-- A projection that stores the columns explicitly stays usable and returns the stored values.
+DROP TABLE IF EXISTS proj_stored;
+
+CREATE TABLE proj_stored (id UInt64, v String, PROJECTION p (SELECT *, _block_number, _block_offset ORDER BY id))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    allow_commit_order_projection = 1,
+    index_granularity = 4;
+
+INSERT INTO proj_stored SELECT number, toString(number) FROM numbers(10);
+INSERT INTO proj_stored SELECT number + 10, toString(number) FROM numbers(10);
+OPTIMIZE TABLE proj_stored FINAL;
+
+SELECT 'stored projection', id, _block_number, _block_offset FROM proj_stored WHERE id IN (5, 15) ORDER BY id SETTINGS force_optimize_projection_name = 'p';
+
+DROP TABLE proj_stored;
+
+-- An implicit minmax index on `_block_number` is built only for a projection that stores the column.
+DROP TABLE IF EXISTS proj_minmax_plain;
+DROP TABLE IF EXISTS proj_minmax_commit_order;
+
+CREATE TABLE proj_minmax_plain (id UInt64, v String)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, index_granularity = 4;
+ALTER TABLE proj_minmax_plain ADD PROJECTION p (SELECT * ORDER BY id) WITH SETTINGS (add_minmax_index_for_block_number_column = 1);
+
+CREATE TABLE proj_minmax_commit_order (id UInt64, v String)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, allow_commit_order_projection = 1, index_granularity = 4;
+ALTER TABLE proj_minmax_commit_order ADD PROJECTION p INDEX * TYPE commit_order WITH SETTINGS (add_minmax_index_for_block_number_column = 1);
+
+INSERT INTO proj_minmax_plain SELECT number, toString(number) FROM numbers(10);
+INSERT INTO proj_minmax_plain SELECT number + 10, toString(number) FROM numbers(10);
+OPTIMIZE TABLE proj_minmax_plain FINAL;
+
+INSERT INTO proj_minmax_commit_order SELECT number, toString(number) FROM numbers(10);
+INSERT INTO proj_minmax_commit_order SELECT number + 10, toString(number) FROM numbers(10);
+OPTIMIZE TABLE proj_minmax_commit_order FINAL;
+
+SELECT 'minmax plain', count() FROM proj_minmax_plain WHERE id = 15 AND _block_number = 2;
+SELECT 'minmax commit_order', count() FROM proj_minmax_commit_order WHERE id = 15 AND _block_number = 2;
+
+DROP TABLE proj_minmax_plain;
+DROP TABLE proj_minmax_commit_order;

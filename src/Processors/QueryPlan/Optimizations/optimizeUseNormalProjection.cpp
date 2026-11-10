@@ -527,13 +527,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     {
         for (const auto & col : required_columns)
         {
-            if (projection->sample_block.findColumnOrSubcolumnByName(col))
-                continue;
-
-            if (projectionSynthesizesBlockColumn(*projection, col))
-                return false;
-
-            if (!projection->metadata->virtuals.has(col))
+            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection->metadata->virtuals.has(col))
                 return false;
         }
 

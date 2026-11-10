@@ -1114,7 +1114,15 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
             if (!index.column_names.empty() && index.column_names.front() == column_name && index.type == "minmax")
                 return;
 
-        const auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        if (!columns_to_analyze.has(column_name))
+        {
+            /// A projection provides these only when its query selects them.
+            if (!columns.has(column_name))
+                return;
+            columns_to_analyze.add(columns.get(column_name));
+        }
+
         auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
         static const MergeTreeSettings default_settings;
         MergeTreeIndexFactory::instance().validate(index, false, default_settings);

@@ -10,3 +10,7 @@ filter projection	1
 offset filter no projection	1
 offset filter projection	1
 offset filter projection filtering	1
+stored projection	5	1	5
+stored projection	15	2	5
+minmax plain	1
+minmax commit_order	1
