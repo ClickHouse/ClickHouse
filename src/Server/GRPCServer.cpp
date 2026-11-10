@@ -1538,7 +1538,6 @@ namespace
                     }
                     catch (const Exception & e)
                     {
-                        /// The cancellation requested by the client is not an error.
                         if (e.code() != ErrorCodes::QUERY_WAS_CANCELLED)
                             throw;
                     }
