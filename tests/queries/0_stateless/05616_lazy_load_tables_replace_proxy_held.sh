@@ -15,7 +15,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB="${CLICKHOUSE_DATABASE}_lazy"
 
 cleanup() {
-    ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${CLICKHOUSE_DATABASE}_reader' SYNC FORMAT Null" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${CLICKHOUSE_DATABASE}_reader' SYNC SETTINGS kill_throw_if_noop = 0 FORMAT Null" 2>/dev/null
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS \`${DB}\` SYNC" 2>/dev/null
 }
 trap cleanup EXIT
@@ -35,8 +35,10 @@ state() {
 
 echo "cold: $(state)"
 
-# The reader loads the table through the proxy and holds it until it is killed.
-${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_DATABASE}_reader" --max_block_size 1 -q "
+# The reader loads the table through the proxy and holds it until it is killed. With `serialize_query_plan`,
+# the plan holding the proxy is replaced by a deserialized one that looks the table up anew, so the proxy
+# is legitimately released (and replaced) in between: keep it off so that the reader holds the proxy.
+${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_DATABASE}_reader" --max_block_size 1 --serialize_query_plan 0 -q "
     SELECT sleepEachRow(1) FROM \`${DB}\`.t AS a, numbers(1000000) AS b FORMAT Null" >/dev/null 2>&1 &
 
 # Wait until the reader has loaded the table, i.e. the engine is known.
@@ -51,7 +53,7 @@ done
 # The reader holds the proxy, so the lookup above and this one must leave it in place.
 echo "held: $(state)"
 
-${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${CLICKHOUSE_DATABASE}_reader' SYNC FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${CLICKHOUSE_DATABASE}_reader' SYNC SETTINGS kill_throw_if_noop = 0 FORMAT Null"
 wait
 
 # The last references of the killed query may go away only a moment after it has left the process list.
