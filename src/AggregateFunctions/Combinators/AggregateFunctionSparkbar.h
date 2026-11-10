@@ -464,8 +464,8 @@ public:
     /// Any argument may be a bare `NULL`: the `Null` adapter skips every row with a `NULL` in it,
     /// so the result is the empty sparkbar. Without this, the generic `Null` combinator would
     /// replace the whole function with `nothingNull` / `nothingUInt64` and return `NULL` or `0`
-    /// instead of a `String`.
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    /// instead of a `String`. The same holds when `-Sparkbar` is wrapped into outer combinators (`avgSparkbarIf`).
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
     {
         const size_t num_arguments = this->argument_types.size();
         UnorderedSetWithMemoryTracking<size_t> result;
