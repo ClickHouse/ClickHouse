@@ -1081,6 +1081,9 @@ void RemoteQueryExecutor::processProfileEventsPacket(Block block)
         ProfileEvents::subtractIncrements(block, ProfileEvents::SelectedBytes, selected_bytes);
     }
 
+    if (profile_events_callback)
+        profile_events_callback(block);
+
     /// Pass profile events from remote server to client
     if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
         if (!profile_queue->emplace(std::move(block)))
@@ -1520,6 +1523,12 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
 {
     LockAndBlocker guard(was_cancelled_mutex);
     profile_info_callback = std::move(callback);
+}
+
+void RemoteQueryExecutor::setProfileEventsCallback(ProfileEventsCallback callback)
+{
+    LockAndBlocker guard(was_cancelled_mutex);
+    profile_events_callback = std::move(callback);
 }
 
 bool RemoteQueryExecutor::shouldSkipUnavailableShard() const

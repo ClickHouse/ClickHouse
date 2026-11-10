@@ -471,6 +471,12 @@ bool ColumnStatistics::hasMinMax() const
     return false;
 }
 
+bool ColumnStatistics::hasSum() const
+{
+    auto it = stats.find(StatisticsType::Basic);
+    return it != stats.end() && assert_cast<const StatisticsBasic &>(*it->second).hasSum();
+}
+
 UInt64 ColumnStatistics::getNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
@@ -480,6 +486,17 @@ UInt64 ColumnStatistics::getNullCount() const
             return basic.getNullCount();
     }
     return 0;
+}
+
+std::optional<Float64> ColumnStatistics::getAvgStringBytes() const
+{
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+    {
+        const auto & basic = assert_cast<const StatisticsBasic &>(*it->second);
+        if (basic.hasStringLengthAvg())
+            return static_cast<Float64>(basic.getStringLengthAvg());
+    }
+    return std::nullopt;
 }
 
 UInt64 ColumnStatistics::getNonNullRowCount() const
@@ -546,6 +563,8 @@ Estimate ColumnStatistics::getEstimate() const
             info.estimated_null_count = basic_stats.getNullCount();
         if (basic_stats.hasDefaultCount())
             info.estimated_default_count = basic_stats.getDefaultCount();
+        if (basic_stats.hasSum())
+            info.estimated_sum = basic_stats.getSum();
     }
     else if (auto minmax_it = stats.find(StatisticsType::MinMax); minmax_it != stats.end())
     {
@@ -1085,6 +1104,11 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
 bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
 {
     return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
+}
+
+bool canStatisticsTrackSum(const DataTypePtr & data_type)
+{
+    return WhichDataType(data_type).isIntegerOrDecimal();
 }
 
 }
