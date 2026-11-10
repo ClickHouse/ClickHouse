@@ -34,6 +34,7 @@ disk="disk(
 # `remote_read_min_bytes_for_seek` reads through a short forward seek.
 read_settings=(
     --max_threads 1
+    --use_statistics_for_sum_avg_aggregation 0
     --enable_parallel_replicas 0
     --enable_filesystem_cache 1
     --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 0

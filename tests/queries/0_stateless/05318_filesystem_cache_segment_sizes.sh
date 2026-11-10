@@ -21,6 +21,7 @@ disk_settings="
 
 read_settings=(
     --max_threads 1
+    --use_statistics_for_sum_avg_aggregation 0
     --enable_parallel_replicas 0
     --enable_filesystem_cache 1
     --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 0
@@ -38,7 +39,7 @@ $CLICKHOUSE_CLIENT --query "
         disk = disk(type = cache, name = '$cache_name', path = '$cache_name/', max_size = '1Gi', $disk_settings);
     CREATE TABLE t_segment_sizes_small (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key
     SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi',
-        disk = disk(type = cache, name = '$small_cache_name', path = '$small_cache_name/', max_size = '6Mi', $disk_settings);
+        disk = disk(type = cache, name = '$small_cache_name', path = '$small_cache_name/', max_size = '6Mi', cache_policy = 'LRU', $disk_settings);
     SYSTEM STOP MERGES t_segment_sizes;
     SYSTEM STOP MERGES t_segment_sizes_small;
     INSERT INTO t_segment_sizes SELECT number, cityHash64(number) FROM numbers(1000000);

@@ -26,6 +26,7 @@ disk="disk(
 
 read_settings=(
     --max_threads 1
+    --use_statistics_for_sum_avg_aggregation 0
     --enable_parallel_replicas 0
     --use_uncompressed_cache 0
     --use_columns_cache 0
