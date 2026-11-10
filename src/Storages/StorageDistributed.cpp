@@ -2423,8 +2423,8 @@ void StorageDistributed::delayInsertOrThrowIfNeeded(const std::atomic<bool> & is
         const size_t step_ms = static_cast<size_t>(std::min<double>(1., static_cast<double>((*distributed_settings)[DistributedSetting::max_delay_to_insert]) * 1'000 * 0.05));
         UInt64 delayed_ms = 0;
 
-        /// Nothing is left to throttle once the INSERT is cancelled or the server shuts down. Throwing then would drop
-        /// rows a Buffer or an asynchronous insert flush may have acknowledged, so the block is written as usual.
+        /// Nothing is left to throttle once the INSERT is cancelled or the server shuts down, and throwing then would
+        /// drop rows that a Buffer or an asynchronous insert flush has already acknowledged.
         do {
             delayed_ms += step_ms;
             std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
