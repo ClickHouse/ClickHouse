@@ -1,4689 +1,1280 @@
 #pragma once
-
-// Include this first, because `#define _asan_poison_address` from
-// llvm/Support/Compiler.h conflicts with its forward declaration in
-// sanitizer/asan_interface.h
-#include <memory>
 #include <type_traits>
-
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/IColumn.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/AccurateComparison.h>
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeArray.h>
+#include <Common/DateLUTImpl.h>
+
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
-#include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/Native.h>
-#include <DataTypes/NumberTraits.h>
-#include <Formats/FormatSettings.h>
-#include <Functions/DateTimeTransforms.h>
-#include <Functions/DivisionUtils.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
+
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+
 #include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/IsOperation.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/castColumn.h>
-#include <base/TypeList.h>
-#include <base/TypeLists.h>
-#include <base/types.h>
-#include <base/wide_integer_to_string.h>
-#include <Common/Arena.h>
-#include <Core/AccurateComparison.h>
-#include <Common/FieldAccurateComparison.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 
-#include <absl/container/inlined_vector.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/parseDateTimeBestEffort.h>
 
-#if USE_EMBEDDED_COMPILER
-#    include <llvm/IR/IRBuilder.h>
-#endif
-
-#include <ranges>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
-    extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
-FormatSettings::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context);
-
-namespace traits_
+/// Rescale a whole-seconds calendar result back into DateTime64/Time64 ticks: whole * multiplier + rem.
+/// The calendar helpers (addDays/addWeeks/addMonths/addQuarters/addYears) can legitimately clamp `whole`
+/// to the DateLUT boundary (e.g. 9999-12-31), but for scale >= 8 that clamped value times the scale
+/// multiplier no longer fits in Int64 (253402214400 * 10^8 already exceeds Int64::max). WITH FILL passes
+/// deltas from the whole Int64 range, so this must be well-defined: compute in the UInt64 domain, which
+/// wraps by construction, and cast back. Bit-identical to the signed form for any in-range result.
+inline Int64 rescaleWholeToTicks(Int64 whole, Int64 multiplier, Int64 rem)
 {
-struct InvalidType; /// Used to indicate undefined operation
-
-template <bool V, typename T> struct Case : std::bool_constant<V> { using type = T; };
-
-/// Switch<Case<C0, T0>, ...> -- select the first Ti for which Ci is true, InvalidType if none.
-template <typename... Ts> using Switch = typename std::disjunction<Ts..., Case<true, InvalidType>>::type;
-
-template <class T>
-using DataTypeFromFieldType = std::conditional_t<std::is_same_v<T, NumberTraits::Error>,
-    InvalidType, DataTypeNumber<T>>;
-
-template <typename DataType> constexpr bool IsIntegral = false;
-template <> inline constexpr bool IsIntegral<DataTypeUInt8> = true;
-template <> inline constexpr bool IsIntegral<DataTypeUInt16> = true;
-template <> inline constexpr bool IsIntegral<DataTypeUInt32> = true;
-template <> inline constexpr bool IsIntegral<DataTypeUInt64> = true;
-template <> inline constexpr bool IsIntegral<DataTypeInt8> = true;
-template <> inline constexpr bool IsIntegral<DataTypeInt16> = true;
-template <> inline constexpr bool IsIntegral<DataTypeInt32> = true;
-template <> inline constexpr bool IsIntegral<DataTypeInt64> = true;
-
-template <typename DataType> constexpr bool IsExtended = false;
-template <> inline constexpr bool IsExtended<DataTypeUInt128> = true;
-template <> inline constexpr bool IsExtended<DataTypeUInt256> = true;
-template <> inline constexpr bool IsExtended<DataTypeInt128> = true;
-template <> inline constexpr bool IsExtended<DataTypeInt256> = true;
-
-template <typename DataType> constexpr bool IsIntegralOrExtended = IsIntegral<DataType> || IsExtended<DataType>;
-template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal =
-    IsIntegralOrExtended<DataType> ||
-    IsDataTypeDecimal<DataType>;
-
-template <typename DataType> constexpr bool IsFloatingPoint = false;
-template <> inline constexpr bool IsFloatingPoint<DataTypeBFloat16> = true;
-template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
-template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
-
-template <typename DataType> constexpr bool IsArray = false;
-template <> inline constexpr bool IsArray<DataTypeArray> = true;
-
-template <typename DataType> constexpr bool IsDateOrDateTime = false;
-template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
-template <> inline constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
-
-template <typename DataType> constexpr bool IsDateOrTimeOrDateTime = false;
-template <> inline constexpr bool IsDateOrTimeOrDateTime<DataTypeDate> = true;
-template <> inline constexpr bool IsDateOrTimeOrDateTime<DataTypeTime> = true;
-template <> inline constexpr bool IsDateOrTimeOrDateTime<DataTypeDateTime> = true;
-
-template <typename DataType> constexpr bool IsIPv4 = false;
-template <> inline constexpr bool IsIPv4<DataTypeIPv4> = true;
-
-template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal128>> = true;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal64>> = true;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal32>> = true;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
-
-template <typename DataType> constexpr bool IsFixedString = false;
-template <> inline constexpr bool IsFixedString<DataTypeFixedString> = true;
-
-template <typename DataType> constexpr bool IsString = false;
-template <> inline constexpr bool IsString<DataTypeString> = true;
-
-template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
-struct BinaryOperationTraits
-{
-    using T0 = typename LeftDataType::FieldType;
-    using T1 = typename RightDataType::FieldType;
-private: /// it's not correct for Decimal
-    using Op = Operation<T0, T1>;
-
-public:
-    static constexpr bool allow_decimal = IsOperation<Operation>::allow_decimal;
-
-    using DecimalResultDataType = Switch<
-        Case<!allow_decimal, InvalidType>,
-        Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
-        Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
-        Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
-        Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
-
-        /// e.g Decimal +-*/ Float, least(Decimal, Float), greatest(Decimal, Float) = Float64
-        Case<IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>,
-        Case<IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>, DataTypeFloat64>,
-
-        Case<IsOperation<Operation>::bit_hamming_distance && IsIntegral<LeftDataType> && IsIntegral<RightDataType>, DataTypeUInt8>,
-        Case<IsOperation<Operation>::bit_hamming_distance && IsFixedString<LeftDataType> && IsFixedString<RightDataType>, DataTypeUInt16>,
-        Case<IsOperation<Operation>::bit_hamming_distance && IsString<LeftDataType> && IsString<RightDataType>, DataTypeUInt64>,
-
-          /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
-        Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
-        Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>>;
-
-    /// Appropriate result type for binary operator on numeric types. "Date" can also mean
-    /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
-    using ResultDataType = Switch<
-        /// Result must be Integer
-        Case<IsOperation<Operation>::int_div || IsOperation<Operation>::int_div_or_zero,
-            std::conditional_t<IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>, DataTypeFromFieldType<typename Op::ResultType>, InvalidType>>,
-        /// Decimal cases
-        Case<IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>, DecimalResultDataType>,
-        Case<
-            IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>,
-            LeftDataType>,
-        Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
-        Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
-        Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
-
-        /// e.g Decimal +-*/ Float, least(Decimal, Float), greatest(Decimal, Float) = Float64
-        Case<IsOperation<Operation>::allow_decimal && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>,
-        Case<IsOperation<Operation>::allow_decimal && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>, DataTypeFloat64>,
-
-        Case<IsOperation<Operation>::bit_hamming_distance && IsIntegral<LeftDataType> && IsIntegral<RightDataType>, DataTypeUInt8>,
-        Case<IsOperation<Operation>::bit_hamming_distance && IsFixedString<LeftDataType> && IsFixedString<RightDataType>, DataTypeUInt16>,
-        Case<IsOperation<Operation>::bit_hamming_distance && IsString<LeftDataType> && IsString<RightDataType>, DataTypeUInt64>,
-
-        /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
-        Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
-        Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,
-
-        /// number <op> number -> see corresponding impl
-        Case<!IsDateOrTimeOrDateTime<LeftDataType> && !IsDateOrTimeOrDateTime<RightDataType>, DataTypeFromFieldType<typename Op::ResultType>>,
-
-        /// Date + Integral -> Date
-        /// Integral + Date -> Date
-        Case<
-            IsOperation<Operation>::plus,
-            Switch<Case<IsIntegral<RightDataType>, LeftDataType>, Case<IsIntegral<LeftDataType>, RightDataType>>>,
-
-        /// Date - Date     -> Int32
-        /// Date - Integral -> Date
-        Case<
-            IsOperation<Operation>::minus,
-            Switch<
-                Case<std::is_same_v<LeftDataType, RightDataType>, DataTypeInt32>,
-                Case<IsDateOrTimeOrDateTime<LeftDataType> && IsIntegral<RightDataType>, LeftDataType>>>,
-
-        /// least(Date, Date) -> Date
-        /// greatest(Date, Date) -> Date
-        Case<
-            std::is_same_v<LeftDataType, RightDataType> && (IsOperation<Operation>::least || IsOperation<Operation>::greatest),
-            LeftDataType>,
-
-        /// Date % Int32 -> Int32
-        /// Date % Float -> Float64
-        Case<
-            IsOperation<Operation>::modulo || IsOperation<Operation>::positive_modulo,
-            Switch<
-                Case<IsDateOrTimeOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
-                Case<IsDateOrTimeOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>>>>;
-};
+    return static_cast<Int64>(static_cast<UInt64>(whole) * static_cast<UInt64>(multiplier) + static_cast<UInt64>(rem));
 }
 
-namespace impl_
+/// Split DateTime64/Time64 ticks into whole seconds and the remainder, truncating like `std::div`.
+/// `std::div` is an out-of-line libc call (`ldiv`/`lldiv`) on every element, while `/` and `%` on the
+/// same operands compile to a single inline division.
+struct TicksDivResult
 {
+    Int64 quot;
+    Int64 rem;
+};
 
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
+ALWAYS_INLINE inline TicksDivResult divTicks(Int64 ticks, Int64 multiplier)
 {
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+    return {ticks / multiplier, ticks % multiplier};
 }
 
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
+/// Type of first argument of 'execute' function overload defines what INPUT DataType it is used for.
+/// Return type defines what is the OUTPUT (return) type of the CH function.
+/// Corresponding types:
+///  - UInt16     => DataTypeDate
+///  - UInt32     => DataTypeDateTime
+///  - Int32      => DataTypeDate32
+///  - DateTime64 => DataTypeDateTime64
+///  - Int8       => error
+/// Please note that INPUT and OUTPUT types may differ, e.g.:
+///  - 'AddSecondsImpl::execute(UInt32, ...) -> UInt32' is available to the ClickHouse users as 'addSeconds(DateTime, ...) -> DateTime'
+///  - 'AddSecondsImpl::execute(UInt16, ...) -> UInt32' is available to the ClickHouse users as 'addSeconds(Date, ...) -> DateTime'
+
+struct AddNanosecondsImpl
 {
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
-}
+    static constexpr auto name = "addNanoseconds";
 
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
-{
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
-}
-
-/** Arithmetic operations: +, -, *, /, %,
-  * intDiv (integer division)
-  * Bitwise operations: |, &, ^, ~.
-  * Etc.
-  */
-
-enum class OpCase : uint8_t
-{
-    Vector,
-    LeftConstant,
-    RightConstant
-};
-
-constexpr const auto & undec(const auto & x) { return x; }
-constexpr const auto & undec(const is_decimal auto & x) { return x.value; }
-
-template <typename A, typename B, typename Op, typename OpResultType = typename Op::ResultType, bool can_have_division_by_nullable = true>
-struct BinaryOperation
-{
-    using ResultType = OpResultType;
-    static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
-
-    template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr)
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        /// No mainstream ISA has SIMD integer division (see `DivideIntegralImpl`).
-        /// The compiler "vectorizes" by extracting each element, doing scalar div,
-        /// and re-inserting, bloating the loop ~3-5x for no benefit. Operations
-        /// that use div/mod set `no_vectorize = true` to opt out; `Op` types that
-        /// don't define the member are treated as opting in to vectorization.
-        ///
-        /// This is a workaround for the LLVM cost model, which was fixed upstream
-        /// on 2026-09-11. On clang 24+ the vectorized integer division becomes
-        /// faster than the scalar loop (`intDivOrZero` on `Int8` is 8.6x faster
-        /// on trunk), so the opt-out becomes harmful and should be removed once
-        /// the minimum supported compiler is clang 24.
-        static constexpr bool disable_vectorization = []
-        {
-            if constexpr (requires { Op::no_vectorize; })
-                return bool(Op::no_vectorize);
-            else
-                return false;
-        }();
-
-        if constexpr (op_case == OpCase::RightConstant)
-        {
-            if (can_have_division_by_nullable && right_nullmap && (*right_nullmap)[0])
-                return;
-
-            if constexpr (disable_vectorization)
-            {
-                #pragma clang loop vectorize(disable)
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i], *b);
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i], *b);
-            }
-        }
-        else
-        {
-            if (can_have_division_by_nullable && right_nullmap)
-            {
-                if constexpr (disable_vectorization)
-                {
-                    #pragma clang loop vectorize(disable)
-                    for (size_t i = 0; i < size; ++i)
-                        if ((*right_nullmap)[i])
-                            c[i] = ResultType();
-                        else
-                            apply<op_case>(a, b, c, i);
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        if ((*right_nullmap)[i])
-                            c[i] = ResultType();
-                        else
-                            apply<op_case>(a, b, c, i);
-                }
-            }
-            else
-            {
-                if constexpr (disable_vectorization)
-                {
-                    #pragma clang loop vectorize(disable)
-                    for (size_t i = 0; i < size; ++i)
-                        apply<op_case>(a, b, c, i);
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        apply<op_case>(a, b, c, i);
-                }
-            }
-        }
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9 - scale);
+        return DateTime64(DecimalUtils::multiplyAdd(t.value, multiplier, delta));
     }
-
-    static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
-
-private:
-    template <OpCase op_case>
-    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        if constexpr (op_case == OpCase::Vector)
-            c[i] = Op::template apply<ResultType>(a[i], b[i]);
-        else
-            c[i] = Op::template apply<ResultType>(*a, b[i]);
+        Int64 multiplier = DecimalUtils::scaleMultiplier<Time64>(9 - scale);
+        return Time64(DecimalUtils::multiplyAdd(t.value, multiplier, delta));
+    }
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9);
+        return DateTime64(DecimalUtils::multiplyAdd(static_cast<Int64>(t), multiplier, delta));
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(UInt16, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Date");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Date32");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Time");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Time");
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
     }
 };
 
-template <typename B, typename Op>
-struct StringIntegerOperationImpl
+struct AddMicrosecondsImpl
 {
-    template <OpCase op_case>
-    static void NO_INLINE processFixedString(const UInt8 * __restrict in_vec, const UInt64 n, const B * __restrict b, ColumnFixedString::Chars & out_vec, size_t size)
-    {
-        size_t prev_offset = 0;
-        out_vec.reserve(n * size);
-        for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (op_case == OpCase::LeftConstant)
-            {
-                Op::apply(&in_vec[0], &in_vec[n], b[i], out_vec);
-            }
-            else
-            {
-                size_t new_offset = prev_offset + n;
+    static constexpr auto name = "addMicroseconds";
 
-                if constexpr (op_case == OpCase::Vector)
-                {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[i], out_vec);
-                }
-                else
-                {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[0], out_vec);
-                }
-                prev_offset = new_offset;
-            }
-        }
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    {
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(6 - scale));
+        return DateTime64(scale <= 6
+            ? DecimalUtils::multiplyAdd(t.value, multiplier, delta)
+            : DecimalUtils::multiplyAdd(delta, multiplier, t.value));
     }
-
-
-    template <OpCase op_case>
-    static void NO_INLINE processString(const UInt8 * __restrict in_vec, const UInt64 * __restrict in_offsets, const B * __restrict b, ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets, size_t size)
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        size_t prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (op_case == OpCase::LeftConstant)
-            {
-                Op::apply(&in_vec[0], &in_vec[in_offsets[0]], b[i], out_vec, out_offsets);
-            }
-            else
-            {
-                size_t new_offset = in_offsets[i];
-
-                if constexpr (op_case == OpCase::Vector)
-                {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[i], out_vec, out_offsets);
-                }
-                else
-                {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[0], out_vec, out_offsets);
-                }
-
-                prev_offset = new_offset;
-            }
-        }
+        Int64 multiplier = DecimalUtils::scaleMultiplier<Time64>(std::abs(6 - scale));
+        return Time64(scale <= 6
+            ? DecimalUtils::multiplyAdd(t.value, multiplier, delta)
+            : DecimalUtils::multiplyAdd(delta, multiplier, t.value));
+    }
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(6);
+        return DateTime64(DecimalUtils::multiplyAdd(static_cast<Int64>(t), multiplier, delta));
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(UInt16, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Date");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Date32");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Time");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Time");
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
     }
 };
 
-template <typename Op>
-struct FixedStringOperationImpl
+struct AddMillisecondsImpl
 {
-    template <OpCase op_case>
-    static void NO_INLINE process(
-        const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict result,
-        size_t size, [[maybe_unused]] size_t N)
+    static constexpr auto name = "addMilliseconds";
+
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        if constexpr (op_case == OpCase::Vector)
-            for (size_t i = 0; i < size; ++i)
-                result[i] = Op::template apply<UInt8>(a[i], b[i]);
-        else if constexpr (op_case == OpCase::LeftConstant)
-            withConst<true>(b, a, result, size, N);
-        else
-            withConst<false>(a, b, result, size, N);
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(3 - scale));
+        return DateTime64(scale <= 3
+            ? DecimalUtils::multiplyAdd(t.value, multiplier, delta)
+            : DecimalUtils::multiplyAdd(delta, multiplier, t.value));
     }
-
-private:
-    template <bool inverted>
-    static void NO_INLINE withConst(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        /// These complications are needed to avoid integer division in inner loop.
-
-        /// Create a pattern of repeated values of b with at least 16 bytes,
-        /// so we can read 16 bytes of this repeated pattern starting from any offset inside b.
-        ///
-        /// Example:
-        ///
-        ///  N = 6
-        ///  ------
-        /// [abcdefabcdefabcdefabc]
-        ///       ^^^^^^^^^^^^^^^^
-        ///      16 bytes starting from the last offset inside b.
-
-        const size_t b_repeated_size = N + 15;
-
-        absl::InlinedVector<UInt8, 64> b_repeated(b_repeated_size);
-
-        for (size_t i = 0; i < b_repeated_size; ++i)
-            b_repeated[i] = b[i % N];
-
-        size_t b_offset = 0;
-        const size_t b_increment = 16 % N;
-
-        /// Example:
-        ///
-        /// At first iteration we copy 16 bytes at offset 0 from b_repeated:
-        /// [abcdefabcdefabcdefabc]
-        ///  ^^^^^^^^^^^^^^^^
-        /// At second iteration we copy 16 bytes at offset 4 = 16 % 6 from b_repeated:
-        /// [abcdefabcdefabcdefabc]
-        ///      ^^^^^^^^^^^^^^^^
-        /// At third iteration we copy 16 bytes at offset 2 = (16 * 2) % 6 from b_repeated:
-        /// [abcdefabcdefabcdefabc]
-        ///    ^^^^^^^^^^^^^^^^
-
-        /// PaddedPODArray allows overflow for 15 bytes.
-        for (size_t i = 0; i < size; i += 16)
-        {
-            /// This loop is formed in a way to be vectorized into two SIMD mov.
-            for (size_t j = 0; j < 16; ++j)
-                c[i + j] = inverted
-                    ? Op::template apply<UInt8>(a[i + j], b_repeated[b_offset + j])
-                    : Op::template apply<UInt8>(b_repeated[b_offset + j], a[i + j]);
-
-            b_offset += b_increment;
-
-            if (b_offset >= N) /// This condition is easily predictable.
-                b_offset -= N;
-        }
+        Int64 multiplier = DecimalUtils::scaleMultiplier<Time64>(std::abs(3 - scale));
+        return Time64(scale <= 3
+            ? DecimalUtils::multiplyAdd(t.value, multiplier, delta)
+            : DecimalUtils::multiplyAdd(delta, multiplier, t.value));
+    }
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(3);
+        return DateTime64(DecimalUtils::multiplyAdd(static_cast<Int64>(t), multiplier, delta));
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(UInt16, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Date");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Date32");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Time");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Time");
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
     }
 };
 
-template <typename Op>
-struct FixedStringReduceOperationImpl
+struct AddSecondsImpl
 {
-    template <OpCase op_case>
-    static void process(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt16 * __restrict result, size_t size, size_t N)
-    {
-        if constexpr (op_case == OpCase::Vector)
-            vectorVector(a, b, result, size, N);
-        else if constexpr (op_case == OpCase::LeftConstant)
-            vectorConstant(b, a, result, size, N);
-        else
-            vectorConstant(a, b, result, size, N);
-    }
+    static constexpr auto name = "addSeconds";
 
-private:
-    static void vectorVector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt16 * __restrict result, size_t size, size_t N)
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t offset = i * N;
-            for (size_t j = 0; j < N; ++j)
-            {
-                result[i] += Op::template apply<UInt8>(a[offset + j], b[offset + j]);
-            }
-        }
+        return DateTime64(DecimalUtils::multiplyAdd(delta, DecimalUtils::scaleMultiplier<DateTime64>(scale), t.value));
     }
-
-    static void vectorConstant(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt16 * __restrict result, size_t size, size_t N)
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t offset = i * N;
-            for (size_t j = 0; j < N; ++j)
-            {
-                result[i] += Op::template apply<UInt8>(a[offset + j], b[j]);
-            }
-        }
+        return DateTime64(DecimalUtils::multiplyAdd(delta, DecimalUtils::scaleMultiplier<Time64>(scale), t.value));
+    }
+    /// Compute in the UInt64 domain so an out-of-range delta wraps by construction instead of hitting
+    /// signed overflow, which is UB even under NO_SANITIZE_UNDEFINED. FillingRow::doLongJump passes
+    /// deltas from the whole Int64 range and relies on the wraparound. Bit-identical to the previous
+    /// two's complement behavior for all inputs.
+    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<UInt32>(static_cast<UInt64>(t) + static_cast<UInt64>(delta));
+    }
+    static DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        // use default datetime64 scale
+        static_assert(DataTypeDateTime64::default_scale == 3);
+        // UInt64 domain: wraps by construction (see execute(UInt32) above).
+        return static_cast<Int64>((static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) + static_cast<UInt64>(delta)) * 1000ULL);
+    }
+    /// UInt64 domain: wraps by construction (see execute(UInt32) above). Time / Time64 carriers.
+    static Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
+    }
+    static Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
+    }
+    static UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta));
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
     }
 };
 
-template <typename Op>
-struct StringReduceOperationImpl
+struct AddMinutesImpl
 {
-    static void vectorVector(
-        const ColumnString::Chars & a,
-        const ColumnString::Offsets & offsets_a,
-        const ColumnString::Chars & b,
-        const ColumnString::Offsets & offsets_b,
-        PaddedPODArray<UInt64> & res)
+    static constexpr auto name = "addMinutes";
+
+    /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and a
+    /// signed multiply would be UB (see AddSecondsImpl).
+    static DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        size_t size = res.size();
-        for (size_t i = 0; i < size; ++i)
-        {
-            res[i] = process(
-                a.data() + offsets_a[i - 1],
-                a.data() + offsets_a[i],
-                b.data() + offsets_b[i - 1],
-                b.data() + offsets_b[i]);
-        }
+        return DateTime64(static_cast<Int64>(
+            static_cast<UInt64>(t.value) + 60 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<DateTime64>(scale))));
     }
-
-    static void
-    vectorConstant(const ColumnString::Chars & a, const ColumnString::Offsets & offsets_a, std::string_view b, PaddedPODArray<UInt64> & res)
+    static Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        size_t size = res.size();
-        for (size_t i = 0; i < size; ++i)
-        {
-            res[i] = process(
-                a.data() + offsets_a[i - 1],
-                a.data() + offsets_a[i],
-                reinterpret_cast<const UInt8 *>(b.data()),
-                reinterpret_cast<const UInt8 *>(b.data()) + b.size());
-        }
+        return Time64(static_cast<Int64>(
+            static_cast<UInt64>(t.value) + 60 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<Time64>(scale))));
     }
-
-    static UInt64 constConst(std::string_view a, std::string_view b)
+    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return process(
-            reinterpret_cast<const UInt8 *>(a.data()),
-            reinterpret_cast<const UInt8 *>(a.data()) + a.size(),
-            reinterpret_cast<const UInt8 *>(b.data()),
-            reinterpret_cast<const UInt8 *>(b.data()) + b.size());
+        return static_cast<UInt32>(static_cast<UInt64>(t) + static_cast<UInt64>(delta) * 60);
     }
-
-private:
-    static UInt64 process(const UInt8 * __restrict start_a, const UInt8 * __restrict end_a, const UInt8 * start_b, const UInt8 * end_b)
+    static DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
-        UInt64 res = 0;
-        while (start_a < end_a && start_b < end_b)
-            res += Op::template apply<UInt8>(*start_a++, *start_b++);
-
-        while (start_a < end_a)
-            res += Op::template apply<UInt8>(*start_a++, 0);
-        while (start_b < end_b)
-            res += Op::template apply<UInt8>(0, *start_b++);
-        return res;
+        // use default datetime64 scale
+        static_assert(DataTypeDateTime64::default_scale == 3);
+        // UInt64 domain: wraps by construction (see AddSecondsImpl).
+        return static_cast<Int64>((static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) + static_cast<UInt64>(delta) * 60) * 1000ULL);
+    }
+    /// UInt64 domain: wraps by construction (see AddSecondsImpl). Time / Time64 carriers.
+    static Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 60);
+    }
+    static Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 60);
+    }
+    static UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta) * 60);
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
     }
 };
 
-template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType, bool can_have_division_by_nullable = true>
-struct BinaryOperationImpl : BinaryOperation<A, B, Op, ResultType, can_have_division_by_nullable> { };
-
-/**
- * Binary operations with Decimals (either Decimal OP Decimal or Decimal Op Float) need to scale the args correctly.
- *  - + (plus), - (minus), * (multiply), least and greatest operations scale one of the args (which scale factor is not 1).
- *    The resulting scale is either left or the right scale.
- *  - / (divide) operation scales the first argument.
- *    The resulting scale is the first one's.
- */
-template <template <typename, typename> typename Operation, class OpResultType, bool check_overflow = true>
-struct DecimalBinaryOperation
+struct AddHoursImpl
 {
-private:
-    using ResultType = OpResultType; // e.g. Decimal32
-    using NativeResultType = NativeType<ResultType>; // e.g. UInt32 for Decimal32
+    static constexpr auto name = "addHours";
 
-    using ResultContainerType = typename ColumnVectorOrDecimal<ResultType>::Container;
-
-public:
-    template <OpCase op_case, bool is_decimal_a, bool is_decimal_b>
-    static void NO_INLINE process(const auto & a, const auto & b, ResultContainerType & c,
-        NativeResultType scale_a, NativeResultType scale_b, const NullMap * right_nullmap = nullptr)
+    /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and a
+    /// signed multiply would be UB (see AddSecondsImpl).
+    static DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<decltype(a)>);
-        if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<decltype(b)>);
+        return DateTime64(static_cast<Int64>(
+            static_cast<UInt64>(t.value) + 3600 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<DateTime64>(scale))));
+    }
+    static Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    {
+        return Time64(static_cast<Int64>(
+            static_cast<UInt64>(t.value) + 3600 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<Time64>(scale))));
+    }
+    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<UInt32>(static_cast<UInt64>(t) + static_cast<UInt64>(delta) * 3600);
+    }
+    static DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        // use default datetime64 scale
+        static_assert(DataTypeDateTime64::default_scale == 3);
+        // UInt64 domain: wraps by construction (see AddSecondsImpl).
+        return static_cast<Int64>((static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) + static_cast<UInt64>(delta) * 3600) * 1000ULL);
+    }
+    /// UInt64 domain: wraps by construction (see AddSecondsImpl). Time / Time64 carriers.
+    static Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 3600);
+    }
+    static Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 3600);
+    }
+    static UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta) * 3600);
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
+    }
+};
 
-        size_t size = 0;
+struct AddDaysImpl
+{
+    static constexpr auto name = "addDays";
 
-        if constexpr (op_case == OpCase::LeftConstant)
-            size = b.size();
+    /// Kept out of line: in a fixed-offset time zone every row takes the arithmetic shortcut, so the
+    /// table walk must not be inlined into that loop.
+    static NO_INLINE NO_SANITIZE_UNDEFINED UInt32 addDaysThroughLUT(
+        UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.addDays(t, delta));
+    }
+
+    template <bool fixed_offset>
+    static NO_SANITIZE_UNDEFINED DateTime64 executeWithOffsetMode(
+        DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        if constexpr (fixed_offset)
+        {
+            if (time_zone.dayShiftStaysWithinLUT(t, delta, multiplier))
+                return t + delta * DATE_SECONDS_PER_DAY * multiplier;
+        }
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addDays(d.quot, delta), multiplier, d.rem);
+    }
+    template <bool fixed_offset>
+    static NO_SANITIZE_UNDEFINED Time64 executeWithOffsetMode(
+        Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
+        if constexpr (fixed_offset)
+        {
+            if (time_zone.dayShiftStaysWithinLUT(t, delta, multiplier))
+                return t + delta * DATE_SECONDS_PER_DAY * multiplier;
+        }
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addDays(d.quot, delta), multiplier, d.rem);
+    }
+    template <bool fixed_offset>
+    static NO_SANITIZE_UNDEFINED UInt32 executeWithOffsetMode(
+        UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        if constexpr (fixed_offset)
+        {
+            if (time_zone.dayShiftStaysWithinLUT(t, delta))
+                return static_cast<UInt32>(t + delta * DATE_SECONDS_PER_DAY);
+            return addDaysThroughLUT(t, delta, time_zone);
+        }
+        return static_cast<UInt32>(time_zone.addDays(t, delta));
+    }
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(
+        DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        if (time_zone.hasFixedOffset())
+            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
+        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
+    }
+    static NO_SANITIZE_UNDEFINED Time64 execute(
+        Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        if (time_zone.hasFixedOffset())
+            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
+        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
+    }
+    static NO_SANITIZE_UNDEFINED UInt32 execute(
+        UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        if (time_zone.hasFixedOffset())
+            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
+        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
+    }
+    /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and
+    /// signed overflow would be UB (see AddSecondsImpl).
+    static UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<UInt16>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
+    }
+    static Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int32>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addDays() cannot be used with Time");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addDays() cannot be used with Time");
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
+    }
+};
+
+struct AddWeeksImpl
+{
+    static constexpr auto name = "addWeeks";
+
+    /// Wraps like the plain multiplication the calendar path used to do, but reports the overflow so
+    /// that the fast path can decline it instead of deciding on a wrapped shift.
+    static bool weeksToDays(Int64 delta, Int64 & days)
+    {
+        return !__builtin_mul_overflow(delta, 7, &days);
+    }
+
+    template <bool fixed_offset>
+    static NO_SANITIZE_UNDEFINED DateTime64 executeWithOffsetMode(
+        DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        Int64 days = 0;
+        if constexpr (fixed_offset)
+        {
+            if (weeksToDays(delta, days) && time_zone.dayShiftStaysWithinLUT(t, days, multiplier))
+                return t + days * DATE_SECONDS_PER_DAY * multiplier;
+        }
         else
-            size = a.size();
-
-        if constexpr (is_plus_minus_compare)
-        {
-            if (scale_a != 1)
-            {
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<true>(
-                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                        scale_a);
-                return;
-            }
-            if (scale_b != 1)
-            {
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<false>(
-                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                        scale_b);
-                return;
-            }
-        }
-        else if constexpr (is_multiply)
-        {
-            if (scale_a != 1)
-            {
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<true, false>(
-                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                        scale_a);
-                return;
-            }
-            if (scale_b != 1)
-            {
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<false, false>(
-                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                        scale_b);
-                return;
-            }
-        }
-        else if constexpr (is_division && is_decimal_b)
-        {
-            processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a](const auto & left, const auto & right)
-            {
-                return applyScaledDiv<is_decimal_a>(
-                    castToNative(left), right, scale_a);
-            });
-            return;
-        }
-
-        processWithRightNullmapImpl<op_case>(
-            a, b, c, size, right_nullmap,
-            [](const auto & left, const auto & right)
-            {
-                return apply(castToNative(left), castToNative(right));
-            });
+            weeksToDays(delta, days);
+        auto d = divTicks(t, multiplier);
+        /// `days` (= delta * 7) is computed via weeksToDays in the wrapping (UInt64-equivalent) domain
+        /// above; rescaleWholeToTicks keeps the final whole * multiplier well-defined for large scales.
+        /// WITH FILL passes deltas from the whole Int64 range, so both steps must avoid signed overflow.
+        return rescaleWholeToTicks(time_zone.addDays(d.quot, days), multiplier, d.rem);
     }
-
-    template <bool is_decimal_a, bool is_decimal_b, class A, class B>
-    static ResultType process(A a, B b, NativeResultType scale_a, NativeResultType scale_b)
-        requires(!is_decimal<A> && !is_decimal<B>)
+    template <bool fixed_offset>
+    static NO_SANITIZE_UNDEFINED Time64 executeWithOffsetMode(
+        Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
-        if constexpr (is_division && is_decimal_b)
-            return applyScaledDiv<is_decimal_a>(castToNative(a), b, scale_a);
-        else if constexpr (is_plus_minus_compare)
+        auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
+        Int64 days = 0;
+        if constexpr (fixed_offset)
         {
-            if (scale_a != 1)
-                return applyScaled<true>(castToNative(a), castToNative(b), scale_a);
-            if (scale_b != 1)
-                return applyScaled<false>(castToNative(a), castToNative(b), scale_b);
-        }
-
-        return apply(castToNative(a), castToNative(b));
-    }
-
-private:
-    template <OpCase op_case, typename ApplyFunc>
-    static void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, ApplyFunc apply_func)
-    {
-        if (can_have_division_by_nullable && right_nullmap)
-        {
-            if constexpr (op_case == OpCase::RightConstant)
-            {
-                if ((*right_nullmap)[0])
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        c[i] = ResultType();
-                    return;
-                }
-
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = apply_func(undec(a[i]), undec(b));
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
-                {
-                    if ((*right_nullmap)[i])
-                        c[i] = ResultType();
-                    else
-                        c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
-                }
-            }
+            if (weeksToDays(delta, days) && time_zone.dayShiftStaysWithinLUT(t, days, multiplier))
+                return t + days * DATE_SECONDS_PER_DAY * multiplier;
         }
         else
-            for (size_t i = 0; i < size; ++i)
-                c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i));
+            weeksToDays(delta, days);
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addDays(d.quot, days), multiplier, d.rem);
     }
-
-    static constexpr bool is_plus_minus =   IsOperation<Operation>::plus ||
-                                            IsOperation<Operation>::minus;
-    static constexpr bool is_multiply =     IsOperation<Operation>::multiply;
-    static constexpr bool is_float_division = IsOperation<Operation>::div_floating;
-    static constexpr bool is_int_division = IsOperation<Operation>::int_div ||
-                                            IsOperation<Operation>::int_div_or_zero;
-    static constexpr bool is_division = is_float_division || is_int_division;
-    static constexpr bool is_compare =      IsOperation<Operation>::least ||
-                                            IsOperation<Operation>::greatest;
-    static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
-    static constexpr bool can_overflow = is_plus_minus || is_multiply;
-    static constexpr bool can_have_division_by_nullable = IsOperation<Operation>::can_have_division_by_nullable;
-
-    using Op = std::conditional_t<is_float_division,
-        DivideIntegralImpl<NativeResultType, NativeResultType>, /// substitute divide by intDiv (throw on division by zero)
-        Operation<NativeResultType, NativeResultType>>;
-
-    template <OpCase op_case, OpCase target, class E>
-    static auto unwrap(const E& elem, size_t i)
+    template <bool fixed_offset>
+    static NO_SANITIZE_UNDEFINED UInt32 executeWithOffsetMode(
+        UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
-        if constexpr (op_case == target)
-            return undec(elem);
+        Int64 days = 0;
+        if constexpr (fixed_offset)
+        {
+            if (weeksToDays(delta, days) && time_zone.dayShiftStaysWithinLUT(t, days))
+                return static_cast<UInt32>(t + days * DATE_SECONDS_PER_DAY);
+            return AddDaysImpl::addDaysThroughLUT(t, days, time_zone);
+        }
         else
-            return undec(elem[i]);
+            weeksToDays(delta, days);
+        return static_cast<UInt32>(time_zone.addDays(t, days));
+    }
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(
+        DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        if (time_zone.hasFixedOffset())
+            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
+        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
+    }
+    static NO_SANITIZE_UNDEFINED Time64 execute(
+        Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        if (time_zone.hasFixedOffset())
+            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
+        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
+    }
+    static NO_SANITIZE_UNDEFINED UInt32 execute(
+        UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        if (time_zone.hasFixedOffset())
+            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
+        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
+    }
+    /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and
+    /// signed overflow would be UB (see AddSecondsImpl).
+    static UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<UInt16>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 7);
+    }
+    static Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int32>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 7);
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addWeeks() cannot be used with Time");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addWeeks() cannot be used with Time");
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
+    }
+};
+
+struct AddMonthsImpl
+{
+    static constexpr auto name = "addMonths";
+
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addMonths(d.quot, delta), multiplier, d.rem);
+    }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addMonths(d.quot, delta), multiplier, d.rem);
+    }
+    static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<UInt32>(time_zone.addMonths(t, delta));
+    }
+    static NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return time_zone.addMonths(DayNum(d), delta);
+    }
+    static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return time_zone.addMonths(ExtendedDayNum(d), delta);
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMonths() cannot be used with Time");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMonths() cannot be used with Time");
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
+    }
+};
+
+struct AddQuartersImpl
+{
+    static constexpr auto name = "addQuarters";
+
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addQuarters(d.quot, delta), multiplier, d.rem);
+    }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addQuarters(d.quot, delta), multiplier, d.rem);
+    }
+    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<UInt32>(time_zone.addQuarters(t, delta));
+    }
+    static UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return time_zone.addQuarters(DayNum(d), delta);
+    }
+    static Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return time_zone.addQuarters(ExtendedDayNum(d), delta);
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addQuarters() cannot be used with Time");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addQuarters() cannot be used with Time");
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
+    }
+};
+
+struct AddYearsImpl
+{
+    static constexpr auto name = "addYears";
+
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addYears(d.quot, delta), multiplier, d.rem);
+    }
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    {
+        auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addYears(d.quot, delta), multiplier, d.rem);
+    }
+    static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<UInt32>(time_zone.addYears(t, delta));
+    }
+    static NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return time_zone.addYears(DayNum(d), delta);
+    }
+    static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    {
+        return time_zone.addYears(ExtendedDayNum(d), delta);
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addYears() cannot be used with Time");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addYears() cannot be used with Time");
+    }
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        ReadBufferFromString buf(s);
+        DateTime64 t;
+        parseDateTime64BestEffort(t, scale, buf, time_zone, utc_time_zone);
+        return execute(t, delta, time_zone, utc_time_zone, scale);
+    }
+};
+
+template <typename Transform>
+struct SubtractIntervalImpl : public Transform
+{
+    using Transform::Transform;
+
+    /// Wraps like the raw negation used to (delta == INT64_MIN stays INT64_MIN), but reports the
+    /// overflow so the checked fast-path guards run on a defined value instead of UB.
+    static bool negate(Int64 delta, Int64 & negated)
+    {
+        return !__builtin_sub_overflow(Int64{0}, delta, &negated);
     }
 
-    /** The operation runs in the native width of the decimal result, so an operand that does not
-      * survive the narrowing into that width would wrap and make every row of the result silently
-      * wrong - `toDecimal32(1.5, 4) * 9223372036854775807` answered `-1.5`, because the multiplier
-      * narrowed to `-1`. Comparing the same pair already reports `DECIMAL_OVERFLOW`, and the
-      * documented contract of `Decimal` is that excessive digits in the integer part raise.
-      *
-      * Only the conversions that can lose information are checked, so the ones that cannot (a
-      * narrower integer into a wider native type) stay free.
-      */
     template <typename T>
-    static NativeResultType castToNative(const T & value)
+    auto execute(T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
     {
-        const auto result = static_cast<NativeResultType>(value);
-
-        using Value = std::decay_t<T>;
-        if constexpr (
-            check_overflow && is_integer<Value> && is_integer<NativeResultType>
-            && (sizeof(Value) > sizeof(NativeResultType) || is_signed_v<Value> != is_signed_v<NativeResultType>))
-        {
-            if (!accurate::equalsOp(value, result))
-                throw Exception(
-                    ErrorCodes::DECIMAL_OVERFLOW,
-                    "Decimal math overflow: the operand does not fit into the {} bits of the result",
-                    sizeof(NativeResultType) * 8);
-        }
-
-        return result;
+        Int64 negated = 0;
+        negate(delta, negated);
+        return Transform::execute(t, negated, time_zone, utc_time_zone, scale);
     }
 
-    /// there's implicit type conversion here
-    static NativeResultType apply(NativeResultType a, NativeResultType b)
+    /// Reached only for `delta == INT64_MIN`, where the negation wraps. Kept out of line: the table
+    /// walk must not be inlined into a fixed-offset loop whose other rows take the shortcut.
+    template <typename T>
+    static NO_INLINE auto executeNegationOverflow(
+        T t, Int64 negated, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
-        if constexpr (can_overflow && check_overflow)
+        return Transform::template executeWithOffsetMode<false>(t, negated, time_zone, utc_time_zone, scale);
+    }
+
+    template <bool fixed_offset, typename T>
+    auto executeWithOffsetMode(
+        T t,
+        Int64 delta,
+        const DateLUTImpl & time_zone,
+        const DateLUTImpl & utc_time_zone,
+        UInt16 scale) const
+    {
+        Int64 negated = 0;
+        if constexpr (fixed_offset)
         {
-            NativeResultType res;
-            if (Op::template apply<NativeResultType>(a, b, res))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-            return res;
+            if (!negate(delta, negated))
+                return executeNegationOverflow(t, negated, time_zone, utc_time_zone, scale);
         }
         else
-            return Op::template apply<NativeResultType>(a, b);
+            negate(delta, negated);
+        return Transform::template executeWithOffsetMode<fixed_offset>(t, negated, time_zone, utc_time_zone, scale);
     }
 
-    template <bool scale_left, bool may_check_overflow = true>
-    static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
+    template <typename T>
+    NO_SANITIZE_UNDEFINED auto executeForTime(
+        T t,
+        Int64 delta,
+        const DateLUTImpl & time_zone,
+        const DateLUTImpl & utc_time_zone,
+        UInt16 scale) const
     {
-        static_assert(is_plus_minus_compare || is_multiply);
-        NativeResultType res;
-
-        if constexpr (check_overflow && may_check_overflow)
-        {
-            bool overflow = false;
-
-            if constexpr (scale_left)
-                overflow |= common::mulOverflow(a, scale, a);
-            else
-                overflow |= common::mulOverflow(b, scale, b);
-
-            if constexpr (can_overflow)
-                overflow |= Op::template apply<NativeResultType>(a, b, res);
-            else
-                res = Op::template apply<NativeResultType>(a, b);
-
-            if (overflow)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-        }
-        else
-        {
-            if constexpr (scale_left)
-                a *= scale;
-            else
-                b *= scale;
-            res = Op::template apply<NativeResultType>(a, b);
-        }
-
-        return res;
+        /// Negate in the UInt64 domain: plain -delta is signed-overflow UB for delta == INT64_MIN.
+        /// The two's-complement result is identical for every other value.
+        return Transform::executeForTime(t, static_cast<Int64>(-static_cast<UInt64>(delta)), time_zone, utc_time_zone, scale);
     }
+};
 
-    template <bool is_decimal_a>
-    static NO_SANITIZE_UNDEFINED NativeResultType applyScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
+struct SubtractNanosecondsImpl : SubtractIntervalImpl<AddNanosecondsImpl> { static constexpr auto name = "subtractNanoseconds"; };
+struct SubtractMicrosecondsImpl : SubtractIntervalImpl<AddMicrosecondsImpl> { static constexpr auto name = "subtractMicroseconds"; };
+struct SubtractMillisecondsImpl : SubtractIntervalImpl<AddMillisecondsImpl> { static constexpr auto name = "subtractMilliseconds"; };
+struct SubtractSecondsImpl : SubtractIntervalImpl<AddSecondsImpl> { static constexpr auto name = "subtractSeconds"; };
+struct SubtractMinutesImpl : SubtractIntervalImpl<AddMinutesImpl> { static constexpr auto name = "subtractMinutes"; };
+struct SubtractHoursImpl : SubtractIntervalImpl<AddHoursImpl> { static constexpr auto name = "subtractHours"; };
+struct SubtractDaysImpl : SubtractIntervalImpl<AddDaysImpl> { static constexpr auto name = "subtractDays"; };
+struct SubtractWeeksImpl : SubtractIntervalImpl<AddWeeksImpl> { static constexpr auto name = "subtractWeeks"; };
+struct SubtractMonthsImpl : SubtractIntervalImpl<AddMonthsImpl> { static constexpr auto name = "subtractMonths"; };
+struct SubtractQuartersImpl : SubtractIntervalImpl<AddQuartersImpl> { static constexpr auto name = "subtractQuarters"; };
+struct SubtractYearsImpl : SubtractIntervalImpl<AddYearsImpl> { static constexpr auto name = "subtractYears"; };
+
+
+template <typename Transform, typename FromDataType>
+inline constexpr bool supports_fixed_offset_dispatch
+    = (std::is_base_of_v<AddDaysImpl, Transform> || std::is_base_of_v<AddWeeksImpl, Transform>)
+    && (std::is_same_v<FromDataType, DataTypeDateTime>
+        || std::is_same_v<FromDataType, DataTypeDateTime64>
+        || std::is_same_v<FromDataType, DataTypeTime64>);
+
+template <typename Transform, bool fixed_offset>
+struct Processor
+{
+    const Transform transform;
+
+    explicit Processor(Transform transform_)
+        : transform(std::move(transform_))
+    {}
+
+    template <typename FromDataType,
+        typename FromColumnType = typename FromDataType::ColumnType,
+        typename ToColumnType>
+    void NO_INLINE vectorConstant(const FromColumnType & col_from, ToColumnType & col_to, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
     {
-        if constexpr (is_division)
+        static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+
+        if constexpr (std::is_same_v<FromColumnType, ColumnString>)
         {
-            if constexpr (check_overflow)
+            auto & vec_to = col_to.getData();
+
+            vec_to.resize(input_rows_count);
+
+            for (size_t i = 0 ; i < input_rows_count; ++i)
             {
-                bool overflow = false;
-                if constexpr (!is_decimal_a)
-                    overflow |= common::mulOverflow(scale, scale, scale);
-                overflow |= common::mulOverflow(a, scale, a);
-                if (overflow)
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                std::string_view from = col_from.getDataAt(i);
+                vec_to[i] = executeTransform<FromDataType>(from, checkOverflow(delta), time_zone, utc_time_zone, scale);
+            }
+        }
+        else
+        {
+            const auto & vec_from = col_from.getData();
+            auto & vec_to = col_to.getData();
+
+            vec_to.resize(input_rows_count);
+
+            if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale));
             }
             else
             {
-                if constexpr (!is_decimal_a)
-                    scale *= scale;
-                a *= scale;
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(
+                        executeTransform<FromDataType>(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale));
             }
+        }
+    }
 
-            return Op::template apply<NativeResultType>(a, b);
+    template <typename FromDataType,
+        typename FromColumnType = typename FromDataType::ColumnType,
+        typename ToColumnType>
+    void vectorVector(const FromColumnType & col_from, ToColumnType & col_to, const IColumn & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+    {
+        castTypeToEither<
+            ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
+            ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
+            ColumnFloat32, ColumnFloat64>(
+            &delta, [&](const auto & column){ vectorVector<FromDataType>(col_from, col_to, column, time_zone, scale, input_rows_count); return true; });
+    }
+
+    template <typename FromDataType,
+        typename FromType = typename FromDataType::FieldType,
+        typename ToColumnType>
+    void constantVector(const FromType & from, ToColumnType & col_to, const IColumn & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+    {
+        castTypeToEither<
+            ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
+            ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
+            ColumnFloat32, ColumnFloat64>(
+            &delta, [&](const auto & column){ constantVector<FromDataType>(from, col_to, column, time_zone, scale, input_rows_count); return true; });
+    }
+
+private:
+    /// Called once per row from the loops below. The transforms are small, but whether the inliner takes them
+    /// varied between otherwise identical builds (one left `DecimalUtils::multiplyAdd` as a call in the loop of
+    /// `addSeconds` on `DateTime64`, 40% more instructions), so force it.
+    template <typename FromDataType, typename T>
+    ALWAYS_INLINE auto executeTransform(
+        T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
+    {
+        if constexpr (supports_fixed_offset_dispatch<Transform, FromDataType>)
+        {
+            [[clang::always_inline]] return transform.template executeWithOffsetMode<fixed_offset>(t, delta, time_zone, utc_time_zone, scale);
+        }
+        else
+        {
+            [[clang::always_inline]] return transform.execute(t, delta, time_zone, utc_time_zone, scale);
+        }
+    }
+
+    template <typename Value>
+    static Int64 checkOverflow(Value val)
+    {
+        Int64 result = 0;
+        if (accurate::convertNumeric<Value, Int64, false>(val, result))
+            return result;
+        throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+    }
+
+    template <typename FromDataType,
+        typename FromColumnType = typename FromDataType::ColumnType,
+        typename ToColumnType,
+        typename DeltaColumnType>
+    NO_INLINE NO_SANITIZE_UNDEFINED void vectorVector(
+        const FromColumnType & col_from, ToColumnType & col_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+    {
+        static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+
+        if constexpr (std::is_same_v<FromColumnType, ColumnString>)
+        {
+            auto & vec_to = col_to.getData();
+
+            vec_to.resize(input_rows_count);
+
+            for (size_t i = 0 ; i < input_rows_count; ++i)
+            {
+                std::string_view from = col_from.getDataAt(i);
+                vec_to[i] = executeTransform<FromDataType>(
+                    from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
+            }
+        }
+        else
+        {
+            const auto & vec_from = col_from.getData();
+            auto & vec_to = col_to.getData();
+
+            vec_to.resize(input_rows_count);
+
+            if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(vec_from[i], checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+            }
+            else
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(executeTransform<FromDataType>(
+                        vec_from[i], checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+            }
+        }
+    }
+
+    template <typename FromDataType,
+        typename FromType = typename FromDataType::FieldType,
+        typename ToColumnType,
+        typename DeltaColumnType>
+    NO_INLINE NO_SANITIZE_UNDEFINED void constantVector(
+        const FromType & from, ToColumnType & col_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+    {
+        static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+
+        auto & vec_to = col_to.getData();
+
+        vec_to.resize(input_rows_count);
+
+        if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+                vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+                vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(executeTransform<FromDataType>(
+                    from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
         }
     }
 };
-}
 
-using namespace traits_;
-using namespace impl_;
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
-class FunctionBinaryArithmetic : public IFunction, WithContext
+template <typename FromDataType, typename ToDataType, typename Transform>
+struct DateTimeAddIntervalImpl
 {
-    static constexpr bool is_plus = IsOperation<Op>::plus;
-    static constexpr bool is_minus = IsOperation<Op>::minus;
-    static constexpr bool is_multiply = IsOperation<Op>::multiply;
-    static constexpr bool is_division = IsOperation<Op>::division;
-    static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
-    static constexpr bool is_modulo = IsOperation<Op>::modulo;
-    static constexpr bool is_positive_modulo = IsOperation<Op>::positive_modulo;
-    static constexpr bool is_int_div = IsOperation<Op>::int_div;
-    static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
-    static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
-    static constexpr bool is_div_floating_or_null = IsOperation<Op>::div_floating_or_null;
-    static constexpr bool is_int_div_or_null = IsOperation<Op>::int_div_or_null;
-    static constexpr bool can_have_division_by_nullable = IsOperation<Op>::can_have_division_by_nullable;
-
-    bool check_decimal_overflow = true;
-
-    /// `String +/- Interval` is executed by parsing the String (see `getFunctionForIntervalArithmetic`).
-    /// The value behind a NULL in a `Nullable(String)` is not a date, so such a function must not be
-    /// executed on those rows: see `canBeExecutedOnDefaultArguments`.
-    bool parses_string_operand = false;
-
-    /// Whether the operation is a division with a Nullable denominator (needs the division-by-zero
-    /// protection in executeImpl2). Decided by the overload resolver from the original argument
-    /// types. A runtime flag instead of a template parameter: making it a template parameter would
-    /// instantiate the entire class twice for every division-like operation.
-    bool division_by_nullable = false;
-
-    /// Date/Time overflow behavior, captured from the query context at construction time so that
-    /// executeImpl does not have to consult the context (which may have been destroyed by the time a
-    /// stored expression - e.g. a sorting key - is re-executed during a merge). See #54890.
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior{};
-
-    /// Builders for the interval/tuple special cases, resolved from the argument types at construction
-    /// time while the context is alive (see the constructor). At most one is non-null for a given
-    /// instance; a null builder means the corresponding special case does not apply. Precomputing them
-    /// keeps executeImpl free of the context.
-    ///
-    /// Caveat: the four tuple-family builders below wrap `ITupleFunction`-derived functions
-    /// (`FunctionTupleOperator`, `FunctionDateOrDateTimeOperationTupleOfIntervals`,
-    /// `FunctionTupleOperationInterval`, `FunctionTupleOperatorByNumber`, `FunctionDotProduct`) that
-    /// still hold a strong `ContextPtr` internally and use it at execute time to resolve their
-    /// element-wise sub-functions. So the tuple special cases still pin the build-time query context
-    /// (they keep working precisely because the strong reference keeps it alive); only the plain
-    /// numeric/Date/interval paths - and arrays whose element-level operation is one of those - are
-    /// fully context-free. Arrays over tuple-family elements (e.g. `[(1, 2)] + [(3, 4)]` or
-    /// `[INTERVAL 1 DAY] + [INTERVAL 1 HOUR]`) still pin the context the same way, through the
-    /// tuple-family builders cached by `array_element_function` below. Making the `ITupleFunction`
-    /// family context-free is a planned follow-up.
-    FunctionOverloadResolverPtr prepared_interval_function;
-    FunctionOverloadResolverPtr prepared_date_tuple_of_intervals_function;
-    FunctionOverloadResolverPtr prepared_merge_intervals_function;
-    FunctionOverloadResolverPtr prepared_tuple_function;
-    FunctionOverloadResolverPtr prepared_tuple_and_number_function;
-
-    /// Same-typed sibling built for the array element types. executeArraysImpl/executeArrayWithNumericImpl
-    /// evaluate the operation on the array element types, which differ from this function's (array)
-    /// argument types, so this function's precomputed builders above do not apply to them. The element
-    /// arithmetic is delegated to this sibling (whose own constructor resolves the element-level special
-    /// cases, recursively for nested arrays - including, per the caveat above, tuple-family builders that
-    /// pin the context when the element types hit one of those cases). Null when neither operand is an
-    /// array.
-    FunctionPtr array_element_function;
-
-    static bool isTimeAndDateTimeOperation(const DataTypePtr & left, const DataTypePtr & right)
+    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt16 scale, size_t input_rows_count)
     {
-        return ((WhichDataType(left).isTimeOrTime64() && WhichDataType(right).isDateTimeOrDateTime64()) ||
-               (WhichDataType(left).isDateTimeOrDateTime64() && WhichDataType(right).isTimeOrTime64()));
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+
+        if constexpr (supports_fixed_offset_dispatch<Transform, FromDataType>)
+        {
+            if (time_zone.hasFixedOffset())
+                return executeWithOffsetMode<true>(std::move(transform), arguments, result_type, scale, input_rows_count, time_zone);
+        }
+
+        return executeWithOffsetMode<false>(std::move(transform), arguments, result_type, scale, input_rows_count, time_zone);
     }
 
-    static bool castType(const IDataType * type, auto && f)
-    {
-        using IntegerTypes = TypeList<
-            DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
-            DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256>;
-
-        using DecimalTypes = TypeList<DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256>;
-
-        using Floats = TypeList<DataTypeFloat32, DataTypeFloat64, DataTypeBFloat16>;
-
-        /// Only include extra types that this specific operation actually uses.
-        /// Decimal: needed only when allow_decimal is true (plus, minus, multiply,
-        ///   divide, intDiv, intDivOrZero, modulo, positiveModulo, least, greatest,
-        ///   midpoint). All other operations (bitwise, GCD/LCM, *OrNull division
-        ///   variants, etc.) produce InvalidType for Decimal pairs, so skip them.
-        /// Date/DateTime/Time: needed for plus, minus, least, greatest, modulo,
-        ///   positive_modulo (see BinaryOperationTraits::ResultDataType).
-        ///   All other operations produce InvalidType for these, so skip them.
-        /// String/FixedString: needed for bitwise ops (allow_fixed_string/allow_string_integer)
-        ///   and bitHammingDistance.
-        /// Interval: needed for plus/minus (date/time +/- interval arithmetic).
-        /// All other operations reject these types in the dispatch lambda anyway,
-        /// so we skip them to reduce the template instantiation matrix.
-        static constexpr bool needs_decimal = IsOperation<Op>::allow_decimal;
-        static constexpr bool needs_date_time = is_plus || is_minus
-            || IsOperation<Op>::least || IsOperation<Op>::greatest
-            || is_modulo || IsOperation<Op>::positive_modulo;
-        static constexpr bool needs_string_types =
-            Op<UInt8, UInt8>::allow_fixed_string || Op<UInt8, UInt8>::allow_string_integer || is_bit_hamming_distance;
-        static constexpr bool needs_interval = is_plus || is_minus;
-
-        using NumericTypes = std::conditional_t<needs_decimal,
-            TypeListConcat<IntegerTypes, DecimalTypes>, IntegerTypes>;
-        using NumericAndDateTypes = std::conditional_t<needs_date_time,
-            TypeListConcat<NumericTypes, TypeList<DataTypeDate, DataTypeDateTime, DataTypeTime>>, NumericTypes>;
-        using WithStrings = std::conditional_t<needs_string_types,
-            TypeListConcat<NumericAndDateTypes, TypeList<DataTypeFixedString, DataTypeString>>, NumericAndDateTypes>;
-        using WithInterval = std::conditional_t<needs_interval,
-            TypeListConcat<WithStrings, TypeList<DataTypeInterval>>, WithStrings>;
-        using ValidTypes = std::conditional_t<valid_on_float_arguments,
-            TypeListConcat<WithInterval, Floats>, WithInterval>;
-
-        return castTypeToEither(ValidTypes{}, type, std::forward<decltype(f)>(f));
-    }
-
-    template <typename F>
-    static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
-    {
-        return castType(left, [&](const auto & left_)
-        {
-            return castType(right, [&](const auto & right_)
-            {
-                return f(left_, right_);
-            });
-        });
-    }
-
-    static FunctionOverloadResolverPtr
-    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
-    {
-        if (!context_)
-            return {};
-
-        bool first_arg_is_date_or_time_or_datetime_or_string = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type0) || isString(type0);
-        bool second_arg_is_date_or_time_or_datetime_or_string = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type1) || isString(type1);
-
-        /// Exactly one argument must be Date or DateTime or String
-        if (first_arg_is_date_or_time_or_datetime_or_string == second_arg_is_date_or_time_or_datetime_or_string)
-            return {};
-
-        /// Special case when the function is plus or minus, one of arguments is Date or DateTime or String and another is Interval.
-        /// We construct another function (example: addMonths) and call it.
-
-        if constexpr (!is_plus && !is_minus)
-            return {};
-
-        const DataTypePtr & type_time = first_arg_is_date_or_time_or_datetime_or_string ? type0 : type1;
-        const DataTypePtr & type_interval = first_arg_is_date_or_time_or_datetime_or_string ? type1 : type0;
-
-        bool first_or_second_arg_is_string = isString(type0) || isString(type1);
-        bool interval_is_number = isNumber(type_interval);
-
-        const DataTypeInterval * interval_data_type = nullptr;
-        if (!interval_is_number)
-        {
-            interval_data_type = checkAndGetDataType<DataTypeInterval>(type_interval.get());
-
-            if (!interval_data_type)
-                return {};
-        }
-        else if (first_or_second_arg_is_string)
-        {
-            return {};
-        }
-
-        if (second_arg_is_date_or_time_or_datetime_or_string && is_minus)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
-                                                                  "argument of type Interval cannot be first", name);
-
-        std::string function_name;
-        if (interval_data_type)
-        {
-            function_name = fmt::format("{}{}s",
-                is_plus ? "add" : "subtract",
-                interval_data_type->getKind().toString());
-        }
-        else
-        {
-            if (isDateOrDate32(type_time))
-                function_name = is_plus ? "addDays" : "subtractDays";
-            else
-                function_name = is_plus ? "addSeconds" : "subtractSeconds";
-        }
-
-        return FunctionFactory::instance().get(function_name, context_);
-    }
-
-    static FunctionOverloadResolverPtr
-    getFunctionForDateTupleOfIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
-    {
-        if (!context_)
-            return {};
-
-        bool first_arg_is_date_or_datetime = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type0);
-        bool second_arg_is_date_or_datetime = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type1);
-
-        /// Exactly one argument must be Date or DateTime
-        if (first_arg_is_date_or_datetime == second_arg_is_date_or_datetime)
-            return {};
-
-        if (!isTuple(type0) && !isTuple(type1))
-            return {};
-
-        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
-        /// We construct another function and call it.
-        if constexpr (!is_plus && !is_minus)
-            return {};
-
-        if (isTuple(type0) && second_arg_is_date_or_datetime && is_minus)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
-                                                                  "argument of Tuple type cannot be first", name);
-
-        std::string function_name;
-        if (is_plus)
-        {
-            function_name = "addTupleOfIntervals";
-        }
-        else
-        {
-            function_name = "subtractTupleOfIntervals";
-        }
-
-        return FunctionFactory::instance().get(function_name, context_);
-    }
-
-    static FunctionOverloadResolverPtr
-    getFunctionForMergeIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
-    {
-        if (!context_)
-            return {};
-
-        /// Special case when the function is plus or minus, first argument is Interval or Tuple of Intervals
-        ///  and the second argument is the Interval of a different kind.
-        /// We construct another function (example: addIntervals) and call it
-
-        if constexpr (!is_plus && !is_minus)
-            return {};
-
-        const auto * tuple_data_type_0 = checkAndGetDataType<DataTypeTuple>(type0.get());
-        const auto * interval_data_type_0 = checkAndGetDataType<DataTypeInterval>(type0.get());
-        const auto * interval_data_type_1 = checkAndGetDataType<DataTypeInterval>(type1.get());
-
-        if ((!tuple_data_type_0 && !interval_data_type_0) || !interval_data_type_1)
-            return {};
-
-        if (interval_data_type_0 && interval_data_type_0->equals(*interval_data_type_1))
-            return {};
-
-        if (tuple_data_type_0)
-        {
-            const auto & tuple_types = tuple_data_type_0->getElements();
-            for (const auto & type : tuple_types)
-                if (!isInterval(type))
-                    return {};
-        }
-
-        std::string function_name;
-        if (is_plus)
-        {
-            function_name = "addInterval";
-        }
-        else
-        {
-            function_name = "subtractInterval";
-        }
-
-        return FunctionFactory::instance().get(function_name, context_);
-    }
-
-    static FunctionOverloadResolverPtr
-    getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
-    {
-        if (!context_)
-            return {};
-
-        if (!isTuple(removeNullable(type0)) || !isTuple(removeNullable(type1)))
-            return {};
-
-        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        /// We construct another function (example: tuplePlus) and call it.
-
-        if constexpr (!is_plus && !is_minus && !is_multiply)
-            return {};
-
-        std::string function_name;
-        if (is_plus)
-        {
-            function_name = "tuplePlus";
-        }
-        else if (is_minus)
-        {
-            function_name = "tupleMinus";
-        }
-        else
-        {
-            function_name = "dotProduct";
-        }
-
-        return FunctionFactory::instance().get(function_name, context_);
-    }
-
-    static FunctionOverloadResolverPtr
-    getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
-    {
-        if (!context_)
-            return {};
-
-        if (!(isTuple(removeNullable(type0)) && isNumber(removeNullable(type1)))
-            && !(isTuple(removeNullable(type1)) && isNumber(removeNullable(type0))))
-            return {};
-
-        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        /// We construct another function (example: tupleMultiplyByNumber) and call it.
-
-        if constexpr (!is_multiply && !is_division && !is_positive_modulo)
-            return {};
-
-        if (isNumber(type0) && (is_division || is_positive_modulo))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
-                                                                  "argument of numeric type cannot be first", name);
-
-        std::string function_name;
-        if constexpr (is_multiply)
-        {
-            function_name = "tupleMultiplyByNumber";
-        }
-        else if constexpr (is_positive_modulo)
-        {
-            function_name = "tuplePositiveModuloByNumber";
-        }
-        else // is_division
-        {
-            if constexpr (is_modulo)
-            {
-                function_name = "tupleModuloByNumber";
-            }
-            else if constexpr (is_int_div)
-            {
-                function_name = "tupleIntDivByNumber";
-            }
-            else if constexpr (is_int_div_or_zero)
-            {
-                function_name = "tupleIntDivOrZeroByNumber";
-            }
-            else
-            {
-                function_name = "tupleDivideByNumber";
-            }
-        }
-
-        return FunctionFactory::instance().get(function_name, context_);
-    }
-
-    static bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1)
-    {
-        if constexpr (!is_multiply)
-            return false;
-
-        WhichDataType which0(type0);
-        WhichDataType which1(type1);
-
-        return (which0.isAggregateFunction() && which1.isNativeUInt())
-            || (which0.isNativeUInt() && which1.isAggregateFunction());
-    }
-
-    static bool isAggregateAddition(const DataTypePtr & type0, const DataTypePtr & type1)
-    {
-        if constexpr (!is_plus)
-            return false;
-
-        WhichDataType which0(type0);
-        WhichDataType which1(type1);
-
-        return which0.isAggregateFunction() && which1.isAggregateFunction();
-    }
-
-    static bool isDateTime64Subtraction(const DataTypePtr & type0, const DataTypePtr & type1)
-    {
-        if constexpr (!is_minus)
-            return false;
-
-        WhichDataType which0(type0);
-        WhichDataType which1(type1);
-
-        if (which0.isDateTime64() && which1.isDateTimeOrDateTime64())
-            return true;
-
-        return which1.isDateTime64() && which0.isDateTimeOrDateTime64();
-    }
-
-    static bool isTime64Subtraction(const DataTypePtr & type0, const DataTypePtr & type1)
-    {
-        if constexpr (!is_minus)
-            return false;
-
-        WhichDataType which0(type0);
-        WhichDataType which1(type1);
-
-        if (which0.isTime64() && which1.isTimeOrTime64())
-            return true;
-
-        return which1.isTime64() && which0.isTimeOrTime64();
-    }
-
-    static bool isDateAndTimeAddition(const DataTypePtr & type0, const DataTypePtr & type1)
-    {
-        if constexpr (!is_plus)
-            return false;
-
-        WhichDataType which0(type0);
-        WhichDataType which1(type1);
-
-        return (which0.isDateOrDate32() && which1.isTimeOrTime64())
-            || (which0.isTimeOrTime64() && which1.isDateOrDate32());
-    }
-
-    /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
-    /// A column of aggregate states made by hand must carry the state version of its declared type
-    /// (e.g. `AggregateFunction(1, uniq, UInt64)`): the version affects how the states are serialized
-    /// on a later round trip through an arena (`groupArray`, sorting) - a fresh column would use the
-    /// function's default version instead and the result would not match its type.
-    static std::optional<size_t> getAggregateStateVersion(const DataTypePtr & result_type)
-    {
-        return assert_cast<const DataTypeAggregateFunction &>(*result_type).getVersionIfExplicit();
-    }
-
-    ColumnPtr executeAggregateMultiply(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-    {
-        ColumnsWithTypeAndName new_arguments = arguments;
-        if (WhichDataType(new_arguments[1].type).isAggregateFunction())
-            std::swap(new_arguments[0], new_arguments[1]);
-
-        if (!isColumnConst(*new_arguments[1].column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of aggregation state multiply. "
-                "Should be integer constant", new_arguments[1].column->getName());
-
-        const IColumn & agg_state_column = *new_arguments[0].column;
-        bool agg_state_is_const = isColumnConst(agg_state_column);
-        const ColumnAggregateFunction & column = typeid_cast<const ColumnAggregateFunction &>(
-            agg_state_is_const ? assert_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
-
-        AggregateFunctionPtr function = column.getAggregateFunction();
-
-        size_t size = agg_state_is_const ? 1 : input_rows_count;
-
-        auto column_to = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
-        column_to->reserve(size);
-
-        auto column_from = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
-        column_from->reserve(size);
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            column_to->insertDefault();
-            column_from->insertFrom(column.getData()[i]);
-        }
-
-        auto & vec_to = column_to->getData();
-        auto & vec_from = column_from->getData();
-
-        UInt64 m = typeid_cast<const ColumnConst *>(new_arguments[1].column.get())->getValue<UInt64>();
-
-        // Since we merge the function states by ourselves, we have to have an
-        // Arena for this. Pass it to the resulting column so that the arena
-        // has a proper lifetime.
-        auto arena = std::make_shared<Arena>();
-        column_to->addArena(arena);
-
-        /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
-        /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
-        ///
-        /// The squaring step computes vec_from[i] := vec_from[i] + vec_from[i].
-        /// Calling `function->merge(state, state)` directly is undefined behaviour:
-        /// many aggregate function `merge` implementations append the source's
-        /// internal storage to the destination's. When `src == dst` and the
-        /// destination reallocates, the source iterators (pointing to the freed
-        /// buffer) are dereferenced, producing a heap-use-after-free. We avoid
-        /// the alias by copying `vec_from` into an independent column first.
-        ///
-        /// The temporary column is constructed inside the squaring branch so
-        /// that its arena is released at the end of each iteration. Re-using a
-        /// single column across iterations would leak per-iteration state
-        /// memory into the column's monotonic arena (`popBack` decrements the
-        /// row count but does not free arena allocations), causing the
-        /// temporary footprint to grow with the multiplier.
-        while (m)
-        {
-            if (m % 2)
-            {
-                for (size_t i = 0; i < size; ++i)
-                    function->merge(vec_to[i], vec_from[i], arena.get());
-                --m;
-            }
-            else
-            {
-                auto column_temp = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
-                column_temp->reserve(size);
-                for (size_t i = 0; i < size; ++i)
-                    column_temp->insertFrom(vec_from[i]);
-                auto & vec_temp = column_temp->getData();
-
-                for (size_t i = 0; i < size; ++i)
-                    function->merge(vec_from[i], vec_temp[i], arena.get());
-
-                m /= 2;
-            }
-        }
-
-        if (agg_state_is_const)
-            return ColumnConst::create(std::move(column_to), input_rows_count);
-        return column_to;
-    }
-
-    /// Merge two aggregation states together.
-    ColumnPtr executeAggregateAddition(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-    {
-        const IColumn & lhs_column = *arguments[0].column;
-        const IColumn & rhs_column = *arguments[1].column;
-
-        bool lhs_is_const = isColumnConst(lhs_column);
-        bool rhs_is_const = isColumnConst(rhs_column);
-
-        const ColumnAggregateFunction & lhs = typeid_cast<const ColumnAggregateFunction &>(
-            lhs_is_const ? assert_cast<const ColumnConst &>(lhs_column).getDataColumn() : lhs_column);
-        const ColumnAggregateFunction & rhs = typeid_cast<const ColumnAggregateFunction &>(
-            rhs_is_const ? assert_cast<const ColumnConst &>(rhs_column).getDataColumn() : rhs_column);
-
-        AggregateFunctionPtr function = lhs.getAggregateFunction();
-
-        size_t size = (lhs_is_const && rhs_is_const) ? 1 : input_rows_count;
-
-        auto column_to = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
-        column_to->reserve(size);
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            column_to->insertFrom(lhs.getData()[lhs_is_const ? 0 : i]);
-            column_to->insertMergeFrom(rhs.getData()[rhs_is_const ? 0 : i]);
-        }
-
-        if (lhs_is_const && rhs_is_const)
-            return ColumnConst::create(std::move(column_to), input_rows_count);
-        return column_to;
-    }
-
-    ColumnPtr executeTimeAndDateTimeOperation(
+private:
+    template <bool fixed_offset>
+    static ColumnPtr executeWithOffsetMode(
+        Transform transform,
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
+        UInt16 scale,
         size_t input_rows_count,
-        bool should_subtract) const
+        const DateLUTImpl & time_zone)
     {
-        /// The addition is commutative - figure out which argument is the time and which is the datetime.
-        /// For subtraction, type resolution guarantees that the datetime is on the left.
-        bool left_is_time = WhichDataType(arguments[0].type).isTimeOrTime64();
-        const ColumnWithTypeAndName & time_arg = left_is_time ? arguments[0] : arguments[1];
-        const ColumnWithTypeAndName & datetime_arg = left_is_time ? arguments[1] : arguments[0];
+        using FromValueType = typename FromDataType::FieldType;
+        using FromColumnType = typename FromDataType::ColumnType;
+        using ToColumnType = typename ToDataType::ColumnType;
 
-        bool is_datetime64 = isDateTime64(datetime_arg.type);
-        bool is_time64 = isTime64(time_arg.type);
+        const IColumn & source_column = *arguments[0].column;
+        const IColumn & delta_column = *arguments[1].column;
 
-        /// DateTime with Time -> DateTime (UInt32 seconds). All other combinations -> DateTime64
-        /// because Time64 requires sub-second precision.
-        bool result_is_datetime64 = is_datetime64 || is_time64;
+        auto result_col = result_type->createColumn();
+        auto col_to = assert_cast<ToColumnType *>(result_col.get());
 
-        auto overflow_behavior = date_time_overflow_behavior;
+        auto processor = Processor<Transform, fixed_offset>{std::move(transform)};
 
-        /// The valid range for the result, expressed in the result's own units
-        /// (same logic as in executeDateAndTimeAddition).
-        Int64 result_min = 0;
-        Int64 result_max = static_cast<Int64>(MAX_DATETIME_TIMESTAMP);
-        UInt32 result_scale = 0;
-
-        /// Multipliers converting each argument's units to the result's units.
-        Int64 datetime_scale_factor = 1;
-        Int64 time_scale_factor = 1;
-
-        if (result_is_datetime64)
+        if (const auto * sources = checkAndGetColumn<FromColumnType>(&source_column))
         {
-            const auto & res_type = assert_cast<const DataTypeDateTime64 &>(*result_type);
-            result_scale = res_type.getScale();
-            Int64 result_scale_mul = DecimalUtils::scaleMultiplier<Int64>(result_scale);
-            /// Both ends of the representable window overflow Int64 once scaled at the highest
-            /// precisions, so clamp to the Int64 limits in that case instead of multiplying blindly.
-            result_min = (MIN_DATETIME64_TIMESTAMP >= std::numeric_limits<Int64>::min() / result_scale_mul)
-                ? MIN_DATETIME64_TIMESTAMP * result_scale_mul
-                : std::numeric_limits<Int64>::min();
-            result_max = (MAX_DATETIME64_TIMESTAMP <= std::numeric_limits<Int64>::max() / result_scale_mul)
-                ? MAX_DATETIME64_TIMESTAMP * result_scale_mul + result_scale_mul - 1
-                : std::numeric_limits<Int64>::max();
-
-            UInt32 datetime_scale = is_datetime64 ? assert_cast<const DataTypeDateTime64 &>(*datetime_arg.type).getScale() : 0;
-            UInt32 time_scale = is_time64 ? assert_cast<const DataTypeTime64 &>(*time_arg.type).getScale() : 0;
-            datetime_scale_factor = DecimalUtils::scaleMultiplier<Int64>(result_scale - datetime_scale);
-            time_scale_factor = DecimalUtils::scaleMultiplier<Int64>(result_scale - time_scale);
-        }
-
-        /// Check whether the computed result fits in the valid range, following date_time_overflow_behavior.
-        /// The result comes in as Int128 (which cannot overflow), and is narrowed to Int64 here.
-        auto check_and_clamp = [&](Int128 wide_result) -> Int64
-        {
-            if (wide_result >= result_min && wide_result <= result_max) [[likely]]
-                return static_cast<Int64>(wide_result);
-
-            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-            {
-                if (result_is_datetime64)
-                    throw Exception(
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "The result of {} between DateTime and Time is out of bounds of type DateTime64({})",
-                        should_subtract ? "minus" : "plus",
-                        result_scale);
-                else
-                    throw Exception(
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "Value {} is out of bounds of type DateTime",
-                        static_cast<Int64>(wide_result));
-            }
-            else if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-            {
-                return static_cast<Int64>(std::clamp<Int128>(wide_result, result_min, result_max));
-            }
-            /// Ignore: truncate to Int64. The result is undefined per ClickHouse docs.
-            return static_cast<Int64>(wide_result);
-        };
-
-        /// Resolve column data to typed raw pointers once, so the per-row loop
-        /// only does pointer indexing - no dynamic_cast or type checks per row.
-        const auto * datetime_col = datetime_arg.column.get();
-        const auto * time_col = time_arg.column.get();
-        bool datetime_is_const = isColumnConst(*datetime_col);
-        bool time_is_const = isColumnConst(*time_col);
-
-        Int64 datetime_const_value = 0;
-        const DateTime64 * datetime64_ptr = nullptr;
-        const UInt32 * datetime32_ptr = nullptr;
-        if (datetime_is_const)
-            datetime_const_value = is_datetime64
-                ? checkAndGetColumnConst<ColumnDecimal<DateTime64>>(datetime_col)->template getValue<DateTime64>().value
-                : static_cast<Int64>(checkAndGetColumnConst<ColumnVector<UInt32>>(datetime_col)->template getValue<UInt32>());
-        else if (is_datetime64)
-            datetime64_ptr = checkAndGetColumn<ColumnDecimal<DateTime64>>(datetime_col)->getData().data();
-        else
-            datetime32_ptr = checkAndGetColumn<ColumnVector<UInt32>>(datetime_col)->getData().data();
-
-        Int64 time_const_value = 0;
-        const Time64 * time64_ptr = nullptr;
-        const Int32 * time32_ptr = nullptr;
-        if (time_is_const)
-            time_const_value = is_time64 ? checkAndGetColumnConst<ColumnDecimal<Time64>>(time_col)->template getValue<Time64>().value
-                                         : checkAndGetColumnConst<ColumnVector<Int32>>(time_col)->template getValue<Int32>();
-        else if (is_time64)
-            time64_ptr = checkAndGetColumn<ColumnDecimal<Time64>>(time_col)->getData().data();
-        else
-            time32_ptr = checkAndGetColumn<ColumnVector<Int32>>(time_col)->getData().data();
-
-        auto get_datetime = [&](size_t i) -> Int64
-        {
-            if (datetime_is_const)
-                return datetime_const_value;
-            return is_datetime64 ? datetime64_ptr[i].value : static_cast<Int64>(datetime32_ptr[i]);
-        };
-        auto get_time = [&](size_t i) -> Int64
-        {
-            if (time_is_const)
-                return time_const_value;
-            return is_time64 ? time64_ptr[i].value : static_cast<Int64>(time32_ptr[i]);
-        };
-
-        /// Bring both operands to the result scale in Int128 (no intermediate overflow), combine, range-check.
-        auto compute = [&](size_t i) -> Int64
-        {
-            Int128 datetime_scaled = Int128(get_datetime(i)) * datetime_scale_factor;
-            Int128 time_scaled = Int128(get_time(i)) * time_scale_factor;
-            return check_and_clamp(should_subtract ? datetime_scaled - time_scaled : datetime_scaled + time_scaled);
-        };
-
-        /// Both columns constant - compute once, return a single-value column.
-        if (datetime_is_const && time_is_const)
-        {
-            Int64 const_result = compute(0);
-            if (result_is_datetime64)
-                return result_type->createColumnConst(input_rows_count, DecimalField<DateTime64>(DateTime64(const_result), result_scale));
-            return result_type->createColumnConst(input_rows_count, static_cast<UInt64>(static_cast<UInt32>(const_result)));
-        }
-
-        if (result_is_datetime64)
-        {
-            auto col_res = ColumnDecimal<DateTime64>::create(input_rows_count, result_scale);
-            auto & result_data = col_res->getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                result_data[i] = DateTime64(compute(i));
-            return col_res;
-        }
-        else
-        {
-            auto col_res = ColumnVector<UInt32>::create(input_rows_count);
-            auto & result_data = col_res->getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                result_data[i] = static_cast<UInt32>(compute(i));
-            return col_res;
-        }
-    }
-
-    ColumnPtr executeDateTime64Subtraction(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
-                                           size_t input_row_count) const
-    {
-        using OpImplCheck = DecimalBinaryOperation<Op, Decimal64, /* check_overflow */ true>;
-        using OpImpl = DecimalBinaryOperation<Op, Decimal64, /* check_overflow */ false>;
-        using ColumnDateTime64 = DataTypeDateTime64::ColumnType;
-        using ColumnDateTime = DataTypeDateTime::ColumnType;
-
-        struct ColumnInfo
-        {
-            explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
-            const ColumnWithTypeAndName & argument;
-            const ColumnDateTime64 * col{};
-            ColumnPtr converted_col;
-            Int64 const_val{};
-            bool is_const{};
-            UInt64 scale{};
-        } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
-
-        const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());
-        if (!type)
-            return nullptr;
-
-        /// Process column information for both arguments
-        auto process = [type] (struct ColumnInfo & to_be_checked, const DataTypePtr & other_type)
-        {
-            const auto * col_raw = to_be_checked.argument.column.get();
-            to_be_checked.is_const = isColumnConst(*col_raw);
-
-            if (to_be_checked.is_const)
-            {
-                if (WhichDataType(to_be_checked.argument.type).isDateTime())
-                {
-                    to_be_checked.const_val = checkAndGetColumnConst<ColumnDateTime>(col_raw)->template getValue<UInt32>();
-                    /// the output type is the same as the other argument, which is DateTime64
-                    to_be_checked.scale = type->getScaleMultiplier();
-                }
-                else
-                {
-                    to_be_checked.const_val = checkAndGetColumnConst<ColumnDateTime64>(col_raw)->template getValue<Decimal64>().value;
-                    const auto & from_type = *checkAndGetDataType<DataTypeDateTime64>(to_be_checked.argument.type.get());
-                    to_be_checked.scale = type->scaleFactorFor(from_type, /* is_multiply_or_divisor */ false);
-                }
-            }
+            if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
+                processor.template vectorConstant<FromDataType>(*sources, *col_to, delta_const_column->getInt(0), time_zone, scale, input_rows_count);
             else
-            {
-                if (WhichDataType(to_be_checked.argument.type).isDateTime())
-                {
-                    to_be_checked.converted_col = castColumn(to_be_checked.argument, other_type);
-                    to_be_checked.col = checkAndGetColumn<ColumnDateTime64>(to_be_checked.converted_col.get());
-                    /// the DateTime argument is already scaled up by calling castColumn
-                    to_be_checked.scale = 1;
-                }
-                else
-                {
-                    to_be_checked.col = checkAndGetColumn<ColumnDateTime64>(col_raw);
-                    const auto & from_type = *checkAndGetDataType<DataTypeDateTime64>(to_be_checked.argument.type.get());
-                    to_be_checked.scale = type->scaleFactorFor(from_type, /* is_multiply_or_divisor */ false);
-                }
-
-                if (!to_be_checked.col)
-                    return false;
-            }
-            return true;
-        };
-
-        /// Process both columns
-        if (!process(cols[0], cols[1].argument.type))
-            return nullptr;
-        if (!process(cols[1], cols[0].argument.type))
-            return nullptr;
-
-        /// Handle constant values
-        if (cols[0].is_const && cols[1].is_const)
-        {
-            auto res = helperInvokeEither</* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck, Decimal64>(
-                cols[0].const_val, cols[1].const_val, cols[0].scale, cols[1].scale);
-            return type->createColumnConst(input_row_count, toField(res, type->getScale()));
+                processor.template vectorVector<FromDataType>(*sources, *col_to, delta_column, time_zone, scale, input_rows_count);
         }
-
-        auto col_res = ColumnDecimal<Decimal64>::create(input_row_count, type->getScale());
-        auto & vec_res = col_res->getData();
-
-        auto invoke = [&]<OpCase op_case>(const auto& col0, const auto& col1)
+        else if (const auto * sources_const = checkAndGetColumnConst<FromColumnType>(&source_column))
         {
-            helperInvokeEither<op_case, /* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck>(
-                col0, col1, vec_res, cols[0].scale, cols[1].scale, nullptr);
-        };
-        /// Process based on whether the column is constant or not
-        if (cols[0].is_const)
-            invoke.template operator()<OpCase::LeftConstant>(cols[0].const_val, cols[1].col->getData());
-        else if (cols[1].is_const)
-            invoke.template operator()<OpCase::RightConstant>(cols[0].col->getData(), cols[1].const_val);
-        else
-            invoke.template operator()<OpCase::Vector>(cols[0].col->getData(), cols[1].col->getData());
-
-        return col_res;
-    }
-
-    ColumnPtr executeTime64Subtraction(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
-                                           size_t input_row_count) const
-    {
-        using OpImplCheck = DecimalBinaryOperation<Op, Decimal64, /* check_overflow */ true>;
-        using OpImpl = DecimalBinaryOperation<Op, Decimal64, /* check_overflow */ false>;
-        using ColumnTime64 = DataTypeTime64::ColumnType;
-        using ColumnTime = DataTypeTime::ColumnType;
-
-        struct ColumnInfo
-        {
-            explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
-            const ColumnWithTypeAndName & argument;
-            const ColumnTime64 * col{};
-            ColumnPtr converted_col;
-            Int64 const_val{};
-            bool is_const{};
-            UInt64 scale{};
-        } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
-
-        const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());
-        if (!type)
-            return nullptr;
-
-        /// Process column information for both arguments
-        auto process = [type] (struct ColumnInfo & to_be_checked, const DataTypePtr & other_type)
-        {
-            const auto * col_raw = to_be_checked.argument.column.get();
-            to_be_checked.is_const = isColumnConst(*col_raw);
-
-            if (to_be_checked.is_const)
-            {
-                if (WhichDataType(to_be_checked.argument.type).isTime())
-                {
-                    to_be_checked.const_val = checkAndGetColumnConst<ColumnTime>(col_raw)->template getValue<Int32>();
-                    /// the output type is the same as the other argument, which is Time64
-                    to_be_checked.scale = type->getScaleMultiplier();
-                }
-                else
-                {
-                    to_be_checked.const_val = checkAndGetColumnConst<ColumnTime64>(col_raw)->template getValue<Decimal64>().value;
-                    const auto & from_type = *checkAndGetDataType<DataTypeTime64>(to_be_checked.argument.type.get());
-                    to_be_checked.scale = type->scaleFactorFor(from_type, /* is_multiply_or_divisor */ false);
-                }
-            }
-            else
-            {
-                if (WhichDataType(to_be_checked.argument.type).isTime())
-                {
-                    to_be_checked.converted_col = castColumn(to_be_checked.argument, other_type);
-                    to_be_checked.col = checkAndGetColumn<ColumnTime64>(to_be_checked.converted_col.get());
-                    /// the DateTime argument is already scaled up by calling castColumn
-                    to_be_checked.scale = 1;
-                }
-                else
-                {
-                    to_be_checked.col = checkAndGetColumn<ColumnTime64>(col_raw);
-                    const auto & from_type = *checkAndGetDataType<DataTypeTime64>(to_be_checked.argument.type.get());
-                    to_be_checked.scale = type->scaleFactorFor(from_type, /* is_multiply_or_divisor */ false);
-                }
-
-                if (!to_be_checked.col)
-                    return false;
-            }
-            return true;
-        };
-
-        /// Process both columns
-        if (!process(cols[0], cols[1].argument.type))
-            return nullptr;
-        if (!process(cols[1], cols[0].argument.type))
-            return nullptr;
-
-        /// Handle constant values
-        if (cols[0].is_const && cols[1].is_const)
-        {
-            auto res = helperInvokeEither</* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck, Decimal64>(
-                cols[0].const_val, cols[1].const_val, cols[0].scale, cols[1].scale);
-            return type->createColumnConst(input_row_count, toField(res, type->getScale()));
-        }
-
-        auto col_res = ColumnDecimal<Decimal64>::create(input_row_count, type->getScale());
-        auto & vec_res = col_res->getData();
-
-        auto invoke = [&]<OpCase op_case>(const auto& col0, const auto& col1)
-        {
-            helperInvokeEither<op_case, /* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck>(
-                col0, col1, vec_res, cols[0].scale, cols[1].scale, nullptr);
-        };
-        /// Process based on whether the column is constant or not
-        if (cols[0].is_const)
-            invoke.template operator()<OpCase::LeftConstant>(cols[0].const_val, cols[1].col->getData());
-        else if (cols[1].is_const)
-            invoke.template operator()<OpCase::RightConstant>(cols[0].col->getData(), cols[1].const_val);
-        else
-            invoke.template operator()<OpCase::Vector>(cols[0].col->getData(), cols[1].col->getData());
-
-        return col_res;
-    }
-
-    /// Executes Date/Date32 + Time/Time64 -> DateTime/DateTime64.
-    ///
-    /// Converts the date to a midnight unix timestamp, then adds the time-of-day offset.
-    /// For Time64, the midnight timestamp is scaled to match Time64's precision (e.g. milliseconds)
-    /// before adding. The arithmetic uses Int128 so that the scaling cannot overflow.
-    ///
-    /// Result type: Date + Time -> DateTime, all other combinations -> DateTime64(scale).
-    /// Overflow: respects date_time_overflow_behavior (throw / saturate / ignore).
-    ColumnPtr executeDateAndTimeAddition(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-    {
-        /// The operation is commutative — figure out which argument is the date and which is the time.
-        WhichDataType which0(arguments[0].type);
-        size_t date_idx = which0.isDateOrDate32() ? 0 : 1;
-        const auto & date_arg = arguments[date_idx];
-        const auto & time_arg = arguments[1 - date_idx];
-
-        bool is_date32 = WhichDataType(date_arg.type).isDate32();
-        bool is_time64 = WhichDataType(time_arg.type).isTime64();
-
-        /// Date + Time -> DateTime (UInt32 seconds). All other combinations -> DateTime64
-        /// because either Date32's range exceeds UInt32, or Time64 requires sub-second precision.
-        bool result_is_datetime64 = is_date32 || is_time64;
-
-        /// Session timezone if set, otherwise server default. Used by fromDayNum to convert
-        /// a day number to a midnight unix timestamp — different timezones give different timestamps.
-        const auto & time_zone = DateLUT::instance();
-
-        /// Time64 values are stored in scaled units (e.g. milliseconds at scale 3, nanoseconds at scale 9).
-        /// The midnight timestamp is in seconds, so we multiply it by this factor to match Time64's units.
-        /// For plain Time (seconds), scale_multiplier stays 1.
-        Int64 scale_multiplier = 1;
-        if (is_time64)
-        {
-            const auto * time64_type = checkAndGetDataType<DataTypeTime64>(time_arg.type.get());
-            scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(time64_type->getScale());
-        }
-
-        auto overflow_behavior = date_time_overflow_behavior;
-
-        /// The valid range for the result, expressed in the result's own units:
-        ///   DateTime:   seconds in [0, 2^32-1], covering ~1970 to ~2106.
-        ///   DateTime64: scaled values in [MIN_DATETIME64_TIMESTAMP * 10^scale, MAX_DATETIME64_TIMESTAMP * 10^scale],
-        ///               covering years 0000 to 9999 (but narrower at high scales due to Int64 capacity).
-        Int64 result_min = 0;
-        Int64 result_max = static_cast<Int64>(MAX_DATETIME_TIMESTAMP);
-        UInt32 result_scale = 0;
-        if (result_is_datetime64)
-        {
-            const auto & res_type = assert_cast<const DataTypeDateTime64 &>(*result_type);
-            result_scale = res_type.getScale();
-            Int64 result_scale_mul = DecimalUtils::scaleMultiplier<Int64>(result_scale);
-            /// Both ends of the representable window (0000-01-01 .. 9999-12-31) overflow Int64 once scaled at
-            /// the highest precisions, so clamp to the Int64 limits in that case instead of multiplying blindly.
-            result_min = (MIN_DATETIME64_TIMESTAMP >= std::numeric_limits<Int64>::min() / result_scale_mul)
-                ? MIN_DATETIME64_TIMESTAMP * result_scale_mul
-                : std::numeric_limits<Int64>::min();
-            result_max = (MAX_DATETIME64_TIMESTAMP <= std::numeric_limits<Int64>::max() / result_scale_mul)
-                ? MAX_DATETIME64_TIMESTAMP * result_scale_mul + result_scale_mul - 1
-                : std::numeric_limits<Int64>::max();
-        }
-
-        /// Convert a day number to the unix timestamp (seconds) at midnight of that day.
-        auto to_midnight = [&](Int64 day_num) -> Int64
-        {
-            return is_date32 ? static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(day_num))))
-                             : static_cast<Int64>(time_zone.fromDayNum(DayNum(static_cast<UInt16>(day_num))));
-        };
-
-        /// Check whether the computed result fits in the valid range.
-        /// The result comes in as Int128 (which cannot overflow), and is narrowed to Int64 here.
-        auto check_and_clamp = [&](Int128 wide_result) -> Int64
-        {
-            if (wide_result >= result_min && wide_result <= result_max) [[likely]]
-                return static_cast<Int64>(wide_result);
-
-            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-            {
-                if (result_is_datetime64)
-                    throw Exception(
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "The result of Date plus Time is out of bounds of type DateTime64({})",
-                        result_scale);
-                else
-                    throw Exception(
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "Value {} is out of bounds of type DateTime",
-                        static_cast<Int64>(wide_result));
-            }
-            else if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-            {
-                return static_cast<Int64>(std::clamp<Int128>(wide_result, result_min, result_max));
-            }
-            /// Ignore: truncate to Int64. The result is undefined per ClickHouse docs.
-            return static_cast<Int64>(wide_result);
-        };
-
-        /// Full computation: look up midnight from the day number, scale it, add time, check bounds.
-        auto compute_from_day = [&](Int64 day_num, Int64 time_val) -> Int64
-        {
-            Int64 midnight_ts = to_midnight(day_num);
-
-            if (is_time64)
-                return check_and_clamp(Int128(midnight_ts) * scale_multiplier + time_val);
-
-            return check_and_clamp(Int128(midnight_ts) + time_val);
-        };
-
-        /// When the date is a constant, midnight (already scaled) is precomputed before the loop.
-        /// This skips the day-number lookup and the multiply on every row.
-        auto compute_from_precomputed_midnight
-            = [&](Int128 midnight_wide, Int64 time_val) -> Int64 { return check_and_clamp(midnight_wide + time_val); };
-
-        /// Resolve column data to typed raw pointers once, so the per-row loop
-        /// only does pointer indexing — no dynamic_cast or type checks per row.
-        const auto * date_col = date_arg.column.get();
-        const auto * time_col = time_arg.column.get();
-        bool date_is_const = isColumnConst(*date_col);
-        bool time_is_const = isColumnConst(*time_col);
-
-        Int64 date_const_value = 0;
-        const Int32 * date32_ptr = nullptr;
-        const UInt16 * date16_ptr = nullptr;
-        if (date_is_const)
-            date_const_value = is_date32 ? checkAndGetColumnConst<ColumnVector<Int32>>(date_col)->template getValue<Int32>()
-                                         : checkAndGetColumnConst<ColumnVector<UInt16>>(date_col)->template getValue<UInt16>();
-        else if (is_date32)
-            date32_ptr = checkAndGetColumn<ColumnVector<Int32>>(date_col)->getData().data();
-        else
-            date16_ptr = checkAndGetColumn<ColumnVector<UInt16>>(date_col)->getData().data();
-
-        Int64 time_const_value = 0;
-        const Time64 * time64_ptr = nullptr;
-        const Int32 * time32_ptr = nullptr;
-        if (time_is_const)
-            time_const_value = is_time64 ? checkAndGetColumnConst<ColumnDecimal<Time64>>(time_col)->template getValue<Time64>().value
-                                         : checkAndGetColumnConst<ColumnVector<Int32>>(time_col)->template getValue<Int32>();
-        else if (is_time64)
-            time64_ptr = checkAndGetColumn<ColumnDecimal<Time64>>(time_col)->getData().data();
-        else
-            time32_ptr = checkAndGetColumn<ColumnVector<Int32>>(time_col)->getData().data();
-
-        auto get_date = [&](size_t i) -> Int64
-        {
-            if (date_is_const)
-                return date_const_value;
-            return is_date32 ? static_cast<Int64>(date32_ptr[i]) : static_cast<Int64>(date16_ptr[i]);
-        };
-        auto get_time = [&](size_t i) -> Int64
-        {
-            if (time_is_const)
-                return time_const_value;
-            return is_time64 ? time64_ptr[i].value : static_cast<Int64>(time32_ptr[i]);
-        };
-
-        /// When the date column is constant, compute midnight once (as Int128, already scaled
-        /// for Time64) so the loop only needs to add each row's time value.
-        Int128 midnight_precomputed = 0;
-        if (date_is_const)
-        {
-            Int64 midnight_ts = to_midnight(date_const_value);
-            midnight_precomputed = is_time64 ? Int128(midnight_ts) * scale_multiplier : Int128(midnight_ts);
-        }
-
-        /// Both columns constant — compute once, return a single-value column.
-        if (date_is_const && time_is_const)
-        {
-            Int64 const_result = compute_from_precomputed_midnight(midnight_precomputed, time_const_value);
-            if (result_is_datetime64)
-                return result_type->createColumnConst(input_rows_count, DecimalField<DateTime64>(DateTime64(const_result), result_scale));
-            return result_type->createColumnConst(input_rows_count, static_cast<UInt64>(static_cast<UInt32>(const_result)));
-        }
-
-        if (result_is_datetime64)
-        {
-            auto col_res = ColumnDecimal<DateTime64>::create(input_rows_count, result_scale);
-            auto & result_data = col_res->getData();
-            if (date_is_const)
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    result_data[i] = DateTime64(compute_from_precomputed_midnight(midnight_precomputed, get_time(i)));
-            else
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    result_data[i] = DateTime64(compute_from_day(get_date(i), get_time(i)));
-            return col_res;
+            processor.template constantVector<FromDataType>(sources_const->template getValue<FromValueType>(), *col_to, delta_column, time_zone, scale, input_rows_count);
         }
         else
         {
-            auto col_res = ColumnVector<UInt32>::create(input_rows_count);
-            auto & result_data = col_res->getData();
-            if (date_is_const)
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    result_data[i] = static_cast<UInt32>(compute_from_precomputed_midnight(midnight_precomputed, get_time(i)));
-            else
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    result_data[i] = static_cast<UInt32>(compute_from_day(get_date(i), get_time(i)));
-            return col_res;
-        }
-    }
-
-    ColumnPtr executeDateTimeIntervalPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
-                                               size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
-    {
-        ColumnsWithTypeAndName new_arguments = arguments;
-
-        /// Interval argument must be second.
-        if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(arguments[1].type) || isString(arguments[1].type))
-            std::swap(new_arguments[0], new_arguments[1]);
-
-        /// Change interval argument type to its representation
-        if (WhichDataType(new_arguments[1].type).isInterval())
-            new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
-
-        auto function = function_builder->build(new_arguments);
-        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
-    }
-
-    ColumnPtr executeDateTimeTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
-                                               size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
-    {
-        ColumnsWithTypeAndName new_arguments = arguments;
-
-       /// Tuple argument must be second.
-        if (isTuple(arguments[0].type))
-            std::swap(new_arguments[0], new_arguments[1]);
-
-        auto function = function_builder->build(new_arguments);
-
-        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
-    }
-
-    ColumnPtr executeIntervalTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
-                                               size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
-    {
-        auto function = function_builder->build(arguments);
-
-        return function->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
-    }
-
-    ColumnPtr executeArraysImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-    {
-        const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
-
-        if (!return_type_array)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array", getName());
-
-        auto num_args = arguments.size();
-        DataTypes data_types;
-
-        ColumnsWithTypeAndName new_arguments {num_args};
-        DataTypePtr result_array_type;
-
-        const auto * left_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
-        const auto * right_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
-
-        /// Unpacking arrays if both are constants.
-        if (left_const && right_const)
-        {
-            new_arguments[0] = {left_const->getDataColumnPtr(), arguments[0].type, arguments[0].name};
-            new_arguments[1] = {right_const->getDataColumnPtr(), arguments[1].type, arguments[1].name};
-            auto col = executeImpl(new_arguments, result_type, 1);
-            return ColumnConst::create(std::move(col), input_rows_count);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                            arguments[0].column->getName(), Transform::name);
         }
 
-        /// Unpacking arrays if at least one column is constant.
-        if (left_const || right_const)
-        {
-            new_arguments[0] = {arguments[0].column->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name};
-            new_arguments[1] = {arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
-            return executeImpl(new_arguments, result_type, input_rows_count);
-        }
-
-        const auto * left_array_col = typeid_cast<const ColumnArray *>(arguments[0].column.get());
-        const auto * right_array_col = typeid_cast<const ColumnArray *>(arguments[1].column.get());
-        if (!left_array_col->hasEqualOffsets(*right_array_col))
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Two arguments for function {} must have equal sizes", getName());
-
-        const auto & left_array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
-        new_arguments[0] = {left_array_col->getDataPtr(), left_array_type, arguments[0].name};
-
-        const auto & right_array_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
-        new_arguments[1] = {right_array_col->getDataPtr(), right_array_type, arguments[1].name};
-
-        result_array_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
-
-        size_t rows_count = 0;
-        const auto & left_offsets = left_array_col->getOffsets();
-        if (!left_offsets.empty())
-            rows_count = left_offsets.back();
-        auto res = array_element_function
-            ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
-            : executeImpl(new_arguments, result_array_type, rows_count);
-
-        /// The element-wise result can be a constant (for example a NULL), the data of an array cannot.
-        return ColumnArray::create(res->convertToFullColumnIfConst(), typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
+        return result_col;
     }
+};
 
-    ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
-    {
-        ColumnsWithTypeAndName arguments = args;
-        bool is_swapped = isNumber(args[0].type); /// Defines the order of arguments (If array is first argument - is_swapped = false)
+namespace date_and_time_type_details
+{
+// Compile-time mapping of value (DataType::FieldType) types to corresponding DataType
+template <typename FieldType> struct ResultDataTypeMap {};
+template <> struct ResultDataTypeMap<UInt16>           { using ResultDataType = DataTypeDate; };
+template <> struct ResultDataTypeMap<UInt32>           { using ResultDataType = DataTypeDateTime; };
+template <> struct ResultDataTypeMap<Int32>            { using ResultDataType = DataTypeDate32; };
+template <> struct ResultDataTypeMap<DateTime64>       { using ResultDataType = DataTypeDateTime64; };
+template <> struct ResultDataTypeMap<Int64>            { using ResultDataType = DataTypeTime; }; // Time has generic type Int32, which interferres with Date32, so I needed to map Time with the vacant generic type
+template <> struct ResultDataTypeMap<Time64>           { using ResultDataType = DataTypeTime64; };
+template <> struct ResultDataTypeMap<Int8>             { using ResultDataType = DataTypeInt8; }; // error
+}
 
-        const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
-        if (!return_type_array)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array", getName());
-
-        auto num_args = arguments.size();
-        DataTypes data_types;
-
-        ColumnsWithTypeAndName new_arguments {num_args};
-        DataTypePtr result_array_type;
-
-        const auto * left_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
-        const auto * right_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
-
-        if (left_const && right_const)
-        {
-            new_arguments[0] = {left_const->getDataColumnPtr(), arguments[0].type, arguments[0].name};
-            new_arguments[1] = {right_const->getDataColumnPtr(), arguments[1].type, arguments[1].name};
-            auto col = executeImpl(new_arguments, result_type, 1);
-            return ColumnConst::create(std::move(col), input_rows_count);
-        }
-
-        if (right_const && is_swapped)
-        {
-            new_arguments[0] = {arguments[0].column.get()->getPtr(), arguments[0].type, arguments[0].name};
-            new_arguments[1] = {right_const->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
-            return executeImpl(new_arguments, result_type, input_rows_count);
-        }
-        if (left_const && !is_swapped)
-        {
-            new_arguments[0] = {left_const->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name};
-            new_arguments[1] = {arguments[1].column.get()->getPtr(), arguments[1].type, arguments[1].name};
-            return executeImpl(new_arguments, result_type, input_rows_count);
-        }
-
-        if (is_swapped)
-            std::swap(arguments[1], arguments[0]);
-
-        const auto * left_array_col = typeid_cast<const ColumnArray *>(arguments[0].column.get());
-        const auto & left_array_elements_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
-        const auto & right_col = arguments[1].column.get()->cloneResized(left_array_col->size());
-
-        size_t rows_count = 0;
-        const auto & left_offsets = left_array_col->getOffsets();
-        if (!left_offsets.empty())
-            rows_count = left_offsets.back();
-
-        new_arguments[0] = {left_array_col->getDataPtr(), left_array_elements_type, arguments[0].name};
-        if (right_const)
-            new_arguments[1] = {right_col->cloneResized(rows_count), arguments[1].type, arguments[1].name};
-        else
-            new_arguments[1] = {right_col->replicate(left_array_col->getOffsets()), arguments[1].type, arguments[1].name};
-
-        result_array_type = return_type_array->getNestedType();
-
-        if (is_swapped)
-            std::swap(new_arguments[1], new_arguments[0]);
-        auto res = array_element_function
-            ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
-            : executeImpl(new_arguments, result_array_type, rows_count);
-
-        return ColumnArray::create(res, left_array_col->getOffsetsPtr());
-    }
-
-    ColumnPtr executeTupleNumberOperator(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
-                                               size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
-    {
-        ColumnsWithTypeAndName new_arguments = arguments;
-
-        /// Number argument must be second.
-        if (isNumber(arguments[0].type))
-            std::swap(new_arguments[0], new_arguments[1]);
-
-        auto function = function_builder->build(new_arguments);
-
-        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
-    }
-
-    template <typename T, typename ResultDataType>
-    static auto helperGetOrConvert(const auto & col_const, const auto & col)
-    {
-        using ResultType = typename ResultDataType::FieldType;
-        using NativeResultType = NativeType<ResultType>;
-
-        if constexpr (IsFloatingPoint<ResultDataType> && is_decimal<T>)
-            return DecimalUtils::convertTo<NativeResultType>(col_const->template getValue<T>(), col.getScale());
-        else if constexpr (is_decimal<T>)
-            return col_const->template getValue<T>().value;
-        else
-            return col_const->template getValue<T>();
-    }
-
-    /// The decimal operation runs in the native width of its result, so a constant operand that does
-    /// not survive the narrowing into that width would wrap and make every row silently wrong. Checked
-    /// here rather than inside the operation, because only this class knows the setting.
-    template <typename NativeResultType, typename T>
-    NativeResultType castConstantToNative(const T & value) const
-    {
-        const auto result = static_cast<NativeResultType>(value);
-
-        using Value = std::decay_t<T>;
-        if constexpr (
-            is_integer<Value> && is_integer<NativeResultType>
-            && (sizeof(Value) > sizeof(NativeResultType) || is_signed_v<Value> != is_signed_v<NativeResultType>))
-        {
-            if (check_decimal_overflow && !accurate::equalsOp(value, result))
-                throw Exception(
-                    ErrorCodes::DECIMAL_OVERFLOW,
-                    "Decimal math overflow: the operand does not fit into the {} bits of the result",
-                    sizeof(NativeResultType) * 8);
-        }
-
-        return result;
-    }
-
-    template <OpCase op_case, bool left_decimal, bool right_decimal, typename OpImpl, typename OpImplCheck>
-    void helperInvokeEither(const auto& left, const auto& right, auto& vec_res, auto scale_a, auto scale_b, const NullMap * right_nullmap) const
-    {
-        if (check_decimal_overflow)
-            OpImplCheck::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap);
-        else
-            OpImpl::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap);
-    }
-
-    template <bool left_decimal, bool right_decimal, typename OpImpl, typename OpImplCheck, typename ResultType, typename A, typename B>
-    ResultType helperInvokeEither(A a, B b, auto scale_a, auto scale_b) const
-        requires(!is_decimal<A> && !is_decimal<B>)
-    {
-        if (check_decimal_overflow)
-            return OpImplCheck::template process<left_decimal, right_decimal>(a, b, scale_a, scale_b);
-        else
-            return OpImpl::template process<left_decimal, right_decimal>(a, b, scale_a, scale_b);
-    }
-
-    template <class LeftDataType, class RightDataType, class ResultDataType>
-    ColumnPtr executeNumericWithDecimal(
-        const auto & left, const auto & right,
-        const ColumnConst * const col_left_const, const ColumnConst * const col_right_const,
-        const auto * const col_left, const auto * const col_right,
-        size_t col_left_size, const NullMap * right_nullmap) const
-    {
-        using T0 = typename LeftDataType::FieldType;
-        using T1 = typename RightDataType::FieldType;
-        using ResultType = typename ResultDataType::FieldType;
-
-        using NativeResultType = NativeType<ResultType>;
-        using OpImpl = DecimalBinaryOperation<Op, ResultType, false>;
-        using OpImplCheck = DecimalBinaryOperation<Op, ResultType, true>;
-
-        using ColVecResult = ColumnVectorOrDecimal<ResultType>;
-
-        static constexpr const bool left_is_decimal = is_decimal<T0>;
-        static constexpr const bool right_is_decimal = is_decimal<T1>;
-
-        typename ColVecResult::MutablePtr col_res = nullptr;
-
-        const ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
-
-        const ResultType scale_a = [&]
-        {
-            if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
-                return right.getScaleMultiplier(); // the division impl uses only the scale_a
-            else
-            {
-                if constexpr (is_multiply)
-                    // the decimal impl uses scales, but if the result is decimal, both of the arguments are decimal,
-                    // so they would multiply correctly, so we need to scale the result to the neutral element (1).
-                    // The explicit type is needed as the int (in contrast with float) can't be implicitly converted
-                    // to decimal.
-                    return ResultType{1};
-                else
-                    return type.scaleFactorFor(left, false);
-            }
-        }();
-
-        const ResultType scale_b = [&]
-        {
-                if constexpr (is_multiply)
-                    return ResultType{1};
-                else
-                    return type.scaleFactorFor(right, is_division);
-        }();
-
-        /// non-vector result
-        if (col_left_const && col_right_const)
-        {
-            /// A `NULL` divisor makes the result `NULL` whatever the operands are, so they are not narrowed
-            /// (and cannot raise `DECIMAL_OVERFLOW`) in that case.
-            ResultType res = {};
-            if (!right_nullmap || !(*right_nullmap)[0])
-            {
-                const NativeResultType const_a
-                    = castConstantToNative<NativeResultType>(helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
-                const NativeResultType const_b
-                    = castConstantToNative<NativeResultType>(helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
-
-                res = helperInvokeEither<left_is_decimal, right_is_decimal, OpImpl, OpImplCheck, ResultType>(
-                     const_a, const_b, scale_a, scale_b);
-            }
-
-            return ResultDataType(type.getPrecision(), type.getScale())
-                .createColumnConst(col_left_const->size(), toField(res, type.getScale()));
-        }
-
-        col_res = ColVecResult::create(0, type.getScale());
-
-        auto & vec_res = col_res->getData();
-        vec_res.resize(col_left_size);
-
-        /// Likewise, when every divisor row is `NULL`, the whole result is `NULL`, so the constant operand
-        /// is not narrowed (and cannot raise `DECIMAL_OVERFLOW`).
-        if (can_have_division_by_nullable && right_nullmap && (col_left_const || col_right_const)
-            && std::all_of(right_nullmap->begin(), right_nullmap->end(), [](UInt8 is_null) { return is_null != 0; }))
-        {
-            std::fill(vec_res.begin(), vec_res.end(), ResultType());
-            return col_res;
-        }
-
-        if (col_left && col_right)
-        {
-            helperInvokeEither<OpCase::Vector, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
-                col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b, right_nullmap);
-        }
-        else if (col_left_const && col_right)
-        {
-            const NativeResultType const_a
-                = castConstantToNative<NativeResultType>(helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
-
-            helperInvokeEither<OpCase::LeftConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
-                const_a, col_right->getData(), vec_res, scale_a, scale_b, right_nullmap);
-        }
-        else if (col_left && col_right_const)
-        {
-            const NativeResultType const_b
-                = castConstantToNative<NativeResultType>(helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
-
-            helperInvokeEither<OpCase::RightConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
-                col_left->getData(), const_b, vec_res, scale_a, scale_b, right_nullmap);
-        }
-        else
-            return nullptr;
-
-        return col_res;
-    }
-
+template <typename Transform>
+class FunctionDateOrDateTimeAddInterval final : public IFunction
+{
 public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBinaryArithmetic>(context_); }
-    static FunctionPtr create(ContextPtr context_, const DataTypePtr & left_type, const DataTypePtr & right_type, bool division_by_nullable_ = false)
-    {
-        return std::make_shared<FunctionBinaryArithmetic>(context_, left_type, right_type, division_by_nullable_);
-    }
-
-    explicit FunctionBinaryArithmetic(ContextPtr context_, const DataTypePtr & left_type = nullptr, const DataTypePtr & right_type = nullptr, bool division_by_nullable_ = false)
-    :   WithContext(context_),
-        check_decimal_overflow(decimalCheckArithmeticOverflow(context_)),
-        division_by_nullable(division_by_nullable_),
-        date_time_overflow_behavior(getDateTimeOverflowBehavior(context_))
-    {
-        /// Resolve the context-dependent builders for the interval/tuple special cases now, while the
-        /// context is alive, so that executeImpl never needs it. The types are known only when the
-        /// function is built for concrete arguments (via the overload resolver); functions created
-        /// without them (e.g. least/greatest, whose operation never reaches these special cases) simply
-        /// leave the builders null.
-        ///
-        /// executeImpl sees the argument types after the default implementations strip LowCardinality
-        /// and - unless the operation is division-by-nullable - Nullable, so normalize the types the
-        /// same way here to resolve exactly the builders executeImpl would.
-        if (left_type && right_type)
-        {
-            auto normalize = [this](DataTypePtr type)
-            {
-                type = recursiveRemoveLowCardinality(type);
-                if (!division_by_nullable && !is_division_or_null)
-                    type = removeNullable(type);
-                return type;
-            };
-            const DataTypePtr type0 = normalize(left_type);
-            const DataTypePtr type1 = normalize(right_type);
-            prepared_interval_function = getFunctionForIntervalArithmetic(type0, type1, context_);
-            parses_string_operand = prepared_interval_function && (isString(type0) || isString(type1));
-            prepared_date_tuple_of_intervals_function = getFunctionForDateTupleOfIntervalsArithmetic(type0, type1, context_);
-            prepared_merge_intervals_function = getFunctionForMergeIntervalsArithmetic(type0, type1, context_);
-            prepared_tuple_function = getFunctionForTupleArithmetic(type0, type1, context_);
-            prepared_tuple_and_number_function = getFunctionForTupleAndNumberArithmetic(type0, type1, context_);
-
-            /// Array operands are handled element-wise by re-evaluating the operation on the element
-            /// types (see executeArraysImpl/executeArrayWithNumericImpl). Build that sub-function here so
-            /// those paths never re-enter executeImpl with element types the precomputed builders above
-            /// do not cover. Its own constructor recursively resolves the element-level special cases.
-            if (isArray(type0) || isArray(type1))
-            {
-                auto element_type = [](const DataTypePtr & type)
-                {
-                    return isArray(type) ? typeid_cast<const DataTypeArray &>(*type).getNestedType() : type;
-                };
-                array_element_function = create(context_, element_type(type0), element_type(type1));
-            }
-        }
-    }
+    static constexpr auto name = Transform::name;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); }
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
-
-    bool isNameInsensitive() const override { return true; }
-
-    bool useDefaultImplementationForNulls() const override
-    {
-        /// We shouldn't use default implementation for nulls for the case when operation is divide,
-        /// intDiv or modulo and denominator is Nullable(Something), because it may cause division
-        /// by zero error (when value is Null we store default value 0 in nested column).
-        /// And we also shouldn't use default implementation for nulls for the case when operation is
-        /// divideOrNull, intDivOrNull, moduloOrNull or positiveModuloOrNull, because it will return
-        /// null when the divisor is zero, and it is conflict with the default implementation.
-        return !division_by_nullable && !is_division_or_null;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
-    {
-        /// Look through `LowCardinality` the same way `division_by_nullable` does in the resolver, so that
-        /// `canThrowIfKnown` (which relies on this method) agrees with the execution path.
-        return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
-            || (IsOperation<Op>::div_floating
-                && (isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[0].type))
-                    || isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[1].type))));
-    }
-
-    /// Only the operations on native numbers that are known not to throw are described, everything else
-    /// (`Decimal` overflow, `Date` and `Interval` arithmetic, negative shifts, `intDiv` of floats, etc.) may throw.
-    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
-    {
-        return canThrowImpl(arguments, /* divisor_is_known_safe */ false);
-    }
-
-protected:
-    /// The value of a constant divisor is not used here, so `intDiv` and `modulo` are
-    /// described as not throwing only if the caller knows that the constant divisor is safe: it is not zero
-    /// and, for a signed dividend, it does not become negative after the cast to a signed type.
-    bool canThrowImpl(const DataTypesWithConstInfo & arguments, bool divisor_is_known_safe) const
-    {
-        if (arguments.size() != 2 || isSuitableForShortCircuitArgumentsExecution(arguments))
-            return true;
-
-        const auto left = removeNullable(recursiveRemoveLowCardinality(arguments[0].type));
-        const auto right = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
-        if (!isNativeNumber(left) || !isNativeNumber(right))
-            return true;
-
-        constexpr std::string_view name_view = Name::name;
-        if constexpr (is_plus || is_minus || is_multiply || IsOperation<Op>::div_floating
-            || IsOperation<Op>::least || IsOperation<Op>::greatest
-            || name_view == "bitAnd" || name_view == "bitOr" || name_view == "bitXor")
-            return false;
-
-        /// The divisor is a constant here (see `isSuitableForShortCircuitArgumentsExecution`). Division by a zero
-        /// constant throws on every row, but it must not be moved ahead of a condition that skips all the rows,
-        /// so the divisor must be known to be non-zero. Division of the minimal signed number by minus one depends
-        /// on the rows, so the divisor must be unsigned, and must stay positive after the cast to a signed type.
-        if constexpr (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo)
-            return !divisor_is_known_safe || !isNativeInteger(left) || !isNativeUInt(right);
-
-        return true;
-    }
-
-public:
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        /// Type resolution runs during analysis while the context is alive, but it is also re-invoked from
-        /// IFunction::compile when a stored expression (e.g. a table's sorting key) is JIT-compiled at
-        /// pipeline-build time - by then the query context that built the function may already be gone.
-        /// Only the plain-numeric path is JIT-compilable (interval/tuple/date/decimal operations are not),
-        /// and that path never dereferences the context, so lock the weak pointer instead of throwing
-        /// `Context has expired` on an expired context. See #54890.
-        return getReturnTypeImplStatic(arguments, context.lock());
-    }
-
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
-    {
-        /// Special case when multiply aggregate function state
-        if (isAggregateMultiply(arguments[0], arguments[1]))
-        {
-            if (WhichDataType(arguments[0]).isAggregateFunction())
-                return arguments[0];
-            return arguments[1];
-        }
-
-        /// Special case - addition of two aggregate functions states
-        if (isAggregateAddition(arguments[0], arguments[1]))
-        {
-            if (!arguments[0]->equals(*arguments[1]))
-                throw Exception(ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES,
-                    "Cannot add aggregate states of different functions: {} and {}",
-                    arguments[0]->getName(), arguments[1]->getName());
-
-            return arguments[0];
-        }
-
-        /// Special case - one argument is IPv4 and the other is IPv4 or an integer
-        if ((isIPv4(arguments[0]) && (isIPv4(arguments[1]) || isInteger(arguments[1])))
-            || (isIPv4(arguments[1]) && isInteger(arguments[0])))
-        {
-            DataTypes new_arguments {
-                    isIPv4(arguments[0]) ? std::make_shared<DataTypeUInt32>() : arguments[0],
-                    isIPv4(arguments[1]) ? std::make_shared<DataTypeUInt32>() : arguments[1],
-            };
-
-            return getReturnTypeImplStatic2(new_arguments, context_);
-        }
-
-        /// Special case -one argument is IPv6 and the other is Ipv4 or an integer
-        if ((isIPv6(arguments[0]) && (isIPv6(arguments[1]) || isInteger(arguments[1])))
-            || (isIPv6(arguments[1]) && isInteger(arguments[0])))
-        {
-            DataTypes new_arguments {
-                    isIPv6(arguments[0]) ? std::make_shared<DataTypeUInt128>() : arguments[0],
-                    isIPv6(arguments[1]) ? std::make_shared<DataTypeUInt128>() : arguments[1],
-            };
-
-            return getReturnTypeImplStatic2(new_arguments, context_);
-        }
-
-
-        if constexpr (is_plus || is_minus)
-        {
-            if (isArray(arguments[0]) && isArray(arguments[1]))
-            {
-                DataTypes new_arguments {
-                        static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
-                        static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
-                };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
-            }
-        }
-
-        /// Special case when the function is minus, both arguments are DateTime64.
-        if (isDateTime64Subtraction(arguments[0], arguments[1]))
-        {
-            UInt32 scale_lhs = 0;
-            UInt32 scale_rhs = 0;
-            if (isDateTime64(arguments[0]))
-            {
-                const auto *lhs = checkAndGetDataType<DataTypeDateTime64>(arguments[0].get());
-                scale_lhs = lhs->getScale();
-            }
-            if (isDateTime64(arguments[1]))
-            {
-                const auto *rhs = checkAndGetDataType<DataTypeDateTime64>(arguments[1].get());
-                scale_rhs = rhs->getScale();
-            }
-            return std::make_shared<DataTypeDecimal64>(DecimalUtils::max_precision<DateTime64>, std::max(scale_lhs, scale_rhs));
-        }
-        else if (isTime64Subtraction(arguments[0], arguments[1])) /// Special case when the function is minus, both arguments are Time64.
-        {
-            UInt32 scale_lhs = 0;
-            UInt32 scale_rhs = 0;
-            if (isTime64(arguments[0]))
-            {
-                const auto *lhs = checkAndGetDataType<DataTypeTime64>(arguments[0].get());
-                scale_lhs = lhs->getScale();
-            }
-            if (isTime64(arguments[1]))
-            {
-                const auto *rhs = checkAndGetDataType<DataTypeTime64>(arguments[1].get());
-                scale_rhs = rhs->getScale();
-            }
-            return std::make_shared<DataTypeDecimal64>(DecimalUtils::max_precision<Time64>, std::max(scale_lhs, scale_rhs));
-        }
-        else if (isDateAndTimeAddition(arguments[0], arguments[1])) /// Special case when the function is plus, one argument is Date/Date32 and the other is Time/Time64.
-        {
-            WhichDataType which0(arguments[0]);
-            WhichDataType which1(arguments[1]);
-
-            const WhichDataType & date_which = which0.isDateOrDate32() ? which0 : which1;
-            const WhichDataType & time_which = which0.isTimeOrTime64() ? which0 : which1;
-            const DataTypePtr & time_type = which0.isTimeOrTime64() ? arguments[0] : arguments[1];
-
-            if (date_which.isDate() && time_which.isTime())
-            {
-                return std::make_shared<DataTypeDateTime>();
-            }
-            else if (date_which.isDate() && time_which.isTime64())
-            {
-                const auto * t64 = checkAndGetDataType<DataTypeTime64>(time_type.get());
-                return std::make_shared<DataTypeDateTime64>(t64->getScale());
-            }
-            else if (date_which.isDate32() && time_which.isTime())
-            {
-                return std::make_shared<DataTypeDateTime64>(0);
-            }
-            else if (date_which.isDate32() && time_which.isTime64())
-            {
-                const auto * t64 = checkAndGetDataType<DataTypeTime64>(time_type.get());
-                return std::make_shared<DataTypeDateTime64>(t64->getScale());
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected combination of date and time types for plus: {} and {}",
-                    arguments[0]->getName(),
-                    arguments[1]->getName());
-            }
-        }
-        else if constexpr (is_plus || is_minus) /// Special case for Time+DateTime and Time-DateTime operations.
-        {
-            if (isTimeAndDateTimeOperation(arguments[0], arguments[1]))
-            {
-                // For subtraction, check that DateTime is on the left and Time is on the right
-                if constexpr (is_minus)
-                {
-                    if (WhichDataType(arguments[0]).isTimeOrTime64() && WhichDataType(arguments[1]).isDateTimeOrDateTime64())
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Invalid arguments for subtract operation: {} and {}. For subtraction, DateTime must be the first argument",
-                            arguments[0]->getName(), arguments[1]->getName());
-                }
-
-                /// Determine which argument is Time and which is DateTime
-                bool left_is_time = WhichDataType(arguments[0]).isTimeOrTime64();
-                const DataTypePtr & time_type = left_is_time ? arguments[0] : arguments[1];
-                const DataTypePtr & datetime_type = left_is_time ? arguments[1] : arguments[0];
-
-                /// Preserve the explicit timezone of the DateTime/DateTime64 argument, if any
-                String timezone;
-                if (const auto * tz_mixin = dynamic_cast<const TimezoneMixin *>(datetime_type.get()); tz_mixin && tz_mixin->hasExplicitTimeZone())
-                    timezone = tz_mixin->getTimeZone().getTimeZone();
-
-                /// Return DateTime or DateTime64 based on input types
-                if (isDateTime64(datetime_type) || isTime64(time_type))
-                {
-                    /// Calculate the maximum scale
-                    UInt32 scale = 0;
-
-                    if (isDateTime64(datetime_type))
-                    {
-                        const auto * dt64 = checkAndGetDataType<DataTypeDateTime64>(datetime_type.get());
-                        scale = std::max(scale, dt64->getScale());
-                    }
-
-                    if (isTime64(time_type))
-                    {
-                        const auto * t64 = checkAndGetDataType<DataTypeTime64>(time_type.get());
-                        scale = std::max(scale, t64->getScale());
-                    }
-
-                    return std::make_shared<DataTypeDateTime64>(scale, timezone);
-                }
-                else
-                {
-                    /// Return regular DateTime for standard precision
-                    return std::make_shared<DataTypeDateTime>(timezone);
-                }
-            }
-        }
-
-        if constexpr (is_multiply || is_division)
-        {
-            if (isArray(arguments[0]) && isNumber(arguments[1]))
-            {
-                DataTypes new_arguments {
-                        static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
-                        arguments[1],
-                };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
-            }
-            if (isNumber(arguments[0]) && isArray(arguments[1]))
-            {
-                DataTypes new_arguments {
-                        arguments[0],
-                        static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
-                };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
-            }
-        }
-
-        return getReturnTypeImplStatic2(arguments, context_);
-    }
-
-    static DataTypePtr getReturnTypeImplStatic2(const DataTypes & arguments, ContextPtr context_)
-    {
-        /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
-        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context_))
-        {
-            ColumnsWithTypeAndName new_arguments(2);
-
-            for (size_t i = 0; i < 2; ++i)
-                new_arguments[i].type = arguments[i];
-
-            /// Interval argument must be second.
-            if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
-                std::swap(new_arguments[0], new_arguments[1]);
-
-            /// Change interval argument to its representation
-            new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
-
-            auto function = function_builder->build(new_arguments);
-            return function->getResultType();
-        }
-
-        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], arguments[1], context_))
-        {
-            ColumnsWithTypeAndName new_arguments(2);
-
-            for (size_t i = 0; i < 2; ++i)
-                new_arguments[i].type = arguments[i];
-
-            auto function = function_builder->build(new_arguments);
-            return function->getResultType();
-        }
-
-        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
-        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0], arguments[1], context_))
-        {
-            ColumnsWithTypeAndName new_arguments(2);
-
-            for (size_t i = 0; i < 2; ++i)
-                new_arguments[i].type = arguments[i];
-
-            /// Tuple argument must be second.
-            if (isTuple(new_arguments[0].type))
-                std::swap(new_arguments[0], new_arguments[1]);
-
-            auto function = function_builder->build(new_arguments);
-            return function->getResultType();
-        }
-
-        /// Special case when the function is plus or minus, one of arguments is Interval/Tuple of Intervals and another is Interval.
-        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0], arguments[1], context_))
-        {
-            ColumnsWithTypeAndName new_arguments(2);
-
-            for (size_t i = 0; i < 2; ++i)
-                new_arguments[i].type = arguments[i];
-
-            auto function = function_builder->build(new_arguments);
-            return function->getResultType();
-        }
-
-        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0], arguments[1], context_))
-        {
-            ColumnsWithTypeAndName new_arguments(2);
-
-            for (size_t i = 0; i < 2; ++i)
-                new_arguments[i].type = arguments[i];
-
-            /// Number argument must be second.
-            if (isNumber(new_arguments[0].type))
-                std::swap(new_arguments[0], new_arguments[1]);
-
-            auto function = function_builder->build(new_arguments);
-            return function->getResultType();
-        }
-
-        DataTypePtr type_res;
-
-        const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr ((std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeString, LeftDataType>) ||
-                (std::is_same_v<DataTypeFixedString, RightDataType> || std::is_same_v<DataTypeString, RightDataType>))
-            {
-                if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                              std::is_same_v<DataTypeFixedString, RightDataType>)
-                {
-                    if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
-                        return false;
-                    else
-                    {
-                        if (left.getN() == right.getN())
-                        {
-                            if constexpr (is_bit_hamming_distance)
-                                type_res = std::make_shared<DataTypeUInt16>();
-                            else
-                                type_res = std::make_shared<LeftDataType>(left.getN());
-                            return true;
-                        }
-                    }
-                }
-
-                if constexpr (
-                    is_bit_hamming_distance
-                    && std::is_same_v<DataTypeString, LeftDataType> && std::is_same_v<DataTypeString, RightDataType>)
-                    type_res = std::make_shared<DataTypeUInt64>();
-                else if constexpr (!Op<LeftDataType, RightDataType>::allow_string_integer)
-                    return false;
-                else if constexpr (!IsIntegral<RightDataType>)
-                    return false;
-                else if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType>)
-                    type_res = std::make_shared<LeftDataType>(left.getN());
-                else
-                    type_res = std::make_shared<DataTypeString>();
-                return true;
-            }
-            else if constexpr (std::is_same_v<LeftDataType, DataTypeInterval> || std::is_same_v<RightDataType, DataTypeInterval>)
-            {
-                if constexpr (std::is_same_v<LeftDataType, DataTypeInterval> &&
-                              std::is_same_v<RightDataType, DataTypeInterval>)
-                {
-                    if constexpr (is_plus || is_minus)
-                    {
-                        if (left.getKind() == right.getKind())
-                        {
-                            type_res = std::make_shared<LeftDataType>(left.getKind());
-                            return true;
-                        }
-                    }
-                }
-            }
-            else
-            {
-                if constexpr ((std::is_same_v<LeftDataType, DataTypeBFloat16> || std::is_same_v<RightDataType, DataTypeBFloat16>)
-                    && (sizeof(typename LeftDataType::FieldType) > 8 || sizeof(typename RightDataType::FieldType) > 8))
-                {
-                    /// Big integers and BFloat16 are not supported together.
-                    return false;
-                }
-
-                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-
-
-                if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
-                {
-                    if constexpr (is_int_div || is_int_div_or_zero)
-                        type_res = std::make_shared<ResultDataType>();
-                    else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                    {
-                        if constexpr (is_division)
-                        {
-                            if (decimalCheckArithmeticOverflow(context_))
-                            {
-                                /// Check overflow by using operands scale (based on big decimal division implementation details):
-                                /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
-                                /// i.e. int_operand = decimal_operand*10^scale
-                                /// For division, left operand will be scaled by right operand scale also to do big integer division,
-                                /// BigInt result = left*10^(left_scale + right_scale) / right * 10^right_scale
-                                /// So, we can check upfront possible overflow just by checking max scale used for left operand
-                                /// Note: it doesn't detect all possible overflow during big decimal division
-                                if (left.getScale() + right.getScale() > ResultDataType::maxPrecision())
-                                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Overflow during decimal division");
-                            }
-                        }
-                        ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
-                        type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
-                    }
-                    else if constexpr (((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
-                        (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>)))
-                    {
-                        type_res = std::make_shared<DataTypeFloat64>();
-                    }
-                    else if constexpr (IsDataTypeDecimal<LeftDataType>)
-                    {
-                        type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
-                    }
-                    else if constexpr (IsDataTypeDecimal<RightDataType>)
-                    {
-                        type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
-                    }
-                    else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
-                    {
-                        // Special case for DateTime: binary OPS should reuse timezone
-                        // of DateTime argument as timezeone of result type.
-                        // NOTE: binary plus/minus are not allowed on DateTime64, and we are not handling it here.
-
-                        const TimezoneMixin * tz = nullptr;
-                        if constexpr (std::is_same_v<RightDataType, DataTypeDateTime>)
-                            tz = &right;
-                        if constexpr (std::is_same_v<LeftDataType, DataTypeDateTime>)
-                            tz = &left;
-                        type_res = std::make_shared<ResultDataType>(*tz);
-                    }
-                    else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
-                    {
-                        type_res = std::make_shared<DataTypeTime>();
-                    }
-                    else
-                        type_res = std::make_shared<ResultDataType>();
-                    return true;
-                }
-            }
-            return false;
-        });
-
-        if (valid)
-        {
-            if constexpr (is_division_or_null)
-                return makeNullable(type_res);
-            else
-                return type_res;
-        }
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {} and {} of arguments of function {}",
-            arguments[0]->getName(), arguments[1]->getName(), String(name));
-    }
-
-    ColumnPtr executeFixedString(const ColumnsWithTypeAndName & arguments) const
-    {
-        using OpImpl = FixedStringOperationImpl<Op<UInt8, UInt8>>;
-        using OpReduceImpl = FixedStringReduceOperationImpl<Op<UInt8, UInt8>>;
-
-        const auto * const col_left_raw = arguments[0].column.get();
-        const auto * const col_right_raw = arguments[1].column.get();
-
-        if (const auto * col_left_const = checkAndGetColumnConst<ColumnFixedString>(col_left_raw))
-        {
-            if (const auto * col_right_const = checkAndGetColumnConst<ColumnFixedString>(col_right_raw))
-            {
-                const auto * col_left = &checkAndGetColumn<ColumnFixedString>(col_left_const->getDataColumn());
-                const auto * col_right = &checkAndGetColumn<ColumnFixedString>(col_right_const->getDataColumn());
-
-                if (col_left->getN() != col_right->getN())
-                    return nullptr;
-
-                if constexpr (is_bit_hamming_distance)
-                {
-                    auto col_res = ColumnUInt16::create();
-                    auto & data = col_res->getData();
-                    data.resize_fill(col_left->size());
-
-                    OpReduceImpl::template process<OpCase::Vector>(
-                        col_left->getChars().data(), col_right->getChars().data(), data.data(), data.size(), col_left->getN());
-
-                    return ColumnConst::create(std::move(col_res), col_left_raw->size());
-                }
-                else
-                {
-                    auto col_res = ColumnFixedString::create(col_left->getN());
-                    auto & out_chars = col_res->getChars();
-
-                    out_chars.resize(col_left->getN());
-
-                    OpImpl::template process<OpCase::Vector>(
-                        col_left->getChars().data(), col_right->getChars().data(), out_chars.data(), out_chars.size(), {});
-
-                    return ColumnConst::create(std::move(col_res), col_left_raw->size());
-                }
-
-            }
-        }
-
-        const bool is_left_column_const = checkAndGetColumnConst<ColumnFixedString>(col_left_raw) != nullptr;
-        const bool is_right_column_const = checkAndGetColumnConst<ColumnFixedString>(col_right_raw) != nullptr;
-
-        const auto * col_left = is_left_column_const
-                        ? checkAndGetColumn<ColumnFixedString>(
-                            &checkAndGetColumnConst<ColumnFixedString>(col_left_raw)->getDataColumn())
-                        : checkAndGetColumn<ColumnFixedString>(col_left_raw);
-        const auto * col_right = is_right_column_const
-                        ? checkAndGetColumn<ColumnFixedString>(
-                            &checkAndGetColumnConst<ColumnFixedString>(col_right_raw)->getDataColumn())
-                        : checkAndGetColumn<ColumnFixedString>(col_right_raw);
-
-        if (col_left && col_right)
-        {
-            if (col_left->getN() != col_right->getN())
-                return nullptr;
-
-            if constexpr (is_bit_hamming_distance)
-            {
-                auto col_res = ColumnUInt16::create();
-                auto & data = col_res->getData();
-                data.resize_fill(is_right_column_const ? col_left->size() : col_right->size());
-
-                if (!is_left_column_const && !is_right_column_const)
-                {
-                    OpReduceImpl::template process<OpCase::Vector>(
-                        col_left->getChars().data(), col_right->getChars().data(), data.data(), data.size(), col_left->getN());
-                }
-                else if (is_left_column_const)
-                {
-                    OpReduceImpl::template process<OpCase::LeftConstant>(
-                        col_left->getChars().data(), col_right->getChars().data(), data.data(), data.size(), col_left->getN());
-                }
-                else
-                {
-                    OpReduceImpl::template process<OpCase::RightConstant>(
-                        col_left->getChars().data(), col_right->getChars().data(), data.data(), data.size(), col_left->getN());
-                }
-
-                return col_res;
-            }
-            else
-            {
-                auto col_res = ColumnFixedString::create(col_left->getN());
-                auto & out_chars = col_res->getChars();
-                out_chars.resize((is_right_column_const ? col_left->size() : col_right->size()) * col_left->getN());
-
-                if (!is_left_column_const && !is_right_column_const)
-                {
-                    OpImpl::template process<OpCase::Vector>(
-                        col_left->getChars().data(), col_right->getChars().data(), out_chars.data(), out_chars.size(), {});
-                }
-                else if (is_left_column_const)
-                {
-                    OpImpl::template process<OpCase::LeftConstant>(
-                        col_left->getChars().data(), col_right->getChars().data(), out_chars.data(), out_chars.size(), col_left->getN());
-                }
-                else
-                {
-                    OpImpl::template process<OpCase::RightConstant>(
-                        col_left->getChars().data(), col_right->getChars().data(), out_chars.data(), out_chars.size(), col_left->getN());
-                }
-
-                return col_res;
-            }
-        }
-        return nullptr;
-    }
-
-    /// Only used for bitHammingDistance
-    ColumnPtr executeString(const ColumnsWithTypeAndName & arguments) const
-    {
-        using OpImpl = StringReduceOperationImpl<Op<UInt8, UInt8>>;
-
-        const auto * const col_left_raw = arguments[0].column.get();
-        const auto * const col_right_raw = arguments[1].column.get();
-
-        if (const auto * col_left_const = checkAndGetColumnConst<ColumnString>(col_left_raw))
-        {
-            if (const auto * col_right_const = checkAndGetColumnConst<ColumnString>(col_right_raw))
-            {
-                const auto * col_left = &checkAndGetColumn<ColumnString>(col_left_const->getDataColumn());
-                const auto * col_right = &checkAndGetColumn<ColumnString>(col_right_const->getDataColumn());
-
-                std::string_view a = col_left->getDataAt(0);
-                std::string_view b = col_right->getDataAt(0);
-
-                auto res = OpImpl::constConst(a, b);
-
-                return DataTypeUInt64{}.createColumnConst(col_left_const->size(), res);
-            }
-        }
-
-        const bool is_left_column_const = checkAndGetColumnConst<ColumnString>(col_left_raw) != nullptr;
-        const bool is_right_column_const = checkAndGetColumnConst<ColumnString>(col_right_raw) != nullptr;
-
-        const auto * col_left = is_left_column_const
-            ? &checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_left_raw)->getDataColumn())
-            : checkAndGetColumn<ColumnString>(col_left_raw);
-        const auto * col_right = is_right_column_const
-            ? &checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_right_raw)->getDataColumn())
-            : checkAndGetColumn<ColumnString>(col_right_raw);
-
-        if (col_left && col_right)
-        {
-            auto col_res = ColumnUInt64::create();
-            auto & data = col_res->getData();
-            data.resize(is_right_column_const ? col_left->size() : col_right->size());
-
-            if (!is_left_column_const && !is_right_column_const)
-            {
-                OpImpl::vectorVector(
-                    col_left->getChars(), col_left->getOffsets(), col_right->getChars(), col_right->getOffsets(), data);
-            }
-            else if (is_left_column_const)
-            {
-                std::string_view str_view = col_left->getDataAt(0);
-                OpImpl::vectorConstant(col_right->getChars(), col_right->getOffsets(), str_view, data);
-            }
-            else
-            {
-                std::string_view str_view = col_right->getDataAt(0);
-                OpImpl::vectorConstant(col_left->getChars(), col_left->getOffsets(), str_view, data);
-            }
-
-            return col_res;
-        }
-        return nullptr;
-    }
-
-template <typename LeftColumnType, typename A, typename B>
-ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A & left, const B & right) const
-    {
-        using LeftDataType = std::decay_t<decltype(left)>;
-        using RightDataType = std::decay_t<decltype(right)>;
-
-        const auto * const col_left_raw = arguments[0].column.get();
-        const auto * const col_right_raw = arguments[1].column.get();
-        using T1 = typename RightDataType::FieldType;
-
-        using ColVecT1 = ColumnVector<T1>;
-        const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
-        const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw);
-
-        using OpImpl = StringIntegerOperationImpl<T1, Op<LeftDataType, T1>>;
-
-        const ColumnConst * const col_left_const = checkAndGetColumnConst<LeftColumnType>(col_left_raw);
-
-        const auto * col_left = col_left_const ? &checkAndGetColumn<LeftColumnType>(col_left_const->getDataColumn())
-                                               : checkAndGetColumn<LeftColumnType>(col_left_raw);
-
-        if (!col_left)
-            return nullptr;
-
-        const typename LeftColumnType::Chars & in_vec = col_left->getChars();
-
-        typename LeftColumnType::MutablePtr col_res;
-        if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
-            col_res = LeftColumnType::create(col_left->getN());
-        else
-            col_res = LeftColumnType::create();
-
-        typename LeftColumnType::Chars & out_vec = col_res->getChars();
-
-        if (col_left_const && col_right_const)
-        {
-            const T1 value = col_right_const->template getValue<T1>();
-            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
-            {
-                OpImpl::template processFixedString<OpCase::Vector>(in_vec.data(), col_left->getN(), &value, out_vec, 1);
-            }
-            else
-            {
-                ColumnString::Offsets & out_offsets = col_res->getOffsets();
-                OpImpl::template processString<OpCase::Vector>(in_vec.data(), col_left->getOffsets().data(), &value, out_vec, out_offsets, 1);
-            }
-
-            return ColumnConst::create(std::move(col_res), col_left_const->size());
-        }
-        if (!col_left_const && !col_right_const && col_right)
-        {
-            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
-            {
-                OpImpl::template processFixedString<OpCase::Vector>(
-                    in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_left->size());
-            }
-            else
-            {
-                ColumnString::Offsets & out_offsets = col_res->getOffsets();
-                out_offsets.reserve(col_left->size());
-                OpImpl::template processString<OpCase::Vector>(
-                    in_vec.data(), col_left->getOffsets().data(), col_right->getData().data(), out_vec, out_offsets, col_left->size());
-            }
-        }
-        else if (col_left_const && col_right)
-        {
-            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
-            {
-                OpImpl::template processFixedString<OpCase::LeftConstant>(
-                    in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_right->size());
-            }
-            else
-            {
-                ColumnString::Offsets & out_offsets = col_res->getOffsets();
-                out_offsets.reserve(col_right->size());
-                OpImpl::template processString<OpCase::LeftConstant>(
-                    in_vec.data(), col_left->getOffsets().data(), col_right->getData().data(), out_vec, out_offsets, col_right->size());
-            }
-        }
-        else if (col_right_const)
-        {
-            const T1 value = col_right_const->template getValue<T1>();
-            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
-            {
-                OpImpl::template processFixedString<OpCase::RightConstant>(
-                    in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
-            }
-            else
-            {
-                ColumnString::Offsets & out_offsets = col_res->getOffsets();
-                out_offsets.reserve(col_left->size());
-                OpImpl::template processString<OpCase::RightConstant>(
-                    in_vec.data(), col_left->getOffsets().data(), &value, out_vec, out_offsets, col_left->size());
-            }
-        }
-        else
-            return nullptr;
-
-        return col_res;
-    }
-
-    /// Decides whether a division-or-null operation must return NULL for the given operands.
-    /// The null condition has to match exactly when the underlying operation would raise an FPE:
-    ///  - floating division (`divideOrNull`): only division by zero (the signed `INT_MIN / -1`
-    ///    overflow is a valid floating-point result, not an FPE);
-    ///  - integer division (`intDivOrNull`): division by zero and signed `INT_MIN / -1`, computed
-    ///    with the same operand casts as `DivideIntegralImpl::apply` (so mixed signed/unsigned
-    ///    operands such as `Int8(-128) / UInt8(255)` are handled like the actual division);
-    ///  - modulo (`moduloOrNull`, `positiveModuloOrNull`): for integer modulo, division by zero and
-    ///    signed `INT_MIN / -1` (the `idiv` instruction computes the quotient too, so the overflow
-    ///    raises just like division); for floating modulo, only division by zero, because the float
-    ///    modulo path never raises (`INT_MIN % -1` is a finite remainder). See `moduloLeadsToFPE`.
-    template <typename A, typename B>
-    static bool divisionOrNullLeadsToNull(A a, B b)
-    {
-        if constexpr (is_div_floating_or_null)
-            return b == 0;
-        else if constexpr (is_int_div_or_null)
-            return integerDivisionLeadsToFPE(a, b);
-        else
-            return moduloLeadsToFPE(a, b);
-    }
-
-    template <typename CommonDataType, typename ResultDataType>
-    ColumnPtr executeNumericViaCommonType(const ColumnsWithTypeAndName & arguments, const NullMap * right_nullmap, NullMap * result_nullmap) const
-    {
-        const auto common_type = std::make_shared<CommonDataType>();
-        ColumnsWithTypeAndName converted_arguments
-        {
-            {castColumn(arguments[0], common_type), common_type, arguments[0].name},
-            {castColumn(arguments[1], common_type), common_type, arguments[1].name},
-        };
-
-        ColumnPtr res = executeNumeric(converted_arguments, *common_type, *common_type, right_nullmap, result_nullmap);
-        if (!res)
-            return nullptr;
-
-        /// The result type of the same-type kernel can be wider than the declared result
-        /// type (e.g. `modulo(UInt256, UInt8)` is `UInt8` while `modulo(UInt256, UInt256)`
-        /// is `UInt256`). Narrowing is exact: the fused kernel casts its result to the
-        /// declared type in the same way.
-        using CommonResultDataType = typename BinaryOperationTraits<Op, CommonDataType, CommonDataType>::ResultDataType;
-        if constexpr (!std::is_same_v<CommonResultDataType, ResultDataType>)
-            res = castColumn({res, std::make_shared<CommonResultDataType>(), ""}, std::make_shared<ResultDataType>());
-
-        return res;
-    }
-
-    template <typename A, typename B>
-    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap, NullMap * result_nullmap = nullptr) const
-    {
-        using LeftDataType = std::decay_t<decltype(left)>;
-        using RightDataType = std::decay_t<decltype(right)>;
-        using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-        using DecimalResultType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::DecimalResultDataType;
-
-        if constexpr (std::is_same_v<ResultDataType, InvalidType>)
-        {
-            return nullptr;
-        }
-        else if constexpr ((std::is_same_v<LeftDataType, DataTypeBFloat16> || std::is_same_v<RightDataType, DataTypeBFloat16>)
-            && (sizeof(typename LeftDataType::FieldType) > 8 || sizeof(typename RightDataType::FieldType) > 8))
-        {
-            /// Big integers and BFloat16 are not supported together.
-            return nullptr;
-        }
-        else // we can't avoid the else because otherwise the compiler may assume the ResultDataType may be Invalid
-             // and that would produce the compile error.
-        {
-            constexpr bool decimal_with_float = (IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>)
-                || (IsFloatingPoint<LeftDataType> && IsDataTypeDecimal<RightDataType>);
-
-            using T0 = std::conditional_t<decimal_with_float, Float64, typename LeftDataType::FieldType>;
-            using T1 = std::conditional_t<decimal_with_float, Float64, typename RightDataType::FieldType>;
-            using ResultType = typename ResultDataType::FieldType;
-            using ColVecT0 = ColumnVectorOrDecimal<T0>;
-            using ColVecT1 = ColumnVectorOrDecimal<T1>;
-            using ColVecResult = ColumnVectorOrDecimal<ResultType>;
-
-            /// Whether to avoid instantiating a dedicated kernel for this pair of types and execute
-            /// the operation via a conversion to a common type instead (to reduce the code size).
-            constexpr bool is_wide_mixed_number_pair = !std::is_same_v<T0, T1>
-                && (is_over_big_int<T0> || is_over_big_int<T1>)
-                && IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>;
-
-            /// Floating division computes `static_cast<ResultType>(a) / static_cast<ResultType>(b)`,
-            /// so converting the arguments to `ResultType` beforehand yields bit-identical results.
-            /// The same holds for `plus`, `minus` and `multiply`, but they keep their fused kernels:
-            /// they are memory-bound, and materializing a widened copy of the narrow operand made
-            /// them up to 1.6x slower on column-column arguments (the `bigint_arithm` perf test),
-            /// while their fused kernels are compact (~100 KB per translation unit for all mixed
-            /// wide pairs together). The division and modulo kernels below are compute-bound, so
-            /// the conversion does not slow them down measurably.
-            constexpr bool op_computes_in_result_type = IsOperation<Op>::div_floating || is_div_floating_or_null;
-
-            /// Integer division casts both operands to the signed type of the dividend size when
-            /// either operand is signed (`DivideIntegralImpl`), so when the dividend is at least as
-            /// wide as the divisor, pre-converting both operands to that type is exact, including
-            /// the checks for division by zero and division of the minimal signed number by minus
-            /// one (the check is done on the same type either way). A narrower dividend is exact
-            /// only when both operands are unsigned - otherwise the minimal-signed-number check
-            /// would be performed on the wider type and stop matching.
-            constexpr bool op_is_prunable_int_div = (is_int_div || is_int_div_or_zero || is_int_div_or_null)
-                && is_integer<T0> && is_integer<T1>
-                && (sizeof(T0) >= sizeof(T1) || (is_unsigned_v<T0> && is_unsigned_v<T1>));
-
-            /// Modulo is computed in the signed type of the wider operand when either operand is
-            /// signed, and in the wider type otherwise (`ModuloImpl`), so pre-converting the
-            /// operands to that type is exact except when the
-            /// division-by-minimal-signed-number check would move to a wider type: a narrower
-            /// signed dividend with a signed divisor, or a sign-flipping conversion of the dividend
-            /// to an equally sized signed divisor type.
-            /// This does not apply to `moduloLegacy`: it deliberately keeps the historical,
-            /// C++-`%`-usual-arithmetic-conversion behaviour (see `ModuloLegacyImpl` in
-            /// `DivisionUtils.h`) for backward compatibility with existing MergeTree partition
-            /// keys, so it is pruned via the plain wider-of-the-two-original-types rule below,
-            /// unconditionally on width.
-            /// A `UInt256` operand cannot be widened to a signed type that holds its full range (no
-            /// 512-bit integer type exists), so a mixed-sign `modulo`/`moduloOrNull` pair with it is not
-            /// pruned: the direct kernel needs no such cast and stays exact for every width.
-            constexpr bool modulo_unsigned_operand_too_wide_to_prune = (is_modulo || IsOperation<Op>::modulo_or_null)
-                && (is_signed_v<T0> || is_signed_v<T1>)
-                && ((is_unsigned_v<T0> && sizeof(T0) == 32) || (is_unsigned_v<T1> && sizeof(T1) == 32));
-            constexpr bool op_is_prunable_modulo = (is_modulo || IsOperation<Op>::modulo_or_null || IsOperation<Op>::modulo_legacy)
-                && is_integer<T0> && is_integer<T1>
-                && !modulo_unsigned_operand_too_wide_to_prune
-                && (sizeof(T0) > sizeof(T1)
-                    || (!(is_signed_v<T0> && is_signed_v<T1>) && !(sizeof(T0) == sizeof(T1) && is_signed_v<T1>)));
-
-            /// `positiveModulo` additionally branches on the sign of the original divisor type when
-            /// adjusting a negative remainder (and throws for the minimal signed divisor value), so
-            /// it is only pruned for a strictly narrower unsigned divisor, where the adjustment
-            /// arithmetic provably coincides.
-            constexpr bool op_is_prunable_positive_modulo = (IsOperation<Op>::positive_modulo || IsOperation<Op>::positive_modulo_or_null)
-                && is_integer<T0> && is_integer<T1> && sizeof(T0) > sizeof(T1) && is_unsigned_v<T1>;
-
-            ColumnPtr left_col = nullptr;
-            ColumnPtr right_col = nullptr;
-
-            /// When Decimal op Float32/64/16, convert both of them into Float64
-            if constexpr (decimal_with_float)
-            {
-                const auto converted_type = std::make_shared<DataTypeFloat64>();
-                left_col = castColumn(arguments[0], converted_type);
-                right_col = castColumn(arguments[1], converted_type);
-            }
-            else
-            {
-                left_col = arguments[0].column;
-                right_col = arguments[1].column;
-            }
-            const auto * const col_left_raw = left_col.get();
-            const auto * const col_right_raw = right_col.get();
-
-            const size_t col_left_size = col_left_raw->size();
-
-            const ColumnConst * const col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw);
-            const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw);
-
-            const ColVecT0 * const col_left = checkAndGetColumn<ColVecT0>(col_left_raw);
-            const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
-
-            if constexpr (IsDataTypeDecimal<ResultDataType>)
-            {
-                return executeNumericWithDecimal<LeftDataType, RightDataType, ResultDataType>(
-                    left, right,
-                    col_left_const, col_right_const,
-                    col_left, col_right,
-                    col_left_size,
-                    right_nullmap);
-            }
-            /// Here we check if we have `intDiv` or `intDivOrZero` and at least one of the arguments is decimal, because in this case originally we had result as decimal, so we need to convert result into integer after calculations
-            else if constexpr (!decimal_with_float && (is_int_div || is_int_div_or_zero) && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>))
-            {
-                if constexpr (!std::is_same_v<DecimalResultType, InvalidType>)
-                {
-                    DataTypePtr type_res;
-                    if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                    {
-                        DecimalResultType result_type = decimalResultType<is_multiply, is_division>(left, right);
-                        type_res = std::make_shared<DecimalResultType>(result_type.getPrecision(), result_type.getScale());
-                    }
-                    else if constexpr (IsDataTypeDecimal<LeftDataType>)
-                        type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
-                    else
-                        type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
-
-                    auto res = executeNumericWithDecimal<LeftDataType, RightDataType, DecimalResultType>(
-                            left, right,
-                            col_left_const, col_right_const,
-                            col_left, col_right,
-                            col_left_size,
-                            right_nullmap);
-
-                    auto col = ColumnWithTypeAndName(res, type_res, name);
-                    return castColumn(col, std::make_shared<ResultDataType>());
-                }
-                return nullptr;
-            }
-            else if constexpr (is_wide_mixed_number_pair
-                && (op_computes_in_result_type || op_is_prunable_int_div || op_is_prunable_modulo || op_is_prunable_positive_modulo))
-            {
-                /// Mixed-type pairs involving a 128/256-bit integer are rare, but their kernels are
-                /// the largest ones (wide multiplication and division do not vectorize and inline a
-                /// lot of library code), and they dominate the code size of arithmetic functions.
-                /// Do not instantiate a dedicated kernel for every such combination: convert both
-                /// arguments to a common type chosen so that the same-type kernel performs exactly
-                /// the same arithmetic as the fused kernel for the original pair would, and execute
-                /// the same-type kernel.
-                if constexpr (op_computes_in_result_type)
-                {
-                    return executeNumericViaCommonType<ResultDataType, ResultDataType>(arguments, right_nullmap, result_nullmap);
-                }
-                else if constexpr (op_is_prunable_int_div)
-                {
-                    /// `DivideIntegralImpl` casts both operands to the signed type of the wider
-                    /// operand size when either operand is signed, and to the wider unsigned
-                    /// type otherwise.
-                    using WiderType = std::conditional_t<(sizeof(T0) >= sizeof(T1)), T0, T1>;
-                    using CommonType = std::conditional_t<is_signed_v<T0> || is_signed_v<T1>, make_signed_t<WiderType>, WiderType>;
-                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
-                }
-                else if constexpr (op_is_prunable_positive_modulo)
-                {
-                    /// See `op_is_prunable_positive_modulo`: the divisor is strictly narrower.
-                    return executeNumericViaCommonType<DataTypeNumber<T0>, ResultDataType>(arguments, right_nullmap, result_nullmap);
-                }
-                else if constexpr (IsOperation<Op>::modulo_legacy)
-                {
-                    /// `ModuloLegacyImpl` computes via the raw C++ `%` operator on its own argument
-                    /// types (`IntegerAType(a) % IntegerBType(b)`), which - through the usual
-                    /// arithmetic conversions - is exactly what casting both operands to the wider
-                    /// of the two ORIGINAL types (sign included, no widening) and then applying `%`
-                    /// on that single type reproduces. This is deliberately not the `ModuloImpl`
-                    /// (non-legacy) rule below: legacy must keep the historical, sometimes
-                    /// unsigned-computed behaviour byte for byte.
-                    using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
-                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
-                }
-                else if constexpr (is_unsigned_v<T0> && is_unsigned_v<T1>)
-                {
-                    /// For two unsigned operands `ModuloImpl` takes the plain remainder in the wider type.
-                    using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
-                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
-                }
-                else
-                {
-                    /// `ModuloImpl` widens an unsigned operand to a signed type wide enough to hold every
-                    /// value of its own width exactly, then computes in whichever safe-signed type is
-                    /// wider (`DivisionUtils.h`). `NumberTraits::nextSize` is not wide enough here: it is
-                    /// capped at 8 bytes for its other, unrelated callers, so it leaves `UInt128` mapped
-                    /// to same-width `Int128`, which cannot hold a `UInt128` value above `Int128::max()` -
-                    /// `castColumn` below would then silently reinterpret it as negative before `%` ever
-                    /// runs, changing what the value MEANS, not just how it is stored. `Int256` exists and
-                    /// holds the full `UInt128` range, so widen up to it specifically for this pruning.
-                    /// (A `UInt256` operand has no such wider signed type to widen into - that case is
-                    /// excluded from `op_is_prunable_modulo` above and never reaches this branch.)
-                    constexpr auto next_integer_size = [](size_t size) { return size < 32 ? size * 2 : size; };
-                    using SafeSignedT0 = typename NumberTraits::Construct<true, false,
-                        is_signed_v<T0> ? sizeof(T0) : next_integer_size(sizeof(T0))>::Type;
-                    using SafeSignedT1 = typename NumberTraits::Construct<true, false,
-                        is_signed_v<T1> ? sizeof(T1) : next_integer_size(sizeof(T1))>::Type;
-                    using CommonType = std::conditional_t<(sizeof(SafeSignedT0) >= sizeof(SafeSignedT1)), SafeSignedT0, SafeSignedT1>;
-                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
-                }
-            }
-            else // can't avoid else and another indentation level, otherwise the compiler would try to instantiate
-                 // ColVecResult for Decimals which would lead to a compile error.
-            {
-                using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType, can_have_division_by_nullable>;
-
-                /// non-vector result
-                if (col_left_const && col_right_const)
-                {
-                    const auto res = right_nullmap && (*right_nullmap)[0] ? ResultType() : OpImpl::process(
-                        col_left_const->template getValue<T0>(),
-                        col_right_const->template getValue<T1>());
-
-                    if constexpr (is_division_or_null)
-                    {
-                        if (result_nullmap)
-                            result_nullmap->resize_fill(col_left_const->size(),
-                                divisionOrNullLeadsToNull(col_left_const->template getValue<T0>(), col_right_const->template getValue<T1>()));
-                    }
-
-                    return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
-                }
-
-                typename ColVecResult::MutablePtr col_res = ColVecResult::create();
-
-                auto & vec_res = col_res->getData();
-                vec_res.resize(col_left_size);
-
-                if (col_left && col_right)
-                {
-                    OpImpl::template process<OpCase::Vector>(
-                        col_left->getData().data(),
-                        col_right->getData().data(),
-                        vec_res.data(),
-                        vec_res.size(),
-                        right_nullmap);
-                }
-                else if (col_left_const && col_right)
-                {
-                    const T0 value = col_left_const->template getValue<T0>();
-
-                    OpImpl::template process<OpCase::LeftConstant>(
-                        &value,
-                        col_right->getData().data(),
-                        vec_res.data(),
-                        vec_res.size(),
-                        right_nullmap);
-                }
-                else if (col_left && col_right_const)
-                {
-                    const T1 value = col_right_const->template getValue<T1>();
-
-                    OpImpl::template process<OpCase::RightConstant>(
-                        col_left->getData().data(), &value, vec_res.data(), vec_res.size(), right_nullmap);
-                }
-                else
-                    return nullptr;
-
-                if constexpr (is_division_or_null)
-                {
-                    if (result_nullmap)
-                    {
-                        result_nullmap->resize_fill(col_left_size, false);
-                        for (size_t i = 0; i < col_left_size; ++i)
-                        {
-                            auto a = col_left ? col_left->getData()[i] : col_left_const->template getValue<T0>();
-                            auto b = col_right ? col_right->getData()[i] : col_right_const->template getValue<T1>();
-                            (*result_nullmap)[i] = divisionOrNullLeadsToNull(a, b);
-                        }
-                    }
-                }
-
-                return col_res;
-            }
-        }
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        /// Special case when multiply aggregate function state
-        if (isAggregateMultiply(arguments[0].type, arguments[1].type))
-        {
-            return executeAggregateMultiply(arguments, result_type, input_rows_count);
-        }
-
-        /// Special case - addition of two aggregate functions states
-        if (isAggregateAddition(arguments[0].type, arguments[1].type))
-        {
-            return executeAggregateAddition(arguments, result_type, input_rows_count);
-        }
-
-        /// Special case when the function is minus, both arguments are DateTime64.
-        if (isDateTime64Subtraction(arguments[0].type, arguments[1].type))
-        {
-            return executeDateTime64Subtraction(arguments, result_type, input_rows_count);
-        }
-        /// Special case when the function is minus, both arguments are Time64.
-        if (isTime64Subtraction(arguments[0].type, arguments[1].type))
-        {
-            return executeTime64Subtraction(arguments, result_type, input_rows_count);
-        }
-
-        /// Special case when the function is plus, one argument is Date/Date32 and the other is Time/Time64.
-        if (isDateAndTimeAddition(arguments[0].type, arguments[1].type))
-        {
-            return executeDateAndTimeAddition(arguments, result_type, input_rows_count);
-        }
-
-        /// Special case when the function is plus or minus, one argument is Time/Time64 and another is DateTime/DateTime64
-        if constexpr (is_plus || is_minus)
-        {
-            if (isTimeAndDateTimeOperation(arguments[0].type, arguments[1].type))
-            {
-                return executeTimeAndDateTimeOperation(arguments, result_type, input_rows_count, is_minus);
-            }
-        }
-
-        /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
-        if (prepared_interval_function)
-        {
-            return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, prepared_interval_function);
-        }
-
-        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
-        if (prepared_date_tuple_of_intervals_function)
-        {
-            return executeDateTimeTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, prepared_date_tuple_of_intervals_function);
-        }
-
-        /// Special case when the function is plus or minus, one of arguments is Interval/Tuple of Intervals and another is Interval.
-        if (prepared_merge_intervals_function)
-        {
-            return executeIntervalTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, prepared_merge_intervals_function);
-        }
-
-        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        if (prepared_tuple_function)
-        {
-            return prepared_tuple_function->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
-        }
-
-        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        if (prepared_tuple_and_number_function)
-        {
-            return executeTupleNumberOperator(arguments, result_type, input_rows_count, prepared_tuple_and_number_function);
-        }
-
-        return executeImpl2(arguments, result_type, input_rows_count);
-    }
-
-    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr, NullMap * result_nullmap = nullptr) const
-    {
-        const auto & left_argument = arguments[0];
-        const auto & right_argument = arguments[1];
-
-        /// A constant's value is independent of its size, but the null map carrying the
-        /// division-by-zero outcome has one entry per row, so a zero-row call keeps the value and
-        /// loses the NULL. Constant arguments give the same answer for every row.
-        if constexpr (is_division_or_null)
-        {
-            if (input_rows_count == 0 && result_type->isNullable() && !right_nullmap && !result_nullmap
-                && isColumnConst(*left_argument.column) && isColumnConst(*right_argument.column))
-            {
-                ColumnsWithTypeAndName one_row = arguments;
-                for (auto & argument : one_row)
-                    argument.column = argument.column->cloneResized(1);
-                return executeImpl2(one_row, result_type, 1)->cloneResized(0);
-            }
-        }
-
-        /// Process special case when operation is divide, intDiv or modulo and denominator
-        /// is Nullable(Something) to prevent division by zero error.
-        ///
-        /// `division_by_nullable` is captured at build time from the original arguments. When the
-        /// function is invoked recursively with already-stripped element types (e.g. from
-        /// `executeArrayWithNumericImpl` for `intDiv(Array, Nullable(N))`, where the framework
-        /// wraps a non-Nullable `Array` result), `right_argument.type` is no longer Nullable.
-        /// The Nullable special-case has already been handled by the outer call, so skip it here.
-        if (division_by_nullable && !right_nullmap && right_argument.type->isNullable())
-        {
-            bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
-            const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
-                                                              : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
-
-            const auto & null_bytemap = nullable_column->getNullMapData();
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
-            /// When the framework declared a non-Nullable result type (e.g. `Array` via `makeNullableSafe`),
-            /// `wrapInNullable` would produce a `ColumnNullable` that disagrees with `result_type`.
-            if (!result_type->isNullable())
-                return res;
-            return wrapInNullable(res, arguments, result_type, input_rows_count);
-        }
-
-        /// Process special case when operation is divideOrNull, intDivOrNull, moduloOrNull or positiveModuloOrNull.
-        if (is_division_or_null)
-        {
-            if (left_argument.column->onlyNull() || right_argument.column->onlyNull())
-            {
-                auto res = removeNullable(result_type)->createColumn();
-                res->insertManyDefaults(input_rows_count);
-                auto null_map_col = ColumnUInt8::create(input_rows_count, true);
-                return !null_map_col->empty() ? wrapInNullable(std::move(res), std::move(null_map_col)) : makeNullable(std::move(res));
-            }
-            else if (result_type->isNullable())
-            {
-                /// Compute null map at the typed level using divisionLeadsToFPE, which handles b==0 and INT_MIN/-1 cases
-                NullMap fpe_nullmap;
-                auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap, &fpe_nullmap);
-
-                /// merge null maps
-                auto null_map_col = ColumnUInt8::create(input_rows_count, false);
-                auto & null_map_data = null_map_col->getData();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    null_map_data[i] = fpe_nullmap[i] || left_argument.column->isNullAt(i) || right_argument.column->isNullAt(i);
-
-                return wrapInNullable(res, std::move(null_map_col));
-            }
-        }
-
-        /// Special case - one or both arguments are IPv4
-        if (isIPv4(arguments[0].type) || isIPv4(arguments[1].type))
-        {
-            ColumnsWithTypeAndName new_arguments {
-                {
-                    isIPv4(arguments[0].type) ? castColumn(arguments[0], std::make_shared<DataTypeUInt32>()) : arguments[0].column,
-                    isIPv4(arguments[0].type) ? std::make_shared<DataTypeUInt32>() : arguments[0].type,
-                    arguments[0].name,
-                },
-                {
-                    isIPv4(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt32>()) : arguments[1].column,
-                    isIPv4(arguments[1].type) ? std::make_shared<DataTypeUInt32>() : arguments[1].type,
-                    arguments[1].name
-                }
-            };
-
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
-        }
-
-        /// Special case - one or both arguments are IPv6
-        if (isIPv6(arguments[0].type) || isIPv6(arguments[1].type))
-        {
-            ColumnsWithTypeAndName new_arguments {
-                {
-                    isIPv6(arguments[0].type) ? castColumn(arguments[0], std::make_shared<DataTypeUInt128>()) : arguments[0].column,
-                    isIPv6(arguments[0].type) ? std::make_shared<DataTypeUInt128>() : arguments[0].type,
-                    arguments[0].name,
-                },
-                {
-                    isIPv6(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt128>()) : arguments[1].column,
-                    isIPv6(arguments[1].type) ? std::make_shared<DataTypeUInt128>() : arguments[1].type,
-                    arguments[1].name
-                }
-            };
-
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
-        }
-
-        /// Special case - Decimal op Float (or Float op Decimal): both sides are converted to
-        /// Float64 regardless of the specific Decimal/Float widths. Handle at runtime to avoid
-        /// instantiating 4 Decimal × 3 Float × 2 directions = 24 redundant template specializations
-        /// that all collapse to the same Float64 × Float64 code path.
-        /// Exclude intDiv/intDivOrZero/intDivOrNull: their result type is an integer whose width
-        /// depends on the original operand types (e.g. Decimal32 → Int32), not Float64.
-        if constexpr (IsOperation<Op>::allow_decimal && valid_on_float_arguments
-            && !IsOperation<Op>::int_div && !IsOperation<Op>::int_div_or_zero && !IsOperation<Op>::int_div_or_null)
-        {
-            const WhichDataType left_which(left_argument.type);
-            const WhichDataType right_which(right_argument.type);
-
-            if ((left_which.isDecimal() && right_which.isFloat()) || (left_which.isFloat() && right_which.isDecimal()))
-            {
-                const auto float64_type = std::make_shared<DataTypeFloat64>();
-                ColumnsWithTypeAndName new_arguments
-                {
-                    {castColumn(arguments[0], float64_type), float64_type, arguments[0].name},
-                    {castColumn(arguments[1], float64_type), float64_type, arguments[1].name},
-                };
-                return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
-            }
-        }
-
-        const auto * const left_generic = left_argument.type.get();
-        const auto * const right_generic = right_argument.type.get();
-        ColumnPtr res;
-
-        const bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr ((std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeString, LeftDataType>) ||
-                          (std::is_same_v<DataTypeFixedString, RightDataType> || std::is_same_v<DataTypeString, RightDataType>))
-            {
-                if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                              std::is_same_v<DataTypeFixedString, RightDataType>)
-                {
-                    if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
-                        return false;
-                    else
-                        return (res = executeFixedString(arguments)) != nullptr;
-                }
-
-                if constexpr (
-                    is_bit_hamming_distance
-                    && std::is_same_v<DataTypeString, LeftDataType> && std::is_same_v<DataTypeString, RightDataType>)
-                    return (res = executeString(arguments)) != nullptr;
-                else if constexpr (!Op<LeftDataType, RightDataType>::allow_string_integer)
-                    return false;
-                else if constexpr (!IsIntegral<RightDataType>)
-                    return false;
-                else if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType>)
-                {
-                    return (res = executeStringInteger<ColumnFixedString>(arguments, left, right)) != nullptr;
-                }
-                else if constexpr (std::is_same_v<DataTypeString, LeftDataType>)
-                    return (res = executeStringInteger<ColumnString>(arguments, left, right)) != nullptr;
-            }
-            else if constexpr (
-                IsOperation<Op>::allow_decimal && valid_on_float_arguments
-                && !IsOperation<Op>::int_div && !IsOperation<Op>::int_div_or_zero && !IsOperation<Op>::int_div_or_null
-                && ((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>)
-                    || (IsFloatingPoint<LeftDataType> && IsDataTypeDecimal<RightDataType>)))
-            {
-                /// Decimal × Float pairs are handled at runtime above (converted to Float64 × Float64).
-                /// Skip them here to avoid redundant template instantiations.
-                return false;
-            }
-            else
-                return (res = executeNumeric(arguments, left, right, right_nullmap, result_nullmap)) != nullptr;
-        });
-
-        if (isArray(result_type))
-        {
-            if (!isArray(arguments[0].type) || !isArray(arguments[1].type))
-                return executeArrayWithNumericImpl(arguments, result_type, input_rows_count);
-            return executeArraysImpl(arguments, result_type, input_rows_count);
-        }
-
-        if (!valid)
-        {
-            // This is a logical error, because the types should have been checked
-            // by getReturnTypeImpl().
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Arguments of '{}' have incorrect data types: '{}' of type '{}',"
-                " '{}' of type '{}'", getName(),
-                left_argument.name, left_argument.type->getName(),
-                right_argument.name, right_argument.type->getName());
-        }
-
-        return res;
-    }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
-    {
-        if (2 != arguments.size())
-            return false;
-
-        if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
-            return false;
-
-        auto denull_left_type = removeNullable(arguments[0]);
-        auto denull_right_type = removeNullable(arguments[1]);
-        WhichDataType data_type_lhs(denull_left_type);
-        WhichDataType data_type_rhs(denull_right_type);
-        if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime() || data_type_lhs.isTime()) ||
-            (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime() || data_type_rhs.isTime()))
-            return false;
-
-        return castBothTypes(
-            denull_left_type.get(),
-            denull_right_type.get(),
-            [&](const auto & left, const auto & right)
-            {
-                using LeftDataType = std::decay_t<decltype(left)>;
-                using RightDataType = std::decay_t<decltype(right)>;
-                if constexpr (
-                    !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
-                    && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
-                {
-                    using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                    using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-
-                    if constexpr (
-                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
-                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
-                    {
-                        return true;
-                    }
-                }
-                return false;
-            });
-    }
-
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
-    {
-        chassert(2 == arguments.size());
-
-        auto denull_left_type = removeNullable(arguments[0].type);
-        auto denull_right_type = removeNullable(arguments[1].type);
-        llvm::Value * result = nullptr;
-
-        castBothTypes(
-            denull_left_type.get(),
-            denull_right_type.get(),
-            [&](const auto & left, const auto & right)
-            {
-                using LeftDataType = std::decay_t<decltype(left)>;
-                using RightDataType = std::decay_t<decltype(right)>;
-                if constexpr (
-                    !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
-                    && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
-                {
-                    using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                    using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                    if constexpr (
-                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
-                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
-                    {
-                        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                        auto * lval = nativeCast(b, arguments[0], result_type);
-                        auto * rval = nativeCast(b, arguments[1], result_type);
-                        result = OpSpec::compile(b, lval, rval, is_signed_v<typename ResultDataType::FieldType>);
-                        return true;
-                    }
-                }
-                return false;
-            });
-
-        return result;
-    }
-#endif
-
-    bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments && !parses_string_operand; }
-};
-
-
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
-class FunctionBinaryArithmeticWithConstants final : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>
-{
-public:
-    using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>;
-    using Monotonicity = typename Base::Monotonicity;
-
-    static FunctionPtr create(
-        const ColumnWithTypeAndName & left_,
-        const ColumnWithTypeAndName & right_,
-        const DataTypePtr & return_type_,
-        ContextPtr context_,
-        bool division_by_nullable_ = false)
-    {
-        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context_, division_by_nullable_);
-    }
-
-    FunctionBinaryArithmeticWithConstants(
-        const ColumnWithTypeAndName & left_,
-        const ColumnWithTypeAndName & right_,
-        const DataTypePtr & return_type_,
-        ContextPtr context_,
-        bool division_by_nullable_ = false)
-        : Base(context_, left_.type, right_.type, division_by_nullable_), left(left_), right(right_), return_type(return_type_)
-    {
-    }
-
-    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
-    {
-        bool divisor_is_known_safe = false;
-        if (arguments.size() == 2 && right.column && isColumnConst(*right.column))
-        {
-            const Field divisor = (*right.column)[0];
-            if (divisor.getType() == Field::Types::UInt64 && divisor.safeGet<UInt64>() != 0)
-            {
-                /// For a signed dividend, the unsigned divisor is cast to the signed type of the same size
-                /// (see `DivideIntegralImpl::apply`), so it must stay positive after this cast,
-                /// otherwise e.g. `intDiv(toInt8(-128), toUInt8(255))` divides by minus one.
-                const auto left_type = removeNullable(recursiveRemoveLowCardinality(arguments[0].type));
-                const auto right_type = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
-                if (isNativeUInt(left_type))
-                    divisor_is_known_safe = true;
-                else if (isNativeUInt(right_type) && right_type->getSizeOfValueInMemory() <= sizeof(UInt64))
-                {
-                    const UInt64 max_signed = (UInt64(1) << (right_type->getSizeOfValueInMemory() * 8 - 1)) - 1;
-                    divisor_is_known_safe = divisor.safeGet<UInt64>() <= max_signed;
-                }
-            }
-        }
-        return Base::canThrowImpl(arguments, divisor_is_known_safe);
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        if (left.column && isColumnConst(*left.column) && arguments.size() == 1)
-        {
-            ColumnsWithTypeAndName columns_with_constant
-                = {{left.column->cloneResized(input_rows_count), left.type, left.name},
-                   arguments[0]};
-
-            return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
-        }
-        if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
-        {
-            ColumnsWithTypeAndName columns_with_constant
-                = {arguments[0], {right.column->cloneResized(input_rows_count), right.type, right.name}};
-
-            return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
-        }
-        return Base::executeImpl(arguments, result_type, input_rows_count);
-    }
-
-    bool hasInformationAboutMonotonicity() const override
-    {
-        const std::string_view name_view = Name::name;
-        return (name_view == "minus" || name_view == "plus" || name_view == "multiply" || name_view == "divide" || name_view == "intDiv");
-    }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left_point, const Field & right_point) const override
-    {
-        const std::string_view name_view = Name::name;
-
-        // NaN breaks monotonicity for floating-point types.
-        if (isNaNField(left_point) || isNaNField(right_point))
-            return {false, true, false, false};
-
-        // For compound types (Tuple, Array, etc.) monotonicity analysis is not applicable: the
-        // arithmetic is element-wise, while the comparison of a compound value is lexicographic,
-        // so an element-wise verdict says nothing about the order of the whole value. `type` is the
-        // varying argument's type; the result may be compound even when that argument is not.
-        if (isCompoundForMonotonicity(type) || (return_type && isCompoundForMonotonicity(*return_type)))
-            return {false, true, false, false};
-
-        /** A `divide` or `multiply` by a constant that can turn a legal input into `NaN` is not monotonic
-          * even when the endpoints of the range are unknown - which is how the read-in-order match asks,
-          * with Null points. `ORDER BY x / inf` over a key holding `-inf` returned that `NaN` row first,
-          * because the forward read of the key was kept while the transformed value sorts last, and under
-          * `LIMIT` the `NaN` row displaced a correct one.
-          *
-          * The constants that can do it are exactly `0` and `±inf`, plus a `NaN` constant, which maps
-          * every input to `NaN`. Which inputs reach the `NaN` depends on the operation: `0 / 0` and
-          * `±inf * 0` happen at a zero input, which any numeric domain contains; `±inf / ±inf`,
-          * `±inf * 0` with the constant `0`, and `c / ±inf` need an infinite input, which only a `Float`
-          * domain contains. So `UInt64 / inf` and `UInt64 * 0.` keep their (constant) monotonicity, and
-          * the key stays readable in order.
-          *
-          * With concrete endpoints (`KeyCondition` passes the bounds of a range of marks), the range itself
-          * tells whether it reaches those inputs: a closed range with finite endpoints holds no `±inf`, and
-          * one on either side of zero holds no zero. Such a range keeps its monotonicity, so `x / inf` over
-          * the `Float64` range `[1, 10]` still prunes.
-          */
-        if ((name_view == "divide" || name_view == "multiply") && return_type
-            && isFloat(*removeNullable(recursiveRemoveLowCardinality(return_type))))
-        {
-            const bool left_is_const = left.column && isColumnConst(*left.column);
-            const bool right_is_const = right.column && isColumnConst(*right.column);
-
-            if (left_is_const || right_is_const)
-            {
-                const Field constant = left_is_const ? (*left.column)[0] : (*right.column)[0];
-                const bool constant_is_number = isNumber(removeNullable(recursiveRemoveLowCardinality(left_is_const ? left.type : right.type)));
-                const auto varying_type = removeNullable(recursiveRemoveLowCardinality(left_is_const ? right.type : left.type));
-                bool varying_can_be_inf = isFloat(varying_type);
-                bool varying_can_be_zero = true;
-
-                /// The endpoints are compared with a numeric `0` only for a numeric domain: native numbers, `BFloat16`
-                /// (whose points are `Float64`) and `Decimal` (whose `DecimalField` points compare with an integer).
-                /// The points of an `IPv4` key do not compare with it, so such a range is assumed to hold zero.
-                if (!left_point.isNull() && !right_point.isNull() && isNumber(varying_type))
-                {
-                    const bool ordered = accurateLessOrEqual(left_point, right_point);
-                    const Field & range_min = ordered ? left_point : right_point;
-                    const Field & range_max = ordered ? right_point : left_point;
-
-                    varying_can_be_inf = varying_can_be_inf && (range_min.isInf() || range_max.isInf());
-                    varying_can_be_zero = accurateLessOrEqual(range_min, Field(0)) && accurateLessOrEqual(Field(0), range_max);
-                }
-
-                bool yields_nan = false;
-                if (constant.isNaN())
-                    yields_nan = true;
-                else if (constant.isInf())
-                    yields_nan = name_view == "multiply" ? varying_can_be_zero : varying_can_be_inf; /// `±inf * 0`, `±inf / ±inf`
-                else if (constant_is_number && accurateEquals(constant, Field(0)))
-                    yields_nan = name_view == "divide" ? varying_can_be_zero : varying_can_be_inf; /// `0 / 0`, `±inf * 0`
-
-                if (yields_nan)
-                    return {false, true, false, false};
-            }
-        }
-
-        if ((name_view == "divide" || name_view == "intDiv") && left.column && isColumnConst(*left.column))
-        {
-            // `const / variable` monotonicity is modelled only for plain numeric operands. `IPv4`/`IPv6`
-            // are substituted with `UInt32`/`UInt128`, so their declared width does not describe the
-            // arithmetic, and their `Field` cannot be compared with a numeric zero (the comparisons
-            // against zero below would raise `BAD_TYPE_OF_FIELD` during key analysis).
-            if (!isNumber(removeNullable(recursiveRemoveLowCardinality(left.type)))
-                || !isNumber(removeNullable(recursiveRemoveLowCardinality(right.type))))
-                return {false, true, false, false};
-        }
-
-        if ((name_view == "divide" || name_view == "intDiv") && right.column && isColumnConst(*right.column))
-        {
-            // The `variable / constant` branch compares the constant with numeric zero. An
-            // `IPv4`/`IPv6` divisor has an IP-tagged `Field`, for which that comparison raises
-            // `BAD_TYPE_OF_FIELD`; conservatively decline monotonicity instead.
-            if (!isNumber(removeNullable(recursiveRemoveLowCardinality(right.type))))
-                return {false, true, false, false};
-        }
-
-        // For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
-        if (left_point.isNull() || right_point.isNull())
-        {
-            if (name_view == "divide" || name_view == "intDiv")
-            {
-                // variable / constant
-                if (right.column && isColumnConst(*right.column))
-                {
-                    auto constant = (*right.column)[0];
-                    if (accurateEquals(constant, Field(0)))
-                        return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
-                    bool is_constant_positive = accurateLess(Field(0), constant);
-
-                    auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                    auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
-                    auto arithmetic_arg_type = getArithmeticType(arg_type);
-
-                    // `intDiv`/`divide` computes in a Decimal operand's own native signed width: a Decimal
-                    // divisor wraps the dividend at a boundary set by its width and scale, a Decimal dividend
-                    // truncates the divisor into that width, and a Float operand stays in floating point.
-                    if ((name_view == "intDiv" || name_view == "divide")
-                        && (isDecimal(divisor_type) || decimalDivConstDivisorTruncates(arg_type, divisor_type, constant)))
-                        return {false, true, false, false};
-
-                    // `intDiv(unsigned, signed-integer-const)` reinterprets the dividend through a signed
-                    // cast (see `DivideIntegralImpl`/`intDivRangeCrossesSignedWrap`); a Float divisor
-                    // computes through floating point and never wraps. An unbounded range over an unsigned
-                    // domain always contains the discontinuity, so it is never always-monotonic; report
-                    // monotonicity only when an endpoint keeps the range on one side of it.
-                    if (name_view == "intDiv" && isUInt(arithmetic_arg_type) && isInt(divisor_type))
-                    {
-                        if (intDivRangeCrossesSignedWrap(
-                                arithmetic_arg_type, getArithmeticField(left_point), getArithmeticField(right_point)))
-                            return {false, true, false, false};
-                        return {true, is_constant_positive, false};
-                    }
-
-                    // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
-                    // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
-                    // so the function is monotonic decreasing even though the raw constant looks positive.
-                    if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
-                        is_constant_positive = false;
-
-                    // division is saturated to `inf`, thus it doesn't have overflow issues.
-                    return {true, is_constant_positive, true};
-                }
-            }
-            return {false, true, false, false};
-        }
-
-        /** `divide` and `multiply` by a constant are modelled as monotonic from the constant alone, but a
-          * `Float` key column may hold `±inf`, and `-inf / inf`, `inf * 0` and `0 * inf` are all `NaN`. A
-          * `NaN` endpoint leaves a transformed range that no point compares into, so index analysis prunes
-          * every part and granule and the query silently loses the finite rows that do match. Only the
-          * transform can tell, so evaluate it at both endpoints, as the `plus`/`minus` branches below do for
-          * their own overflow question. Restricted to a `Float` result: no other result type has a `NaN`,
-          * and an integer division by a zero constant would raise here rather than answer one.
-          */
-        if ((name_view == "divide" || name_view == "multiply") && return_type
-            && isFloat(*removeNullable(recursiveRemoveLowCardinality(return_type))))
-        {
-            auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-            auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
-            auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
-            const bool left_is_constant = left.column && isColumnConst(*left.column);
-
-            auto transform = [&](const Field & point)
-            {
-                ColumnsWithTypeAndName columns_with_constant
-                    = {{left_type->createColumnConst(1, left_is_constant ? (*left.column)[0] : point), left_type, left.name},
-                       {right_type->createColumnConst(1, left_is_constant ? point : (*right.column)[0]), right_type, right.name}};
-
-                auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
-                Field point_transformed;
-                col->get(0, point_transformed);
-                return point_transformed;
-            };
-
-            if ((left_is_constant || (right.column && isColumnConst(*right.column)))
-                && (isNaNField(transform(left_point)) || isNaNField(transform(right_point))))
-                return {false, true, false, false};
-        }
-
-        // For simplicity, we treat every single value interval as positive monotonic,
-        // unless the function is undefined at that point (e.g. division by zero).
-        if (accurateEquals(left_point, right_point))
-        {
-            // Division is undefined at zero, so we must not report monotonicity:
-            // - divide(const, x) or intDiv(const, x) at x = 0 (right_arg_is_zero)
-            // - divide(x, 0) or intDiv(x, 0) where the constant divisor is 0 (right_const_is_zero)
-            bool is_div_function = name_view == "divide" || name_view == "intDiv";
-            bool right_arg_is_zero = left.column && isColumnConst(*left.column) && accurateEquals(left_point, Field(0));
-            bool right_const_is_zero = right.column && isColumnConst(*right.column) && accurateEquals((*right.column)[0], Field(0));
-
-            if (is_div_function && (right_arg_is_zero || right_const_is_zero))
-                return {false, true, false, false};
-
-            return {true, true, false, false};
-        }
-
-        if (name_view == "minus" || name_view == "plus")
-        {
-            // const +|- variable
-            if (left.column && isColumnConst(*left.column))
-            {
-                auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
-                auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
-
-                auto transform = [&](const Field & point)
-                {
-                    ColumnsWithTypeAndName columns_with_constant
-                        = {{left_type->createColumnConst(1, (*left.column)[0]), left_type, left.name},
-                           {right_type->createColumnConst(1, point), right_type, right.name}};
-
-                    /// This is a bit dangerous to call `Base::executeImpl` cause it ignores `use Default Implementation For XXX` flags.
-                    /// It was possible to check monotonicity for nullable right type, which results in an exception.
-                    /// We also strip `LowCardinality` recursively (e.g. `Array(LowCardinality(Float64))` -> `Array(Float64)`)
-                    /// because the framework's `LowCardinality` default implementation is bypassed when calling `Base::executeImpl`
-                    /// directly, and the inner numeric dispatch (via `castBothTypes`) does not recognize `LowCardinality`.
-                    auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
-                    Field point_transformed;
-                    col->get(0, point_transformed);
-                    return point_transformed;
-                };
-
-                bool is_positive_monotonicity = accurateLess(left_point, right_point)
-                            == accurateLess(transform(left_point), transform(right_point));
-
-                if (name_view == "plus")
-                {
-                    // Check if there is an overflow
-                    if (is_positive_monotonicity)
-                        return {true, true, false, true};
-                    return {false, true, false, false};
-                }
-
-                // Check if there is an overflow
-                if (!is_positive_monotonicity)
-                    return {true, false, false, true};
-                return {false, false, false, false};
-            }
-            // variable +|- constant
-            if (right.column && isColumnConst(*right.column))
-            {
-                auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
-                auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
-
-                auto transform = [&](const Field & point)
-                {
-                    ColumnsWithTypeAndName columns_with_constant
-                        = {{left_type->createColumnConst(1, point), left_type, left.name},
-                           {right_type->createColumnConst(1, (*right.column)[0]), right_type, right.name}};
-
-                    auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
-                    Field point_transformed;
-                    col->get(0, point_transformed);
-                    return point_transformed;
-                };
-
-                // Check if there is an overflow
-                if (accurateLess(left_point, right_point) == accurateLess(transform(left_point), transform(right_point)))
-                    return {true, true, false, true};
-                return {false, true, false, false};
-            }
-        }
-        if (name_view == "divide" || name_view == "intDiv")
-        {
-            bool is_strict = name_view == "divide";
-
-            // const / variable
-            if (left.column && isColumnConst(*left.column))
-            {
-                auto constant = (*left.column)[0];
-
-                auto const_type = removeNullable(recursiveRemoveLowCardinality(left.type));  // the constant
-                auto arg_type = removeNullable(recursiveRemoveLowCardinality(right.type));   // the variable
-
-                // With a `Decimal` operand and no `Float` operand the division computes in the decimal's
-                // native width (`DecimalBinaryOperation` casts both operands to `NativeResultType` and
-                // substitutes the integral operation even for `divide`), so the divisor is truncated and
-                // an unsigned constant reinterprets at a boundary set by the decimal width and scale
-                // rather than by either operand's own type. The quotient is then not even monotonic in
-                // the variable. A `Decimal`/`Float` pair is converted to `Float64` beforehand and is
-                // unaffected.
-                if ((isDecimal(const_type) || isDecimal(arg_type)) && !isFloat(const_type) && !isFloat(arg_type))
-                    return {false, true, false, false};
-
-                if (accurateEquals(constant, Field(0)))
-                {
-                    /// `0 / x` is 0 for any `x` != 0, but undefined at `x` = 0
-                    /// (`NaN`/`Inf` for `divide`, division-by-zero exception for `intDiv`).
-                    /// The function is constant (and therefore monotonic) only when the range
-                    /// strictly excludes 0. Otherwise the chain is non-monotonic and the
-                    /// `MergeTreeSetIndex` binary search invariant (begin <= end) can be violated.
-                    if ((accurateLess(left_point, Field(0)) && accurateLess(right_point, Field(0)))
-                        || (accurateLess(Field(0), left_point) && accurateLess(Field(0), right_point)))
-                        return {true, true, false, false};
-                    return {false, true, false, false};
-                }
-
-                /// `±inf / variable` is `±inf` for every finite nonzero `variable`: not strict.
-                if (constant.isInf())
-                    is_strict = false;
-
-                bool is_constant_positive = accurateLess(Field(0), constant);
-                if (name_view == "intDiv"
-                    && intDivConstDividendReinterpretsNegative(const_type, arg_type, constant))
-                    is_constant_positive = false;
-
-                // `c / x` has derivative `-c / x^2`, whose sign is `-sign(c)` for every `x != 0`: the
-                // direction is the same on the negative and the positive branch, only the values differ.
-                // The range must strictly exclude 0 (the function is undefined there and the two
-                // branches are not joined).
-                if ((accurateLess(left_point, Field(0)) && accurateLess(right_point, Field(0)))
-                    || (accurateLess(Field(0), left_point) && accurateLess(Field(0), right_point)))
-                    return {true, !is_constant_positive, false, is_strict};
-            }
-            // variable / constant
-            else if (right.column && isColumnConst(*right.column))
-            {
-                auto constant = (*right.column)[0];
-                if (accurateEquals(constant, Field(0)))
-                    return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
-
-                /// `variable / ±inf` is `0` for every finite `variable` (an infinite one is declined above),
-                /// so it is monotonic but collapses all values into one: not strict, otherwise the
-                /// read-in-order match would keep taking the next `ORDER BY` terms from the key.
-                if (constant.isInf())
-                    is_strict = false;
-
-                bool is_constant_positive = accurateLess(Field(0), constant);
-
-                auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
-                auto arithmetic_arg_type = getArithmeticType(arg_type);
-
-                // `intDiv`/`divide` computes in a Decimal operand's own native signed width: a Decimal
-                // divisor wraps the dividend at a boundary set by its width and scale, a Decimal dividend
-                // truncates the divisor into that width, and a Float operand stays in floating point.
-                if (isDecimal(arg_type) && isDecimal(divisor_type)
-                    && decimalDivisionRescaleFits(left_point, right_point, *arg_type, *divisor_type, return_type))
-                    return {true, is_constant_positive, false, false};
-
-                if ((name_view == "intDiv" || name_view == "divide")
-                    && (isDecimal(divisor_type) || decimalDivConstDivisorTruncates(arg_type, divisor_type, constant)))
-                    return {false, true, false, false};
-
-                // `intDiv(unsigned, signed-integer-const)` is a step function (see
-                // `intDivRangeCrossesSignedWrap`): a range crossing the discontinuity is non-monotonic,
-                // so reject it (no pruning); a range on one side is monotonic on that range but not
-                // always-monotonic. The wrap is exclusive to the signed-integer divisor path; a Float
-                // divisor computes through floating point and never wraps.
-                if (name_view == "intDiv" && isUInt(arithmetic_arg_type) && isInt(divisor_type))
-                {
-                    if (intDivRangeCrossesSignedWrap(
-                            arithmetic_arg_type, getArithmeticField(left_point), getArithmeticField(right_point)))
-                        return {false, true, false, false};
-                    return {true, is_constant_positive, false, is_strict};
-                }
-
-                // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
-                // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
-                // so the function is monotonic decreasing even though the raw constant looks positive.
-                if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
-                    is_constant_positive = false;
-
-                // `divide` is floating-point (saturates, order-preserving), `intDiv` by a Float divisor
-                // computes through floating point, and `intDiv` with an unsigned result never wraps, so
-                // all are always monotonic.
-                return {true, is_constant_positive, true, is_strict};
-            }
-        }
-        if (name_view == "multiply")
-        {
-            /// variable * constant or constant * variable
-            const auto & const_side = (right.column && isColumnConst(*right.column)) ? right : left;
-            if (const_side.column && isColumnConst(*const_side.column))
-            {
-                auto constant = (*const_side.column)[0];
-                if (accurateEquals(constant, Field(0)))
-                    return {true, true, false, false}; /// x * 0 is constant, trivially monotonic but not strict
-
-                auto ret_type = removeNullable(removeLowCardinality(return_type));
-
-                bool is_constant_positive = accurateLess(Field(0), constant);
-
-                /// Check if multiplication can overflow within [left_point, right_point].
-                ///
-                /// Multiply by constant `c` can have `c-1` wrap boundaries in modular arithmetic,
-                /// so unlike plus/minus, comparing endpoint directions does not reliably detect overflow.
-                /// Instead, we verify each endpoint is within [TYPE_MIN/c, TYPE_MAX/c].
-                /// If both are in this safe range, the entire interval is overflow-free.
-
-                auto check_overflow = [&]<typename T>(const Field & point, const Field & c, std::type_identity<T>) -> bool
-                {
-                    T type_min = std::numeric_limits<T>::min();
-                    T type_max = std::numeric_limits<T>::max();
-
-                    /// Convert Field to T, returning nullopt if the value is out of range.
-                    auto to_T = [&](const Field & f) -> std::optional<T>
-                    {
-                        return Field::dispatch([&](const auto & v) -> std::optional<T>
-                        {
-                            using V = std::decay_t<decltype(v)>;
-                            if constexpr (is_integer<V>)
-                            {
-                                if (accurate::lessOp(v, type_min) || accurate::greaterOp(v, type_max))
-                                    return std::nullopt;
-                                return static_cast<T>(v);
-                            }
-                            else
-                                return std::nullopt;
-                        }, f);
-                    };
-
-                    auto a = to_T(point);
-                    auto b = to_T(c);
-                    if (!a || !b)
-                        return true; /// value doesn't fit → overflow
-
-                    if (*b == T(0))
-                        return false;
-
-                    if constexpr (is_signed_v<T>)
-                    {
-                        /// TYPE_MIN / -1 is UB for native signed types.
-                        if (*b == T(-1))
-                            return *a == type_min;
-
-                        T lo = (*b > T(0)) ? (type_min / *b) : (type_max / *b);
-                        T hi = (*b > T(0)) ? (type_max / *b) : (type_min / *b);
-                        return *a < lo || *a > hi;
-                    }
-                    else
-                    {
-                        return *a > type_max / *b;
-                    }
-                };
-
-                auto overflows = [&]<typename T>(std::type_identity<T> tag)
-                {
-                    return check_overflow(left_point, constant, tag)
-                        || check_overflow(right_point, constant, tag);
-                };
-
-                WhichDataType which(ret_type->getTypeId());
-                bool overflow
-                    = which.isUInt8()   ? overflows(std::type_identity<UInt8>{})
-                    : which.isUInt16()  ? overflows(std::type_identity<UInt16>{})
-                    : which.isUInt32()  ? overflows(std::type_identity<UInt32>{})
-                    : which.isUInt64()  ? overflows(std::type_identity<UInt64>{})
-                    : which.isUInt128() ? overflows(std::type_identity<UInt128>{})
-                    : which.isUInt256() ? overflows(std::type_identity<UInt256>{})
-                    : which.isInt8()    ? overflows(std::type_identity<Int8>{})
-                    : which.isInt16()   ? overflows(std::type_identity<Int16>{})
-                    : which.isInt32()   ? overflows(std::type_identity<Int32>{})
-                    : which.isInt64()   ? overflows(std::type_identity<Int64>{})
-                    : which.isInt128()  ? overflows(std::type_identity<Int128>{})
-                    : which.isInt256()  ? overflows(std::type_identity<Int256>{})
-                    : true; /// unknown type — conservatively assume overflow
-
-                if (overflow)
-                    return {false, true, false, false};
-
-                return {true, is_constant_positive, false, true};
-            }
-        }
-        return {false, true, false};
-    }
-
-    /// True for `Array`/`Tuple`/`Map`, looking through `Nullable` and `LowCardinality`
-    /// (`Nullable(Tuple)` is a reachable key type). Takes a reference rather than a `DataTypePtr`
-    /// because `getMonotonicityForRange` receives one, and `IDataType::getPtr()` throws for a type
-    /// that is not owned by a `shared_ptr`.
-    static bool isCompoundForMonotonicity(const IDataType & type)
-    {
-        const IDataType * unwrapped = &type;
-        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(unwrapped))
-            unwrapped = low_cardinality->getDictionaryType().get();
-        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(unwrapped))
-            unwrapped = nullable->getNestedType().get();
-        return isArray(*unwrapped) || isTuple(*unwrapped) || isMap(*unwrapped);
-    }
-
-    /// Arithmetic substitutes `IPv4` and `IPv6` with their respective unsigned integer types
-    /// before execution. Monotonicity checks that depend on the integer width must use that
-    /// substituted type as well.
-    static DataTypePtr getArithmeticType(const DataTypePtr & type)
-    {
-        if (isIPv4(type))
-            return std::make_shared<DataTypeUInt32>();
-        if (isIPv6(type))
-            return std::make_shared<DataTypeUInt128>();
-        return type;
-    }
-
-    /// The value counterpart of `getArithmeticType`. An `IPv6` value must be cast instead of
-    /// reinterpreted because execution swaps its stored limbs and byteswaps each limb.
-    static Field getArithmeticField(const Field & field)
-    {
-        const bool is_ipv4 = field.getType() == Field::Types::IPv4;
-        if (!is_ipv4 && field.getType() != Field::Types::IPv6)
-            return field;
-
-        const DataTypePtr from = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeIPv4>()) : std::make_shared<DataTypeIPv6>();
-        const DataTypePtr to = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeUInt32>()) : std::make_shared<DataTypeUInt128>();
-        const ColumnWithTypeAndName argument{from->createColumnConst(1, field), from, ""};
-        return (*castColumn(argument, to))[0];
-    }
-
-    /// `intDiv` casts the dividend to a signed type when the divisor is signed (see `DivideIntegralImpl`),
-    /// so an unsigned dividend whose value is >= 2^(width-1) reinterprets as negative
-    /// (e.g. `intDiv(UInt64, Int64-const)` has an `Int64` result, and `intDiv(2^63, c)` flips sign
-    /// relative to `intDiv(2^63 - 1, c)`). `intDiv` is therefore a step function with a single
-    /// discontinuity at `D = 2^(width-1)`: it is monotonic on each side of `D` but not across it.
-    /// Returns true when the range [left_point, right_point] contains `D` in its interior, i.e. when
-    /// `left_point < D <= right_point` over the unsigned input domain. A null endpoint means the range
-    /// is unbounded there, so it extends to the unsigned domain limits (0 on the left, max on the right),
-    /// which always places `D` strictly inside. Endpoint comparison of the transformed values cannot
-    /// detect this because both endpoints can map to the same output while the interior jumps.
-    /// `arg_type` is the unsigned dividend type (already stripped of Nullable/LowCardinality).
-    static bool intDivRangeCrossesSignedWrap(const DataTypePtr & arg_type, const Field & left_point, const Field & right_point)
-    {
-        const size_t width_bytes = arg_type->getSizeOfValueInMemory();
-        // `D = 2^(8 * width_bytes - 1)` is the first unsigned value that reinterprets as negative.
-        const UInt256 wrap_point = UInt256(1) << (8 * width_bytes - 1);
-        const Field wrap_field(wrap_point);
-
-        // left_point < D: a null left bound is -inf over the unsigned domain (== 0 < D), so it crosses.
-        const bool left_below = left_point.isNull() || accurateLess(left_point, wrap_field);
-        // D <= right_point: a null right bound is +inf over the unsigned domain (== max >= D), so it crosses.
-        const bool right_at_or_above = right_point.isNull() || accurateLessOrEqual(wrap_field, right_point);
-        return left_below && right_at_or_above;
-    }
-
-    /// Mirror of the unsigned-dividend wrap: when the dividend is signed and the divisor is an
-    /// unsigned constant, `DivideIntegralImpl` reinterprets the divisor through `make_signed_t` of
-    /// the wider operand type. With `sizeof(dividend) <= sizeof(divisor)` an unsigned constant whose
-    /// high bit is set (`>= 2^(8 * divisor_width - 1)`) becomes negative, so `intDiv` divides by an
-    /// effectively negative value and is monotonic decreasing even though the raw constant compares
-    /// as positive (e.g. `intDiv(Int8, toUInt8(200))` == `intDiv(Int8, toInt8(-56))`). With
-    /// `sizeof(dividend) > sizeof(divisor)` the divisor widens into the dividend's signed type and
-    /// stays positive, so no flip occurs. The signed dividend is never reinterpreted, so there is no
-    /// discontinuity (unlike `intDivRangeCrossesSignedWrap`): the function is fully monotonic, only
-    /// its direction is reversed. Returns true when the divisor reinterprets as negative.
-    static bool intDivConstReinterpretsNegative(const DataTypePtr & arg_type, const DataTypePtr & divisor_type, const Field & constant)
-    {
-        if (!isInt(arg_type) || !isUInt(divisor_type))
-            return false;
-        if (arg_type->getSizeOfValueInMemory() > divisor_type->getSizeOfValueInMemory())
-            return false;
-        const size_t divisor_width_bytes = divisor_type->getSizeOfValueInMemory();
-        const Field wrap_field(UInt256(1) << (8 * divisor_width_bytes - 1));
-        return accurateLessOrEqual(wrap_field, constant);
-    }
-
-    /// `intDiv` casts the dividend through `make_signed_t` whenever either operand is a signed integer
-    /// (see `DivideIntegralImpl`), so a constant *dividend* of unsigned type whose high bit is set
-    /// (`>= 2^(8 * width - 1)`) divides as a negative number even though the raw `Field` compares as
-    /// positive (`intDiv(toUInt8(200), x)` == `intDiv(toInt8(-56), x)`). Unlike
-    /// `intDivConstReinterpretsNegative` the operand widths do not matter: the dividend is cast in its
-    /// own width.
-    static bool intDivConstDividendReinterpretsNegative(
-        const DataTypePtr & dividend_type, const DataTypePtr & divisor_type, const Field & constant)
-    {
-        if (!isUInt(dividend_type) || !isInt(divisor_type))
-            return false;
-        const size_t width_bytes = dividend_type->getSizeOfValueInMemory();
-        const Field wrap_field(UInt256(1) << (8 * width_bytes - 1));
-        return accurateLessOrEqual(wrap_field, constant);
-    }
-
-    /// A `Decimal` dividend makes the division compute in the *decimal's* own native signed width
-    /// (`DecimalBinaryOperation::NativeResultType`: `Int32` for every `Decimal32`, whatever the
-    /// divisor's type is), into which the divisor is materialised by `static_cast`. A constant
-    /// outside that width divides as another value: `intDiv(Decimal32, -9223372036854775807)` by `1`.
-    static bool decimalDivConstDivisorTruncates(
-        const DataTypePtr & arg_type, const DataTypePtr & divisor_type, const Field & constant)
-    {
-        if (!isDecimal(arg_type) || !isInteger(divisor_type))
-            return false;
-        auto exceeds = [&constant]<typename T>(std::type_identity<T>)
-        {
-            return accurateLess(constant, Field(std::numeric_limits<T>::min()))
-                || accurateLess(Field(std::numeric_limits<T>::max()), constant);
-        };
-        switch (arg_type->getSizeOfValueInMemory())
-        {
-            case sizeof(Int32): return exceeds(std::type_identity<Int32>{});
-            case sizeof(Int64): return exceeds(std::type_identity<Int64>{});
-            case sizeof(Int128): return exceeds(std::type_identity<Int128>{});
-            case sizeof(Int256): return exceeds(std::type_identity<Int256>{});
-            default: return true; /// unreachable for the four `Decimal` widths above; fails close if a new one appears
-        }
-    }
-
-    /// `Decimal` division rescales the dividend by the divisor scale in the native type of the wider operand. It throws
-    /// (or wraps with `decimal_check_overflow = 0`) outside a finite range, but is monotonic within a range whose ends
-    /// rescale without overflow. `intDiv` then casts the quotient to an integer result, which must be as wide.
-    static bool decimalDivisionRescaleFits(
-        const Field & left_point, const Field & right_point, const IDataType & arg_type, const IDataType & divisor_type,
-        const DataTypePtr & result_type)
-    {
-        auto result = removeNullable(recursiveRemoveLowCardinality(result_type));
-        const size_t width = std::max(arg_type.getSizeOfValueInMemory(), divisor_type.getSizeOfValueInMemory());
-        if (!(isDecimal(result) || isInteger(result)) || result->getSizeOfValueInMemory() < width)
-            return false;
-
-        Int256 limit;
-        switch (width)
-        {
-            case sizeof(Int32): limit = std::numeric_limits<Int32>::max(); break;
-            case sizeof(Int64): limit = std::numeric_limits<Int64>::max(); break;
-            case sizeof(Int128): limit = std::numeric_limits<Int128>::max(); break;
-            case sizeof(Int256): limit = std::numeric_limits<Int256>::max(); break;
-            default: return false;
-        }
-        const Int256 bound = limit / DecimalUtils::scaleMultiplier<Int256>(getDecimalScale(divisor_type));
-
-        auto fits = [&](const Field & point)
-        {
-            Int256 value;
-            switch (point.getType())
-            {
-                case Field::Types::Decimal32: value = point.safeGet<DecimalField<Decimal32>>().getValue().value; break;
-                case Field::Types::Decimal64: value = point.safeGet<DecimalField<Decimal64>>().getValue().value; break;
-                case Field::Types::Decimal128: value = point.safeGet<DecimalField<Decimal128>>().getValue().value; break;
-                case Field::Types::Decimal256: value = point.safeGet<DecimalField<Decimal256>>().getValue().value; break;
-                default: return false;
-            }
-            return -bound <= value && value <= bound;
-        };
-        return fits(left_point) && fits(right_point);
-    }
-
-private:
-    ColumnWithTypeAndName left;
-    ColumnWithTypeAndName right;
-    DataTypePtr return_type;
-};
-
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
-class BinaryArithmeticOverloadResolver final : public IFunctionOverloadResolver
-{
-public:
-    static constexpr auto name = Name::name;
-    static FunctionOverloadResolverPtr create(ContextPtr context_)
-    {
-        return std::make_unique<BinaryArithmeticOverloadResolver>(context_);
-    }
-
-    explicit BinaryArithmeticOverloadResolver(ContextPtr context_) : context(context_) {}
-
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isVariadic() const override { return false; }
-
-    /// Per-Op opt-in to declarative signatures:
-    /// - `Op<UInt8, UInt8>::signature` (authoritative): the DSL is used for
-    ///   both argument validation and result-type resolution; the long-form
-    ///   `getReturnTypeImpl` below is skipped.
-    /// - `Op<UInt8, UInt8>::signature_documentation` (docs-only): surfaced via
-    ///   `system.functions` but the long-form `getReturnTypeImpl` stays
-    ///   authoritative — used when the promotion rule isn't expressible in
-    ///   the current DSL (e.g. `plus`, `minus`, `multiply`, `divide`).
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Documentation-only — adds/subtracts the integer/float `delta` of the
+    /// given interval unit (encoded in `Transform`) to/from a date or
+    /// date-time value. The optional 3rd argument is a constant time-zone
+    /// string. The concrete result type depends on the input date type and
+    /// the precision of the interval unit (e.g. `addSeconds(Date, ...)`
+    /// promotes to `DateTime`).
     String getSignatureString() const override
     {
-        if constexpr (requires { Op<UInt8, UInt8>::signature; })
-            return Op<UInt8, UInt8>::signature;
-        else if constexpr (requires { Op<UInt8, UInt8>::signature_documentation; })
-            return Op<UInt8, UInt8>::signature_documentation;
-        else
-            return {};
+        return "(Date | Date32 | Time | Time64 | DateTime | DateTime64 | String, NativeNumber, [const String]) -> Any";
+    }
+
+    /// The declarative signature above is documentation-only: the exact result type is not
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it as well, so the base
+    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
+    /// would reject valid calls or evaluate an uncaptured return-type name).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// When `Op::signature` (authoritative) is defined, let the base path
-        /// run `applyFunctionSignature`. Otherwise fall through to the
-        /// long-form `getReturnTypeImpl(DataTypes)` so that
-        /// `signature_documentation` doesn't accidentally drive type checking.
-        if constexpr (requires { Op<UInt8, UInt8>::signature; })
-            return IFunctionOverloadResolver::getReturnTypeImpl(arguments);
-
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
-
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
-    {
-        bool division_by_nullable = false;
-        if constexpr (IsOperation<Op>::can_have_division_by_nullable)
-        {
-            /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
-            /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
-            ///
-            /// A `LowCardinality` wrapper hides the nullability from `isNullable`, so strip it: with a
-            /// `LowCardinality(Nullable(...))` denominator the NULL-masking variant was not selected and
-            /// the NULL rows divided by the nested default `0`, throwing `Division by zero` on data
-            /// where the plain `Nullable(...)` denominator returns NULL.
-            const auto left_type = recursiveRemoveLowCardinality(arguments[0].type);
-            const auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
-
-            division_by_nullable = !left_type->onlyNull() && !right_type->onlyNull() && right_type->isNullable()
-                && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
-                    || (IsOperation<Op>::div_floating
-                        && (isDecimalOrNullableDecimal(left_type) || isDecimalOrNullableDecimal(right_type))));
-        }
-
-        auto make_adaptor = [&](auto function)
-        {
-            return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                function,
-                DataTypes{std::from_range_t{}, arguments | std::views::transform([](const auto & elem) { return elem.type; })},
-                return_type);
-        };
-
-        /// More efficient specialization for two numeric arguments.
-        if (arguments.size() == 2
-            && ((arguments[0].column && isColumnConst(*arguments[0].column))
-                || (arguments[1].column && isColumnConst(*arguments[1].column))))
-        {
-            return make_adaptor(FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(
-                arguments[0], arguments[1], return_type, context, division_by_nullable));
-        }
-
-        return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(context, arguments[0].type, arguments[1].type, division_by_nullable));
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() != 2)
+        if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                 getName(), arguments.size());
-        return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::getReturnTypeImplStatic(arguments, context);
+
+        if (arguments.size() == 2)
+        {
+            if (!isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(arguments[0].type) && !isString(arguments[0].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                    "Must be a date, a date with time or a String", arguments[0].type->getName(), getName());
+        }
+        else
+        {
+            if (!WhichDataType(arguments[0].type).isDateTimeOrDateTime64())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                    "Must be a DateTime/DateTime64", arguments[0].type->getName(), getName());
+
+            if (!WhichDataType(arguments[2].type).isString())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
+                                "The 3rd argument must be a constant string with a timezone name. "
+                                "The timezone argument is allowed only when the 1st argument has the type DateTime",
+                                arguments[2].type->getName(), getName());
+        }
+
+        if (!isNativeNumber(arguments[1].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be a number", getName());
+
+        switch (arguments[0].type->getTypeId())
+        {
+            case TypeIndex::Date:
+                return resolveReturnType<DataTypeDate>(arguments);
+            case TypeIndex::Time:
+                return resolveReturnType<DataTypeTime>(arguments);
+            case TypeIndex::Date32:
+                return resolveReturnType<DataTypeDate32>(arguments);
+            case TypeIndex::Time64:
+                return resolveReturnType<DataTypeTime64>(arguments);
+            case TypeIndex::DateTime:
+                return resolveReturnType<DataTypeDateTime>(arguments);
+            case TypeIndex::DateTime64:
+                return resolveReturnType<DataTypeDateTime64>(arguments);
+            case TypeIndex::String:
+                return resolveReturnType<DataTypeString>(arguments);
+            default:
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid type of 1st argument of function {}: "
+                    "{}, expected: Date, DateTime or DateTime64.", getName(), arguments[0].type->getName());
+        }
     }
 
-private:
-    ContextPtr context;
+    /// Helper templates to deduce return type based on argument type, since some overloads may promote or denote types,
+    /// e.g. addSeconds(Date, 1) => DateTime
+    template <typename FromDataType>
+    struct TransformExecuteReturnTypeImpl
+    {
+        using FieldType = typename FromDataType::FieldType;
+
+        using type = decltype(
+            std::declval<Transform>().execute(
+                std::declval<FieldType>(),    // e.g. Int32, UInt16, Int64...
+                0,                            // delta
+                std::declval<DateLUTImpl>(),  // timezone
+                std::declval<DateLUTImpl>(),  // utc
+                0                             // scale
+            )
+        );
+    };
+
+    template <>
+    struct TransformExecuteReturnTypeImpl<DataTypeTime>
+    {
+        using FieldType = DataTypeTime::FieldType;
+
+        using type = decltype(
+            std::declval<Transform>().executeForTime(
+                std::declval<FieldType>(),    // Int32
+                0,                            // delta
+                std::declval<DateLUTImpl>(),  // timezone
+                std::declval<DateLUTImpl>(),  // utc
+                0                             // scale
+            )
+        );
+    };
+
+    template <typename FromDataType>
+    using TransformExecuteReturnType = typename TransformExecuteReturnTypeImpl<FromDataType>::type;
+
+    // Deduces RETURN DataType from INPUT DataType, based on return type of Transform{}.execute(INPUT_TYPE, UInt64, DateLUTImpl).
+    // e.g. for Transform-type that has execute()-overload with 'UInt16' input and 'UInt32' return,
+    // argument type is expected to be 'Date', and result type is deduced to be 'DateTime'.
+    template <typename FromDataType>
+    using TransformResultDataType = typename date_and_time_type_details::ResultDataTypeMap<TransformExecuteReturnType<FromDataType>>::ResultDataType;
+
+    template <typename FromDataType>
+    DataTypePtr resolveReturnType(const ColumnsWithTypeAndName & arguments) const
+    {
+        using ResultDataType = TransformResultDataType<FromDataType>;
+
+        if constexpr (std::is_same_v<ResultDataType, DataTypeDate>)
+            return std::make_shared<DataTypeDate>();
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>)
+            return std::make_shared<DataTypeDate32>();
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
+            return std::make_shared<DataTypeTime>();
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeTime64>)
+        {
+            static constexpr auto target_scale = std::invoke(
+                []() -> std::optional<UInt32>
+                {
+                    if constexpr (std::is_base_of_v<AddNanosecondsImpl, Transform>)
+                        return 9;
+                    else if constexpr (std::is_base_of_v<AddMicrosecondsImpl, Transform>)
+                        return 6;
+                    else if constexpr (std::is_base_of_v<AddMillisecondsImpl, Transform>)
+                        return 3;
+
+                    return {};
+                });
+
+            if (const auto* time64_type = typeid_cast<const DataTypeTime64 *>(arguments[0].type.get()))
+            {
+                const auto from_scale = time64_type->getScale();
+                return std::make_shared<DataTypeTime64>(std::max(from_scale, target_scale.value_or(from_scale)));
+            }
+
+            return std::make_shared<DataTypeTime64>(target_scale.value_or(DataTypeTime64::default_scale));
+        }
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
+        {
+            static constexpr auto target_scale = std::invoke(
+                []() -> std::optional<UInt32>
+                {
+                    if constexpr (std::is_base_of_v<AddNanosecondsImpl, Transform>)
+                        return 9;
+                    else if constexpr (std::is_base_of_v<AddMicrosecondsImpl, Transform>)
+                        return 6;
+                    else if constexpr (std::is_base_of_v<AddMillisecondsImpl, Transform>)
+                        return 3;
+
+                    return {};
+                });
+
+            auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
+            if (const auto* datetime64_type = typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get()))
+            {
+                const auto from_scale = datetime64_type->getScale();
+                return std::make_shared<DataTypeDateTime64>(std::max(from_scale, target_scale.value_or(from_scale)), std::move(timezone));
+            }
+
+            return std::make_shared<DataTypeDateTime64>(target_scale.value_or(DataTypeDateTime64::default_scale), std::move(timezone));
+        }
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeInt8>)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot be used with {}", getName(), arguments[0].type->getName());
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type in datetime add interval function");
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// The first argument may be a String, which is parsed as a date/date with time. The value behind a
+    /// NULL in a `Nullable(String)` is not a date (typically the empty string), so the function must not
+    /// be executed on those rows. Declining makes `defaultImplementationForNulls` filter them out first;
+    /// their result is masked as NULL anyway, and inputs without NULLs are not affected.
+    /// This is asked without the arguments, so it also applies to date arguments, where it is harmless.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        const IDataType * from_type = arguments[0].type.get();
+        WhichDataType which(from_type);
+
+        if (which.isDate())
+            return DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(Transform{}, arguments, result_type, 0, input_rows_count);
+        if (which.isDate32())
+            return DateTimeAddIntervalImpl<DataTypeDate32, TransformResultDataType<DataTypeDate32>, Transform>::execute(
+                Transform{}, arguments, result_type, 0, input_rows_count);
+        if (which.isTime())
+            return DateTimeAddIntervalImpl<DataTypeTime, TransformResultDataType<DataTypeTime>, Transform>::execute(
+                Transform{}, arguments, result_type, 0, input_rows_count);
+        if (which.isTime64())
+        {
+            const auto * datetime64_type = assert_cast<const DataTypeTime64 *>(from_type);
+            auto from_scale = datetime64_type->getScale();
+            return DateTimeAddIntervalImpl<DataTypeTime64, TransformResultDataType<DataTypeTime64>, Transform>::execute(
+                Transform{}, arguments, result_type, static_cast<UInt16>(from_scale), input_rows_count);
+        }
+        if (which.isDateTime())
+            return DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
+                Transform{}, arguments, result_type, 0, input_rows_count);
+        if (which.isDateTime64())
+        {
+            const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type);
+            auto from_scale = datetime64_type->getScale();
+            return DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
+                Transform{}, arguments, result_type, static_cast<UInt16>(from_scale), input_rows_count);
+        }
+        if (which.isString())
+            return DateTimeAddIntervalImpl<DataTypeString, DataTypeDateTime64, Transform>::execute(
+                Transform{}, arguments, result_type, 3, input_rows_count);
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of first argument of function {}",
+            arguments[0].type->getName(),
+            getName());
+    }
 };
+
 }
