@@ -125,7 +125,7 @@ createStmt
     : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier clusterClause? engineExpr?                                                                                       # CreateDatabaseStmt
     | (ATTACH | CREATE (OR REPLACE)? | REPLACE) DICTIONARY (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? dictionarySchemaClause dictionaryEngineClause                                          # CreateDictionaryStmt
     | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
-    | (ATTACH | CREATE (OR REPLACE)? | REPLACE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? engineClause? tableCommentClause? subqueryClause? tableCommentClause?  # CreateTableStmt
+    | (ATTACH | CREATE (OR REPLACE)? | REPLACE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? engineClause? (tableCommentClause subqueryClause? | subqueryClause tableCommentClause?)?  # CreateTableStmt
     | (ATTACH | CREATE) (OR REPLACE)? VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? subqueryClause                                              # CreateViewStmt
     ;
 
@@ -217,6 +217,11 @@ projectionSettingsExpr: WITH SETTINGS LPAREN settingExprList RPAREN;
 codecExpr: CODEC LPAREN codecArgExpr (COMMA codecArgExpr)* RPAREN;
 codecArgExpr: identifier (LPAREN columnExprList? RPAREN)?;
 // Parsed by ParserTTLElement. DELETE is the default action, so `expr WHERE cond` means `expr DELETE WHERE cond`.
+// The order of the two GROUP BY alternatives matters. ClickHouse reads the keys without implicit aliases, but
+// columnExpr allows them, and SET is a keyword that can be an alias, so `GROUP BY x SET y = 1` can be read as
+// the key `x SET y` compared with 1. ANTLR resolves such an ambiguity to the first alternative, so the one
+// with SET has to come first. Taking SET out of keywordForAlias would remove the ambiguity, but
+// `SELECT 1 set` would stop parsing.
 ttlExpr
     : columnExpr (
         DELETE? whereClause
@@ -247,11 +252,7 @@ tokenValidClause
     : VALID UNTIL stringLiteral
     | VALID FOR columnExpr
     ;
-tokenGrantsClause: GRANTS LPAREN tokenGrantElement (COMMA tokenGrantElement)* RPAREN;
-tokenGrantElement
-    : privilegeList ON grantScope
-    | sourcePrivilegeList ON sourceScope
-    ;
+tokenGrantsClause: GRANTS LPAREN grantElementList RPAREN;
 
 // HTTP handlers. The clauses are in the order of ParserCreateHandlerQuery and ParserDropHandlerQuery.
 // URL is required for CREATE and optional for ALTER.
@@ -306,251 +307,89 @@ explainStmt
     ;
 
 // GRANT and REVOKE statements
+//
+// ClickHouse parses the privileges and the scope of GRANT and REVOKE in one place, and decides afterwards, from the
+// privilege, whether the scope is a table (`db.table`) or a source (`S3('regexp')`) and whether the privilege is valid
+// there. The grammar does the same: the privileges are a list of words and the scope accepts both forms. It does
+// not check that a privilege exists or that it fits the scope.
+// ON CLUSTER is accepted in each of the four places where ClickHouse accepts it. ClickHouse accepts it once.
 
 grantStmt
-    : GRANT clusterClause? privilegeList ON grantScope TO granteeList grantOptionList        # GrantPrivilegeStmt
-    | GRANT clusterClause? sourcePrivilegeList ON sourceScope TO granteeList grantOptionList # GrantSourcePrivilegeStmt
-    | GRANT clusterClause? roleList TO granteeList grantAdminOptionList                      # GrantRoleStmt
+    : GRANT clusterClause? CURRENT GRANTS (LPAREN grantElementList RPAREN | ON grantScope) clusterClause? TO granteeList clusterClause? (grantOptionList clusterClause?)?  # GrantCurrentGrantsStmt
+    | GRANT clusterClause? grantElementList clusterClause? TO granteeList clusterClause? (grantOptionList clusterClause?)?                                                  # GrantPrivilegeStmt
+    | GRANT clusterClause? roleList clusterClause? TO granteeList clusterClause? (grantAdminOptionList clusterClause?)?                                                      # GrantRoleStmt
     ;
 
 revokeStmt
-    : REVOKE clusterClause? (GRANT OPTION FOR)? privilegeList ON grantScope FROM granteeList         # RevokePrivilegeStmt
-    | REVOKE clusterClause? (GRANT OPTION FOR)? sourcePrivilegeList ON sourceScope FROM granteeList  # RevokeSourcePrivilegeStmt
-    | REVOKE clusterClause? (ADMIN OPTION FOR)? roleList FROM granteeList                # RevokeRoleStmt
+    : REVOKE clusterClause? (GRANT OPTION FOR)? grantElementList clusterClause? FROM granteeList clusterClause?  # RevokePrivilegeStmt
+    | REVOKE clusterClause? (ADMIN OPTION FOR)? roleList clusterClause? FROM granteeList clusterClause?          # RevokeRoleStmt
     ;
 
-// List of privileges
+// One or more `privileges ON scope` groups: GRANT SELECT ON db.t1, INSERT ON db.t2 TO u
+grantElementList: grantElement (COMMA grantElement)*;
+grantElement: privilegeList ON grantScope;
+
 privilegeList: privilege (COMMA privilege)*;
 
-// Single privilege with optional column list
+// A privilege with an optional list of columns: SELECT(a, b)
 privilege: privilegeName (LPAREN columnList RPAREN)?;
 
-// Privilege names. This is the list of access types in src/Access/Common/AccessType.h
-// that the grammar knows. It is not complete, and it does not list every alias.
-// See https://clickhouse.com/docs/sql-reference/statements/grant#privileges
-privilegeName
-    : SELECT
-    | INSERT
-    | ALTER alterPrivilege?
-    | CREATE createPrivilege?
-    | DROP dropPrivilege?
-    | TRUNCATE
-    | OPTIMIZE
-    | SHOW showPrivilege?
-    | KILL QUERY
-    | ACCESS MANAGEMENT
-    | SYSTEM systemPrivilege?
-    | INTROSPECTION
-    | SOURCES
-    | DICTGET
-    | ALL PRIVILEGES?
-    | NONE
-    | NAMED COLLECTION ADMIN?
-    | TABLE ENGINE
-    | UNDROP TABLE
-    | MOVE PARTITION BETWEEN SHARDS
-    | SET DEFINER
-    // Deprecated source-as-privilege forms; modern syntax is `READ|WRITE ON <source>`
-    | S3
-    | AZURE
-    | HDFS
-    | MONGO
-    | MYSQL
-    | ODBC
-    | JDBC
-    | POSTGRES
-    | REDIS
-    | SQLITE
-    | REMOTE
-    | URL
-    | KAFKA
+// The name of a privilege is a sequence of words, such as `ALTER ADD COLUMN` or `SYSTEM DROP DNS CACHE`.
+// ClickHouse reads every word up to ON, TO, FROM or a bracket, and looks the whole phrase up in the access types
+// of src/Access/Common/AccessType.h, together with their aliases. The grammar does not keep a list of them.
+// GRANT and CURRENT cannot be part of a name. They would make `REVOKE GRANT OPTION FOR ...` and `GRANT CURRENT GRANTS ...` ambiguous.
+// The set below is every token that is not a word, so a new keyword is a word of a privilege without any change here.
+privilegeWord
+    : ~( ON | TO | FROM | GRANT | CURRENT
+       | HEXADECIMAL_STRING_LITERAL | BINARY_STRING_LITERAL | FLOATING_LITERAL | OCTAL_LITERAL | DECIMAL_LITERAL
+       | HEXADECIMAL_NUMERIC_LITERAL | BINARY_NUMERIC_LITERAL | STRING_LITERAL
+       | ARROW | ASTERISK | AT | BACKQUOTE | BACKSLASH | COLON | COMMA | CONCAT | DASH | DOT | DOUBLE_COLON
+       | EQ_DOUBLE | EQ_SINGLE | GE | GT | LBRACE | LBRACKET | LE | LPAREN | LT | NOT_EQ | PERCENT | PLUS
+       | QUESTIONMARK | QUOTE_DOUBLE | QUOTE_SINGLE | RBRACE | RBRACKET | RPAREN | SEMICOLON | SLASH | UNDERSCORE
+       )
     ;
-
-// ALTER sub-privileges
-alterPrivilege
-    : TABLE
-    | VIEW
-    | DATABASE
-    | COLUMN
-    | INDEX
-    | CONSTRAINT
-    | TTL
-    | SETTINGS
-    | MOVE PARTITION
-    | FETCH PARTITION
-    | FREEZE PARTITION
-    | UPDATE
-    | DELETE
-    | ADD COLUMN
-    | DROP COLUMN
-    | MODIFY COLUMN
-    | COMMENT COLUMN
-    | CLEAR COLUMN
-    | RENAME COLUMN
-    | MATERIALIZE COLUMN
-    | ADD INDEX
-    | DROP INDEX
-    | MATERIALIZE INDEX
-    | CLEAR INDEX
-    | ADD CONSTRAINT
-    | DROP CONSTRAINT
-    | MODIFY TTL
-    | MATERIALIZE TTL
-    | MODIFY SETTING
-    | MODIFY COMMENT
-    | USER
-    | ROLE
-    | ROW POLICY
-    | QUOTA
-    | SETTINGS PROFILE
-    | HANDLER
-    ;
-
-// CREATE sub-privileges
-createPrivilege
-    : TABLE
-    | VIEW
-    | DATABASE
-    | DICTIONARY
-    | FUNCTION
-    | TEMPORARY TABLE
-    | ARBITRARY TEMPORARY TABLE
-    | USER
-    | ROLE
-    | ROW POLICY
-    | QUOTA
-    | SETTINGS PROFILE
-    | NAMED COLLECTION
-    | TOKEN
-    | HANDLER
-    ;
-
-// DROP sub-privileges
-dropPrivilege
-    : TABLE
-    | VIEW
-    | DATABASE
-    | DICTIONARY
-    | FUNCTION
-    | USER
-    | ROLE
-    | ROW POLICY
-    | QUOTA
-    | SETTINGS PROFILE
-    | NAMED COLLECTION
-    | HANDLER
-    ;
-
-// SHOW sub-privileges
-showPrivilege
-    : DATABASES
-    | TABLES
-    | COLUMNS
-    | DICTIONARIES
-    | USERS
-    | ROLES
-    | ROW POLICIES
-    | QUOTAS
-    | SETTINGS PROFILES
-    | ACCESS
-    | NAMED COLLECTIONS
-    | HANDLERS
-    | HANDLER
-    ;
-
-// SYSTEM sub-privileges
-systemPrivilege
-    : SHUTDOWN
-    | DROP CACHE
-    | DROP DNS CACHE
-    | DROP MARK CACHE
-    | DROP UNCOMPRESSED CACHE
-    | DROP MMAP CACHE
-    | DROP COMPILED EXPRESSION CACHE
-    | RELOAD
-    | RELOAD CONFIG
-    | RELOAD DICTIONARY
-    | RELOAD EMBEDDED DICTIONARIES
-    | RELOAD FUNCTION
-    | RELOAD FUNCTIONS
-    | RESTART REPLICA
-    | RESTORE REPLICA
-    | SYNC REPLICA
-    | SYNC DATABASE REPLICA
-    | FLUSH
-    | FLUSH DISTRIBUTED
-    | FLUSH LOGS
-    | FLUSH ASYNC INSERT QUEUE
-    | MERGES
-    | TTL MERGES
-    | FETCHES
-    | MOVES
-    | DISTRIBUTED SENDS
-    | REPLICATED SENDS
-    | REPLICATION QUEUES
-    | STOP MERGES
-    | STOP TTL MERGES
-    | STOP FETCHES
-    | STOP MOVES
-    | STOP DISTRIBUTED SENDS
-    | STOP REPLICATED SENDS
-    | STOP REPLICATION QUEUES
-    | START MERGES
-    | START TTL MERGES
-    | START FETCHES
-    | START MOVES
-    | START DISTRIBUTED SENDS
-    | START REPLICATED SENDS
-    | START REPLICATION QUEUES
-    ;
+privilegeName: privilegeWord+;
 
 // Column list for column-level privileges
 columnList: identifier (COMMA identifier)*;
 
-// Scope: db.table, db.*, *.*, table, *
+// The scope of a privilege:
+//   *.*  *  db.*  db*.*  db.table  db.table*  table  table*  -- the database and the table may end with `*` as a prefix
+//   S3  S3('regexp')                                        -- the source of READ and WRITE, with an optional regular expression or name
 grantScope
-    : identifier DOT identifier    // db.table
-    | identifier DOT ASTERISK      // db.*
-    | ASTERISK DOT ASTERISK        // *.*
-    | identifier                   // table only
-    | ASTERISK                     // *
-    ;
-
-// Source-level privileges (table functions and external storages):
-//   GRANT READ ON S3 TO user                          -- all S3 paths
-//   GRANT READ ON S3('s3://bucket/prefix/*') TO user  -- restricted to a regular expression
-//   GRANT WRITE ON * TO user                          -- every source
-sourcePrivilegeList: sourcePrivilege (COMMA sourcePrivilege)*;
-sourcePrivilege: READ | WRITE;
-sourceScope
-    : sourceName (LPAREN stringLiteral RPAREN)?
+    : ASTERISK DOT ASTERISK
     | ASTERISK
+    | identifier ASTERISK? DOT ASTERISK
+    | identifier DOT identifier ASTERISK?
+    | identifier ASTERISK? (LPAREN (identifier | stringLiteral) RPAREN)?
     ;
-// A source is one of the names in AccessTypeObjects::Source: FILE, URL, REMOTE, MONGO, REDIS, MYSQL,
-// POSTGRES, SQLITE, ODBC, JDBC, HDFS, S3, HIVE, AZURE, KAFKA, NATS, RABBITMQ, YTSAURUS, ARROW_FLIGHT,
-// BIGQUERY, ELASTICSEARCH, DISK, or the alias of a table engine such as MongoDB.
-// The grammar accepts any identifier here, because most of these names are not lexer keywords.
-sourceName: identifier;
 
-// List of grantees (users or roles)
-granteeList: grantee (COMMA grantee)*;
-
-// Single grantee
+// The names of users and roles. ALL and NONE are keywords that `identifier` accepts, and so are all names of roles.
+// EXCEPT is accepted by GRANT as well: ClickHouse rejects it later.
+granteeList: grantee (COMMA grantee)* (EXCEPT grantee (COMMA grantee)*)?;
 grantee
-    : identifier
-    | CURRENT_USER
+    : CURRENT_USER LPAREN RPAREN
+    | userOrRoleName
+    ;
+roleList: userOrRoleName (COMMA userOrRoleName)* (EXCEPT userOrRoleName (COMMA userOrRoleName)*)?;
+
+// A name or a quoted name. Only a name that is not quoted can have a host: user@host, user@'%'.
+userOrRoleName
+    : identifier (AT (identifier | stringLiteral))?
+    | stringLiteral
     ;
 
-// Role list for role grants
-roleList: identifier (COMMA identifier)*;
-
-// GRANT options: WITH GRANT OPTION, then WITH REPLACE OPTION
-grantOptionList: (WITH GRANT OPTION)? (WITH REPLACE OPTION)?;
+// GRANT options: WITH GRANT OPTION, then WITH REPLACE OPTION. The list is not empty, so that an ON CLUSTER before and after it is not ambiguous.
+grantOptionList
+    : WITH GRANT OPTION (WITH REPLACE OPTION)?
+    | WITH REPLACE OPTION
+    ;
 
 // ADMIN options for role grants: WITH ADMIN OPTION, then WITH REPLACE OPTION
-grantAdminOptionList: (WITH ADMIN OPTION)? (WITH REPLACE OPTION)?;
-
-// INSERT statement
+grantAdminOptionList
+    : WITH ADMIN OPTION (WITH REPLACE OPTION)?
+    | WITH REPLACE OPTION
+    ;
 
 // INSERT statement
 
@@ -840,7 +679,7 @@ columnExpr
     | columnExpr IS NOT? NULL_SQL                                                         # ColumnExprIsNull
     | columnExpr AND columnExpr                                                           # ColumnExprAnd
     | columnExpr OR columnExpr                                                            # ColumnExprOr
-    | <assoc=right> columnExpr QUESTIONMARK columnExpr COLON columnExpr                          # ColumnExprTernaryOp
+    | <assoc=right> columnExpr QUESTIONMARK columnExpr COLON columnExpr                   # ColumnExprTernaryOp
     | columnExpr (alias | AS identifier)                                                  # ColumnExprAlias
 
     | (tableIdentifier DOT)? ASTERISK                                                     # ColumnExprAsterisk  // single-column only
@@ -926,7 +765,7 @@ keyword
     | ARBITRARY | CACHE | COLLECTION | COLLECTIONS | COMPILED | CONFIG | DNS | EMBEDDED | FETCH | MARK | MMAP | UNCOMPRESSED
     | ADMIN | APPEND | ASSUME | AZURE | COMPRESSION | DEFINER | DICTGET | EPHEMERAL | EXCHANGE | GET | GRANT | HANDLER | HANDLERS | HDFS
     | INTROSPECTION | JDBC | KAFKA | LEVEL | MANAGEMENT | METHODS | MONGO | MOVES | MYSQL | NAMED | NONE | ODBC | OPTION | POST | POSTGRES | PREFIX
-    | PROTOCOL | PUT | QUERY | QUEUE | QUEUES | READ | RECOMPRESS | REDIS | REGEXP | REMOTE | REPLICATION | RESET | RESTART | RESTORE | REVOKE | S3
+    | PROTOCOL | PUT | QUERY | QUEUE | QUEUES | READ | RECOMPRESS | REDIS | REGEXP | REMOTE | REPLICATION | RESTART | RESTORE | REVOKE | S3
     | SHARDS | SHUTDOWN | SOURCES | SQLITE | STATISTICS | STDOUT | TOKEN | UNDROP | UNTIL | URL | VALID | WRITE
     ;
 keywordForAlias
@@ -943,7 +782,7 @@ keywordForAlias
     | ARBITRARY | CACHE | COLLECTION | COLLECTIONS | COMPILED | CONFIG | DNS | EMBEDDED | FETCH | MARK | MMAP | UNCOMPRESSED
     | ADMIN | APPEND | ASSUME | AZURE | COMPRESSION | DEFINER | DICTGET | EPHEMERAL | EXCHANGE | GET | GRANT | HANDLER | HANDLERS | HDFS
     | INTROSPECTION | JDBC | KAFKA | LEVEL | MANAGEMENT | METHODS | MONGO | MOVES | MYSQL | NAMED | NONE | ODBC | OPTION | POST | POSTGRES | PREFIX
-    | PROTOCOL | PUT | QUERY | QUEUE | QUEUES | READ | REDIS | REGEXP | REMOTE | REPLICATION | RESET | RESTART | RESTORE | REVOKE | S3 | SHARDS
+    | PROTOCOL | PUT | QUERY | QUEUE | QUEUES | READ | REDIS | REGEXP | REMOTE | REPLICATION | RESTART | RESTORE | REVOKE | S3 | SHARDS
     | SHUTDOWN | SOURCES | SQLITE | STATISTICS | STDOUT | TOKEN | UNDROP | UNTIL | URL | VALID | WRITE
     | GRANTS | RECOMPRESS
     ;
