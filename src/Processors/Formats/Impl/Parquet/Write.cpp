@@ -779,19 +779,6 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 {
     /// We could use wrapWriteBufferWithCompressionMethod() for everything, but I worry about the
     /// overhead of creating a bunch of WriteBuffers on each page (thousands of values).
-#if USE_LIBDEFLATE
-    /// One-shot libdeflate for gzip: the page is already fully in memory, and libdeflate is faster
-    /// and compresses better than the streaming zlib path. Levels outside libdeflate's [1, 12]
-    /// range (e.g. level 0 = store) keep using the streaming path below.
-    if (method == CompressionMethod::Gzip && level >= 1 && level <= 12)
-    {
-        scratch.resize(Libdeflate::compressBound(method, level, source.size()));
-        size_t compressed_size = Libdeflate::compress(method, level, source.data(), source.size(), scratch.data(), scratch.size());
-        scratch.resize(compressed_size);
-        return scratch;
-    }
-#endif
-
     switch (method)
     {
         case CompressionMethod::None:
@@ -849,6 +836,22 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
             scratch.resize(compressed_size);
             return scratch;
+        }
+#endif
+
+#if USE_LIBDEFLATE
+        /// One-shot libdeflate for gzip: the page is already fully in memory, and libdeflate is faster
+        /// and compresses better than the streaming zlib path. Levels outside libdeflate's [1, 12]
+        /// range (e.g. level 0 = store) keep using the streaming path below.
+        case CompressionMethod::Gzip: {
+            if (level >= 1 && level <= 12)
+            {
+                scratch.resize(Libdeflate::compressBound(method, level, source.size()));
+                size_t compressed_size = Libdeflate::compress(method, level, source.data(), source.size(), scratch.data(), scratch.size());
+                scratch.resize(compressed_size);
+                return scratch;
+            }
+            [[fallthrough]];
         }
 #endif
 
