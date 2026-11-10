@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 -- Tests parallel_replicas_exchange_plan: the planner builds a plain local plan, then a post-build phase
 -- splits it at the reading step into a UNION of a local read and a remote parallel-replicas read of the
 -- shipped fragment. Results must match non-parallel execution, and counts must not be multiplied across

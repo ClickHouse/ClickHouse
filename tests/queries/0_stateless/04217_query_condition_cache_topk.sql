@@ -1,4 +1,4 @@
--- Tags: long, no-parallel
+-- Tags: long, no-parallel, no-parallel-replicas
 -- Tag no-parallel: Messes with internal cache
 -- Tag long: needs ~1M rows for the QCC to populate (a granule-spanning chunk must be
 --   fully filtered before the LIMIT cancels the pipeline), so on the slower S3 +
@@ -10,12 +10,7 @@
 -- through the `ORDER BY <column> LIMIT n` (TopK) plan, and that QCC entries
 -- are partitioned by the TopK plan parameters (column, type, LIMIT, direction,
 -- num_sort_columns) so a re-run with the same plan reuses the cached granule
--- decisions while a re-run with a different plan stores fresh entries instead.
---
--- Each TopK plan writes two entries per part: one for the WHERE filter (written
--- by `FilterTransform`, see `updateQueryConditionCache`) and one for the dynamic
--- `__topKFilter` PREWHERE (written by `MergeTreeSelectProcessor`, issue #114639).
--- Both are salted with the TopK plan parameters.
+-- decisions while a re-run with a different plan stores a fresh entry instead.
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
@@ -27,6 +22,10 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 -- `getPrewhereInfo()` is already set on the read step before TopK runs) and the
 -- WHERE condition is the one written into the query condition cache.
 SET optimize_move_to_prewhere = 0;
+-- Parallel replicas split the plan into a different shape and do extra QCC lookups
+-- that this test doesn't expect.
+SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS tab;
@@ -46,21 +45,21 @@ SELECT '--- QCC starts empty';
 SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Same TopK plan re-runs reuse the same QCC entries';
+SELECT '--- Same TopK plan re-runs reuse the same QCC entry';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Different LIMIT writes separate entries';
+SELECT '--- Different LIMIT writes a separate entry';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 7 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Different sort direction writes separate entries';
+SELECT '--- Different sort direction writes a separate entry';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 DESC LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Different sort column writes separate entries';
+SELECT '--- Different sort column writes a separate entry';
 SELECT v2 FROM tab WHERE v2 = 10000 ORDER BY v2 ASC LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
@@ -84,13 +83,13 @@ FROM numbers(1_000_000);
 SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Same NULLS direction re-runs reuse the same QCC entries';
+SELECT '--- Same NULLS direction re-runs reuse the same QCC entry';
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS FIRST LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS FIRST LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Different NULLS direction writes separate entries';
+SELECT '--- Different NULLS direction writes a separate entry';
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS LAST LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 

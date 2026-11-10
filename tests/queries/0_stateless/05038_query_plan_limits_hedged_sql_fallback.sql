@@ -1,3 +1,7 @@
+-- Tags: no-darwin
+-- `HedgedConnections` are compiled only under `OS_LINUX`, so on macOS `use_hedged_requests` is a no-op
+-- and the initiator never has to fall back to SQL.
+
 -- Regression test: a distributed query with `serialize_query_plan = 1` over hedged connections
 -- must fall back to sending SQL when the plan carries non-default execution limits and a later
 -- hedge could select a replica whose query-plan serialization version is unverified. Plan-level

@@ -86,11 +86,7 @@ WITH map(
                 startsWith(type_, 'LowCardinality'), split[2],
                 startsWith(type_, 'Nullable'), split[2],
                 split[1]) AS inner_type,
-        multiIf(startsWith(type_, 'LowCardinality(Nullable(Decimal'), splitByString(', ', split[4]),
-                startsWith(type_, 'LowCardinality(Decimal'), splitByString(', ', split[3]),
-                startsWith(type_, 'Nullable(Decimal'), splitByString(', ', split[3]),
-                startsWith(type_, 'Decimal'), splitByString(', ', split[2]),
-                []) AS decimal_scale_and_precision,
+        if (length(split) > 1, splitByString(', ', split[2]), []) AS decimal_scale_and_precision,
         multiIf(inner_type = 'Decimal' AND toInt8(decimal_scale_and_precision[1]) <= 65 AND toInt8(decimal_scale_and_precision[2]) <= 30, concat('DECIMAL(', decimal_scale_and_precision[1], ', ', decimal_scale_and_precision[2], ')'),
                 mapContains(native_to_mysql_mapping, inner_type) = true, native_to_mysql_mapping[inner_type],
                 'TEXT') AS mysql_type
@@ -151,7 +147,7 @@ WHERE
         database,
         table);
 
-    if (query.has_like)
+    if (!query.like.empty())
     {
         rewritten_query += " AND field ";
         if (query.not_like)

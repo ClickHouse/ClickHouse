@@ -290,7 +290,7 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
         )",
         R"(
 ┌─groupArrayInsertAt(number, 0)─┐
-│ [0]                           │
+│ [7]                           │
 └───────────────────────────────┘
         )"
     }
@@ -299,8 +299,7 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    AggregateFunctionProperties properties = {.is_order_dependent = true};
-    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation, properties});
+    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation});
 }
 
 }

@@ -10,6 +10,7 @@ SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 -- The Fast test profile sets a non-zero max_rows_to_group_by, which keeps aggregations local.
 -- Pin it to 0 so the asserted distributed plans are exercised.
@@ -39,10 +40,10 @@ EXPLAIN PLAN
 SELECT count() FROM (SELECT oj_l.k AS jk FROM oj_l RIGHT JOIN oj_r ON oj_l.k = oj_r.k) j JOIN oj_s ON j.jk = oj_s.k;
 
 SELECT '-- results match the non-distributed baseline';
-SELECT count() FROM (SELECT oj_l.k AS jk FROM oj_l RIGHT JOIN oj_r ON oj_l.k = oj_r.k) j JOIN oj_s ON j.jk = oj_s.k SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT count() FROM (SELECT oj_r.k AS jk FROM oj_l LEFT JOIN oj_r ON oj_l.k = oj_r.k) j JOIN oj_s ON j.jk = oj_s.k SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT sum(cnt) FROM (SELECT oj_l.k AS lk, count() AS cnt FROM oj_l FULL JOIN oj_r ON oj_l.k = oj_r.k GROUP BY lk) SETTINGS distributed_plan_fallback_to_local_execution = 0;
-SELECT sum(cnt) FROM (SELECT oj_r.k AS rk, count() AS cnt FROM oj_l FULL JOIN oj_r ON oj_l.k = oj_r.k GROUP BY rk) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM (SELECT oj_l.k AS jk FROM oj_l RIGHT JOIN oj_r ON oj_l.k = oj_r.k) j JOIN oj_s ON j.jk = oj_s.k;
+SELECT count() FROM (SELECT oj_r.k AS jk FROM oj_l LEFT JOIN oj_r ON oj_l.k = oj_r.k) j JOIN oj_s ON j.jk = oj_s.k;
+SELECT sum(cnt) FROM (SELECT oj_l.k AS lk, count() AS cnt FROM oj_l FULL JOIN oj_r ON oj_l.k = oj_r.k GROUP BY lk);
+SELECT sum(cnt) FROM (SELECT oj_r.k AS rk, count() AS cnt FROM oj_l FULL JOIN oj_r ON oj_l.k = oj_r.k GROUP BY rk);
 
 DROP TABLE oj_l;
 DROP TABLE oj_r;

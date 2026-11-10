@@ -253,8 +253,6 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 /// Not on WebAssembly: Emscripten's libc unconditionally defines `dlerror` (its own code
 /// pulls it in), so the override would be a duplicate symbol at the link - and a sandbox
 /// cannot load libraries in the first place.
-///
-/// Keep this guard identical to the one in `programs/keeper/keeper_main.cpp`.
 #if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || defined(OS_WASM))
 extern "C"
 {
@@ -297,8 +295,6 @@ static __attribute__((constructor(0))) void init_je_malloc_message()
 
         std::string_view message_view{str};
         if (message_view == "<jemalloc>: background thread creation failed (11)\n")
-            return;
-        if (message_view == "<jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.\n")
             return;
 
 #    if defined(SYS_write)
