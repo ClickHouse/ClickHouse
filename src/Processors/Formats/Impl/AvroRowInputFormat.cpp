@@ -57,8 +57,6 @@
 #include <Types.hh>
 #include <ValidSchema.hh>
 
-#include <array>
-
 namespace DB
 {
 
