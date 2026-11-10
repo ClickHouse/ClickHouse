@@ -53,9 +53,7 @@ private:
 
     /// Allocation that is being killed (if any)
     ResourceAllocation * allocation_to_kill = nullptr;
-    /// The requester whose increase selected `allocation_to_kill`. Only compared, never dereferenced.
-    ResourceAllocation * killer_allocation = nullptr;
-    /// The last requester failed for its own increase while `allocation_to_kill` was in flight. Only compared, never dereferenced.
+    /// A requester failed for its own increase while `allocation_to_kill` was in flight. Only compared, never dereferenced.
     ResourceAllocation * self_killed = nullptr;
 
     SpaceSharedNodePtr child;

@@ -2375,6 +2375,56 @@ TEST(SchedulerSpaceShared, ImpossibleGrowSelfKillsWhileEvictionForAnotherRequest
 }
 
 
+/// Two impossible grows while an eviction is in flight: each requester is killed exactly once. `c` waits for the
+/// release of `b` (the first self-kill) and is killed after it; when `victim` leaves, the limit waits for `c`.
+TEST(SchedulerSpaceShared, ImpossibleGrowsWhileEvictionIsInFlightAreKilledOnce)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 100);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    auto victim = std::make_unique<ManualAllocation>(queue, "victim", 40, /* eviction_score = */ 100);
+    ManualAllocation a(queue, "a", 45, /* eviction_score = */ 0);
+    auto b = std::make_unique<ManualAllocation>(queue, "b", 5, /* eviction_score = */ -10);
+    auto c = std::make_unique<ManualAllocation>(queue, "c", 5, /* eviction_score = */ -20);
+
+    auto wait_kill = [](ManualAllocation & allocation, std::chrono::seconds timeout)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (allocation.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+    };
+
+    a.increaseAsync(20); // 95 + 20 > 100: `victim` is selected and keeps its memory for now
+    wait_kill(*victim, std::chrono::seconds(60));
+    ASSERT_EQ(victim->killCount(), 1u);
+
+    b->increaseAsync(200);
+    wait_kill(*b, std::chrono::seconds(10));
+    ASSERT_EQ(b->killCount(), 1u);
+
+    c->increaseAsync(200); // `c` has the lowest score, so its impossible grow is now current
+    r.sync();
+    EXPECT_EQ(c->killCount(), 0u) << "Only one self-kill is in flight at a time";
+
+    b.reset();
+    wait_kill(*c, std::chrono::seconds(10));
+    EXPECT_EQ(c->killCount(), 1u);
+
+    victim.reset();
+    r.sync();
+    EXPECT_EQ(c->killCount(), 1u);
+    EXPECT_EQ(a.killCount(), 0u);
+
+    c.reset();
+    a.waitSynced();
+    EXPECT_EQ(a.size(), 65);
+    EXPECT_EQ(a.killCount(), 0u);
+}
+
+
 /// An impossible grow — the requester's own reservation exceeds the limit, so no eviction can make it fit —
 /// must fail the requester's own request rather than evict a peer. `AllocationLimit` (the limit-enforcing
 /// node) selects the requester before descending to a victim.

@@ -177,16 +177,10 @@ void AllocationLimit::approveDecrease()
     // Check if allocation being killed released all its resources
     if (decrease->removing_allocation)
     {
+        // A requester that failed itself meanwhile is still releasing: wait for it as for a selected victim.
         if (&decrease->allocation == allocation_to_kill)
-        {
-            // A requester that failed itself meanwhile is still releasing: wait for it as for a selected victim.
             allocation_to_kill = std::exchange(self_killed, nullptr);
-            killer_allocation = allocation_to_kill;
-        }
-        // A new allocation may reuse the address of a removed one.
-        if (&decrease->allocation == killer_allocation)
-            killer_allocation = nullptr;
-        if (&decrease->allocation == self_killed)
+        else if (&decrease->allocation == self_killed)
             self_killed = nullptr;
     }
 
@@ -239,7 +233,6 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         // next `setIncrease(..., reapply_constraint=true)` below picks a fresh victim. The
         // previously-issued `killAllocation` is harmless if its target has already cleaned up.
         allocation_to_kill = nullptr;
-        killer_allocation = nullptr;
         self_killed = nullptr;
         reapply_constraint = true;
     }
@@ -294,7 +287,6 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
         // `nullptr`. Any previously-issued `killAllocation` is harmless if its target has already
         // cleaned up.
         allocation_to_kill = nullptr;
-        killer_allocation = nullptr;
         self_killed = nullptr;
     }
 
@@ -317,16 +309,12 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                 {
                     allocation_to_kill = selectAllocationToKill(*new_increase, max_allocated, details);
                     if (allocation_to_kill)
-                    {
-                        killer_allocation = &new_increase->allocation;
                         kill(*new_increase, *allocation_to_kill, details);
-                    }
                 }
-                else if (&new_increase->allocation != killer_allocation && &new_increase->allocation != self_killed
-                    && &new_increase->allocation != allocation_to_kill)
+                else if (!self_killed && &new_increase->allocation != allocation_to_kill)
                 {
-                    // An eviction selected for another requester is still in flight. Keep waiting for its release,
-                    // unless this request cannot fit even then.
+                    // An eviction is still in flight. Keep waiting for its release, unless this request cannot fit
+                    // even then. One such self-kill at a time, so no allocation is killed twice.
                     if (ResourceAllocation * self = selectSelfKill(*new_increase, max_allocated, details))
                     {
                         self_killed = &new_increase->allocation;
