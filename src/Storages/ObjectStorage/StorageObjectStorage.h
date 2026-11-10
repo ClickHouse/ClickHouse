@@ -143,6 +143,8 @@ public:
     std::optional<NameSet> supportedPrewhereColumns() const override;
     ColumnSizeByName getColumnSizes() const override;
 
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
@@ -269,6 +271,9 @@ protected:
 
     VirtualColumnsDescription createVirtualColumns(ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const;
 
+    StorageMetadataPtr getMetadataForRead(const StorageMetadataPtr & metadata, const ContextPtr & context) const;
+    bool readsIgnoreDeclaredDefinition(const ContextPtr & context) const;
+
     /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -304,6 +309,8 @@ protected:
     bool hive_partitioning_sample_path_deferred = false;
     std::mutex hive_partitioning_resolution_mutex;
     std::mutex settings_changes_mutex;
+    /// The definition of the table as stored, which a reload of the schema from the data lake keeps.
+    MultiVersion<StorageInMemoryMetadata> declared_metadata;
     /// Stays false on a failed resolution, so the next query retries it.
     bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
 
