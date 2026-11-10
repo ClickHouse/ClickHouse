@@ -200,6 +200,9 @@ struct DecorrelationContext
     /// Whether the optimizer will turn the referenced input subplan into an in-memory ChunkBuffer.
     /// Decided once here (see decorrelateQueryPlan); buildLogicalJoin uses it to pick the join kind.
     bool uses_in_memory_buffer = false;
+    /// Whether the correlated columns of the decorrelated plan may come from the distinct outer values, where `NULL`
+    /// is a value. Otherwise they are equal inner columns, which the retained `equals` filter never lets be `NULL`.
+    bool uses_correlated_domain = false;
 };
 
 /// How to convert an equivalent column to exactly the correlated column type.
@@ -417,6 +420,7 @@ bool referencedInputUsesInMemoryBuffer(const DecorrelationContext & context)
 QueryPlan buildCorrelatedDomainPlan(DecorrelationContext & context)
 {
     context.uses_in_memory_buffer = referencedInputUsesInMemoryBuffer(context);
+    context.uses_correlated_domain = true;
     context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
 
     auto buffer_header = std::make_shared<Block>();
@@ -1603,7 +1607,8 @@ QueryPlan buildLogicalJoin(
     QueryPlan input_stream_plan,
     QueryPlan decorrelated_plan,
     const CorrelatedSubquery & correlated_subquery,
-    bool uses_in_memory_buffer
+    bool uses_in_memory_buffer,
+    bool uses_correlated_domain
 )
 {
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
@@ -1666,7 +1671,11 @@ QueryPlan buildLogicalJoin(
         std::vector<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
-        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+        /// A `NULL` domain value has its own evaluation of the subquery, which must match the outer rows with `NULL`.
+        auto key_operator = uses_correlated_domain && isNullableOrLowCardinalityNullable(eq_arguments.front().getType())
+            ? JoinConditionOperator::NullSafeEquals
+            : JoinConditionOperator::Equals;
+        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(key_operator));
         predicates.push_back(std::move(eq_node));
     }
 
@@ -1858,7 +1867,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
                 correlated_subquery,
-                context.uses_in_memory_buffer);
+                context.uses_in_memory_buffer,
+                context.uses_correlated_domain);
             break;
         }
         case CorrelatedSubqueryKind::EXISTS:
@@ -1908,7 +1918,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
                 correlated_subquery,
-                context.uses_in_memory_buffer);
+                context.uses_in_memory_buffer,
+                context.uses_correlated_domain);
             break;
         }
         case CorrelatedSubqueryKind::LATERAL_JOIN:

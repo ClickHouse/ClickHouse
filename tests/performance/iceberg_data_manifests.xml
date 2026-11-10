@@ -213,8 +213,13 @@
     <create_query>DROP TABLE IF EXISTS perf_iceberg_data_manifests</create_query>
     <create_query>CREATE TABLE perf_iceberg_data_manifests (id Int64, data String) ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/perf_iceberg_data_manifests/'))</create_query>
     <create_query>INSERT INTO perf_iceberg_data_manifests SELECT number + {n} * 500, toString(number) FROM numbers(500) SETTINGS allow_insert_into_iceberg = 1</create_query>
+    <!-- use_iceberg_metadata_files_cache is read when the table is created, so this twin reads all 200 manifests on every run. -->
+    <create_query>DROP TABLE IF EXISTS perf_iceberg_data_manifests_cold</create_query>
+    <create_query>CREATE TABLE perf_iceberg_data_manifests_cold ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/perf_iceberg_data_manifests/')) SETTINGS use_iceberg_metadata_files_cache = 0</create_query>
 
     <query>SELECT max(id) FROM perf_iceberg_data_manifests SETTINGS use_iceberg_metadata_files_cache = 0</query>
+    <query>SELECT max(id) FROM perf_iceberg_data_manifests_cold</query>
 
+    <drop_query>DROP TABLE IF EXISTS perf_iceberg_data_manifests_cold</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_iceberg_data_manifests</drop_query>
 </test>
