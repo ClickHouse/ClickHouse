@@ -324,7 +324,7 @@ TEST(ZooKeeperTest, ListWithOptionsV1RejectsVersionTwoOnSameOpcode)
     auto decoded_request = ZooKeeperRequestFactory::instance().get(OpNum::ListWithOptions);
     auto & decoded = dynamic_cast<ZooKeeperListWithOptionsRequest &>(*decoded_request);
     ReadBufferFromString in(out.str());
-    EXPECT_THROW(decoded.readImpl(in), Exception);
+    EXPECT_THROW(decoded.readImpl(in), Coordination::Exception);
 }
 
 TEST(ZooKeeperTest, Create2ResponseWireRoundTrip)
