@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ifNull` and `coalesce` execute their lazy arguments themselves, so they must report the profiles of
+# `ifNull`, `coalesce` and `caseWithExpression` execute their lazy arguments themselves, so they must report the profiles of
 # these arguments, as `if` does. Otherwise `enable_adaptive_short_circuit_lazy_execution` never sees how
 # much a lazy argument costs and never switches it to eager execution. Here the lazily executed `and`
 # is needed for 99% of the rows and is so cheap that filtering and expanding the rows costs more than
@@ -52,4 +52,7 @@ check "ifNull" "SELECT sum(ifNull(n, and(b1, b2))) FROM t"
 check "coalesce" "SELECT sum(coalesce(n, and(b1, b2))) FROM t"
 # The constant `NULL` arguments are skipped by `coalesce`, the profiles must still refer to the positions of the arguments.
 check "coalesce_with_nulls" "SELECT sum(coalesce(NULL, n, NULL, n, and(b1, b2))) FROM t"
+# `CASE x WHEN ... END` with constant values uses `transform`, and `multiIf` otherwise.
+check "case_transform" "SELECT sum(CASE isNull(n) WHEN 0 THEN 7 ELSE and(b1, b2) END) FROM t"
+check "case_multi_if" "SELECT sum(CASE isNull(n) WHEN 0 THEN 7 WHEN b1 + 100 THEN 8 ELSE and(b1, b2) END) FROM t"
 check "if" "SELECT sum(if(isNull(n), and(b1, b2), assumeNotNull(n))) FROM t"
