@@ -47,7 +47,6 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/SubcolumnCodecs.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageProxy.h>
