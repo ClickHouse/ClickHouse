@@ -85,6 +85,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -206,6 +207,7 @@ namespace Setting
     extern const SettingsBool log_profile_events;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool log_queries;
+    extern const SettingsBool log_query_views;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
     extern const SettingsFloat log_queries_probability;
@@ -577,6 +579,60 @@ String formatQueryForLogging(const String & query, const Settings & settings)
         settings[Setting::max_parser_backtracks],
         /*skip_insignificant*/ true);
     return ast ? ast->formatForLogging(settings[Setting::log_queries_cut_to_length]) : "";
+}
+
+/// The views that ran under a query context of their own as part of this query (see `Context::ViewExecutionLogEntry`)
+/// are logged into `system.query_views_log`, as the views of an insert chain are, with the access info of that context.
+static void logViewExecutions(const QueryLogElement & parent, const ContextPtr & context)
+{
+    const Settings & settings = context->getSettingsRef();
+    if (!settings[Setting::log_queries] || !settings[Setting::log_query_views] || !context->hasQueryContext())
+        return;
+
+    auto entries = context->getQueryContext()->getViewExecutionLogEntries();
+    if (entries.empty())
+        return;
+
+    auto views_log = context->getQueryViewsLog();
+    if (!views_log)
+        return;
+
+    for (const auto & entry : entries)
+    {
+        views_log->add([&](QueryViewsLogElement & element)
+        {
+            element.event_time = parent.event_time;
+            element.event_time_microseconds = parent.event_time_microseconds;
+            element.initial_query_id = parent.client_info.current_query_id;
+
+            element.view_name = entry.view_id.getFullTableName();
+            element.view_uuid = entry.view_id.uuid;
+            element.view_type = entry.is_materialized ? QueryViewsLogElement::ViewType::MATERIALIZED : QueryViewsLogElement::ViewType::DEFAULT;
+            element.view_query = entry.view_query;
+            element.view_target = entry.view_target;
+            element.user = entry.user;
+
+            {
+                std::lock_guard lock(entry.access_info->mutex);
+                element.databases = entry.access_info->databases;
+                element.tables = entry.access_info->tables;
+                element.columns = entry.access_info->columns;
+                element.partitions = entry.access_info->partitions;
+                element.projections = entry.access_info->projections;
+                element.used_row_policies = entry.access_info->row_policies;
+            }
+
+            /// The view has no status of its own: it finishes or fails with the query.
+            element.status = parent.type == QueryLogElementType::QUERY_FINISH
+                ? QueryLogElementType::QUERY_FINISH
+                : QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
+            if (element.status != QueryLogElementType::QUERY_FINISH)
+            {
+                element.exception_code = parent.exception_code;
+                element.exception = parent.exception;
+            }
+        });
+    }
 }
 
 QueryLogElement logQueryStart(
@@ -988,6 +1044,8 @@ static void logQueryFinishImpl(
                 query_log->add([&](QueryLogElement & e) { e = elem; });
         }
 
+        logViewExecutions(elem, context);
+
         /// Already logged; `elem` lives on in a `BlockIO` callback and this snapshot would outlive the query.
         elem.profile_counters.reset();
     }
@@ -1165,6 +1223,8 @@ void logQueryException(
 
         query_log->add([&](QueryLogElement & e) { e = elem; });
     }
+
+    logViewExecutions(elem, context);
 
     if (query_span)
     {

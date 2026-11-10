@@ -559,10 +559,27 @@ public:
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
+    /// A view that ran under a query context of its own (`SQL SECURITY DEFINER` / `NONE`) as part of this query: a sealed
+    /// view the query read, or a materialized view read through. It is logged into `system.query_views_log` when the query
+    /// finishes, with the access info of that context. The views of an insert chain are logged by `InsertDependenciesBuilder`.
+    struct ViewExecutionLogEntry
+    {
+        StorageID view_id;
+        bool is_materialized = false;
+        /// Set for a materialized view.
+        String view_target{};
+        /// Empty for a read through a materialized view, which runs nothing of the view's query.
+        String view_query{};
+        /// Empty for `SQL SECURITY NONE`.
+        String user;
+        QueryAccessInfoPtr access_info;
+    };
+
 protected:
     /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
     /// Therefore, query_access_info must be a pointer.
     QueryAccessInfoPtr query_access_info;
+    std::vector<ViewExecutionLogEntry> view_execution_log_entries;
 
 public:
     /// Record names of created objects of factories (for testing, etc)
@@ -1216,6 +1233,10 @@ public:
     void addQueryAccessInfo(const Names & partition_names);
     void addViewAccessInfo(const String & view_name);
     void addUsedRowPolicy(const String & policy_name);
+
+    /// Both are called on the query context.
+    void addViewExecutionLogEntry(ViewExecutionLogEntry entry);
+    std::vector<ViewExecutionLogEntry> getViewExecutionLogEntries() const;
 
     struct QualifiedProjectionName
     {

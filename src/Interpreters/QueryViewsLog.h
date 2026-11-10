@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <memory>
+#include <set>
 #include <sys/types.h>
 
 #include <Columns/IColumn_fwd.h>
@@ -45,6 +46,17 @@ struct QueryViewsLogElement
     ViewType view_type{ViewType::DEFAULT};
     String view_query;
     String view_target;
+    /// The user the view's query ran as: the definer of a `SQL SECURITY DEFINER` view, empty for `SQL SECURITY NONE`,
+    /// otherwise the user of the query.
+    String user;
+    /// What the view's query accessed. Filled for a view that runs under a query context of its own (`SQL SECURITY
+    /// DEFINER` / `NONE`); the objects accessed by a view that runs as the user are in the user's `system.query_log` row.
+    std::set<String> databases;
+    std::set<String> tables;
+    std::set<String> columns;
+    std::set<String> partitions;
+    std::set<String> projections;
+    std::set<String> used_row_policies;
 
     UInt64 read_rows{};
     UInt64 read_bytes{};

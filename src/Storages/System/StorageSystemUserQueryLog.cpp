@@ -281,11 +281,24 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
     /// For queries received from an initiator (e.g. from a distributed query), the initiating user is
     /// recorded in `initial_user`, while `user` may be the interserver connection user. `currentUser()`
     /// is `ClientInfo::initial_user` as well, so both sides of the comparison use the initiating user.
+    /// `initial_user` is forwarded in ClientInfo, and a SECONDARY_QUERY peer may supply any value, so it is
+    /// trusted only when it is the authenticated user. `clickhouse-local` has no authenticated user: both
+    /// names are empty there.
+    const auto & client_info = outer_context->getClientInfo();
+    const bool local_without_user = outer_context->getApplicationType() == Context::ApplicationType::LOCAL
+        && client_info.interface == ClientInfo::Interface::LOCAL
+        && client_info.current_user.empty() && client_info.initial_user.empty();
+    const bool identity_is_consistent = local_without_user
+        || (!client_info.current_user.empty() && client_info.current_user == client_info.initial_user);
+
+    /// Only the user's own top-level queries: the child rows of a query, the parts sent to other servers and the
+    /// bodies of `SQL SECURITY DEFINER` views, may name objects the user has no access to.
     String select_query = fmt::format(
-        "SELECT {} FROM {} WHERE (if(initial_user != '', initial_user, user) = {})",
+        "SELECT {} FROM {} WHERE {} AND is_initial_query = 1 AND (if(initial_user != '', initial_user, user) = {})",
         select_columns,
         log_table_id.getFullTableName(),
-        quoteString(outer_context->getClientInfo().initial_user));
+        identity_is_consistent ? "1" : "0",
+        quoteString(client_info.initial_user));
 
     if (String pushed_conditions = buildPushedDownConditions(); !pushed_conditions.empty())
         select_query += fmt::format(" AND ({})", pushed_conditions);

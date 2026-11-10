@@ -53,6 +53,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 #include <Core/UUID.h>
+#include <Access/Common/SQLSecurityDefs.h>
 
 #include <Backups/BackupEntriesCollector.h>
 
@@ -568,6 +569,19 @@ void StorageMaterializedView::readImpl(
     if (!has_inner_table && !storage_id.empty() && view_metadata->sql_security_type)
         context->checkAccess(
             AccessType::SELECT, storage_id, target_storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, context, storage_id));
+
+    /// A `DEFINER` / `NONE` view reads its target under a query context of its own: that read is logged with the view in
+    /// `system.query_views_log`, not in the caller's row. Nothing of the view's query runs, so `view_query` stays empty.
+    if (local_context->hasQueryContext() && context->hasQueryContext() && context->getQueryContext() != local_context->getQueryContext())
+    {
+        context->getQueryContext()->addQueryAccessInfo(storage_id, column_names);
+        local_context->getQueryContext()->addViewExecutionLogEntry(Context::ViewExecutionLogEntry{
+            .view_id = getStorageID(),
+            .is_materialized = true,
+            .view_target = storage_id.getFullTableName(),
+            .user = view_metadata->sql_security_type == SQLSecurityType::DEFINER && view_metadata->definer ? *view_metadata->definer : "",
+            .access_info = context->getQueryAccessInfoPtr()});
+    }
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;

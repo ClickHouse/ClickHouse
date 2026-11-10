@@ -229,8 +229,11 @@ protected:
 
 private:
     bool isView(StorageIDMaybeEmpty id) const;
+    /// The view runs under a query context of its own, see `getSQLSecurityOverriddenContext`. Its access info is kept
+    /// apart from the caller's and logged with the view in `system.query_views_log`.
+    bool isSQLSecurityOverridden(const StorageIDMaybeEmpty & id) const;
 
-    std::pair<ContextPtr, ContextPtr> createSelectInsertContext(const DependencyPath & path);
+    std::pair<ContextMutablePtr, ContextMutablePtr> createSelectInsertContext(const DependencyPath & path);
     bool observePath(const DependencyPath & path);
     String debugTree() const;
     String debugPath(const DependencyPath & path) const;

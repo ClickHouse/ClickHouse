@@ -3405,6 +3405,21 @@ void Context::addUsedRowPolicy(const String & policy_name)
     query_access_info->row_policies.emplace(policy_name);
 }
 
+void Context::addViewExecutionLogEntry(ViewExecutionLogEntry entry)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have view execution log entries");
+
+    std::lock_guard lock(mutex);
+    view_execution_log_entries.push_back(std::move(entry));
+}
+
+std::vector<Context::ViewExecutionLogEntry> Context::getViewExecutionLogEntries() const
+{
+    SharedLockGuard lock(mutex);
+    return view_execution_log_entries;
+}
+
 void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)
 {
     if (!qualified_projection_name)

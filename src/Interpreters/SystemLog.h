@@ -97,6 +97,8 @@ ORDER BY event_time_microseconds;
 If correlated child queries can run on other nodes, query `system.query_log` on every node, for example with [`clusterAllReplicas`](/reference/functions/table-functions/cluster).
 </Tip>
 
+A view with `SQL SECURITY DEFINER` or `NONE` runs its query under the definer's identity, or without one. What such a view accessed is not part of the row of the query that used it: it is logged with the view in [system.query_views_log](/reference/system-tables/query_views_log), together with the `user` it ran as. The exception is a transparent view, a plain projection over one `MergeTree` table whose inner query `EXPLAIN` already shows to the caller: it is attributed in the caller's own row.
+
 Each query creates one or two rows in the `query_log` table, depending on the status (see the `type` column) of the query:
 
 1.  If the query execution was successful, two rows with the `QueryStart` and `QueryFinish` types are created.

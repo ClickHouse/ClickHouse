@@ -3384,6 +3384,8 @@ Note that regardless of the SQL security option, in every case it is still requi
 Thus, it is required to have `GRANT ALLOW SQL SECURITY NONE TO <user>` in order to create a view with this option.
 </Note>
 
+What the query of a `DEFINER` or `NONE` view accesses is recorded in [system.query_views_log](/reference/system-tables/query_views_log), with `user` set to the definer, and not in the `system.query_log` row of the query that used the view.
+
 If `DEFINER`/`SQL SECURITY` aren't specified, the result depends on the [`ignore_empty_sql_security_in_create_view_query`](/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query) server setting.
 
 With its default value of `true`, the query is stored as written and the view gets an empty SQL security type. A normal view then runs with the permissions of the invoker, and for a materialized view with an explicitly specified target table, the access checks on that target table are skipped: inserting into the source table does not require the `INSERT` privilege on the target table, and reading from the view does not require the `SELECT` privilege on it.

@@ -1345,19 +1345,30 @@ Chain InsertDependenciesBuilder::createChainWithDependencies(InputPort * returni
 }
 
 
-std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertContext(const DependencyPath & path)
+bool InsertDependenciesBuilder::isSQLSecurityOverridden(const StorageIDMaybeEmpty & id) const
+{
+    /// A view that could not be observed, e.g. one whose target is gone, has no metadata here.
+    auto it = id.empty() ? metadata_snapshots.end() : metadata_snapshots.find(id);
+    if (it == metadata_snapshots.end())
+        return false;
+    const auto & type = it->second->sql_security_type;
+    return type == SQLSecurityType::DEFINER || type == SQLSecurityType::NONE;
+}
+
+std::pair<ContextMutablePtr, ContextMutablePtr> InsertDependenciesBuilder::createSelectInsertContext(const DependencyPath & path)
 {
     const auto & current = path.current();
 
     auto parent_select_context = select_contexts.at(path.parent(2));
     auto select_context = metadata_snapshots.at(current)->getSQLSecurityOverriddenContext(parent_select_context);
-    select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
+    if (!isSQLSecurityOverridden(current))
+        select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)
     select_context->setSetting("parallelize_output_from_storages", Field{false});
 
     auto insert_context = Context::createCopy(select_context);
-    insert_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
+    insert_context->setQueryAccessInfo(select_context->getQueryAccessInfoPtr());
     if (!deduplicate_blocks_in_dependent_materialized_views)
         insert_context->setSetting("insert_deduplicate", Field{false});
 
@@ -1538,6 +1549,14 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     {
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
         const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
+        if (isSQLSecurityOverridden(root_view_))
+        {
+            /// The target is recorded with the view, see the regular table branch below.
+            select_context->addQueryAccessInfo(inner_table_, /*column_names=*/ {});
+        }
+        else if (init_context->hasQueryContext())
+            select_context->setQueryAccessInfo(init_context->getQueryContext()->getQueryAccessInfoPtr());
+        insert_context->setQueryAccessInfo(select_context->getQueryAccessInfoPtr());
 
         root_view = root_view_;
         inner_tables[root_view] = inner_table_;
@@ -1573,12 +1592,23 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         input_headers[current] = output_headers.at(path.parent(2));
         // output_headers is filled at next call observePath(inner_table)
 
-        std::tie(select_contexts[current], insert_contexts[current]) = createSelectInsertContext(path);
+        auto [select_context, insert_context] = createSelectInsertContext(path);
+        select_contexts[current] = select_context;
+        insert_contexts[current] = insert_context;
 
         dependent_views[current] = {};
 
         if (init_context->hasQueryContext())
-            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
+        {
+            if (isSQLSecurityOverridden(current))
+            {
+                /// The view and its target are recorded with the view, see the regular table branch below.
+                select_context->addViewAccessInfo(current.getFullTableName());
+                select_context->addQueryAccessInfo(materialized_view->getTargetTableId(), /*column_names=*/ {});
+            }
+            else
+                init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
+        }
 
         return true;
     }
@@ -1588,7 +1618,8 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         /// at the first iteration it is the init_table_id most likely
         /// the following iterations will be for inner tables of materialized views
 
-        if (init_context->hasQueryContext())
+        /// The target of a `DEFINER` / `NONE` view is recorded with the view.
+        if (init_context->hasQueryContext() && !(isView(parent) && isSQLSecurityOverridden(parent)))
             init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
 
         if (current == init_table_id)
@@ -2021,6 +2052,26 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
             element.view_type = view_type;
             element.view_query = getViewQueryForLog(view_id);
             element.view_target = inner_table_id.getFullTableName();
+
+            if (auto metadata_it = metadata_snapshots.find(view_id); metadata_it != metadata_snapshots.end())
+            {
+                const auto & view_metadata = metadata_it->second;
+                if (view_metadata->sql_security_type == SQLSecurityType::DEFINER)
+                    element.user = view_metadata->definer.value_or("");
+                else if (view_metadata->sql_security_type != SQLSecurityType::NONE)
+                    element.user = init_context->getClientInfo().current_user;
+            }
+            if (auto context_it = select_contexts.find(view_id); context_it != select_contexts.end() && isSQLSecurityOverridden(view_id))
+            {
+                const auto & access_info = context_it->second->getQueryAccessInfo();
+                std::lock_guard lock(access_info.mutex);
+                element.databases = access_info.databases;
+                element.tables = access_info.tables;
+                element.columns = access_info.columns;
+                element.partitions = access_info.partitions;
+                element.projections = access_info.projections;
+                element.used_row_policies = access_info.row_policies;
+            }
 
             element.peak_memory_usage = thread_group->memory_tracker.getPeak() > 0 ? thread_group->memory_tracker.getPeak() : 0;
 

@@ -77,6 +77,8 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
+    extern const SettingsBool enable_shared_storage_snapshot_in_query;
+    extern const SettingsUInt64 log_queries_cut_to_length;
 }
 
 namespace ErrorCodes
@@ -337,10 +339,40 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
+ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view, bool sealed)
 {
-    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    const auto & metadata = *storage_snapshot->metadata;
+    auto view_context = metadata.getSQLSecurityOverriddenContext(context);
+
+    /// A `DEFINER` / `NONE` body runs under a query context of its own, see `getSQLSecurityOverriddenContext`.
+    bool shares_caller_query_context = false;
+    if (context->hasQueryContext() && view_context->hasQueryContext() && view_context->getQueryContext() != context->getQueryContext())
+    {
+        auto query_context = context->getQueryContext();
+        if (sealed)
+        {
+            /// What a sealed body reads is logged with the view in `system.query_views_log`, not in the caller's row.
+            const auto max_length = context->getSettingsRef()[Setting::log_queries_cut_to_length];
+            query_context->addViewExecutionLogEntry(Context::ViewExecutionLogEntry{
+                .view_id = view->getStorageID(),
+                .view_query = metadata.getSelectQuery().inner_query->formatForLogging(max_length),
+                .user = metadata.sql_security_type == SQLSecurityType::DEFINER && metadata.definer ? *metadata.definer : "",
+                .access_info = view_context->getQueryAccessInfoPtr()});
+        }
+        else
+        {
+            /// A transparent body is a plain projection of a MergeTree table (see `isSealed`) that `EXPLAIN` shows to the
+            /// caller: what it reads is attributed to the caller's row, so let it resolve to the caller's query context.
+            view_context->setQueryContext(query_context);
+            shares_caller_query_context = true;
+        }
+    }
+
     Settings view_settings = view_context->getSettingsCopy();
+    /// The snapshot cache of the caller's query is keyed by table only, while the body may read with other
+    /// `apply_mutations_on_fly` / `apply_patch_parts`, e.g. from the definer's profile. Take an own snapshot.
+    if (shares_caller_query_context)
+        view_settings[Setting::enable_shared_storage_snapshot_in_query] = false;
 
     /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
     if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree]
@@ -743,7 +775,7 @@ void StorageView::readImpl(
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
     const bool sealed = isSealed(*storage_snapshot->metadata, context);
-    auto view_context = getViewContext(context, storage_snapshot, this);
+    auto view_context = getViewContext(context, storage_snapshot, this, sealed);
     {
         /// The outer filter is used only to analyze the indexes of the inner tables,
         /// but for a sealed view it would skip data by the values of the rows the view hides.
@@ -751,6 +783,9 @@ void StorageView::readImpl(
             current_inner_query, view_context, options, column_names, sealed ? nullptr : query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
+        /// The body's query context has no other owner, while the plan steps reference it only weakly and the
+        /// optimizer still records the chosen projections into it.
+        query_plan.addInterpreterContext(view_context);
     }
 
     /// And also convert to expected structure.
@@ -953,10 +988,24 @@ Used for implementing views (for more information, see the `CREATE VIEW query`).
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+
+    /// The inlined body is planned as part of the caller's query, and its nodes and plan steps hold copies of
+    /// `view_context` that reference a query context only weakly: let a `DEFINER` / `NONE` body resolve to the caller's
+    /// query context instead of one of its own that nobody owns. Only a transparent view is inlined (see `isSealed`).
+    bool shares_caller_query_context = false;
+    if (context->hasQueryContext() && view_context->hasQueryContext() && view_context->getQueryContext() != context->getQueryContext())
+    {
+        view_context->setQueryContext(context->getQueryContext());
+        shares_caller_query_context = true;
+    }
+
     Settings view_settings = view_context->getSettingsCopy();
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
+    /// See `getViewContext`.
+    if (shares_caller_query_context)
+        view_settings[Setting::enable_shared_storage_snapshot_in_query] = false;
     view_context->setSettings(view_settings);
     /// The inlined view body is the inner query of the view, just like in `getViewContext`:
     /// e.g. it must read the table itself, not the inserted block of a materialized view.

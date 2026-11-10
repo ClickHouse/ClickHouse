@@ -2,7 +2,9 @@
 
 #include <base/getFQDNOrHostName.h>
 #include <Common/config_version.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/IColumn.h>
+#include <Common/typeid_cast.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
@@ -36,6 +38,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"Window", static_cast<Int8>(ViewType::WINDOW)}});
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto array_low_cardinality_string = std::make_shared<DataTypeArray>(low_cardinality_string);
 
     return ColumnsDescription
     {
@@ -50,9 +53,16 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query in the same query chain."},
         {"view_name", std::make_shared<DataTypeString>(), "Name of the view."},
         {"view_uuid", std::make_shared<DataTypeUUID>(), "UUID of the view."},
-        {"view_type", std::move(view_type_datatype), "Type of the view. Values: 'Default' = 1 — Default views. Should not appear in this log, 'Materialized' = 2 — Materialized views, 'Live' = 3 — Live views."},
+        {"view_type", std::move(view_type_datatype), "Type of the view. Values: 'Default' = 1 — Default views, logged for a view with `SQL SECURITY DEFINER` or `NONE` that a query reads through, 'Materialized' = 2 — Materialized views, 'Live' = 3 — Live views."},
         {"view_query", std::make_shared<DataTypeString>(), "The query executed by the view."},
         {"view_target", std::make_shared<DataTypeString>(), "The name of the view target table."},
+        {"user", low_cardinality_string, "The user the view's query ran as: the definer of a `SQL SECURITY DEFINER` view, empty for `SQL SECURITY NONE`, otherwise the user of the query."},
+        {"databases", array_low_cardinality_string, "Names of the databases accessed by the view's query. The access columns are filled for a view with `SQL SECURITY DEFINER` or `NONE`, which runs under a query context of its own; what a view that runs as the user accessed is listed in the user's `system.query_log` row."},
+        {"tables", array_low_cardinality_string, "Names of the tables accessed by the view's query, see `databases`."},
+        {"columns", array_low_cardinality_string, "Names of the columns accessed by the view's query, see `databases`."},
+        {"partitions", array_low_cardinality_string, "Names of the partitions accessed by the view's query, see `databases`."},
+        {"projections", array_low_cardinality_string, "Names of the projections used by the view's query, see `databases`."},
+        {"used_row_policies", array_low_cardinality_string, "Names of the row policies applied in the view's query, see `databases`."},
 
         {"read_rows", std::make_shared<DataTypeUInt64>(), "Number of read rows."},
         {"read_bytes", std::make_shared<DataTypeUInt64>(), "Number of read bytes."},
@@ -79,45 +89,61 @@ NamesAndAliases QueryViewsLogElement::getNamesAndAliases()
         {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}};
 }
 
-void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
+void QueryViewsLogElement::appendToBlock(MutableColumns & result_columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType()); // event_date
-    columns[i++]->insert(event_time);
-    columns[i++]->insert(event_time_microseconds);
-    columns[i++]->insert(view_duration_ms);
+    result_columns[i++]->insert(getFQDNOrHostName());
+    result_columns[i++]->insert(VERSION_STRING);
+    result_columns[i++]->insert(SYSTEM_PROCESSOR);
+    result_columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType()); // event_date
+    result_columns[i++]->insert(event_time);
+    result_columns[i++]->insert(event_time_microseconds);
+    result_columns[i++]->insert(view_duration_ms);
 
-    columns[i++]->insertData(initial_query_id.data(), initial_query_id.size());
-    columns[i++]->insertData(view_name.data(), view_name.size());
-    columns[i++]->insert(view_uuid);
-    columns[i++]->insert(view_type);
-    columns[i++]->insertData(view_query.data(), view_query.size());
-    columns[i++]->insertData(view_target.data(), view_target.size());
+    result_columns[i++]->insertData(initial_query_id.data(), initial_query_id.size());
+    result_columns[i++]->insertData(view_name.data(), view_name.size());
+    result_columns[i++]->insert(view_uuid);
+    result_columns[i++]->insert(view_type);
+    result_columns[i++]->insertData(view_query.data(), view_query.size());
+    result_columns[i++]->insertData(view_target.data(), view_target.size());
+    result_columns[i++]->insertData(user.data(), user.size());
 
-    columns[i++]->insert(read_rows);
-    columns[i++]->insert(read_bytes);
-    columns[i++]->insert(written_rows);
-    columns[i++]->insert(written_bytes);
-    columns[i++]->insert(peak_memory_usage);
+    auto insert_names = [&](const std::set<String> & names)
+    {
+        auto & column = typeid_cast<ColumnArray &>(*result_columns[i++]);
+        for (const auto & name : names)
+            column.getData().insertData(name.data(), name.size());
+        auto & offsets = column.getOffsets();
+        offsets.push_back(offsets.back() + names.size());
+    };
+    insert_names(databases);
+    insert_names(tables);
+    insert_names(columns);
+    insert_names(partitions);
+    insert_names(projections);
+    insert_names(used_row_policies);
+
+    result_columns[i++]->insert(read_rows);
+    result_columns[i++]->insert(read_bytes);
+    result_columns[i++]->insert(written_rows);
+    result_columns[i++]->insert(written_bytes);
+    result_columns[i++]->insert(peak_memory_usage);
 
     if (profile_counters)
     {
-        auto * column = columns[i++].get();
+        auto * column = result_columns[i++].get();
         ProfileEvents::dumpToMapColumn(*profile_counters, column, true);
     }
     else
     {
-        columns[i++]->insertDefault();
+        result_columns[i++]->insertDefault();
     }
 
-    columns[i++]->insert(status);
-    columns[i++]->insert(exception_code);
-    columns[i++]->insertData(exception.data(), exception.size());
-    columns[i++]->insertData(stack_trace.data(), stack_trace.size());
+    result_columns[i++]->insert(status);
+    result_columns[i++]->insert(exception_code);
+    result_columns[i++]->insertData(exception.data(), exception.size());
+    result_columns[i++]->insertData(stack_trace.data(), stack_trace.size());
 }
 
 }
