@@ -60,6 +60,12 @@ public:
     /// (`input_format_null_as_default`), a union branch that the row did not take, an array of records without items.
     /// `missing[column]` is empty, not all zeros, for a column that the plan always reads from the file, so
     /// no per-row work is spent on it: a caller reads a flag only for rows below `missing[column].size()`.
+    ///
+    /// The executor counts the items of arrays and maps that occupy no bytes (`null`, an empty record) without
+    /// visiting them. When the plan only appends their default value to the column (`Nothing`, `Tuple()`, a `Nullable`
+    /// null, a record of these), it does so for a whole array at once: a row's budget of 16777216 items is not that many
+    /// calls, and for `Nothing` and `Tuple()` no memory either. Every other loop over the items of an array or a map
+    /// looks at the cancellation of the query once per 65536 items.
     UInt64 decode(
         std::span<const UInt8> input,
         UInt64 max_rows,

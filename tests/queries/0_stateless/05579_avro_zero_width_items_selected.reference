@@ -1,0 +1,16 @@
+8192 rows of 16777216 items
+8192	137438953472
+8192	137438953472
+8192	137438953472
+Values
+0
+3
+1
+[]
+[NULL,NULL,NULL]
+[NULL]
+[]
+[(),(),()]
+[()]
+More than the budget of a row
+exceeds the limit of 16777216 per row
