@@ -1,0 +1,29 @@
+<test>
+    <!-- The initiator plans the query of the shards once, whatever the number of shards. -->
+    <settings>
+        <serialize_query_plan>0</serialize_query_plan>
+    </settings>
+
+    <query>EXPLAIN SELECT
+        sumIf(number * 1, number % 2 = 1 AND toString(number) != '1') AS s1, sumIf(number * 2, number % 3 = 1 AND toString(number) != '2') AS s2,
+        sumIf(number * 3, number % 4 = 1 AND toString(number) != '3') AS s3, sumIf(number * 4, number % 5 = 1 AND toString(number) != '4') AS s4,
+        sumIf(number * 5, number % 6 = 1 AND toString(number) != '5') AS s5, sumIf(number * 6, number % 7 = 1 AND toString(number) != '6') AS s6,
+        sumIf(number * 7, number % 8 = 1 AND toString(number) != '7') AS s7, sumIf(number * 8, number % 9 = 1 AND toString(number) != '8') AS s8,
+        sumIf(number * 9, number % 10 = 1 AND toString(number) != '9') AS s9, sumIf(number * 10, number % 11 = 1 AND toString(number) != '10') AS s10,
+        sumIf(number * 11, number % 12 = 1 AND toString(number) != '11') AS s11, sumIf(number * 12, number % 13 = 1 AND toString(number) != '12') AS s12,
+        sumIf(number * 13, number % 14 = 1 AND toString(number) != '13') AS s13, sumIf(number * 14, number % 15 = 1 AND toString(number) != '14') AS s14,
+        sumIf(number * 15, number % 16 = 1 AND toString(number) != '15') AS s15, sumIf(number * 16, number % 17 = 1 AND toString(number) != '16') AS s16,
+        sumIf(number * 17, number % 18 = 1 AND toString(number) != '17') AS s17, sumIf(number * 18, number % 19 = 1 AND toString(number) != '18') AS s18,
+        sumIf(number * 19, number % 20 = 1 AND toString(number) != '19') AS s19, sumIf(number * 20, number % 21 = 1 AND toString(number) != '20') AS s20,
+        sumIf(number * 21, number % 22 = 1 AND toString(number) != '21') AS s21, sumIf(number * 22, number % 23 = 1 AND toString(number) != '22') AS s22,
+        sumIf(number * 23, number % 24 = 1 AND toString(number) != '23') AS s23, sumIf(number * 24, number % 25 = 1 AND toString(number) != '24') AS s24,
+        sumIf(number * 25, number % 26 = 1 AND toString(number) != '25') AS s25, sumIf(number * 26, number % 27 = 1 AND toString(number) != '26') AS s26,
+        sumIf(number * 27, number % 28 = 1 AND toString(number) != '27') AS s27, sumIf(number * 28, number % 29 = 1 AND toString(number) != '28') AS s28,
+        sumIf(number * 29, number % 30 = 1 AND toString(number) != '29') AS s29, sumIf(number * 30, number % 31 = 1 AND toString(number) != '30') AS s30,
+        sumIf(number * 31, number % 32 = 1 AND toString(number) != '31') AS s31, sumIf(number * 32, number % 33 = 1 AND toString(number) != '32') AS s32,
+        sumIf(number * 33, number % 34 = 1 AND toString(number) != '33') AS s33, sumIf(number * 34, number % 35 = 1 AND toString(number) != '34') AS s34,
+        sumIf(number * 35, number % 36 = 1 AND toString(number) != '35') AS s35, sumIf(number * 36, number % 37 = 1 AND toString(number) != '36') AS s36,
+        sumIf(number * 37, number % 38 = 1 AND toString(number) != '37') AS s37, sumIf(number * 38, number % 39 = 1 AND toString(number) != '38') AS s38,
+        sumIf(number * 39, number % 40 = 1 AND toString(number) != '39') AS s39, sumIf(number * 40, number % 41 = 1 AND toString(number) != '40') AS s40
+        FROM remote('127.0.0.{{2..33}}', numbers(1)) GROUP BY number FORMAT Null</query>
+</test>
