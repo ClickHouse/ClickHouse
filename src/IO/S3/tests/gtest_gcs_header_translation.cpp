@@ -342,7 +342,7 @@ DB::S3::PutObjectRequest makeCreateIfAbsentRequest(const std::string & idempoten
     DB::S3::PutObjectRequest request;
     request.SetBucket("test-bucket");
     request.SetKey("table(1)/metadata/v2.metadata.json");
-    request.SetMetadata({{"owner", "analytics"}, {DB::S3::IDEMPOTENCY_ID_METADATA_KEY, idempotency_id}});
+    request.SetMetadata({{"owner", "analytics"}, {DB::S3::IDEMPOTENCY_ID_METADATA_KEY, Aws::String(idempotency_id)}});
     request.setIdempotencyId(idempotency_id);
     request.SetIfNoneMatch("*");
     request.SetContentType("binary/octet-stream");

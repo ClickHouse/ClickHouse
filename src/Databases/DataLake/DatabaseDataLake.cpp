@@ -1370,7 +1370,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         context_->getAccess()->checkAccessWithFilter(
             AccessType::READ,
             toStringSource(AccessTypeObjects::Source::HDFS),
-            ITableFunction::normalizeURIForAccessCheck(hdfs_configuration->getRawURI()));
+            ITableFunction::normalizeURIForAccessCheck(String(hdfs_configuration->getRawURI())));
         /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
         /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
         hdfs_configuration->setReadOnly();

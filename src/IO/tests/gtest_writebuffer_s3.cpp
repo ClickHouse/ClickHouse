@@ -600,14 +600,14 @@ struct RejectCopyAndPutInjection : InjectionModel
 
     std::optional<Aws::S3::Model::CopyObjectOutcome> call(const Aws::S3::Model::CopyObjectRequest & /*request*/) override
     {
-        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, copy_error, "RejectCopyInjection", false);
+        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, Aws::String(copy_error), "RejectCopyInjection", false);
     }
 
     std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & /*request*/) override
     {
         if (!put_error)
             return std::nullopt;
-        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, *put_error, "RejectPutInjection", false);
+        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, Aws::String(*put_error), "RejectPutInjection", false);
     }
 
     String copy_error;
@@ -2407,15 +2407,15 @@ TEST_F(CopyS3FileRoutingTest, RejectedCopyOfEmptyObjectUsesRegularUpload)
         setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>(error));
 
         const auto & objects = client->store->GetBucketStore(bucket).objects;
-        ASSERT_FALSE(objects.contains(dst_key));
+        ASSERT_FALSE(objects.contains(MockS3::BucketMemStore::Key(dst_key)));
 
         EXPECT_NO_THROW(runWholeCopy(src_key, /* size= */ 0, dst_key));
 
         EXPECT_EQ(client->counters.copyObject, 1u);
         EXPECT_EQ(client->counters.putObject, 1u);
         EXPECT_EQ(client->counters.multiUploadCreate, 0u);
-        ASSERT_TRUE(objects.contains(dst_key));
-        EXPECT_TRUE(objects.at(dst_key).empty());
+        ASSERT_TRUE(objects.contains(MockS3::BucketMemStore::Key(dst_key)));
+        EXPECT_TRUE(objects.at(MockS3::BucketMemStore::Key(dst_key)).empty());
     }
 }
 
@@ -2446,7 +2446,7 @@ TEST_F(CopyS3FileRoutingTest, RejectedUploadOfEmptyObjectThrowsS3Error)
         EXPECT_EQ(client->counters.copyObject, 1u);
         EXPECT_EQ(client->counters.putObject, 1u);
         EXPECT_EQ(client->counters.multiUploadCreate, 0u);
-        EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains(dst_key));
+        EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains(MockS3::BucketMemStore::Key(dst_key)));
     }
 }
 
@@ -2463,7 +2463,7 @@ TEST_F(CopyS3FileRoutingTest, RejectedCopyOfSmallObjectUsesRegularUpload)
         setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>("InvalidRequest"));
 
         const auto & objects = client->store->GetBucketStore(bucket).objects;
-        ASSERT_FALSE(objects.contains(dst_key));
+        ASSERT_FALSE(objects.contains(MockS3::BucketMemStore::Key(dst_key)));
 
         EXPECT_NO_THROW(runWholeCopy(src_key, size, dst_key));
 
@@ -2471,8 +2471,8 @@ TEST_F(CopyS3FileRoutingTest, RejectedCopyOfSmallObjectUsesRegularUpload)
         EXPECT_EQ(client->counters.uploadPartCopy, 0u);
         EXPECT_EQ(client->counters.multiUploadCreate, 0u);
         EXPECT_EQ(client->counters.putObject, 1u);
-        ASSERT_TRUE(objects.contains(dst_key));
-        EXPECT_EQ(objects.at(dst_key), source);
+        ASSERT_TRUE(objects.contains(MockS3::BucketMemStore::Key(dst_key)));
+        EXPECT_EQ(objects.at(MockS3::BucketMemStore::Key(dst_key)), source);
     }
 }
 
@@ -2503,7 +2503,7 @@ TEST_F(CopyS3FileRoutingTest, RejectedCopyRetriesAsMultipartCopyOnlyIfAllowed)
             EXPECT_EQ(client->counters.multiUploadCreate, 0u);
             EXPECT_EQ(client->counters.putObject, 1u);
         }
-        EXPECT_EQ(client->store->GetBucketStore(bucket).objects.at(dst_key), source);
+        EXPECT_EQ(client->store->GetBucketStore(bucket).objects.at(MockS3::BucketMemStore::Key(dst_key)), source);
     }
 }
 

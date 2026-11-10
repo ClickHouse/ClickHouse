@@ -209,7 +209,7 @@ public:
                 set_option("aws_sse_customer_key_base64", header.value);
                 has_sse_customer_key = true;
             }
-            else if (boost::iequals(header.name, "x-amz-request-payer") && boost::iequals(header.value, "requester"))
+            else if (boost::iequals(header.name, "x-amz-request-payer") && boost::iequals(std::string_view(header.value), "requester"))
             {
                 set_option("aws_request_payer", "true");
                 request_payer = true;

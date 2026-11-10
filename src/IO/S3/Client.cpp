@@ -780,7 +780,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             return std::invoke_result_t<RequestFn, RequestType &>(Aws::Client::AWSError<Aws::S3::S3Errors>(
                 Aws::S3::S3Errors::MISSING_PARAMETER,
                 "MISSING_PARAMETER",
-                fmt::format("The object key is empty, so the request would address bucket {} itself", request.GetBucket()),
+                awsFormat("The object key is empty, so the request would address bucket {} itself", request.GetBucket()),
                 /*isRetryable*/ false));
     }
 
@@ -1473,7 +1473,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         String customer_key;
         try
         {
-            customer_key = base64Decode(server_side_encryption_customer_key_base64);
+            customer_key = base64Decode(String(server_side_encryption_customer_key_base64));
         }
         catch (const Poco::DataFormatException &)
         {
@@ -1492,7 +1492,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             server_side_encryption_customer_key_base64});
 
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
-            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(customer_key))});
+            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(Aws::String(customer_key)))});
     }
 
     // These will be added after request signing
@@ -1613,9 +1613,9 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
     const String payload_sha256 = encodeSHA256(body);
     const String payload_hash = hexString(payload_sha256.data(), payload_sha256.size());
 
-    const Poco::URI endpoint(initial_endpoint);
+    const Poco::URI endpoint(initial_endpoint.c_str());
     const String host = endpoint.getAuthority();
-    const String path = "/" + request.GetBucket() + "/" + request.GetKey();
+    const String path = fmt::format("/{}/{}", request.GetBucket(), request.GetKey());
 
     Aws::Http::HeaderValueCollection request_headers = request.GetHeaders();
     for (const auto & [name, value] : request.GetAdditionalCustomHeaders())
@@ -1623,7 +1623,7 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
 
     MapWithMemoryTracking<String, String> headers;
     for (const auto & [name, value] : translateHeadersToGCS(std::move(request_headers)))
-        headers[boost::algorithm::to_lower_copy(name)] = boost::algorithm::trim_copy(value);
+        headers[boost::algorithm::to_lower_copy(String(name))] = boost::algorithm::trim_copy(String(value));
 
     headers.erase("content-length");
     headers["host"] = host;
@@ -1680,11 +1680,11 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
     payload->write(body.data(), static_cast<std::streamsize>(body.size()));
     payload->seekg(0);
     http_request->AddContentBody(payload);
-    http_request->SetContentLength(std::to_string(body.size()));
+    http_request->SetContentLength(Aws::String(std::to_string(body.size())));
     for (const auto & [name, value] : headers)
         if (name != "host")
-            http_request->SetHeaderValue(name, value);
-    http_request->SetHeaderValue("authorization", authorization);
+            http_request->SetHeaderValue(Aws::String(name), Aws::String(value));
+    http_request->SetHeaderValue("authorization", Aws::String(authorization));
 
     const auto & retry_strategy = client_configuration.retryStrategy;
     for (long retries = 0;; ++retries) // NOLINT(google-runtime-int)
@@ -1694,7 +1694,7 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
         if (!response)
         {
             error = Aws::Client::AWSError<Aws::Client::CoreErrors>(
-                Aws::Client::CoreErrors::NETWORK_CONNECTION, "", fmt::format("GCS create of {} returned no response", request.GetKey()), true);
+                Aws::Client::CoreErrors::NETWORK_CONNECTION, "", awsFormat("GCS create of {} returned no response", request.GetKey()), true);
         }
         else if (!response->HasClientError() && response->GetResponseCode() == Aws::Http::HttpResponseCode::OK)
         {
