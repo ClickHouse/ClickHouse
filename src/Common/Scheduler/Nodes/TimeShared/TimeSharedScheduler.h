@@ -12,7 +12,6 @@
 #include <unordered_map>
 #include <memory>
 #include <atomic>
-#include <future>
 
 
 namespace DB
@@ -65,13 +64,7 @@ public:
     void start(ThreadName name)
     {
         if (!scheduler.joinable())
-        {
-            // Only the thread owns the promise, so it is broken if the thread finishes without starting
-            auto started = std::make_shared<std::promise<void>>();
-            auto started_future = started->get_future();
-            scheduler = ThreadFromGlobalPool([this, name, my_started = std::move(started)] { schedulerThread(name, *my_started); });
-            EventQueue::waitSchedulerThreadStarted(started_future);
-        }
+            scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
     }
 
     /// Joins scheduler threads and execute every pending request iff graceful
@@ -236,12 +229,11 @@ private:
     }
 
     /// An exception would leave every waiter hanging, so it terminates the server. MemoryTracker does not throw here.
-    void schedulerThread(ThreadName name, std::promise<void> & started) noexcept
+    void schedulerThread(ThreadName name) noexcept
     {
         LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
         DB::setThreadName(name);
         EventQueue::SchedulerThread scheduler_thread(&events);
-        started.set_value();
 
         while (!stop_flag.load())
         {

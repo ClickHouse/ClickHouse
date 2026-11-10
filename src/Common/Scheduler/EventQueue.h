@@ -10,7 +10,6 @@
 #include <chrono>
 #include <deque>
 #include <functional>
-#include <future>
 #include <mutex>
 #include <condition_variable>
 
@@ -99,9 +98,6 @@ public:
 
     /// Wait for single event (if not available) and process it
     void process();
-
-    /// Waits until a scheduler thread sets `started`. Terminates the server if the thread finished without setting it.
-    static void waitSchedulerThreadStarted(std::future<void> & started) noexcept;
 
     /// Returns current time point
     TimePoint now();
