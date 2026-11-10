@@ -12,6 +12,10 @@ WITH RECURSIVE t USING KEY (k) AS
 )
 SELECT * FROM t ORDER BY k; -- { serverError UNSUPPORTED_METHOD }
 
+-- `EXISTS` is folded during analysis only with this setting (CI randomizes it); without it the
+-- subquery is evaluated at every step like `IN` below.
+SET execute_exists_as_scalar_subquery = 1;
+
 WITH RECURSIVE t USING KEY (k) AS
 (
     SELECT 1 AS k
