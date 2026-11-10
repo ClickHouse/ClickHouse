@@ -25,7 +25,7 @@ SET weight = DEFAULT;
 TRUNCATE TABLE t_sched_part_1;
 TRUNCATE TABLE t_sched_part_2;
 INSERT INTO t_sched_part_1 SELECT 1 PARALLEL WITH INSERT INTO t_sched_part_2 SELECT 2;
-SELECT * FROM t_sched_part_1 UNION ALL SELECT * FROM t_sched_part_2 ORDER BY 1;
+SELECT * FROM (SELECT * FROM t_sched_part_1 UNION ALL SELECT * FROM t_sched_part_2) ORDER BY 1;
 
 -- Query settings in the storage `SETTINGS` clause of a `CREATE` apply to the query too.
 DROP TABLE IF EXISTS t_sched_part_3;
