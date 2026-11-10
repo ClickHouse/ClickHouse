@@ -204,7 +204,7 @@ DatabaseDataLake::DatabaseDataLake(
     , url(url_)
     , database_settings(std::make_unique<const DatabaseDataLakeSettings>(settings_))
     , database_engine_definition(database_engine_definition_->formatWithSecretsOneLine<SecretString>())
-    , table_engine_definition(table_engine_definition_)
+    , table_engine_definition(table_engine_definition_->formatWithSecretsOneLine<SecretString>())
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
     , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
@@ -757,8 +757,10 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
     TableEngineArgs result;
 
     /// Take database engine definition AST as base.
-    ASTStorage * storage = table_engine_definition->as<ASTStorage>();
-    result.args = storage->engine->arguments->children;
+    auto table_engine_definition_ast = parseDatabaseEngineDefinition(table_engine_definition);
+    ASTStorage * storage = table_engine_definition_ast->as<ASTStorage>();
+    if (storage->engine->arguments)
+        result.args = storage->engine->arguments->children;
 
     if (table_metadata.hasLocation())
     {
@@ -1731,9 +1733,13 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     }
 
     auto create_table_query = make_intrusive<ASTCreateQuery>();
-    auto table_storage_define = table_engine_definition->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(table_engine_definition);
 
     auto * storage = table_storage_define->as<ASTStorage>();
+    if (storage->engine->arguments == nullptr)
+    {
+        storage->engine->arguments = make_intrusive<ASTExpressionList>();
+    }
     storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     storage->engine->name = String(catalog->getTableEngineName(table_metadata));
 

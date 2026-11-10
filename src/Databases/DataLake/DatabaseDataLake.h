@@ -107,7 +107,7 @@ private:
     MultiVersion<DatabaseDataLakeSettings> database_settings;
     /// Database engine definition taken from initial CREATE DATABASE query.
     SecretString database_engine_definition TSA_GUARDED_BY(mutex);
-    const ASTPtr table_engine_definition;
+    const SecretString table_engine_definition;
     const LoggerPtr log;
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;

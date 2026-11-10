@@ -1,6 +1,7 @@
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Poco/JSON/Object.h>
 #include <Core/ServerSettings.h>
+#include <Databases/DatabasesCommon.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
@@ -114,7 +115,7 @@ GlueCatalog::GlueCatalog(
     const String & endpoint,
     DB::ContextPtr context_,
     const CatalogSettings & settings_,
-    DB::ASTPtr table_engine_definition_,
+    const DB::SecretString & table_engine_definition_,
     bool allow_server_credentials_in_user_queries_)
     : ICatalog("")
     , DB::WithContext(context_)
@@ -579,8 +580,11 @@ size_t GlueCatalog::FieldTypesWeightFunction::operator()(const FieldTypes & fiel
 
 GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
 {
-    DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
-    DB::ASTs args = storage->engine->arguments->children;
+    auto table_engine_definition_ast = DB::parseDatabaseEngineDefinition(table_engine_definition);
+    DB::ASTStorage * storage = table_engine_definition_ast->as<DB::ASTStorage>();
+    DB::ASTs args;
+    if (storage->engine->arguments)
+        args = storage->engine->arguments->children;
 
     String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : s3_location;
     if (args.empty())

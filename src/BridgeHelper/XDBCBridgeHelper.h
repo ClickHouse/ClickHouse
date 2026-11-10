@@ -10,6 +10,7 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/BridgeProtocolVersion.h>
+#include <Common/SecretString.h>
 #include <Common/ShellCommand.h>
 #include <Common/ShellCommandsHolder.h>
 #include <IO/ConnectionTimeouts.h>
@@ -106,7 +107,7 @@ protected:
         }
     }
 
-    auto getConnectionString() const { return connection_string; }
+    String getConnectionString() const { return String(connection_string); }
 
     String getName() const override { return BridgeHelperMixin::getName(); }
 
@@ -139,7 +140,7 @@ private:
     using Configuration = Poco::Util::AbstractConfiguration;
 
     LoggerPtr log;
-    std::string connection_string;
+    SecretString connection_string;
     bool use_connection_pooling;
     Poco::Timespan http_timeout;
     std::string bridge_host;
@@ -165,7 +166,7 @@ protected:
     {
         URLParams result;
 
-        result.emplace_back("connection_string", connection_string); /// already validated
+        result.emplace_back("connection_string", getConnectionString()); /// already validated
         result.emplace_back("max_block_size", std::to_string(max_block_size));
 
         return result;
