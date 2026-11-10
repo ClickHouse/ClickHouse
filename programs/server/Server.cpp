@@ -1508,6 +1508,8 @@ try
         if (server_settings[ServerSetting::enable_silk_runtime])
         {
             LOG_INFO(log, "Stopping silk fiber scheduler");
+            /// Closing a cooperative connection needs the scheduler, so stored connections go first.
+            HTTPConnectionPools::instance().dropCache();
             Silk::destroyFiberScheduler();
         }
 #endif
