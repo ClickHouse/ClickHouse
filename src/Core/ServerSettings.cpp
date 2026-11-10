@@ -2533,6 +2533,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "mqs",
         "kafka_consumer_hang",
         "iceberg_biglake_metadata_service_hosts",
+        "iceberg_bearer_token_host",
 
         /// External bridges
         "library_bridge",

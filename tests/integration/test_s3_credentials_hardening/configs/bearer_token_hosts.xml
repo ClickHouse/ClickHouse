@@ -1,0 +1,5 @@
+<clickhouse>
+    <iceberg_bearer_token_host>
+        <host>127.0.0.1</host>
+    </iceberg_bearer_token_host>
+</clickhouse>
