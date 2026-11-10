@@ -107,6 +107,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_rows_to_sort;
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const QueryPlanSerializationSettingsUInt64 prefer_external_sort_block_bytes;
+    extern const QueryPlanSerializationSettingsInt64 read_in_order_virtual_row_prefetch_window;
     extern const QueryPlanSerializationSettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const QueryPlanSerializationSettingsOverflowMode sort_overflow_mode;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
@@ -190,6 +191,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     min_free_disk_space = settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
+    virtual_row_prefetch_window = settings[QueryPlanSerializationSetting::read_in_order_virtual_row_prefetch_window];
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]);
@@ -208,6 +210,7 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort] = max_bytes_ratio_before_external_sort;
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
+    settings[QueryPlanSerializationSetting::read_in_order_virtual_row_prefetch_window] = virtual_row_prefetch_window;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }
