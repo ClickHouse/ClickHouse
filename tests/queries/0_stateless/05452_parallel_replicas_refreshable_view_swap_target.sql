@@ -50,6 +50,30 @@ SELECT count() FROM (EXPLAIN SELECT sum(x) FROM mv_replace) WHERE explain ILIKE 
 SELECT count() > 0 FROM (EXPLAIN SELECT sum(x) FROM alias_append) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() > 0 FROM (EXPLAIN SELECT sum(x) FROM mv_append) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
 
+-- F: the target as the external samples table of a TimeSeries table, read through `timeSeriesSamples`.
+SET enable_time_series_table = 1;
+CREATE TABLE samples_replace (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE samples_append (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE MATERIALIZED VIEW rmv_samples_replace REFRESH EVERY 1 YEAR TO samples_replace AS SELECT x AS id, toDateTime64(x, 3) AS timestamp, toFloat64(x) AS value FROM src;
+CREATE MATERIALIZED VIEW rmv_samples_append REFRESH EVERY 1 YEAR APPEND TO samples_append AS SELECT x AS id, toDateTime64(x, 3) AS timestamp, toFloat64(x) AS value FROM src;
+SYSTEM WAIT VIEW rmv_samples_replace;
+SYSTEM WAIT VIEW rmv_samples_append;
+CREATE TABLE ts_replace ENGINE = TimeSeries SETTINGS version = 8 DATA samples_replace;
+CREATE TABLE ts_append ENGINE = TimeSeries SETTINGS version = 8 DATA samples_append;
+SELECT count() FROM (EXPLAIN SELECT sum(value) FROM timeSeriesSamples(ts_replace)) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
+SELECT count() FROM (EXPLAIN SELECT sum(value) FROM (SELECT value FROM timeSeriesSamples(ts_replace) WHERE id > 10)) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
+SELECT count() FROM (EXPLAIN SELECT sum(x) FROM src RIGHT JOIN timeSeriesSamples(ts_replace) AS r ON src.x = r.id) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
+-- The same reads of the APPEND target are still read with parallel replicas.
+SELECT count() > 0 FROM (EXPLAIN SELECT sum(value) FROM timeSeriesSamples(ts_append)) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
+SELECT count() > 0 FROM (EXPLAIN SELECT sum(value) FROM (SELECT value FROM timeSeriesSamples(ts_append) WHERE id > 10)) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
+SELECT count() > 0 FROM (EXPLAIN SELECT sum(x) FROM src RIGHT JOIN timeSeriesSamples(ts_append) AS r ON src.x = r.id) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
+
+DROP TABLE ts_replace;
+DROP TABLE ts_append;
+DROP TABLE rmv_samples_replace;
+DROP TABLE rmv_samples_append;
+DROP TABLE samples_replace;
+DROP TABLE samples_append;
 DROP TABLE mv_replace;
 DROP TABLE mv_append;
 DROP TABLE alias_replace;

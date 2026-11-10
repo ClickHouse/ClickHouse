@@ -49,14 +49,19 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-bool isRefreshableMaterializedViewSwapTarget(const TableNode & table_node, const ContextPtr & context)
+bool isRefreshableMaterializedViewSwapTarget(const IQueryTreeNode & table_expression, const ContextPtr & context)
 {
+    const auto * table_node = table_expression.as<TableNode>();
+    const auto * table_function_node = table_expression.as<TableFunctionNode>();
+    if (!table_node && !(table_function_node && table_function_node->isResolved()))
+        return false;
+
     const auto & refresh_set = context->getRefreshSet();
-    if (refresh_set.tryGetTaskForInnerTable(table_node.getStorageID()))
+    if (refresh_set.tryGetTaskForInnerTable(table_node ? table_node->getStorageID() : table_function_node->getStorageID()))
         return true;
 
     /// An `Alias` or a materialized view forwards the read to the table it names, which each replica resolves by name as well.
-    StoragePtr storage = unwrapStorageProxy(table_node.getStorage());
+    StoragePtr storage = unwrapStorageProxy(table_node ? table_node->getStorage() : table_function_node->getStorage());
     for (size_t i = 0; storage && i < 16; ++i)
     {
         StorageID target_id = StorageID::createEmpty();
@@ -101,18 +106,17 @@ static bool isStorageEligibleForParallelReplicas(const StoragePtr & storage, boo
     return true;
 }
 
+/// Replicas resolve the table by name, so a refresh can make them read another table or none. Not checked on a follower,
+/// which would then read the whole table outside of the coordination.
+static bool isSwapTargetReadOnInitiator(const IQueryTreeNode & table_expression, const ContextPtr & context)
+{
+    return !context->getClientInfo().collaborate_with_initiator && isRefreshableMaterializedViewSwapTarget(table_expression, context);
+}
+
 bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context)
 {
     const bool has_final = table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal();
-    if (!isStorageEligibleForParallelReplicas(storage, has_final, context))
-        return false;
-
-    /// Replicas resolve the table by name, so a refresh can make them read another table or none. Not checked on a follower,
-    /// which would then read the whole table outside of the coordination.
-    if (!context->getClientInfo().collaborate_with_initiator && isRefreshableMaterializedViewSwapTarget(table_node, context))
-        return false;
-
-    return true;
+    return isStorageEligibleForParallelReplicas(storage, has_final, context) && !isSwapTargetReadOnInitiator(table_node, context);
 }
 
 /// A table function that denotes the same source on every replica (`ITableFunction::getParallelReplicasReadID`)
@@ -164,7 +168,8 @@ static bool canUseTableFunctionForParallelReplicas(
 
     const bool has_final
         = table_function_node.hasTableExpressionModifiers() && table_function_node.getTableExpressionModifiers()->hasFinal();
-    return isStorageEligibleForParallelReplicas(table_function_node.getStorage(), has_final, context);
+    return isStorageEligibleForParallelReplicas(table_function_node.getStorage(), has_final, context)
+        && !isSwapTargetReadOnInitiator(table_function_node, context);
 }
 
 bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
