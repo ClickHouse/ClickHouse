@@ -9,8 +9,6 @@ SET optimize_trivial_count_query = 0;
 SET optimize_use_projections = 0;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET distributed_index_analysis = 0;
--- with a throwing read limit the join order estimate analyzes the indexes and discards the result, the read analyzes them again
-SET max_rows_to_read = 100000;
 SET query_plan_optimize_join_order_limit = 10;
 
 DROP TABLE IF EXISTS t_granules_dropped_estimation;
@@ -29,10 +27,11 @@ SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_
 -- two partitions of four granules
 INSERT INTO t_granules_dropped_estimation SELECT number, number FROM numbers(64);
 
+-- with a throwing read limit the join order estimate analyzes the indexes and discards the result, the read analyzes them again
 -- the partition key excludes four granules, the primary key three
-SELECT sum(t.k) FROM t_granules_dropped_estimation AS t CROSS JOIN numbers(1) AS n WHERE t.k = 5 SETTINGS log_comment = 'granules_dropped_estimation_1';
+SELECT sum(t.k) FROM t_granules_dropped_estimation AS t CROSS JOIN numbers(1) AS n WHERE t.k = 5 SETTINGS max_rows_to_read = 100000, log_comment = 'granules_dropped_estimation_1';
 -- the skip index excludes seven granules
-SELECT sum(t.k) FROM t_granules_dropped_estimation AS t CROSS JOIN numbers(1) AS n WHERE t.a = 5 SETTINGS log_comment = 'granules_dropped_estimation_2';
+SELECT sum(t.k) FROM t_granules_dropped_estimation AS t CROSS JOIN numbers(1) AS n WHERE t.a = 5 SETTINGS max_rows_to_read = 100000, log_comment = 'granules_dropped_estimation_2';
 
 SYSTEM FLUSH LOGS query_log;
 
