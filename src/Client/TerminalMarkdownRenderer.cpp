@@ -201,10 +201,13 @@ struct DocSnippet
 };
 
 const DocSnippet DOC_SNIPPETS[] = {
-    {"_snippet_dictionary_in_cloud.mdx", R"DOCS_MD(<Tip>
-If you are using a dictionary with ClickHouse Cloud please use the DDL query option to create your dictionaries, and create your dictionary as user `default`.
-Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/products/cloud/guides/cloud-compatibility).
-</Tip>)DOCS_MD"},
+    {"_snippet_dictionary_in_cloud.mdx", R"DOCS_MD(<Note title="ClickHouse Cloud">
+Use [`CREATE DICTIONARY`](/reference/statements/create/dictionary#creating-a-dictionary-with-a-ddl-query) to create dictionaries.
+
+When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
+
+Verify the list of supported dictionary sources in the [Cloud Compatibility guide](/products/cloud/guides/cloud-compatibility).
+</Note>)DOCS_MD"},
 
     {"_when-to-use-json.mdx", R"DOCS_MD(## When to use the `JSON` Type {#when-to-use-json-type}
 
@@ -401,9 +404,79 @@ bool isMdxLayoutComponent(std::string_view name)
         || name == "VerticalStepper" || name == "Image";
 }
 
+std::optional<std::vector<String>> mdxStringArrayAttribute(std::string_view attrs, std::string_view name)
+{
+    size_t pos = 0;
+    while (pos < attrs.size())
+    {
+        const size_t found = attrs.find(name, pos);
+        if (found == std::string_view::npos)
+            return std::nullopt;
+        pos = found + name.size();
+        const bool at_word_start = found == 0 || isInlineSpace(attrs[found - 1]);
+        std::string_view rest = attrs.substr(found + name.size());
+        while (!rest.empty() && isInlineSpace(rest.front()))
+            rest.remove_prefix(1);
+        if (!at_word_start || rest.empty() || rest.front() != '=')
+            continue;
+        rest.remove_prefix(1);
+        while (!rest.empty() && isInlineSpace(rest.front()))
+            rest.remove_prefix(1);
+        if (!rest.empty() && rest.front() == '{')
+            rest.remove_prefix(1);
+        while (!rest.empty() && isInlineSpace(rest.front()))
+            rest.remove_prefix(1);
+        if (rest.empty() || rest.front() != '[')
+            return std::nullopt;
+        rest.remove_prefix(1);
+
+        std::vector<String> result;
+        while (true)
+        {
+            while (!rest.empty() && (isInlineSpace(rest.front()) || rest.front() == ','))
+                rest.remove_prefix(1);
+            if (rest.empty() || rest.front() == ']')
+                return result;
+            if (rest.front() != '"')
+                return std::nullopt;
+            rest.remove_prefix(1);
+            const size_t close = rest.find('"');
+            if (close == std::string_view::npos)
+                return std::nullopt;
+            result.emplace_back(rest.substr(0, close));
+            rest.remove_prefix(close + 1);
+        }
+    }
+    return std::nullopt;
+}
+
+String cloudOnlyBadgeLabel(std::string_view attributes)
+{
+    std::vector<String> supported = {"cloud", "private", "BYOC"};
+    if (auto attribute = mdxStringArrayAttribute(attributes, "supported"))
+        supported = std::move(*attribute);
+
+    for (auto & platform : supported)
+    {
+        if (platform == "cloud")
+            platform = "ClickHouse Cloud";
+        else if (platform == "private")
+            platform = "ClickHouse Private";
+    }
+
+    String result = "Available in ";
+    for (size_t i = 0; i < supported.size(); ++i)
+    {
+        if (i > 0)
+            result += i + 1 == supported.size() ? (supported.size() == 2 ? " and " : ", and ") : ", ";
+        result += supported[i];
+    }
+    return result;
+}
+
 /// Human-readable text for an MDX badge component such as `<ExperimentalBadge/>`. Known badges get a
 /// descriptive label; any other `*Badge` component falls back to its name with the camel case split.
-String badgeLabel(std::string_view name)
+String badgeLabel(std::string_view name, std::string_view attributes = {})
 {
     if (name == "ExperimentalBadge")
         return "Experimental";
@@ -414,7 +487,7 @@ String badgeLabel(std::string_view name)
     if (name == "CloudAvailableBadge")
         return "Available in ClickHouse Cloud";
     if (name == "CloudOnlyBadge")
-        return "ClickHouse Cloud only";
+        return cloudOnlyBadgeLabel(attributes);
     if (name == "PrivatePreviewBadge")
         return "Private Preview";
     if (name == "ScalePlanFeatureBadge")
@@ -805,7 +878,7 @@ private:
                         const std::string_view name = s.substr(name_begin, p - name_begin);
                         if (name.size() > 5 && name[0] >= 'A' && name[0] <= 'Z' && name.ends_with("Badge"))
                         {
-                            append("[" + badgeLabel(name) + "]", Style{.bold = true});
+                            append("[" + badgeLabel(name, s.substr(p, close - 1 - p)) + "]", Style{.bold = true});
                             /// A plan-gating badge also carries a substantive message built from its
                             /// attributes; render it after the label (see `badgePayload`).
                             if (const String payload = badgePayload(name, s.substr(p, close - 1 - p)); !payload.empty())
@@ -1332,7 +1405,7 @@ private:
                         {
                             String type(tag->name);
                             std::transform(type.begin(), type.end(), type.begin(), [](char c) { return std::tolower(static_cast<unsigned char>(c)); });
-                            renderAdmonition(type, {}, body_lines);
+                            renderAdmonition(type, mdxAttribute(tag->attributes, "title"), body_lines);
                             i = close_pos + 1;
                             continue;
                         }

@@ -1,9 +1,22 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
+
+#include <limits>
 
 namespace DB
 {
+
+/// Find the `__applyFilter(<key>, key_column)` conjuncts planted by tryAddJoinRuntimeFilter
+/// among the top-level AND conjuncts of the given filter predicate. One descriptor per
+/// bare-column conjunct (aliases and CASTs on the key are looked through); an `__applyFilter`
+/// outside the conjunction — under an OR or a NOT, or in an unrelated expression of the same
+/// DAG — is not applied to every row and is not reported. The overload takes the filter
+/// column of a FilterStep by name.
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate);
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name);
 
 using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
 using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
@@ -55,7 +68,9 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
 /// * Input nodes are mapped by name.
-/// * Function is mapped to function if all children are mapped and function names are same.
+/// * Function is mapped to function if all children are mapped, function names are same, and
+///   result types are equal. The two DAGs can be built under different settings, and the same
+///   expression can then have different result types in each.
 /// * Alias is mapped to it's children mapping.
 /// * Monotonic function can be mapped to it's children mapping if direct mapping does not exist.
 ///   In this case, information about monotonicity is filled.
@@ -134,6 +149,32 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     const MatchedTrees::Matches & matches,
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
+
+/// The arguments of a function node in the shape `IFunctionBase` methods expect: the result type of
+/// every child, and its constant column where the child has one. Whether a function is injective or
+/// monotonic can depend on them, so a caller that has a node has no reason to pass nothing.
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node);
+
+/// What each column of a header is to a DAG's inputs: one entry per header column, in header order,
+/// holding the position in `inputs` of the input reading it, or `passes_through` when no input reads it
+/// and the column goes past the DAG untouched.
+///
+/// Names can repeat in both, so the n-th input named `x` reads the n-th header column named `x`, which
+/// is the rule `ActionsDAG::updateHeader` follows to build the block a step runs on. A caller holding
+/// some of the inputs can therefore ask where exactly those read from, which
+/// `ActionsDAG::matchInputPositionsToHeader` cannot answer: it returns a plain list of the positions
+/// something reads, with no way back to which input reads which.
+struct HeaderColumnsToInputs
+{
+    static constexpr size_t passes_through = std::numeric_limits<size_t>::max();
+
+    std::vector<size_t> read_by;
+
+    size_t size() const { return read_by.size(); }
+    bool passesThrough(size_t header_position) const { return read_by[header_position] == passes_through; }
+};
+
+HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header);
 
 bool isInjectiveFunction(const ActionsDAG::Node * node);
 

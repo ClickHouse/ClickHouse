@@ -25,10 +25,10 @@ using FunctionHasTokenOrNull
 REGISTER_FUNCTION(HasToken)
 {
     FunctionDocumentation::Description description = R"(
-:::note
+<Note>
 `hasToken` has certain pitfalls when used for lookups in text indexes with non-`splitByNonAlpha` tokenizers and/or preprocessor/postprocessor expressions.
 We recommend using `hasAnyTokens` and `hasAllTokens` instead.
-:::
+</Note>
 
 Checks if the given token is present in the haystack.
 

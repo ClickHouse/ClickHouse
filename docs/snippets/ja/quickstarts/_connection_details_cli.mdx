@@ -1,0 +1,174 @@
+---
+title: 接続情報 CLI
+---
+
+このページでは、既存の ClickHouse Cloud サービスの接続情報 (ホスト名、ポート番号、ユーザー名、パスワード) を、[ClickHouse CLI](/ja/products/cloud/features/cli) (`clickhousectl`) を使ってコマンドラインから確認する方法を説明します。コマンドは非対話型で、`--json` を指定すると `clickhousectl` は JSON を出力します。
+
+## 前提条件 {#prerequisites}
+
+ClickHouse CLI をインストールします。
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+また、`jq` も必要です。
+
+以下の書き込み系のステップには [API キー認証](/ja/products/cloud/features/admin-features/api/openapi) が必要です: `cloud service start` (サービスが `stopped` の場合のみ) と `reset-password`。OAuth ログインは読み取り専用であり、読み取り系のステップ (`service list`、`service get`) のみに対応しています:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+あるいは、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定します。`clickhousectl cloud auth status` を実行し、スコープが `read/write` のエントリが表示されることを確認してください。
+
+また、接続情報の取得元となる既存の ClickHouse Cloud サービスも必要です。たとえば、[最初の Cloud サービスを作成する](/ja/get-started/quickstarts/create-your-first-service-on-cloud) クイックスタートや、[Cloud クイックスタート](/ja/getting-started/quick-start/cloud) の CLI フローで作成したサービスなどが該当します。
+
+## サービスを確認する {#find-your-service}
+
+組織内のサービスを一覧表示し、接続したいサービスの ID を控えておきます:
+
+```bash
+clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
+```
+
+```text
+9c2d4e61-7a35-49c8-8f0e-2b5a1d7c3e90	my-first-service	running
+```
+
+サービス ID を控えておいてください。本ガイドの他のすべてのコマンドは、これを引数として受け取ります。名前から調べるには次のようにします:
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json | jq -r '.[] | select(.name == "my-first-service") | .id')
+```
+
+後続のステップで接続を確認するために、service が起動している必要があります。state が `stopped` の場合は起動し、`running` になるまでポーリングしてください (アイドルスケーリングにより `idle` になっている service は最初の接続時に自動的に復帰するため、ここでの操作は不要です) :
+
+```bash
+clickhousectl cloud service start "$CH_ID"
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+## 接続情報を取得する {#get-your-connection-details}
+
+`clickhousectl cloud service get` は、公開されているプロトコルごとの endpoint を含む、サービスの完全な詳細を返します。レスポンスを保存し、必要な情報を抽出してください。
+
+```bash
+clickhousectl cloud service get "$CH_ID" --json > service.json
+jq '.endpoints' service.json
+```
+
+```json
+[
+  {
+    "host": "abc123.us-east-1.aws.clickhouse.cloud",
+    "port": 9440,
+    "protocol": "nativesecure"
+  },
+  {
+    "host": "abc123.us-east-1.aws.clickhouse.cloud",
+    "port": 8443,
+    "protocol": "https"
+  }
+]
+```
+
+以下は ClickHouse Cloud の 2 つの主要なネットワークプロトコルで、それぞれ専用のポートを使用します。
+
+* **ネイティブプロトコル (`nativesecure`、ポート 9440)&#x20;**&#x20;- `clickhouse-client`、`clickhouse-local`、および大半の言語別ドライバーで使用されるバイナリプロトコルです。最も高速な選択肢であり、ClickHouse のすべての機能をサポートします。Cloud では TLS が必須です。
+* **HTTPS プロトコル (`https`、ポート 8443)&#x20;**&#x20;- REST クライアント、`curl`、Web ベースのツール、および HTTP を優先するドライバーに適した HTTP ベースのインターフェイスです。こちらも Cloud では TLS が必須です。
+
+ClickHouse Cloud へ接続する際は、いずれのプロトコルでも TLS 暗号化が必要であり、平文で接続することはできません。正しいポートを指定すれば、ほとんどのツールはこれを自動的に処理しますが、クライアントによっては `--secure` フラグを渡したり `ssl=true` を設定したりする必要があります。本シリーズの大半のクイックスタートおよび CLI ワークフローでは、**ポート 9440 のネイティブプロトコル**を使用します。
+
+ホスト名とポートを抽出します。
+
+```bash
+CH_HOST=$(jq -r '.endpoints[] | select(.protocol == "nativesecure") | .host' service.json)
+CH_NATIVE_PORT=$(jq -r '.endpoints[] | select(.protocol == "nativesecure") | .port' service.json)
+CH_HTTPS_PORT=$(jq -r '.endpoints[] | select(.protocol == "https") | .port' service.json)
+```
+
+追加のデータベースユーザーを作成していない場合、ユーザー名は `default` です。
+
+## パスワードを取得する {#get-a-password}
+
+`default` ユーザーのパスワードは `clickhousectl cloud service create` の実行時に一度だけ返され、後から API や CLI の呼び出しで読み出すことはできません。作成時に保存してある場合は、以降の手順で使用する変数に代入し、リセットの手順は省略してください。
+
+```bash
+CH_PASSWORD='<your saved password>'
+```
+
+紛失した場合は、新しいものを生成します:
+
+```bash
+CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r .password)
+```
+
+<Warning>
+  `reset-password` を実行すると、`default` USER の従来のパスワードは即座に無効化されます。古いパスワードのまま設定されているクライアントは認証できなくなります。対象の service が [warehouse](/ja/products/cloud/features/infrastructure/warehouses) に属している場合、データベースユーザーはその warehouse 内のすべての services で共有されるため、リセットにより同一 warehouse 内の他の service のパスワードも変更されます。初回発行時と同様に、新しいパスワードは一度だけ表示されるため、安全な場所に保管してください。
+</Warning>
+
+## 接続情報を保存して再利用する {#save-your-connection-details-for-reuse}
+
+これらの接続情報は、各クイックスタートで頻繁に使用します。毎回入力し直す手間を省くには、端末のセッションで環境変数としてエクスポートしておくとよいでしょう。
+
+```bash
+export CLICKHOUSE_HOST=$CH_HOST
+export CLICKHOUSE_USER=default
+export CLICKHOUSE_PASSWORD=$CH_PASSWORD
+```
+
+<Warning>
+  これらの環境変数は、現在の端末セッションの間のみ保持されます。パスワードをシェルのプロファイルファイル (`.bashrc`、`.zshrc`) に保存したり、バージョン管理にコミットしたりしないでください。
+</Warning>
+
+## 接続の確認 {#verify-connectivity}
+
+`curl` で HTTPS インターフェイス (ポート 8443) を確認します。
+
+```bash
+curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
+  "https://$CLICKHOUSE_HOST:8443/?query=SELECT%201"
+```
+
+```text
+1
+```
+
+[**clickhouse client**](/ja/concepts/features/interfaces/client) でネイティブプロトコル (ポート 9440) を確認します。ClickHouse CLI が `clickhouse` バイナリを管理してくれるため、未インストールの場合は `clickhousectl local use latest` を実行すればインストールされ、`~/.local/bin/clickhouse` へのシンボリックリンクが作成されます。続いて、次を実行します:
+
+```bash
+clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \
+  --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" \
+  --query "SELECT concat('Connected to ClickHouse ', version(), ' as ', currentUser())"
+```
+
+```text
+Connected to ClickHouse 26.2.1.558 as default
+```
+
+## クリーンアップ {#cleanup}
+
+このガイドではサービスのメタデータを読み取り、 (任意で) パスワードをリセットするだけです。新しいクラウドリソースは作成されないため、クリーンアップは不要です。
+
+ただし、1つ例外があります。サービスが `stopped` の状態で、接続確認のために起動した場合、そのサービスは実行され続け、コンピュートの課金が発生します。まだ実行しておく必要がなければ、再度停止してください:
+
+```bash
+clickhousectl cloud service stop "$CH_ID"
+```
+
+## 次のステップ {#next-steps}
+
+これで、任意の外部ツールから ClickHouse Cloud サービスに接続するために必要な接続情報がすべて揃いました。ここで確認したホスト名、ポート、ユーザー名、パスワードは、クイックスタートシリーズの以降のページでも使用します。
+
+次は以下のクイックスタートをご覧ください:
+
+* [clickhouse-client を使用してデータを挿入する](/ja/get-started/quickstarts/insert-data-using-clickhouse-client)
+* [最初の MergeTree テーブルを作成する](/ja/get-started/quickstarts/create-your-first-mergetree-table)
+
+さらに詳しく知りたい場合は、リファレンスドキュメントをご覧ください:
+
+* [ネイティブインターフェイス (TCP)](/ja/concepts/features/interfaces/tcp)
+* [HTTP インターフェイス](/ja/concepts/features/interfaces/http)

@@ -1,6 +1,7 @@
 #include <Interpreters/SessionLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
@@ -41,7 +42,6 @@ auto eventTime()
 }
 
 using AuthType = AuthenticationType;
-using Interface = ClientInfo::Interface;
 
 void fillColumnArray(const Strings & data, IColumn & column)
 {
@@ -106,22 +106,6 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
 #undef AUTH_TYPE_NAME_AND_VALUE
     static_assert(static_cast<int>(AuthenticationType::MAX) == 13);
 
-    auto interface_type_column = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-        {
-            {"TCP",                    static_cast<Int8>(Interface::TCP)},
-            {"HTTP",                   static_cast<Int8>(Interface::HTTP)},
-            {"gRPC",                   static_cast<Int8>(Interface::GRPC)},
-            {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
-            {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
-            {"Local",                  static_cast<Int8>(Interface::LOCAL)},
-            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
-            {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
-            {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
-            {"ArrowFlight",            static_cast<Int8>(Interface::ARROW_FLIGHT)},
-        });
-    static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
-
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
     auto settings_type_column = std::make_shared<DataTypeArray>(
@@ -136,6 +120,8 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", lc_string_datatype, "Hostname of the server executing the query."},
+        {"clickhouse_version", lc_string_datatype, "Version of the ClickHouse server that produced the row."},
+        {"system_processor", lc_string_datatype, "CPU architecture of the ClickHouse server that produced the row."},
         {"type", std::move(event_type), "Login/logout result. Possible values: "
             "LoginFailure — Login error. "
             "LoginSuccess — Successful login. "
@@ -155,7 +141,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
 
         {"client_address", DataTypeFactory::instance().get("IPv6"), "The IP address that was used to log in/out."},
         {"client_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to log in/out."},
-        {"interface", std::move(interface_type_column), "The interface from which the login was initiated."},
+        {"interface", getClientInterfaceEnum(), "The interface from which the login was initiated."},
 
         {"client_hostname", std::make_shared<DataTypeString>(), "The hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},
@@ -189,6 +175,8 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);

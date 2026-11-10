@@ -1,11 +1,129 @@
 #include <Common/StringUtils.h>
 
 #include <Common/TargetSpecific.h>
+#include <base/defines.h>
 
-#if defined(__AVX2__)
-#include <immintrin.h>
-#endif
+#include <cstring>
 
+#include <bit>
+
+namespace
+{
+/// Below this size the head scan costs more than the cache line splits it avoids.
+constexpr size_t ALIGN_THRESHOLD = 64 * 1024;
+
+/// OR of all bytes in `[data, data + size)` with explicit vector accumulators. The plain byte loop is not an option
+/// since clang 23: it promotes the accumulator to 32-bit lanes (llvm/llvm-project#222142), so x86-64-v4 gets four
+/// `vpmovzxbd` plus `vpord` per 64 bytes instead of one `vporq`, and aarch64 a `tbl` shuffle per load. The compiler
+/// splits the 64-byte vectors to the register width of the target: two `ymm` at x86-64-v3, four `q` registers on NEON.
+using Bytes = UInt8 __attribute__((vector_size(64)));
+
+ALWAYS_INLINE UInt8 orBytes(const UInt8 * data, size_t size)
+{
+    Bytes acc0{};
+    Bytes acc1{};
+    Bytes acc2{};
+    Bytes acc3{};
+    size_t i = 0;
+    for (; i + 4 * sizeof(Bytes) <= size; i += 4 * sizeof(Bytes))
+    {
+        Bytes v0;
+        Bytes v1;
+        Bytes v2;
+        Bytes v3;
+        memcpy(&v0, data + i, sizeof(Bytes));
+        memcpy(&v1, data + i + sizeof(Bytes), sizeof(Bytes));
+        memcpy(&v2, data + i + 2 * sizeof(Bytes), sizeof(Bytes));
+        memcpy(&v3, data + i + 3 * sizeof(Bytes), sizeof(Bytes));
+        acc0 |= v0;
+        acc1 |= v1;
+        acc2 |= v2;
+        acc3 |= v3;
+    }
+    acc0 |= acc1;
+    acc2 |= acc3;
+    acc0 |= acc2;
+    for (; i + sizeof(Bytes) <= size; i += sizeof(Bytes))
+    {
+        Bytes v;
+        memcpy(&v, data + i, sizeof(Bytes));
+        acc0 |= v;
+    }
+
+    UInt64 words[sizeof(Bytes) / sizeof(UInt64)];
+    memcpy(words, &acc0, sizeof(Bytes));
+    UInt64 word = 0;
+    for (UInt64 w : words)
+        word |= w;
+    word |= word >> 32;
+    word |= word >> 16;
+    word |= word >> 8;
+
+    UInt8 mask = static_cast<UInt8>(word);
+    for (; i < size; ++i)
+        mask |= data[i];
+    return mask;
+}
+
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(static bool NO_INLINE),
+    isAllASCIIImpl,
+    MULTITARGET_FUNCTION_BODY((const UInt8 * data, size_t size) /// NOLINT
+    {
+        if (size < ALIGN_THRESHOLD)
+            return !(orBytes(data, size) & 0x80);
+
+        /// One overlapping scan of the first 64 bytes, so that the bulk loop starts on a 64-byte
+        /// boundary and no wide load splits a cache line. Misaligned 512-bit loads run at half rate.
+        UInt8 mask = orBytes(data, 64);
+
+        const size_t start = 64 - (reinterpret_cast<uintptr_t>(data) & 63);
+        const UInt8 * aligned = static_cast<const UInt8 *>(__builtin_assume_aligned(data + start, 64));
+        mask |= orBytes(aligned, size - start);
+
+        return !(mask & 0x80);
+    }))
+
+using NonASCIIBytes = Int8 __attribute__((ext_vector_type(64)));
+using NonASCIIMask = bool __attribute__((ext_vector_type(64)));
+
+/// `bytes >> 7` is nonzero exactly where the sign bit is set: a comparison would depend on
+/// `-faltivec-src-compat` on PowerPC. A bit mask of a bool vector follows the target endianness.
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(static size_t NO_INLINE),
+    findFirstNonASCIIImpl,
+    MULTITARGET_FUNCTION_BODY((const UInt8 * data, size_t size) /// NOLINT
+    {
+        NonASCIIBytes bytes;
+        size_t i = 0;
+
+        /// As in `isAllASCIIImpl`, the first block is checked unaligned so that the bulk loop starts on a 64-byte boundary.
+        if (size >= ALIGN_THRESHOLD)
+        {
+            memcpy(&bytes, data, sizeof(bytes));
+            if (__builtin_reduce_or(bytes) >= 0)
+                i = 64 - (reinterpret_cast<uintptr_t>(data) & 63);
+        }
+
+        for (; i + sizeof(bytes) <= size; i += sizeof(bytes))
+        {
+            memcpy(&bytes, data + i, sizeof(bytes));
+            /// The sign bit of the OR tests a block without its bit mask, which takes several instructions on AArch64.
+            if (__builtin_reduce_or(bytes) < 0)
+            {
+                if constexpr (std::endian::native == std::endian::little)
+                    return i + static_cast<size_t>(std::countr_zero(__builtin_bit_cast(UInt64, __builtin_convertvector(bytes >> 7, NonASCIIMask))));
+                break;
+            }
+        }
+
+        for (; i < size; ++i)
+            if (data[i] >= 0x80)
+                return i;
+
+        return size;
+    }))
+}
 
 namespace impl
 {
@@ -24,30 +142,22 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 
 bool isAllASCII(const UInt8 * data, size_t size)
 {
-#if defined(__AVX2__)
-    __m256i masks = _mm256_setzero_si256();
-
-    size_t i = 0;
-    for (; i + 32 <= size; i += 32)
-    {
-        __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i));
-        masks = _mm256_or_si256(masks, bytes);
-    }
-    int mask = _mm256_movemask_epi8(masks);
-
-    UInt8 tail_mask = 0;
-    for (; i < size; i++)
-        tail_mask |= data[i];
-
-    mask |= (tail_mask & 0x80);
-    return !mask;
-#else
-    UInt8 mask = 0;
-    for (size_t i = 0; i < size; ++i)
-        mask |= data[i];
-
-    return !(mask & 0x80);
+#if USE_X86_64_MULTITARGET_CODE
+    if (DB::isArchSupported(DB::TargetArch::x86_64_v4))
+        return isAllASCIIImpl_x86_64_v4(data, size);
 #endif
+
+    return isAllASCIIImpl(data, size);
+}
+
+size_t findFirstNonASCII(const UInt8 * data, size_t size)
+{
+#if USE_X86_64_MULTITARGET_CODE
+    if (DB::isArchSupported(DB::TargetArch::x86_64_v4))
+        return findFirstNonASCIIImpl_x86_64_v4(data, size);
+#endif
+
+    return findFirstNonASCIIImpl(data, size);
 }
 
 LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)

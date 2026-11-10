@@ -22,3 +22,6 @@ key	UInt64
 sum(value)	AggregateFunction(sum, UInt64)
 check table with block number column
 1
+1	1	1	1	1	1	1	1	1	1	1	1
+1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1
+DEFAULT	0

@@ -127,22 +127,22 @@ write_query()
     for f in $SELF_DESCRIBING_FILES; do
         echo "SELECT '=== $f';"
         write_query "SELECT * FROM file('$CUR_DIR/data_arrow/$f.arrow', 'Arrow')
-            SETTINGS allow_experimental_nullable_tuple_type = 1"
+            SETTINGS enable_nullable_tuple_type = 1"
     done
 
     # The raw-byte targets need an explicit structure: `binary` carries no type of its own.
     echo "SELECT '=== struct_json_garbage_bytes_under_null';"
     write_query "SELECT * FROM file('$CUR_DIR/data_arrow/struct_json_garbage_bytes_under_null.arrow', 'Arrow', 's Nullable(Tuple(j JSON))')
-        SETTINGS allow_experimental_nullable_tuple_type = 1, enable_json_type = 1"
+        SETTINGS enable_nullable_tuple_type = 1, enable_json_type = 1"
     echo "SELECT '=== struct_ipv6_binary_garbage_under_null';"
     write_query "SELECT * FROM file('$CUR_DIR/data_arrow/struct_ipv6_binary_garbage_under_null.arrow', 'Arrow', 's Nullable(Tuple(v IPv6))')
-        SETTINGS allow_experimental_nullable_tuple_type = 1"
+        SETTINGS enable_nullable_tuple_type = 1"
     echo "SELECT '=== struct_int128_binary_garbage_under_null';"
     write_query "SELECT * FROM file('$CUR_DIR/data_arrow/struct_int128_binary_garbage_under_null.arrow', 'Arrow', 's Nullable(Tuple(n Int128))')
-        SETTINGS allow_experimental_nullable_tuple_type = 1"
+        SETTINGS enable_nullable_tuple_type = 1"
     echo "SELECT '=== struct_array_ipv6_binary_garbage_under_null';"
     write_query "SELECT * FROM file('$CUR_DIR/data_arrow/struct_array_ipv6_binary_garbage_under_null.arrow', 'Arrow', 's Nullable(Tuple(a Array(IPv6)))')
-        SETTINGS allow_experimental_nullable_tuple_type = 1"
+        SETTINGS enable_nullable_tuple_type = 1"
 
     # Without the nullable-tuple setting the struct is read as a plain Tuple: its null map is dropped and
     # the NULL row becomes a visible one, which must show type defaults, not the hidden bytes. The numeric
@@ -168,7 +168,7 @@ write_query()
 
     echo "SELECT '=== struct_uuid_garbage_under_null';"
     write_query "SELECT * FROM file('$TMP_DIR/struct_uuid_garbage_under_null.arrow', 'Arrow')
-        SETTINGS allow_experimental_nullable_tuple_type = 1"
+        SETTINGS enable_nullable_tuple_type = 1"
     # The same file as a plain Tuple: the struct null map is dropped, so row 0 becomes visible and the
     # self-describing UUID leaf must show the default instead of the hidden bytes.
     echo "SELECT '=== struct_uuid_garbage_under_null as a plain Tuple';"

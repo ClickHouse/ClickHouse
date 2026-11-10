@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import json
+import os
 import time
 import urllib
 from typing import List, Optional
@@ -23,6 +24,10 @@ from .result import Result
 from .settings import Settings
 from .usage import ComputeUsage, PipelineUtilization, StorageUsage
 from .utils import Utils
+
+
+class CIDBTimeoutError(RuntimeError):
+    """Every attempt of a CIDB request timed out on the client side."""
 
 
 class CIDB:
@@ -117,6 +122,18 @@ class CIDB:
             user=data.get("user"),
             passwd=data.get("password"),
         )
+
+    READ_URL_ENV = "CI_DB_READ_URL"
+
+    @staticmethod
+    def lookup_read_url(source) -> str:
+        url = json.loads(source.get_secret(Settings.SECRET_CI_DB_CONNECTION).get_value())["url"]
+        assert "@" not in url, f"CI DB url must not carry credentials, got [{url.rsplit('@', 1)[-1]}]"
+        return url
+
+    @staticmethod
+    def get_read_url(info) -> str:
+        return os.environ.get(CIDB.READ_URL_ENV) or CIDB.lookup_read_url(info)
 
     def get_link_to_test_case_statistics(
         self,
@@ -270,6 +287,13 @@ ORDER BY day DESC
         """Generates JSON data records for the result and its test cases."""
         env = _Environment.get()
 
+        # Job-level usage attributes: host metrics plus the re-run attempt this
+        # row came from (0 = first run), so a consumer can tell a re-run's row
+        # from the original job's.
+        job_attributes = cls._host_usage_attributes(result.ext.get("metrics"))
+        if env.RERUN_COUNT:
+            job_attributes["rerun_count"] = env.RERUN_COUNT
+
         # Create the base record
         base_record = cls.TableRecord(
             pull_request_number=env.PR_NUMBER,
@@ -295,7 +319,7 @@ ORDER BY day DESC
             test_status="",
             test_duration_ms=None,
             test_context_raw=result.info,
-            attributes=cls._host_usage_attributes(result.ext.get("metrics")),
+            attributes=job_attributes,
         )
         yield json.dumps(dataclasses.asdict(base_record))
 
@@ -323,6 +347,9 @@ ORDER BY day DESC
     def _post_with_retries(self, params, data, timeout, retries, what):
         """POST to CI DB, backing off progressively on transport errors and on
         non-OK responses alike: `requests` does not raise for 4xx/5xx."""
+        # At `max_concurrent_queries` the server waits this long for a free slot
+        # instead of rejecting the request with TOO_MANY_SIMULTANEOUS_QUERIES.
+        params = {**params, "queue_max_wait_ms": int(timeout * 1000) // 2}
         retry = 0
         while True:
             retry += 1
@@ -336,21 +363,26 @@ ORDER BY day DESC
                 )
                 if response.ok:
                     return response
+                timed_out = False
                 error = f"{what} failed, response code [{response.status_code}], body [{response.text}]"
             except Exception as ex:
+                timed_out = isinstance(ex, requests.exceptions.Timeout)
                 error = f"{what} failed, exception [{ex}]"
 
             print(f"WARNING: CIDB {error} - attempt {retry}/{retries}")
             if retry >= retries:
+                if timed_out:
+                    raise CIDBTimeoutError(f"CIDB {error}")
                 raise RuntimeError(f"CIDB {error}")
             time.sleep(2**retry)
 
-    def query(self, query: str, retries: int = 5, log_level="warning"):
+    def query(self, query: str, retries: int = 5, log_level="warning", timeout=None):
         """
         Executes a SELECT query on CI DB with retry support.
 
         :param query: SQL query string
         :param retries: Number of retry attempts on failure
+        :param timeout: Per-attempt timeout in seconds, `Settings.CI_DB_QUERY_TIMEOUT_SEC` by default
         :return: Response text if successful
         """
         params = {
@@ -363,7 +395,7 @@ ORDER BY day DESC
         return self._post_with_retries(
             params=params,
             data=query.encode(),
-            timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+            timeout=timeout or Settings.CI_DB_QUERY_TIMEOUT_SEC,
             retries=retries,
             what="query",
         ).text
@@ -413,6 +445,7 @@ ORDER BY day DESC
         start_time: Optional[float] = None,
         duration_s: Optional[float] = None,
         workflow_status: str = "",
+        rerun_count: int = 0,
     ):
         """Write a single workflow-level summary row carrying pipeline
         utilization, storage and compute usage in the ``attributes`` JSON
@@ -423,6 +456,10 @@ ORDER BY day DESC
         written as ``pipeline_<bucket>_jobs``. Note this is distinct from
         ``pipeline_jobs`` below, which counts only the jobs substantial enough
         to qualify for the utilization KPI.
+
+        ``rerun_count`` is the highest per-job re-run count in the run; when
+        non-zero it is written as ``pipeline_max_rerun_count`` so a consumer can
+        tell a clean run's usage from one whose totals were affected by re-runs.
 
         Replaces the older ``insert_storage_usage``/``insert_compute_usage``,
         which encoded these numbers into the ``check_duration_ms``/``test_*``
@@ -444,6 +481,12 @@ ORDER BY day DESC
             attributes["pipeline_duration_s"] = round(duration_s, 1)
         for bucket, count in (job_counts or {}).items():
             attributes[f"pipeline_{bucket}_jobs"] = count
+        # Highest per-job re-run count in the run. >0 means at least one job was
+        # re-run, so these usage totals reflect the latest attempt of each job
+        # and understate the resources actually consumed across attempts — a
+        # consumer can filter these rows out of clean-run baselines.
+        if rerun_count:
+            attributes["pipeline_max_rerun_count"] = rerun_count
         if pipeline_utilization and pipeline_utilization.jobs:
             for key, value in pipeline_utilization.to_summary().items():
                 attributes[f"pipeline_{key}"] = value

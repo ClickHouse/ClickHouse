@@ -4,6 +4,8 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -50,10 +52,52 @@ bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserD
     return true;
 }
 
+bool RestoreCoordinationLocal::acquireReplicatedWorkloadEntities(const String &)
+{
+    return true;
+}
+
+bool RestoreCoordinationLocal::acquireReplicatedNamedCollections(const String &)
+{
+    return true;
+}
+
+void RestoreCoordinationLocal::addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path)
+{
+    std::lock_guard lock{mutex};
+    auto & dirs = replicated_named_collections_dirs[replication_id];
+    if (std::find(dirs.begin(), dirs.end(), dir_path) == dirs.end())
+        dirs.push_back(dir_path);
+}
+
+Strings RestoreCoordinationLocal::getReplicatedNamedCollectionsDirs(const String & replication_id) const
+{
+    std::lock_guard lock{mutex};
+    auto it = replicated_named_collections_dirs.find(replication_id);
+    if (it == replicated_named_collections_dirs.end())
+        return {};
+    return it->second;
+}
+
 bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)
 {
     std::lock_guard lock{mutex};
     return acquired_data_in_keeper_map_tables.emplace(root_zk_path).second;
+}
+
+void RestoreCoordinationLocal::addRocksDBTable(const String & rocksdb_dir, const String & election_id)
+{
+    std::lock_guard lock{mutex};
+    auto [it, inserted] = rocksdb_data_owner.emplace(rocksdb_dir, election_id);
+    if (!inserted && election_id > it->second)
+        it->second = election_id;
+}
+
+String RestoreCoordinationLocal::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    std::lock_guard lock{mutex};
+    auto it = rocksdb_data_owner.find(rocksdb_dir);
+    return it != rocksdb_data_owner.end() ? it->second : String{};
 }
 
 void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)

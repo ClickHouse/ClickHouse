@@ -72,6 +72,12 @@ public:
     using QueryNodeToPlanStepMapping = std::unordered_map<const QueryNode *, const QueryPlan::Node *>;
     const QueryNodeToPlanStepMapping & getQueryNodeToPlanStepMapping() const { return query_node_to_plan_step_mapping; }
 
+    /// Used for the arms of a set operation (`UNION` / `INTERSECT` / `EXCEPT`) that explicitly opted
+    /// out of the Planner-level query result cache with its own `SETTINGS use_query_cache = 0`: the
+    /// arms are the set operation itself, so the outer `query_cache_for_subqueries` propagation must
+    /// not cache them either. An explicit `use_query_cache` on an arm still wins.
+    void disableQueryCacheForSubqueriesPropagation() { allow_query_cache_for_subqueries_propagation = false; }
+
 private:
     SelectQueryInfo buildSelectQueryInfo() const;
 
@@ -87,6 +93,7 @@ private:
     StorageLimitsList storage_limits;
     std::set<std::string> used_row_policies;
     QueryNodeToPlanStepMapping query_node_to_plan_step_mapping;
+    bool allow_query_cache_for_subqueries_propagation = true;
 };
 
 }

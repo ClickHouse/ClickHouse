@@ -1,0 +1,6 @@
+#!/bin/sh
+# Clang's Solaris driver supplies -C as the first linker argument.
+if [ "$1" = -C ]; then
+    shift
+fi
+exec "@ILLUMOS_LLD@" "$@"

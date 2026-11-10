@@ -20,7 +20,6 @@
 #include <Interpreters/GroupingSetsRewriterVisitor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -35,6 +34,7 @@
 #include <Interpreters/replaceForPositionalArguments.h>
 #include <Interpreters/replaceMissedSubcolumnsInQuery.h>
 
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
@@ -72,6 +72,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsString count_distinct_implementation;
@@ -81,6 +82,8 @@ namespace Setting
     extern const SettingsBool legacy_column_name_of_tuple_literal;
     extern const SettingsBool normalize_function_names;
     extern const SettingsBool optimize_if_chain_to_multiif;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool optimize_group_by_function_keys;
     extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
     extern const SettingsBool optimize_move_to_prewhere;
@@ -99,6 +102,7 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
@@ -345,19 +349,6 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED, "Empty list of columns in SELECT query");
 }
 
-bool hasArrayJoin(const ASTPtr & ast)
-{
-    if (const ASTFunction * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && hasArrayJoin(child))
-            return true;
-
-    return false;
-}
-
 /// Keep number of columns for 'GLOBAL IN (SELECT 1 AS a, a)'
 void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 {
@@ -480,7 +471,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             /// Columns required by interpolate expression are not always in the required_result_columns
             new_elements.push_back(elem);
         }
-        else if (select_query->distinct || hasArrayJoin(elem))
+        else if (select_query->distinct || expressionContainsArrayJoin(elem))
         {
             /// ARRAY JOIN cannot be optimized out since it may change number of rows,
             /// so as DISTINCT.
@@ -1147,11 +1138,14 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             auto query_context = CurrentThread::tryGetQueryContext();
             auto access = query_context ? query_context->getAccess() : nullptr;
             const auto & storage_id = storage->getStorageID();
+            const NameSet chain_granted = access
+                ? alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, source_columns.getNames())
+                : NameSet{};
             for (const auto & column : source_columns)
             {
                 if (access
                     && access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                    && alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name))
+                    && chain_granted.contains(column.name))
                     accessible_columns.push_back(column);
             }
         }
@@ -1516,6 +1510,17 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY ALL is not supported with the old planner");
     }
 
+    if (select_query->shuffle)
+    {
+        if (!settings[Setting::allow_experimental_shuffle_query])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
+
+        if (!select_options.only_analyze)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "`SHUFFLE` is supported only with the analyzer (turn on setting `allow_experimental_analyzer = 1`)");
+    }
+
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
@@ -1545,16 +1550,25 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
-    result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
-
-     /// Only apply AST optimization for initial queries.
+    /// Only apply AST optimization for initial queries.
     const bool ast_optimizations_allowed =
         getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         && !select_options.ignore_ast_optimizations;
 
     bool optimize_multiif_to_if_v = ast_optimizations_allowed && settings[Setting::optimize_multiif_to_if];
-    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], optimize_multiif_to_if_v);
+    /// The legacy AST rewrite of an `if` chain to `multiIf` is purely syntactic: the synthesized `multiIf`
+    /// is resolved from the query settings, so with `optimize_if_transform_const_strings_to_lowcardinality`
+    /// it returns `LowCardinality(String)` while the `if` chain it replaces returns plain `String`
+    /// (`FunctionIf` strips `LowCardinality` from its arguments before inferring the return type, and the
+    /// else-branch of the outer `if` is a nested `if`, not a constant). The analyzer's `IfChainToMultiIfPass`
+    /// keeps the type by building its `multiIf` with the optimization disabled, which an AST-level rewrite
+    /// cannot express. Disable the legacy rewrite instead, so that the result type does not depend on
+    /// `enable_analyzer`. The condition mirrors `FunctionMultiIf::create`, where
+    /// `optimize_if_transform_strings_to_enum` supersedes the `LowCardinality` optimization.
+    const bool if_chain_to_multiif = settings[Setting::optimize_if_chain_to_multiif]
+        && !(settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+             && !settings[Setting::optimize_if_transform_strings_to_enum]);
+    TreeOptimizer::optimizeIf(query, result.aliases, if_chain_to_multiif, optimize_multiif_to_if_v);
 
     if (ast_optimizations_allowed)
         TreeOptimizer::apply(query, result, tables_with_columns, getContext());
@@ -1670,7 +1684,19 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], false);
+    /// The legacy AST rewrite of an `if` chain to `multiIf` is purely syntactic: the synthesized `multiIf`
+    /// is resolved from the query settings, so with `optimize_if_transform_const_strings_to_lowcardinality`
+    /// it returns `LowCardinality(String)` while the `if` chain it replaces returns plain `String`
+    /// (`FunctionIf` strips `LowCardinality` from its arguments before inferring the return type, and the
+    /// else-branch of the outer `if` is a nested `if`, not a constant). The analyzer's `IfChainToMultiIfPass`
+    /// keeps the type by building its `multiIf` with the optimization disabled, which an AST-level rewrite
+    /// cannot express. Disable the legacy rewrite instead, so that the result type does not depend on
+    /// `enable_analyzer`. The condition mirrors `FunctionMultiIf::create`, where
+    /// `optimize_if_transform_strings_to_enum` supersedes the `LowCardinality` optimization.
+    const bool if_chain_to_multiif = settings[Setting::optimize_if_chain_to_multiif]
+        && !(settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+             && !settings[Setting::optimize_if_transform_strings_to_enum]);
+    TreeOptimizer::optimizeIf(query, result.aliases, if_chain_to_multiif, false);
 
     if (allow_aggregations)
     {

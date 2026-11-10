@@ -21,7 +21,7 @@ settings disk = disk(
     name = '${CLICKHOUSE_TEST_UNIQUE_NAME}',
     path = '${CLICKHOUSE_TEST_UNIQUE_NAME}/',
     max_size = '1Gi',
-    disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_TEST_UNIQUE_NAME}_blob/'));
+    disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}_blob/'));
 insert into ${CLICKHOUSE_DATABASE}.test select number, toString(number) from numbers(100000);
 "
 

@@ -11,7 +11,8 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
-#include <Poco/StreamCopier.h>
+#include <IO/HTTP/HTTPClientIO.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
@@ -75,10 +76,12 @@ const CloudJWTProvider::AuthEndpoints * CloudJWTProvider::getAuthEndpoints(const
 }
 
 CloudJWTProvider::CloudJWTProvider(
-    std::string auth_url, std::string client_id, std::string audience, std::string host,
-    std::ostream & out, std::ostream & err)
-    : JWTProvider(std::move(auth_url), std::move(client_id), std::move(audience), out, err),
-      host_str(std::move(host))
+    JWTProviderOptions options,
+    std::string host,
+    std::ostream & out,
+    std::ostream & err)
+    : JWTProvider(std::move(options), out, err)
+    , host_str(std::move(host))
 {
     if (oauth_url.empty() || oauth_client_id.empty())
     {
@@ -125,6 +128,13 @@ std::string CloudJWTProvider::getAudience() const
     return "token-exchange";
 }
 
+bool CloudJWTProvider::preferCompleteVerificationURI() const
+{
+    /// The ClickHouse Cloud activation page pre-fills the code from the complete URL,
+    /// so the short URL is only noise.
+    return true;
+}
+
 void CloudJWTProvider::exchangeIdPTokenForClickHouseJWT(bool show_messages)
 {
     const auto * endpoints = getAuthEndpoints(host_str);
@@ -153,19 +163,18 @@ void CloudJWTProvider::exchangeIdPTokenForClickHouseJWT(bool show_messages)
     request_payload_buffer.finalize();
 
     request.setContentLength(request_body.length());
-    session->sendRequest(request) << request_body;
+    auto request_out = sendHTTPRequest(*session, request);
+    writeString(request_body, *request_out);
+    request_out->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-    {
-        std::string error_body;
-        Poco::StreamCopier::copyToString(rs, error_body);
-        throw Exception(ErrorCodes::NETWORK_ERROR, "Error exchanging token: {} {}\nResponse: {}", response.getStatus(), response.getReason(), error_body);
-    }
+    auto rs = receiveHTTPResponse(*session, response);
 
     std::string response_body;
-    Poco::StreamCopier::copyToString(rs, response_body);
+    readStringUntilEOF(response_body, *rs);
+
+    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Error exchanging token: {} {}\nResponse: {}", response.getStatus(), response.getReason(), response_body);
 
     Poco::JSON::Object::Ptr object = Poco::JSON::Parser().parse(response_body).extract<Poco::JSON::Object::Ptr>();
     clickhouse_jwt = object->getValue<std::string>("token");

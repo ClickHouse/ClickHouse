@@ -81,6 +81,7 @@ using FromDoubleIntermediateType = boost::multiprecision::cpp_bin_float_double_e
 #endif
 
 namespace CityHash_v1_0_2 { struct uint128; }
+class BFloat16;
 
 namespace wide
 {
@@ -307,6 +308,74 @@ constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, uint64_t diviso
     return static_cast<uint64_t>(dividend / divisor);
 }
 
+/// A divisor prepared for repeated division: normalized so that its high bit is set, together with the
+/// shift that normalized it and the reciprocal of the result. Building the reciprocal is itself a
+/// 128 / 64 division, so it pays off only when reused; for a compile-time divisor it costs nothing.
+struct invariant_divisor
+{
+    uint64_t divisor;
+    uint64_t normalized;
+    uint64_t reciprocal;
+    unsigned shift;
+};
+
+constexpr invariant_divisor prepare_divisor(uint64_t divisor)
+{
+    const unsigned shift = static_cast<unsigned>(std::countl_zero(divisor));
+    const uint64_t normalized = divisor << shift;
+    const unsigned __int128 reciprocal
+        = ~static_cast<unsigned __int128>(0) / normalized - (static_cast<unsigned __int128>(1) << 64);
+    return {divisor, normalized, static_cast<uint64_t>(reciprocal), shift};
+}
+
+/// Divides `high` : `low` by the divisor `prepared` was built from, using its reciprocal in place of a
+/// division, for a quotient known to fit in a limb; requires `high` below that divisor. Moller and
+/// Granlund, "Improved division by invariant integers", algorithm 4, over the normalized divisor.
+constexpr uint64_t
+divide_128_by_64_preinv(uint64_t high, uint64_t low, const invariant_divisor & prepared, uint64_t & remainder)
+{
+    /// `high < divisor` gives `high << shift <= normalized - 2^shift`, and the bits shifted in from
+    /// `low` are below `2^shift`, so the normalized high word stays below the normalized divisor.
+    uint64_t numerator_high = high << prepared.shift;
+    if (prepared.shift != 0)
+        numerator_high |= low >> (64 - prepared.shift);
+    const uint64_t numerator_low = low << prepared.shift;
+
+    unsigned __int128 estimate = static_cast<unsigned __int128>(prepared.reciprocal) * numerator_high;
+    estimate += (static_cast<unsigned __int128>(numerator_high + 1) << 64) | numerator_low;
+
+    uint64_t quotient = static_cast<uint64_t>(estimate >> 64);
+    const uint64_t estimate_low = static_cast<uint64_t>(estimate);
+    uint64_t rest = numerator_low - quotient * prepared.normalized;
+
+    /// The estimate is at most one too large, and what detects that is a comparison against the low
+    /// product word rather than against the divisor. The second correction is possible but rare.
+    const uint64_t correction = -static_cast<uint64_t>(rest > estimate_low);
+    quotient += correction;
+    rest += correction & prepared.normalized;
+    if (rest >= prepared.normalized)
+    {
+        rest -= prepared.normalized;
+        ++quotient;
+    }
+
+    remainder = rest >> prepared.shift;
+    return quotient;
+}
+
+/// Divides `high` : `low` by the divisor `prepared` was built from, for a quotient known to fit in a
+/// limb; requires `high` below that divisor. Prefer this over the three-argument form wherever the
+/// same divisor serves many divisions, and keep the argument `constexpr` where the divisor is.
+constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, const invariant_divisor & prepared, uint64_t & remainder)
+{
+#if defined(__x86_64__)
+    /// A single `divq` outperforms the reciprocal here, so the prepared form is only the portable route.
+    if (!std::is_constant_evaluated())
+        return divide_128_by_64(high, low, prepared.divisor, remainder);
+#endif
+    return divide_128_by_64_preinv(high, low, prepared, remainder);
+}
+
 /// Divides `numerator` (`m` limbs, little-endian) by the single limb `denominator`.
 /// Writes `m` quotient limbs into `quotient` and returns the remainder.
 ///
@@ -314,9 +383,50 @@ constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, uint64_t diviso
 /// remainder carried in from the previous step is below the divisor.
 constexpr uint64_t divide_by_single_limb(const uint64_t * numerator, unsigned m, uint64_t denominator, uint64_t * quotient)
 {
-    uint64_t remainder = 0;
-    for (unsigned i = m; i > 0; --i)
-        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
+#if defined(__x86_64__)
+    /// Keep the `divq` loop: a native first division adds operand-width selection branches.
+    if (!std::is_constant_evaluated())
+    {
+        uint64_t remainder = 0;
+        for (unsigned i = m; i > 0; --i)
+            quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
+        return remainder;
+    }
+#endif
+    if (m == 0)
+        return 0;
+
+    if (std::has_single_bit(denominator))
+    {
+        const unsigned shift = static_cast<unsigned>(std::countr_zero(denominator));
+        if (shift == 0)
+        {
+            for (unsigned i = 0; i < m; ++i)
+                quotient[i] = numerator[i];
+            return 0;
+        }
+
+        const uint64_t remainder = numerator[0] & (denominator - 1);
+        uint64_t carry = 0;
+        for (unsigned i = m; i > 0; --i)
+        {
+            const uint64_t limb = numerator[i - 1];
+            quotient[i - 1] = (limb >> shift) | carry;
+            carry = limb << (64 - shift);
+        }
+        return remainder;
+    }
+
+    /// The first step has no carried remainder, so a native 64-bit division suffices.
+    uint64_t remainder = numerator[m - 1] % denominator;
+    quotient[m - 1] = numerator[m - 1] / denominator;
+    if (m == 1)
+        return remainder;
+
+    /// Amortize reciprocal preparation over the remaining limbs on targets without `divq`.
+    const auto prepared = prepare_divisor(denominator);
+    for (unsigned i = m - 1; i > 0; --i)
+        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], prepared, remainder);
     return remainder;
 }
 
@@ -526,16 +636,33 @@ struct integer<Bits, Signed>::_impl
     {
         static_assert(sizeof(Integral) <= sizeof(base_type));
 
-        self.items[little(0)] = _impl::to_Integral(rhs);
+        if constexpr (std::is_same_v<Integral, float> || std::is_same_v<Integral, BFloat16>)
+        {
+            const float value = static_cast<float>(rhs);
+            /// |value| < 2^63, false for NaN and infinities.
+            if ((std::bit_cast<uint32_t>(value) & 0x7fffffffu) < std::bit_cast<uint32_t>(0x1p63f))
+                wide_integer_from_builtin(self, static_cast<int64_t>(value));
+            else
+                wide_integer_from_builtin(self, static_cast<double>(value));
+        }
+        else if constexpr (std::is_floating_point_v<Integral>)
+        {
+            /// An 8-byte `long double` (arm64 macOS).
+            wide_integer_from_builtin(self, static_cast<double>(rhs));
+        }
+        else
+        {
+            self.items[little(0)] = _impl::to_Integral(rhs);
 
-        /// Sign-extend with a value select instead of a branch: a data-dependent branch here
-        /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
-        base_type extension = 0;
-        if constexpr (std::is_signed_v<Integral>)
-            extension = rhs < 0 ? base_type(-1) : base_type(0);
+            /// Sign-extend with a value select instead of a branch: a data-dependent branch here
+            /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
+            base_type extension = 0;
+            if constexpr (std::is_signed_v<Integral>)
+                extension = rhs < 0 ? base_type(-1) : base_type(0);
 
-        for (unsigned i = 1; i < item_count; ++i)
-            self.items[little(i)] = extension;
+            for (unsigned i = 1; i < item_count; ++i)
+                self.items[little(i)] = extension;
+        }
     }
 
     template <typename TupleLike, size_t i = 0>
@@ -1382,7 +1509,12 @@ public:
             /// than `divide` below.
             integer<Bits, unsigned> numerator = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            integer<Bits, unsigned> quotient;
+            /// The signed operators are out of line, so `divide` is inlined into them: a narrow division then stays in registers.
+            if constexpr (std::is_same_v<Signed, signed>)
+                [[clang::always_inline]] quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            else
+                quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
                 quotient = operator_unary_minus(quotient);
@@ -1403,7 +1535,10 @@ public:
             /// See the note in operator_slash about _BitInt(256).
             integer<Bits, unsigned> remainder = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            if constexpr (std::is_same_v<Signed, signed>)
+                [[clang::always_inline]] integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            else
+                integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs))
                 remainder = operator_unary_minus(remainder);

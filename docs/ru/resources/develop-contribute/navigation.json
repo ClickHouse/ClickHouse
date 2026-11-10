@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Introduction",
+      "group": "Введение",
       "pages": [
         "ru/resources/develop-contribute/introduction/developer-instruction",
         "ru/resources/develop-contribute/introduction/architecture"
       ]
     },
     {
-      "group": "Building",
+      "group": "Сборка",
       "pages": [
         "ru/resources/develop-contribute/build/build",
         "ru/resources/develop-contribute/build/build-osx",
@@ -21,17 +21,15 @@
       ]
     },
     {
-      "group": "Native protocol",
+      "group": "Собственный протокол",
       "pages": [
-        "ru/resources/develop-contribute/native-protocol/basics",
-        "ru/resources/develop-contribute/native-protocol/client",
-        "ru/resources/develop-contribute/native-protocol/server",
-        "ru/resources/develop-contribute/native-protocol/columns",
+        "ru/resources/develop-contribute/native-protocol/protocol",
+        "ru/resources/develop-contribute/native-protocol/format",
         "ru/resources/develop-contribute/native-protocol/hash"
       ]
     },
     {
-      "group": "Contributing",
+      "group": "Участие в разработке",
       "pages": [
         "ru/resources/develop-contribute/contribute/tests",
         "ru/resources/develop-contribute/contribute/continuous-integration",
@@ -44,7 +42,7 @@
       ]
     },
     {
-      "group": "Integration development",
+      "group": "Разработка интеграций",
       "pages": [
         "ru/resources/develop-contribute/integrations/index",
         "ru/resources/develop-contribute/integrations/building-integrations",
@@ -53,13 +51,13 @@
       ]
     },
     {
-      "group": "Roadmap",
+      "group": "Планы развития",
       "pages": [
         "ru/resources/develop-contribute/roadmap"
       ]
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "Development & contributing",
+  "item": "Разработка и участие в проекте",
   "root": "ru/resources/develop-contribute/index"
 }

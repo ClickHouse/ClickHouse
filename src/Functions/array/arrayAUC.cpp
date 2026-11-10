@@ -15,6 +15,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -139,6 +140,37 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    /// `arrayROCAUC(scores, labels[, scale[, offsets]])`           — 2..4 args
+    /// `arrayAUCPR(scores, labels[, offsets])`                     — 2..3 args
+    /// `scores` and `labels` must be Array of numeric (labels can also be Enum).
+    /// Optional `scale` is a const Bool (only for ROC); optional `offsets` is
+    /// an Array of integers. Result is `Float64`.
+    String getSignatureString() const override
+    {
+        if (is_pr)
+            return "(Array, Array, [Array]) -> Float64";
+        /// `[const Bool, [Array]]` cannot be expressed as a nested Optional group (the
+        /// signature grammar does not allow groups inside `[...]`), so spell the legal
+        /// arities as explicit alternatives instead. `offsets` is only valid together
+        /// with `scale`, matching `getReturnTypeImpl` below.
+        return "(Array, Array) -> Float64"
+               " OR (Array, Array, const Bool) -> Float64"
+               " OR (Array, Array, const Bool, Array) -> Float64";
+    }
+
+    /// The signature above does not spell the element types of the arrays, and the `scale`
+    /// argument must be a constant, which cannot be checked from the types alone. Decline this
+    /// entry point (as it behaved before the signature was added) instead of letting it accept
+    /// shapes the authoritative resolver below rejects.
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "getReturnType is not implemented for {}: the constness of the arguments can only be validated "
+            "when the columns are known",
+            getName());
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -524,13 +556,13 @@ For more details, please see [here](https://developers.google.com/machine-learni
     - `total_positives`: The total number of positive samples in the entire dataset.
     - `total_negatives`: The total number of negative samples in the entire dataset.
 
-:::note
+<Note>
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-:::
+</Note>
 )"}
     };
     FunctionDocumentation::ReturnedValue returned_value_roc = {"Returns area under the receiver operating characteristic (ROC) curve. Returns `NaN` if a score is `NaN`, and, when `scale` is true, also when the ROC AUC is undefined because there are no positive or no negative labels.", {"Float64"}};
@@ -560,13 +592,13 @@ For more details, please see [here](https://developers.google.com/machine-learni
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.
 
-:::note
+<Note>
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-:::
+</Note>
 )"}
     };
     FunctionDocumentation::ReturnedValue returned_value_pr = {"Returns area under the precision-recall (PR) curve, or `NaN` if any score is `NaN`.", {"Float64"}};

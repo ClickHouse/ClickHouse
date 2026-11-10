@@ -295,7 +295,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, std::move(coordinator), context);
     };
 
-    factory.registerSource("executable", create_table_source, Documentation{
+    factory.registerSource("executable", create_table_source, SecretArgumentsSpec{}, Documentation{
         .description = R"DOCS_MD(
 # Executable File dictionary source
 

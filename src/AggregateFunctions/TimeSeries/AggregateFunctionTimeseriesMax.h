@@ -28,18 +28,17 @@ namespace ErrorCodes
 ///
 /// The bucket is a preaggregated maximum instead of the raw samples: the duplicate-timestamp rule keeps the greatest
 /// value at a timestamp, which is what the maximum keeps anyway (unlike the minimum, see `AggregateFunctionTimeseriesMin.h`).
-template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool return_timestamp_>
+template <typename TimestampType_, typename ValueType_, bool return_timestamp_>
 struct AggregateFunctionTimeseriesMaxTraits
 {
     /// Return the timestamp of the maximum (ts_of_max_over_time) instead of the maximum itself.
     static constexpr bool return_timestamp = return_timestamp_;
-
-    using TimestampType = TimestampType_;
-    using IntervalType = IntervalType_;
+    using GridScaleTimestampType = DateTime64;
     using ValueType = ValueType_;
+    using TimestampType = TimestampType_;
 
-    /// A timestamp in seconds needs Float64 precision (a Float32 near the current epoch has a ~128-second ulp).
-    using ResultType = std::conditional_t<return_timestamp, Float64, ValueType>;
+    /// The timestamp is returned as is, with the type of the timestamps in the input columns.
+    using ResultType = std::conditional_t<return_timestamp, TimestampType, ValueType>;
 
     static String getName()
     {
@@ -129,47 +128,39 @@ struct AggregateFunctionTimeseriesMaxTraits
     /// Sliding aggregator: buckets are summaries already and are fed to the (non-invertible) `SlidingSum` as is.
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
-        TimestampType timestamp_scale_multiplier;
-
-        Aggregator(size_t stack_size, TimestampType timestamp_scale_multiplier_)
-            : sliding_sum(stack_size), timestamp_scale_multiplier(timestamp_scale_multiplier_)
+        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
+        explicit Aggregator(size_t stack_size)
+            : sliding_sum(stack_size)
         {
         }
 
-        void add(const Summary & bucket, TimestampType bucket_end_timestamp)
+        void add(const Summary & bucket, GridScaleTimestampType bucket_end_timestamp)
         {
             if (!bucket.empty())
                 sliding_sum.add(Summary{bucket}, bucket_end_timestamp);
         }
 
-        void removeBefore(TimestampType cut_off)
+        void removeBefore(GridScaleTimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ResultType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (combined.empty())
                 return std::nullopt;
             if constexpr (return_timestamp)
-            {
-                /// The timestamp in seconds.
-                return static_cast<Float64>(static_cast<Int64>(combined.timestamp))
-                    / static_cast<Float64>(static_cast<Int64>(timestamp_scale_multiplier));
-            }
+                return combined.timestamp;
             else
-            {
                 return combined.value;
-            }
         }
     };
 
     /// The summary itself, see above.
     using Bucket = Summary;
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
+    static constexpr UInt16 FORMAT_VERSION = 2;
 
     /// Two-stacks thresholds, measured by the `timeseries_to_grid_two_stack_vs_recompute` example:
     /// two-stacks first wins at 4 buckets per window and is 2x faster from 18.
@@ -179,14 +170,14 @@ struct AggregateFunctionTimeseriesMaxTraits
 
 
 /// Aggregate function to calculate PromQL-like max_over_time (or ts_of_max_over_time) on a grid.
-template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool return_timestamp_>
+template <typename TimestampType_, typename ValueType_, bool return_timestamp_>
 class AggregateFunctionTimeseriesMax final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesMax<TimestampType_, IntervalType_, ValueType_, return_timestamp_>,
-        AggregateFunctionTimeseriesMaxTraits<TimestampType_, IntervalType_, ValueType_, return_timestamp_>>
+        AggregateFunctionTimeseriesMax<TimestampType_, ValueType_, return_timestamp_>,
+        AggregateFunctionTimeseriesMaxTraits<TimestampType_, ValueType_, return_timestamp_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesMaxTraits<TimestampType_, IntervalType_, ValueType_, return_timestamp_>;
+    using Traits = AggregateFunctionTimeseriesMaxTraits<TimestampType_, ValueType_, return_timestamp_>;
 
     using Aggregator = typename Traits::Aggregator;
 
@@ -195,15 +186,15 @@ public:
 
     Aggregator createAggregator(size_t stack_size_for_two_stacks) const
     {
-        return Aggregator{stack_size_for_two_stacks, Base::timestamp_scale_multiplier};
+        return Aggregator{stack_size_for_two_stacks};
     }
 };
 
-/// Each SQL function as a 3-argument template, so registration names the function directly.
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesMaxToGrid = AggregateFunctionTimeseriesMax<TimestampType, IntervalType, ValueType, /* return_timestamp = */ false>;
+/// Each SQL function as a template, so registration names the function directly.
+template <typename TimestampType, typename ValueType>
+using AggregateFunctionTimeseriesMaxToGrid = AggregateFunctionTimeseriesMax<TimestampType, ValueType, /* return_timestamp = */ false>;
 
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesTimestampOfMaxToGrid = AggregateFunctionTimeseriesMax<TimestampType, IntervalType, ValueType, /* return_timestamp = */ true>;
+template <typename TimestampType, typename ValueType>
+using AggregateFunctionTimeseriesTimestampOfMaxToGrid = AggregateFunctionTimeseriesMax<TimestampType, ValueType, /* return_timestamp = */ true>;
 
 }

@@ -139,7 +139,7 @@ void StorageWebConfiguration::check(ContextPtr context)
         for (const auto & url_option : url_shard)
             context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
     }
-    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
+    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
 }
 
 ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context, bool, CredentialsConfigurationCallback) /// NOLINT
@@ -158,7 +158,7 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
     ContextPtr context,
     bool with_structure)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         if (collection->getOrDefault<String>("format", "auto") == "auto")
         {
@@ -234,7 +234,7 @@ void StorageWebConfiguration::initializeFromParsedArguments(WebStorageParsedArgu
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
 
     setNamespaceFromURL(context);
-    paths = {path};
+    setPaths({path});
     setPathForRead(path);
 }
 

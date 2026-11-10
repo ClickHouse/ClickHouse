@@ -44,6 +44,43 @@ Default tokenizer (splitByNonAlpha)
 -- Nullable(FixedString) input
 1
 \N
+-- Array input: elements are tokenized
+1
+0
+1
+1
+1
+0
+0
+0
+0
+-- the tokens of one row are one sequence, so a phrase spans elements
+1
+-- empty or NULL element is not a token
+1
+1
+-- Array(FixedString) input
+1
+-- a FixedString keeps its zero padding, which some tokenizers put inside a token
+1
+1
+1
+-- the padding joins the last token of these, so nothing matches
+0
+0
+-- Array phrase: elements are tokens
+0
+1
+-- the array tokenizer is what the postprocessor rewrite passes
+1
+-- tokenizer applies to input elements and a String phrase
+1
+1
+-- Array(String) column values
+1
+1	1
+2	0
+3	0
 -- Nullable(String) column values
 1
 \N
