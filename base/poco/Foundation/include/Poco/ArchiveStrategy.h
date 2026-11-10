@@ -25,6 +25,7 @@
 #include "Poco/LogFile.h"
 #include "Poco/NumberFormatter.h"
 
+#include <functional>
 #include <memory>
 
 
@@ -47,8 +48,9 @@ public:
     virtual ~ArchiveStrategy();
 
     virtual void archive(std::unique_ptr<LogFile> & file, bool streamCompress = false) = 0;
-    /// Closes and renames `file` for archiving and replaces it with a new log file.
-    /// If this method throws, `file` may be null.
+    /// Renames `file` for archiving and replaces it with a new log file.
+    /// If this method throws, `file` is still the current file under its original name
+    /// (or null, if the file could not be renamed back).
     /// Creates CompressedLogFile if streamCompress flag is set.
 
     void compress(bool flag = true);
@@ -57,6 +59,16 @@ public:
 protected:
     void moveFile(const std::string & oldName, const std::string & newName);
     bool exists(const std::string & name);
+    static std::unique_ptr<LogFile> openFile(const std::string & base, bool streamCompress);
+    void rotateFile(
+        std::unique_ptr<LogFile> & file,
+        const std::string & base,
+        const std::string & ext,
+        const std::string & archived,
+        bool streamCompress,
+        const std::function<void()> & makeRoom);
+    /// Opens the new file under a temporary name, calls `makeRoom`, renames the current file to `archived`
+    /// and the new file to the current name, then replaces `file`. Compresses `archived` after the old file is closed.
 
 private:
     ArchiveStrategy(const ArchiveStrategy &);
@@ -103,21 +115,16 @@ public:
             ext = ".lz4";
         }
 
-        file.reset();
         std::string archPath = base;
         archPath.append(".");
         DateTimeFormatter::append(archPath, DT().timestamp(), "%Y%m%d%H%M%S%i");
         archPath.append(ext);
 
-        if (exists(archPath))
-            archiveByNumber(archPath);
-        else
-            moveFile(base + ext, archPath);
-
-        if (streamCompress)
-            file = std::make_unique<CompressedLogFile>(base);
-        else
-            file = std::make_unique<LogFile>(base);
+        rotateFile(file, base, ext, archPath, streamCompress, [&]
+        {
+            if (exists(archPath))
+                archiveByNumber(archPath);
+        });
     }
 
 private:

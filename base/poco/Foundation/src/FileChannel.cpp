@@ -25,6 +25,7 @@
 #include "Poco/Exception.h"
 #include "Poco/Ascii.h"
 #include "Poco/CombinedRotateStrategy.h"
+#include <exception>
 
 
 namespace Poco {
@@ -104,15 +105,26 @@ void FileChannel::log(const Message& msg)
 {
 	FastMutex::ScopedLock lock(_mutex);
 
-	unsafeOpen();
-
-	if (_pRotateStrategy && _pArchiveStrategy && _pRotateStrategy->mustRotate(_pFile.get()))
+	/// A failed rotation keeps the current file, so the message is written and the error is rethrown after it.
+	std::exception_ptr rotation_error;
+	try
 	{
-		unsafeRotate();
-		// we must call mustRotate() again to give the
-		// RotateByIntervalStrategy a chance to write its timestamp
-		// to the new file.
-		_pRotateStrategy->mustRotate(_pFile.get());
+		unsafeOpen();
+
+		if (_pRotateStrategy && _pArchiveStrategy && _pRotateStrategy->mustRotate(_pFile.get()))
+		{
+			unsafeRotate();
+			// we must call mustRotate() again to give the
+			// RotateByIntervalStrategy a chance to write its timestamp
+			// to the new file.
+			_pRotateStrategy->mustRotate(_pFile.get());
+		}
+	}
+	catch (...)
+	{
+		if (!_pFile)
+			throw;
+		rotation_error = std::current_exception();
 	}
 
 	try
@@ -133,6 +145,9 @@ void FileChannel::log(const Message& msg)
             PurgeOneFileStrategy().purge(_path);
         }
     }
+
+	if (rotation_error)
+		std::rethrow_exception(rotation_error);
 }
 
 	
@@ -336,15 +351,8 @@ void FileChannel::unsafeOpen()
 
 void FileChannel::unsafeRotate()
 {
-	try
-	{
-		_pArchiveStrategy->archive(_pFile, _streamCompress);
-		purge();
-	}
-	catch (...)
-	{
-		_pFile = newLogFile();
-	}
+	_pArchiveStrategy->archive(_pFile, _streamCompress);
+	purge();
 }
 
 
