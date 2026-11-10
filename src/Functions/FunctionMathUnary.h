@@ -230,7 +230,7 @@ struct UnaryFunctionVectorized
     static constexpr bool convert_arguments_first = !inline_function;
 
     template <typename T>
-    static void execute(const T * __restrict src, Float64 * __restrict dst)
+    static void execute(const T * src, Float64 * dst)
     {
         *dst = Function(static_cast<Float64>(*src));
     }
