@@ -16,7 +16,6 @@ namespace DB
 struct ColumnWithTypeAndName;
 class TableJoin;
 class IColumn;
-struct JoinSettings;
 
 using ColumnPtrMap = std::unordered_map<String, ColumnPtr>;
 using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
@@ -24,14 +23,6 @@ using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 
 namespace JoinCommon
 {
-
-/// Whether one of the algorithms the `join_algorithm` setting enables can execute this kind and
-/// strictness. The sort-merge algorithms implement only a part of them - neither `SEMI` nor `ANTI`,
-/// and `partial_merge` does not do `ANY` beyond `INNER`/`LEFT` - so a plan rewrite that produces such
-/// a join under `join_algorithm = 'full_sorting_merge'` or `'partial_merge'` would turn a query that
-/// runs into `NOT_IMPLEMENTED`. `grace_hash` counts only where `JoinSettings::canRunGraceHash` says
-/// the join pickers would not pass it over on any node.
-bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKind kind, JoinStrictness strictness);
 
 /// Helper interface to work with mask from JOIN ON section
 class JoinMask
@@ -107,10 +98,6 @@ private:
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
     const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion = false);
 
-/// Replaces a `Bool` of `type`, a common type of two JOIN keys, by `UInt8` where one of the keys has an `UInt8`
-/// in that place, so that a `Bool` key and an integer key are compared by value, as `=` does.
-DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type);
-
 /** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
   *
   * The target of a JOIN key conversion must not have Nullable elements: `accurateCastOrNull` reports an
@@ -121,10 +108,6 @@ DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_ty
   * top-level NULL is.
   */
 DataTypePtr removeNullableInsideTuple(const DataTypePtr & type);
-
-/// Whether a JOIN key of this type can match a pair for which `equals` is not true: a NaN, a NULL nested
-/// in a Tuple, or a NULL Variant or Dynamic.
-bool keyMatchesValuesEqualsRejects(const DataTypePtr & type);
 
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
@@ -148,11 +131,11 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
 Int64 getCurrentQueryMemoryUsage();
 Block materializeColumnsFromRightBlock(Block block, const Block & sample_block);
 
-/// Throw an exception if join condition column cannot be used in boolean context
+/// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
                        const Block & block_right, const String & condition_name_right);
 
-/// Throw an exception if blocks have different types of key columns. Compare up to Nullability.
+/// Throw an exception if blocks have different types of key columns . Compare up to Nullability.
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
                       const Block & block_right, const Names & key_names_right);
 

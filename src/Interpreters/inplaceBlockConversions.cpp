@@ -56,6 +56,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -155,7 +156,6 @@ void addDefaultRequiredExpressionsRecursively(
     }
 }
 
-
 ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default)
 {
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
@@ -220,18 +220,31 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
     return conversion_expr_list;
 }
 
-/// The expression list resolved against a table made of `header`'s columns, with the context the resolution ran in
-/// (the planner needs the same one afterwards) and the table itself: the column nodes of the expression point at it
-/// and it has to outlive them.
-struct ResolvedExpressionList
+std::optional<ActionsDAG> createExpressions(
+    const Block & header,
+    ASTPtr expr_list,
+    bool save_unneeded_columns,
+    ContextPtr context)
 {
-    QueryTreeNodePtr expression;
-    ContextMutablePtr context;
-    std::shared_ptr<TableNode> table;
-};
+    if (!expr_list)
+        return {};
 
-ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
+    auto syntax_result = TreeRewriter(context).analyze(expr_list, header.getNamesAndTypesList());
+    auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
+    ActionsDAG dag(header.getNamesAndTypesList());
+    auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
+    return ActionsDAG::merge(std::move(dag), std::move(actions));
+}
+
+std::optional<ActionsDAG> createExpressionsAnalyzer(
+    const Block & header,
+    ASTPtr expr_list,
+    bool save_unneeded_columns,
+    ContextPtr context)
 {
+    if (!expr_list)
+        return {};
+
     auto execution_context = Context::createCopy(context);
     auto expression = buildQueryTree(expr_list, execution_context);
 
@@ -244,22 +257,6 @@ ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr 
 
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);
-
-    return {std::move(expression), std::move(execution_context), std::move(fake_table_expression)};
-}
-
-std::optional<ActionsDAG> createExpressionsAnalyzer(
-    const Block & header,
-    ASTPtr expr_list,
-    bool save_unneeded_columns,
-    ContextPtr context)
-{
-    if (!expr_list)
-        return {};
-
-    auto resolved = resolveExpressionList(header, expr_list, context);
-    auto & expression = resolved.expression;
-    auto & execution_context = resolved.context;
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
@@ -296,7 +293,11 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     if (conversion_expr_list->children.empty())
         return;
 
-    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
+    std::optional<ActionsDAG> dag;
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
+    else
+        dag = createExpressions(block, conversion_expr_list, true, context);
 
     if (dag)
     {
@@ -315,19 +316,6 @@ static bool needConvertAnyNullToDefault(const Block & header, const NamesAndType
     return false;
 }
 
-QueryTreeNodePtr resolveMissingDefaults(
-    const Block & header,
-    const NamesAndTypesList & required_columns,
-    const ColumnsDescription & columns,
-    ContextPtr context,
-    bool null_as_default)
-{
-    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    if (!expr_list)
-        return nullptr;
-    return resolveExpressionList(header, expr_list, context).expression;
-}
-
 std::optional<ActionsDAG> evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
@@ -340,7 +328,10 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
+
+    return createExpressions(header, expr_list, save_unneeded_columns, context);
 }
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class
@@ -585,12 +576,6 @@ static bool isSubcolumnOfAvailableColumn(
     return requested_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
 }
 
-bool mayLeaveColumnToMissingDefaults(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
-{
-    /// A superset of the two cases in which `fillMissingColumns` leaves a column unfilled.
-    return hasDefault(storage_snapshot, column) || (storage_snapshot && column.isSubcolumn());
-}
-
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
 {
     /// Add a dot to the end of name for convenience.
@@ -698,35 +683,6 @@ void fillMissingColumns(
             auto column_in_storage = tryGetColumnInStorage(storage_snapshot, *requested_column);
             const auto & column_for_type = column_in_storage ? *column_in_storage : *requested_column;
 
-            /// Subcolumn names count arrays from the root of the column (`sizeN`, a JSON path below an array),
-            /// so a subcolumn is taken from the whole column when the shared offsets are its outer arrays.
-            const auto & type_in_storage = column_for_type.getTypeInStorage();
-            const auto * array_in_storage = typeid_cast<const DataTypeArray *>(type_in_storage.get());
-            if (column_for_type.isSubcolumn() && array_in_storage
-                && array_in_storage->getNumberOfDimensions() >= current_offsets.size())
-            {
-                DataTypePtr element_type = type_in_storage;
-                for (size_t level = 0; level < current_offsets.size(); ++level)
-                    element_type = assert_cast<const DataTypeArray &>(*element_type).getNestedType();
-
-                /// Every element is the default, so the subcolumn of one element is replicated.
-                ColumnPtr column = createColumnWithDefaultValue(*element_type, "", 1);
-                for (size_t level = 0; level < current_offsets.size(); ++level)
-                    column = ColumnArray::create(column, ColumnUInt64::create(1, 1));
-
-                column = type_in_storage->getSubcolumn(column_for_type.getSubcolumnName(), column);
-                for (size_t level = 0; level < current_offsets.size(); ++level)
-                    column = assert_cast<const ColumnArray &>(*column).getDataPtr();
-
-                size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
-                column = ColumnConst::create(column, data_size)->convertToFullColumnIfConst();
-                for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
-                    column = ColumnArray::create(column, *it);
-
-                res_columns[i] = std::move(column);
-                continue;
-            }
-
             Names tuple_elements;
             SerializationPtr serialization = IDataType::getSerialization(column_for_type);
 
@@ -742,7 +698,7 @@ void fillMissingColumns(
                 if (subcolumn_name == requested_subcolumn_name
                     || requested_subcolumn_name.starts_with(subcolumn_name + "."))
                     tuple_elements.push_back(path.back().name_of_substream);
-            }, ISerialization::SubstreamData(serialization).withType(column_for_type.type));
+            }, ISerialization::SubstreamData(serialization));
 
             /// The number of dimensions that belongs to the array itself but not shared in Nested column.
             /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.

@@ -103,15 +103,7 @@ using MergePlainMergeTreeTaskPtr = std::shared_ptr<MergePlainMergeTreeTask>;
 
 [[ maybe_unused ]] static void executeHere(MergePlainMergeTreeTaskPtr task)
 {
-    try
-    {
-        while (task->executeStep()) {}
-    }
-    catch (...)
-    {
-        task->cancel();
-        throw;
-    }
+    while (task->executeStep()) {}
 }
 
 
