@@ -340,9 +340,7 @@ void FileChannel::unsafeOpen()
 
 void FileChannel::unsafeRotate()
 {
-	/// `archive` deletes the current `LogFile` before it renames the files and opens the new one.
-	/// Reset `_pFile` first: if both `archive` and `newLogFile` throw, `_pFile` stays null instead of
-	/// pointing to the deleted object, and the next `log` call opens the file again in `unsafeOpen`.
+	/// `archive` deletes the current file, so `_pFile` must not dangle if opening the new one fails.
 	LogFile * pFile = std::exchange(_pFile, nullptr);
 	try
 	{
