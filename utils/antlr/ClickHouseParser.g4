@@ -211,7 +211,7 @@ columnSettingsExpr: SETTINGS LPAREN settingExprList RPAREN;
 tableIndexDfnt: nestedIdentifier columnExpr TYPE columnTypeExpr GRANULARITY DECIMAL_LITERAL;
 tableProjectionDfnt
     : nestedIdentifier projectionSelectStmt projectionSettingsExpr?                 # TableProjectionDfntQuery
-    | nestedIdentifier INDEX columnExpr TYPE columnTypeExpr projectionSettingsExpr? # TableProjectionDfntIndex
+    | nestedIdentifier INDEX columnExprList TYPE columnTypeExpr projectionSettingsExpr? # TableProjectionDfntIndex
     ;
 projectionSettingsExpr: WITH SETTINGS LPAREN settingExprList RPAREN;
 codecExpr: CODEC LPAREN codecArgExpr (COMMA codecArgExpr)* RPAREN;
@@ -224,7 +224,8 @@ ttlExpr
         | RECOMPRESS codecExpr
         | TO DISK (IF EXISTS)? stringLiteral
         | TO VOLUME (IF EXISTS)? stringLiteral
-        | GROUP BY columnExprList (SET assignmentExprList)?
+        | GROUP BY columnExprList SET assignmentExprList
+        | GROUP BY columnExprList
     )?
     ;
 
@@ -280,6 +281,8 @@ handlerInnerQueryBody
     | createTokenStmt
     | queryWithoutOutput
     | embeddedInsertStmt
+    | deleteStmt
+    | updateStmt
     ;
 // The inline data of an INSERT is not part of a handler: the data comes from the HTTP body.
 embeddedInsertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) columnsClause? embeddedDataClause;
@@ -311,9 +314,9 @@ grantStmt
     ;
 
 revokeStmt
-    : REVOKE clusterClause? privilegeList ON grantScope FROM granteeList           # RevokePrivilegeStmt
-    | REVOKE clusterClause? sourcePrivilegeList ON sourceScope FROM granteeList    # RevokeSourcePrivilegeStmt
-    | REVOKE clusterClause? (ADMIN OPTION FOR)? roleList FROM granteeList          # RevokeRoleStmt
+    : REVOKE clusterClause? (GRANT OPTION FOR)? privilegeList ON grantScope FROM granteeList         # RevokePrivilegeStmt
+    | REVOKE clusterClause? (GRANT OPTION FOR)? sourcePrivilegeList ON sourceScope FROM granteeList  # RevokeSourcePrivilegeStmt
+    | REVOKE clusterClause? (ADMIN OPTION FOR)? roleList FROM granteeList                # RevokeRoleStmt
     ;
 
 // List of privileges
