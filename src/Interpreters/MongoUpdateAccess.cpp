@@ -21,7 +21,12 @@ namespace ErrorCodes
 std::vector<String> getMongoCollectionColumns(const String & database, const String & table, const ContextPtr & context)
 {
     std::vector<String> column_names;
-    auto storage = DatabaseCatalog::instance().tryGetTable(StorageID(database, table), context);
+    /// The table is resolved as the interpreter of the update resolves it: an unqualified name is a
+    /// temporary table of the session first, and a table of the current database otherwise.
+    auto table_id = context->tryResolveStorageID(StorageID(database, table));
+    if (!table_id)
+        return column_names;
+    auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
     if (!storage)
         return column_names;
     auto metadata = storage->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);

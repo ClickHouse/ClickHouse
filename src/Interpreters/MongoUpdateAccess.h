@@ -19,7 +19,9 @@ namespace DB
   * may see: `$unset`, `$rename` and `$set` of a subdocument write the whole of it, see
   * `Mongo::expandMongoSubtreeAssignments`, and narrowing it to the visible columns would turn the
   * write of a subdocument into the write of a part of it. `expandMongoSubtreeAssignmentsCheckingAccess` then makes sure
-  * the user may write all of it.
+  * the user may write all of it. An empty `database` resolves `table` as the interpreter of the
+  * update does: to a temporary table of the session first, and to a table of the current database
+  * otherwise.
   */
 std::vector<String> getMongoCollectionColumns(const String & database, const String & table, const ContextPtr & context);
 

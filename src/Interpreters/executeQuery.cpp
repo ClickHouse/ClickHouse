@@ -2709,8 +2709,9 @@ static BlockIO executeQueryImpl(
                 /// `getMongoCollectionColumns` and `expandMongoSubtreeAssignmentsCheckingAccess`.
                 if (const auto * alter = out_ast->as<ASTAlterQuery>())
                 {
-                    const String database = alter->getDatabase().empty() ? context->getCurrentDatabase() : alter->getDatabase();
-                    auto column_names = getMongoCollectionColumns(database, alter->getTable(), context);
+                    /// The database stays empty when the query names none, so that the columns are
+                    /// those of the very table the interpreter updates, a temporary one included.
+                    auto column_names = getMongoCollectionColumns(alter->getDatabase(), alter->getTable(), context);
                     if (!column_names.empty())
                         expandMongoSubtreeAssignmentsCheckingAccess(out_ast, column_names, context);
                 }
