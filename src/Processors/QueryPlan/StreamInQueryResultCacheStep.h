@@ -11,9 +11,9 @@ class QueryResultCacheHerdTokenHolder;
 class StreamInQueryResultCacheStep : public ITransformingStep
 {
 public:
-    /// `herd_token_holder_`, if non-null, is released once the subquery's result has been fully streamed into the
-    /// query result cache (or the pipeline is torn down without that happening, e.g. due to an exception or
-    /// cancellation). Used only for subqueries planned in the Planner;
+    /// `herd_token_holder_`, if non-null, is released once all streams of the subquery are finished and its result has been
+    /// written into the query result cache, even if the enclosing query is still running (or once the pipeline is torn
+    /// down without that happening, e.g. due to an exception or cancellation). Used only for subqueries planned in the Planner;
     /// top-level queries manage their herd token's lifetime in executeQuery() directly.
     StreamInQueryResultCacheStep(
         const SharedHeader & input_header_,

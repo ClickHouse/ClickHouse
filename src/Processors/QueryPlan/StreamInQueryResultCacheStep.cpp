@@ -33,6 +33,10 @@ StreamInQueryResultCacheStep::StreamInQueryResultCacheStep(
 
 void StreamInQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    std::shared_ptr<StreamInQueryResultCacheSubqueryCompletion> subquery_completion;
+    if (herd_token_holder)
+        subquery_completion = std::make_shared<StreamInQueryResultCacheSubqueryCompletion>(herd_token_holder);
+
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
@@ -54,7 +58,7 @@ void StreamInQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipe
                     break;
             }
 
-            return std::make_shared<StreamInQueryResultCacheTransform>(*header, query_result_cache_writer, chunk_type, herd_token_holder);
+            return std::make_shared<StreamInQueryResultCacheTransform>(*header, query_result_cache_writer, chunk_type, subquery_completion);
         });
 }
 
