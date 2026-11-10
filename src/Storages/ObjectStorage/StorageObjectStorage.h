@@ -218,6 +218,7 @@ public:
     bool supportsDelete() const override;
 
     bool supportsParallelInsert() const override;
+    bool supportsInsertCommitSink() const override;
 
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;

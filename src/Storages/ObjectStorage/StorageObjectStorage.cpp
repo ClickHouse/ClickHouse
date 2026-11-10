@@ -527,6 +527,14 @@ bool StorageObjectStorage::supportsParallelInsert() const
     return configuration->supportsParallelInsert();
 }
 
+bool StorageObjectStorage::supportsInsertCommitSink() const
+{
+    /// Initialized like in `supportsParallelInsert`.
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsInsertCommitSink();
+}
+
 std::shared_ptr<IDataLakeMetadata> StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
     if (!configuration->isDataLakeConfiguration())

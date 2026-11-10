@@ -52,6 +52,7 @@ public:
     bool isObjectStorage() const override { return true; }
 
     bool supportsParallelInsert() const override;
+    bool supportsInsertCommitSink() const override;
 
     bool supportsDelete() const override;
 

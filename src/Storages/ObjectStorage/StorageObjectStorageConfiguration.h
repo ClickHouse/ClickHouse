@@ -202,6 +202,7 @@ public:
 
     virtual bool supportsFileIterator() const { return false; }
     virtual bool supportsParallelInsert() const { return false; }
+    virtual bool supportsInsertCommitSink() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
     virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }

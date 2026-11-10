@@ -127,6 +127,8 @@ public:
 
     virtual bool supportsWrites() const { return false; }
     virtual bool supportsParallelInsert() const { return false; }
+    /// See `IStorage::supportsInsertCommitSink`.
+    virtual bool supportsInsertCommitSink() const { return false; }
 
     /// Reads the incremental refreshable-MV cursor persisted in the current table snapshot (as stored),
     /// or nullopt if absent/unsupported. The write path commits it atomically with the appended data.

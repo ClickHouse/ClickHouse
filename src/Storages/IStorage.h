@@ -549,6 +549,9 @@ public:
       */
     virtual ProcessorPtr createInsertCommitSink(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) { return nullptr; }
 
+    /// Whether `createInsertCommitSink` returns a sink, so the parallel sinks of an `INSERT` need it to finish the insert at once.
+    virtual bool supportsInsertCommitSink() const { return false; }
+
     /** Checks on the initiator that the current user is allowed to insert into this table, in
       * addition to the `INSERT` privilege on the table name checked by the interpreter.
       *

@@ -122,6 +122,7 @@ public:
 
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
+    bool supportsInsertCommitSink() const override { return true; }
 
     std::optional<String> getRefreshCursor(ContextPtr local_context) const override;
 

@@ -224,6 +224,11 @@ public:
         return getMetadata()->supportsParallelInsert();
     }
 
+    bool supportsInsertCommitSink() const override
+    {
+        return getMetadata()->supportsInsertCommitSink();
+    }
+
     void mutate(const MutationCommands & commands,
         ContextPtr context,
         StoragePtr storage_ptr,
