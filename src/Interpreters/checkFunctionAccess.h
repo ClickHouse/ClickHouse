@@ -19,9 +19,6 @@ namespace DB
 /// What `FunctionFactory` does not create is checked by name where a call is resolved, in
 /// `QueryAnalyzer::resolveFunction`, `ActionsVisitor` and `UserDefinedSQLFunctionVisitor`: user defined functions,
 /// and calls which are handled without creating their function.
-///
-/// The result of a query that calls such a function is not written to the query result cache: a hit is served before
-/// the query is analyzed, so it would skip the check after the grant is revoked.
 void checkFunctionAccess(const ContextPtr & context, const String & function_name);
 
 }

@@ -1028,8 +1028,6 @@ The check runs when a call is resolved to that function, not when the name is me
 `system.functions` and `SHOW FUNCTIONS` keep working for users without the grant, and an alias that
 shadows a protected name (`WITH x -> x + 1 AS hex SELECT arrayMap(hex, [1])`) is unaffected. A SQL
 user-defined function that calls a listed function also requires a grant for that inner function.
-The result of a query that calls a listed function is not stored in the [query cache](/concepts/features/performance/caches/query-cache),
-so revoking the grant takes effect on the next run of the query.
 
 Both the function as written and the function which is actually executed require the grant. They differ
 when a setting or an optimization replaces a call: `in` is executed as `nullIn` under `transform_null_in`,

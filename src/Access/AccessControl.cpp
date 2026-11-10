@@ -38,7 +38,6 @@
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/re2.h>
-#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 
 #include <Poco/AccessExpireCache.h>
@@ -49,7 +48,6 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <string_view>
 #include <unordered_set>
 
 
@@ -81,13 +79,7 @@ extern const char access_control_pause_after_feature_tier_check[];
 namespace
 {
     /// `access_control_improvements.functions_requiring_grant`, by the names the functions are registered under.
-    struct FunctionsRequiringGrant
-    {
-        std::unordered_set<String> names;
-        /// Identifies the list in the key of the query result cache. The same list gives the same value
-        /// in every process, because the on-disk cache keeps its entries across restarts.
-        UInt64 fingerprint = 0;
-    };
+    using FunctionsRequiringGrant = std::unordered_set<String>;
 
     /// Process-wide, so that `checkFunctionAccess` can skip the whole check with one relaxed
     /// atomic load on the default empty list: reaching the `AccessControl` instance would mean
@@ -1250,8 +1242,7 @@ void AccessControl::setFunctionsRequiringGrantFromConfig(const Poco::Util::Abstr
 
 void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
 {
-    auto list = std::make_unique<FunctionsRequiringGrant>();
-    auto & names = list->names;
+    auto names = std::make_unique<FunctionsRequiringGrant>();
     for (const auto & name : function_names)
     {
         if (name.empty())
@@ -1279,7 +1270,7 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
         {
             /// Store the registered name, so that `<function>isValidASCII</function>` also covers
             /// the `isASCII` alias and `<function>HEX</function>` covers `hex`.
-            names.emplace(std::move(registered_name));
+            names->emplace(std::move(registered_name));
         }
         else if (aggregate_function_factory.isAggregateFunctionName(name))
         {
@@ -1300,22 +1291,12 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
                 "Function '{}' listed in access_control_improvements.functions_requiring_grant is neither an ordinary nor an "
                 "aggregate function. It will require GRANT FUNCTION only if a user defined function with this name exists.",
                 name);
-            names.emplace(name);
+            names->emplace(name);
         }
     }
 
-    Strings sorted_names(names.begin(), names.end());
-    std::ranges::sort(sorted_names);
-    SipHash fingerprint;
-    for (const auto & name : sorted_names)
-    {
-        fingerprint.update(name.size());
-        fingerprint.update(name);
-    }
-    list->fingerprint = fingerprint.get64();
-
-    const bool enabled = !names.empty();
-    functions_requiring_grant.set(std::move(list));
+    const bool enabled = !names->empty();
+    functions_requiring_grant.set(std::move(names));
     functions_requiring_grant_enabled.store(enabled, std::memory_order_release);
 }
 
@@ -1333,11 +1314,6 @@ void AccessControl::canonicalizeFunctionNames(AccessRightsElements & elements)
     }
 }
 
-UInt64 AccessControl::getFunctionsRequiringGrantFingerprint()
-{
-    return functions_requiring_grant.get()->fingerprint;
-}
-
 bool AccessControl::functionRequiresGrant(const String & function_name)
 {
     if (!functions_requiring_grant_enabled.load(std::memory_order_acquire))
@@ -1345,7 +1321,7 @@ bool AccessControl::functionRequiresGrant(const String & function_name)
 
     /// Both sides are registered names: the list is resolved in `setFunctionsRequiringGrant`, and
     /// `checkFunctionAccess` resolves the name of the call.
-    return functions_requiring_grant.get()->names.contains(function_name);
+    return functions_requiring_grant.get()->contains(function_name);
 }
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
