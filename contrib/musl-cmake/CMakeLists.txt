@@ -1668,6 +1668,8 @@ target_compile_options(musl PRIVATE
     # Never instrument libc: its early-init code (__init_libc, CRT) runs before
     # sanitizer runtimes are initialized, and sanitizers hook the public libc
     # functions with interceptors instead (same model as with uninstrumented glibc).
+    # TODO: this also leaves musl without Clang CFI (`ENABLE_CFI`), which needs no runtime. Build musl with CFI too,
+    # with the vDSO pointers of `clock_gettime` and `sched_getcpu` made read-only as in base/glibc-compatibility.
     -fno-sanitize=all
 
     # Unwind tables: required for C++ exceptions and stack traces through musl.
