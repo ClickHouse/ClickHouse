@@ -53,6 +53,14 @@ IDisk::IDisk(const String & name_)
 
 IDisk::~IDisk() = default;
 
+ReservationPtr IDisk::reserveAndGetUnreservedSpace(
+    UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space)
+{
+    ReservationPtr reservation = constraints ? reserve(bytes, *constraints) : reserve(bytes);
+    unreserved_space = reservation ? reservation->getUnreservedSpace() : getUnreservedSpace();
+    return reservation;
+}
+
 bool IDisk::isDirectoryEmpty(const String & path) const
 {
     return !iterateDirectory(path)->isValid();
@@ -230,6 +238,13 @@ void IDisk::startup(bool skip_access_check)
         {
             LOG_DEBUG(getLogger("IDisk"),
                 "Skip access check for disk {} (read-only disk).",
+                getName());
+        }
+        else if (isBroken())
+        {
+            /// `startupImpl` already logged why. The disk checker, if enabled, clears the flag once the disk recovers.
+            LOG_WARNING(getLogger("IDisk"),
+                "Skip access check for disk {} (disk is broken).",
                 getName());
         }
         else
