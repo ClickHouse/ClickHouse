@@ -230,8 +230,7 @@ private:
     /// The statistics built for every path of a `JSON` column; empty if none are.
     ColumnStatisticsDescription::StatisticsTypeDescMap path_types;
     PathStatistics path_statistics;
-    /// Statistics read from disk keep the statistics of their paths serialized, and a path is deserialized when it is
-    /// used: a part may have thousands of paths, a deserialized one takes kilobytes, and a query needs a few.
+    /// The statistics of the paths read from disk, serialized: a path is deserialized when it is used.
     std::map<String, String> serialized_path_statistics;
 };
 
