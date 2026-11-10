@@ -14,6 +14,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
@@ -83,11 +85,23 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
 
             /// Must be the formatter the `_path` column is produced with: this filter is
             /// evaluated against that column's values.
-            const auto path = formatObjectPath(*configuration, key, /*include_connection_info=*/false);
+            auto path = formatObjectPath(*configuration, key, /*include_connection_info=*/false);
 
-            VirtualColumnUtils::filterByPathOrFile(
-                keys, std::vector<std::string>{path}, filter_actions,
-                virtual_columns, hive_partition_columns, getContext());
+            /// `_path` exposes the metadata URI, while `_file` comes from the resolved key, which can differ
+            /// from the URI suffix (e.g. a query part that is not part of the key).
+            std::optional<std::vector<std::string>> file_names;
+            if (auto metadata_path = object->getPathInDataLakeMetadata())
+            {
+                path = *metadata_path;
+                file_names.emplace(std::vector<std::string>{object->getFileName()});
+            }
+
+            VirtualColumnUtils::filterSourcesByIndexes(
+                keys,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    std::vector<std::string>{path}, filter_actions,
+                    virtual_columns, hive_partition_columns, getContext(),
+                    /*format_settings=*/std::nullopt, file_names ? &*file_names : nullptr));
 
             if (keys.empty())
             {
@@ -153,7 +167,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             bool has_cache_entry = false;
             if (query_condition_cache)
             {
-                const auto query_condition_cache_key = last_object_info->getIdentifier(/*include_file_bucket_info=*/ false);
+                const auto query_condition_cache_key = last_object_info->getQueryConditionCacheIdentifier(object_storage);
                 auto matching_marks = query_condition_cache->read(
                     storage_id.uuid,
                     query_condition_cache_key,
@@ -187,8 +201,10 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             {
                 auto & object = last_object_info->relative_path_with_metadata;
                 if (!object.metadata)
-                    object.metadata = StorageObjectStorageSource::tryMakeObjectMetadataFromTableRecords(*configuration, *last_object_info, storage_id);
-                auto buffer = createReadBuffer(object, object_storage, getContext(), log);
+                    object.metadata = StorageObjectStorageSource::tryMakeObjectMetadataFromTableRecords(
+                        *configuration, *last_object_info, object_storage, storage_id);
+                auto storage_to_use = last_object_info->getResolvedStorage(object_storage);
+                auto buffer = createReadBuffer(object, storage_to_use, getContext(), log);
                 file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, object, format_settings, getContext());
             }
             for (const auto & file_bucket : file_bucket_infos)
@@ -218,6 +234,23 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
 {
     return getArchiveEntryKey(getIdentifierForPath(getPath(), include_file_bucket_info), archive_entry_index);
+}
+
+String ObjectInfo::getQueryConditionCacheIdentifier(const ObjectStoragePtr & base_storage) const
+{
+    const auto metadata_path = getPathInDataLakeMetadata();
+    if (!metadata_path)
+        return getIdentifier(/*include_file_bucket_info=*/ false);
+
+    String result = getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/ false);
+    String redacted_path = metadata_path->substr(0, metadata_path->find_first_of("?#"));
+    if (maskURIUserinfo(redacted_path) || redacted_path.size() != metadata_path->size())
+        result = getIdentifierForPath(redacted_path, /*include_file_bucket_info=*/ false) + "#path=" + sipHash128String(result);
+
+    /// The name of an external storage is an opaque digest of the endpoint and the credentials of its client.
+    if (const auto storage = getResolvedStorage(base_storage); storage != base_storage)
+        result += "#storage=" + storage->getDiskName();
+    return result;
 }
 
 String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const

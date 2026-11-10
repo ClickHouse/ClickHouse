@@ -833,6 +833,7 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
         }
         /// HDFS authenticates (e.g. with Kerberos) through the server's `hdfs` configuration, not through engine arguments.
         else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog)
+                 && table_metadata.getStorageType() != DatabaseDataLakeStorageType::Local
                  && result.storage_type != DatabaseDataLakeStorageType::HDFS)
         {
             throw Exception(

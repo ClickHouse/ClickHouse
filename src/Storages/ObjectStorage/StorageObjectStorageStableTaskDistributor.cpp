@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Common/SipHash.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <consistent_hashing.h>
 #include <optional>
 
@@ -9,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -23,12 +25,26 @@ size_t getTaskWeight(const ObjectInfoPtr & object_info)
     return 1;
 }
 
-String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over_whole_archive)
+String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over_whole_archive, bool include_file_bucket_info = true)
 {
     if (send_over_whole_archive && object_info->isArchive())
         return object_info->getIdentifierForPath(object_info->getPathToArchive());
 
-    return object_info->getIdentifier();
+    if (auto metadata_path = object_info->getPathInDataLakeMetadata())
+    {
+        /// The coordinator may not be a replica, and replicas need not share its filesystem, so local files cannot be dispatched.
+        if (auto local_path = object_info->getExternalLocalPath())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Iceberg metadata references the file '{}' on the local filesystem, outside of the table location. "
+                "Such a file cannot be read by a cluster function, which distributes the work across replicas that "
+                "do not share this filesystem. Read the table without the `*Cluster` function instead",
+                *local_path);
+
+        return object_info->getIdentifierForPath(*metadata_path, include_file_bucket_info);
+    }
+
+    return object_info->getIdentifier(include_file_bucket_info);
 }
 
 }
@@ -112,7 +128,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
         LOG_TRACE(
             log,
             "Assigning pre-queued file {} to replica {}",
-            getSchedulingIdentifier(next_file, send_over_whole_archive),
+            maskCredentialsInURI(getSchedulingIdentifier(next_file, send_over_whole_archive)),
             number_of_current_replica
         );
 
@@ -172,12 +188,12 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
             placement_identifier = file_identifier;
             LOG_TEST(log, "Will send over the whole archive {} to replicas. "
                      "This will be suboptimal, consider turning on "
-                     "cluster_function_process_archive_on_multiple_nodes setting", file_identifier);
+                     "cluster_function_process_archive_on_multiple_nodes setting", maskCredentialsInURI(file_identifier));
         }
         else
         {
-            file_identifier = object_info->getIdentifier();
-            placement_identifier = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
+            file_identifier = getSchedulingIdentifier(object_info, send_over_whole_archive);
+            placement_identifier = getSchedulingIdentifier(object_info, send_over_whole_archive, /*include_file_bucket_info=*/ false);
         }
 
         size_t file_replica_idx = getReplicaForFile(placement_identifier);
@@ -185,7 +201,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         {
             LOG_TRACE(
                 log, "Found file {} for replica {}",
-                file_identifier, number_of_current_replica
+                maskCredentialsInURI(file_identifier), number_of_current_replica
             );
 
             return object_info;
@@ -193,7 +209,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         LOG_TEST(
             log,
             "Found file {} for replica {} (number of current replica: {})",
-            file_identifier,
+            maskCredentialsInURI(file_identifier),
             file_replica_idx,
             number_of_current_replica
         );
@@ -297,7 +313,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
             LOG_TRACE(
                 log,
                 "Iterator exhausted. Assigning unprocessed file {} of replica {} to replica {}",
-                getSchedulingIdentifier(next_file, send_over_whole_archive),
+                maskCredentialsInURI(getSchedulingIdentifier(next_file, send_over_whole_archive)),
                 *owner,
                 number_of_current_replica);
 

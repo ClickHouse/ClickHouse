@@ -1,5 +1,6 @@
 #include <Formats/ColumnNameMaps.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -376,6 +377,7 @@ static bool writeMetadataFiles(
     const DataFileWriteResultWithStats & delete_files,
     const DataFileWriteResultWithStats & data_files,
     ObjectStoragePtr object_storage,
+    ExternalStorageCache & external_storages,
     ContextPtr context,
     FileNamesGenerator & filename_generator,
     const Iceberg::IcebergPathResolver & path_resolver,
@@ -540,6 +542,7 @@ static bool writeMetadataFiles(
                 path_resolver,
                 metadata,
                 object_storage,
+                external_storages,
                 context,
                 manifest_entries,
                 new_snapshot,
@@ -628,7 +631,8 @@ void validateSnapshotForMutation(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    ExternalStorageCache & external_storages)
 {
     if (!metadata->has(f_current_snapshot_id) || metadata->isNull(f_current_snapshot_id))
         return;
@@ -654,22 +658,32 @@ void validateSnapshotForMutation(
         return;
 
     auto manifest_list_path = IcebergPathFromMetadata::deserialize(current_snapshot->getValue<String>(f_manifest_list));
-    auto manifest_list_entries = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
+    auto manifest_list_entries = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log, external_storages);
     for (const auto & manifest_list_entry : manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_table_components, context, log, manifest_list_entry, current_schema_id);
+            object_storage, persistent_table_components, context, log, manifest_list_entry, current_schema_id, external_storages);
 
         for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
             const String & file_format = file_entry->parsed_entry->file_format;
             if (Poco::toLower(file_format) != "parquet")
+            {
+                /// The diagnostic names the data file, which the user may not be allowed to read.
+                checkPathReadable(
+                    persistent_table_components.table_location,
+                    file_entry->parsed_entry->file_path_key.serialize(),
+                    object_storage,
+                    external_storages,
+                    context,
+                    persistent_table_components.path_resolver);
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Iceberg DELETE and UPDATE require all data files in the current snapshot to be Parquet, "
                     "but data file `{}` has format `{}`",
-                    file_entry->parsed_entry->file_path_key.serialize(),
+                    file_entry->parsed_entry->file_path_key,
                     file_format);
+            }
         }
 
         for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
@@ -690,6 +704,7 @@ void mutate(
     StorageMetadataPtr storage_metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
+    ExternalStorageCache & external_storages,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
@@ -758,7 +773,7 @@ void mutate(
         /// metadata version, so a concurrent writer that commits non-Parquet
         /// data files between iterations is caught by the next retry.
         validateSnapshotForMutation(
-            metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id));
+            metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id), external_storages);
 
         TableStateSnapshot current_iceberg_snapshot;
         current_iceberg_snapshot.metadata_file_path = metadata_path;
@@ -797,6 +812,7 @@ void mutate(
                     mutation_files->delete_file,
                     mutation_files->data_file,
                     object_storage,
+                    external_storages,
                     context,
                     filename_generator,
                     persistent_table_components.path_resolver,

@@ -52,6 +52,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/operators.hpp>
@@ -61,6 +62,7 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -571,7 +573,8 @@ void ObjectIteratorListingAllForTopKQueryConditionCache::listObjects(size_t proc
     {
         if (object->isArchive() || object->file_bucket_info)
             return;
-        auto file_key = StorageObjectStorageSource::makeQueryConditionCacheKey(*object, /*is_data_lake=*/ false);
+        auto file_key = StorageObjectStorageSource::makeQueryConditionCacheKey(
+            object->getIdentifier(/*include_file_bucket_info=*/ false), *object, /*is_data_lake=*/ false);
         if (!file_key)
             return;
         file_keys.push_back(std::move(*file_key));
@@ -614,8 +617,30 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     return result;
 }
 
+std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
+    const StorageObjectStorageConfiguration & configuration,
+    const ObjectInfoPtr & object_info,
+    const ObjectStoragePtr & object_storage,
+    bool include_connection_info)
+{
+    auto resolved_storage = object_info->getResolvedStorage(object_storage);
+    if (resolved_storage != object_storage)
+    {
+        /// Not joined as `fs::path`: a leading slash is a distinct part of the object key.
+        const auto & key = object_info->getPath();
+        if (include_connection_info)
+            return fmt::format("{}/{}/{}", resolved_storage->getDescription(), resolved_storage->getObjectsNamespace(), key);
+        return fmt::format("{}/{}", resolved_storage->getObjectsNamespace(), key);
+    }
+
+    return getUniqueStoragePathIdentifier(configuration, *object_info, include_connection_info);
+}
+
 std::optional<ObjectMetadata> StorageObjectStorageSource::tryMakeObjectMetadataFromTableRecords(
-    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const StorageID & storage_id)
+    const StorageObjectStorageConfiguration & configuration,
+    const ObjectInfo & object_info,
+    const ObjectStoragePtr & object_storage,
+    const StorageID & storage_id)
 {
     /// Parquet and ORC locate their footer from the size, so a wrong size fails the read instead of dropping rows.
     const auto size_from_table = object_info.getFileSizeHint();
@@ -626,10 +651,16 @@ std::optional<ObjectMetadata> StorageObjectStorageSource::tryMakeObjectMetadataF
         || !(boost::iequals(file_format, "Parquet") || boost::iequals(file_format, "ORC")))
         return std::nullopt;
 
+    /// An external file lives outside the table's data source. The name of its storage is an opaque digest of the
+    /// endpoint and the credentials of the client, so a cached file is not served to a client that cannot read it.
+    const auto storage_to_use = object_info.getResolvedStorage(object_storage);
+    const auto data_source_description = storage_to_use == object_storage
+        ? configuration.getDataSourceDescription()
+        : storage_to_use->getDiskName();
     return ObjectMetadata::fromTableRecords(
         size_from_table,
         fmt::format("immutable:{}:{}:{}:{}", toString(storage_id.uuid), storage_id.database_name,
-                    configuration.getDataSourceDescription(), *size_from_table));
+                    data_source_description, *size_from_table));
 }
 
 /// The object identifier already uses the full path, so files that share a base name in
@@ -649,26 +680,32 @@ std::optional<ObjectMetadata> StorageObjectStorageSource::tryMakeObjectMetadataF
 /// is in (endpoint, bucket, container, ...) instead. The
 /// connection info can carry secrets (a signed URL, userinfo in an HDFS URI), and so can the path itself
 /// (a web index can link to `data.parquet?token=...`), while the `part_name` is visible in
-/// `system.query_condition_cache` and in the logs. So the key is the path without its query and fragment,
-/// for readability only, followed by a hash of the complete identifier and the qualified path. The hash
-/// has a fixed length at the end, so the key stays unambiguous.
+/// `system.query_condition_cache` and in the logs. So the key is the path without its userinfo, query and
+/// fragment, for readability only, followed by a hash of the complete identifier and the qualified path. The
+/// hash has a fixed length at the end, so the key stays unambiguous.
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
-    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const UUID & table_uuid)
+    const StorageObjectStorageConfiguration & configuration,
+    const ObjectInfoPtr & object_info,
+    const ObjectStoragePtr & object_storage,
+    const UUID & table_uuid)
 {
-    String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+    String identifier = object_info->getQueryConditionCacheIdentifier(object_storage);
     if (table_uuid == UUIDHelpers::Nil)
     {
-        const String qualified_path = getUniqueStoragePathIdentifier(configuration, object_info, /*include_connection_info=*/true);
+        const String qualified_path = getUniqueStoragePathIdentifier(configuration, object_info, object_storage, /*include_connection_info=*/true);
         /// NUL cannot occur in a path, so it separates the two unambiguously.
         const String hashed = sipHash128String(identifier + '\0' + qualified_path);
-        identifier = identifier.substr(0, identifier.find_first_of("?#")) + "#storage=" + hashed;
+        identifier = identifier.substr(0, identifier.find_first_of("?#"));
+        maskURIUserinfo(identifier);
+        identifier += "#storage=" + hashed;
     }
-    return makeQueryConditionCacheKey(identifier, object_info, configuration.isDataLakeConfiguration());
+    return makeQueryConditionCacheKey(identifier, *object_info, configuration.isDataLakeConfiguration());
 }
 
-std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
+    const ObjectInfo & object_info, const ObjectStoragePtr & object_storage, bool is_data_lake)
 {
-    return makeQueryConditionCacheKey(object_info.getIdentifier(/*include_file_bucket_info=*/false), object_info, is_data_lake);
+    return makeQueryConditionCacheKey(object_info.getQueryConditionCacheIdentifier(object_storage), object_info, is_data_lake);
 }
 
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
@@ -728,11 +765,16 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     {
         const bool expect_whole_archive = !local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
 
+        std::string table_location = configuration->getPathForRead().path;
+        if (auto metadata = configuration->getExternalMetadata())
+            table_location = metadata->getTableLocation();
+
         auto distributed_iterator = std::make_unique<ReadTaskIterator>(
             local_context->getClusterFunctionReadTaskCallback(),
             local_context->getSettingsRef()[Setting::max_threads],
             /*is_archive_=*/is_archive && !expect_whole_archive,
             object_storage,
+            table_location,
             local_context);
 
         if (is_archive && expect_whole_archive)
@@ -1110,6 +1152,8 @@ Chunk StorageObjectStorageSource::generate()
                     read_context);
             }
 
+            std::string path_for_virtual_column = object_info->getPathInDataLakeMetadata().value_or(path);
+
             const String * iceberg_metadata_file_path = nullptr;
             std::optional<UInt64> last_updated_sequence_number;
             std::optional<UInt64> first_row_id;
@@ -1135,7 +1179,7 @@ Chunk StorageObjectStorageSource::generate()
                 chunk,
                 read_from_format_info.requested_virtual_columns,
                 {
-                    .path = path,
+                    .path = path_for_virtual_column,
                     .storage_id = storage_id,
                     .size = object_size,
                     .filename = &filename,
@@ -1247,7 +1291,7 @@ Chunk StorageObjectStorageSource::generate()
             && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, object_info, object_storage, storage_id.uuid);
             try
             {
                 const auto * input_format = reader.getInputFormat();
@@ -1320,7 +1364,8 @@ Chunk StorageObjectStorageSource::generate()
         if (reader.use_top_k_query_condition_cache_key && reader.getInputFormat() && !isCancelled())
         {
             const auto * input_format = reader.getInputFormat();
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*reader.getObjectInfo(), configuration->isDataLakeConfiguration());
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(
+                *reader.getObjectInfo(), object_storage, configuration->isDataLakeConfiguration());
             auto buckets_opt = input_format->getMatchedBuckets();
             if (query_condition_cache_key && buckets_opt.has_value())
                 pending_top_k_query_condition_cache_entries.push_back(PendingTopKQueryConditionCacheEntry{
@@ -1335,7 +1380,7 @@ Chunk StorageObjectStorageSource::generate()
             && !hasAttachedDeletes(*reader.getObjectInfo())
             && !reader.getObjectInfo()->rows_to_read
             && !reader.getObjectInfo()->file_bucket_info)
-            addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
+            addNumRowsToCache(reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
 
@@ -1376,7 +1421,7 @@ void StorageObjectStorageSource::addTotalRowsApproxFromMetadata(const ObjectInfo
         addTotalRowsApprox(*num_rows);
 }
 
-void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
+void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfoPtr & object_info, size_t num_rows)
 {
     /// The cache key does not include the compression method. Under an explicit `compression_method` the
     /// same object can decode differently (or fail) through another definition with a different codec,
@@ -1388,8 +1433,8 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
         return;
 
     const auto cache_key = getKeyForSchemaCache(
-        getUniqueStoragePathIdentifier(*configuration, object_info),
-        object_info.getFileFormat().value_or(configuration->format),
+        getUniqueStoragePathIdentifier(*configuration, object_info, object_storage),
+        object_info->getFileFormat().value_or(configuration->format),
         format_settings,
         read_context);
     schema_cache.addNumRows(cache_key, num_rows);
@@ -1506,12 +1551,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
+            ObjectStoragePtr storage_to_use = object_info->getResolvedStorage(object_storage);
+
             std::optional<ObjectMetadata> metadata_from_table;
             if (!with_tags
                 && !read_from_format_info.requested_virtual_columns.contains("_etag")
                 && !read_from_format_info.requested_virtual_columns.contains("_time")
                 && !query_settings.ignore_non_existent_file)
-                metadata_from_table = tryMakeObjectMetadataFromTableRecords(*configuration, *object_info, storage_id);
+                metadata_from_table = tryMakeObjectMetadataFromTableRecords(*configuration, *object_info, object_storage, storage_id);
 
             if (metadata_from_table)
             {
@@ -1519,7 +1566,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
             else if (query_settings.ignore_non_existent_file)
             {
-                auto metadata = tryGetObjectMetadataForRead(*object_storage, metadata_object, with_tags);
+                auto metadata = tryGetObjectMetadataForRead(*storage_to_use, metadata_object, with_tags);
                 if (!metadata)
                     return {};
 
@@ -1527,7 +1574,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
             else
             {
-                object_info->setObjectMetadata(getObjectMetadataForRead(*object_storage, metadata_object, with_tags));
+                object_info->setObjectMetadata(getObjectMetadataForRead(*storage_to_use, metadata_object, with_tags));
             }
         }
 
@@ -1559,7 +1606,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// The entries of the plain predicate are kept for a table without a UUID as well, under the key
             /// and the `table_id` for files (see `QueryConditionCache::getTableIdForFileEntries`). The TopK key
             /// is made only for a table with a UUID, for which both are the same as the ones of the TopK entries.
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, object_info, object_storage, storage_id.uuid);
 
             /// One logical consultation, so it emits one `QueryConditionCacheHits` / `Misses` event
             /// however many keys are probed.
@@ -1660,7 +1707,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             return std::nullopt;
 
         const auto cache_key = getKeyForSchemaCache(
-            getUniqueStoragePathIdentifier(*configuration, *object_info),
+            getUniqueStoragePathIdentifier(*configuration, object_info, object_storage),
             object_info->getFileFormat().value_or(configuration->format),
             format_settings,
             context_);
@@ -1745,8 +1792,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             read_settings.remote_fs_settings.random_access
                 = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name, context_, format_settings);
             read_buf = createReadBuffer(
-                object_info->relative_path_with_metadata, object_storage, context_, log,
-                read_settings, !headers_requested);
+                object_info->relative_path_with_metadata,
+                object_info->getResolvedStorage(object_storage),
+                context_,
+                log,
+                read_settings,
+                !headers_requested);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -2022,9 +2073,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
                 object_with_metadata->relative_path = getArchiveEntryKey(object_info->getPath(), object_info->archive_entry_index);
+            bool is_outside_table_directory = false;
+#if USE_AVRO
+            /// The cached entries of a data lake file outside the table directory would be visible under the grants
+            /// of the table and its base storage rather than of the file's own source, so such a file is not cached.
+            if (object_info->getPathInDataLakeMetadata())
+                is_outside_table_directory = !isObjectInTableDirectory(
+                    object_info->getResolvedStorage(object_storage), object_info->getPath(), object_storage,
+                    configuration->getPathForRead().path);
+#endif
             /// The relative path alone does not identify the object: another bucket, container or
             /// endpoint can have an object with the same key and version token.
-            if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage_id))
+            if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage_id); table_uuid && !is_outside_table_directory)
             {
                 object_with_metadata->path_for_content_cache = getUniqueStoragePathIdentifier(*configuration, *object_info);
                 object_with_metadata->storage_type_for_content_cache = configuration->getType();
@@ -2929,11 +2989,13 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     size_t max_threads_count,
     bool is_archive_,
     ObjectStoragePtr object_storage_,
+    const std::string & table_location_,
     ContextPtr context_)
     : WithContext(context_)
     , callback(callback_)
     , is_archive(is_archive_)
     , object_storage(object_storage_)
+    , table_location(table_location_)
 {
     ThreadPool pool(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -2959,8 +3021,18 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     {
         auto object = object_future.get();
         if (object)
+        {
+            resolveObjectStorageIfNeeded(object);
             buffer.push_back(object);
+        }
     }
+}
+
+void StorageObjectStorageSource::ReadTaskIterator::resolveObjectStorageIfNeeded([[maybe_unused]] const ObjectInfoPtr & object)
+{
+#if USE_AVRO
+    resolveObjectStorageFromDataLakeMetadata(object, table_location, object_storage, external_storages, getContext());
+#endif
 }
 
 static size_t getKnownArchiveSize(const ObjectInfoPtr & object_info)
@@ -3012,6 +3084,7 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
         if (!task || task->isEmpty())
             return nullptr;
         object_info = task->getObjectInfo();
+        resolveObjectStorageIfNeeded(object_info);
     }
     else
     {
@@ -3136,7 +3209,10 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
         /* path_to_archive */
         object_info->getPath(),
         /* archive_read_function */ [=, this]()
-        { return createReadBuffer(object_info->relative_path_with_metadata, object_storage, getContext(), log); },
+        {
+            auto storage = object_info->getResolvedStorage(object_storage);
+            return createReadBuffer(object_info->relative_path_with_metadata, storage, getContext(), log);
+        },
         /* archive_size */ size);
 }
 
@@ -3159,7 +3235,10 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 }
 
                 if (!archive_object->getObjectMetadata())
-                    archive_object->setObjectMetadata(getObjectMetadataForRead(*object_storage, archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+                {
+                    ObjectStoragePtr storage_to_use = archive_object->getResolvedStorage(object_storage);
+                    archive_object->setObjectMetadata(getObjectMetadataForRead(*storage_to_use, archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+                }
 
                 archive_reader = createArchiveReader(archive_object);
                 file_enumerator = archive_reader->firstFile();
@@ -3187,7 +3266,10 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 return {};
 
             if (!archive_object->getObjectMetadata())
-                archive_object->setObjectMetadata(getObjectMetadataForRead(*object_storage, archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+            {
+                ObjectStoragePtr storage_to_use = archive_object->getResolvedStorage(object_storage);
+                archive_object->setObjectMetadata(getObjectMetadataForRead(*storage_to_use, archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+            }
 
             archive_reader = createArchiveReader(archive_object);
             if (!archive_reader->fileExists(path_in_archive))
