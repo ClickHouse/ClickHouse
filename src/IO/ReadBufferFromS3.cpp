@@ -21,7 +21,6 @@
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentThread.h>
-#include <Common/HTTPConnectionInfo.h>
 #include <base/sleep.h>
 
 #include <cstdint>
@@ -390,9 +389,6 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
 
-    /// Throws the cancellation cause, and is a no-op off-query, so an ordinary network error still retries.
-    CurrentThread::checkIfNotCancelled();
-
     if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {
         if (s3_exception->isAccessTokenExpiredError() && credentials_refresh_callback)
@@ -535,17 +531,6 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
     }
 }
 
-void ReadBufferFromS3::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)
-{
-    if (impl)
-    {
-        impl->detachSession();
-        resetWorkingBuffer();
-        impl.reset();
-    }
-    read_settings.io_scheduling = io_scheduling;
-}
-
 void ReadBufferFromS3::setReadUntilEnd()
 {
     if (read_until_position)
@@ -677,7 +662,6 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
     /// Measures time-to-first-byte: just the GetObject API call, not data transfer.
     /// Each sendRequest call is logged individually, unlike HDFS/Local which aggregate.
-    HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
     Stopwatch blob_log_watch;
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 

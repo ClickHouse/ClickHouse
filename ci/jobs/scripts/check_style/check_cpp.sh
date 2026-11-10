@@ -123,7 +123,6 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::size
 
     ErrorCodes::ErrorCode
-    ErrorCodes::Error
     ErrorCodes::getName
     ErrorCodes::increment
     ErrorCodes::extendedMessage
@@ -281,10 +280,8 @@ directories_to_lint_std_containers_usages=(
     src/Processors/Merges
     src/Processors/Executors
     src/Processors/Sources
-    src/Processors/Transforms
     src/QueryPipeline
     src/TableFunctions
-    src/WindowFunctions
 )
 
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do

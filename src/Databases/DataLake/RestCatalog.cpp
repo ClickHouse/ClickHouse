@@ -174,7 +174,6 @@ std::string correctAPIURI(const std::string & uri)
     return std::filesystem::path(uri) / "v1";
 }
 
-/// Percent-encodes every byte of a level outside the RFC 3986 unreserved set and joins the levels with `%1F`.
 String encodeNamespaceForURI(const String & namespace_name)
 {
     String encoded;
@@ -183,21 +182,9 @@ String encodeNamespaceForURI(const String & namespace_name)
         if (ch == '.')
             encoded += "%1F";
         else
-            Poco::URI::encode(String(1, ch), "#&+/:;=?@", encoded);
+            encoded.push_back(ch);
     }
     return encoded;
-}
-
-Poco::JSON::Array::Ptr namespaceToJSON(const String & namespace_name)
-{
-    std::vector<String> levels;
-    /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
-    /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
-    splitInto<'.'>(levels, namespace_name);
-    Poco::JSON::Array::Ptr result = new Poco::JSON::Array;
-    for (const auto & level : levels)
-        result->add(level);
-    return result;
 }
 
 /// A 404 status alone does not separate a namespace that is gone from an endpoint the catalog does
@@ -1668,7 +1655,7 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
             /// Here name encoded back to 'foo%2Fbar' format
             const auto table_name_raw = current_table_json->get("name").extract<String>();
             std::string table_name;
-            Poco::URI::encode(table_name_raw, "/?#", table_name);
+            Poco::URI::encode(table_name_raw, "/", table_name);
 
             tables.push_back(base_namespace + "." + table_name);
             if (limit && tables.size() >= limit)
@@ -1794,7 +1781,7 @@ bool RestCatalog::getTableMetadataImpl(
         const bool allow_geo_parser
             = getContext()->getSettingsRef()[DB::Setting::allow_geo_types_in_iceberg].value;
         auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
-        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor);
+        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickHouseTableSchemaById(id);
         result.setSchema(*schema);
     }
@@ -1900,7 +1887,16 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     /// The request body takes the namespace as a list of levels, unlike the URL form above.
     /// No `location` property is sent. The catalog applies its warehouse default instead.
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    request_body->set("namespace", namespaceToJSON(namespace_name));
+    {
+        std::vector<String> levels;
+        /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
+        /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
+        splitInto<'.'>(levels, namespace_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        for (const auto & level : levels)
+            namespaces->add(level);
+        request_body->set("namespace", namespaces);
+    }
 
     try
     {
@@ -2039,13 +2035,14 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        identifier->set("namespace", namespaceToJSON(namespace_name));
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
 
         request_body->set("identifier", identifier);
     }
 
     {
-        /// TODO: carry the table UUID from the start of the insert and send `assert-table-uuid`, so a dropped and recreated table rejects the stale commit.
         Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
         requirement->set("type", "assert-ref-snapshot-id");
         requirement->set("ref", "main");
@@ -2097,8 +2094,6 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
             LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
             return false;
         }
-        /// TODO: 500, 502 and 504 mean the commit state is unknown. The client should keep the written files
-        /// until it re-reads the table, instead of treating this as a failure and cleaning them up.
         LOG_ERROR(log, "updateMetadata failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
@@ -2124,7 +2119,9 @@ Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        identifier->set("namespace", namespaceToJSON(namespace_name));
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
 
         request_body->set("identifier", identifier);
     }
@@ -2241,7 +2238,9 @@ bool RestCatalog::updateSchema(
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        identifier->set("namespace", namespaceToJSON(namespace_name));
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
 
         request_body->set("identifier", identifier);
     }

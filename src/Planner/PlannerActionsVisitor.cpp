@@ -2,6 +2,8 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <WindowFunctions/IWindowFunction.h>
+
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>

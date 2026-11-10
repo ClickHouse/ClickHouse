@@ -59,7 +59,8 @@ ColumnsDescription TableFunctionObfuscate::getActualTableStructure(ContextPtr co
     SharedHeader sample_block;
 
     /// Interpret the inner query with the same context adjustments as the execution
-    /// in `ObfuscateSource`.
+    /// in `ObfuscateSource`, in particular so that positional arguments are resolved
+    /// even on secondary-query (remote-shard) contexts.
     auto inner_context = ObfuscateSource::makeInnerContext(context);
 
     if (inner_context->getSettingsRef()[Setting::allow_experimental_analyzer])

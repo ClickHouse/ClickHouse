@@ -436,8 +436,6 @@ StorageMaterializedView::StorageMaterializedView(
 
         auto new_columns_list = make_intrusive<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
-        if (query.columns_list->codec_declarations)
-            new_columns_list->set(new_columns_list->codec_declarations, query.columns_list->codec_declarations->ptr());
         if (storage_features.supports_skipping_indices)
         {
             if (query.columns_list->indices)

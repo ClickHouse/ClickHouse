@@ -305,16 +305,6 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     }
 
     StorageID storage_id(database_name, table_name);
-
-    /// The destination of `INSERT INTO FUNCTION ... RETURNING` is not in the database catalog,
-    /// and the RETURNING query reads the inserted data from the view source.
-    if (auto view_source = context->getViewSource();
-        view_source && !context->isViewInnerQuery()
-        && view_source->getStorageID().database_name == database_name
-        && view_source->getStorageID().table_name == table_name
-        && !DatabaseCatalog::instance().isDatabaseExist(database_name))
-        return std::make_shared<TableNode>(view_source, context);
-
     storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
@@ -370,26 +360,23 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage)
         return {};
 
+
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
 
     /// The view source holds the block pushed to a materialized view with the types it was
     /// converted to; the catalog table may have been altered since. Take the types from it, but
     /// keep the catalog storage so engine checks (FINAL, SAMPLE, `_shard_num`) see the real table.
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
     /// The inner query of an ordinary view reads the table itself.
-    /// The snapshot above can be shared by every read of the table in the query, so only a copy gets the view source's types.
     if (auto view_source = context->getViewSource();
         view_source && !context->isViewInnerQuery()
         && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
-    {
-        auto view_source_metadata = view_source->getInMemoryMetadataPtr(context, false);
-        storage_snapshot = storage_snapshot->clone(view_source_metadata, storage_snapshot->data);
-    }
+        metadata_snapshot = view_source->getInMemoryMetadataPtr(context, false);
 
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     /// Pass the user-requested storage_id explicitly instead of letting the
     /// TableNode ctor read storage->getStorageID(), which can be mutated by
     /// a concurrent renameInMemory between tryGetTable and this point.
@@ -419,9 +406,6 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
 
     const auto & storage_id = table_node.getStorageID();
     if (!storage_id.hasDatabase())
-        return;
-
-    if (isInsertedDataOfTableFunction(table_node.getStorage(), storage_id, context))
         return;
 
     /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
