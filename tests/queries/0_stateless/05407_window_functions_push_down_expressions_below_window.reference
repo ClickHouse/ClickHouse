@@ -1,0 +1,93 @@
+memory
+2000000	1999999000000	2000000
+plan
+Window
+toUInt64OrZero
+between the windows and their lowest sorting
+Window
+Window
+toUInt64OrZero
+0	0	4	0
+1	1	3	3
+2	2	3	9
+0	3	4	0
+1	4	3	3
+2	5	3	9
+0	6	4	0
+1	7	3	3
+2	8	3	9
+0	9	4	0
+a sparse column materialized by the sorting for the window
+8	9900	51102855
+9	100	510052
+8	9900	51102855
+9	100	510052
+disabled
+toUInt64OrZero
+Window
+the column is read after the window functions
+length
+Window
+length
+Window
+several results larger than the smallest string
+cityHash64
+Window
+results of unbounded size
+ok
+results whose size of value does not bound their storage
+CAST
+Window
+arrayJoin below the window functions
+1	1
+QUALIFY
+0	0	1
+1	0	2
+2	0	3
+4	0	5
+an AND condition of a filter
+2
+2
+2
+2
+1
+1
+lazily executed arguments of short-circuit functions
+0
+0
+0
+0
+0
+0
+1
+1
+block-dependent functions and side effects
+4	3	1
+3	3	2
+2	3	3
+1	3	4
+0	2	5
+4	1	1
+3	2	2
+2	3	3
+1	4	4
+0	5	5
+ok
+arrayJoin
+1	1	3
+1	1	3
+1	1	3
+2	1	3
+2	1	3
+2	1	3
+remote
+0	6
+0	6
+1	6
+1	6
+2	6
+2	6
+Window
+toUInt64OrZero
+ReadFromRemote
+Header: __table1.s String
