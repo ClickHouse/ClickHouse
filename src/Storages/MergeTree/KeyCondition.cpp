@@ -7100,8 +7100,8 @@ static BoolMask forAnySparseHyperrectangle(
 
     auto result = BoolMask::combine(initial_mask, callback(sparse_hyperrectangle));
 
-    /// isComplete() means that both `can_be_true` = true and ``can_be_false` = true. No `result = BoolMask::combine(result, ...)`
-    /// can change `result` anymore. So, there is no need to continue.
+    /// isComplete() means that `can_be_true` = true and `canBeFalseOrNull()` = true. No `result = BoolMask::combine(result, ...)`
+    /// can change them anymore. So, there is no need to continue.
     if (result.isComplete())
         return result;
 

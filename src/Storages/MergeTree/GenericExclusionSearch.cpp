@@ -80,7 +80,7 @@ void searchUnlimited(
             if (!mask.can_be_true)
                 continue;
 
-            bool exact = !mask.can_be_false;
+            bool exact = !mask.canBeFalseOrNull();
             if (exact || range.end == range.begin + 1)
             {
                 appendWithMaxGap(result.ranges, range, search_settings.min_marks_for_seek);
@@ -142,7 +142,7 @@ void searchLimited(
         if (!mask.can_be_true)
             continue;
 
-        bool exact = !mask.can_be_false;
+        bool exact = !mask.canBeFalseOrNull();
         if (exact || range.end == range.begin + 1)
         {
             accepted.push_back(range);

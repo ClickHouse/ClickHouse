@@ -53,8 +53,7 @@ struct GenericExclusionSearchResult
     bool reached_step_limit = false;
 };
 
-/// Returns a BoolMask telling whether the condition can be true and whether it can be false for the
-/// rows of the given mark range.
+/// Returns whether the condition can be true, false, and NULL on the rows of the given mark range.
 using MarkRangeCheck = std::function<BoolMask(const MarkRange &)>;
 
 /// The initial ranges must be sorted and non-intersecting.

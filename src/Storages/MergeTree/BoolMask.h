@@ -38,11 +38,13 @@ struct BoolMask
         return can_be_true == other.can_be_true && can_be_false == other.can_be_false && can_be_null == other.can_be_null;
     }
 
-    /// Check if mask is no longer changeable under BoolMask::combine.
+    bool canBeFalseOrNull() const { return can_be_false || can_be_null; }
+
+    /// Check if `can_be_true` and `canBeFalseOrNull()` are no longer changeable under BoolMask::combine.
     /// We use this condition to early-exit KeyConditions::checkInRange methods.
     bool isComplete() const
     {
-        return can_be_true && can_be_false;
+        return can_be_true && canBeFalseOrNull();
     }
 
     /// Combine check result in different hyperrectangles.
@@ -69,7 +71,7 @@ struct BoolMask
     /// effectively prevent calculation of discarded BoolMask component as it is
     /// no longer changeable under BoolMask::combine (isComplete).
     static const BoolMask consider_only_can_be_true;
-    static const BoolMask consider_only_can_be_false;
+    static const BoolMask consider_only_can_be_false_or_null;
 };
 
 namespace fmt

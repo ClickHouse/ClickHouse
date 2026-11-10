@@ -20,7 +20,8 @@ public:
     /// Check if the part can potentially match the filter condition based on statistics.
     /// Returns BoolMask with the same semantics as KeyCondition::checkInHyperrectangle:
     ///   - can_be_true: whether any rows in the part might satisfy the condition
-    ///   - can_be_false: whether any rows in the part might not satisfy the condition
+    ///   - can_be_false: whether the condition might be false on any rows in the part
+    ///   - can_be_null: whether the condition might be NULL on any rows in the part
     BoolMask checkPartCanMatch(const Estimates & estimates);
 
     /// Returns true if no columns with MinMax statistics are used in the filter, then all parts will match.
