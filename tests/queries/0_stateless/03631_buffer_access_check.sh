@@ -101,4 +101,15 @@ EOF
 # A grant on the path `j.a` alone is enough to read the row count.
 ${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT x FROM $db.test_buffer_7"
 
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE TABLE $db.test_table_8 (k UInt32, \`n.a\` Array(UInt8), \`n.c\` String) ENGINE = MergeTree ORDER BY k;
+INSERT INTO $db.test_table_8 VALUES (1, [1, 2], '[3,4]');
+CREATE TABLE $db.test_buffer_8 (k UInt32, n Nested(a UInt8, b UInt8, c UInt8))
+    ENGINE = Buffer($db, test_table_8, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+GRANT SELECT ON $db.test_buffer_8 TO $user;
+GRANT SELECT(\`n.b\`, \`n.c\`) ON $db.test_table_8 TO $user;
+EOF
+# The sizes of `n.b` come from `n.c`, the member the user may read, though the destination stores it as `String`.
+${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT n.b FROM $db.test_buffer_8"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"

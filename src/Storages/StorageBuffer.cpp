@@ -536,15 +536,21 @@ void StorageBuffer::read(
                 columns_to_fill.insert(columns_to_fill.end(), fill_closure.begin(), fill_closure.end());
                 fill_support = fill_inputs;
 
-                /// A destination column read only for the sizes of a `Nested` group is the smallest one the user may read.
-                auto smallest_readable_column = [&](const NamesAndTypesList & columns)
+                /// A destination column read only for the sizes of a `Nested` group is the smallest one the user may read,
+                /// preferably one that needs no conversion.
+                auto smallest_readable_column = [&](const NamesAndTypesList & columns, const NamesAndTypesList & columns_to_convert)
                 {
                     const auto readable = checkAccessRights(destination, destination->getStorageID(), destination_snapshot, Names{}, local_context);
-                    NamesAndTypesList readable_columns;
-                    for (const auto & column : columns)
-                        if (readable.contains(column.name))
-                            readable_columns.push_back(column);
-                    return ExpressionActions::getSmallestColumn(readable_columns.empty() ? columns : readable_columns).name;
+                    for (const auto * candidates : {&columns, &columns_to_convert})
+                    {
+                        NamesAndTypesList readable_columns;
+                        for (const auto & column : *candidates)
+                            if (readable.contains(column.name))
+                                readable_columns.push_back(column);
+                        if (!readable_columns.empty())
+                            return ExpressionActions::getSmallestColumn(readable_columns).name;
+                    }
+                    return ExpressionActions::getSmallestColumn(columns.empty() ? columns_to_convert : columns).name;
                 };
 
                 /// A missing `Nested` member gets the sizes of a member of its group that is an array in the Buffer and that the
@@ -564,17 +570,17 @@ void StorageBuffer::read(
                         if (Nested::extractTableName(column.name) == group && our_member && isArray(our_member->type))
                             (isArray(column.type) ? group_arrays : group_arrays_to_convert).push_back(column);
                     }
-                    const bool convert = group_arrays.empty();
-                    if (convert)
-                        group_arrays = std::move(group_arrays_to_convert);
-                    if (group_arrays.empty())
+                    if (group_arrays.empty() && group_arrays_to_convert.empty())
                         continue;
 
-                    auto read_array = std::ranges::find_first_of(columns_intersection, group_arrays.getNames());
-                    String size_source = read_array != columns_intersection.end() ? *read_array : smallest_readable_column(group_arrays);
+                    Names candidates = group_arrays.getNames();
+                    std::ranges::copy(group_arrays_to_convert.getNames(), std::back_inserter(candidates));
+                    auto read_array = std::ranges::find_first_of(columns_intersection, candidates);
+                    String size_source = read_array != columns_intersection.end()
+                        ? *read_array : smallest_readable_column(group_arrays, group_arrays_to_convert);
                     if (read_array == columns_intersection.end())
                         columns_intersection.push_back(size_source);
-                    if (convert)
+                    if (group_arrays_to_convert.contains(size_source))
                         fill_inputs.insert(size_source);
                     fill_support.insert(std::move(size_source));
                 }
