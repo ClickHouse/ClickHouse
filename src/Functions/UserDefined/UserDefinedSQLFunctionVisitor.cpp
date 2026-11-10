@@ -250,6 +250,16 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 
+    /// The lambdas declared in the body itself, as in `x -> (WITH (y -> y * 3) AS g SELECT g(x))`, shadow the UDFs
+    /// of the same name in the body as well.
+    std::unordered_set<String> body_shadowed_names; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+    if (shadowed_names)
+    {
+        body_shadowed_names = *shadowed_names;
+        collectLambdaNames(*function_body_to_update, body_shadowed_names);
+        shadowed_names = &body_shadowed_names;
+    }
+
     auto expression_list = make_intrusive<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
 

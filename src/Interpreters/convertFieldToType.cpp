@@ -1919,7 +1919,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return {};
         }
 
-        return convertFieldToType(parsed, type, from_type_hint, format_settings);
+        /// The parsed value is of `type_to_parse`, not of the original source: e.g. a `Dynamic` hint of a string would
+        /// make its `UUID2` leaves, already in the layout of `UUID2`, be swapped once more as if they were `UUID`.
+        return convertFieldToType(parsed, type, type_to_parse, format_settings);
     }
 
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
