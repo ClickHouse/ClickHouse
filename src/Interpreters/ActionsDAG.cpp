@@ -1812,6 +1812,7 @@ static ColumnWithTypeAndName executeActionForPartialResult(
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
+            CurrentThread::checkIfNotCancelled();
             try
             {
                 /// Do not fold when an argument's type differs from the type this node was resolved
@@ -2099,11 +2100,7 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                 }
 
                 if (has_all_arguments)
-                {
-                    if (node->type == ActionType::FUNCTION)
-                        CurrentThread::checkIfNotCancelled();
                     node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, true);
-                }
                 else if (params.allow_unknown_function_arguments)
                     node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, false);
                 else /// Recorded as unknown: a column-less entry.
