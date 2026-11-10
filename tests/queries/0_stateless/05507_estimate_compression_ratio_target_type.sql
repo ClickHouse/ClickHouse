@@ -170,6 +170,36 @@ SELECT finalizeAggregation(st) = (SELECT estimateCompressionRatio('LZ4', 'String
 SELECT finalizeAggregation(st) = (SELECT estimateCompressionRatio('LZ4', 'String')(s) FROM src) FROM memory_states;
 DROP TABLE memory_states;
 
+-- Its pending rows are converted with the settings of the query that added them, whoever reads it first: two states added
+-- with different overflow settings, merged before anything finalizes them by a query whose setting would throw.
+DROP TABLE IF EXISTS overflow_states;
+DROP TABLE IF EXISTS overflow_results;
+CREATE TABLE overflow_states (k UInt8, st AggregateFunction(estimateCompressionRatio('LZ4', 'DateTime(\'UTC\')'), DateTime64(3, 'UTC'))) ENGINE = Memory;
+CREATE TABLE overflow_results (kind String, k UInt8, r Float64) ENGINE = Memory;
+INSERT INTO overflow_states SELECT 0, estimateCompressionRatioState('LZ4', 'DateTime(\'UTC\')')(toDateTime64('1960-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(number))
+FROM numbers(20) SETTINGS date_time_overflow_behavior = 'ignore';
+INSERT INTO overflow_states SELECT 1, estimateCompressionRatioState('LZ4', 'DateTime(\'UTC\')')(toDateTime64('1960-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(number))
+FROM numbers(20) SETTINGS date_time_overflow_behavior = 'saturate';
+INSERT INTO overflow_results SELECT 'merged', k, estimateCompressionRatioMerge('LZ4', 'DateTime(\'UTC\')')(st) FROM overflow_states GROUP BY k
+SETTINGS date_time_overflow_behavior = 'throw';
+INSERT INTO overflow_results SELECT 'direct', 0, estimateCompressionRatio('LZ4', 'DateTime(\'UTC\')')(toDateTime64('1960-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(number))
+FROM numbers(20) SETTINGS date_time_overflow_behavior = 'ignore';
+INSERT INTO overflow_results SELECT 'direct', 1, estimateCompressionRatio('LZ4', 'DateTime(\'UTC\')')(toDateTime64('1960-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(number))
+FROM numbers(20) SETTINGS date_time_overflow_behavior = 'saturate';
+INSERT INTO overflow_results SELECT 'finalized', k, finalizeAggregation(st) FROM overflow_states SETTINGS date_time_overflow_behavior = 'throw';
+-- Each state as its own query would have estimated it (the two differ), and unchanged by the merge.
+SELECT k, uniqExact(r), count() FROM overflow_results GROUP BY k ORDER BY k;
+SELECT uniqExact(r) FROM overflow_results;
+DROP TABLE overflow_states;
+DROP TABLE overflow_results;
+-- The validation of the target type is the one of the query that added the rows, too.
+DROP TABLE IF EXISTS lc_memory_states;
+CREATE TABLE lc_memory_states (st AggregateFunction(estimateCompressionRatio('LowCardinality(UInt8)'), UInt8)) ENGINE = Memory;
+INSERT INTO lc_memory_states SELECT estimateCompressionRatioState('LowCardinality(UInt8)')(toUInt8(n % 10)) FROM src WHERE n < 1000
+SETTINGS allow_suspicious_low_cardinality_types = 1;
+SELECT estimateCompressionRatioMerge('LowCardinality(UInt8)')(st) > 0 FROM lc_memory_states;
+DROP TABLE lc_memory_states;
+
 SELECT 'sparse';
 -- A column read in sparse form is estimated as the same rows read dense.
 DROP TABLE IF EXISTS sparse;

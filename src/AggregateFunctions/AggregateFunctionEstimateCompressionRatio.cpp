@@ -328,14 +328,26 @@ struct TargetPart
     }
 };
 
+/// How the rows of a state are converted to the target type: the cast and the type validation of the query that created the
+/// function, with its settings copied (nothing of the query is kept). A state keeps the conversion of the function that added
+/// its pending rows, so that a function created by another query that reads the state (a `-Merge` of a live state kept in a
+/// `Memory` table) converts them as the query that added them would have.
+struct Conversion
+{
+    /// Null when the target type is the source type.
+    FunctionBasePtr cast;
+    std::optional<DataTypeValidationSettings> validation_settings;
+};
+
 struct EstimateCompressionRatioWithTargetData
 {
     /// The bytes of the rows in the source type: the granules written and the merged states.
     UInt64 source_bytes = 0;
     /// The compressed bytes in the target type: the finished parts and the merged states.
     UInt64 compressed_bytes = 0;
-    /// Rows of the source type waiting to be written.
+    /// Rows of the source type waiting to be written, and the conversion of the function that added them.
     MutableColumnPtr pending;
+    std::shared_ptr<const Conversion> conversion;
     /// The rows and bytes of the open granule written so far, when it is written in pieces.
     size_t granule_rows = 0;
     size_t granule_bytes = 0;
@@ -364,7 +376,6 @@ public:
         , target_type(std::move(target_type_))
         , max_compress_block_size(block_size_bytes.value_or(DEFAULT_MAX_COMPRESS_BLOCK_SIZE))
         , min_compress_block_size(block_size_bytes.value_or(DEFAULT_MIN_COMPRESS_BLOCK_SIZE))
-        , validation_settings(std::move(validation_settings_))
     {
         /// `Dynamic` and `JSON`, also nested. As a target, their substreams depend on the data and the writer has more rules for
         /// them. As a source, the rows waiting for a granule take the dynamic structure of the blocks they came in, which their
@@ -395,6 +406,8 @@ public:
         /// Built as `accurateCast` builds it, with the settings of the query (enum values, date and time parsing and overflow;
         /// the cast copies them), and prepared here, so that a conversion the types do not allow is reported here and not at the
         /// first granule. `createInternalCast` would saturate dates and times that overflow whatever the settings say.
+        auto own_conversion = std::make_shared<Conversion>();
+        own_conversion->validation_settings = std::move(validation_settings_);
         if (!source_type->equals(*target_type))
         {
             ContextPtr query_context;
@@ -404,11 +417,12 @@ public:
                 ? query_context->getSettingsRef()[Setting::date_time_overflow_behavior].value
                 : FormatSettings::DateTimeOverflowBehavior::Ignore;
             ColumnsWithTypeAndName cast_arguments{{source_type->createColumn(), source_type, ""}, {nullptr, std::make_shared<DataTypeString>(), ""}};
-            cast = createFunctionBaseCast(
+            own_conversion->cast = createFunctionBaseCast(
                 createFunctionConvertSettings(query_context, overflow_behavior), "accurateCast", cast_arguments, target_type, {},
                 CastType::accurate);
-            cast->prepare({});
+            own_conversion->cast->prepare({});
         }
+        conversion = std::move(own_conversion);
 
         /// The codecs of the substreams are resolved here, so that a codec the target type cannot take is reported here too.
         ISerialization::EnumerateStreamsSettings enumerate_settings;
@@ -536,6 +550,7 @@ private:
             data_ref.pending = source_type->createColumn();
             /// Otherwise the first row allocates 4 KiB, which a group of a few rows does not need.
             data_ref.pending->reserve(1);
+            data_ref.conversion = conversion;
         }
         return *data_ref.pending;
     }
@@ -596,18 +611,19 @@ private:
 
         /// As `CAST`, which rejects suspicious and experimental types the settings do not allow. Here and not when the function is
         /// created, so that a state type that names such a type can still be read and merged (`ATTACH`, `-Merge`).
-        if (!data_ref.part && validation_settings)
-            validateDataType(target_type, *validation_settings);
+        const Conversion & rows_conversion = *data_ref.conversion;
+        if (!data_ref.part && rows_conversion.validation_settings)
+            validateDataType(target_type, *rows_conversion.validation_settings);
 
         ColumnPtr rows = data_ref.pending->getPtr();
         /// A value the target type cannot hold is an error here, before the state changes.
         ColumnPtr converted = rows;
-        if (cast)
+        if (rows_conversion.cast)
         {
             ColumnsWithTypeAndName arguments{
                 {rows, source_type, ""},
                 {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
-            converted = cast->execute(arguments, target_type, rows->size(), /*dry_run=*/false);
+            converted = rows_conversion.cast->execute(arguments, target_type, rows->size(), /*dry_run=*/false);
         }
         const UInt64 rows_bytes = sourceBytes(*rows);
 
@@ -734,10 +750,9 @@ private:
     const DataTypePtr target_type;
     const size_t max_compress_block_size;
     const size_t min_compress_block_size;
-    /// The settings of the query that created the function, to validate the target type when rows are converted to it.
-    const std::optional<DataTypeValidationSettings> validation_settings;
     ASTPtr codec_description;
-    FunctionBasePtr cast;
+    /// The conversion of this function, given to the states it adds rows to.
+    std::shared_ptr<const Conversion> conversion;
     UnorderedMapWithMemoryTracking<String, StreamLayout> stream_layouts;
 };
 
