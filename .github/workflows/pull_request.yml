@@ -5416,6 +5416,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5476,6 +5477,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan

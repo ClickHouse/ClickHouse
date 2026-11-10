@@ -31,9 +31,6 @@ query_id_base="02841_summary_$CLICKHOUSE_DATABASE"
 
 # Slow down the local replica, so the remote replicas always take part in the query: otherwise the local replica
 # may read the whole result alone, and no remote replica would be involved.
-# Plan-based parallel replicas does not ship a `LIMIT` without `ORDER BY` to the replicas yet, so a remote replica
-# reads until the initiator cancels it, and a cancelled replica never reports its progress. Remove the
-# `parallel_replicas_plan_based` pin once https://github.com/ClickHouse/ClickHouse/pull/129811 is merged.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read"
 
 echo "
@@ -47,8 +44,7 @@ echo "
         automatic_parallel_replicas_mode = 0,
         parallel_replicas_for_non_replicated_merge_tree = 1,
         interactive_delay=0,
-        parallel_replicas_local_plan=1,
-        parallel_replicas_plan_based=0
+        parallel_replicas_local_plan=1
     "\
     | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&query_id=${query_id_base}_interactive_0" --data-binary @- -vvv 2>&1 \
     | grep "Summary" | grep -v 'Access-Control-Expose-Headers' | grep -cv '"read_rows":"0"'
@@ -64,19 +60,18 @@ echo "
         automatic_parallel_replicas_mode = 0,
         parallel_replicas_for_non_replicated_merge_tree = 1,
         interactive_delay=99999999999,
-        parallel_replicas_local_plan=1,
-        parallel_replicas_plan_based=0
+        parallel_replicas_local_plan=1
     "\
     | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&query_id=${query_id_base}_interactive_high" --data-binary @- -vvv 2>&1 \
     | grep "Summary" | grep -v 'Access-Control-Expose-Headers' | grep -cv '"read_rows":"0"'
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read"
 
-# Wait for query_log entries from parallel replicas queries.
-# There is a race between HTTP response being sent and the query_log entry being written.
+# Wait for the replicas' query_log entries of both queries. A replica has its own `query_id`, and its entry is
+# written when the replica finishes, which can be after the initiator has sent the HTTP response.
 for _ in $(seq 1 60); do
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-    count=$($CLICKHOUSE_CLIENT --query "SELECT count(DISTINCT initial_query_id) FROM system.query_log WHERE event_date >= yesterday() AND initial_query_id LIKE '${query_id_base}%'")
+    count=$($CLICKHOUSE_CLIENT --query "SELECT countDistinctIf(initial_query_id, query_id != initial_query_id) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id LIKE '${query_id_base}%'")
     [ "$count" -ge 2 ] && break
     sleep 0.5
 done
