@@ -4,6 +4,7 @@ The tables in this directory are copied from the parquetry (tileverse-io) test k
 `internal/parquetry-testkit/src/main/resources/iceberg-*` at commit
 https://github.com/tileverse-io/parquetry/tree/fba9d4db27f93fd7e21f2dd121bd81f40646347e/internal/parquetry-testkit/src/main/resources
 (Apache License 2.0, https://github.com/tileverse-io/parquetry/blob/fba9d4db27f93fd7e21f2dd121bd81f40646347e/LICENSE).
+The upstream `NOTICE` file is reproduced as `NOTICE` in this directory: Parquetry, Copyright 2026 Multiversio LLC.
 
 `iceberg-geo-testbed` is vendored by parquetry from https://github.com/jatorre/iceberg-geo-testbed at commit
 `59f47a71f641f14994f54e279791e8188edc723f` (Apache License 2.0,
