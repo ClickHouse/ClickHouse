@@ -2850,7 +2850,8 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             global_ctx->new_data_part,
             global_ctx->rows_written,
             index_ptr,
-            /// A rebuilt index already holds the merged part's offsets.
+            /// An index rebuilt from the merged rows already numbers them as the merged part does; remapping
+            /// would read its row ids as rows of the first source part.
             global_ctx->merge_may_reduce_rows ? nullptr : global_ctx->merged_part_offsets,
             reader_settings,
             global_ctx->to->getWriterSettings(),
