@@ -13,7 +13,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ErrnoException.h>
-#include <Parsers/TokenIterator.h>
 #include <Poco/Util/HelpFormatter.h>
 
 #if USE_SSL
@@ -249,64 +248,7 @@ bool KeeperClient::processQueryText(const String & text, bool is_interactive)
             if (i > 0)
                 connectToKeeper();
 
-            if (waiting_confirmation)
-            {
-                waiting_confirmation = false;
-                if (text.size() == 1 && (text == "y" || text == "Y"))
-                    confirmation_callback();
-                return true;
-            }
-
-            const char * begin = text.data();
-            const char * end = begin + text.size();
-
-            /// Tokenize once for the entire input. We use skip_insignificant=false
-            /// so that whitespace tokens are explicit — needed for `\ ` (escaped space)
-            /// handling in parseKeeperArg. We avoid tryParseQuery because it rejects
-            /// Error tokens (like `\`) during its lookahead scan.
-            Tokens tokens(begin, end, 0, false);
-            IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-            while (!pos->isEnd())
-            {
-                /// Skip leading whitespace and semicolons (to support multi statements).
-                while (!pos->isEnd() && (pos->type == TokenType::Whitespace || pos->type == TokenType::Semicolon))
-                    ++pos;
-
-                if (pos->isEnd())
-                    break;
-
-                KeeperParser parser;
-                ASTPtr res;
-                Expected expected;
-                bool parsed = parser.parse(pos, res, expected);
-
-                if (!parsed || !res)
-                {
-                    std::cerr << "Syntax error at position " << (pos->begin - begin) << "\n";
-                    return true;
-                }
-
-                /// Skip trailing whitespace after the parsed command.
-                while (!pos->isEnd() && pos->type == TokenType::Whitespace)
-                    ++pos;
-
-                /// After a command, the next token must be a semicolon (statement
-                /// separator) or end-of-stream. Anything else is trailing garbage
-                /// (e.g. "create /x v garbage") — report without executing.
-                if (!pos->isEnd() && pos->type != TokenType::Semicolon)
-                {
-                    std::cerr << "Syntax error: unexpected trailing input at position "
-                        << (pos->begin - begin) << "\n";
-                    return true;
-                }
-
-                auto * query = res->as<ASTKeeperQuery>();
-
-                auto command = getCommands().find(query->command);
-                command->second->execute(query, this);
-            }
-
+            executeQueryText(text);
             break;
         }
         catch (Coordination::Exception & err)

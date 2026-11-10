@@ -81,6 +81,11 @@ public:
     virtual ~KeeperClientBase() = default;
 
 protected:
+    /// Parses and runs `text` with the Keeper token loop (`skip_insignificant=false`)
+    /// so completed paths such as `space\ node` round-trip. Throws
+    /// `Coordination::Exception` so `clickhouse-keeper-client` can retry hardware errors.
+    void executeQueryText(const String & text);
+
     bool waiting_confirmation = false;
 };
 

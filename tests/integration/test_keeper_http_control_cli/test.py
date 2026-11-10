@@ -332,6 +332,47 @@ def test_http_commands_complete(started_cluster):
     assert missing_parent_body["completions"] == []
     assert missing_parent_body["replace_start"] == len("ls ".encode("utf-8"))
 
+    # Completions must be executable over HTTP as-is (escaped space / backslash).
+    spaced_name = f"{prefix}_space node"
+    slash_name = f"{prefix}_back\\slash"
+    for name, value in ((spaced_name, "space-val"), (slash_name, "slash-val")):
+        created = requests.get(
+            "http://{host}:{port}/api/v1/commands".format(
+                host=leader.ip_address, port=9182
+            ),
+            params={"command": f"create '/{dirname}/{name}' '{value}'", "cwd": "/"},
+        )
+        assert created.status_code == 200
+
+    def execute_completed(complete_prefix, expected_value):
+        complete_resp = requests.get(
+            "http://{host}:{port}/api/v1/commands".format(
+                host=leader.ip_address, port=9182
+            ),
+            params={"complete": complete_prefix, "cwd": "/"},
+        )
+        assert complete_resp.status_code == 200
+        complete_body = complete_resp.json()
+        assert complete_body["completions"], complete_body
+        head = complete_prefix.encode("utf-8")[: complete_body["replace_start"]].decode(
+            "utf-8"
+        )
+        reconstructed = head + complete_body["completions"][0]
+        exec_resp = requests.get(
+            "http://{host}:{port}/api/v1/commands".format(
+                host=leader.ip_address, port=9182
+            ),
+            params={"command": reconstructed, "cwd": "/"},
+        )
+        assert exec_resp.status_code == 200, reconstructed
+        assert expected_value in exec_resp.json()["result"], (
+            reconstructed,
+            exec_resp.json(),
+        )
+
+    execute_completed(f"get /{dirname}/{prefix}_space", "space-val")
+    execute_completed(f"get /{dirname}/{prefix}_back", "slash-val")
+
     with keeper_utils.KeeperClient.from_cluster(
         cluster, keeper_ip=leader.ip_address, port=9181
     ) as client:
