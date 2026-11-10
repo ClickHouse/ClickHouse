@@ -576,10 +576,13 @@ private:
         compactAccumulatedIfNeeded();
     }
 
+    /// Reclaims the dead accumulated rows as soon as they are at least half of the rows, however few rows
+    /// are accumulated: a single key updated on every step must not retain every previous payload. Every
+    /// compaction halves the rows at least, so the amortized cost stays linear in the appended rows.
     void compactAccumulatedIfNeeded()
     {
         size_t accumulated_size = accumulated_live.size();
-        if (accumulated_size < 8192 || accumulated_dead * 2 < accumulated_size)
+        if (accumulated_dead == 0 || accumulated_dead * 2 < accumulated_size)
             return;
 
         MutableColumns compacted_columns = header->cloneEmptyColumns();
