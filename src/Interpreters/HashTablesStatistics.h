@@ -79,9 +79,9 @@ struct AggregationEntry
     /// other methods. Its share of `sum_of_sizes` splits the preallocation of such a table between its
     /// sub-tables.
     size_t sum_of_sizes_with_empty_string = 0;
-    /// Whether the staged streams of most of the threads of a run of the query kept repeating the missed keys (see
-    /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for such a query, so later runs do not engage the
-    /// adaptive aggregation at all. Runs without a verdict of their own carry the stored one over (see
+    /// The adaptive verdict of a run of the query (see `Aggregator::adaptiveStagingVerdict`): its staged
+    /// streams were repeat-dominated, so freezing cannot pay for such a query, and later runs do not engage
+    /// the adaptive aggregation at all. Runs without a verdict of their own carry the stored one over (see
     /// `updateStatistics`).
     bool adaptive_staging_repeat_dominated = false;
 };
