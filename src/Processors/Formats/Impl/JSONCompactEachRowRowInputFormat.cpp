@@ -1,3 +1,4 @@
+#include <atomic>
 #include <Processors/Formats/Impl/JSONCompactEachRowRowInputFormat.h>
 
 #include <IO/ReadHelpers.h>
@@ -815,7 +816,7 @@ void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory)
         size_t min_rows = 1 + int(with_names) + int(with_types);
         factory.registerFileSegmentationEngineCreator(format_name, [min_rows](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
         {
-            return [min_rows, max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+            return [min_rows, max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
             {
                 return JSONUtils::fileSegmentationEngineJSONCompactEachRow(in, memory, min_bytes, min_rows, max_rows, max_row_size);
             };

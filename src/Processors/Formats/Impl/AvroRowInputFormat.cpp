@@ -1,3 +1,4 @@
+#include <atomic>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #if USE_AVRO
 
@@ -1759,11 +1760,16 @@ constexpr size_t AVRO_SEGMENT_COPY_STEP = 1 << 20;
 
 /// `Dst` is the header `String` or the segment `Memory`, which needs `resizeAmortized` to grow cheaply.
 template <typename Dst>
-void copyAvroBytes(ReadBuffer & in, Dst & dst, size_t n)
+bool copyAvroBytes(ReadBuffer & in, Dst & dst, size_t n, const std::atomic<bool> * segmentation_finished = nullptr)
 {
     while (n)
     {
         CurrentThread::checkIfNotCancelled();
+        /// A block is read as a unit but can be far larger than `min_bytes`, so also stop on a non-kill
+        /// pipeline stop (LIMIT, `timeout_overflow_mode='break'`, a background exception) that
+        /// `checkIfNotCancelled` does not see; the caller discards the partial block.
+        if (segmentation_finished && segmentation_finished->load())
+            return false;
 
         size_t step = std::min(n, AVRO_SEGMENT_COPY_STEP);
         size_t old = dst.size();
@@ -1774,6 +1780,7 @@ void copyAvroBytes(ReadBuffer & in, Dst & dst, size_t n)
         readAvroStrict(in, dst.data() + old, step);
         n -= step;
     }
+    return true;
 }
 
 /// An Avro `bytes`/`string`: a `long` length followed by that many bytes.
@@ -1847,7 +1854,8 @@ Int64 copyAvroLongToMemory(ReadBuffer & in, DB::Memory<> & memory)
 /// Cut the OCF into segments on block (sync) boundaries. Each segment is `header + N whole blocks`,
 /// a standalone OCF. Rows never straddle a boundary, so there is no stitch step.
 std::pair<bool, size_t> fileSegmentationEngineAvro(
-    ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, AvroSegmentationState & state)
+    ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, AvroSegmentationState & state,
+    const std::atomic<bool> & segmentation_finished)
 {
     if (!state.header_read)
         readAvroOCFHeader(in, state);
@@ -1856,8 +1864,16 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
 
     size_t rows_in_segment = 0;
     bool eof = false;
+    bool stopped = false;
     while (true)
     {
+        /// Stop before the next block when the pipeline is finishing (killed, LIMIT, break, background
+        /// exception) so a stopped query does not keep segmenting; return the whole blocks read so far.
+        if (segmentation_finished.load())
+        {
+            stopped = true;
+            break;
+        }
         /// The only legal EOF place: a well-formed file ends right after a block's sync marker.
         /// Inside a block, throw on unexpected EOF
         if (in.eof())
@@ -1866,6 +1882,7 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
             break;
         }
 
+        const size_t block_start = memory.size();
         Int64 object_count = copyAvroLongToMemory(in, memory);
         Int64 byte_count = copyAvroLongToMemory(in, memory);
         /// Same messages as `avro::DataFileReaderBase::readDataBlock`.
@@ -1874,7 +1891,14 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
         if (byte_count < 0)
             throw Exception(ErrorCodes::AVRO_EXCEPTION, "Invalid data file. Negative byte count in block header: {}", byte_count);
 
-        copyAvroBytes(in, memory, static_cast<size_t>(byte_count));
+        /// A single block can be far larger than `min_bytes`; if the pipeline stops mid-block, drop this
+        /// partial block (its header varints and the bytes copied so far) and return the earlier blocks.
+        if (!copyAvroBytes(in, memory, static_cast<size_t>(byte_count), &segmentation_finished))
+        {
+            memory.resize(block_start);
+            stopped = true;
+            break;
+        }
 
         char sync[16];
         readAvroStrict(in, sync, sizeof(sync));
@@ -1890,7 +1914,9 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
             break;
     }
 
-    return {!eof, rows_in_segment};
+    /// No more data when at EOF or stopped; the latter leaves `in` mid-stream, but the segmentator will
+    /// not call again once `segmentation_finished` is set.
+    return {!eof && !stopped, rows_in_segment};
 }
 
 }
@@ -1914,9 +1940,9 @@ void registerInputFormatAvro(FormatFactory & factory)
     factory.registerFileSegmentationEngineCreator("Avro", [](const FormatSettings &) -> FormatFactory::FileSegmentationEngine
     {
         auto state = std::make_shared<AvroSegmentationState>();
-        return [state](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        return [state](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> & segmentation_finished)
         {
-            return fileSegmentationEngineAvro(in, memory, min_bytes, max_rows, *state);
+            return fileSegmentationEngineAvro(in, memory, min_bytes, max_rows, *state, segmentation_finished);
         };
     });
 

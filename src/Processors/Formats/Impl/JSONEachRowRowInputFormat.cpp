@@ -1,3 +1,4 @@
+#include <atomic>
 #include <algorithm>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -685,7 +686,7 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
     auto creator = [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
     {
-        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
         {
             return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
         };

@@ -1,3 +1,4 @@
+#include <atomic>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
@@ -1177,7 +1178,7 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
         auto register_func = [&](const String & format_name, bool, bool)
         {
             static constexpr size_t min_rows = 3; /// Make it 3 for header auto detection (first 3 rows must be always in the same segment).
-            factory.registerFileSegmentationEngine(format_name, [is_raw](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+            factory.registerFileSegmentationEngine(format_name, [is_raw](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
             {
                 return fileSegmentationEngineTabSeparatedImpl(in, memory, is_raw, min_bytes, min_rows, max_rows);
             });
@@ -1194,7 +1195,7 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
     }
 
     // We can use the same segmentation engine for TSKV.
-    factory.registerFileSegmentationEngine("TSKV", [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+    factory.registerFileSegmentationEngine("TSKV", [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
     {
         return fileSegmentationEngineTabSeparatedImpl(in, memory, false, min_bytes, 1, max_rows);
     });

@@ -1,3 +1,4 @@
+#include <atomic>
 #include <IO/ReadBufferFromString.h>
 
 #include <Common/checkStackSize.h>
@@ -1073,7 +1074,7 @@ void BSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTyp
 }
 
 static std::pair<bool, size_t>
-fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
 {
     size_t number_of_rows = 0;
 

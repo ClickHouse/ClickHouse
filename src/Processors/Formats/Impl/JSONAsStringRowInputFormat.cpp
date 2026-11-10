@@ -1,3 +1,4 @@
+#include <atomic>
 #include <Columns/ColumnConst.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
@@ -284,7 +285,7 @@ void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngineCreator("JSONAsString", [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
     {
-        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
         {
             return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
         };
@@ -389,7 +390,7 @@ void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngineCreator("JSONAsObject", [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
     {
-        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, const std::atomic<bool> &)
         {
             return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
         };

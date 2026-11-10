@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
@@ -96,12 +97,18 @@ public:
       * If `max_rows` is non-zero the function also stops after reading the `max_rows` number of rows
       * (even if the `min_bytes` boundary isn't reached yet).
       * Used in ParallelParsingInputFormat.
+      * `segmentation_finished` is set by ParallelParsingInputFormat when parsing stops for any reason
+      * (query killed, `LIMIT` reached, `timeout_overflow_mode = 'break'`, a background exception). An
+      * engine that may read far more than `min_bytes` in one call (e.g. a whole Avro block) must poll it
+      * between its bounded reads and return the segment read so far, so a stopped query does not keep
+      * draining the input.
       */
     using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
         ReadBuffer & buf,
         DB::Memory<Allocator<false>> & memory,
         size_t min_bytes,
-        size_t max_rows)>;
+        size_t max_rows,
+        const std::atomic<bool> & segmentation_finished)>;
 
     using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
         const FormatSettings & settings)>;
