@@ -19,7 +19,6 @@ struct StringBytesUniqImpl
 {
     using ResultType = UInt16;
 
-    /// For each byte value, the number of the last row that contained it (never greater than `row`).
     std::array<UInt64, 256> last_seen_row{};
     UInt64 row = 0;
 
