@@ -37,7 +37,6 @@ enum class QuantizationMethod : UInt8
     /// For models with Matryoshka embeddings model, the leading bits carry most of the information, so the compression loses only little data
     PrefixInt8 = 6,
     PrefixBf16 = 7,
-    MultiBitRaBitQ = 8,
 };
 
 constexpr UInt64 RANDOM_PROJECTION_SEED = 0x9E3779B97F4A7C15ULL;
@@ -326,11 +325,14 @@ float raBitQDistance(const RaBitQQuery & q, const char * code)
     return 1.0f - cosine;
 }
 
-/// Multi-bit RaBitQ uses one binary bit and at least one extra bit.
-constexpr size_t MULTI_BIT_RABITQ_MIN_BITS = 2;
+/// Omitting bit width parameter defaults to 1-bit encoding.
+constexpr size_t RABITQ_DEFAULT_BITS = 1;
+constexpr size_t RABITQ_MAX_BITS = 8;
 
-/// Supports up to 8 bits per dimension.
-constexpr size_t MULTI_BIT_RABITQ_MAX_BITS = 8;
+size_t effectiveRaBitQBits(size_t bits)
+{
+    return bits == 0 ? RABITQ_DEFAULT_BITS : bits;
+}
 
 struct MultiBitRaBitQScaleEvent
 {
@@ -612,15 +614,13 @@ QuantizationMethod methodToCodec(std::string_view method)
         return QuantizationMethod::PrefixInt8;
     if (method == "prefix_bf16")
         return QuantizationMethod::PrefixBf16;
-    if (method == "multi_bit_rabitq")
-        return QuantizationMethod::MultiBitRaBitQ;
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown quantization method '{}'", method);
 }
 }
 
 bool VectorQuantizer::supportsL2(std::string_view method)
 {
-    /// `rabitq`, `multi_bit_rabitq` and `turboquant` are sign/rotation cosine estimators.
+    /// `rabitq` and `turboquant` are sign/rotation cosine estimators.
     /// They do not retain the vector norm, so their approximate distance can only rank by ang.
     return method == "int8" || method == "prefix_int8" || method == "prefix_bf16";
 }
@@ -638,16 +638,16 @@ std::string VectorQuantizer::validateParams(std::string_view method, size_t dime
         return fmt::format("the number of dimensions ({}) exceeds the maximum {}", dimensions, MAX_DIMENSIONS);
 
     /// 'turboquant' and 'rabitq' pack their codes 8 coordinates to the byte, They require that teh dimension is multiple of 8.
-    if ((codec == QuantizationMethod::TurboQuant || codec == QuantizationMethod::RaBitQ || codec == QuantizationMethod::MultiBitRaBitQ)
-        && dimensions % 8 != 0)
+    if ((codec == QuantizationMethod::TurboQuant || codec == QuantizationMethod::RaBitQ) && dimensions % 8 != 0)
         return fmt::format("method '{}' requires the number of dimensions to be a multiple of 8, got {}", method, dimensions);
 
     /// For the prefix methods `bits` is the number of leading dimensions stored (the prefix); it must be in (0, dimensions].
     if ((codec == QuantizationMethod::PrefixInt8 || codec == QuantizationMethod::PrefixBf16) && (bits < 1 || bits > dimensions))
         return fmt::format("method '{}' requires the number of leading dimensions to be in [1, {}], got {}", method, dimensions, bits);
 
-    if (codec == QuantizationMethod::MultiBitRaBitQ && (bits < MULTI_BIT_RABITQ_MIN_BITS || bits > MULTI_BIT_RABITQ_MAX_BITS))
-        return fmt::format("method '{}' requires bits in [{}, {}], got {}", method, MULTI_BIT_RABITQ_MIN_BITS, MULTI_BIT_RABITQ_MAX_BITS, bits);
+    /// Zero defaults to 1-bit RaBitQ encoding for compatibility.
+    if (codec == QuantizationMethod::RaBitQ && bits > RABITQ_MAX_BITS)
+        return fmt::format("method '{}' requires bits in [1, {}] (default: 1), got {}", method, RABITQ_MAX_BITS, bits);
     return {};
 }
 
@@ -658,7 +658,7 @@ size_t VectorQuantizer::bytesPerVector(std::string_view method, size_t dimension
         case QuantizationMethod::TurboQuant:
             return dimensions / 4 + sizeof(float);
         case QuantizationMethod::RaBitQ:
-            return dimensions / 8 + sizeof(float);
+            return (dimensions / 8) * effectiveRaBitQBits(bits) + sizeof(float);
         case QuantizationMethod::Int8:
             /// One Int8 Lloyd-Max code per coordinate, followed by the 4-byte original L2 norm.
             return dimensions + sizeof(float);
@@ -668,8 +668,6 @@ size_t VectorQuantizer::bytesPerVector(std::string_view method, size_t dimension
         case QuantizationMethod::PrefixBf16:
             /// `bits` leading dimensions as bfloat16 (2 bytes each).
             return bits * 2;
-        case QuantizationMethod::MultiBitRaBitQ:
-            return (dimensions / 8) * bits + sizeof(float);
     }
     return 0;
 }
@@ -683,7 +681,7 @@ struct VectorQuantizer::Encoder
     std::vector<float> projection2;  /// turboquant: P2 (the QJL projection)
     std::vector<float> work;         /// per-vector scratch for the rotated vector
     std::vector<float> work2;        /// turboquant: second per-vector scratch
-    std::vector<MultiBitRaBitQScaleEvent> scale_events; ///multi-bit-rabitq: reuseable during scale-search
+    std::vector<MultiBitRaBitQScaleEvent> scale_events; /// Multi-bit RaBitQ: reusable during scale search.
 };
 
 void VectorQuantizer::EncoderDeleter::operator()(Encoder * ptr) const noexcept { delete ptr; }
@@ -700,6 +698,14 @@ VectorQuantizer::EncoderPtr VectorQuantizer::createEncoder(std::string_view meth
     switch (encoder->codec)
     {
         case QuantizationMethod::RaBitQ:
+        {
+            encoder->bits = effectiveRaBitQBits(bits);
+            encoder->projection = generateRandomProjection(dimensions);
+            encoder->work.resize(encoder->projection.size() / PROJECTION_ROUNDS);
+            if (encoder->bits > RABITQ_DEFAULT_BITS)
+                encoder->scale_events.reserve(dimensions);
+            break;
+        }
         case QuantizationMethod::Int8:
             encoder->projection = generateRandomProjection(dimensions);
             encoder->work.resize(encoder->projection.size() / PROJECTION_ROUNDS);
@@ -716,13 +722,6 @@ VectorQuantizer::EncoderPtr VectorQuantizer::createEncoder(std::string_view meth
         case QuantizationMethod::PrefixInt8:
         case QuantizationMethod::PrefixBf16:
             break;
-        case QuantizationMethod::MultiBitRaBitQ:
-        {
-            encoder->projection = generateRandomProjection(dimensions);
-            encoder->work.resize(encoder->projection.size() / PROJECTION_ROUNDS);
-            encoder->scale_events.reserve(dimensions);
-            break;
-        }
     }
     return encoder;
 }
@@ -734,7 +733,10 @@ void VectorQuantizer::encode(Encoder & encoder, const float * vec, char * dst)
     switch (encoder.codec)
     {
         case QuantizationMethod::RaBitQ:
-            encodeRaBitQ(encoder.projection, vec, dimensions, encoder.work.data(), dst);
+            if (bits == RABITQ_DEFAULT_BITS)
+                encodeRaBitQ(encoder.projection, vec, dimensions, encoder.work.data(), dst);
+            else
+                encodeMultiBitRaBitQ(encoder.projection, vec, dimensions, bits, encoder.work.data(), encoder.scale_events, dst);
             return;
         case QuantizationMethod::TurboQuant:
             encodeTurboQuant(encoder.projection, encoder.projection2, vec, dimensions, encoder.work.data(), encoder.work2.data(), dst);
@@ -794,11 +796,6 @@ void VectorQuantizer::encode(Encoder & encoder, const float * vec, char * dst)
             std::memcpy(dst + dimensions, &norm, sizeof(float));
             return;
         }
-        case QuantizationMethod::MultiBitRaBitQ:
-        {
-            encodeMultiBitRaBitQ(encoder.projection, vec, dimensions, encoder.bits, encoder.work.data(), encoder.scale_events, dst);
-            return;
-        }
     }
 }
 
@@ -855,7 +852,8 @@ VectorQuantizer::QueryPtr VectorQuantizer::prepareQuery(std::string_view method,
     {
         case QuantizationMethod::RaBitQ:
         {
-            query->code_bytes = dimensions / 8 + sizeof(float);
+            query->bits = effectiveRaBitQBits(bits);
+            query->code_bytes = (dimensions / 8) * query->bits + sizeof(float);
             const std::vector<float> projection = generateRandomProjection(dimensions);
             std::vector<float> work(projection.size() / PROJECTION_ROUNDS);
             applyRandomProjection(projection, ref, dimensions, work.data());
@@ -904,17 +902,6 @@ VectorQuantizer::QueryPtr VectorQuantizer::prepareQuery(std::string_view method,
             query->int8.dimensions = dimensions;
             break;
         }
-        case QuantizationMethod::MultiBitRaBitQ:
-        {
-            query->code_bytes = (dimensions / 8) * bits + sizeof(float);
-
-            const std::vector<float> projection = generateRandomProjection(dimensions);
-            std::vector<float> work(projection.size() / PROJECTION_ROUNDS);
-
-            applyRandomProjection(projection, ref, dimensions, work.data());
-            query->rabitq = buildRaBitQQuery(work.data(), dimensions);
-            break;
-        }
     }
     return QueryPtr(query.release());
 }
@@ -924,7 +911,9 @@ float VectorQuantizer::distance(const Query & query, const char * code)
     switch (query.codec)
     {
         case QuantizationMethod::RaBitQ:
-            return raBitQDistance(query.rabitq, code);
+            if (query.bits == RABITQ_DEFAULT_BITS)
+                return raBitQDistance(query.rabitq, code);
+            return multiBitRaBitQDistance(query.rabitq, query.bits, code);
         case QuantizationMethod::TurboQuant:
             return turboQuantDistance(query.turbo, code);
         case QuantizationMethod::PrefixInt8:
@@ -991,8 +980,6 @@ float VectorQuantizer::distance(const Query & query, const char * code)
                 return iq.q_norm_sq + norm_x * norm_x - 2.0f * iq.q_norm * norm_x * ip;
             return 1.0f - ip;
         }
-        case QuantizationMethod::MultiBitRaBitQ:
-            return multiBitRaBitQDistance(query.rabitq, query.bits, code);
     }
     return 0.0f;
 }

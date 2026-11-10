@@ -11,28 +11,27 @@ DROP TABLE IF EXISTS quantize_multi_bit_rabitq;
 DROP TABLE IF EXISTS quantize_multi_bit_rabitq_bad;
 
 -- Parameter validation.
-CREATE TABLE quantize_multi_bit_rabitq_bad (id UInt32, vec Array(Float32) CODEC(Quantized('multi_bit_rabitq', 256, 1))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
-CREATE TABLE quantize_multi_bit_rabitq_bad (id UInt32, vec Array(Float32) CODEC(Quantized('multi_bit_rabitq', 256, 9))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
-CREATE TABLE quantize_multi_bit_rabitq_bad (id UInt32, vec Array(Float32) CODEC(Quantized('multi_bit_rabitq', 255, 4))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
+CREATE TABLE quantize_multi_bit_rabitq_bad (id UInt32, vec Array(Float32) CODEC(Quantized('rabitq', 256, 9))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
+CREATE TABLE quantize_multi_bit_rabitq_bad (id UInt32, vec Array(Float32) CODEC(Quantized('rabitq', 255, 4))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
 
 -- Test every supported bit width.
 CREATE TABLE quantize_multi_bit_rabitq
 (
     id UInt32,
-    v2 Array(Float32) CODEC(Quantized('multi_bit_rabitq', 256, 2)),
-    v3 Array(Float32) CODEC(Quantized('multi_bit_rabitq', 256, 3)),
-    v4 Array(Float32) CODEC(Quantized('multi_bit_rabitq', 256, 4)),
-    v5 Array(Float32) CODEC(Quantized('multi_bit_rabitq', 256, 5)),
-    v6 Array(Float32) CODEC(Quantized('multi_bit_rabitq', 256, 6)),
-    v7 Array(Float32) CODEC(Quantized('multi_bit_rabitq', 256, 7)),
-    v8 Array(Float32) CODEC(Quantized('multi_bit_rabitq', 256, 8))
+    v2 Array(Float32) CODEC(Quantized('rabitq', 256, 2)),
+    v3 Array(Float32) CODEC(Quantized('rabitq', 256, 3)),
+    v4 Array(Float32) CODEC(Quantized('rabitq', 256, 4)),
+    v5 Array(Float32) CODEC(Quantized('rabitq', 256, 5)),
+    v6 Array(Float32) CODEC(Quantized('rabitq', 256, 6)),
+    v7 Array(Float32) CODEC(Quantized('rabitq', 256, 7)),
+    v8 Array(Float32) CODEC(Quantized('rabitq', 256, 8))
 )
 ENGINE = MergeTree ORDER BY id;
 
 -- Verify codec configuration.
 SELECT 'show_create',
-    position(create_table_query, 'Quantized(\'multi_bit_rabitq\', 256, 2') > 0,
-    position(create_table_query, 'Quantized(\'multi_bit_rabitq\', 256, 8') > 0
+    position(create_table_query, 'Quantized(\'rabitq\', 256, 2') > 0,
+    position(create_table_query, 'Quantized(\'rabitq\', 256, 8') > 0
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'quantize_multi_bit_rabitq';
 

@@ -156,7 +156,7 @@ static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choic
         {
             /// Vector-quantization codec, only for Array(Float32/Float64/BFloat16); arguments are mandatory.
             /// Quantized('<method>', dimensions[, ...]); dimensions is a multiple of 8 so every method accepts it.
-            static const DB::Strings quant_methods = {"turboquant", "rabitq", "multi_bit_rabitq", "int8", "prefix", "product"};
+            static const DB::Strings quant_methods = {"turboquant", "rabitq", "int8", "prefix", "product"};
             const String method = rg.pickRandomly(quant_methods);
             const uint32_t dimensions = rg.randomInt<uint32_t>(1, 64) * 8;
 
@@ -180,11 +180,11 @@ static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choic
                 res += ", ";
                 res += std::to_string(rg.pickRandomly(subspaces));
             }
-            else if (method == "multi_bit_rabitq")
+            else if (method == "rabitq" && rg.nextBool())
             {
-                /// Multi-bit RaBitQ requires 2-8 bits per dimension.
+                /// RaBitQ supports an optional 1-8 bit width; omitting the parameter defaults to 1-bit encoding.
                 res += ", ";
-                res += std::to_string(rg.randomInt<uint32_t>(2, 8));
+                res += std::to_string(rg.randomInt<uint32_t>(1, 8));
             }
             res += ")";
         }
