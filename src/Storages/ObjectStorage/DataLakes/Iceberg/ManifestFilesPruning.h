@@ -45,6 +45,23 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     DB::ContextPtr context,
     bool keep_nullable = false);
 
+/// ClickHouse before 26.9 wrote `truncate[W]` of a negative integer as a value that is not a multiple of `W`;
+/// the rows of such a partition have the spec values on both sides of it.
+struct IntegerTruncateField
+{
+    size_t tuple_index;
+    Int64 width;
+};
+
+std::optional<Int64> getIntegerTruncateWidth(const PartitionSpecsEntry & partition_field, const DB::DataTypePtr & key_type);
+
+std::vector<IntegerTruncateField> getIntegerTruncateFields(
+    const PartitionSpecification & partition_specification, const DB::DataTypes & partition_key_types);
+
+/// An old value that is not a multiple of `W` is negative, while a spec value that is not a multiple
+/// (the subtraction wrapping near `INT64_MIN`) is positive.
+bool isLegacyTruncateValue(const DB::Field & value, Int64 width);
+
 /// NOTE: tricky part to support RENAME column.
 /// Takes ActionDAG representation of user's WHERE expression and
 /// renames columns to their original numeric ID's in iceberg.
@@ -68,6 +85,7 @@ private:
     /// The same key over Nullable inputs, for a partition tuple that holds NULL.
     std::optional<DB::KeyDescription> nullable_partition_key;
     std::optional<DB::KeyCondition> nullable_partition_key_condition;
+    std::vector<IntegerTruncateField> integer_truncate_fields;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
     /// Float bounds exclude NaN, so these are used for a data file unless its `nan_value_counts` proves the column has none.
@@ -84,6 +102,7 @@ public:
         Int32 initial_schema_id_,
         const DB::ActionsDAG * filter_dag,
         const DB::KeyDescription * partition_key_,
+        const PartitionSpecification & partition_specification,
         DB::ContextPtr context,
         bool require_ready_sets = false);
 
