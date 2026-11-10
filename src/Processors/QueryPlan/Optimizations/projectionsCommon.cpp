@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 
 #include <Core/Settings.h>
@@ -544,6 +545,12 @@ void recordHypotheticalOutcome(
     outcome.forced = outcome.forced && outcome.chosen;
 }
 
+bool projectionSynthesizesBlockColumn(const ProjectionDescription & projection, const String & column)
+{
+    return (column == BlockNumberColumn::name || column == BlockOffsetColumn::name)
+        && !projection.sample_block.findColumnOrSubcolumnByName(column);
+}
+
 void filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
@@ -568,6 +575,10 @@ void filterPartsAndCollectProjectionCandidates(
     {
         for (const auto & name : projection_query_info.filter_actions_dag->getRequiredColumnsNames())
         {
+            /// The projection's indexes would evaluate the filter on synthesized values and prune the wrong parent parts.
+            if (projectionSynthesizesBlockColumn(projection, name))
+                return;
+
             if (projection.sample_block.has(name))
                 filter_required_columns.push_back(name);
         }

@@ -19,7 +19,6 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context.h>
@@ -531,8 +530,7 @@ UseProjectionsResult optimizeUseNormalProjections(
             if (projection->sample_block.findColumnOrSubcolumnByName(col))
                 continue;
 
-            /// A projection part synthesizes these from its own part info and row order, not the parent's per-row values.
-            if (col == BlockNumberColumn::name || col == BlockOffsetColumn::name)
+            if (projectionSynthesizesBlockColumn(*projection, col))
                 return false;
 
             if (!projection->metadata->virtuals.has(col))

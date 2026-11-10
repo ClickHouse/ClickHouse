@@ -7,3 +7,6 @@ projection	5	1	4
 projection	15	2	4
 filter no projection	1
 filter projection	1
+offset filter no projection	1
+offset filter projection	1
+offset filter projection filtering	1

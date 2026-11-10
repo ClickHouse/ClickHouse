@@ -54,3 +54,22 @@ SELECT 'filter projection', count() FROM proj_src WHERE id = 15 AND _block_numbe
 DROP TABLE proj_mv;
 DROP TABLE proj_tgt;
 DROP TABLE proj_src;
+
+-- A projection that is not read can still prune parent parts through its indexes; those must not see synthesized values either.
+DROP TABLE IF EXISTS proj_filter;
+
+CREATE TABLE proj_filter (id UInt64, v String, PROJECTION p (SELECT * WHERE id = 15 ORDER BY id))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    part_minmax_index_columns = 'with_block_number_offset',
+    index_granularity = 4;
+
+INSERT INTO proj_filter SELECT number, toString(number) FROM numbers(20);
+
+SELECT 'offset filter no projection', count() FROM proj_filter WHERE id = 15 AND _block_offset = 15 SETTINGS optimize_use_projections = 0;
+SELECT 'offset filter projection', count() FROM proj_filter WHERE id = 15 AND _block_offset = 15 SETTINGS optimize_use_projections = 1;
+SELECT 'offset filter projection filtering', count() FROM proj_filter WHERE id = 15 AND _block_offset = 15 SETTINGS optimize_use_projections = 1, optimize_use_projection_filtering = 1;
+
+DROP TABLE proj_filter;
