@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Processors/Formats/IOutputFormat.h>
-#include <Common/DequeWithMemoryTracking.h>
 
 #include <Common/ThreadPool.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
@@ -14,6 +14,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 
+#include <deque>
 #include <atomic>
 
 
@@ -64,7 +65,7 @@ namespace ErrorCodes
  * To stop the execution, a fake Chunk is added (ProcessingUnitType = FINALIZE) and finalize()
  * function is blocked until the Collector thread is done.
 */
-class ParallelFormattingOutputFormat final : public IOutputFormat
+class ParallelFormattingOutputFormat : public IOutputFormat
 {
 public:
     /// Used to recreate formatter on every new data piece.
@@ -221,7 +222,7 @@ private:
         Memory<> segment;
         size_t actual_memory_size{0};
         Statistics statistics;
-        size_t rows_num{};
+        size_t rows_num;
     };
 
     Poco::Event collector_finished{};
@@ -237,7 +238,7 @@ private:
     std::exception_ptr background_exception = nullptr;
 
     /// We use deque, because ProcessingUnit doesn't have move or copy constructor.
-    DequeWithMemoryTracking<ProcessingUnit> processing_units;
+    std::deque<ProcessingUnit> processing_units;
 
     std::mutex mutex;
     std::atomic_bool emergency_stop{false};

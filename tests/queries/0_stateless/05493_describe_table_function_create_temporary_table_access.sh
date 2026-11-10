@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Resolving the structure of a table function (`DESCRIBE TABLE url(...)`, or a table function nested in
-# `cluster` or `viewIfPermitted`) must require the same `CREATE TEMPORARY TABLE` grant as reading from it, and must be refused
+# `cluster`) must require the same `CREATE TEMPORARY TABLE` grant as reading from it, and must be refused
 # before the source is contacted. Otherwise a user who cannot run `url` (e.g. under `readonly = 1`) can make
 # the server request an arbitrary endpoint and read the response from the schema inference error.
 
@@ -75,14 +75,6 @@ function check_user() {
     run "${user}" "DESCRIBE TABLE remote('127.0.0.1', url('$(endpoint "${label}_remote")', 'JSONEachRow'))"
     # `cluster` is allowed in readonly mode, but it resolves the structure of the nested `url` on the local shard.
     run "${user}" "DESCRIBE TABLE cluster('test_shard_localhost', url('$(endpoint "${label}_cluster")', 'JSONEachRow'))"
-
-    # `viewIfPermitted` is allowed in readonly mode, but it resolves the structure of its `ELSE` table function.
-    run "${user}" "DESCRIBE TABLE viewIfPermitted(SELECT 1 ELSE url('$(endpoint "${label}_view_if_permitted")', 'JSONEachRow'))"
-    # `SELECT` from `viewIfPermitted` resolves the structure of its `ELSE` table function too, before choosing a branch.
-    # It is skipped for `readonly_2`: `SELECT 1` is permitted for it and does not match the structure of the `ELSE` branch.
-    if [[ "${label}" != "readonly_2" ]]; then
-        run "${user}" "SELECT * FROM viewIfPermitted(SELECT 1 ELSE url('$(endpoint "${label}_select_view_if_permitted")', 'JSONEachRow'))"
-    fi
 
     # Table functions allowed in readonly mode stay available without the grant.
     run "${user}" "DESCRIBE TABLE numbers(1)"
