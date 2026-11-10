@@ -21,8 +21,7 @@ SET enable_filesystem_cache = 1, read_from_filesystem_cache_if_exists_otherwise_
     remote_filesystem_read_prefetch = 0, allow_prefetched_read_pool_for_remote_filesystem = 0, max_threads = 1,
     use_page_cache_for_object_storage = 0, use_uncompressed_cache = 0, use_columns_cache = 0;
 
--- Cold, then warm.
-SELECT sum(v) FROM t_reader_executor_cache_front WHERE k < 20000 OR k > 900000;
-SELECT sum(v) FROM t_reader_executor_cache_front WHERE k < 20000 OR k > 900000;
+SELECT 'cold cache', sum(v) FROM t_reader_executor_cache_front WHERE k < 20000 OR k > 900000;
+SELECT 'warm cache', sum(v) FROM t_reader_executor_cache_front WHERE k < 20000 OR k > 900000;
 
 DROP TABLE t_reader_executor_cache_front;
