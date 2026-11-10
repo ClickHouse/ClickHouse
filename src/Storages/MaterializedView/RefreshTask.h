@@ -469,7 +469,7 @@ private:
     void markCoordinationUnavailable();
 
     /// Creates the coordination znodes of this replica unless its replica znode exists.
-    void createCoordinationZnodesIfNeeded(zkutil::ZooKeeper & zookeeper, const String & root_znode_data, bool is_restore_from_backup);
+    void createCoordinationZnodesIfNeeded(zkutil::ZooKeeper & zookeeper, const String & root_znode_data, bool is_restore_from_backup) const;
 
     /// Children of the coordination znode, one per replica with a pending `SYSTEM REFRESH VIEW`, see `run`.
     static constexpr std::string_view request_znode_prefix = "requested-";

@@ -280,7 +280,7 @@ void RefreshTask::markCoordinationUnavailable()
     scheduling.unexpected_error = "Keeper server doesn't have all feature flags required by refreshable materialized view: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.";
 }
 
-void RefreshTask::createCoordinationZnodesIfNeeded(zkutil::ZooKeeper & zookeeper, const String & root_znode_data, bool is_restore_from_backup)
+void RefreshTask::createCoordinationZnodesIfNeeded(zkutil::ZooKeeper & zookeeper, const String & root_znode_data, bool is_restore_from_backup) const
 {
     String replica_path = coordination.path + "/replicas/" + coordination.replica_name;
     if (zookeeper.exists(replica_path))
