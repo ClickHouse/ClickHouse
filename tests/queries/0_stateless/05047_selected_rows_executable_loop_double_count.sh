@@ -169,11 +169,11 @@ EOF
 # would make it depend on randomized granule settings. The non-pool cell must not set
 # \`send_chunk_header\`: with a header the child would echo the count back as a data row.
 $CLICKHOUSE_LOCAL --config-file="${WORK_DIR}/config.xml" --query "
-SELECT * FROM executable('gen1000.sh', 'TSV', 'x UInt64')
+SELECT * FROM executable('gen1000.sh', 'TSV', 'x UInt64', SETTINGS command_read_timeout = 30000)
 SETTINGS log_queries = 1, log_comment = '05047_exec_tf', ast_fuzzer_runs = 0
 FORMAT Null;
 
-CREATE TABLE t_pool (x UInt64) ENGINE = ExecutablePool('gen1000_pool.sh', 'TSV') SETTINGS pool_size = 1;
+CREATE TABLE t_pool (x UInt64) ENGINE = ExecutablePool('gen1000_pool.sh', 'TSV') SETTINGS pool_size = 1, command_read_timeout = 30000;
 SELECT * FROM t_pool
 SETTINGS log_queries = 1, log_comment = '05047_exec_pool', ast_fuzzer_runs = 0
 FORMAT Null;
@@ -182,7 +182,7 @@ CREATE TABLE t_pool_src (x UInt64) ENGINE = Memory;
 INSERT INTO t_pool_src SELECT number FROM numbers(100);
 
 CREATE TABLE t_exec_in (x UInt64)
-ENGINE = Executable('echo_rows.sh', 'TSV', (SELECT x FROM t_pool_src WHERE x < 10));
+ENGINE = Executable('echo_rows.sh', 'TSV', (SELECT x FROM t_pool_src WHERE x < 10)) SETTINGS command_read_timeout = 30000;
 
 SELECT * FROM t_exec_in
 SETTINGS log_queries = 1, log_comment = '05047_exec_input', ast_fuzzer_runs = 0
@@ -190,7 +190,7 @@ FORMAT Null;
 
 CREATE TABLE t_pool_in (x UInt64)
 ENGINE = ExecutablePool('echo_pool.sh', 'TSV', (SELECT x FROM t_pool_src WHERE x < 10))
-SETTINGS send_chunk_header = 1, pool_size = 1;
+SETTINGS send_chunk_header = 1, pool_size = 1, command_read_timeout = 30000;
 
 SELECT * FROM t_pool_in
 SETTINGS log_queries = 1, log_comment = '05047_exec_pool_input', ast_fuzzer_runs = 0
