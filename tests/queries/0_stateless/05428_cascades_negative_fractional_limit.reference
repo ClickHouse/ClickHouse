@@ -10,10 +10,9 @@
 Expression (Project names)
   NegativeLimit
     Offset
-      GatherExchange
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-          Sorting
-            ReadFromMergeTree (ParallelRead default.t_cascades_neg_limit)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        Sorting
+          ReadFromMergeTree (default.t_cascades_neg_limit)
 -- LIMIT 2 OFFSET -3
 0
 4
