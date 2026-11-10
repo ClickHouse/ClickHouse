@@ -16,7 +16,7 @@ node = cluster.add_instance(
     "node",
     stay_alive=True,
     main_configs=[
-        "configs/cpu_slot_preemption.xml",
+        "configs/cpu_slot_settings.xml",
     ],
     with_zookeeper=True,
 )

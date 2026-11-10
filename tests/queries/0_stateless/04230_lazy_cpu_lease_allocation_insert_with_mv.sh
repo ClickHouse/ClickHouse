@@ -11,7 +11,7 @@
 # Regression test for the CPULeaseAllocation half of
 # https://github.com/ClickHouse/ClickHouse/pull/102928 (lazy slot allocation).
 #
-# When workload CPU scheduling is enabled with `cpu_slot_preemption=1` (default),
+# When workload CPU scheduling is enabled,
 # the pipeline uses `CPULeaseAllocation` instead of `ConcurrencyControl::Allocation`.
 # Pre-fix, the lease eagerly requested `max_threads` worth of slots from the
 # workload scheduler at construction time. For an INSERT with one MV and serial

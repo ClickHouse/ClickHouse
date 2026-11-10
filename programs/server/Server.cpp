@@ -435,7 +435,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 total_memory_profiler_step;
     extern const ServerSettingsDouble total_memory_tracker_sample_probability;
     extern const ServerSettingsBool throw_on_unknown_workload;
-    extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
     extern const ServerSettingsBool cpu_slot_parking;
@@ -3016,7 +3015,6 @@ try
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
             global_context->setThrowOnUnknownWorkload(new_server_settings[ServerSetting::throw_on_unknown_workload]);
             global_context->setCPUSlotPreemption(
-                new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
             global_context->setCPUSlotParking(new_server_settings[ServerSetting::cpu_slot_parking]);
