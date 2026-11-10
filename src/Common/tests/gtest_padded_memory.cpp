@@ -20,7 +20,7 @@ namespace
 constexpr size_t padding = 15;
 constexpr std::array<size_t, 11> lengths{0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 49};
 
-void poisonPadding(UInt8 * data, size_t size)
+void poisonPadding(const UInt8 * data, size_t size)
 {
 #if defined(MEMORY_SANITIZER)
     __msan_poison(data + size, padding);
