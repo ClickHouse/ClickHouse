@@ -1,5 +1,6 @@
 -- the setting is experimental
 SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
 -- a map that does not exist needs the number of buckets
 Set `bucket_map_buckets` to create it
 -- a new map splits the buckets evenly between the shards

@@ -52,6 +52,8 @@ $CLICKHOUSE_CLIENT -m -q "
 echo '-- the setting is experimental'
 $CLICKHOUSE_CLIENT -q "CREATE TABLE dist $DIST_DEFINITION SETTINGS bucket_map_zookeeper_path = '$MAP_PATH', bucket_map_buckets = 4" 2>&1 \
     | grep -o -m1 'SUPPORT_IS_DISABLED'
+$CLICKHOUSE_CLIENT -q "CREATE TABLE remote_dist (key UInt64) ENGINE = Remote('127.0.0.1', 'shard_0', 'data', key) SETTINGS bucket_map_zookeeper_path = '${MAP_PARENT}/remote_bucket_map', bucket_map_buckets = 4" 2>&1 \
+    | grep -o -m1 'SUPPORT_IS_DISABLED'
 
 echo '-- a map that does not exist needs the number of buckets'
 $CLICKHOUSE_CLIENT --allow_experimental_distributed_bucket_map 1 -q "CREATE TABLE dist $DIST_DEFINITION SETTINGS bucket_map_zookeeper_path = '$MAP_PATH'" 2>&1 \
