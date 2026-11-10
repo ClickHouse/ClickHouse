@@ -70,8 +70,10 @@
 #include <Common/FailPoint.h>
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
+#include <Server/ConnectionRegistry.h>
 #include <Server/createServer.h>
 #include <Server/StartupWarnings.h>
 #include <Server/socketBindListen.h>
@@ -164,6 +166,9 @@
 #include <Common/JemallocMergeTreeArena.h>
 
 #include "config.h"
+#if USE_SILK
+#    include <glibc-rseq/rseq.h>
+#endif
 #include <Common/config_version.h>
 
 #if defined(OS_LINUX)
@@ -262,14 +267,19 @@ namespace ServerSetting
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsUInt64 stream_kafka_locks_refresh_polls;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
     extern const ServerSettingsBool enable_write_through_distributed_cache;
+    extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
+    extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsUInt64 disk_connections_rcvbuf;
     extern const ServerSettingsUInt64 disk_connections_sndbuf;
+    extern const ServerSettingsUInt64 streaming_exchange_rcvbuf;
+    extern const ServerSettingsUInt64 streaming_exchange_sndbuf;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -449,9 +459,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
-    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
-    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 ai_function_max_thread_pool_size;
+    extern const ServerSettingsUInt64 ai_function_max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 ai_function_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -464,6 +474,7 @@ namespace ServerSetting
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsBool skip_binary_checksum_checks;
     extern const ServerSettingsBool abort_on_logical_error;
+    extern const ServerSettingsBool collect_connection_metrics;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
@@ -1106,7 +1117,7 @@ try
         getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
     );
 
-#if defined(__x86_64__)
+    /// Log the CPU instruction sets detected at runtime.
     String cpu_info;
 #define COLLECT_FLAG(X) \
     if (CPU::have##X()) \
@@ -1119,8 +1130,7 @@ try
     CPU_ID_ENUMERATE(COLLECT_FLAG)
 #undef COLLECT_FLAG
 
-    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
-#endif
+    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info.empty() ? "none detected" : cpu_info);
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
@@ -1448,6 +1458,18 @@ try
 #if USE_SILK
     if (server_settings[ServerSetting::enable_silk_runtime])
     {
+        /// Silk reads the current CPU from the rseq area that the C library registers for every thread, and its
+        /// per-CPU structures use rseq critical sections. Without a registered area it reads a CPU number that is
+        /// out of range and aborts in its worker threads. `rseq_init` in librseq does not detect this: it only
+        /// checks that the C library exports the rseq symbols, not that the registration succeeded.
+        if (rseq_cpu_id() < 0)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The server setting `enable_silk_runtime` is set, but the Linux 'restartable sequences' (rseq) feature, "
+                "which the silk fiber runtime requires, is not enabled for this process. The kernel may not support it "
+                "(it was introduced in Linux 4.18), a seccomp profile may block the rseq system call, or the C library "
+                "did not register the rseq area");
+
         Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
     }
 #endif
@@ -1501,6 +1523,8 @@ try
         if (server_settings[ServerSetting::enable_silk_runtime])
         {
             LOG_INFO(log, "Stopping silk fiber scheduler");
+            /// Closing a cooperative connection needs the scheduler, so stored connections go first.
+            HTTPConnectionPools::instance().dropCache();
             Silk::destroyFiberScheduler();
         }
 #endif
@@ -1818,10 +1842,10 @@ try
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
-    getIcebergManifestDecodeThreadPool().initialize(
-        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
-        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
-        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+    getAIRequestThreadPool().initialize(
+        server_settings[ServerSetting::ai_function_max_thread_pool_size],
+        server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+        server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 
     std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
@@ -2251,7 +2275,8 @@ try
             {
                 try
                 {
-                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(listen_host, streaming_exchange_port, exchange_connections_ptr));
+                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(
+                        listen_host, streaming_exchange_port, server_settings[ServerSetting::listen_backlog], exchange_connections_ptr));
                     exchange_servers.back()->start();
                 }
                 catch (Poco::Exception & e)
@@ -2677,6 +2702,15 @@ try
             validatePrometheusConstantLabels(
                 *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
 
+            /// `setsockopt` takes `int`. Reject before `config().replace`: `ConfigReloader` does not roll back.
+            {
+                ServerSettings reload_server_settings;
+                reload_server_settings.loadSettingsFromConfig(*reload_config);
+                StreamingExchangeProtocol::validateSocketBufferSizes(
+                    reload_server_settings[ServerSetting::streaming_exchange_sndbuf],
+                    reload_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
+            }
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;
@@ -2691,6 +2725,8 @@ try
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
+
+            ConnectionRegistry::instance().setEnabled(new_server_settings[ServerSetting::collect_connection_metrics]);
 
             /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
             if (const auto requested_seccomp_mode = getRequestedSeccompMode();
@@ -2831,8 +2867,13 @@ try
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setKafkaLocksRefreshPolls(new_server_settings[ServerSetting::stream_kafka_locks_refresh_polls]);
             global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
             global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::enable_write_through_distributed_cache]);
+            global_context->setDistributedCacheTemporaryDataPoolBehaviourOnLimit(
+                new_server_settings[ServerSetting::distributed_cache_temporary_data_pool_behaviour_on_limit]);
+            global_context->setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(
+                new_server_settings[ServerSetting::distributed_cache_temporary_data_max_connections_bypassing_pool]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
@@ -2966,10 +3007,10 @@ try
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
                 new_server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
-            getIcebergManifestDecodeThreadPool().reloadConfiguration(
-                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
-                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
-                new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+            getAIRequestThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_size],
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+                new_server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
@@ -3047,6 +3088,9 @@ try
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
+#if USE_GPU
+                global_context->updateGPUKernelCacheConfiguration(new_server_settings);
+#endif
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
@@ -3099,6 +3143,10 @@ try
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
                 });
+
+            StreamingExchangeProtocol::setSocketBufferSizes(
+                new_server_settings[ServerSetting::streaming_exchange_sndbuf],
+                new_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 
@@ -3632,6 +3680,9 @@ try
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
+        /// The tables (including the ones in the `system` database) can depend on the dictionaries from the configuration files,
+        /// so register them before loading the databases. They start loading later, in `loadOrReloadDictionaries`.
+        global_context->registerDictionariesBeforeLoadingMetadata(config());
         load_system_metadata_tasks = loadMetadataSystem(global_context, server_settings[ServerSetting::async_load_system_database]);
         maybeConvertSystemDatabase(global_context, load_system_metadata_tasks);
 

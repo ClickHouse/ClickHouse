@@ -1,4 +1,5 @@
 #include <Access/DefinerDependencies.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -58,6 +59,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
 
@@ -256,12 +258,12 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
         || select->group_by_with_totals || select->group_by_with_rollup
         || select->group_by_with_cube || select->group_by_with_grouping_sets
         || select->having() || select->qualify()
-        || select->orderBy() || select->order_by_all
+        || select->orderBy() || select->order_by_all || select->shuffle
         || select->limitLength() || select->limitOffset()
         || select->limitAfter() || select->limitUntil()
         || select->limitBy() || select->limit_by_all
         || select->limitByLength() || select->limitByOffset()
-        || select->distinct || select->arrayJoinExpressionList().first
+        || select->distinct
         || select->settings())
     {
         return nullptr;
@@ -295,6 +297,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     }
 
     const auto * tables = select->tables().get();
+    /// Every JOIN and ARRAY JOIN clause is a separate element of this list.
     if (!tables || tables->children.size() != 1)
     {
         return nullptr;
@@ -547,6 +550,9 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
         QueryTreePassManager pass_manager(context);
         addQueryTreePasses(pass_manager);
         pass_manager.runOnlyResolve(inner_query_tree);
+        /// Each replica would expand the body itself, and a decorrelated subquery reads the table again.
+        if (containsCorrelatedSubquery(inner_query_tree))
+            return nullptr;
     }
     catch (const Exception &)
     {
@@ -579,7 +585,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// result semantics when evaluated per-replica must disqualify the view.
                     if (query_node.hasGroupBy() || query_node.hasHaving()
                         || query_node.hasWindow() || query_node.hasQualify()
-                        || query_node.hasOrderBy() || query_node.isDistinct()
+                        || query_node.hasOrderBy() || query_node.isShuffle() || query_node.isDistinct()
                         || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
                         || query_node.hasLimitBy()
                         || query_node.hasLimit() || query_node.hasOffset()

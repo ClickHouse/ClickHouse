@@ -6,7 +6,6 @@
 -- be parsed as Float64 and round, dropping the matching rows (and a DateTime64 boundary of 0 used to
 -- fail with CANNOT_PARSE_DATETIME, see https://github.com/ClickHouse/ClickHouse/issues/94612).
 
-SET enable_analyzer = 1;
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET prefer_localhost_replica = 0;
 SET serialize_query_plan = 0;

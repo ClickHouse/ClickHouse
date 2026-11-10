@@ -46,10 +46,13 @@
 #include <Storages/ObjectStorage/Utils.h>
 
 
+#include <IO/SharedThreadPools.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 namespace ProfileEvents
 {
@@ -132,6 +135,12 @@ PartitionFieldSummaries parsePartitionFieldSummaries(const AvroForIcebergDeseria
     return summaries;
 }
 
+bool useMetadataCacheForManifestFiles(const PersistentTableComponents & persistent_table_components, const ContextPtr & local_context)
+{
+    return persistent_table_components.metadata_cache
+        && local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value < DB::IcebergMetadataLogLevel::ManifestFileMetadata;
+}
+
 }
 
 Iceberg::ManifestFileCacheableInfo getManifestFile(
@@ -141,10 +150,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     LoggerPtr log,
     const IcebergPathFromMetadata & filename)
 {
-    auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
-
-    bool use_iceberg_metadata_cache
-        = (persistent_table_components.metadata_cache && log_level < DB::IcebergMetadataLogLevel::ManifestFileMetadata);
+    const bool use_iceberg_metadata_cache = useMetadataCacheForManifestFiles(persistent_table_components, local_context);
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
@@ -152,6 +158,8 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFilesReadMicroseconds);
 
         RelativePathWithMetadata manifest_object_info(persistent_table_components.path_resolver.resolve(filename));
+        /// `manifest_length` is not always exact, so the manifest is read to the end without a size.
+        manifest_object_info.metadata = ObjectMetadata::fromTableRecords(std::nullopt);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
@@ -165,12 +173,11 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         });
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
-        auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
-            std::move(buffer), filename, getFormatSettings(local_context));
+        String manifest_file_bytes;
+        readStringUntilEOF(manifest_file_bytes, *buffer);
 
-        const size_t manifest_file_bytes = manifest_file_deserializer->bytesRead();
-        ProfileEvents::increment(ProfileEvents::IcebergManifestFilesReadBytes, manifest_file_bytes);
-        return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), manifest_file_bytes};
+        ProfileEvents::increment(ProfileEvents::IcebergManifestFilesReadBytes, manifest_file_bytes.size());
+        return Iceberg::ManifestFileCacheableInfo::fromBytes(std::move(manifest_file_bytes), filename, getFormatSettings(local_context));
     };
 
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
@@ -197,8 +204,18 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         log,
         cache_key.manifest_file_path);
 
+    return getManifestFileEntriesHandle(cacheable_info, persistent_table_components, local_context, cache_key, table_snapshot_schema_id);
+}
+
+Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesHandle(
+    const ManifestFileCacheableInfo & manifest_file,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr local_context,
+    const ManifestFileCacheKey & cache_key,
+    Int32 table_snapshot_schema_id)
+{
     auto iterator = Iceberg::ManifestFileIterator::create(
-        cacheable_info.deserializer,
+        manifest_file.getDeserializer(),
         cache_key.manifest_file_path,
         persistent_table_components.path_resolver,
         *persistent_table_components.schema_processor,
@@ -356,6 +373,98 @@ ManifestFileCacheKeys getManifestList(
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;
+}
+
+ManifestFilesPrefetcher::Fetch::Fetch(ManifestFilesPrefetcher & owner_, const ManifestFileCacheKey & manifest_, size_t leased_bytes_)
+    : owner(owner_)
+    , manifest(manifest_)
+    , leased_bytes(leased_bytes_)
+{
+    ++owner.leased;
+    owner.leased_bytes += leased_bytes;
+}
+
+ManifestFilesPrefetcher::Fetch::~Fetch()
+{
+    if (pending.valid())
+        pending.wait();
+    owner.leased_bytes -= leased_bytes;
+    --owner.leased;
+}
+
+ManifestFileCacheableInfo ManifestFilesPrefetcher::Fetch::get()
+{
+    if (!cached)
+        cached = pending.get();
+    return *cached;
+}
+
+ManifestFilesPrefetcher::ManifestFilesPrefetcher(
+    ObjectStoragePtr object_storage_,
+    const PersistentTableComponents & persistent_table_components_,
+    ContextPtr local_context_,
+    LoggerPtr log_,
+    ManifestFileCacheKeys manifests_)
+    : object_storage(std::move(object_storage_))
+    , persistent_table_components(persistent_table_components_)
+    , local_context(std::move(local_context_))
+    , log(std::move(log_))
+    , manifests(std::move(manifests_))
+    , use_metadata_cache(
+          useMetadataCacheForManifestFiles(persistent_table_components, local_context) && persistent_table_components.table_uuid.has_value())
+{
+    fill();
+}
+
+ManifestFilesPrefetcher::~ManifestFilesPrefetcher()
+{
+    *stopped = true;
+    window.clear();
+}
+
+ManifestFilesPrefetcher::FetchPtr ManifestFilesPrefetcher::take()
+{
+    fill();
+    if (window.empty())
+        return nullptr;
+    auto fetch = std::move(window.front());
+    window.pop_front();
+    return fetch;
+}
+
+void ManifestFilesPrefetcher::fill()
+{
+    auto runner = threadPoolCallbackRunnerUnsafe<ManifestFileCacheableInfo>(getIOThreadPool().get(), ThreadName::ICEBERG_ITERATOR);
+
+    while (next_to_fetch < manifests.size() && leased < max_manifest_files_in_flight)
+    {
+        const auto & manifest = manifests[next_to_fetch];
+
+        std::optional<ManifestFileCacheableInfo> cached;
+        if (use_metadata_cache)
+            cached = persistent_table_components.metadata_cache->tryGetManifestFile(
+                IcebergMetadataFilesCache::getKey(*persistent_table_components.table_uuid, manifest.manifest_file_path.serialize()));
+
+        const size_t bytes = cached ? 0 : manifest.manifest_file_byte_size;
+        if (bytes != 0 && leased_bytes != 0 && leased_bytes + bytes > max_manifest_bytes_in_flight)
+            break;
+
+        auto fetch = FetchPtr(new Fetch(*this, manifest, bytes));
+        if (cached)
+            fetch->cached = std::move(cached);
+        else
+            fetch->pending = runner(
+                [stopped_ = stopped, object_storage_ = object_storage, components = persistent_table_components, context = local_context, log_ = log, path = manifest.manifest_file_path]
+                {
+                    if (*stopped_)
+                        return ManifestFileCacheableInfo{};
+                    return getManifestFile(object_storage_, components, context, log_, path);
+                },
+                Priority{});
+
+        window.push_back(std::move(fetch));
+        ++next_to_fetch;
+    }
 }
 
 }

@@ -2,7 +2,6 @@
 -- no-parallel-replicas: vector-search read hints are produced during local index analysis.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS tab;
