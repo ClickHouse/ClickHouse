@@ -316,7 +316,7 @@ static void addRequestedSubcolumns(
     for (const auto & requested_column : requested_columns)
     {
         const String name = requested_column.getNameInStorage();
-        const DataTypePtr type = requested_column.getTypeInStorage();
+        const DataTypePtr & type = requested_column.getTypeInStorage();
         if (dag.tryFindInOutputs(name))
             continue;
 
