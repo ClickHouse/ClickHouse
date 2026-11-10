@@ -1441,7 +1441,7 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     const String & path,
     const ORC::Type * orc_type,
     VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns,
-    const ColumnNameToFieldId & encoding,
+    const ColumnMapper & column_mapper,
     bool ignore_case);
 
 /// The ORC type of the column `path` of the data lake schema, matching each struct on its way from the root by Iceberg field
@@ -1557,7 +1557,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
                             nested_table_name,
                             nested_table_orc_type,
                             std::move(subcolumns),
-                            column_mapper->getStorageColumnEncoding(),
+                            *column_mapper,
                             ignore_case);
                         updateIncludeTypeIds(
                             nested_table_type, nested_table_orc_type, ignore_case, include_typeids, column_mapper, nested_table_name);
@@ -3279,22 +3279,29 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
 
 /// The type of the column `path` (the file's `orc_type`, if it has one) whose requested subcolumns have the given paths below it
 /// and types, to read it under the data lake schema: a list is an array of its element, a struct has the requested elements, a
-/// whole one with its type. A list is told from a struct with a field `element` by the file, by `encoding` if the file has none.
+/// whole one with its type. A list is told from a struct with a field `element` by the file; if the file has none, by the type
+/// of its `initial-default`, else by the encoding.
 static DataTypePtr makeTypeHintFromSubcolumns(
     const String & path,
     const ORC::Type * orc_type,
     VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns,
-    const ColumnNameToFieldId & encoding,
+    const ColumnMapper & column_mapper,
     bool ignore_case)
 {
     /// A subcolumn below a list is an array of the subcolumn of its element.
-    const bool is_list = orc_type ? orc_type->getKind() == ORC::LIST : encoding.contains(path + ".element");
+    bool is_list = false;
+    if (orc_type)
+        is_list = orc_type->getKind() == ORC::LIST;
+    else if (const Field * value = column_mapper.getIcebergInitialDefault(path))
+        is_list = value->getType() == Field::Types::Array;
+    else
+        is_list = column_mapper.getStorageColumnEncoding().contains(path + ".element");
     if (is_list && std::ranges::all_of(subcolumns, [](const auto & subcolumn) { return isArray(subcolumn.second); }))
     {
         for (auto & [_, type] : subcolumns)
             type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
         return std::make_shared<DataTypeArray>(makeTypeHintFromSubcolumns(
-            path + ".element", orc_type ? orc_type->getSubtype(0) : nullptr, std::move(subcolumns), encoding, ignore_case));
+            path + ".element", orc_type ? orc_type->getSubtype(0) : nullptr, std::move(subcolumns), column_mapper, ignore_case));
     }
 
     Names names;
@@ -3324,7 +3331,8 @@ static DataTypePtr makeTypeHintFromSubcolumns(
         if (orc_type && orc_type->getKind() == ORC::STRUCT)
             if (auto field = findORCStructFieldByName(orc_type, name, ignore_case))
                 element_orc_type = orc_type->getSubtype(*field);
-        types.push_back(makeTypeHintFromSubcolumns(path + "." + name, element_orc_type, nested_subcolumns.at(name), encoding, ignore_case));
+        types.push_back(
+            makeTypeHintFromSubcolumns(path + "." + name, element_orc_type, nested_subcolumns.at(name), column_mapper, ignore_case));
     }
     return std::make_shared<DataTypeTuple>(types, names);
 }
@@ -3394,7 +3402,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                             nested_table_name,
                             orc_column_with_type.second,
                             std::move(subcolumns),
-                            column_mapper->getStorageColumnEncoding(),
+                            *column_mapper,
                             case_insensitive_matching);
                     }
                     ColumnsWithTypeAndName cols = {readColumnFromORCColumn(

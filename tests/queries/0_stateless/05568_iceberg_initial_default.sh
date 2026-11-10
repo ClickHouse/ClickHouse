@@ -70,6 +70,12 @@ elif mode == "rename_to_dropped":
     struct = next(f for f in fields if f["name"] == "t")["type"]
     struct["fields"] = [f for f in struct["fields"] if f["name"] != "x"]
     struct["fields"][0]["name"] = "x"
+elif mode == "element_field":
+    element = new_id()
+    struct = next(f for f in fields if f["name"] == "t")["type"]
+    struct["fields"].append({"id": new_id(), "name": "s", "required": False, "initial-default": {},
+        "type": {"type": "struct", "fields": [{"id": new_id(), "name": "element", "required": False, "initial-default": [9],
+            "type": {"type": "list", "element-id": element, "element": "int", "element-required": False}}]}})
 elif mode == "readd_in_list":
     by_name = {f["name"]: f for f in fields}
     u = by_name["u"]["type"]["fields"][1]["type"]["element"]
@@ -364,6 +370,21 @@ for format in Parquet ORC Avro; do
             SELECT 'rename to dropped, t.x = 100', t ${nested_filter}, input_format_orc_filter_push_down = 1;
             SELECT 'rename to dropped, t.x = 100', t ${nested_filter}, input_format_orc_filter_push_down = 0;
             SELECT 'rename to dropped, t.x = 10', t FROM icebergLocal('${table}/') WHERE t.x = 10 SETTINGS input_format_orc_filter_push_down = 1;
+        "
+    fi
+
+    # An added struct with a field named `element`, absent from the file, is not a list.
+    if [ "${format}" != Avro ]; then
+        table="${format}_element_field"
+        ${LOCAL} --allow_insert_into_iceberg=1 -q "
+            CREATE TABLE t (t Tuple(x Nullable(Int32))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t VALUES ((10));
+        "
+        add_fields "${table}" element_field
+        bind_to_current_schema "${table}"
+        ${LOCAL} -q "
+            SELECT 'element field', t FROM icebergLocal('${table}/');
+            SELECT 'element field', t.s.element FROM icebergLocal('${table}/');
         "
     fi
 
