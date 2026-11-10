@@ -1,0 +1,20 @@
+COLUMNS regexp inside a function
+1	2
+COLUMNS list inside a function
+1	2
+COLUMNS regexp
+1	2
+lambda
+1	2
+lambda using only its own argument keeps the structure of the insertion table
+0123	[2]
+identifier inside a function
+1	2
+count(*)
+1	1
+asterisk
+1	2
+asterisk with EXCEPT
+1	0
+Parquet
+a	[1,2]
