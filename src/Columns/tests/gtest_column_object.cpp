@@ -672,9 +672,12 @@ TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
     /// also include rows already present in a non-empty target.
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=10)");
 
+    /// The reservation must exceed the initial allocation of the discriminators (4096 bytes, one byte per row), which the
+    /// non-empty target below already has, otherwise the capacity assertions below are vacuous.
+    static constexpr size_t source_rows = 1'000;
     auto source = type->createColumn();
     auto & source_object = assert_cast<ColumnObject &>(*source);
-    for (size_t i = 0; i != 100; ++i)
+    for (size_t i = 0; i != source_rows; ++i)
         source_object.insert(Object{{"a", Field{UInt64(i)}}});
     /// Load-bearing precondition: if "a" landed in shared data the assertions below would be vacuous.
     ASSERT_EQ(source_object.getDynamicPaths().size(), 1u);
@@ -696,15 +699,19 @@ TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
     /// shared_data already includes the non-empty target and scales by `factor`, and must keep doing so.
     ASSERT_GE(target_object.getSharedDataPtr()->capacity(), expected_reservation);
 
+    /// Regression: the rows that the target already has were not included, so every dynamic path grew
+    /// (reallocated and copied its discriminators and offsets) during the squashing.
     ASSERT_TRUE(target_object.getDynamicPathsPtrs().contains("a"));
-    ASSERT_GE(target_object.getDynamicPathsPtrs().at("a")->capacity(), expected_reservation);
+    const size_t dynamic_path_capacity = target_object.getDynamicPathsPtrs().at("a")->capacity();
+    ASSERT_GE(dynamic_path_capacity, expected_reservation);
 
-    ASSERT_EQ(sources.front()->size(), 100u);
+    /// The reservation is enough: the dynamic path does not grow while the `factor` batches are inserted.
     for (size_t batch = 0; batch != factor; ++batch)
-        target_object.insertRangeFrom(*sources.front(), 0, sources.front()->size());
+        target_object.insertRangeFrom(*sources.front(), 0, source_rows);
+    ASSERT_EQ(target_object.getDynamicPathsPtrs().at("a")->capacity(), dynamic_path_capacity);
 
-    ASSERT_EQ(target_object.size(), 1u + 100u * factor);
+    ASSERT_EQ(target_object.size(), 1u + source_rows * factor);
     ASSERT_EQ(target_object[0], initial_value);
     for (size_t i = 1; i != target_object.size(); ++i)
-        ASSERT_EQ(target_object[i], (*sources.front())[(i - 1) % sources.front()->size()]);
+        ASSERT_EQ(target_object[i], (*sources.front())[(i - 1) % source_rows]);
 }
