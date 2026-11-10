@@ -2188,7 +2188,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  columnPathRef(rg.pickRandomly(this->entries), rcs->mutable_col());
                  this->entries.clear();
              }},
-            {3 * static_cast<uint32_t>(is_mt),
+            /// Not in the dump oracle: a lossy codec such as `SZ3` lets a merge change the values between the dumps
+            {3 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
              {
                  addTableCodec(rg, t, ati->mutable_column_modify_codec());
