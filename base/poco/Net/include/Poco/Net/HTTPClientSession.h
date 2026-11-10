@@ -281,11 +281,11 @@ namespace Net
 
         BodyInfo sendRequestHeaders(HTTPRequest & request) { return sendRequestHeaders(request, nullptr, nullptr); }
 
-        bool waitForResponseData(const Poco::Timespan & timeout);
-        /// Waits up to `timeout` until the server sends a response or closes the connection,
-        /// without consuming anything. Returns `true` when something can be read, and `false`
-        /// when nothing arrived within `timeout`. `timeout` must be positive. The receive and
-        /// send timeouts of the session are restored afterwards.
+        bool waitForResponseData();
+        /// Waits, with the current timeouts of the socket, until the server sends a response or
+        /// closes the connection, without consuming anything. Returns `true` when something can
+        /// be read, and `false` on a timeout. A TLS socket reads with the larger of its receive
+        /// and send timeouts.
         ///
         /// For a request sent with `Expect: 100-continue` by `sendRequestHeaders`: the server
         /// answers either `100 Continue` or a final response, or ignores the expectation.

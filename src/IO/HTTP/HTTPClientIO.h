@@ -140,6 +140,7 @@ std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
     HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
 /// Waits for the answer to a request sent with `Expect: 100-continue`, before its body is written.
+/// `timeout` must be positive.
 ///
 /// Returns `nullptr` when the body has to be sent now: the server answered `100 Continue`, or sent
 /// nothing within `timeout` (a server or proxy can ignore the expectation, and RFC 9110 lets the

@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/Hex.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Poco/Ascii.h>
 #include <Poco/Net/NetException.h>
@@ -17,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -624,10 +626,30 @@ receiveHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, 
     return receiveHTTPResponseImpl(std::move(session), session_ref, response, buf_size);
 }
 
+/// Waits up to `timeout` for a response, without consuming it. Only the wait uses `timeout`: the
+/// response header is read with the timeouts of the session.
+static bool waitForResponseDataWithTimeout(Poco::Net::HTTPClientSession & session, Poco::Timespan timeout)
+{
+    /// A zero socket timeout means no timeout at all.
+    if (timeout <= 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The wait for an HTTP response needs a positive timeout");
+
+    /// The TLS layer reads with the larger of the receive and send timeouts, so both are set.
+    /// A socket that fails here is broken, and the session is dropped anyway.
+    auto & socket = session.socket();
+    SCOPE_EXIT_SAFE({
+        socket.setReceiveTimeout(session.getReceiveTimeout());
+        socket.setSendTimeout(session.getSendTimeout());
+    });
+    socket.setReceiveTimeout(timeout);
+    socket.setSendTimeout(timeout);
+    return session.waitForResponseData();
+}
+
 std::unique_ptr<HTTPResponseReadBuffer>
 waitForHTTPContinue(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, Poco::Timespan timeout, size_t buf_size)
 {
-    if (!session->waitForResponseData(timeout))
+    if (!waitForResponseDataWithTimeout(*session, timeout))
         return nullptr;
 
     readHTTPResponseHeaderOrReset(*session, response);
