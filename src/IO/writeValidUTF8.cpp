@@ -11,13 +11,7 @@
 #    include <simdutf.h>
 #endif
 
-#include <bit>
 #include <string_view>
-
-#if defined(__aarch64__) && defined(__ARM_NEON)
-#    include <base/simd.h>
-#    include <arm_neon.h>
-#endif
 
 namespace DB
 {
@@ -71,30 +65,10 @@ void writeValidUTF8(const char * begin, const char * end, WriteBuffer & out)
 
     while (p < end)
     {
-#if defined(__aarch64__) && defined(__ARM_NEON)
-        /// Dense Unicode needs no ASCII scan.
-        if (static_cast<unsigned char>(*p) < 0x80)
-        {
-            p = skipASCIIBlocks(p, end);
-            if (end - p >= 16)
-            {
-                /// The first remaining block contains a non-ASCII byte.
-                const auto mask = getNibbleMask(vcgeq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)), vdupq_n_u8(0x80)));
-                p += std::countr_zero(mask) / 4;
-            }
-
-            /// Skip ASCII in a partial vector tail without a Poco legality check.
-            while (p < end && static_cast<unsigned char>(*p) < 0x80)
-                ++p;
-            if (p == end)
-                break;
-        }
-#else
         /// Fast skip of ASCII
         p = skipASCIIBlocks(p, end);
         if (!(p < end))
             break;
-#endif
 
         size_t len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
 

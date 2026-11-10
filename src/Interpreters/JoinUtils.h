@@ -107,10 +107,6 @@ private:
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
     const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion = false);
 
-/// Replaces a `Bool` of `type`, a common type of two JOIN keys, by `UInt8` where one of the keys has an `UInt8`
-/// in that place, so that a `Bool` key and an integer key are compared by value, as `=` does.
-DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type);
-
 /** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
   *
   * The target of a JOIN key conversion must not have Nullable elements: `accurateCastOrNull` reports an
@@ -148,11 +144,11 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
 Int64 getCurrentQueryMemoryUsage();
 Block materializeColumnsFromRightBlock(Block block, const Block & sample_block);
 
-/// Throw an exception if join condition column cannot be used in boolean context
+/// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
                        const Block & block_right, const String & condition_name_right);
 
-/// Throw an exception if blocks have different types of key columns. Compare up to Nullability.
+/// Throw an exception if blocks have different types of key columns . Compare up to Nullability.
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
                       const Block & block_right, const Names & key_names_right);
 
@@ -197,9 +193,8 @@ constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
-/// Insert default values for rows marked in filter; the defaults of `default_type` if it is set.
-ColumnPtr filterWithBlanks(
-    ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false, const DataTypePtr & default_type = nullptr);
+/// Insert default values for rows marked in filter
+ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false);
 
 }
 

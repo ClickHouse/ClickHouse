@@ -3,7 +3,6 @@
 #include <stack>
 #include <cmath>
 
-#include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -140,8 +139,6 @@ static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStati
     result.max_value = std::move(estimate.estimated_max);
     if (estimate.estimated_null_count && estimate.rows_count)
         result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
-    if (auto avg_string_bytes = stats->getAvgStringBytes())
-        result.avg_bytes = *avg_string_bytes;
     return result;
 }
 
@@ -335,13 +332,6 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
             out.finalized = true;
             return false;
-        }
-
-        /// NULL stays undecided: `ALWAYS_FALSE` would become `ALWAYS_TRUE` under `NOT`.
-        if (auto folded = ActionsDAG::tryFoldPredicateThroughMaterialize(func.getDAGNode()); folded && !folded->isNullAt(0))
-        {
-            out.function = folded->getBool(0) ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
         }
 
         if (num_args == 1)
@@ -670,11 +660,6 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     /// else: incompatible statistics (e.g. a concurrent ALTER changed the column type,
     /// shifting the aggregate-function state layout). Skip this part's statistics so the
     /// estimator still works with the compatible parts instead of crashing.
-}
-
-void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_name, UInt64 cardinality)
-{
-    estimator->column_estimators.at(column_name).stats->setCardinality(cardinality);
 }
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const

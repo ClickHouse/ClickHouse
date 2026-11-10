@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optional>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <unordered_map>
 #include <Columns/ColumnVariant.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -48,7 +48,7 @@ private:
     std::optional<size_t> geometry_col_idx;
     std::optional<size_t> properties_col_idx;
 
-    UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator> geometry_discriminators;
+    std::unordered_map<String, ColumnVariant::Discriminator> geometry_discriminators;
 };
 
 class GeoJSONExternalSchemaReader : public IExternalSchemaReader

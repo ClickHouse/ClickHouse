@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
-#include <Core/ResultColumnOrigin.h>
 #include <base/types.h>
 #include <base/unit.h>
 
@@ -42,7 +40,6 @@ struct FormatSettings
     bool always_write_decimal_point_in_float_and_decimal = false;
     UInt64 float_precision = 0;
     bool precise_float_parsing = true;
-    bool check_integer_text_overflow = false;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -165,11 +162,6 @@ struct FormatSettings
     InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::AUTO;
 
     UInt64 client_protocol_version = 0;
-
-    /// The hash of the settings `getFormatSettings` derived this from (see `getFormatSettingsHash`), for
-    /// keying a value by the format settings it was read with. Unset when the struct was not built by
-    /// `getFormatSettings`. A member changed afterwards is not reflected in it.
-    std::optional<UInt64> source_settings_hash = std::nullopt;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
@@ -372,7 +364,6 @@ struct FormatSettings
         bool type_json_skip_null_typed_paths = false;
         std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
         bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
-        bool type_json_skip_duplicate_key_detection = false;
         bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
         bool pretty_print = true;
         char pretty_print_indent = ' ';
@@ -427,7 +418,7 @@ struct FormatSettings
         bool enable_row_group_prefetch = true;
         bool verify_checksums = true;
         bool local_time_as_utc = true;
-        UnorderedSetWithMemoryTracking<int> skip_row_groups = {};
+        std::unordered_set<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         size_t local_read_min_bytes_for_seek = 8192;
@@ -448,7 +439,6 @@ struct FormatSettings
         bool write_page_index = false;
         bool write_bloom_filter = false;
         bool write_checksums = true;
-        bool use_alp_encoding = false;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
@@ -459,7 +449,6 @@ struct FormatSettings
         bool detect_variant_by_structure = true;
         bool spatial_filter_push_down = true;
         bool write_geometadata = true;
-        bool write_geometry_logical_type = false;
         bool write_file_logical_type = false;
         size_t max_dictionary_size = 1024 * 1024;
     } parquet{};
@@ -539,8 +528,6 @@ struct FormatSettings
          * By default, use Text ResultSet.
          */
         bool binary_protocol = false;
-        /// The table columns the result columns come from, reported in the column definitions. Not owned; may be null.
-        const ResultColumnOrigins * result_column_origins = nullptr;
     } mysql_wire{};
 
     struct
@@ -607,7 +594,7 @@ struct FormatSettings
         int64_t row_batch_size = 100'000;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
-        UnorderedSetWithMemoryTracking<int> skip_stripes = {};
+        std::unordered_set<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
         bool filter_push_down = true;
@@ -618,13 +605,6 @@ struct FormatSettings
         double output_dictionary_key_size_threshold = 0.0;
         UInt64 output_compression_block_size = 256 * 1024; /// 256 KiB
     } orc{};
-
-    struct
-    {
-        bool filter_push_down = true;
-        bool preserve_order = false;
-        bool output_string_as_string = true;
-    } vortex{};
 
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.

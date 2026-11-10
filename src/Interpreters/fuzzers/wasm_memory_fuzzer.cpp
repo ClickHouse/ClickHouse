@@ -20,7 +20,6 @@
 using namespace DB;
 using namespace DB::WebAssembly;
 
-#if USE_WASMTIME
 /// Minimal valid WebAssembly module: 1 memory page (64 KiB), exported as "memory".
 ///
 /// Binary layout:
@@ -35,7 +34,6 @@ static const uint8_t kMinimalWasm[] = {
     /// Export section: [07][len=10][count=1][name_len=6]["memory"][kind=2][index=0]
     0x07, 0x0a, 0x01, 0x06, 0x6d, 0x65, 0x6d, 0x6f, 0x72, 0x79, 0x02, 0x00,
 };
-#endif
 
 ContextMutablePtr context;
 

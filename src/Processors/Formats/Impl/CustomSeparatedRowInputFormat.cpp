@@ -215,9 +215,9 @@ String CustomSeparatedFormatReader::readFieldIntoString(bool is_first, bool is_l
 }
 
 template <CustomSeparatedFormatReader::ReadFieldMode mode>
-VectorWithMemoryTracking<String> CustomSeparatedFormatReader::readRowImpl()
+std::vector<String> CustomSeparatedFormatReader::readRowImpl()
 {
-    VectorWithMemoryTracking<String> values;
+    std::vector<String> values;
     skipRowStartDelimiter();
 
     if (columns == 0 || format_settings.custom.allow_variable_number_of_columns)
@@ -415,7 +415,7 @@ CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
 {
 }
 
-std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<std::vector<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (no_more_data || reader.checkForSuffix())
     {
