@@ -657,16 +657,20 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         if (base_storage->getType() == ObjectStorageType::S3)
             base_storage_endpoint = base_storage->getDescription();
 
+        const std::string target_provider_family = s3ProviderFamily(target_decomposed.scheme);
+
+        /// The declared `location` may name another provider than the base client, e.g. for a copied table.
         const bool provider_families_compatible = s3ProviderFamiliesCompatible(
-            s3BaseProviderFamily(table_location_decomposed.scheme, base_storage_endpoint),
-            s3ProviderFamily(target_decomposed.scheme));
+            s3BaseProviderFamily("", base_storage_endpoint), target_provider_family);
 
         /// A table copied without rewriting metadata still uses its old `location`; re-root paths inside it.
         if (base_scheme_normalized == "s3" || base_scheme_normalized == "https" || base_scheme_normalized == "http")
         {
             auto base_s3_uri = parseMetadataS3URI(table_location, table_location_decomposed);
+            const bool location_families_compatible = s3ProviderFamiliesCompatible(
+                s3BaseProviderFamily(table_location_decomposed.scheme, base_s3_uri.endpoint), target_provider_family);
 
-            if (s3URIMatches(s3_uri, base_s3_uri.bucket, base_s3_uri.endpoint, target_scheme_normalized, provider_families_compatible)
+            if (s3URIMatches(s3_uri, base_s3_uri.bucket, base_s3_uri.endpoint, target_scheme_normalized, location_families_compatible)
                 && keyIsInsidePrefix(base_s3_uri.key, key_to_use, /*is_filesystem_path*/ false))
             {
                 check_base_storage_access();

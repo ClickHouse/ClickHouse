@@ -168,15 +168,34 @@ def test_gs_path_is_not_served_by_same_named_s3_bucket(started_cluster_iceberg_w
     _rewrite_manifests_and_reupload(
         started_cluster_iceberg_with_spark, host_path, base_path,
         lambda p: f"gs://{started_cluster_iceberg_with_spark.minio_bucket}/{base_path}/data/{os.path.basename(p)}")
+
+    # A copy on MinIO that keeps its source `gs://` location.
+    metadata_dir = os.path.join(host_path, "metadata")
+    source_location = f"gs://original/{base_path}"
+    for manifest_list in find_files(metadata_dir, ".avro"):
+        if os.path.basename(manifest_list).startswith("snap-"):
+            modify_avro_file(manifest_list, ["manifest_path"], lambda p: f"{source_location}/metadata/{os.path.basename(p)}")
+            started_cluster_iceberg_with_spark.default_s3_uploader.upload_file(
+                manifest_list, f"{base_path}/{os.path.relpath(manifest_list, host_path)}")
+    for metadata_json in find_files(metadata_dir, ".metadata.json"):
+        with open(metadata_json) as f:
+            metadata = json.load(f)
+        metadata["location"] = source_location
+        for snapshot in metadata.get("snapshots", []):
+            snapshot["manifest-list"] = f"{source_location}/metadata/{os.path.basename(snapshot['manifest-list'])}"
+        with open(metadata_json, "w") as f:
+            json.dump(metadata, f)
+        started_cluster_iceberg_with_spark.default_s3_uploader.upload_file(
+            metadata_json, f"{base_path}/{os.path.relpath(metadata_json, host_path)}")
     shutil.rmtree(temp_dir)
 
     _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
 
-    # GCS is unreachable here; a successful read would mean the MinIO bucket was used incorrectly.
+    # The `gs://` path needs its own client, which gets neither the MinIO client nor its credentials.
     error = instance.query_and_get_error(
         f"SELECT * FROM {TABLE_NAME} ORDER BY id "
         f"SETTINGS s3_request_timeout_ms = 3000, s3_connect_timeout_ms = 3000")
-    assert "alpha" not in error
+    assert "S3 access from user queries is not allowed to use the server's own credentials" in error, error
 
     instance.query(f"DETACH TABLE {TABLE_NAME}")
 
