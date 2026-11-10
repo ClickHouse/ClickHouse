@@ -908,6 +908,13 @@ def assert_authorization_forbidden(error, secret="user:pass"):
             "'TSV', 'x UInt64') SETTINGS http_max_tries = 1",
             id="failover",
         ),
+        # The second option is usable, so the read must not move on to it.
+        pytest.param(
+            "SELECT sum(x) FROM url("
+            "'http://user:pass@resolver:8087/data/2025/part1.tsv|http://resolver:8087/data/2025/part1.tsv', "
+            "'TSV', 'x UInt64') SETTINGS http_max_tries = 1",
+            id="failover_first",
+        ),
         pytest.param(
             "SELECT sum(x) FROM urlCluster('test_cluster_two_shards', "
             "'http://user:pass@resolver:8087/data/2025/part1.tsv', 'TSV', 'x UInt64')",
@@ -918,6 +925,14 @@ def assert_authorization_forbidden(error, secret="user:pass"):
                 "SELECT sum(x) FROM url('http://user:pass@resolver:8087/data/2025/part*.tsv', 'TSV', 'x UInt64')"
             ),
             id="wildcard",
+        ),
+        # Requests with the `Authorization` header get 403 there, so the read moves on to the second option.
+        pytest.param(
+            with_url_wildcard_setting(
+                "SELECT sum(x) FROM url('http://{user:pass@resolver:8087|resolver:8087}/data/auth_failover/part*.tsv', "
+                "'TSV', 'x UInt64')"
+            ),
+            id="wildcard_failover_first",
         ),
     ],
 )
