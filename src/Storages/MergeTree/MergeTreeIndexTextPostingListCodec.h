@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
+#include <Storages/MergeTree/PostingListWeightsCodec.h>
 
 #include <limits>
 #include <memory>

@@ -4,6 +4,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
+#include <Storages/MergeTree/PostingListWeightsCodec.h>
 #include <Storages/MergeTree/PostingListSegment.h>
 #include <Core/SettingsEnums.h>
 #include <algorithm>

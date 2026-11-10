@@ -134,8 +134,7 @@ private:
         else
         {
             postings_buf->seek(static_cast<off_t>(token_info.offsets[segment_index]), SEEK_SET);
-            postings_serialization.deserializeToArray(
-                *postings_buf, token_info, segment_index, row_ids, read_weights ? &weights : nullptr);
+            postings_serialization.deserializeToArray(*postings_buf, token_info, segment_index, row_ids, read_weights ? &weights : nullptr);
         }
 
         if (positions_buf)
@@ -536,10 +535,8 @@ private:
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Text index '{}' in part '{}' has no file with positions", index_name, part.name);
         }
 
-        PostingsSerialization postings_serialization(
-            PostingListCodecFactory::createPostingListCodec(index_header.codec_type), index_header.version, index_header.scoring);
-        postings_cursor.emplace(
-            std::move(postings_serialization), std::move(postings_buf), std::move(positions_buf), positions_file_size, weight_pos.has_value());
+        PostingsSerialization postings_serialization(PostingListCodecFactory::createPostingListCodec(index_header.codec_type), index_header.version, index_header.scoring);
+        postings_cursor.emplace(std::move(postings_serialization), std::move(postings_buf), std::move(positions_buf), positions_file_size, weight_pos.has_value());
     }
 
     /// Loads the header of the index in `part` if it is needed, and finds the dictionary blocks matching the token condition.
