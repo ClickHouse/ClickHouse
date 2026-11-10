@@ -1392,6 +1392,24 @@ def test_backup_required_privileges_address_default_database():
     node1.query("DROP DATABASE addrdb ON CLUSTER 'cluster' SYNC")
 
 
+def test_backup_restore_mixed_address_default_database():
+    # Some addresses of 'cluster_mixed_default_db' set `default_database` and some do not, so one
+    # dispatched query cannot resolve an unqualified table name the same way on every host.
+    node1.query("CREATE DATABASE addrdb ON CLUSTER 'cluster'")
+    node1.query("CREATE TABLE addrdb.tbl ON CLUSTER 'cluster' (x UInt8) ENGINE=MergeTree ORDER BY x")
+    node1.query("CREATE TABLE default.tbl ON CLUSTER 'cluster' (x UInt8) ENGINE=MergeTree ORDER BY x")
+
+    backup_name = new_backup_name()
+    error = "Mixed local default DB and shard default DB"
+    assert error in node1.query_and_get_error(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster_mixed_default_db' TO {backup_name}"
+    )
+    node1.query(f"BACKUP TABLE addrdb.tbl ON CLUSTER 'cluster_mixed_default_db' TO {backup_name}")
+    assert error in node1.query_and_get_error(
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster_mixed_default_db' FROM {backup_name}"
+    )
+
+
 def test_system_named_collections_key_mismatch():
     node1.query("CREATE NAMED COLLECTION backup_nc_mismatch AS key1 = 'value1'")
 
