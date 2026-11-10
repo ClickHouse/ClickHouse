@@ -32,9 +32,9 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
+#include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/makeASTSelectLatestSamples.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -746,13 +746,14 @@ void PrometheusHTTPProtocolAPI::getMetadata(
             make_intrusive<ASTLiteral>(metric_param));
 
     /// A row policy on the TimeSeries table restricts the metadata to the families of the metrics the policy lets through.
-    /// The inner tags table inherits that policy (see getEffectiveRowPolicyFilter), so the subquery is filtered by it:
+    /// The visible-metric-names subquery reads the tags target directly, so the translated policy is applied as its WHERE
+    /// (see makeRowPolicyFilterForTagsTable):
     /// AND hasAny(arrayMap(suffix -> concat(ifNull(toString(metric_family), ''), suffix), timeSeriesMetricTypeToSuffixes(ifNull(toString(type), ''))),
-    ///            (SELECT groupUniqArray(toString(metric_name)) FROM <tags>))
-    if (auto row_policy_filter = getEffectiveRowPolicyFilter(*time_series_storage, getContext()))
+    ///            (SELECT groupUniqArray(toString(metric_name)) FROM <tags> WHERE <translated policy>))
+    if (auto row_policy_filter = makeRowPolicyFilterForTagsTable(*time_series_storage, getContext()))
     {
         LOG_DEBUG(log, "Restricting the metadata to the metric families visible under the row policy filter: {}",
-                  row_policy_filter->expression->formatForLogging());
+                  row_policy_filter->formatForLogging());
 
         auto visible_metric_names_select = make_intrusive<ASTSelectQuery>();
         {
@@ -770,6 +771,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
             auto tables = make_intrusive<ASTTablesInSelectQuery>();
             tables->children.push_back(std::move(table));
             visible_metric_names_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+            visible_metric_names_select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(row_policy_filter));
         }
 
         auto visible_metric_names_union = make_intrusive<ASTSelectWithUnionQuery>();
