@@ -5,7 +5,13 @@ timeSeriesStoreTags:
 1	1	1	1	1	1	1	1	1	1	[('__name__','http_requests'),('env','dev'),('region','eu')]	[('__name__','http_request_by_region'),('region','us')]	[('__name__','http_request_by_region'),('region','us')]	[('__name__','http_requests_total')]	[('__name__','http_requests_total')]	[('__name__','http_requests_total')]	[]	1	1	1	1	1	1	1	1	1	1
 
 timeSeriesExtractTag:
-1	http_requests_count	dev	\N
+1	http_requests_count	dev	\N	1	1
+
+timeSeriesExtractTag mixed rows:
+2	2	2
+
+timeSeriesGroupToSamplingKey:
+[1,1,1,1,1,1]
 
 timeSeriesCopyTag:
 [('__name__','http_codes'),('env','dev'),('region','eu')]	[('__name__','http_codes'),('code','404'),('env','dev'),('region','eu')]	1	1	[('__name__','http_codes'),('code','404'),('region','eu')]

@@ -47,6 +47,10 @@ Pour activer cette fonction d’introspection :
 * Installez le paquet `clickhouse-common-static-dbg`.
 * Définissez le paramètre [`allow_introspection_functions`](/fr/reference/settings/session-settings/allow#allow_introspection_functions) sur `1`.
 
+<Note>
+  Cette fonction n’est pas déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -67,7 +71,7 @@ Renvoie un nom de fichier de code source et un numéro de ligne séparés par le
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -87,7 +91,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(94784076370703) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -106,7 +110,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -135,6 +139,10 @@ Pour activer cette fonction d’introspection :
 
 * Installez le paquet `clickhouse-common-static-dbg`.
 * Définissez le paramètre [`allow_introspection_functions`](/fr/reference/settings/session-settings/allow#allow_introspection_functions) sur `1`.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents avec les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -232,6 +240,10 @@ Introduit dans : v20.1.0
 
 Convertit une adresse de mémoire virtuelle située dans le processus du serveur ClickHouse en un symbole provenant des fichiers objets de ClickHouse.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents avec les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -248,11 +260,11 @@ Renvoie le symbole des fichiers objets de ClickHouse ou une chaîne vide si l’
 
 **Exemples**
 
-**Sélection de la première chaîne de la table système `trace_log`**
+**Sélection de la première chaîne de caractères de la table système `trace_log`**
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -272,7 +284,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -293,7 +305,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -348,7 +360,7 @@ Renvoie le nom de la fonction C++, ou une chaîne vide si le symbole n’est pas
 **Sélection de la première chaîne de caractères de la table système `trace_log`**
 
 ```sql title=Query
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -368,7 +380,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -389,7 +401,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response

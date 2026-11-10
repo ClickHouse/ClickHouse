@@ -1,0 +1,63 @@
+no join
+0	[]	[]	[]	[]
+single inner join
+1	['HASH']	['INNER']	['ALL']	[]
+join executed with its sides swapped
+1	['HASH']	['LEFT']	['ALL']	[]
+1	['HASH']	['RIGHT']	['ALL']	[]
+1	['HASH']	['RIGHT']	['ALL']	[]
+three tables, two joins
+2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
+cross join
+1	['CONSTANT']	['CROSS']	['ALL']	[]
+join engine table
+1	['HASH']	['LEFT']	['ANY']	[]
+asof join
+1	['HASH']	['LEFT']	['ASOF']	[]
+paste join
+1	['PASTE']	['PASTE']	['ALL']	[]
+every kind and strictness
+04891_join_count_matrix_01_all_inner	1	['INNER']	['ALL']
+04891_join_count_matrix_02_all_left	1	['LEFT']	['ALL']
+04891_join_count_matrix_03_all_right	1	['RIGHT']	['ALL']
+04891_join_count_matrix_04_all_full	1	['FULL']	['ALL']
+04891_join_count_matrix_05_any_inner	1	['INNER']	['ANY']
+04891_join_count_matrix_06_any_left	1	['LEFT']	['ANY']
+04891_join_count_matrix_07_any_right	1	['RIGHT']	['ANY']
+04891_join_count_matrix_08_right_any_left	1	['LEFT']	['RIGHT_ANY']
+04891_join_count_matrix_09_right_any_right	1	['RIGHT']	['RIGHT_ANY']
+04891_join_count_matrix_10_any_inner_rewritten_to_semi_left	1	['LEFT']	['SEMI']
+04891_join_count_matrix_11_semi_left	1	['LEFT']	['SEMI']
+04891_join_count_matrix_12_semi_right	1	['RIGHT']	['SEMI']
+04891_join_count_matrix_13_semi_without_side	1	['LEFT']	['SEMI']
+04891_join_count_matrix_14_anti_left	1	['LEFT']	['ANTI']
+04891_join_count_matrix_15_anti_right	1	['RIGHT']	['ANTI']
+04891_join_count_matrix_16_anti_without_side	1	['LEFT']	['ANTI']
+04891_join_count_matrix_17_asof_inner	1	['INNER']	['ASOF']
+04891_join_count_matrix_18_asof_left	1	['LEFT']	['ASOF']
+04891_join_count_matrix_19_cross	1	['CROSS']	['ALL']
+04891_join_count_matrix_20_comma_reported_as_cross	1	['CROSS']	['ALL']
+04891_join_count_matrix_21_comma_reported_as_inner	1	['INNER']	['ALL']
+04891_join_count_matrix_22_paste	1	['PASTE']	['ALL']
+full sorting merge
+1	['FULL_SORTING_MERGE']	['INNER']	['ALL']	[]
+parallel full sorting merge
+1	['FULL_SORTING_MERGE']	['LEFT']	['ASOF']	[]
+1	['PARALLEL_FULL_SORTING_MERGE']	['INNER']	['ALL']	[]
+ie join
+1	['IE_JOIN']	['INNER']	['ALL']	[]
+1	['IE_JOIN']	['LEFT']	['ANTI']	[]
+explain reports the joins of the pipeline it builds
+1	['HASH']	['INNER']	['ALL']	[]
+1	['HASH']	['INNER']	['ALL']	[]
+1	['HASH']	['INNER']	['ALL']	[]
+grace hash spilling
+1	['GRACE_HASH']	['INNER']	['ALL']	['join']
+partial merge spilling
+1	['PARTIAL_MERGE']	['INNER']	['ALL']	['join']
+hash switching to grace hash
+1	['GRACE_HASH','HASH']	['INNER']	['ALL']	['join']
+group by spilling
+0	[]	[]	[]	['aggregation']
+order by spilling
+0	[]	[]	[]	['sort']

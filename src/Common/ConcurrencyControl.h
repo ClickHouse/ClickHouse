@@ -73,6 +73,9 @@ struct ConcurrencyControlState
     SlotCount cur_concurrency = 0;
     CurrentMetrics::Increment max_concurrency_metric;
 
+    // Number of live allocations (of all schedulers), used to estimate the fair share of a new allocation
+    size_t allocations = 0;
+
     // Rollback lever for the lazy allocation strategy. When false, pipelines bypass the
     // lazy `allocate(1, 1) + setMax` growth path and use eager `allocate(1, num_threads)`
     // directly. Read without locking (relaxed).
@@ -425,6 +428,11 @@ public:
 
     // Sets value of the current slot limit
     void setMaxConcurrency(SlotCount value);
+
+    // Estimates how many slots a new allocation can expect to hold: the slot limit divided evenly
+    // between the live allocations and the new one (at least one slot), or `UnlimitedSlots` if there is no limit.
+    // It is used to choose the parallelism of a query before its pipeline allocates slots.
+    SlotCount getFairShare() const;
 
     // Sets the current scheduling algorithm. Returns true if `value` is valid
     bool setScheduler(const String & value);

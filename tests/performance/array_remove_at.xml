@@ -1,0 +1,9 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT arrayMap(x -&gt; number + x, range(32)) AS arr, toInt32(number % 32 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
+    <query>SELECT arrayRemoveAt(range(32), toInt32(number % 32 + 1)) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT arrayRemoveAt(arr, 17) FROM (SELECT arrayMap(x -&gt; number + x, range(32)) AS arr FROM numbers(1000000)) FORMAT Null</query>
+</test>

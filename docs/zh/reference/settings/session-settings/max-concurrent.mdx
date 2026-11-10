@@ -18,7 +18,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-如果此设置的值小于或等于当前正在同时处理的查询数量，则抛出异常。
+如果当前正在同时处理的查询数量达到或超过此设置的值，则抛出异常。
 
 示例：可将所有用户的 `max_concurrent_queries_for_all_users` 设置为 99，而数据库管理员可将自己的值设为 100，这样即使在 server 过载时，仍可运行查询进行调查。
 

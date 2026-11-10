@@ -1,0 +1,146 @@
+"""A `HDFS` database must not serve a table from its cache unchecked.
+
+The cache is keyed on the table name alone, so an entry one user resolved is handed to every later
+caller. Both the read source grant and the remote host filter therefore have to be checked above it.
+The same shape was fixed for the `Filesystem` database in
+https://github.com/ClickHouse/ClickHouse/issues/118042.
+"""
+
+import uuid
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.config_manager import ConfigManager
+
+if is_arm():
+    pytestmark = pytest.mark.skip
+
+cluster = ClickHouseCluster(__file__)
+node = cluster.add_instance("node", with_hdfs=True, stay_alive=True)
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def table_function_calls(query_id):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    rows = node.query(
+        "SELECT ProfileEvents['TableFunctionExecute'] FROM system.query_log "
+        f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    ).splitlines()
+    assert len(rows) == 1, rows
+    return int(rows[0])
+
+
+def test_hdfs_database_cache_is_checked(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    for name in ("warm.tsv", "cold.tsv", "cold2.tsv"):
+        hdfs_api.write_data("/" + name, "7\n")
+
+    # The engine rejects a source that carries a path, so table names here are relative, which is the
+    # form the `EXISTS TABLE` arms below need.
+    node.query("CREATE DATABASE hdfs_db ENGINE = HDFS('hdfs://hdfs1:9000')")
+    # The source grant is the variable under test, so the table grant is deliberately broad and cannot
+    # confound the result. It also shows that it does not confer the source grant by itself.
+    node.query("CREATE USER u")
+    node.query("GRANT SELECT ON *.* TO u")
+
+    # A user holding the grant resolves the name, which is what caches the storage for it.
+    assert node.query("SELECT * FROM hdfs_db.`warm.tsv`") == "7\n"
+
+    # `tryGetTable` reports a denied resolution as `UNKNOWN_TABLE` (code 60). What this asserts is that
+    # the cached name is refused exactly like the name that was never resolved.
+    error = node.query_and_get_error("SELECT * FROM hdfs_db.`warm.tsv`", user="u")
+    assert "Code: 60." in error, error
+    error = node.query_and_get_error("SELECT * FROM hdfs_db.`cold.tsv`", user="u")
+    assert "Code: 60." in error, error
+
+    # `EXISTS TABLE` needs only `SHOW TABLES`, so it must answer alike for a cached name and for one
+    # that was never resolved, or it reports which names other users have read.
+    assert node.query("EXISTS TABLE hdfs_db.`warm.tsv`", user="u") == "1\n"
+    assert node.query("EXISTS TABLE hdfs_db.`never.tsv`", user="u") == "1\n"
+    # A name that forms no usable URL still answers 0, and answers it to everyone: the two lines above
+    # are a measurement, and this probe does not depend on the grant.
+    assert node.query("EXISTS TABLE hdfs_db.`hdfs://hdfs1:9000`", user="u") == "0\n"
+    assert node.query("EXISTS TABLE hdfs_db.`hdfs://hdfs1:9000`") == "0\n"
+
+    node.query("GRANT READ ON HDFS TO u")
+
+    # With the grant the cached name is served. `TableFunctionExecute` counts calls of the table
+    # function, which serving from the cache does not make, so a read that counts none was served
+    # from the cache. The count is the read's own: the server also runs table functions by itself.
+    warm_id = str(uuid.uuid4())
+    assert (
+        node.query("SELECT * FROM hdfs_db.`warm.tsv`", user="u", query_id=warm_id)
+        == "7\n"
+    )
+    assert table_function_calls(warm_id) == 0
+    # Resolving a name that is not cached is the control that counts a call.
+    cold_id = str(uuid.uuid4())
+    assert node.query("SELECT * FROM hdfs_db.`cold2.tsv`", query_id=cold_id) == "7\n"
+    assert table_function_calls(cold_id) > 0
+
+    # A grant restricted by URL must keep working: the filter is matched against the URI the table
+    # function reports, which for HDFS is the host of the table and not its path.
+    node.query("CREATE USER f")
+    node.query("GRANT SELECT ON *.* TO f")
+    node.query("GRANT READ ON HDFS('hdfs://hdfs1:9000') TO f")
+    assert node.query("SELECT * FROM hdfs_db.`warm.tsv`", user="f") == "7\n"
+
+    # The host filter is re-read on `SYSTEM RELOAD CONFIG`, which keeps the cache, so a cached table
+    # must stop being served once its host is no longer allowed. These run as the fully granted user,
+    # so the grant cannot be the cause.
+    with ConfigManager() as cm:
+        cm.add_main_config(node, "configs/allowlist.xml")
+        error = node.query_and_get_error("SELECT * FROM hdfs_db.`warm.tsv`")
+        assert "Code: 60." in error, error
+        assert node.query("EXISTS TABLE hdfs_db.`warm.tsv`") == "0\n"
+        # A path that reports the refusal instead of masking it names the URL that was rejected.
+        error = node.query_and_get_error("INSERT INTO hdfs_db.`warm.tsv` VALUES (1)")
+        assert "UNACCEPTABLE_URL" in error, error
+        # The name that is not in the cache is refused the same way, as it already was.
+        error = node.query_and_get_error("SELECT * FROM hdfs_db.`cold.tsv`")
+        assert "Code: 60." in error, error
+
+    # Removing the file and reloading again restores the answer, so the refusals above came from the
+    # filter and not from an evicted or poisoned cache entry.
+    assert node.query("SELECT * FROM hdfs_db.`warm.tsv`") == "7\n"
+
+    node.query("DROP DATABASE hdfs_db SYNC")
+    node.query("DROP USER u, f")
+
+
+def test_hdfs_database_restore_is_checked(started_cluster):
+    # `RESTORE DATABASE` replays a definition taken from a backup, which is user-controlled input, so
+    # the remote host filter must reject it like a `CREATE`. Only the server's replay of its own stored
+    # metadata is exempt. `Memory` backups live in the session, hence the shared `session_id`.
+    session = {"session_id": f"restore_{uuid.uuid4().hex}"}
+    node.http_query(
+        "CREATE DATABASE hdfs_restore_db ENGINE = HDFS('hdfs://hdfs1:9000')",
+        method="POST",
+        params=session,
+    )
+    node.http_query(
+        "BACKUP DATABASE hdfs_restore_db TO Memory('b')", method="POST", params=session
+    )
+    node.query("DROP DATABASE hdfs_restore_db SYNC")
+
+    with ConfigManager() as cm:
+        cm.add_main_config(node, "configs/allowlist.xml")
+        error = node.http_query_and_get_error(
+            "RESTORE DATABASE hdfs_restore_db FROM Memory('b')",
+            method="POST",
+            params=session,
+        )
+        assert "UNACCEPTABLE_URL" in error, error
+        # The definition is rejected before it is persisted.
+        assert node.query("EXISTS DATABASE hdfs_restore_db") == "0\n"
+
+    node.query("DROP DATABASE IF EXISTS hdfs_restore_db SYNC")

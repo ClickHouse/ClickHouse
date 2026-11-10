@@ -37,9 +37,6 @@
           "$ref": "./products/managed-postgres/navigation.json"
         },
         {
-          "$ref": "./clickstack/navigation.json"
-        },
-        {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
           "item": "Langfuse"
@@ -50,7 +47,7 @@
           "item": "Código aberto"
         },
         {
-          "$ref": "./products/agentic-data-stack/navigation.json"
+          "$ref": "./clickstack/navigation.json"
         },
         {
           "$ref": "./chdb/navigation.json"

@@ -1,0 +1,5 @@
+SELECT * APPLY (toString, \'x\\\'y\') FROM t
+SELECT * APPLY (toString, \'a\\\\b\') FROM t
+SELECT * APPLY `to String` FROM t
+SELECT * APPLY (toString, \'p_\') FROM t
+1

@@ -203,6 +203,9 @@ function makeElement(tag) {
         transposeIfNeeded() {},
         _changeTableLayout() {},
         finalizeFailedTable() {},
+        /// Read by `postSingle` before a failed run drops its page (the offset the streamed rows
+        /// were numbered from); the stub never paginates, so it is the unpaginated first page.
+        _rowNumberOffset() { return 0; },
         start() {},
         finish() {},
         updateProgress() {},
@@ -432,7 +435,7 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
         atob: (b64) => Buffer.from(b64, 'base64').toString('binary'),
         btoa: (bin) => Buffer.from(bin, 'binary').toString('base64'),
         TextEncoder, TextDecoder,
-        URL, URLSearchParams,
+        URL, URLSearchParams, FormData,
         Event, CustomEvent,
         AbortController,
         structuredClone,
@@ -1257,8 +1260,8 @@ async function main() {
         /// looks like BETWEEN the click and the run.
         vm.runInContext(
             "(() => { globalThis.__launched = 0; postOne = async () => { ++globalThis.__launched; };" +
-            " const t = getActiveTab(); t.sortColumns.push({ name: 'a', desc: true });" +
-            " commitResultShape({ _ownerTab: t, _queryText: t.query }); })()",
+            " const t = getActiveTab(); const c = activeCell(t); c.sortColumns.push({ name: 'a', desc: true });" +
+            " commitResultShape({ _ownerCell: c, _queryText: c.query }); })()",
             r.sandbox);
         await sleep(50);
         check('shape-not-stamped-before-run', 'the shape change launched the re-run',
@@ -1273,7 +1276,7 @@ async function main() {
             r.sandbox.history.state);
         /// And the launch DOES stamp it, once it has resolved the shape for the statement it runs -
         /// this is the call `postSingle` makes right after `resolveShapeForRun`.
-        vm.runInContext('persistResultShape(getActiveTab())', r.sandbox);
+        vm.runInContext('persistResultShape(activeCell(getActiveTab()))', r.sandbox);
         await sleep(50);
         check('shape-not-stamped-before-run', 'the run stamps the shape it resolved',
             new URL(r.sandbox.location.href).searchParams.get('sort_columns')
@@ -1636,6 +1639,157 @@ async function main() {
         check('close-folds-draft', 'Back recreates the closed tab with the draft',
             vm.runInContext("tabs.some(t => t.query === 'SELECT 2')", r.sandbox),
             vm.runInContext("JSON.stringify(tabs.map(t => t.query))", r.sandbox));
+    }
+
+    /// Guard (dirty-startup Format): clicking "Format" while the saved workspace is still loading
+    /// is a user action on the live editor. It must mark the bootstrap workspace dirty before its
+    /// server round-trip (`runScenario` asserts that `duringLoad` did), otherwise reconciliation can
+    /// activate the saved tab and the formatted text is discarded as stale when the response arrives.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            openDelayMs: 30,
+            duringLoad: (sandbox) => {
+                vm.runInContext(
+                    "query_area.value = 'select 999';" +
+                    "format_button.dispatchEvent({ type: 'click', isTrusted: true });",
+                    sandbox);
+            },
+            seedTabs: [
+                { id: 't8', title: 'Report', query: 'SELECT 1', params: {}, result: null, lastSavedQuery: 'SELECT 1' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+        check('dirty-startup-format', 'reconciliation keeps the live editor text the Format click was sent for',
+            vm.runInContext("query_area.value", r.sandbox) === 'select 999',
+            vm.runInContext("query_area.value", r.sandbox));
+    }
+
+    /// Guard (Format across a connection change): the result of a `formatQuery` request sent to the
+    /// previous server/user must not replace the editor text once the connection has changed, even
+    /// though the tab and the text are the same. The control run (no connection change) proves the
+    /// stubbed round-trip does apply the result.
+    /// The stubbed server "formats" each statement (`param_q<N>`) by upper-casing it and returns it
+    /// as `f<N>`, like `SELECT formatQuery({q0:String}) AS f0, ...` does.
+    const formatScenario = async (config) => {
+        const r = await runScenario(js, Object.assign({
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't8', title: 'Report', query: 'select 1', params: {}, result: null, lastSavedQuery: 'select 1' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+        }, config));
+        const query_area = r.sandbox.document.getElementById('query');
+        r.sandbox.document.execCommand = (command, show_ui, text) => {
+            query_area.value = text;
+            return true;
+        };
+        /// `requests` collects the statements of every request sent; `error` makes the stubbed
+        /// server answer with an exception, as for a syntax error in one of the statements.
+        const formatWith = async (text, during_request, { error = false, wait_ms = 50 } = {}) => {
+            let respond;
+            const responded = new Promise(resolve => { respond = resolve; });
+            const requests = [];
+            r.sandbox.fetch = async (url, init) => {
+                const statements = [];
+                for (let i = 0; init.body.has(`param_q${i}`); ++i) statements.push(init.body.get(`param_q${i}`));
+                requests.push(statements);
+                await responded;
+                const row = {};
+                statements.forEach((statement, i) => { row[`f${i}`] = statement.toUpperCase(); });
+                return {
+                    ok: !error,
+                    status: error ? 400 : 200,
+                    headers: { get: () => null },
+                    text: async () => 'Code: 62. DB::Exception: Syntax error',
+                    json: async () => ({ data: [row] }),
+                };
+            };
+            vm.runInContext("query_area.value = " + JSON.stringify(text) + ";" +
+                "format_button.dispatchEvent({ type: 'click', isTrusted: true });", r.sandbox);
+            during_request();
+            respond();
+            await sleep(wait_ms);
+            return { text: query_area.value, requests };
+        };
+        return { r, formatWith };
+    };
+
+    {
+        const { formatWith } = await formatScenario({});
+        const control = await formatWith('select 1', () => {});
+        check('format-connection-change', 'the Format result is applied when the connection is unchanged',
+            control.text === 'SELECT 1', control.text);
+    }
+    {
+        const { r, formatWith } = await formatScenario({});
+        const switched = await formatWith('select 1', () => {
+            vm.runInContext("user_elem.value = 'other_user';" +
+                "user_elem.dispatchEvent({ type: 'input', isTrusted: true });", r.sandbox);
+        });
+        check('format-connection-change', 'the Format result for the previous connection is discarded',
+            switched.text === 'select 1', switched.text);
+    }
+
+    /// Guard (Format of several statements): every statement is formatted separately and replaced
+    /// in place; the delimiters, whitespace and comments between the statements are kept as is.
+    {
+        const { formatWith } = await formatScenario({});
+        const multi = await formatWith('select 1;\n-- comment; not a delimiter\nselect 2 ;  ', () => {});
+        check('format-multi-statement', 'each statement is sent separately, without delimiters and comments',
+            JSON.stringify(multi.requests) === JSON.stringify([['select 1', 'select 2']]), multi.requests);
+        check('format-multi-statement', 'each statement is replaced in place',
+            multi.text === 'SELECT 1;\n-- comment; not a delimiter\nSELECT 2 ;  ', multi.text);
+
+        /// All or nothing: an error in any statement leaves the whole editor text unchanged.
+        const failed = await formatWith('select 1; selec 2', () => {}, { error: true });
+        check('format-multi-statement', 'an error in one statement leaves the editor unchanged',
+            failed.text === 'select 1; selec 2', failed.text);
+
+        /// The lexer stops at an unterminated string literal or comment: the remainder must still be
+        /// sent (for the server to report the error), not silently dropped while the valid prefix
+        /// is formatted.
+        const unterminated = await formatWith("select 1; select 2 'unterminated", () => {});
+        check('format-multi-statement', 'the text after a lexer error is sent with the last statement',
+            JSON.stringify(unterminated.requests) === JSON.stringify([['select 1', "select 2 'unterminated"]]),
+            unterminated.requests);
+        const only_comment = await formatWith('select 1; /* unterminated', () => {});
+        check('format-multi-statement', 'an unterminated comment after the last delimiter is sent as a statement',
+            JSON.stringify(only_comment.requests) === JSON.stringify([['select 1', '/* unterminated']]),
+            only_comment.requests);
+
+        /// A leading byte order mark is whitespace for the lexer, so it stays outside the statements,
+        /// but it is a part of the text: the statement offsets must account for it, or the
+        /// statements are cut short (`\uFEFFselect ` instead of `select 1`).
+        const bom = await formatWith('\uFEFFselect 1;', () => {});
+        check('format-multi-statement', 'a leading BOM does not shift the statement boundaries',
+            JSON.stringify(bom.requests) === JSON.stringify([['select 1']]), bom.requests);
+        check('format-multi-statement', 'a leading BOM is kept in the editor',
+            bom.text === '\uFEFFSELECT 1;', bom.text);
+        const bom_multi = await formatWith('\uFEFFselect 1; select 2;', () => {});
+        check('format-multi-statement', 'a leading BOM does not shift the boundaries of later statements',
+            JSON.stringify(bom_multi.requests) === JSON.stringify([['select 1', 'select 2']]),
+            bom_multi.requests);
+    }
+
+    /// Guard (Format across a connection change during the lexer load): the first click loads the
+    /// lexer before the request is built; a connection selected meanwhile must not receive the
+    /// text the click was made for.
+    {
+        const { r, formatWith } = await formatScenario({ wasmInstantiateDelayMs: 1000 });
+        check('format-connection-change-lexer-load', 'the lexer module is still loading when the scenario acts',
+            vm.runInContext('typeof lexer_module', r.sandbox) === 'undefined',
+            vm.runInContext('typeof lexer_module', r.sandbox));
+        const switched = await formatWith('select 1', () => {
+            vm.runInContext("user_elem.value = 'other_user';" +
+                "user_elem.dispatchEvent({ type: 'input', isTrusted: true });", r.sandbox);
+        }, { wait_ms: 1500 });
+        check('format-connection-change-lexer-load', 'no request is sent for the previous connection',
+            switched.requests.length === 0, switched.requests);
+        check('format-connection-change-lexer-load', 'the editor text is unchanged',
+            switched.text === 'select 1', switched.text);
     }
 
     if (failures) {

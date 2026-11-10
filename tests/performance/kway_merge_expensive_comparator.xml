@@ -1,0 +1,53 @@
+<test>
+    <settings>
+        <max_threads>16</max_threads>
+    </settings>
+
+    <!-- The merge phase of a full sort with an expensive comparator (several columns, collation).
+         The k-way merge data structure and the number of comparisons it performs dominate here.
+         The single-column string queries guard the specialized cursors that stay on the heap. -->
+    <query>SELECT number % 100 AS k1, toString(cityHash64(number)) AS k2 FROM numbers_mt(20000000) ORDER BY k1, k2 FORMAT Null</query>
+    <query>SELECT number % 2 AS k1, number % 4 AS k2, number % 8 AS k3, cityHash64(number) AS k4 FROM numbers_mt(20000000) ORDER BY k1, k2, k3, k4 FORMAT Null</query>
+    <query>SELECT char(65 + number % 26) || toString(cityHash64(number)) AS s FROM numbers_mt(5000000) ORDER BY s COLLATE 'en' FORMAT Null</query>
+    <query>SELECT toString(cityHash64(number)) AS s FROM numbers_mt(20000000) ORDER BY s FORMAT Null</query>
+    <query>SELECT toString(cityHash64(number % 1000)) AS s FROM numbers_mt(50000000) ORDER BY s FORMAT Null</query>
+
+    <!-- The special merge algorithms always merge through the generic `SortCursor`, but a
+         single-column key without a collation is cheap to compare and must keep the heap
+         container; a multi-column key takes the sorted array. Fully overlapping parts make
+         the queue maintenance dominate. -->
+    <create_query>CREATE TABLE replacing_cheap_key (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE replacing_expensive_key (k1 UInt64, k2 UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY (k1, k2)</create_query>
+    <fill_query>SYSTEM STOP MERGES replacing_cheap_key</fill_query>
+    <fill_query>SYSTEM STOP MERGES replacing_expensive_key</fill_query>
+    <fill_query>INSERT INTO replacing_cheap_key SELECT number, 1 FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO replacing_cheap_key SELECT number, 2 FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO replacing_cheap_key SELECT number, 3 FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO replacing_cheap_key SELECT number, 4 FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO replacing_expensive_key SELECT number, number, 1 FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO replacing_expensive_key SELECT number, number, 2 FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO replacing_expensive_key SELECT number, number, 3 FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO replacing_expensive_key SELECT number, number, 4 FROM numbers(3000000)</fill_query>
+
+    <query>SELECT * FROM replacing_cheap_key FINAL FORMAT Null SETTINGS split_parts_ranges_into_intersecting_and_non_intersecting_final = 0, split_intersecting_parts_ranges_into_layers_final = 0, enable_vertical_final = 0</query>
+    <query>SELECT * FROM replacing_expensive_key FINAL FORMAT Null SETTINGS split_parts_ranges_into_intersecting_and_non_intersecting_final = 0, split_intersecting_parts_ranges_into_layers_final = 0, enable_vertical_final = 0</query>
+
+    <!-- The insert-time merge: `optimize_on_insert` is on by default, so every `INSERT` into a
+         `ReplacingMergeTree` merges the already sorted block through `ReplacingSortedAlgorithm`
+         with a single input. A single cursor always reports its whole remainder as one batch,
+         so this is where the batch interface must cost nothing when there is nothing to gain:
+         with unique keys the queue has to behave exactly like the heap, while a block with runs
+         of duplicates is where skipping to the end of a run pays off. -->
+    <create_query>CREATE TABLE replacing_insert_unique (k UInt64) ENGINE = ReplacingMergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE replacing_insert_duplicates (k UInt64) ENGINE = ReplacingMergeTree ORDER BY k</create_query>
+    <create_query>SYSTEM STOP MERGES replacing_insert_unique</create_query>
+    <create_query>SYSTEM STOP MERGES replacing_insert_duplicates</create_query>
+
+    <query>INSERT INTO replacing_insert_unique SELECT number FROM numbers(20000000) SETTINGS max_threads = 1, max_insert_threads = 1</query>
+    <query>INSERT INTO replacing_insert_duplicates SELECT number DIV 10 FROM numbers(20000000) SETTINGS max_threads = 1, max_insert_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS replacing_cheap_key</drop_query>
+    <drop_query>DROP TABLE IF EXISTS replacing_expensive_key</drop_query>
+    <drop_query>DROP TABLE IF EXISTS replacing_insert_unique</drop_query>
+    <drop_query>DROP TABLE IF EXISTS replacing_insert_duplicates</drop_query>
+</test>

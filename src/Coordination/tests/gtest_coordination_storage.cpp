@@ -8,12 +8,16 @@
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/Stopwatch.h>
+
+#include <map>
 #include <unordered_set>
 
 TEST_P(CoordinationTest, TestSystemNodeModify)
 {
     using namespace Coordination;
-    int64_t zxid{0};
+    /// Zxid 0 is reserved for "not assigned yet" (see KeeperRequestBatch::first_zxid); real zxids start at 1.
+    int64_t zxid{1};
 
     // On INIT we abort when a system path is modified
     this->keeper_context->setServerState(KeeperContext::Phase::RUNNING);
@@ -23,7 +27,7 @@ TEST_P(CoordinationTest, TestSystemNodeModify)
     {
         auto request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = path;
-        storage.preprocessRequest(request, 0, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 0, 0, zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(request, 0, zxid);
         ASSERT_FALSE(responses.empty());
 
@@ -43,6 +47,95 @@ TEST_P(CoordinationTest, TestSystemNodeModify)
     assert_create("/keeper1/test", Error::ZOK);
 }
 
+/// Zxid bookkeeping for SessionID requests, see KeeperRequestBatch::ownsZxids.
+///
+/// A batch of exactly one SessionID request is stamped with a zxid by the leader but must not
+/// reserve it: old leaders wrote such entries followed by another entry with the same zxid, so
+/// replaying an old log requires accepting the reuse. Any other batch (several SessionID requests,
+/// or SessionID mixed with regular requests) owns its zxid range and must advance the committed
+/// zxid on commit. Otherwise the leader hands the same zxids out again and followers, which still
+/// have the batch in uncommitted_batches at that point, fail with "Got new ZXID smaller or equal
+/// to current ZXID" or trip the leader-dedupe chassert in preprocessBatch.
+TEST_P(CoordinationTest, TestSessionIDBatchZxid)
+{
+    using namespace Coordination;
+
+    this->keeper_context->setServerState(KeeperContext::Phase::RUNNING);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+
+    const auto make_session_id_request = []
+    {
+        auto request = std::make_shared<ZooKeeperSessionIDRequest>();
+        request->session_timeout_ms = 1000;
+        return DB::KeeperRequestForSession{.session_id = -1, .request = request};
+    };
+    const auto make_create_request = [](const std::string & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        return DB::KeeperRequestForSession{.session_id = 1, .request = request};
+    };
+
+    /// Same sequence as KeeperStateMachine: preprocess the batch, then commit each request
+    /// (getSessionID for SessionID, processOneRequest for the rest) and finish the batch with
+    /// endProcessBatch. `first_zxid` is what the leader would stamp, i.e. the next unreserved zxid.
+    const auto commit_batch = [&](std::vector<DB::KeeperRequestForSession> requests)
+    {
+        DB::KeeperRequestBatch batch;
+        batch.requests = std::move(requests);
+        batch.first_zxid = storage.getNextZXID();
+        storage.preprocessBatch(batch, /*check_acl=*/false);
+        for (size_t i = 0; i < batch.requests.size(); ++i)
+        {
+            const auto & request_for_session = batch.requests[i];
+            if (request_for_session.request->getOpNum() == OpNum::SessionID)
+            {
+                storage.getSessionID(1000);
+            }
+            else
+            {
+                auto responses = storage.processOneRequest(
+                    request_for_session.request, request_for_session.session_id, batch.getZxid(i), /*produce_response=*/true);
+                ASSERT_EQ(responses.size(), 1);
+                ASSERT_EQ(responses[0].response->error, Error::ZOK);
+            }
+        }
+        storage.endProcessBatch(batch);
+    };
+
+    /// 1. A lone SessionID request: stamped with zxid 1, but the zxid is not reserved.
+    ASSERT_EQ(storage.getNextZXID(), 1);
+    ASSERT_NO_FATAL_FAILURE(commit_batch({make_session_id_request()}));
+    ASSERT_EQ(storage.getZXID(), 0) << "a lone SessionID request must not advance the committed zxid";
+    ASSERT_EQ(storage.getNextZXID(), 1) << "a lone SessionID request must not reserve its zxid";
+
+    /// The old-log shape: the next entry reuses zxid 1 and must be accepted.
+    ASSERT_NO_FATAL_FAILURE(commit_batch({make_create_request("/after_lone_session_id")}));
+    ASSERT_EQ(storage.getZXID(), 1);
+
+    /// 2. Several SessionID requests in one batch own zxids 2..3 and advance the committed zxid.
+    ASSERT_NO_FATAL_FAILURE(commit_batch({make_session_id_request(), make_session_id_request()}));
+    ASSERT_EQ(storage.getZXID(), 3) << "committing a multi-request SessionID batch did not advance the committed zxid";
+    ASSERT_EQ(storage.getNextZXID(), 4) << "the zxid range of the committed SessionID batch is handed out again";
+
+    /// A second such batch with the same request count is exactly the shape that collided with
+    /// the first one (same zxid range, same nodes digest) when the zxids were reused.
+    ASSERT_NO_FATAL_FAILURE(commit_batch({make_session_id_request(), make_session_id_request()}));
+    ASSERT_EQ(storage.getZXID(), 5);
+
+    /// 3. SessionID mixed with regular requests, in both positions: zxids 6..7 and 8..9.
+    ASSERT_NO_FATAL_FAILURE(commit_batch({make_session_id_request(), make_create_request("/after_session_id_in_batch")}));
+    ASSERT_EQ(storage.getZXID(), 7);
+    ASSERT_NO_FATAL_FAILURE(commit_batch({make_create_request("/before_session_id_in_batch"), make_session_id_request()}));
+    ASSERT_EQ(storage.getZXID(), 9);
+    ASSERT_EQ(storage.getNextZXID(), 10);
+
+    /// 4. And a plain request after all that gets the next zxid.
+    ASSERT_NO_FATAL_FAILURE(commit_batch({make_create_request("/plain")}));
+    ASSERT_EQ(storage.getZXID(), 10);
+}
+
 TEST_P(CoordinationTest, TestCheckNotExistsRequest)
 {
     using namespace DB;
@@ -58,7 +151,7 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
         const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
         int new_zxid = ++zxid;
         create_request->path = path;
-        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(create_request, 1, new_zxid);
 
         EXPECT_GE(responses.size(), 1);
@@ -72,7 +165,7 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
     {
         SCOPED_TRACE("CheckNotExists returns ZOK");
         int new_zxid = ++zxid;
-        storage.preprocessRequest(check_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(check_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(check_request, 1, new_zxid);
         EXPECT_GE(responses.size(), 1);
         auto error = responses[0].response->error;
@@ -87,7 +180,7 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
     {
         SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");
         int new_zxid = ++zxid;
-        storage.preprocessRequest(check_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(check_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(check_request, 1, new_zxid);
         EXPECT_GE(responses.size(), 1);
         auto error = responses[0].response->error;
@@ -98,7 +191,7 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
         SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS for same version");
         int new_zxid = ++zxid;
         check_request->version = node_version;
-        storage.preprocessRequest(check_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(check_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(check_request, 1, new_zxid);
         EXPECT_GE(responses.size(), 1);
         auto error = responses[0].response->error;
@@ -109,7 +202,7 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
         SCOPED_TRACE("CheckNotExists returns ZOK for different version");
         int new_zxid = ++zxid;
         check_request->version = node_version + 1;
-        storage.preprocessRequest(check_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(check_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(check_request, 1, new_zxid);
         EXPECT_GE(responses.size(), 1);
         auto error = responses[0].response->error;
@@ -130,7 +223,7 @@ TEST_P(CoordinationTest, TestDeterministicPreprocess)
 
     const auto process_create = [](DB::KeeperStorage & storage, const auto & request, int64_t zxid)
     {
-        storage.preprocessRequest(request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(request, 1, zxid);
         EXPECT_GE(responses.size(), 1);
         EXPECT_EQ(responses[0].response->error, Error::ZOK);
@@ -154,7 +247,7 @@ TEST_P(CoordinationTest, TestDeterministicPreprocess)
     commit_initial_data(storage1);
 
     for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
-        storage1.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
+        storage1.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*log_idx=*/zxid);
 
     /// create identical new storage
     const auto storage2_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
@@ -165,7 +258,7 @@ TEST_P(CoordinationTest, TestDeterministicPreprocess)
     /// (previously this test was testing something completely different here,
     /// but that code path was removed, and now this test is not very interesting)
     for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
-        storage2.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
+        storage2.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*log_idx=*/zxid);
 
     const auto commit_unprocessed = [&](DB::KeeperStorage & storage)
     {
@@ -220,7 +313,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
         create_request->is_ephemeral = create_mode == zkutil::CreateMode::Ephemeral || create_mode == zkutil::CreateMode::EphemeralSequential;
         create_request->is_sequential = create_mode == zkutil::CreateMode::PersistentSequential || create_mode == zkutil::CreateMode::EphemeralSequential;
 
-        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(create_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -235,7 +328,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
         remove_request->path = path;
         remove_request->version = version;
 
-        storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         return storage.processRequest(remove_request, 1, new_zxid);
     };
 
@@ -247,7 +340,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
         remove_request->path = path;
         remove_request->remove_nodes_limit = remove_nodes_limit;
 
-        storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         return storage.processRequest(remove_request, 1, new_zxid);
     };
 
@@ -258,7 +351,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
         const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
         exists_request->path = path;
 
-        storage.preprocessRequest(exists_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(exists_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -446,7 +539,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
         const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
         exists_request->path = path;
 
-        storage.preprocessRequest(exists_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(exists_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -472,7 +565,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
         ops.push_back(zkutil::makeRemoveRequest("/A", -1));
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(request, 1, new_zxid);
         ops.pop_back();
 
@@ -488,7 +581,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
         ops.push_back(makeRemoveRecursiveRequest("/A", 4));
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(request, 1, new_zxid);
         ops.pop_back();
 
@@ -509,7 +602,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
         ops.push_back(makeRemoveRecursiveRequest("/A", 3));
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(request, 1, new_zxid);
         ops.pop_back();
         ops.pop_back();
@@ -529,7 +622,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
 
         /// First create nodes
         const auto create_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
-        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto create_responses = storage.processRequest(create_request, 1, create_zxid);
         ASSERT_EQ(create_responses.size(), 1);
         ASSERT_TRUE(is_multi_ok(create_responses[0].response));
@@ -550,7 +643,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
         };
         const auto remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
-        storage.preprocessRequest(remove_request, 1, 0, remove_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto remove_responses = storage.processRequest(remove_request, 1, remove_zxid);
 
         ASSERT_EQ(remove_responses.size(), 1);
@@ -568,7 +661,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
 
         /// First create nodes
         const auto create_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
-        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto create_responses = storage.processRequest(create_request, 1, create_zxid);
         ASSERT_EQ(create_responses.size(), 1);
         ASSERT_TRUE(is_multi_ok(create_responses[0].response));
@@ -580,7 +673,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
             makeRemoveRecursiveRequest("/A", 3),
         };
         auto remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
-        storage.preprocessRequest(remove_request, 1, 0, remove_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto remove_responses = storage.processRequest(remove_request, 1, remove_zxid);
 
         ASSERT_EQ(remove_responses.size(), 1);
@@ -590,7 +683,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
         remove_zxid = ++zxid;
         ops[1] = makeRemoveRecursiveRequest("/A", 4);
         remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
-        storage.preprocessRequest(remove_request, 1, 0, remove_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid, /*check_acl=*/true, /*log_idx=*/0);
         remove_responses = storage.processRequest(remove_request, 1, remove_zxid);
 
         ASSERT_EQ(remove_responses.size(), 1);
@@ -614,7 +707,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
             makeRemoveRecursiveRequest("/A", 3),
         };
         auto remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
-        storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto remove_responses = storage.processRequest(remove_request, 1, new_zxid);
 
         ASSERT_EQ(remove_responses.size(), 1);
@@ -627,6 +720,233 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
     }
 
 }
+
+/// Preprocessing a RemoveRecursive request must not slow down when many unrelated uncommitted
+/// nodes are in flight. Without a per-parent index of uncommitted nodes the collector scans every
+/// uncommitted node once per request, so a backlog of 100K uncommitted creates makes a batch of
+/// small recursive removes take hundreds of milliseconds instead of well under one.
+TEST_P(CoordinationTest, TestRemoveRecursivePreprocessWithUncommittedBacklog)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    const auto preprocess = [&](const ZooKeeperRequestPtr & request)
+    {
+        int64_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
+        return new_zxid;
+    };
+
+    const auto create_committed = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK) << "Failed to create " << path;
+    };
+
+    const auto exists = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperExistsRequest>();
+        request->path = path;
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Error::ZOK;
+    };
+
+    const auto is_multi_ok = [&](const ZooKeeperResponsePtr & response)
+    {
+        const auto & multi_response = dynamic_cast<const ZooKeeperMultiResponse &>(*response);
+        for (const auto & op_response : multi_response.responses)
+            if (op_response->error != Error::ZOK)
+                return false;
+        return true;
+    };
+
+    /// Two identical sets of small subtrees to remove: one is measured without a backlog, the other with.
+    constexpr size_t subtrees = 50;
+    for (const auto * root : {"/set_a", "/set_b"})
+    {
+        create_committed(root);
+        for (size_t i = 0; i < subtrees; ++i)
+        {
+            const auto node = fmt::format("{}/{}", root, i);
+            create_committed(node);
+            create_committed(node + "/lease");
+        }
+    }
+    create_committed("/backlog");
+
+    const auto make_remove_batch = [&](const String & root)
+    {
+        Requests ops;
+        for (size_t i = 0; i < subtrees; ++i)
+            ops.push_back(makeRemoveRecursiveRequest(fmt::format("{}/{}", root, i), 100));
+        return std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+    };
+
+    /// Baseline: no uncommitted backlog.
+    const auto batch_a = make_remove_batch("/set_a");
+    Stopwatch watch_a;
+    const auto zxid_a = preprocess(batch_a);
+    const UInt64 base_us = watch_a.elapsedMicroseconds();
+    auto responses = storage.processRequest(batch_a, 1, zxid_a);
+    ASSERT_EQ(responses.size(), 1);
+    ASSERT_TRUE(is_multi_ok(responses[0].response));
+
+    /// Backlog: many unrelated creates preprocessed but not yet committed.
+    constexpr size_t backlog = 100000;
+    std::vector<std::pair<ZooKeeperRequestPtr, int64_t>> pending;
+    pending.reserve(backlog);
+    for (size_t i = 0; i < backlog; ++i)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = fmt::format("/backlog/{}", i);
+        auto new_zxid = preprocess(request);
+        pending.emplace_back(std::move(request), new_zxid);
+    }
+
+    const auto batch_b = make_remove_batch("/set_b");
+    Stopwatch watch_b;
+    const auto zxid_b = preprocess(batch_b);
+    const UInt64 backlog_us = watch_b.elapsedMicroseconds();
+
+    std::cerr << fmt::format(
+        "RemoveRecursive batch of {} preprocessed in {} us without backlog and in {} us with {} uncommitted nodes\n",
+        subtrees, base_us, backlog_us, backlog);
+
+    /// Commit everything in order and check the outcome.
+    for (const auto & [request, request_zxid] : pending)
+    {
+        auto create_responses = storage.processRequest(request, 1, request_zxid);
+        ASSERT_EQ(create_responses.size(), 1);
+        ASSERT_EQ(create_responses[0].response->error, Error::ZOK);
+    }
+    responses = storage.processRequest(batch_b, 1, zxid_b);
+    ASSERT_EQ(responses.size(), 1);
+    ASSERT_TRUE(is_multi_ok(responses[0].response));
+    ASSERT_FALSE(exists("/set_b/0/lease"));
+    ASSERT_FALSE(exists(fmt::format("/set_b/{}", subtrees - 1)));
+    ASSERT_TRUE(exists("/set_b"));
+    ASSERT_TRUE(exists(fmt::format("/backlog/{}", backlog - 1)));
+
+    /// The cost of the batch must not scale with the number of unrelated uncommitted nodes.
+    /// Allow generous noise: ten times the baseline or 20 ms, whichever is larger.
+    /// Not checked under sanitizers: their runtime makes a timing this short unreliable.
+#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+    EXPECT_LE(backlog_us, std::max<UInt64>(base_us * 10, 20000))
+        << "preprocessing slowed down from " << base_us << " us to " << backlog_us << " us with " << backlog << " uncommitted nodes";
+#endif
+}
+
+/// Uncommitted children must be visible to RemoveRecursive, and must stop being visible once the
+/// request that created them is rolled back.
+TEST_P(CoordinationTest, TestRemoveRecursiveSeesUncommittedChildrenUntilRollback)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    const auto preprocess = [&](const ZooKeeperRequestPtr & request)
+    {
+        int64_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
+        return new_zxid;
+    };
+
+    const auto make_create = [](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        return request;
+    };
+
+    const auto make_remove_recursive = [](const String & path, uint32_t limit)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
+        request->path = path;
+        request->remove_nodes_limit = limit;
+        return request;
+    };
+
+    const auto exists = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperExistsRequest>();
+        request->path = path;
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Error::ZOK;
+    };
+
+    for (const auto * path : {"/p", "/p/x"})
+    {
+        auto request = make_create(path);
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    }
+
+    {
+        SCOPED_TRACE("An uncommitted child counts toward the remove limit");
+        auto child = make_create("/p/x/c1");
+        auto child_zxid = preprocess(child);
+        auto remove = make_remove_recursive("/p/x", 1);
+        auto remove_zxid = preprocess(remove);
+
+        auto child_responses = storage.processRequest(child, 1, child_zxid);
+        ASSERT_EQ(child_responses.size(), 1);
+        ASSERT_EQ(child_responses[0].response->error, Error::ZOK);
+        auto remove_responses = storage.processRequest(remove, 1, remove_zxid);
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_EQ(remove_responses[0].response->error, Error::ZNOTEMPTY);
+        ASSERT_TRUE(exists("/p/x/c1"));
+
+        /// With a limit that fits the committed child the same remove succeeds.
+        auto remove_fitting = make_remove_recursive("/p/x", 2);
+        auto remove_fitting_zxid = preprocess(remove_fitting);
+        remove_responses = storage.processRequest(remove_fitting, 1, remove_fitting_zxid);
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
+        ASSERT_FALSE(exists("/p/x"));
+    }
+
+    {
+        SCOPED_TRACE("A rolled back uncommitted child no longer counts");
+        auto parent = make_create("/p/y");
+        auto parent_zxid = preprocess(parent);
+        auto parent_responses = storage.processRequest(parent, 1, parent_zxid);
+        ASSERT_EQ(parent_responses[0].response->error, Error::ZOK);
+
+        auto child = make_create("/p/y/c2");
+        auto child_zxid = preprocess(child);
+        KeeperRequestBatch batch;
+        batch.requests.push_back(KeeperRequestForSession{.session_id = 1, .time = 0, .request = child});
+        batch.first_zxid = child_zxid;
+        storage.rollbackBatch(batch, /*allow_missing=*/false);
+        --zxid;
+
+        auto remove = make_remove_recursive("/p/y", 1);
+        auto remove_zxid = preprocess(remove);
+        auto remove_responses = storage.processRequest(remove, 1, remove_zxid);
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
+        ASSERT_FALSE(exists("/p/y"));
+        ASSERT_FALSE(exists("/p/y/c2"));
+    }
+}
+
 
 TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
 {
@@ -646,7 +966,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
         create_request->is_ephemeral = create_mode == zkutil::CreateMode::Ephemeral || create_mode == zkutil::CreateMode::EphemeralSequential;
         create_request->is_sequential = create_mode == zkutil::CreateMode::PersistentSequential || create_mode == zkutil::CreateMode::EphemeralSequential;
 
-        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(create_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -661,7 +981,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
         exists_request->path = path;
         exists_request->has_watch = true;
 
-        storage.preprocessRequest(exists_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(exists_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -676,7 +996,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
         list_request->path = path;
         list_request->has_watch = true;
 
-        storage.preprocessRequest(list_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(list_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(list_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -703,7 +1023,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
     remove_request->path = "/A";
     remove_request->remove_nodes_limit = 4;
 
-    storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto responses = storage.processRequest(remove_request, 1, new_zxid);
 
     ASSERT_EQ(responses.size(), 7);
@@ -732,6 +1052,133 @@ TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
     ASSERT_EQ(storage.list_watches.size(), 0);
 }
 
+/// A session gets one watch event per change, however many of its watches match it (as in ZooKeeper).
+TEST_P(CoordinationTest, TestOverlappingWatchesNotifySessionOnce)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    const int64_t watcher = 1;
+    const int64_t other_watcher = 2;
+    const int64_t writer = 3;
+
+    using WatchEvents = std::map<int64_t, std::vector<std::pair<Event, String>>>;
+    const auto run = [&](const ZooKeeperRequestPtr & request, int64_t session_id)
+    {
+        int64_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, session_id, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
+        WatchEvents events;
+        for (const auto & response_for_session : storage.processRequest(request, session_id, new_zxid))
+        {
+            const auto & response = *response_for_session.response;
+            if (const auto * watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(&response))
+                events[response_for_session.session_id].emplace_back(static_cast<Event>(watch_response->type), watch_response->path);
+            else
+                EXPECT_EQ(response.error, Error::ZOK) << request->toString();
+        }
+        for (auto & [_, session_events] : events)
+            std::ranges::sort(session_events);
+        return events;
+    };
+
+    const auto create = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto set = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperSetRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto remove = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto add_watch = [&](const String & path, AddWatchRequest::AddWatchMode mode, int64_t session_id)
+    {
+        auto request = std::make_shared<ZooKeeperAddWatchRequest>();
+        request->path = path;
+        request->mode = mode;
+        EXPECT_TRUE(run(request, session_id).empty());
+    };
+
+    const auto exists_with_watch = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperExistsRequest>();
+        request->path = path;
+        request->has_watch = true;
+        EXPECT_TRUE(run(request, watcher).empty());
+    };
+
+    const auto list_with_watch = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperListRequest>();
+        request->path = path;
+        request->has_watch = true;
+        EXPECT_TRUE(run(request, watcher).empty());
+    };
+
+    for (const auto * path : {"/r", "/r/a", "/p", "/p/n", "/d", "/o", "/o/n", "/e"})
+        EXPECT_TRUE(create(path).empty());
+
+    const auto persistent = AddWatchRequest::AddWatchMode::PERSISTENT;
+    const auto recursive = AddWatchRequest::AddWatchMode::PERSISTENT_RECURSIVE;
+    add_watch("/r", recursive, watcher);
+    add_watch("/r/a", recursive, watcher);
+    add_watch("/r", recursive, other_watcher);
+    add_watch("/p", recursive, watcher);
+    add_watch("/p/n", persistent, watcher);
+    add_watch("/d", persistent, watcher);
+    add_watch("/o", recursive, watcher);
+    exists_with_watch("/e");
+    list_with_watch("/e");
+
+    EXPECT_EQ(create("/r/a/b"), (WatchEvents{{watcher, {{Event::CREATED, "/r/a/b"}}}, {other_watcher, {{Event::CREATED, "/r/a/b"}}}}));
+    EXPECT_EQ(set("/r/a/b"), (WatchEvents{{watcher, {{Event::CHANGED, "/r/a/b"}}}, {other_watcher, {{Event::CHANGED, "/r/a/b"}}}}));
+    {
+        const Requests ops{
+            zkutil::makeCreateRequest("/r/a/x", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/r/a/y", "", zkutil::CreateMode::Persistent)};
+        const std::vector<std::pair<Event, String>> created{{Event::CREATED, "/r/a/x"}, {Event::CREATED, "/r/a/y"}};
+        EXPECT_EQ(run(std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{}), writer), (WatchEvents{{watcher, created}, {other_watcher, created}}));
+    }
+    EXPECT_EQ(remove("/r/a/b"), (WatchEvents{{watcher, {{Event::DELETED, "/r/a/b"}}}, {other_watcher, {{Event::DELETED, "/r/a/b"}}}}));
+
+    EXPECT_EQ(set("/p/n"), (WatchEvents{{watcher, {{Event::CHANGED, "/p/n"}}}}));
+    EXPECT_EQ(create("/p/n/c"), (WatchEvents{{watcher, {{Event::CREATED, "/p/n/c"}, {Event::CHILD, "/p/n"}}}}));
+    EXPECT_EQ(remove("/p/n/c"), (WatchEvents{{watcher, {{Event::DELETED, "/p/n/c"}, {Event::CHILD, "/p/n"}}}}));
+    EXPECT_EQ(remove("/p/n"), (WatchEvents{{watcher, {{Event::DELETED, "/p/n"}}}}));
+
+    EXPECT_EQ(remove("/d"), (WatchEvents{{watcher, {{Event::DELETED, "/d"}}}}));
+    EXPECT_EQ(create("/d"), (WatchEvents{{watcher, {{Event::CREATED, "/d"}}}}));
+
+    exists_with_watch("/o/n");
+    EXPECT_EQ(set("/o/n"), (WatchEvents{{watcher, {{Event::CHANGED, "/o/n"}}}}));
+    EXPECT_EQ(set("/o/n"), (WatchEvents{{watcher, {{Event::CHANGED, "/o/n"}}}}));
+    list_with_watch("/o");
+    add_watch("/o", persistent, watcher);
+    EXPECT_EQ(create("/o/m"), (WatchEvents{{watcher, {{Event::CREATED, "/o/m"}, {Event::CHILD, "/o"}}}}));
+    EXPECT_EQ(remove("/e"), (WatchEvents{{watcher, {{Event::DELETED, "/e"}}}}));
+
+    EXPECT_FALSE(storage.watches.contains("/o/n"));
+    EXPECT_FALSE(storage.list_watches.contains("/o"));
+    EXPECT_FALSE(storage.watches.contains("/e"));
+    EXPECT_FALSE(storage.list_watches.contains("/e"));
+    EXPECT_EQ(storage.getTotalWatchesCount(), 11);
+}
+
 TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
 {
     using namespace DB;
@@ -749,7 +1196,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
         auth_request->scheme = "digest";
         auth_request->data = user_auth_data;
 
-        storage.preprocessRequest(auth_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(auth_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(auth_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -764,7 +1211,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
         create_request->path = path;
         create_request->acls = {{.permissions = ACL::Create, .scheme = "auth", .id = ""}};
 
-        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(create_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -784,7 +1231,7 @@ TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
         remove_request->path = "/A";
         remove_request->remove_nodes_limit = 4;
 
-        storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(remove_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -811,7 +1258,7 @@ TEST_P(CoordinationTest, TestListRequestTypes)
         create_request->path = path;
         create_request->is_sequential = is_sequential;
         create_request->is_ephemeral = is_ephemeral;
-        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(create_request, 1, new_zxid);
 
         EXPECT_GE(responses.size(), 1);
@@ -846,7 +1293,7 @@ TEST_P(CoordinationTest, TestListRequestTypes)
         int new_zxid = ++zxid;
         list_request->path = std::string{parentNodePath(test_path)};
         list_request->list_request_type = list_request_type;
-        storage.preprocessRequest(list_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(list_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(list_request, 1, new_zxid);
 
         EXPECT_GE(responses.size(), 1);
@@ -877,6 +1324,202 @@ TEST_P(CoordinationTest, TestListRequestTypes)
     }
 }
 
+TEST_P(CoordinationTest, TestListWithOptionsRequest)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = KeeperStorage::create(500, "", this->keeper_context);
+    KeeperStorage & storage = *storage_ptr;
+    int32_t zxid = 0;
+
+    const auto create = [&](const String & path, const String & data = "", bool ephemeral = false)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        request->data = data;
+        request->is_ephemeral = ephemeral;
+        const int32_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    };
+    const auto list = [&](const String & path, const ListOptions & options)
+    {
+        auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+        request->path = path;
+        request->options = options;
+        request->xid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, 1, request->xid);
+        EXPECT_EQ(responses.size(), 1);
+        return dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*responses[0].response);
+    };
+
+    create("/list_with_options");
+    create("/list_with_options/a", "data-a");
+    create("/list_with_options/a/x", "data-x");
+    create("/list_with_options/b", "data-b");
+    create("/list_with_options/b/x", "data-bx");
+    create("/list_with_options_shuffle");
+    for (const auto * child_name : {"a", "b", "c", "d", "e", "f", "g", "h"})
+        create("/list_with_options_shuffle/" + String(child_name));
+
+    {
+        SCOPED_TRACE("List direct children");
+        const auto & response = list("/list_with_options", {});
+        ASSERT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(std::unordered_set<String>(response.names.begin(), response.names.end()), (std::unordered_set<String>{"a", "b"}));
+        EXPECT_TRUE(response.stats.empty());
+        EXPECT_TRUE(response.data.empty());
+        EXPECT_FALSE(response.truncated);
+    }
+
+    {
+        SCOPED_TRACE("List recursive children with metadata");
+        ListOptions options;
+        options.recursive = true;
+        options.with_stat = true;
+        options.with_data = true;
+        const auto & response = list("/list_with_options", options);
+        ASSERT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(std::unordered_set<String>(response.names.begin(), response.names.end()), (std::unordered_set<String>{"a", "a/x", "b", "b/x"}));
+        ASSERT_EQ(response.names.size(), response.stats.size());
+        ASSERT_EQ(response.names.size(), response.data.size());
+        EXPECT_TRUE(std::ranges::none_of(response.names, [](const String & name) { return name.starts_with('/'); }));
+    }
+
+    {
+        SCOPED_TRACE("List persistent children with a result limit");
+        ListOptions options;
+        options.filter = ListRequestType::PERSISTENT_ONLY;
+        options.max_results = 1;
+        const auto & response = list("/list_with_options", options);
+        ASSERT_EQ(response.error, Error::ZOK);
+        ASSERT_EQ(response.names.size(), 1);
+        EXPECT_TRUE(response.names[0] == "a" || response.names[0] == "b");
+        EXPECT_TRUE(response.truncated);
+    }
+
+    {
+        SCOPED_TRACE("Shuffle complete results and a result prefix");
+        const std::unordered_set<String> expected_names{"a", "b", "c", "d", "e", "f", "g", "h"};
+
+        ListOptions options;
+        options.shuffle = true;
+        const auto & shuffled_response = list("/list_with_options_shuffle", options);
+        EXPECT_EQ(shuffled_response.error, Error::ZOK);
+        EXPECT_EQ(std::unordered_set<String>(shuffled_response.names.begin(), shuffled_response.names.end()), expected_names);
+
+        const auto first_names = shuffled_response.names;
+        bool observed_different_order = false;
+        for (size_t attempt = 0; attempt < 10; ++attempt)
+        {
+            const auto & retried_response = list("/list_with_options_shuffle", options);
+            ASSERT_EQ(retried_response.error, Error::ZOK);
+            if (retried_response.names != first_names)
+            {
+                observed_different_order = true;
+                break;
+            }
+        }
+        EXPECT_TRUE(observed_different_order);
+
+        options.max_results = 3;
+        const auto & partial_shuffled_response = list("/list_with_options_shuffle", options);
+        EXPECT_EQ(partial_shuffled_response.error, Error::ZOK);
+        EXPECT_EQ(partial_shuffled_response.names.size(), options.max_results);
+        EXPECT_TRUE(partial_shuffled_response.truncated);
+    }
+
+    {
+        SCOPED_TRACE("List recursive children relative to the root");
+        ListOptions options;
+        options.recursive = true;
+        const auto & response = list("/", options);
+        ASSERT_EQ(response.error, Error::ZOK);
+        const auto names = std::unordered_set<String>(response.names.begin(), response.names.end());
+        EXPECT_TRUE(names.contains("list_with_options"));
+        EXPECT_TRUE(names.contains("list_with_options/a"));
+        EXPECT_TRUE(names.contains("list_with_options/a/x"));
+        EXPECT_TRUE(names.contains("list_with_options/b"));
+        EXPECT_TRUE(names.contains("list_with_options/b/x"));
+        EXPECT_TRUE(std::ranges::none_of(response.names, [](const String & name) { return name.starts_with('/'); }));
+    }
+}
+
+TEST_P(CoordinationTest, TestListWithOptionsAcls)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    constexpr int64_t authorized_session_id = 1;
+    constexpr int64_t unauthorized_session_id = 2;
+    const auto storage_ptr = KeeperStorage::create(500, "", this->keeper_context);
+    KeeperStorage & storage = *storage_ptr;
+    int32_t zxid = 0;
+
+    {
+        const auto request = std::make_shared<ZooKeeperAuthRequest>();
+        request->scheme = "digest";
+        request->data = "test_user:test_password";
+        storage.preprocessRequest(request, authorized_session_id, 0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, authorized_session_id, zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    }
+
+    const auto create = [&](const String & path, ACLs acls = {})
+    {
+        const auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        request->acls = std::move(acls);
+        storage.preprocessRequest(request, authorized_session_id, 0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, authorized_session_id, zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    };
+    const auto list = [&](const String & path, const ListOptions & options, int64_t session_id)
+    {
+        const auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+        request->path = path;
+        request->options = options;
+        request->xid = ++zxid;
+        KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = session_id, .request = request}};
+        const auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);
+        EXPECT_EQ(responses.size(), 1);
+        return dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*responses[0].response);
+    };
+
+    const ACLs unreadable_acls {{.permissions = ACL::Create, .scheme = "auth", .id = ""}};
+    create("/list_with_options_denied_root", unreadable_acls);
+    create("/list_with_options_acl");
+    create("/list_with_options_acl/visible");
+    create("/list_with_options_acl/hidden", unreadable_acls);
+    create("/list_with_options_acl/hidden/grandchild");
+
+    {
+        const auto & response = list("/list_with_options_denied_root", {}, unauthorized_session_id);
+        EXPECT_EQ(response.error, Error::ZNOAUTH);
+    }
+
+    {
+        ListOptions options;
+        options.with_stat = true;
+        const auto & response = list("/list_with_options_acl", options, unauthorized_session_id);
+        EXPECT_EQ(response.error, Error::ZNOAUTH);
+    }
+
+    {
+        ListOptions options;
+        options.recursive = true;
+        const auto & response = list("/list_with_options_acl", options, unauthorized_session_id);
+        EXPECT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(response.names, std::vector<String>({"visible"}));
+    }
+}
+
 TEST_P(CoordinationTest, TestGetChildrenWithStatsAndData)
 {
     using namespace DB;
@@ -895,7 +1538,7 @@ TEST_P(CoordinationTest, TestGetChildrenWithStatsAndData)
         const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
         create_request->path = path;
         create_request->data = data;
-        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(create_request, 1, new_zxid);
         EXPECT_GE(responses.size(), 1);
         EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK);
@@ -907,7 +1550,7 @@ TEST_P(CoordinationTest, TestGetChildrenWithStatsAndData)
         const auto set_request = std::make_shared<ZooKeeperSetRequest>();
         set_request->path = path;
         set_request->data = data;
-        storage.preprocessRequest(set_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(set_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(set_request, 1, new_zxid);
         EXPECT_GE(responses.size(), 1);
         EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK);
@@ -921,7 +1564,7 @@ TEST_P(CoordinationTest, TestGetChildrenWithStatsAndData)
         list_request->list_request_type = ListRequestType::ALL;
         list_request->with_stat = with_stat;
         list_request->with_data = with_data;
-        storage.preprocessRequest(list_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(list_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(list_request, 1, new_zxid);
         EXPECT_GE(responses.size(), 1);
         const auto & list_response = dynamic_cast<const ListResponse &>(*responses[0].response);
@@ -1067,7 +1710,7 @@ TEST_P(CoordinationTest, TestGetChildrenWithStatsAndData)
         list_request->list_request_type = ListRequestType::ALL;
         list_request->with_stat = true;
         list_request->with_data = false;
-        storage.preprocessRequest(list_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(list_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(list_request, 1, new_zxid);
         EXPECT_GE(responses.size(), 1);
         const auto & list_response = dynamic_cast<const ListResponse &>(*responses[0].response);
@@ -1103,15 +1746,15 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     {
         auto get_request = std::make_shared<ZooKeeperGetRequest>();
         get_request->path = path;
-        storage.preprocessRequest(get_request, 0, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(get_request, 0, 0, zxid, /*check_acl=*/true, /*log_idx=*/0);
         return get_request;
     };
 
     const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
     create_request->path = path;
     create_request->data = "initial_data";
-    storage.preprocessRequest(create_request, 0, 0, 1, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
-    storage.preprocessRequest(create_request, 0, 0, 2, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(create_request, 0, 0, 1, /*check_acl=*/true, /*log_idx=*/0);
+    storage.preprocessRequest(create_request, 0, 0, 2, /*check_acl=*/true, /*log_idx=*/0);
 
     ASSERT_EQ(get_committed_data(), std::nullopt);
 
@@ -1122,7 +1765,7 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     const auto set_request = std::make_shared<ZooKeeperSetRequest>();
     set_request->path = path;
     set_request->data = "new_data";
-    storage.preprocessRequest(set_request, 0, 0, 4, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(set_request, 0, 0, 4, /*check_acl=*/true, /*log_idx=*/0);
 
     const auto after_set_get = preprocess_get(5);
 
@@ -1130,8 +1773,8 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
 
     const auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
     remove_request->path = path;
-    storage.preprocessRequest(remove_request, 0, 0, 6, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
-    storage.preprocessRequest(remove_request, 0, 0, 7, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(remove_request, 0, 0, 6, /*check_acl=*/true, /*log_idx=*/0);
+    storage.preprocessRequest(remove_request, 0, 0, 7, /*check_acl=*/true, /*log_idx=*/0);
 
     const auto after_remove_get = preprocess_get(8);
 
@@ -1223,7 +1866,7 @@ TEST_P(CoordinationTest, TestBlockACL)
         const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
         create_request->path = path;
         create_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{digest}}};
-        storage.preprocessRequest(create_request, session_id, 0, req_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, session_id, 0, req_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, digest);
@@ -1234,7 +1877,7 @@ TEST_P(CoordinationTest, TestBlockACL)
         const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
         set_acl_request->path = path;
         set_acl_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{new_digest}}};
-        storage.preprocessRequest(set_acl_request, session_id, 0, req_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(set_acl_request, session_id, 0, req_zxid, /*check_acl=*/true, /*log_idx=*/0);
         acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, new_digest);
@@ -1250,7 +1893,7 @@ TEST_P(CoordinationTest, TestBlockACL)
         const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
         create_request->path = path;
         create_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{digest}}};
-        storage.preprocessRequest(create_request, session_id, 0, req_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, session_id, 0, req_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(create_request, session_id, req_zxid);
@@ -1260,12 +1903,50 @@ TEST_P(CoordinationTest, TestBlockACL)
         const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
         set_acl_request->path = path;
         set_acl_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{new_digest}}};
-        storage.preprocessRequest(set_acl_request, session_id, 0, req_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(set_acl_request, session_id, 0, req_zxid, /*check_acl=*/true, /*log_idx=*/0);
         acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(set_acl_request, session_id, req_zxid);
         ASSERT_EQ(committed_acl_id(path), 0);
     }
+}
+
+/// A Keeper snapshot converted from ZooKeeper can carry an ACL map entry whose id is nonzero but whose
+/// ACL list is empty. An empty ACL list means unrestricted, whichever id carries it.
+TEST_P(CoordinationTest, TestEmptyACLListWithNonzeroId)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    /// Mimic snapshot deserialization: addMapping starts the usage counter at 0, and every node
+    /// referencing the id adds one use.
+    storage.acl_map.addMapping(2, {});
+    addNode(storage, "/legacy_empty_acl", "data", /*ephemeral_owner=*/0, /*acl_id=*/2);
+    storage.acl_map.addUsage(2);
+
+    storage.acl_map.addMapping(3, {{.permissions = ACL::All, .scheme = "digest", .id = "user:password"}});
+    addNode(storage, "/restricted", "data", /*ephemeral_owner=*/0, /*acl_id=*/3);
+    storage.acl_map.addUsage(3);
+
+    const auto assert_get = [&](const std::string & path, Error expected)
+    {
+        int64_t new_zxid = ++zxid;
+        auto request = std::make_shared<ZooKeeperGetRequest>();
+        request->path = path;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1u);
+        ASSERT_EQ(responses[0].response->error, expected) << "path " << path;
+    };
+
+    /// The session adds no auth, so only the node's own ACL list decides.
+    assert_get("/legacy_empty_acl", Error::ZOK);
+    /// A nonzero id whose non-empty ACL list the session cannot satisfy is still refused.
+    assert_get("/restricted", Error::ZNOAUTH);
 }
 
 TEST_P(CoordinationTest, TestMultiWatches)
@@ -1289,7 +1970,7 @@ TEST_P(CoordinationTest, TestMultiWatches)
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
         int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         storage.processRequest(request, 1, new_zxid);
     }
 
@@ -1303,7 +1984,7 @@ TEST_P(CoordinationTest, TestMultiWatches)
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
         int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         storage.processRequest(request, 1, new_zxid);
 
         ASSERT_EQ(storage.watches.size(), 1);
@@ -1320,7 +2001,7 @@ TEST_P(CoordinationTest, TestMultiWatches)
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
         int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto remove_responses = storage.processRequest(request, 1, new_zxid);
 
         ASSERT_EQ(storage.watches.size(), 1);
@@ -1337,7 +2018,7 @@ TEST_P(CoordinationTest, TestMultiWatches)
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
         int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto remove_responses = storage.processRequest(request, 1, new_zxid);
 
         ASSERT_EQ(storage.watches.size(), 1);
@@ -1356,7 +2037,7 @@ TEST_P(CoordinationTest, TestMultiWatches)
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
         int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto remove_responses = storage.processRequest(request, 1, new_zxid);
 
         ASSERT_EQ(storage.watches.size(), 2);
@@ -1387,7 +2068,7 @@ TEST_P(CoordinationTest, TestCheckStat)
         const auto create_request = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
 
         int create_zxid = ++zxid;
-        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto create_responses = storage.processRequest(create_request, 1, create_zxid);
         ASSERT_EQ(create_responses.size(), 1);
         ASSERT_EQ(create_responses[0].response->error, Error::ZOK);
@@ -1395,7 +2076,7 @@ TEST_P(CoordinationTest, TestCheckStat)
         const auto get_request = std::dynamic_pointer_cast<ZooKeeperRequest>(zkutil::makeGetRequest("/A1"));
 
         int get_zxid = ++zxid;
-        storage.preprocessRequest(get_request, 1, 0, get_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(get_request, 1, 0, get_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto get_responses = storage.processRequest(get_request, 1, get_zxid);
         ASSERT_EQ(get_responses.size(), 1);
         ASSERT_EQ(get_responses[0].response->error, Error::ZOK);
@@ -1408,7 +2089,7 @@ TEST_P(CoordinationTest, TestCheckStat)
         EXPECT_EQ(request->getOpNum(), op);
 
         int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -1464,7 +2145,7 @@ TEST_P(CoordinationTest, TestTryRemove)
         const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
         exists_request->path = path;
 
-        storage.preprocessRequest(exists_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(exists_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -1481,7 +2162,7 @@ TEST_P(CoordinationTest, TestTryRemove)
         };
         const auto create_request = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
         int create_zxid = ++zxid;
-        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*log_idx=*/0);
         storage.processRequest(create_request, 1, create_zxid);
 
         ASSERT_TRUE(exists("/s1/A"));
@@ -1494,7 +2175,7 @@ TEST_P(CoordinationTest, TestTryRemove)
         };
         const auto remove_request = std::make_shared<ZooKeeperMultiRequest>(remove_ops, ACLs{});
         int remove_zxid = ++zxid;
-        storage.preprocessRequest(remove_request, 1, 0, remove_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(remove_request, 1, remove_zxid);
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
@@ -1519,7 +2200,7 @@ TEST_P(CoordinationTest, TestTryRemove)
         };
         const auto create_request = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
         int create_zxid = ++zxid;
-        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*log_idx=*/0);
         storage.processRequest(create_request, 1, create_zxid);
 
         ASSERT_TRUE(exists("/s2/A"));
@@ -1532,7 +2213,7 @@ TEST_P(CoordinationTest, TestTryRemove)
         };
         const auto remove_request = std::make_shared<ZooKeeperMultiRequest>(remove_ops, ACLs{});
         int remove_zxid = ++zxid;
-        storage.preprocessRequest(remove_request, 1, 0, remove_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(remove_request, 1, remove_zxid);
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
@@ -1572,7 +2253,7 @@ TEST_P(CoordinationTest, TestListRecursiveRequest)
             create_request->acls = {{.permissions = *acl_mode, .scheme = "digest", .id = std::string{digest}}};
         }
 
-        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(create_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -1587,7 +2268,7 @@ TEST_P(CoordinationTest, TestListRecursiveRequest)
         request->path = path;
         request->children_nodes_limit = limit;
 
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -1603,7 +2284,7 @@ TEST_P(CoordinationTest, TestListRecursiveRequest)
         request->path = path;
         request->children_nodes_limit = limit;
 
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -1748,7 +2429,7 @@ TEST_P(CoordinationTest, TestListRecursiveInMultiRequest)
         const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
         exists_request->path = path;
 
-        storage.preprocessRequest(exists_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(exists_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -1764,7 +2445,7 @@ TEST_P(CoordinationTest, TestListRecursiveInMultiRequest)
         };
         const auto create_request = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
         int create_zxid = ++zxid;
-        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*log_idx=*/0);
         storage.processRequest(create_request, 1, create_zxid);
     }
 
@@ -1781,7 +2462,7 @@ TEST_P(CoordinationTest, TestListRecursiveInMultiRequest)
         const Coordination::Requests ops{get_req};
         const auto multi_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
         int new_zxid = ++zxid;
-        storage.preprocessRequest(multi_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(multi_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(multi_request, 1, new_zxid);
 
         ASSERT_EQ(responses.size(), 1);
@@ -1815,7 +2496,7 @@ TEST_P(CoordinationTest, TestListRecursiveAcls)
         auth_request->scheme = "digest";
         auth_request->data = "test_user:test_password";
 
-        storage.preprocessRequest(auth_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(auth_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(auth_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -1828,7 +2509,7 @@ TEST_P(CoordinationTest, TestListRecursiveAcls)
         create_request->path = "/acl_node";
         create_request->acls = {{.permissions = ACL::Create, .scheme = "auth", .id = ""}};
 
-        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(create_request, 1, new_zxid);
 
         EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK);
@@ -1841,7 +2522,7 @@ TEST_P(CoordinationTest, TestListRecursiveAcls)
         get_request->path = "/acl_node";
         get_request->children_nodes_limit = 100;
 
-        storage.preprocessRequest(get_request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(get_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(get_request, 1, new_zxid);
 
         EXPECT_EQ(responses.size(), 1);
@@ -1866,7 +2547,7 @@ TEST_P(CoordinationTest, TestTTLNodeExpiry)
     create_request->include_ttl = true;
     create_request->ttl = ttl_ms;
 
-    storage.preprocessRequest(create_request, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(create_request, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto responses = storage.processRequest(create_request, session_id, zxid);
     ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
@@ -1888,7 +2569,7 @@ TEST_P(CoordinationTest, TestTTLNodeExpiry)
     remove_request->path = "/ttl_node";
     remove_request->version = -1;
     remove_request->try_remove = true;
-    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, /*time=*/ttl_ms + 1, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, /*time=*/ttl_ms + 1, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
     ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
 
@@ -1919,7 +2600,7 @@ TEST_P(CoordinationTest, TestTTLSiblingExpiryOrdering)
         request->path = path;
         request->include_ttl = with_ttl;
         request->ttl = ttl_ms;
-        storage.preprocessRequest(request, session_id, create_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, session_id, create_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(request, session_id, zxid);
         ASSERT_FALSE(responses.empty());
         ASSERT_EQ(responses[0].response->error, Error::ZOK) << "Unexpected error creating " << path;
@@ -1950,7 +2631,7 @@ TEST_P(CoordinationTest, TestTTLSiblingExpiryOrdering)
         request->version = -1;
         request->try_remove = true;
         storage.preprocessRequest(
-            request, keeper_internal_ttl_garbage_collector_session_id, at_ms, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+            request, keeper_internal_ttl_garbage_collector_session_id, at_ms, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
         return storage.processRequest(request, keeper_internal_ttl_garbage_collector_session_id, zxid);
     };
 
@@ -1986,7 +2667,7 @@ TEST_P(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
     create_request->path = "/ttl_node";
     create_request->include_ttl = true;
     create_request->ttl = ttl_ms;
-    storage.preprocessRequest(create_request, session_id, create_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(create_request, session_id, create_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     storage.processRequest(create_request, session_id, zxid);
 
     const int64_t original_destroy_time = create_time + ttl_ms;
@@ -2001,7 +2682,7 @@ TEST_P(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
     auto set_request = std::make_shared<ZooKeeperSetRequest>();
     set_request->path = "/ttl_node";
     set_request->data = "new_data";
-    storage.preprocessRequest(set_request, session_id, set_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(set_request, session_id, set_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
 
     {
         DB::KeeperNodeStats stats;
@@ -2037,7 +2718,7 @@ TEST_P(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
     create_request->path = "/ttl_node";
     create_request->include_ttl = true;
     create_request->ttl = ttl_ms;
-    storage.preprocessRequest(create_request, session_id, create_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(create_request, session_id, create_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     storage.processRequest(create_request, session_id, zxid);
 
     auto expired = storage.collectExpiredTTLPaths(create_time + ttl_ms + 1, 1000000);
@@ -2049,7 +2730,7 @@ TEST_P(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
     auto set_request = std::make_shared<ZooKeeperSetRequest>();
     set_request->path = "/ttl_node";
     set_request->data = "refreshed";
-    storage.preprocessRequest(set_request, session_id, set_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(set_request, session_id, set_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto set_responses = storage.processRequest(set_request, session_id, zxid);
     ASSERT_EQ(set_responses[0].response->error, Error::ZOK);
 
@@ -2063,7 +2744,7 @@ TEST_P(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
     remove_request->path = "/ttl_node";
     remove_request->version = collected_version;
     remove_request->try_remove = true;
-    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, set_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, set_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
     EXPECT_TRUE(remove_responses.empty() || remove_responses[0].response->error == Error::ZOK);
 
@@ -2088,7 +2769,7 @@ TEST_P(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
     create_request->path = "/ttl_node";
     create_request->include_ttl = true;
     create_request->ttl = ttl_ms;
-    storage.preprocessRequest(create_request, session_id, create_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(create_request, session_id, create_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto create_responses = storage.processRequest(create_request, session_id, zxid);
     ASSERT_EQ(create_responses[0].response->error, Error::ZOK);
 
@@ -2104,14 +2785,14 @@ TEST_P(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
     auto delete_request = std::make_shared<ZooKeeperRemoveRequest>();
     delete_request->path = "/ttl_node";
     delete_request->version = -1;
-    storage.preprocessRequest(delete_request, session_id, create_time + ttl_ms + 2, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(delete_request, session_id, create_time + ttl_ms + 2, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto delete_responses = storage.processRequest(delete_request, session_id, zxid);
     ASSERT_EQ(delete_responses[0].response->error, Error::ZOK);
 
     auto recreate_request = std::make_shared<ZooKeeperCreateRequest>();
     recreate_request->path = "/ttl_node";
     recreate_request->data = "fresh";
-    storage.preprocessRequest(recreate_request, session_id, create_time + ttl_ms + 3, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(recreate_request, session_id, create_time + ttl_ms + 3, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto recreate_responses = storage.processRequest(recreate_request, session_id, zxid);
     ASSERT_EQ(recreate_responses[0].response->error, Error::ZOK);
 
@@ -2128,7 +2809,7 @@ TEST_P(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
     remove_request->path = "/ttl_node";
     remove_request->version = collected_version;
     remove_request->try_remove = true;
-    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, create_time + ttl_ms + 4, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, create_time + ttl_ms + 4, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
     ASSERT_EQ(remove_responses.size(), 1u);
     ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
@@ -2161,7 +2842,7 @@ TEST_P(CoordinationTest, TestTTLGCNoOpDoesNotFireDeleteWatch)
     create_request->path = "/ttl_node";
     create_request->include_ttl = true;
     create_request->ttl = ttl_ms;
-    storage.preprocessRequest(create_request, session_id, create_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(create_request, session_id, create_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     ASSERT_EQ(storage.processRequest(create_request, session_id, zxid)[0].response->error, Error::ZOK);
 
     /// TTL GC collects the expired node.
@@ -2173,20 +2854,20 @@ TEST_P(CoordinationTest, TestTTLGCNoOpDoesNotFireDeleteWatch)
     auto delete_request = std::make_shared<ZooKeeperRemoveRequest>();
     delete_request->path = "/ttl_node";
     delete_request->version = -1;
-    storage.preprocessRequest(delete_request, session_id, create_time + ttl_ms + 2, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(delete_request, session_id, create_time + ttl_ms + 2, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     ASSERT_EQ(storage.processRequest(delete_request, session_id, zxid)[0].response->error, Error::ZOK);
 
     auto recreate_request = std::make_shared<ZooKeeperCreateRequest>();
     recreate_request->path = "/ttl_node";
     recreate_request->data = "fresh";
-    storage.preprocessRequest(recreate_request, session_id, create_time + ttl_ms + 3, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(recreate_request, session_id, create_time + ttl_ms + 3, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     ASSERT_EQ(storage.processRequest(recreate_request, session_id, zxid)[0].response->error, Error::ZOK);
 
     /// Register a watch on the fresh node.
     auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
     exists_request->path = "/ttl_node";
     exists_request->has_watch = true;
-    storage.preprocessRequest(exists_request, session_id, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(exists_request, session_id, 0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     ASSERT_EQ(storage.processRequest(exists_request, session_id, zxid)[0].response->error, Error::ZOK);
     ASSERT_EQ(storage.watches.size(), 1u);
 
@@ -2196,7 +2877,7 @@ TEST_P(CoordinationTest, TestTTLGCNoOpDoesNotFireDeleteWatch)
     remove_request->path = "/ttl_node";
     remove_request->version = collected_version;
     remove_request->try_remove = true;
-    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, create_time + ttl_ms + 4, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, create_time + ttl_ms + 4, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
 
     ASSERT_EQ(remove_responses.size(), 1u);
@@ -2224,13 +2905,13 @@ TEST_P(CoordinationTest, TestTTLGCRemovalFiresDeleteWatch)
     create_request->path = "/ttl_node";
     create_request->include_ttl = true;
     create_request->ttl = ttl_ms;
-    storage.preprocessRequest(create_request, session_id, create_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(create_request, session_id, create_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     ASSERT_EQ(storage.processRequest(create_request, session_id, zxid)[0].response->error, Error::ZOK);
 
     auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
     exists_request->path = "/ttl_node";
     exists_request->has_watch = true;
-    storage.preprocessRequest(exists_request, session_id, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(exists_request, session_id, 0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     ASSERT_EQ(storage.processRequest(exists_request, session_id, zxid)[0].response->error, Error::ZOK);
     ASSERT_EQ(storage.watches.size(), 1u);
 
@@ -2242,7 +2923,7 @@ TEST_P(CoordinationTest, TestTTLGCRemovalFiresDeleteWatch)
     remove_request->path = "/ttl_node";
     remove_request->version = collected_version;
     remove_request->try_remove = true;
-    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, create_time + ttl_ms + 2, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, create_time + ttl_ms + 2, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
 
     bool fired_delete_watch = false;
@@ -2284,7 +2965,7 @@ TEST_P(CoordinationTest, TestCreateTTLRejectsInvalidValues)
         req->path = "/n" + std::to_string(ttl);
         req->include_ttl = true;
         req->ttl = ttl;
-        storage.preprocessRequest(req, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(req, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(req, session_id, zxid);
         return responses[0].response->error;
     };
@@ -2314,7 +2995,7 @@ TEST_P(CoordinationTest, TestCreateTTLAndEphemeralDoesNotLeakEphemeral)
     bad_create->is_ephemeral = true;
     bad_create->include_ttl = true;
     bad_create->ttl = 1000;
-    storage.preprocessRequest(bad_create, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(bad_create, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto responses = storage.processRequest(bad_create, session_id, zxid);
     ASSERT_EQ(responses[0].response->error, Error::ZBADARGUMENTS);
 
@@ -2341,7 +3022,7 @@ TEST_P(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
     create_req->path = "/n";
     create_req->include_ttl = true;
     create_req->ttl = ttl_ms;
-    storage.preprocessRequest(create_req, session_id, create_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(create_req, session_id, create_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     storage.processRequest(create_req, session_id, zxid);
 
     const int64_t original_destroy_time = create_time + ttl_ms;
@@ -2354,7 +3035,7 @@ TEST_P(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
     auto multi_req = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
     const int64_t set_time = create_time + 100;
-    storage.preprocessRequest(multi_req, session_id, set_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(multi_req, session_id, set_time, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto multi_responses = storage.processRequest(multi_req, session_id, zxid);
     ASSERT_EQ(multi_responses.size(), 1u);
     auto & multi_response = dynamic_cast<ZooKeeperMultiResponse &>(*multi_responses[0].response);
@@ -2389,7 +3070,7 @@ TEST_P(CoordinationTest, TestCreate2ResponseDataLength)
     request->data = data;
     request->include_stats = true;
 
-    storage.preprocessRequest(request, 1, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(request, 1, 0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto responses = storage.processRequest(request, 1, zxid);
 
     ASSERT_EQ(responses.size(), 1u);

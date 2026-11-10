@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 #include <thread>
+#include <utility>
 
 #include <Common/ActionBlocker.h>
 #include <Common/ActionLock.h>
@@ -58,6 +59,37 @@ TEST(ActionLock, TestConstructorWithActionBlocker)
     EXPECT_FALSE(lock.expired());
     EXPECT_TRUE(blocker.isCancelled());
     EXPECT_EQ(1, blocker.getCounter().load());
+}
+
+TEST(ActionLock, TestMoveConstructor)
+{
+    ActionBlocker blocker;
+
+    {
+        auto lock = blocker.cancel();
+        ActionLock moved_lock(std::move(lock));
+
+        EXPECT_FALSE(moved_lock.expired());
+        EXPECT_TRUE(blocker.isCancelled());
+        EXPECT_EQ(1, blocker.getCounter().load());
+    }
+
+    EXPECT_FALSE(blocker.isCancelled());
+    EXPECT_EQ(0, blocker.getCounter().load());
+}
+
+TEST(ActionLock, TestMoveConstructorFromExpired)
+{
+    ActionLock lock;
+    {
+        ActionBlocker blocker;
+        lock = blocker.cancel();
+        EXPECT_FALSE(lock.expired());
+    }
+
+    ActionLock moved_lock(std::move(lock));
+
+    EXPECT_TRUE(moved_lock.expired());
 }
 
 TEST(ActionLock, TestMoveAssignmentToEmpty)

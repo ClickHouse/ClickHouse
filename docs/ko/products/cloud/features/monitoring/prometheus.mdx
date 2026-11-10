@@ -7,9 +7,12 @@ keywords: ['prometheus', 'grafana', '모니터링', '메트릭', 'exporter']
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-이 기능은 [Prometheus](https://prometheus.io/)를 통합하여 ClickHouse Cloud 서비스를 모니터링할 수 있도록 지원합니다. Prometheus 메트릭에 대한 액세스는 [ClickHouse Cloud API](/ko/products/cloud/features/admin-features/api/api-overview) 엔드포인트를 통해 제공되며, 이 엔드포인트를 사용하면 Prometheus 메트릭 collector에 안전하게 연결하여 메트릭을 내보낼 수 있습니다. 이러한 메트릭은 시각화를 위해 Grafana, Datadog 등의 dashboard와 통합할 수 있습니다.
+이 기능은 [Prometheus](https://prometheus.io/)를 통합하여 ClickHouse Cloud 서비스를 모니터링할 수 있도록 지원합니다. Prometheus 메트릭에 대한 액세스는 [ClickHouse Cloud API](/ko/products/cloud/features/admin-features/api/api-overview) 엔드포인트를 통해 제공되며, 이 엔드포인트를 사용하면 Prometheus 메트릭 collector에 안전하게 연결하여 메트릭을 내보낼 수 있습니다. 이러한 메트릭은 시각화를 위해 Grafana, Datadog 등의 대시보드와 통합할 수 있습니다.
+
+서비스에 연결된 [ClickPipes](/ko/integrations/clickpipes)의 메트릭은 해당 서비스의 ClickHouse 메트릭과 함께 포함됩니다.
 
 시작하려면 [API Key를 생성하세요](/ko/products/cloud/features/admin-features/api/openapi).
 
@@ -23,10 +26,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ### API 참조
 </div>
 
-| 메서드 | 경로                                                                                                                              | 설명                      |
-| --- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 특정 서비스의 메트릭을 반환합니다      |
-| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | 조직 내 모든 서비스의 메트릭을 반환합니다 |
+| 메서드 | 경로                                                                                                                              | 설명                                                                                                                   |
+| --- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 특정 서비스의 메트릭을 반환합니다                                                                                                   |
+| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **더 이상 사용되지 않습니다.** 조직 내 모든 서비스의 메트릭을 반환합니다                                                                          |
+| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | [HTTP 서비스 디스커버리](https://prometheus.io/docs/prometheus/latest/http_sd/) 포맷으로 조직 내 모든 서비스의 Prometheus 스크레이프 대상을 반환합니다 |
+
+<Note>
+  조직 전체 메트릭 엔드포인트(`GET /v1/organizations/{organizationId}/prometheus`)는 [자동 서비스 디스커버리](#automatic-service-discovery) 대신 더 이상 사용되지 않습니다. 기존 조직에서는 계속 사용할 수 있지만, 새로 생성된 조직에서는 대신 디스커버리 엔드포인트를 사용합니다. 이 엔드포인트에 대한 액세스가 필요하면 ClickHouse 지원팀에 문의하십시오.
+</Note>
 
 **요청 매개변수**
 
@@ -35,6 +43,8 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 | 조직 ID                | 엔드포인트   | uuid            |
 | 서비스 ID               | 엔드포인트   | uuid (선택 사항)    |
 | filtered&#95;metrics | 쿼리 매개변수 | boolean (선택 사항) |
+
+이러한 엔드포인트의 전체 요청 및 응답 스키마는 [Cloud API 참조](/ko/products/cloud/api-reference/prometheus)에서 확인할 수 있습니다.
 
 <div id="authentication">
   ### 인증
@@ -192,6 +202,56 @@ scrape_configs:
 ```
 
 `honor_labels` 구성 매개변수는 인스턴스 레이블 값이 올바르게 채워지도록 `true`로 설정해야 합니다. 또한 위 예시에서는 `filtered_metrics`를 `true`로 설정했지만, 이는 사용자 선호에 따라 구성해야 합니다.
+
+<div id="automatic-service-discovery">
+  ### 자동 서비스 디스커버리
+</div>
+
+<BetaBadge />
+
+디스커버리 엔드포인트는 조직 내 서비스별로 하나의 스크레이프 대상을 Prometheus [HTTP 서비스 디스커버리](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) 포맷으로 반환합니다. Prometheus는 디스커버리 폴링마다 대상 목록을 갱신하고 발견된 각 대상을 스크레이프하므로, 새로 생성된 서비스는 자동으로 포함되고 삭제된 서비스는 대상 목록에서 제거됩니다. API Key에 해당 서비스를 볼 권한이 있는 경우에만 포함되며, 삭제 중이거나 이미 삭제된 서비스는 제외됩니다.
+
+사용하려면 [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job에서 디스커버리 엔드포인트를 지정하십시오:
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "clickhouse"
+    http_sd_configs:
+      - url: https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/prometheus/discovery
+        refresh_interval: 60s
+        basic_auth:
+          username: <KEY_ID>
+          password: <KEY_SECRET>
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+```
+
+두 곳 모두에 `basic_auth`를 설정합니다. `http_sd_configs` 아래의 블록은 디스커버리 폴링을 인증하고, 스크레이프 작업의 블록은 서비스별 메트릭 스크레이프를 인증합니다. 정적 구성과 마찬가지로 instance 레이블이 올바르게 설정되도록 `honor_labels: true`를 지정합니다.
+
+디스커버리 응답 예시:
+
+```json
+[
+  {
+    "targets": ["api.clickhouse.cloud"],
+    "labels": {
+      "__scheme__": "https",
+      "__metrics_path__": "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus",
+      "__param_filtered_metrics": "true",
+      "clickhouse_org_id": "<ORG_ID>",
+      "clickhouse_service_id": "<SERVICE_ID>",
+      "clickhouse_discovery_service_name": "my service"
+    }
+  }
+]
+```
+
+디스커버리를 통해 발견된 대상은 `filtered_metrics=true`로 스크레이프됩니다. 전체 메트릭 세트를 스크레이프하는 대상을 발견하려면 디스커버리 URL에 `?filtered_metrics=false`를 추가하십시오. 전체 엔드포인트 사양은 [Cloud API 참조](/ko/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get)에서 확인할 수 있습니다.
 
 <div id="integrating-with-grafana">
   ## Grafana와 통합하기

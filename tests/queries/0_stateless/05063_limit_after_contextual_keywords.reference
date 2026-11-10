@@ -1,0 +1,40 @@
+0
+1
+0
+1
+0
+1
+[2,3]
+[2,3]
+[0,1,2,3]
+0
+1
+0
+1
+0
+1
+0
+1
+0
+1
+2
+WITH\n    2 AS after\nSELECT number\nFROM numbers(5)\nORDER BY number ASC\nLIMIT after
+WITH\n    2 AS after\nSELECT number\nFROM numbers(5)\nORDER BY number ASC\nLIMIT after, 2
+WITH\n    2 AS after\nSELECT number\nFROM numbers(5)\nORDER BY number ASC\nLIMIT after
+0
+1
+2
+3
+4
+0
+1
+3
+4
+0
+1
+2
+1
+2
+3
+4
+3

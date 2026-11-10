@@ -1,0 +1,35 @@
+--- CREATE TABLE AS viewIfPermitted is refused, and nothing is left to read ---
+cannot be used to create a table
+UNKNOWN_TABLE
+leaked: []
+--- refused with an explicit column list too ---
+cannot be used to create a table
+BAD_ARGUMENTS
+--- nested in remote(...) is refused too, even for a full-access user ---
+cannot be used to create a table
+UNKNOWN_TABLE
+leaked: []
+--- nested through loop(...) inside remote(...) is refused too ---
+cannot be used to create a table
+BAD_ARGUMENTS
+--- refused before the structure is inferred: an unreachable remote(...) shard is never contacted ---
+cannot be used to create a table
+BAD_ARGUMENTS
+leaked: []
+--- and an unreachable remote(...) in the ELSE arm is not analyzed either ---
+cannot be used to create a table
+BAD_ARGUMENTS
+leaked: []
+--- carried in a Remote engine argument through the JSON AST dialect, it is refused too ---
+cannot be used to create a table
+UNKNOWN_TABLE
+leaked: []
+--- control: an engine argument that does not depend on grants is still accepted ---
+10
+--- the ELSE fallback still works in a query, without the grant ---
+0
+--- and the query returns the source rows once permitted ---
+3
+--- control: a permitted user is still told about a structure mismatch ---
+BAD_ARGUMENTS
+leaked: [Decimal FixedString salary secret_a secret_b ssn]

@@ -37,9 +37,6 @@
           "$ref": "./products/managed-postgres/navigation.json"
         },
         {
-          "$ref": "./clickstack/navigation.json"
-        },
-        {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
           "item": "Langfuse"
@@ -50,7 +47,7 @@
           "item": "开源"
         },
         {
-          "$ref": "./products/agentic-data-stack/navigation.json"
+          "$ref": "./clickstack/navigation.json"
         },
         {
           "$ref": "./chdb/navigation.json"
@@ -64,7 +61,7 @@
     {
       "menu": [
         {
-          "item": "生态",
+          "item": "生态系统",
           "pages": [
             "zh/integrations/home",
             "zh/integrations/data-catalogs"

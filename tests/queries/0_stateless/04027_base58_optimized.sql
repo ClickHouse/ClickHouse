@@ -30,16 +30,15 @@ SELECT base58Decode(base58Encode(unhex('FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 SELECT '64-byte leading zeros';
 SELECT base58Decode(base58Encode(unhex('00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001'))) = unhex('00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001');
 
--- Overflow: 44 z's exceeds 2^256, must fall back to universal decoder and still round-trip
-SELECT 'overflow fallback';
+-- Overflow: 44 z's exceeds 2^256, so it decodes to more than 32 bytes and must still round-trip
+SELECT 'large decoded values';
 SELECT length(base58Decode(repeat('z', 44))) > 32;
 SELECT base58Decode(base58Encode(base58Decode(repeat('z', 44)))) = base58Decode(repeat('z', 44));
 SELECT length(base58Decode(repeat('z', 88))) > 64;
 SELECT base58Decode(base58Encode(base58Decode(repeat('z', 88)))) = base58Decode(repeat('z', 88));
 
--- Non-32/64 byte inputs whose encoded length falls in [32,44] or [64,88]
--- must still round-trip correctly (the optimized decoder rejects them,
--- then the universal decoder handles them via fallback).
+-- Inputs whose encoded length falls in [32,44] or [64,88] without decoding to 32 or 64 bytes
+-- must still round-trip when no expected size is given.
 SELECT 'non-32/64 byte decode';
 SELECT base58Decode(base58Encode(unhex('0102030405060708090a0b0c0d0e0f101112131415161718'))) = unhex('0102030405060708090a0b0c0d0e0f101112131415161718'); -- 24 bytes
 SELECT base58Decode(base58Encode(unhex('0102030405060708090a0b0c0d0e0f10111213141516171819'))) = unhex('0102030405060708090a0b0c0d0e0f10111213141516171819'); -- 25 bytes
@@ -80,13 +79,32 @@ SELECT 'size hint overflow';
 SELECT base58Decode(repeat('z', 44), 32); -- { serverError INCORRECT_DATA }
 SELECT base58Decode(repeat('z', 88), 64); -- { serverError INCORRECT_DATA }
 
+SELECT 'size hint rejects any other decoded length';
+SELECT base58Decode(repeat('1', 31), 32); -- { serverError INCORRECT_DATA }
+SELECT base58Decode(repeat('1', 45), 32); -- { serverError INCORRECT_DATA }
+SELECT base58Decode(concat(repeat('1', 32), '2'), 32); -- { serverError INCORRECT_DATA }
+SELECT base58Decode(repeat('1', 63), 64); -- { serverError INCORRECT_DATA }
+SELECT base58Decode(repeat('1', 89), 64); -- { serverError INCORRECT_DATA }
+SELECT tryBase58Decode(repeat('1', 31), 32) = '';
+SELECT tryBase58Decode(repeat('1', 63), 64) = '';
+
 SELECT 'tryBase58Decode with size hint';
 SELECT tryBase58Decode(repeat('z', 44), 32) = '';
 SELECT tryBase58Decode(repeat('z', 88), 64) = '';
 SELECT tryBase58Decode('invalid!chars', 32) = '';
 
-SELECT 'size hint fallback to generic';
-SELECT base58Decode(base58Encode('Hello world!'), 99) = 'Hello world!';
+-- The requirement holds at every size, not only at the two the removed fixed-size decoders served.
+-- The first pair is the asymmetry that used to exist: both decode to one byte, and both are rejected.
+SELECT 'expected size applies to every size';
+SELECT base58Decode('2', 32); -- { serverError INCORRECT_DATA }
+SELECT base58Decode('2', 34); -- { serverError INCORRECT_DATA }
+SELECT base58Decode('2', 1) = unhex('01');
+SELECT base58Decode(base58Encode('Hello world!'), 12) = 'Hello world!';
+SELECT base58Decode(base58Encode('Hello world!'), 11); -- { serverError INCORRECT_DATA }
+SELECT base58Decode(base58Encode('Hello world!'), 99); -- { serverError INCORRECT_DATA }
+SELECT base58Decode(repeat('1', 33), 33) = repeat(unhex('00'), 33);
+SELECT base58Decode('2', 18446744073709551615); -- { serverError INCORRECT_DATA }
+SELECT tryBase58Decode('2', 34) = '';
 
 SELECT 'bulk round-trip';
 SELECT sum(dec = rs) == 100 FROM (SELECT randomString(32) AS rs, base58Decode(base58Encode(rs)) AS dec FROM numbers(100));
@@ -96,3 +114,27 @@ SELECT count() FROM (SELECT base58Decode(base58Encode(rs)) AS dec, rs FROM (SELE
 SELECT 'bulk round-trip with size hint';
 SELECT count() FROM (SELECT base58Decode(base58Encode(rs), 32) AS dec, rs FROM (SELECT unhex(hex(randomFixedString(32))) AS rs FROM numbers(100)) WHERE dec = rs);
 SELECT count() FROM (SELECT base58Decode(base58Encode(rs), 64) AS dec, rs FROM (SELECT unhex(hex(randomFixedString(64))) AS rs FROM numbers(100)) WHERE dec = rs);
+
+SELECT 'short path boundary';
+SELECT base58Decode(base58Encode(unhex('010203'))) = unhex('010203');
+SELECT base58Decode(base58Encode(unhex('0102030405060708'))) = unhex('0102030405060708');
+SELECT base58Decode(base58Encode(unhex('010203040506070809'))) = unhex('010203040506070809');
+SELECT base58Decode('jpXCZedGfVR') = unhex('010000000000000000');
+SELECT base58Decode('zzzzzzzzzzz') = unhex('015AC264554F0327FF');
+
+SELECT 'word storage threshold';
+SELECT base58Decode(base58Encode(repeat('a', 466))) = repeat('a', 466);
+SELECT base58Decode(base58Encode(repeat('a', 467))) = repeat('a', 467);
+SELECT base58Decode(base58Encode(repeat('a', 468))) = repeat('a', 468);
+SELECT base58Encode(base58Decode(repeat('z', 696))) = repeat('z', 696);
+SELECT base58Encode(base58Decode(repeat('z', 697))) = repeat('z', 697);
+SELECT base58Encode(base58Decode(repeat('z', 698))) = repeat('z', 698);
+SELECT base58Decode(base58Encode(concat(unhex('00000000000000000000'), repeat('a', 467)))) = concat(unhex('00000000000000000000'), repeat('a', 467));
+
+-- A length that cannot decode to the expected size is rejected before the conversion runs, so this
+-- returns immediately rather than spending the quadratic cost of two million characters.
+SELECT 'size hint rejects an impossible length without converting';
+SET function_base58_max_input_size = 0;
+SET max_execution_time = 3;
+SELECT base58Decode(concat(repeat('z', 1000000), repeat('z', 1000000)), 32); -- { serverError INCORRECT_DATA }
+SELECT base58Decode(concat(repeat('z', 1000000), repeat('z', 1000000)), 64); -- { serverError INCORRECT_DATA }

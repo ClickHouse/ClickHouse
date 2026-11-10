@@ -26,9 +26,10 @@ NOTARY_P8 = TEMP_DIR / "notary_key.p8"
 NOTARY_API_KEY_JSON = TEMP_DIR / "notary_api_key.json"
 
 KMS_KEY_ARN = (
-    "arn:aws:kms:us-east-1:640168457429:key/6b675f39-8cf0-4380-8668-425dc7548086"
+    "arn:aws:kms:us-east-1:445567100269:key/mrk-9742178ad5054c8ba662fb073b62aac8"
 )
 KMS_REGION = "us-east-1"
+SIGNING_ROLE_ARN = "arn:aws:iam::445567100269:role/release_signing"
 PKCS11_TOKEN_LABEL = "clickhouse_macos_signing"
 
 APPLE_TEAM_ID = "ZNDB5FJ8ZW"
@@ -43,6 +44,36 @@ NOTARY_ISSUER_ID = "b17e8d0b-6b5d-4063-9a1d-24d9baa80daf"
 NOTARY_KEY_ID = "99QTC6XVSW"
 
 MAX_SIZE_GROWTH_BYTES = 32 * 1024 * 1024
+
+
+def assume_signing_role():
+    # Assume the signing role in the security account. This job runs on the
+    # dedicated release-runner pool, whose instance role (release_runner) is
+    # the only principal release_signing trusts. We just swap the env creds for
+    # the short-lived signing creds; the instance role stays reachable via IMDS.
+    creds = json.loads(
+        subprocess.check_output(
+            [
+                "aws",
+                "sts",
+                "assume-role",
+                "--role-arn",
+                SIGNING_ROLE_ARN,
+                "--role-session-name",
+                "macos-signing",
+                "--region",
+                KMS_REGION,
+                "--query",
+                "Credentials",
+                "--output",
+                "json",
+            ]
+        )
+    )
+    os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretAccessKey"]
+    os.environ["AWS_SESSION_TOKEN"] = creds["SessionToken"]
+    print("Assumed signing role")
 
 
 def report_tooling():
@@ -195,14 +226,11 @@ def write_notary_api_key():
 
 
 def notarize():
-    try:
-        return Shell.check(
-            f"{RCODESIGN} notary-submit --api-key-file {NOTARY_API_KEY_JSON}"
-            f" --wait --max-wait-seconds 1800 {SIGNED_ZIP}",
-            verbose=True,
-        )
-    finally:
-        NOTARY_API_KEY_JSON.unlink(missing_ok=True)
+    return Shell.check(
+        f"{RCODESIGN} notary-submit --api-key-file {NOTARY_API_KEY_JSON}"
+        f" --wait --max-wait-seconds 1800 {SIGNED_ZIP}",
+        verbose=True,
+    )
 
 
 def verify():
@@ -216,7 +244,12 @@ def verify():
     for line in info.splitlines():
         if any(
             key in line
-            for key in ("apple_team_id", "identifier:", "flags:", "signed_with_algorithm")
+            for key in (
+                "apple_team_id",
+                "identifier:",
+                "flags:",
+                "signed_with_algorithm",
+            )
         ):
             print(line.strip())
     if f"apple_team_id: {APPLE_TEAM_ID}" not in info:
@@ -237,6 +270,10 @@ def main():
     print(f"Build type [{args.build_type}], job [{Info().job_name}]")
 
     steps = [
+        # read the notary key with the runner's own creds BEFORE assuming the
+        # signing role (release_signing can only kms:Sign, not read SSM).
+        ("write notary api key", write_notary_api_key),
+        ("assume signing role", assume_signing_role),
         ("report tooling", report_tooling),
         ("configure KMS module", configure_kms_module),
         ("check certificate against key", check_certificate_matches_key),
@@ -245,16 +282,21 @@ def main():
         ("check output", check_signed_output),
         ("package", package),
         ("verify", verify),
-        ("write notary api key", write_notary_api_key),
         ("notarize", notarize),
     ]
 
     results = []
-    for name, command in steps:
-        results.append(Result.from_commands_run(name=name, command=command))
-        if not results[-1].is_ok():
-            print(f"Step [{name}] failed, stopping")
-            break
+    try:
+        for name, command in steps:
+            results.append(Result.from_commands_run(name=name, command=command))
+            if not results[-1].is_ok():
+                print(f"Step [{name}] failed, stopping")
+                break
+    finally:
+        # never leave the App Store Connect credential in the reused self-hosted
+        # workspace, even if a step before notarize failed.
+        NOTARY_P8.unlink(missing_ok=True)
+        NOTARY_API_KEY_JSON.unlink(missing_ok=True)
 
     Result.create_from(results=results, stopwatch=stopwatch).complete_job()
 
