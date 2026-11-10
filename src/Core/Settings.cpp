@@ -2328,6 +2328,7 @@ Answer `min`, `max` and `count` aggregations from per-part column statistics ins
 When enabled, a query of the form `SELECT min(column), max(column), count() FROM table` without `GROUP BY` and filters
 is answered from column statistics (e.g. MinMax statistics, see the `auto_statistics_types` MergeTree setting)
 for the data parts that have them materialized, and only the remaining parts are read.
+`count()` is also answered together with the aggregations of `use_statistics_for_sum_avg_aggregation`.
 
 Possible values:
 
@@ -2335,6 +2336,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.9", false, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."}) \
+    DECLARE(Bool, use_statistics_for_sum_avg_aggregation, true, R"(
+Answer `sum`, `avg` and `sumCount` aggregations over integer and `Decimal` columns that are not `Nullable` or
+`LowCardinality`, without `GROUP BY` and filters, from per-part column statistics (the `basic` statistics type, see the
+`auto_statistics_types` `MergeTree` setting) for the data parts that have them materialized, and read only the remaining
+parts. `count(column)` of a column that is not `Nullable` or `LowCardinality` is answered there from the number of rows.
+The result is exactly the same as when reading the data.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.11", false, true, "New setting to answer `sum`, `avg`, `sumCount` and `count(column)` aggregations without `GROUP BY` and filters from per-part column statistics. previous_value=false so `compatibility` with versions before 26.11 keeps the optimization disabled and restores the pre-existing plan."}) \
     DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
@@ -5239,7 +5253,7 @@ The memory size at which the adaptive aggregator freezes a thread's local hash t
 )", 0, \
         {"26.9", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."}) \
     DECLARE(Bool, adaptive_aggregator_disable_thaw, false, R"(
-Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads have repeat-dominated staged streams, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
+Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads thaw, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
 
 With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. Aggregations with descending top-K pruning already keep their tables frozen independently of this setting. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
 )", 0, \
@@ -6145,6 +6159,16 @@ Replace if(cond1, then1, if(cond2, ...)) chains to multiIf. Currently it's not b
     DECLARE(Bool, optimize_multiif_to_if, true, R"(
 Replace 'multiIf' with only one condition to 'if'.
 )", 0) \
+    DECLARE(Bool, optimize_if_transform_const_strings_to_lowcardinality, false, R"(
+If enabled, the `if`, `multiIf`, and `transform` functions with constant string result branches (and defaults) will return `LowCardinality(String)` instead of `String`.
+Disabled by default because constructing a `LowCardinality` dictionary per block can be slower than a plain `String` result when the dictionary is not reused downstream.
+The optimization is not applied when the whole expression is constant (constant condition or input as well): a constant gains nothing from `LowCardinality`, and functions expecting constant `String` arguments (e.g. `arrayReduce`, `joinGet`, `tupleElement`) keep working.
+
+All the result branches have to be constants, so a nested `if` chain such as `if(cond1, 'a', if(cond2, 'b', 'c'))` keeps plain `String`: the else-branch of the outer `if` is another `if`, not a constant. Write it as `multiIf(cond1, 'a', cond2, 'b', 'c')` to get `LowCardinality(String)`.
+
+This setting has no effect while `optimize_if_transform_strings_to_enum` is enabled: the `Enum` rewrite takes precedence, and the result stays `String` (or `Nullable(String)`) even for the explicit `multiIf` form above.
+)", 0, \
+        {"26.11", false, false, "New setting to allow optimizing results of const branches from `if`/`multiIf`/`transform` into `LowCardinality`. Disabled by default."}) \
     DECLARE(Bool, optimize_if_transform_strings_to_enum, false, R"(
 Replaces string-type arguments in If and Transform to enum. Disabled by default cause it could make inconsistent change in distributed query that would lead to its fail.
 )", 0) \
@@ -8018,8 +8042,7 @@ This is an expert-level setting which should only be used for debugging by devel
 )", 0, \
         {"26.9", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."}) \
     DECLARE(Bool, query_plan_lower_array_join_function, true, R"(
-Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+Runs the `arrayJoin` function in the same way as the `ARRAY JOIN` clause: as a separate `ARRAY JOIN` step of the query plan. When disabled, the function is calculated inside the expression that contains it, as in older versions.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -9305,9 +9328,6 @@ SELECT * FROM test_table
 │ 1 │
 └───┘
 ```
-)", 0) \
-    DECLARE(Bool, count_distinct_optimization, false, R"(
-Rewrite count distinct to subquery of group by
 )", 0) \
     DECLARE(Bool, optimize_inverse_dictionary_lookup, true, R"(
 Avoid repeated inverse dictionary lookup by doing faster lookups into a precomputed set of possible key values.
@@ -10737,6 +10757,10 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
 )", 0, \
         {"26.10", 5.0, 3.0, "Lowered the minimum estimated ratio of join output rows to build-side rows that enables the hash join row store."}, \
         {"26.9", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."}) \
+    DECLARE(UInt64, min_string_column_bytes_for_hash_join_row_store, 8_MiB, R"(
+Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means `String` columns are not stored in the row store.
+)", 0, \
+        {"26.11", 0, 8_MiB, "New setting to control the minimum estimated size of a build-side `String` column to store it in the hash join row store."}) \
     \
     /* ####################################################### */ \
     /* AI function settings */ \
@@ -11441,7 +11465,7 @@ When the hash join build side was converted to a FixedHashMap (see `enable_join_
     DECLARE(Bool, enable_join_runtime_filters_index_analysis, true, R"(
 Prune granules on the probe side of a JOIN with the runtime filter collected from the build side, see `enable_join_runtime_filters`.
 Only has an effect if `use_skip_indexes_on_data_read = 1`.
-Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, can be pruned.
+Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, or is the global row index `_part_starting_offset + _part_offset`, can be pruned. A self-join on the global row index, which fetches the rows found by a subquery, reads only the granules of those rows. The global row index identifies a row only within one query, so both sides of the join must read the table in the same query.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
@@ -11832,6 +11856,8 @@ Enable table function `eval`.
     MAKE_OBSOLETE(M, Bool, query_plan_aggregation_in_order, true, \
         {"26.10", true, true, "Obsolete setting: the aggregation-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation was removed. Use `optimize_aggregation_in_order` to toggle the optimization."}, \
         {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
+    MAKE_OBSOLETE(M, Bool, count_distinct_optimization, false, \
+        {"26.11", false, false, "Obsolete setting: a single `uniqExact` or `count(DISTINCT)` without `GROUP BY` is computed by radix partitioning (`optimize_uniq_exact_radix_partitioning`), which made the rewrite to a `GROUP BY` subquery unnecessary."}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_insert_select_local_pipeline, true, \
         {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
         {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
