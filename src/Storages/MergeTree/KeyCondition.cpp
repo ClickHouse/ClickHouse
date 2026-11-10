@@ -185,6 +185,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             {
                 out.function = RPNElement::FUNCTION_IN_RANGE;
                 out.range = Range(value);
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -261,6 +262,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -269,6 +271,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -277,6 +280,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -285,6 +289,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -293,6 +298,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -301,6 +307,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -482,6 +489,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.function = RPNElement::FUNCTION_IS_NOT_NULL;
                 // isNotNull means (-Inf, +Inf)
                 out.range = Range::createWholeUniverseWithoutNull();
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -494,6 +502,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 // ranges, instead will use the inverse of (-Inf, +Inf). The inversion happens in
                 // checkInHyperrectangle.
                 out.range = Range::createWholeUniverseWithoutNull();
+                out.null_on_null_key = false;
                 return true;
             }
         },
@@ -7993,6 +8002,25 @@ bool rangeOfKeyColumnMayHoldNull(
         || (atomMayClaimNestedNullOrNaN(element) && keyTypeMayHoldNestedNullOrNaN(key_type));
 }
 
+/// Whether `element` may be NULL on some row of the key ranges. `range_of` returns the range of a key column, or null if
+/// the caller has no range for it. Such a column can hold any value.
+template <typename RangeOf>
+bool atomMayBeNull(const KeyCondition::RPNElement & element, const DataTypes & key_types, RangeOf && range_of)
+{
+    if (!element.null_on_null_key)
+        return false;
+
+    static const Range whole_universe = Range::createWholeUniverse();
+    for (size_t key_column : element.key_columns)
+    {
+        const Range * range = range_of(key_column);
+        if (rangeOfKeyColumnMayHoldNull(element, range ? *range : whole_universe, key_types, key_column))
+            return true;
+    }
+
+    return false;
+}
+
 /// Pushes the mask of an atom group, given `apply_element`, which pushes the mask of one atom. Each atom
 /// bounds the mask of the whole predicate leaf, so the group's mask is their intersection (see
 /// `KeyCondition::RPNElement::group_atoms`).
@@ -8010,10 +8038,16 @@ void pushAtomGroupMask(const KeyCondition::RPNElement & group, const ApplyElemen
 }
 
 /// Builds the mask for a range, set, or `IS [NOT] NULL` atom from `mask`, the result for its range or set on the key
-/// ranges. `column_index_to_column_bf` is null when the caller has no bloom filters.
+/// ranges, and `can_be_null`, whether the atom can be NULL on them. `column_index_to_column_bf` is null when the caller
+/// has no bloom filters.
 BoolMask atomMask(
-    const KeyCondition::RPNElement & element, BoolMask mask, const KeyCondition::ColumnIndexToBloomFilter * column_index_to_column_bf)
+    const KeyCondition::RPNElement & element,
+    BoolMask mask,
+    bool can_be_null,
+    const KeyCondition::ColumnIndexToBloomFilter * column_index_to_column_bf)
 {
+    mask.can_be_null = can_be_null;
+
     if (mask.can_be_true && element.bloom_filter_data && column_index_to_column_bf)
         mask.can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, *column_index_to_column_bf);
 
@@ -8238,6 +8272,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
+    const auto may_be_null = [&](const RPNElement & element)
+    {
+        return atomMayBeNull(
+            element, data_types, [&](size_t key_column) { return key_column < hyperrectangle.size() ? &hyperrectangle[key_column] : nullptr; });
+    };
+
     /// Pushes the mask of an atom or a constant onto `rpn_stack`, or applies a logical operator to it.
     /// Returns false when the element cannot be evaluated on the hyperrectangle. The pushed mask
     /// `(true, true, true)` then allows every value, and the element is reported as unknown, so it does not replace
@@ -8273,7 +8313,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 rpn_stack.emplace_back(true, true, true);
                 return false;
             }
-            rpn_stack.push_back(atomMask(element, *mask, &column_index_to_column_bf));
+            rpn_stack.push_back(atomMask(element, *mask, may_be_null(element), &column_index_to_column_bf));
         }
         else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
         {
@@ -8368,7 +8408,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         }
                     }
 
-                    rpn_stack.emplace_back(mask);
+                    rpn_stack.emplace_back(mask.can_be_true, mask.can_be_false, may_be_null(element));
                 }
                 else
                 {
@@ -8466,13 +8506,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (disjoint)
             {
                 // Indices box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
-                rpn_stack.emplace_back(false, true);
+                rpn_stack.emplace_back(false, true, may_be_null(element));
                 return true;
             }
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
             bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
-            rpn_stack.emplace_back(intersects, true);
+            rpn_stack.emplace_back(intersects, true, may_be_null(element));
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
@@ -8491,7 +8531,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = element.range.intersectsRange(*key_range);
             bool contains = element.range.containsRange(*key_range);
 
-            rpn_stack.push_back(atomMask(element, BoolMask(intersects, !contains), nullptr));
+            rpn_stack.push_back(atomMask(element, BoolMask(intersects, !contains), may_be_null(element), nullptr));
         }
         else if (
             element.function == RPNElement::FUNCTION_IN_SET
@@ -8544,6 +8584,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             rpn_stack.push_back(atomMask(
                 element,
                 element.set_index->checkInRange(hyperrectangle, data_types, element.first_function_number, single_point),
+                may_be_null(element),
                 &column_index_to_column_bf));
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
@@ -8633,6 +8674,16 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return {is_key_col_present, sparse_pos};
     };
 
+    const auto may_be_null = [&](const RPNElement & element)
+    {
+        const auto sparse_range = [&](size_t key_column)
+        {
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
+            return is_key_col_present && sparse_pos < sparse_hyperrectangle.size() ? &sparse_hyperrectangle[sparse_pos] : nullptr;
+        };
+        return atomMayBeNull(element, key_types, sparse_range);
+    };
+
     auto curve_type = [&](size_t key_column_pos)
     {
         for (const auto & curve : key_space_filling_curves)
@@ -8669,7 +8720,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 /// A chain that can't be applied to the range leaves the atom unknown.
                 const auto mask = checkRangeAtomInKeyRange(element, sparse_hyperrectangle[sparse_pos], sparse_data_types, sparse_pos);
-                rpn_stack.push_back(mask ? atomMask(element, *mask, nullptr) : BoolMask(true, true, true));
+                rpn_stack.push_back(mask ? atomMask(element, *mask, may_be_null(element), nullptr) : BoolMask(true, true, true));
             }
         }
         else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
@@ -8767,7 +8818,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                             }
                         }
 
-                        rpn_stack.emplace_back(mask);
+                        rpn_stack.emplace_back(mask.can_be_true, mask.can_be_false, may_be_null(element));
                     }
                     else
                     {
@@ -8889,13 +8940,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (disjoint)
             {
                 // Index box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
-                rpn_stack.emplace_back(false, true);
+                rpn_stack.emplace_back(false, true, may_be_null(element));
                 return;
             }
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
             bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
-            rpn_stack.emplace_back(intersects, true);
+            rpn_stack.emplace_back(intersects, true, may_be_null(element));
         }
         else if (element.function == RPNElement::FUNCTION_IS_NULL
               || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
@@ -8915,7 +8966,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 bool intersects = element.range.intersectsRange(*key_range);
                 bool contains   = element.range.containsRange(*key_range);
 
-                rpn_stack.push_back(atomMask(element, BoolMask(intersects, !contains), nullptr));
+                rpn_stack.push_back(atomMask(element, BoolMask(intersects, !contains), may_be_null(element), nullptr));
             }
         }
         else if (element.function == RPNElement::FUNCTION_IN_SET
@@ -8969,6 +9020,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 element,
                 element.set_index->checkInRange(
                     key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, element.first_function_number, single_point),
+                may_be_null(element),
                 nullptr));
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
