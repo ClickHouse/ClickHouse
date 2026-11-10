@@ -12,6 +12,7 @@ namespace DB
 {
 class IBackupEntry;
 class StorageMergeTree;
+class WriteBuffer;
 
 /// A mutation entry for non-replicated MergeTree storage engines.
 /// Stores information about mutation in file mutation_*.txt.
@@ -85,7 +86,9 @@ struct MergeTreeMutationEntry
 
     void removeFile();
 
-    void writeCSN(CSN csn_);
+    /// Rewrites the file with the `csn:` line through a temporary file. `sync_directory` is
+    /// `fsync_part_directory`: it fsyncs the mutations directory after the rename.
+    void writeCSN(CSN csn_, bool sync_directory);
 
     /// Rewrite a legacy on-disk file (see `needs_file_upgrade`) with the partition scope of
     /// its commands pinned to `IN PARTITION ID`. The shape of the file is unchanged, so a
@@ -112,6 +115,10 @@ struct MergeTreeMutationEntry
         ContextPtr context_);
 
     ~MergeTreeMutationEntry();
+
+private:
+    /// Serializes everything except the `csn:` line, in the format the loading constructor reads.
+    void writeRecord(WriteBuffer & out) const;
 };
 
 }
