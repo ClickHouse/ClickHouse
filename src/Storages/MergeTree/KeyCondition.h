@@ -375,6 +375,10 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
+        /// Whether the atom is NULL on a row whose key value is NULL. Most atoms are. The exceptions are `IS NULL`, `<=>`,
+        /// `has`, `nullIn`, and their negations, which are true or false on such a row.
+        bool null_on_null_key = true;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
