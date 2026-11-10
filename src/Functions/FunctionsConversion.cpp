@@ -1178,6 +1178,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     /// tuple with enable_named_columns_in_function_tuple inserted into a column whose tuple
     /// elements are named differently). Previously such conversions silently filled the whole
     /// result by default values, losing all the data (see issue #70830).
+    /// The input format readers request matching by name in this case too, as a file is read by its schema.
     bool convert_positionally = !(from_type->hasExplicitNames() && to_type->hasExplicitNames());
 
     if (!convert_positionally)
@@ -1194,7 +1195,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
         for (const auto & to_name : to_names)
             common_names_count += from_positions.contains(to_name);
 
-        if (common_names_count == 0)
+        if (common_names_count == 0 && !settings.match_tuple_elements_by_name)
         {
             convert_positionally = true;
         }
@@ -1265,7 +1266,9 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
             else
             {
-                converted_columns[i] = to_element_types[i]->createColumn()->cloneResized(input_rows_count);
+                auto column = to_element_types[i]->createColumn();
+                to_element_types[i]->insertManyDefaultsInto(*column, input_rows_count);
+                converted_columns[i] = std::move(column);
             }
         }
 
@@ -3559,9 +3562,10 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    bool match_tuple_elements_by_name)
 {
-    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior);
+    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior, match_tuple_elements_by_name);
 }
 
 FunctionBasePtr createFunctionBaseCast(

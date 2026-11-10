@@ -241,7 +241,7 @@ DataTypePtr alignStructFieldNamesCaseInsensitive(const DataTypePtr & from, const
     return from;
 }
 
-/// Match named struct fields recursively, dropping unrequested fields and defaulting missing ones.
+/// Prepares the elements of named structs that are requested, recursively; the cast that follows matches them by name.
 /// Nullable tuples are converted with null rows excluded before applying the requested nullability.
 /// Top-level null defaults also populate `missing_values` for column `DEFAULT` expressions.
 ColumnWithTypeAndName prepareArrowColumnForCast(
@@ -273,8 +273,8 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
             if (has_nulls)
             {
                 if (settings.null_as_default)
-                    insertNullAsDefaultIfNeeded(nested, {to_nested->createColumn(), to_nested, from.name}, 0, nullptr);
-                auto converted = IColumn::mutate(castColumn(nested, to_nested)->convertToFullColumnIfConst());
+                    insertNullAsDefaultIfNeeded(nested, {to_nested->createColumn(), to_nested, from.name}, 0, nullptr, true);
+                auto converted = IColumn::mutate(castColumnMatchingTupleElementsByName(nested, to_nested)->convertToFullColumnIfConst());
                 const size_t default_index = converted->size();
                 to_nested->insertDefaultInto(*converted);
                 auto indexes = ColumnUInt64::create(null_map.size());
@@ -338,51 +338,39 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
         const auto & tuple_column = assert_cast<const ColumnTuple &>(*from.column);
         const auto & source_types = from_tuple->getElements();
         const auto & target_types = to_tuple->getElements();
-        const auto & target_names = to_tuple->getElementNames();
         const bool match_by_name = from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames();
         if (!match_by_name && source_types.size() != target_types.size())
             return from;
 
-        UnorderedMapWithMemoryTracking<String, size_t> source_positions;
-        if (match_by_name)
-        {
-            const auto & source_names = from_tuple->getElementNames();
-            source_positions.reserve(source_names.size());
-            for (size_t i = 0; i < source_names.size(); ++i)
-                source_positions.emplace(source_names[i], i);
-        }
-
         Columns columns;
         DataTypes types;
-        columns.reserve(target_types.size());
-        types.reserve(target_types.size());
-        for (size_t i = 0; i < target_types.size(); ++i)
+        columns.reserve(source_types.size());
+        types.reserve(source_types.size());
+        for (size_t i = 0; i < source_types.size(); ++i)
         {
-            size_t source_position = i;
+            std::optional<size_t> target_position = i;
             if (match_by_name)
+                target_position = to_tuple->tryGetPositionByName(from_tuple->getNameByPosition(i + 1));
+            if (!target_position)
             {
-                auto it = source_positions.find(target_names[i]);
-                if (it == source_positions.end())
-                {
-                    columns.push_back(target_types[i]->createColumnConstWithDefaultValue(tuple_column.size())
-                        ->convertToFullColumnIfConst());
-                    types.push_back(target_types[i]);
-                    continue;
-                }
-                source_position = it->second;
+                columns.push_back(tuple_column.getColumnPtr(i));
+                types.push_back(source_types[i]);
+                continue;
             }
             auto prepared = prepareArrowColumnForCast(
-                {tuple_column.getColumnPtr(source_position), source_types[source_position], from.name},
-                target_types[i], settings);
+                {tuple_column.getColumnPtr(i), source_types[i], from.name}, target_types[*target_position], settings);
             columns.push_back(std::move(prepared.column));
             types.push_back(std::move(prepared.type));
         }
 
         /// An empty tuple has no element columns to carry its row count.
         from.column = columns.empty() ? ColumnTuple::create(tuple_column.size()) : ColumnTuple::create(std::move(columns));
-        from.type = to_tuple->hasExplicitNames()
-            ? std::make_shared<DataTypeTuple>(std::move(types), target_names)
-            : std::make_shared<DataTypeTuple>(std::move(types));
+        if (match_by_name)
+            from.type = std::make_shared<DataTypeTuple>(std::move(types), from_tuple->getElementNames());
+        else if (to_tuple->hasExplicitNames())
+            from.type = std::make_shared<DataTypeTuple>(std::move(types), to_tuple->getElementNames());
+        else
+            from.type = std::make_shared<DataTypeTuple>(std::move(types));
         return from;
     }
     return from;
@@ -1019,7 +1007,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                         "Column '{}' is not present in the Arrow IPC data", header_column.name);
 
                 auto missing = header_column.type->createColumn();
-                missing->insertManyDefaults(num_rows);
+                header_column.type->insertManyDefaultsInto(*missing, num_rows);
                 if (block_missing_values_ptr)
                     block_missing_values_ptr->setBits(i, num_rows);
                 columns.push_back(std::move(missing));
@@ -1084,8 +1072,8 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
         {
             column = prepareArrowColumnForCast(column, header_column.type, format_settings, i, block_missing_values_ptr);
             if (format_settings.null_as_default)
-                insertNullAsDefaultIfNeeded(column, header_column, i, block_missing_values_ptr);
-            column.column = castColumn(column, header_column.type);
+                insertNullAsDefaultIfNeeded(column, header_column, i, block_missing_values_ptr, true);
+            column.column = castColumnMatchingTupleElementsByName(column, header_column.type);
         }
         catch (Exception & e)
         {

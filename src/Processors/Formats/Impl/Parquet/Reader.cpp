@@ -4591,7 +4591,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     if (output_info.is_missing_column)
     {
         res = output_info.output_type->createColumn();
-        res->insertManyDefaults(num_rows);
+        output_info.output_type->insertManyDefaultsInto(*res, num_rows);
 
         if (output_info.idx_in_output_block.has_value() &&
             /// If block_missing_values is enabled (not empty), and this column is not prewhere-only
