@@ -203,7 +203,9 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
     if (const size_t affordable = getAffordablePartsToMergeAtOnce(ctx))
     {
         /// A value of 0 means "no limit".
-        if (simple_merge_settings.max_parts_to_merge_at_once == 0 || simple_merge_settings.max_parts_to_merge_at_once > affordable)
+        const bool narrowed = simple_merge_settings.max_parts_to_merge_at_once == 0
+            || simple_merge_settings.max_parts_to_merge_at_once > affordable;
+        if (narrowed)
             simple_merge_settings.max_parts_to_merge_at_once = affordable;
 
         /// A minimum above the cap would stop the table from compacting at all, or, for
@@ -211,11 +213,16 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
         simple_merge_settings.min_parts_to_merge_at_once = std::min(simple_merge_settings.min_parts_to_merge_at_once, affordable);
         simple_merge_settings.small_parts_min_count = std::min(simple_merge_settings.small_parts_min_count, affordable);
 
-        /// The selector lowers the base for old parts and for partitions with many parts, but not below 2, and the
-        /// ratio of the sum of two unequal parts to the larger of them is below 2: with a cap of 2 no merge would
-        /// ever be accepted in the background, and the table would accumulate parts. Lower the floor with the cap,
-        /// to 1 (any merge) for a cap of 2 and to 1.5 for a cap of 3, so that the narrowed merges make progress.
-        simple_merge_settings.min_lowered_base = std::min(simple_merge_settings.min_lowered_base, static_cast<double>(affordable) / 2);
+        /// The selector lowers the base for old parts and for partitions with many parts, but not below 2. A merge
+        /// is accepted when the sum of its parts is at least the base times the largest of them, and for a few
+        /// parts of unequal size that ratio stays below 2: two parts give less than 2, and parts that grow
+        /// geometrically, like `[1 KiB, 16 MiB, 1 KiB, 64 MiB]` repeated, give less than 1.5 with up to four parts.
+        /// The narrowed merge cannot take the many small parts that would raise the ratio, so no merge would ever
+        /// be accepted in the background, and the table would accumulate parts until inserts are rejected.
+        /// When the merge width is narrowed, lower the floor to 1, which accepts any merge, so that old parts
+        /// and partitions with many parts are eventually merged regardless of how uneven the parts are.
+        if (narrowed)
+            simple_merge_settings.min_lowered_base = 1;
     }
 
     return simple_merge_settings;

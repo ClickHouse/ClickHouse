@@ -117,9 +117,9 @@ public:
         double base = 5;
 
         /** The value that `base` is lowered to when the parts are old enough or the partition has enough parts
-          * (see below). With the default of 2, a merge of two parts of unequal size is never accepted, which is
-          * fine as long as more parts may be merged at once, but stops the table from compacting when
-          * `max_parts_to_merge_at_once` is as low as 2.
+          * (see below). With the default of 2, a merge of a few parts of unequal size is never accepted, which is
+          * fine as long as many parts may be merged at once, but stops the table from compacting when
+          * `max_parts_to_merge_at_once` is narrowed to a few parts.
           */
         double min_lowered_base = 2;
 
