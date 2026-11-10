@@ -31,6 +31,7 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
@@ -76,8 +77,6 @@ namespace Setting
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsBool semi_join_include_columns_from_both_sides;
-    extern const SettingsBool anti_join_include_columns_from_both_sides;
 }
 
 static const ActionsDAG::Node * appendExpression(
@@ -206,21 +205,6 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
 
     std::unordered_map<String, const ActionsDAG::Node *> changed_types;
 
-    /** When a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides one side of the JOIN, only the
-      * preserved side is part of the result, so its key column must keep its own type there instead of
-      * being widened to the `USING` supertype - the supertype is derived from the hidden side as well.
-      * Only the output type is kept: the join condition below still reads the supertype cast.
-      */
-    const auto & join_query_settings = builder_context.planner_context->getQueryContext()->getSettingsRef();
-    const bool hides_non_preserved_side
-        = (join_operator.strictness == JoinStrictness::Semi && !join_query_settings[Setting::semi_join_include_columns_from_both_sides])
-        || (join_operator.strictness == JoinStrictness::Anti && !join_query_settings[Setting::anti_join_include_columns_from_both_sides]);
-    std::optional<JoinTableSide> preserved_side;
-    if (hides_non_preserved_side && isLeft(join_operator.kind))
-        preserved_side = JoinTableSide::Left;
-    else if (hides_non_preserved_side && isRight(join_operator.kind))
-        preserved_side = JoinTableSide::Right;
-
     JoinActionRef::AddFunction using_concat_function(FunctionFactory::instance().get("firstNonDefault", nullptr));
     for (size_t i = 0; i < num_nodes; ++i)
     {
@@ -243,16 +227,10 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             return arg;
         };
 
-        for (size_t inner_column_index = 0; inner_column_index < inner_columns.size(); ++inner_column_index)
+        for (const auto & inner_column : inner_columns)
         {
-            const auto & inner_column = inner_columns[inner_column_index];
-            /// The last inner column is the one from the right table expression, the rest are from the left.
-            const auto inner_column_side
-                = (inner_column_index + 1 == inner_columns.size()) ? JoinTableSide::Right : JoinTableSide::Left;
-            const bool keep_original_type = preserved_side == inner_column_side;
-
             auto & arg = args.emplace_back(builder_context.addExpression(inner_column));
-            if (!arg.getType()->equals(*result_type) && !keep_original_type)
+            if (!arg.getType()->equals(*result_type))
             {
                 arg = JoinActionRef::transform({arg}, cast_to_super);
             }
@@ -359,29 +337,6 @@ static bool hasEquiConditions(const JoinCondition & condition)
     return false;
 }
 
-static bool hasPreJoinCondition(const JoinCondition & condition, const JoinExpressionActions & expression_actions)
-{
-    return std::ranges::any_of(condition.conjuncts, [&](const ActionsDAG::Node * conjunct)
-    {
-        JoinActionRef action(conjunct, expression_actions);
-        return action.fromLeft() || action.fromRight() || action.fromNone();
-    });
-}
-
-/// An equality between an expression over the left table and an expression over the right table, which a join
-/// algorithm matches on. Unlike `hasEquiConditions`, an equality with a constant or within one table does not count.
-static bool hasJoinKeyCondition(const JoinCondition & condition, const JoinExpressionActions & expression_actions)
-{
-    return std::ranges::any_of(condition.conjuncts, [&](const ActionsDAG::Node * conjunct)
-    {
-        JoinActionRef action(conjunct, expression_actions);
-        auto [op, lhs, rhs] = action.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-            return false;
-        return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
-    });
-}
-
 
 static JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
 {
@@ -466,28 +421,7 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                 // When some expressions have key expressions and some doesn't, then let's plan the whole OR expression as a single clause to eliminate the chance that some clauses might end up without key expressions
                 // TODO(antaljanosbenjamin/vdimir): Analyze the expressions first, so join clauses are not built unnecessarily.
                 size_t with_key_expression = static_cast<size_t>(std::count_if(result.begin(), result.end(), hasEquiConditions));
-                bool plan_as_single_clause = with_key_expression != 0 && with_key_expression < result.size();
-                /// Without key expressions a clause narrows the candidate pairs only by the conditions evaluated before
-                /// matching. If one clause has none, splitting cannot narrow what an ALL join matches.
-                /// An ALL INNER join is never split: every join algorithm evaluates the whole `OR` after matching on the keys of the enclosing `AND`, while splitting hides these keys inside one `or` predicate from join reordering.
-                /// An outer join is split if every clause has a condition evaluated before matching, because a single clause with a condition on both tables requires the `hash` or `grace_hash` algorithm.
-                /// `hasEquiConditions` also counts an equality with a constant, such as `t1.a = 1 OR t2.b = 2`, which is not a join key, so the rules below look for a join key between the two tables.
-                if (!plan_as_single_clause && builder_context.join_operator.strictness == JoinStrictness::All
-                    && std::ranges::none_of(result, [&](const JoinCondition & clause)
-                    {
-                        return hasJoinKeyCondition(clause, builder_context.expression_actions);
-                    }))
-                {
-                    if (builder_context.join_operator.kind == JoinKind::Inner)
-                        plan_as_single_clause = true;
-                    else
-                        plan_as_single_clause = !std::ranges::all_of(result, [&](const JoinCondition & clause)
-                        {
-                            return hasPreJoinCondition(clause, builder_context.expression_actions);
-                        });
-                }
-
-                if (result.size() > 1 && plan_as_single_clause)
+                if (result.size() > 1 && with_key_expression != 0 && with_key_expression < result.size())
                 {
                     result.clear();
                     buildJoinCondition(node, builder_context, result.emplace_back());

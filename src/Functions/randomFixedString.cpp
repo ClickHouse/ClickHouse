@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <Functions/FunctionsRandom.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
@@ -15,6 +16,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
     extern const int DECIMAL_OVERFLOW;
 }
 
@@ -40,9 +43,16 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(const N NativeUInt) -> FixedString(N)";
+        if (!isNativeUInt(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be unsigned integer", getName());
+
+        if (!arguments[0].column || !isColumnConst(*arguments[0].column))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be constant", getName());
+
+        const size_t n = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<UInt64>();
+        return std::make_shared<DataTypeFixedString>(n);
     }
 
     bool isDeterministic() const override { return false; }

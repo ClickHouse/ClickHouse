@@ -4,6 +4,7 @@
 -- must only skip for projection reads, not for any non-null analysis result.
 -- Regression test for PR fixing issue #110281.
 
+SET enable_analyzer = 1;
 SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS rmt_04517;
@@ -11,7 +12,7 @@ DROP TABLE IF EXISTS dim_04517;
 
 CREATE TABLE rmt_04517 (id UInt64, version UInt64, status String)
 ENGINE = ReplacingMergeTree(version) ORDER BY id
-SETTINGS index_granularity = 256;
+SETTINGS refresh_statistics_interval = 0, index_granularity = 256;
 
 SYSTEM STOP MERGES rmt_04517;
 
@@ -19,7 +20,8 @@ INSERT INTO rmt_04517 SELECT number, 1, if(number < 100, 'target', 'other') FROM
 INSERT INTO rmt_04517 SELECT number, 2, if(number < 100, 'target', 'other') FROM numbers(10000);
 
 CREATE TABLE dim_04517 (id UInt64)
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id
+SETTINGS refresh_statistics_interval = 0;
 
 INSERT INTO dim_04517 SELECT number FROM numbers(1000);
 
@@ -41,7 +43,7 @@ FROM (
     INNER JOIN dim_04517 AS d ON f.id = d.id
     WHERE f.status = 'target'
     SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000,
-             use_statistics = 1, collect_hash_table_stats_during_joins = 0
+             use_statistics = 1, use_statistics_cache = 0, collect_hash_table_stats_during_joins = 0
 )
 WHERE explain ILIKE '%InputSelector%';
 
