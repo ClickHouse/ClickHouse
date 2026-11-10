@@ -381,4 +381,12 @@ inline bool maskURICredentials(std::string & url)
     return masked;
 }
 
+/// The masking above, applied to a copy of `url`.
+[[nodiscard]] inline std::string maskURICredentials(std::string_view url)
+{
+    std::string masked(url);
+    maskURICredentials(masked);
+    return masked;
+}
+
 }

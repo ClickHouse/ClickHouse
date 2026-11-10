@@ -196,9 +196,6 @@ Exception HTTPException::makeExceptionMessage(
     const std::string & body,
     const Strings & response_secrets)
 {
-    std::string masked_uri = uri;
-    maskURICredentials(masked_uri);
-
     /// The reason phrase and the body are remote content that can reflect the request's own credentials back (e.g. an
     /// auth error naming the token). Scrub those exact credential strings, keeping the rest - a useful diagnostic that
     /// does not carry a credential. `uri` arrives unmasked, so that the credentials it carries are scrubbed here too.
@@ -208,7 +205,7 @@ Exception HTTPException::makeExceptionMessage(
         "Received error from remote server {}. "
         "HTTP status code: {} '{}', "
         "body length: {} bytes, body: '{}'",
-        masked_uri, static_cast<int>(http_status), scrubSecrets(reason, secrets), body.length(), scrubSecrets(body, secrets));
+        maskURICredentials(uri), static_cast<int>(http_status), scrubSecrets(reason, secrets), body.length(), scrubSecrets(body, secrets));
 }
 
 }
