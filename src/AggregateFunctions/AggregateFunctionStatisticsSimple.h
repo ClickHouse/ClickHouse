@@ -98,6 +98,14 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    /// `CorrMoments::addMany` ends by reducing five arrays of 16 partial sums, as much work as an array of a
+    /// few dozen values, so for `corr` a call per array costs more than it saves.
+    constexpr static size_t minArraySizeForAddBatchSinglePlace()
+    {
+        return std::is_same_v<typename StatFunc::Data, CorrMoments<ResultType>> ? IAggregateFunction::never_add_batch_single_place_for_arrays
+                                                                                : IAggregateFunction::minArraySizeForAddBatchSinglePlace();
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if constexpr (StatFunc::num_args == 2)

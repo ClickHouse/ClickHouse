@@ -39,6 +39,9 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    /// The loop of inlined `add` for an array is as cheap as the call of `addBatchSinglePlace`.
+    constexpr static size_t minArraySizeForAddBatchSinglePlace() { return IAggregateFunction::never_add_batch_single_place_for_arrays; }
+
     void add(AggregateDataPtr __restrict place, const IColumn **, size_t, Arena *) const override
     {
         ++data(place).count;

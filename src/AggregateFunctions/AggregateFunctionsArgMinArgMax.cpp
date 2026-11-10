@@ -216,6 +216,15 @@ public:
         add(place, columns, 0, arena);
     }
 
+    /// Only for a number the batch search agrees with `add`. For a string it may pick another row of equal
+    /// values than the first, and other types also order NaN and NULL nested in the value differently.
+    bool canOptimizeEqualKeysRanges() const override
+    {
+        using ValueData = std::decay_t<decltype(std::declval<const Data &>().value())>;
+        return !std::is_same_v<ValueData, SingleValueDataString> && !std::is_same_v<ValueData, SingleValueDataGeneric>
+            && !std::is_same_v<ValueData, SingleValueDataGenericWithColumn>;
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
