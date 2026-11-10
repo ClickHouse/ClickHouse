@@ -341,6 +341,7 @@ void FileChannel::unsafeOpen()
 void FileChannel::unsafeRotate()
 {
 	/// `archive` deletes the current file, so `_pFile` must not dangle if opening the new one fails.
+	/// The raw pointer is intentional: `archive` owns `pFile` and deletes it, so it must not be deleted here.
 	LogFile * pFile = std::exchange(_pFile, nullptr);
 	try
 	{
