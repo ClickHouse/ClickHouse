@@ -670,7 +670,7 @@ std::optional<CutIPHeader> findCutIPHeader(int dlt, const uint8_t * data, UInt32
         return {};
 
     const UInt8 first_byte = raw->payload()[0];
-    Tins::PDU::PDUType expected;
+    Tins::PDU::PDUType expected = Tins::PDU::UNKNOWN;
     if (carrier == nullptr)
         expected = outerLayerType(dlt, data, caplen, root);
     else if (const auto * ppi = dynamic_cast<const Tins::PPI *>(carrier))
