@@ -72,7 +72,8 @@ void removeSetsOfAlwaysFalseScope(QueryPlan::Node & node, QueryPlan::Nodes & nod
             return;
         }
 
-        if (!typeid_cast<const ExpressionStep *>(current->step.get()))
+        if (!typeid_cast<const ExpressionStep *>(current->step.get())
+            && !typeid_cast<const DelayedCreatingSetsStep *>(current->step.get()))
             return;
     }
 }

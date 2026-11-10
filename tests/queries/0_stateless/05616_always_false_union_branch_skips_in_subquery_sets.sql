@@ -9,3 +9,5 @@ SELECT k, f FROM (SELECT 'x' AS k, number IN (SELECT throwIf(number = 0, 'dead s
 SELECT k, n FROM (SELECT 'x' AS k, n FROM (SELECT number AS n FROM numbers(4) GROUP BY n WITH TOTALS) WHERE n IN (SELECT number FROM numbers(3)) UNION ALL SELECT 'y' AS k, number AS n FROM numbers(2)) WHERE k = 'y' ORDER BY n;
 -- The filtered-out branch reads remote().
 SELECT count() FROM (SELECT 'x' AS k, n FROM (SELECT number AS n FROM remote('127.0.0.{1,2}', numbers(10))) WHERE n IN (SELECT throwIf(number = 0, 'dead set built') FROM numbers(1)) UNION ALL SELECT 'y' AS k, number AS n FROM numbers(10) WHERE n IN (SELECT number FROM numbers(5))) WHERE k = 'y' SETTINGS prefer_localhost_replica = 0;
+-- The filtered-out branch reads a subquery with its own IN set.
+SELECT count() FROM (SELECT 'x' AS k, n FROM (SELECT number AS n FROM numbers(10) WHERE number IN (SELECT throwIf(number = 0, 'dead inner set built') FROM numbers(1))) WHERE n IN (SELECT throwIf(number = 0, 'dead outer set built') FROM numbers(1)) UNION ALL SELECT 'y' AS k, number AS n FROM numbers(10) WHERE n IN (SELECT number FROM numbers(5))) WHERE k = 'y';
