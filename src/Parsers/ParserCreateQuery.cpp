@@ -2110,7 +2110,7 @@ Applies to database engines that store table metadata on disk (e.g. `Atomic`, `O
 
 - `SELECT`, `INSERT`, `ALTER`, `DROP` transparently trigger loading of the real table engine on first use.
 - `SHOW COLUMNS` and `SHOW INDEXES` name a single table, so they load it rather than report the empty keys and indices the system tables have for a deferred one.
-- `RENAME TABLE` works without triggering a load.
+- `RENAME TABLE` loads a deferred table before checking whether its engine permits the rename.
 - Once a table is loaded, it stays loaded for the lifetime of the server process.
 
 **Limitations:**
