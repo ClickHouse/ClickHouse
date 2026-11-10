@@ -8,7 +8,8 @@ either natively or via a case-insensitive alias are left alone (e.g.
 `STDDEV`, `CARDINALITY`, `ARRAY_TO_STRING`, `REGEXP_SUBSTR`, `TRANSLATE`,
 `ARRAY_AGG`, `STRING_AGG`, `EXTRACT(EPOCH|DOW|... FROM ...)`,
 `date_part('unit', ...)`, `unnest(arr)` in expression position,
-`AT TIME ZONE`, `FETCH FIRST n ROWS ONLY`, `OFFSET n ROWS FETCH ...`, and
+`RANDOM()`, `AT TIME ZONE`, `FETCH FIRST n ROWS ONLY`,
+`OFFSET n ROWS FETCH ...`, and
 `[LEFT] JOIN LATERAL (subquery) ON TRUE` with `enable_lateral_join`).
 
 PostgreSQL `lhs = ANY(array_expr)` with a non-subquery operand is rewritten to
@@ -222,11 +223,6 @@ def rewrite_regexp_split_to_array(args):
     return f"splitByRegexp({parts[1]}, {parts[0]})"
 
 
-def rewrite_random(args):
-    """RANDOM() -> rand()"""
-    return f"rand({args})"
-
-
 def rewrite_functions(sql):
     """Rewrite PostgreSQL function calls that ClickHouse master does not yet
     accept. Function names with a built-in case-insensitive alias (STDDEV,
@@ -241,11 +237,6 @@ def rewrite_functions(sql):
     # an array (caller has to ARRAY JOIN if a table is needed).
     sql = rewrite_function_call(sql, 'regexp_split_to_array', rewrite_regexp_split_to_array)
     sql = rewrite_function_call(sql, 'regexp_split_to_table', rewrite_regexp_split_to_array)
-
-    # RANDOM(): PostgreSQL's returns Float64 in [0, 1); rand() returns UInt32.
-    # The semantics differ but most SQLStorm queries treat the return as an
-    # opaque random value, so the substitution is acceptable in aggregate.
-    sql = rewrite_function_call(sql, 'RANDOM', rewrite_random)
 
     # TO_TIMESTAMP(unix_seconds) -> toDateTime64(..., 6). fromUnixTimestamp only
     # accepts integers; toDateTime64 takes a Float and produces a microsecond

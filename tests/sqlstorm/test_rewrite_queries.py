@@ -14,6 +14,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 from rewrite_queries import rewrite_query
 
 
+class TestRandomCompatibility(unittest.TestCase):
+    def test_random_keeps_postgresql_function(self):
+        sql = "SELECT random(), RANDOM(), RaNdOm()"
+        self.assertEqual(rewrite_query(sql), sql)
+
+
 class TestArrayJoinOnClause(unittest.TestCase):
     def test_real_on_predicate_left_unchanged(self):
         # A real `ON` predicate cannot be expressed as an `ARRAY JOIN`
