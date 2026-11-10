@@ -4,8 +4,9 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
-#include <deque>
-#include <unordered_map>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -61,7 +62,7 @@ private:
     {
         InputPort * input = nullptr;
         OutputPort * output = nullptr;
-        std::deque<Chunk> chunks;
+        DequeWithMemoryTracking<Chunk> chunks;
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
         UInt64 rows_read = 0;
@@ -91,10 +92,10 @@ private:
     const size_t max_rows_to_buffer;
     const size_t max_bytes_to_buffer;
     const size_t read_ahead_window;
-    std::vector<size_t> sort_positions;
+    VectorWithMemoryTracking<size_t> sort_positions;
 
-    std::vector<Lane> lanes;
-    std::unordered_map<const Port *, size_t> lane_of_port;
+    VectorWithMemoryTracking<Lane> lanes;
+    UnorderedMapWithMemoryTracking<const Port *, size_t> lane_of_port;
     size_t num_fresh;
     size_t num_finished = 0;
     size_t num_prefetching = 0;
@@ -102,7 +103,7 @@ private:
 
     /// Deferred lanes in the order the merge will reach them, fixed once every lane has
     /// announced itself; `next_deferred` walks it, so each lane is woken at most once.
-    std::vector<size_t> deferred_order;
+    VectorWithMemoryTracking<size_t> deferred_order;
     bool deferred_order_built = false;
     size_t next_deferred = 0;
     /// The merge asked for a lane other than the one whose data it was consuming, or found
