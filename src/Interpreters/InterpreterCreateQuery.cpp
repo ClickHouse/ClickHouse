@@ -2087,6 +2087,12 @@ AccessType getDropAccessType(const IStorage & table)
     return AccessType::DROP_TABLE;
 }
 
+/// A stub ATTACH has no definition of its own, the table is attached from its stored metadata.
+bool isStubAttach(const ASTCreateQuery & create)
+{
+    return create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -2127,7 +2133,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
+    if (isStubAttach(create))
     {
         /// First, reject any user-supplied storage clauses or top-level fields that the
         /// short-ATTACH path below would silently drop by overwriting `create` with the
@@ -2243,16 +2249,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// only `list_of_modes`, and the analyzer rejects `union_mode == UNION_DEFAULT`.
     normalizeSetOperations(query_ptr, getContext());
 
-    /// In Cloud, ATTACH TABLE with a full definition is not allowed from user queries
-    /// Short syntax ATTACH TABLE t (no definition) reattaches an existing detached table
-    if (create.attach && !create.attach_short_syntax
-        && !internal && !getContext()->isDDLOrOnClusterInternal()
-        && getContext()->getSettingsRef()[Setting::cloud_mode])
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "ATTACH TABLE with a full table definition is not supported. "
-            "Use ATTACH TABLE {} to reattach an existing detached table.",
-            create.getTable());
-
+    /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
     if (!create.attach_short_syntax && create.attach_as_replicated.has_value())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Attaching table as [not] replicated is supported only for short attach queries");
@@ -4120,6 +4117,17 @@ BlockIO InterpreterCreateQuery::execute()
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;
+
+    /// In Cloud, a user query can attach a detached table, but cannot create a table from a definition.
+    /// Checked here because ON CLUSTER can send the query to other hosts before `createTable` runs.
+    if (!is_create_database && create.attach && !isStubAttach(create)
+        && !internal && !getContext()->isDDLOrOnClusterInternal()
+        && getContext()->getSettingsRef()[Setting::cloud_mode])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ATTACH TABLE with a full table definition is not supported. "
+            "Use ATTACH TABLE {} to reattach an existing detached table.",
+            create.getTable());
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())
