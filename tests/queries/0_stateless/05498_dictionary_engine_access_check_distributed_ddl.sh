@@ -103,6 +103,15 @@ unload
 as_user "CREATE TABLE ${cluster_db}.w_function ON CLUSTER test_shard_localhost (id UInt64, value String) AS dictionary('${CLICKHOUSE_DATABASE}.d')" "&distributed_ddl_entry_format_version=2"
 status
 query "EXISTS TABLE ${cluster_db}.w_function"
+# `view` with an explicit column list analyzes its query only when the table is first used, with the global context.
+unload
+as_user "CREATE TABLE w_view (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)"
+status
+query "EXISTS TABLE w_view"
+unload
+as_user "CREATE TABLE ${cluster_db}.w_view ON CLUSTER test_shard_localhost (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)" "&distributed_ddl_entry_format_version=2"
+status
+query "EXISTS TABLE ${cluster_db}.w_view"
 
 echo "--- unqualified name, resolved by ON CLUSTER in the default database of the server"
 query "SYSTEM UNLOAD DICTIONARY default.${unqualified}"
@@ -114,6 +123,7 @@ unload
 as_user "CREATE TABLE w_expression (id UInt64, value String) ENGINE = Dictionary(concat(currentDatabase(), '.d'))"
 status
 query "GRANT dictGet ON ${CLICKHOUSE_DATABASE}.d TO ${username}"
+as_user "CREATE TABLE w_view (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)"
 as_user "CREATE TABLE ${cluster_db}.w_expression ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(concat(currentDatabase(), '.d'))"
 # The query sent to the replicas carries the checked name, so a replica does not evaluate the expression again.
 query "
