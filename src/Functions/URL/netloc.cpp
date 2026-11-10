@@ -91,7 +91,9 @@ struct ExtractNetloc
                         question_mark_pos = pos;
                     break;
                 case '#':
-                    return std::string_view(start_of_host, pos - start_of_host);
+                    if (has_identification)
+                        return std::string_view(start_of_host, pos - start_of_host);
+                    return std::string_view(start_of_host, std::min({pos, question_mark_pos, slash_pos, hostname_end}) - start_of_host);
                 case '@': /// foo:bar@example.ru
                     has_identification = true;
                     hostname_end = end;
