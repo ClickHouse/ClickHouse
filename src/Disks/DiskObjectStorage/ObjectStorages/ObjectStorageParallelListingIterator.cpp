@@ -39,6 +39,17 @@ namespace
     /// Query cancellation does not notify our condition variables, so the consumer waits in bounded
     /// slices and re-checks `check_cancellation` on each timeout instead of blocking indefinitely.
     constexpr std::chrono::milliseconds CANCELLATION_POLL_INTERVAL{100};
+
+    /// A fresh hierarchical range whose first page descends into at least this many sub-"directories"
+    /// (none of them pruned) is a candidate for recursive listing; see `probeRecursiveListing`. Below it the
+    /// per-directory requests are too few to be worth the extra probe request.
+    constexpr size_t MIN_CHILDREN_FOR_RECURSIVE_PROBE = 16;
+
+    /// The recursive probe page of such a range must span at least this many sub-"directories" for the
+    /// range to be listed recursively: the delimited walk costs at least one request per descended
+    /// sub-"directory", while the recursive listing covers this many of them per request. Requiring a
+    /// clear margin keeps dense layouts (a few big directories) on the parallel delimited walk.
+    constexpr size_t MIN_DIRECTORIES_PER_RECURSIVE_PAGE = 8;
 }
 
 ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
@@ -56,7 +67,8 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     std::string root_range_end_,
     std::function<bool(const std::string & common_prefix)> is_marker_only_prefix_,
     size_t max_page_bytes_bound_,
-    bool listing_is_ordered_)
+    bool listing_is_ordered_,
+    bool allow_recursive_listing_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
     , max_buffered_object_bytes(std::max<size_t>(max_buffered_object_bytes_, 1))
@@ -67,6 +79,7 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     , max_pending_range_bytes(std::max<size_t>(max_pending_range_bytes_, 1))
     , allow_start_after(allow_start_after_)
     , listing_is_ordered(listing_is_ordered_)
+    , allow_recursive_listing(allow_recursive_listing_)
     , list_level(std::move(list_level_))
     , probe_level(std::move(probe_level_))
     , should_descend(std::move(should_descend_))
@@ -446,7 +459,7 @@ void ObjectStorageParallelListingIterator::workerLoop(std::deque<ListRange> & lo
 }
 
 std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParallelListingIterator::splitFlatRange(
-    const ListRange & range, const std::string & last_key, const RelativePathsWithMetadata & sample) const
+    const ListRange & range, const std::string & last_key, const RelativePathsWithMetadata & sample, bool use_delimiter) const
 {
     std::vector<ListRange> result;
 
@@ -518,7 +531,10 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
     /// pruned by `should_descend`, instead of being scanned recursively as it would be with a raw
     /// (delimiter-free) keyspace range. This keeps `s3_list_object_parallelism` a pure speedup rather than
     /// a potential much-larger scan of unrelated subtrees, at no cost for a genuinely flat directory (whose
-    /// keys contain no '/', so the delimiter produces no common prefixes anyway).
+    /// keys contain no '/', so the delimiter produces no common prefixes anyway). The only exception is a
+    /// range that `probeRecursiveListing` already switched to recursive listing (`use_delimiter = false`):
+    /// its slices stay recursive, since re-adding the delimiter would bring back the per-directory requests
+    /// that the switch avoided.
     std::string prev = last_key;
     result.reserve(boundaries.size() + 1);
     for (auto & boundary : boundaries)
@@ -529,7 +545,7 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
             .end = boundary,
             .split_pos = pos + 1,
             .split_budget = range.split_budget - 1,
-            .use_delimiter = true,
+            .use_delimiter = use_delimiter,
             .continuation_token = {}};
         result.push_back(std::move(sub));
         prev = std::move(boundary);
@@ -540,7 +556,7 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
         .end = range.end,
         .split_pos = pos + 1,
         .split_budget = range.split_budget - 1,
-        .use_delimiter = true,
+        .use_delimiter = use_delimiter,
         .continuation_token = {}};
     /// Only the last slice inherits the range's own upper bound, and with it whether that bound is
     /// exclusive; the boundaries above are keys inside the interval and are always inclusive.
@@ -576,9 +592,64 @@ bool ObjectStorageParallelListingIterator::splitWouldHelp(
     return false;
 }
 
+std::optional<ObjectStorageListResult> ObjectStorageParallelListingIterator::probeRecursiveListing(
+    const ListRange & range, const ObjectStorageListResult & delimited_page) const
+{
+    /// The delimited walk issues at least one request per descended sub-"directory". When the directories
+    /// are sparse (e.g. `root/p=*/data.csv` with one file per `p=...`) and the glob prunes none of them, that
+    /// is up to `page_size` times more requests than listing the range recursively, which no parallelism can
+    /// compensate. Only a page on which nothing was pruned qualifies: a recursive listing would scan the
+    /// pruned subtrees in full.
+    size_t children = 0;
+    for (const auto & common_prefix : delimited_page.common_prefixes)
+    {
+        if (range.isPastEnd(common_prefix))
+            break;
+        if (!should_descend(common_prefix))
+            return {};
+        ++children;
+    }
+    if (children < MIN_CHILDREN_FOR_RECURSIVE_PROBE)
+        return {};
+
+    /// Measure the density with one recursive page over the same interval as the delimited page.
+    auto page = list_level(range.prefix, /* delimiter */ "", range.start_after, /* continuation_token */ {});
+    /// The whole range fits in one recursive page: nothing can be cheaper.
+    if (!page.is_truncated)
+        return page;
+
+    size_t directories = 0;
+    std::string last_directory;
+    for (const auto & object : page.objects)
+    {
+        /// `getPath` returns by value: keep the key (and the directory taken from it) owned.
+        const std::string key = object->getPath();
+        /// The range ends within this page: likewise, nothing can be cheaper.
+        if (range.isPastEnd(key))
+            return page;
+        const size_t slash = key.find('/', range.prefix.size());
+        if (slash == std::string::npos)
+            continue; /// A loose object of the range itself, listed by the delimited walk too.
+        const std::string_view directory(key.data(), slash + 1);
+        if (directory != last_directory)
+        {
+            ++directories;
+            last_directory.assign(directory);
+        }
+    }
+
+    /// Every directory this page spans is one the delimited page descended into (the delimited page lists
+    /// at least as many of them, in the same order), so the recursive listing pays one request for
+    /// `directories` sub-"directories" the delimited walk would pay one request each for.
+    if (directories >= MIN_DIRECTORIES_PER_RECURSIVE_PAGE)
+        return page;
+    return {};
+}
+
 bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, std::deque<ListRange> & local_frontier)
 {
-    const std::string delimiter = range.use_delimiter ? "/" : "";
+    /// Cleared if `probeRecursiveListing` switches this range to recursive listing.
+    std::string delimiter = range.use_delimiter ? "/" : "";
     /// A re-enqueued hierarchical parent carries a continuation token that resumes its pagination; a fresh
     /// range has an empty token and (on its first page) resumes strictly after `range.start_after` instead.
     std::string continuation_token = range.continuation_token;
@@ -588,6 +659,14 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
     /// once we decide a flat range cannot be usefully split, we paginate it serially without probing
     /// again on every page (which would otherwise issue one wasted probe request per page).
     bool may_split = range.split_budget > 0;
+    /// Whether the first page may switch this range to recursive listing (see `probeRecursiveListing`).
+    /// Only a fresh range qualifies, so that the recursive listing covers exactly the interval of the
+    /// delimited page it replaces: `start_after` of such a range is empty or a plain key boundary of a
+    /// keyspace split. A budget-trim resume range, whose `start_after` is a common prefix whose subtree is
+    /// covered by another range, does not, and neither does a marker-only range (which lists one page
+    /// only). The recursive listing relies on the order of the keys to stop at `range.end`.
+    bool may_list_recursively = allow_recursive_listing && listing_is_ordered && range.use_delimiter && first && !range.marker_only
+        && !range.skip_prefixes_not_after && !range.resume_by_relisting;
     /// Whether this worker holds a `listings_in_flight` reservation that must be released.
     bool reserved = false;
 
@@ -609,6 +688,18 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
             const bool send_start_after = first && !range.resume_by_relisting;
             auto result = list_level(range.prefix, delimiter, send_start_after ? range.start_after : std::string{}, continuation_token);
             first = false;
+
+            if (may_list_recursively)
+            {
+                may_list_recursively = false;
+                /// Replace the delimited page with the recursive one covering the same interval: the rest of
+                /// the range is then paginated (or keyspace-split) without the delimiter.
+                if (auto recursive_page = probeRecursiveListing(range, result))
+                {
+                    result = std::move(*recursive_page);
+                    delimiter.clear();
+                }
+            }
 
             /// Whether the storage returned no entries at all. `ListObjectsV2` may return an empty page with
             /// `IsTruncated` set and a continuation token, so an empty page proves nothing by itself.
@@ -711,7 +802,7 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
                 }
                 else if (splitWouldHelp(range, delimiter, last_key))
                 {
-                    auto split = splitFlatRange(range, last_key, batch.empty() ? result.objects : batch);
+                    auto split = splitFlatRange(range, last_key, batch.empty() ? result.objects : batch, !delimiter.empty());
                     if (split.empty())
                     {
                         keep_paginating = true; /// Could not split; fall back to serial pagination.

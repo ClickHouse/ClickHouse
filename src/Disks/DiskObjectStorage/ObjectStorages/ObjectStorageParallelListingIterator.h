@@ -83,6 +83,14 @@ namespace DB
 /// that space for the page they are about to list, so concurrent workers cannot all pass the check against
 /// the same free space and overshoot the budget by one page each.
 ///
+/// Request amplification on sparse layouts is avoided adaptively. The delimited walk costs at least one
+/// request per descended sub-"directory", which for a sparse layout (e.g. `root/p=*/data.csv` with one file
+/// per `p=...`) is up to `page_size` times more requests than a recursive listing. So when the first page of
+/// a range descends into many sub-"directories" and prunes none of them, one recursive page over the same
+/// interval is listed as a probe; if it spans many sub-"directories", the range is listed recursively from
+/// there on (still keyspace-split if that helps), and otherwise the delimited walk goes on, having spent
+/// one extra request on a range with many sub-"directories" to list anyway.
+///
 /// The iterator is storage-agnostic: it drives a caller-provided `list_level` callback (one delimited
 /// page of one prefix per call, optionally resuming after a key) and a `should_descend` callback.
 class ObjectStorageParallelListingIterator final : public IObjectStorageIterator
@@ -171,6 +179,11 @@ public:
     /// paginated to its end by continuation tokens only, so the pending-range budget is exceeded by at most
     /// one page of child ranges per listed page instead of being trimmed; the depth-first walk still keeps
     /// the frontier bounded by `O(num_threads * tree_depth * page_size)` ranges.
+    /// `allow_recursive_listing` lets a hierarchical range whose sub-"directories" turn out to be sparse
+    /// and unpruned be listed recursively (without the delimiter) instead of with one request per
+    /// sub-"directory"; see `probeRecursiveListing`. Set it to false when listing a key that the glob does
+    /// not match costs more than its share of a page (e.g. a `_tags` scan fetches tags for every listed
+    /// object).
     ObjectStorageParallelListingIterator(
         std::string root_prefix_,
         size_t num_threads_,
@@ -186,7 +199,8 @@ public:
         std::string root_range_end_ = {},
         std::function<bool(const std::string & common_prefix)> is_marker_only_prefix_ = {},
         size_t max_page_bytes_bound_ = 0,
-        bool listing_is_ordered_ = true);
+        bool listing_is_ordered_ = true,
+        bool allow_recursive_listing_ = true);
 
     ~ObjectStorageParallelListingIterator() override;
 
@@ -298,7 +312,15 @@ private:
     bool listRange(const ListRange & range, std::deque<ListRange> & local_frontier);
     /// Tiles `(last_key, range.end)` into contiguous sub-ranges using boundaries derived from the byte
     /// alphabet of `sample`. Returns empty if the range cannot be usefully split (caller paginates).
-    std::vector<ListRange> splitFlatRange(const ListRange & range, const std::string & last_key, const RelativePathsWithMetadata & sample) const;
+    /// The sub-ranges are listed with the '/' delimiter iff `use_delimiter`.
+    std::vector<ListRange> splitFlatRange(
+        const ListRange & range, const std::string & last_key, const RelativePathsWithMetadata & sample, bool use_delimiter) const;
+    /// Called with the first page of a fresh hierarchical range. If that page descends into many
+    /// sub-"directories" and prunes none, lists one recursive (delimiter-free) page over the same interval,
+    /// and returns it if it shows the sub-"directories" to be sparse: it spans several of them per page, so
+    /// listing the range recursively takes fewer requests than one (or more) per sub-"directory". The caller
+    /// then lists the rest of the range recursively. Returns empty to keep the delimited walk.
+    std::optional<ObjectStorageListResult> probeRecursiveListing(const ListRange & range, const ObjectStorageListResult & delimited_page) const;
     /// One cheap probe: is there any key beyond the bucket `last_key` sits in (within the range)?
     /// If not, the keys share a common prefix and splitting cannot parallelize them — so the caller
     /// paginates serially instead of issuing a fan of empty boundary probes.
@@ -363,6 +385,8 @@ private:
     const bool allow_start_after;
     /// Whether listings return entries in ascending lexicographic order; see the constructor.
     const bool listing_is_ordered;
+    /// Whether a range of sparse sub-"directories" may be listed recursively; see the constructor.
+    const bool allow_recursive_listing;
     const ListLevelFunction list_level;
     /// Tags-free existence probe for the flat keyspace split; see `ProbeLevelFunction`.
     const ProbeLevelFunction probe_level;

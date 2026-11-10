@@ -2688,7 +2688,11 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 /// on the first page, so every page of such a directory is listed (its sub-"directories" are still pruned).
                 listing_is_ordered ? makeIsMarkerOnlyPrefixPredicate(key_with_globs.path) : std::function<bool(const std::string &)>{},
                 max_page_bytes_bound,
-                listing_is_ordered);
+                listing_is_ordered,
+                /// A range of sparse, unpruned sub-"directories" is listed recursively rather than with one
+                /// request per sub-"directory". Not for a `_tags` scan: it fetches the tags of every listed
+                /// object, including those under sub-"directories" the glob does not match.
+                /* allow_recursive_listing */ !with_tags);
         }
         else
         {

@@ -1919,6 +1919,139 @@ TEST(ObjectStorageParallelListing, TrailingSlashGlobFollowsEmptyTruncatedPages)
     }
 }
 
+namespace
+{
+
+/// Lists `root/` for `glob` at several parallelism levels, asserting that the glob matches exactly
+/// `expected` and that the listing takes at most `max_requests` requests, of which at most
+/// `max_recursive_requests` drop the '/' delimiter.
+void assertGlobListing(
+    FakeS3 & s3,
+    const std::string & glob,
+    const std::vector<std::string> & expected,
+    size_t max_requests,
+    size_t max_recursive_requests,
+    std::function<bool(const std::string &)> should_descend = {})
+{
+    const re2::RE2 matcher(makeRegexpPatternFromGlobs(glob));
+    ASSERT_TRUE(matcher.ok());
+    for (size_t threads : {1, 2, 4, 16})
+    {
+        s3.requests.store(0);
+        s3.requests_with_empty_delimiter.store(0);
+        ObjectStorageParallelListingIterator iterator(
+            "root/", threads, /* max_buffered_keys */ 4096, makeListLevel(s3), makeProbeLevel(s3),
+            should_descend ? should_descend : makeShouldDescendPredicate(glob),
+            /* allow_keyspace_split */ true, /* check_cancellation */ {},
+            /* max_pending_range_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+            /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ true,
+            /* root_range_end */ {},
+            makeIsMarkerOnlyPrefixPredicate(glob));
+        auto listed = drain(iterator);
+
+        std::vector<std::string> matched;
+        for (const auto & key : listed)
+        {
+            if (re2::RE2::FullMatch(key, matcher))
+                matched.push_back(key);
+        }
+        /// Sorting keeps duplicates, so this also checks that every key is listed exactly once.
+        std::sort(matched.begin(), matched.end());
+        EXPECT_EQ(matched, expected) << "threads=" << threads;
+        EXPECT_LE(s3.requests.load(), max_requests) << "threads=" << threads;
+        EXPECT_LE(s3.requests_with_empty_delimiter.load(), max_recursive_requests) << "threads=" << threads;
+    }
+}
+
+}
+
+TEST(ObjectStorageParallelListing, SparseDirectoriesAreListedRecursively)
+{
+    /// Regression: a sparse partitioned layout, one file per directory, which the glob does not prune.
+    /// Descending into every directory takes one request per directory (10010 requests here), while the
+    /// serial recursive listing takes one request per page (10). The walk must notice that the directories
+    /// are sparse and list them recursively.
+    constexpr size_t num_directories = 10000;
+    FakeS3 s3;
+    s3.page_size = 1000;
+    std::vector<std::string> expected;
+    for (size_t d = 0; d < num_directories; ++d)
+        expected.push_back(fmt::format("root/p={:05}/data.csv", d));
+    s3.keys = expected;
+    s3.finalize();
+
+    /// The first delimited page, the 10 recursive pages and one keyspace-split probe.
+    assertGlobListing(s3, "root/p=*/data.csv", expected, /* max_requests */ 15, /* max_recursive_requests */ 12);
+}
+
+TEST(ObjectStorageParallelListing, SparseDirectoriesOfTrailingSlashGlobAreListedRecursively)
+{
+    /// The same for a trailing-slash glob, which matches the directory markers: every directory is listed
+    /// for only one page, but that is still one request per directory.
+    constexpr size_t num_directories = 5000;
+    FakeS3 s3;
+    s3.page_size = 1000;
+    std::vector<std::string> expected;
+    for (size_t d = 0; d < num_directories; ++d)
+    {
+        expected.push_back(fmt::format("root/d{:05}/", d));
+        s3.add(fmt::format("root/d{:05}/", d));
+        s3.add(fmt::format("root/d{:05}/data.csv", d));
+    }
+    s3.finalize();
+
+    /// The first delimited page, the 10 recursive pages and one keyspace-split probe.
+    assertGlobListing(s3, "root/*/", expected, /* max_requests */ 15, /* max_recursive_requests */ 12);
+}
+
+TEST(ObjectStorageParallelListing, DenseDirectoriesKeepDelimitedWalk)
+{
+    /// Directories with many files each: a recursive page spans a single directory, so listing them
+    /// recursively saves nothing and only loses the parallelism. The walk lists one recursive page as a
+    /// probe and keeps descending into the directories.
+    constexpr size_t num_directories = 20;
+    constexpr size_t files_per_directory = 2500;
+    FakeS3 s3;
+    s3.page_size = 1000;
+    std::vector<std::string> expected;
+    for (size_t d = 0; d < num_directories; ++d)
+        for (size_t f = 0; f < files_per_directory; ++f)
+            expected.push_back(fmt::format("root/d{:02}/{}.csv", d, hexName(d * files_per_directory + f)));
+    s3.keys = expected;
+    s3.finalize();
+    std::sort(expected.begin(), expected.end());
+
+    /// Each directory is keyspace-split (its slices paginated in parallel): about 14 requests per directory,
+    /// plus the root page. The only request without the delimiter is the probe.
+    assertGlobListing(s3, "root/*/*.csv", expected, /* max_requests */ 320, /* max_recursive_requests */ 1);
+}
+
+TEST(ObjectStorageParallelListing, PrunedSparseDirectoriesKeepDelimitedWalk)
+{
+    /// A recursive listing would scan the pruned directories too, so a page on which the glob prunes
+    /// anything is never listed recursively.
+    constexpr size_t num_directories = 2000;
+    FakeS3 s3;
+    s3.page_size = 1000;
+    std::vector<std::string> expected;
+    for (size_t d = 0; d < num_directories; ++d)
+    {
+        s3.add(fmt::format("root/d{:04}/data.csv", d));
+        if (d % 2 == 0)
+            expected.push_back(fmt::format("root/d{:04}/data.csv", d));
+    }
+    s3.finalize();
+
+    auto should_descend = [](const std::string & prefix)
+    {
+        /// Only the directories with an even number, plus the root itself.
+        return prefix == "root/" || (prefix.size() >= 2 && (prefix[prefix.size() - 2] - '0') % 2 == 0);
+    };
+    assertGlobListing(
+        s3, "root/*/data.csv", expected, /* max_requests */ num_directories, /* max_recursive_requests */ 0, should_descend);
+}
+
 TEST(ObjectStorageParallelListing, ExceptionPropagates)
 {
     auto list_level = [](const std::string & prefix, const std::string &, const std::string &, const std::string &) -> ObjectStorageListResult
