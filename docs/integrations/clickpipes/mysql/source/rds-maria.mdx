@@ -85,13 +85,13 @@ Connect to your RDS MariaDB instance as an admin user and execute the following 
 1. Create a dedicated user for ClickPipes:
 
     ```sql
-    CREATE USER 'clickpipes_user'@'host' IDENTIFIED BY 'some-password';
+    CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some-password';
     ```
 
 2. Grant schema permissions. The following example shows permissions for the `clickpipes` database. Repeat these commands for each database and host that you want to replicate:
 
     ```sql
-    GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'host';
+    GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
     ```
 
 3. Grant replication permissions to the user. MariaDB 10.5 and newer also require `SLAVE MONITOR`:
