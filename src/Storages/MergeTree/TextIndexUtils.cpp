@@ -254,7 +254,7 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
     return PostingsSerialization(std::move(codec_copy), text_index.getParams().serialization_version, text_index.getParams().scoring);
 }
 
-static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_part_offsets, size_t part_index, UInt32 row_id)
+static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_part_offsets, size_t part_index, UInt64 row_id)
 {
     UInt64 new_offset = merged_part_offsets[part_index, row_id];
 
@@ -1198,22 +1198,36 @@ void MergeTextIndexesTask::buildDocLengthsAndStats()
         if (doc_lengths_size == 0)
             continue;
 
-        if (header.scoring_stats.num_docs < doc_lengths_size)
+        /// The doc lengths of a segment are those of its last rows, [num_docs - doc_lengths_size, num_docs).
+        /// Both bounds come from disk, so check the range against the rows of the source part before looking up or writing any row:
+        /// the offsets map has an entry per row of the part, and without a map the rows of the segment are those of the merged part.
+        const UInt64 num_docs = header.scoring_stats.num_docs;
+        const size_t part_index = segments[source_num].part_index;
+        const UInt64 part_rows = merged_part_offsets ? merged_part_offsets->getPartRowsCount(part_index) : num_rows;
+
+        if (num_docs < doc_lengths_size || num_docs > part_rows)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Text index merge: segment header num_docs ({}) is smaller than its doc-lengths size ({})",
-                header.scoring_stats.num_docs, doc_lengths_size);
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in text index: segment '{}' has {} document lengths ending at row {}, but the source part has {} rows",
+                segments[source_num].index_file_name, doc_lengths_size, num_docs, part_rows);
         }
 
-        const UInt64 segment_base = header.scoring_stats.num_docs - doc_lengths_size;
+        const UInt64 segment_base = num_docs - doc_lengths_size;
 
         if (merged_part_offsets)
         {
-            size_t part_index = segments[source_num].part_index;
-
             for (size_t i = 0; i < doc_lengths_size; ++i)
             {
-                UInt32 new_offset = adjustPartOffset(*merged_part_offsets, part_index, static_cast<UInt32>(segment_base + i));
+                UInt32 new_offset = adjustPartOffset(*merged_part_offsets, part_index, segment_base + i);
+
+                /// The map is built by the merge itself, so a row of the source part cannot be mapped outside of the merged part.
+                if (new_offset >= merged_doc_lengths.size())
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Text index merge: row {} of source part {} is mapped to row {}, but the merged part has {} rows",
+                        segment_base + i, part_index, new_offset, merged_doc_lengths.size());
+                }
+
                 merged_doc_lengths[new_offset] = source_doc_lengths[i];
             }
         }
