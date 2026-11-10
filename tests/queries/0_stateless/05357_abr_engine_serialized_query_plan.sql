@@ -50,6 +50,15 @@ SELECT count(), max(value) FROM remote('127.0.0.2', currentDatabase(), 'abr_view
 WHERE ts >= toDateTime('2026-06-01 00:00:00')
 SETTINGS analyzer_inline_views = 0;
 
+-- The same through the `view` table function, which is planned as a read of a table function rather than of a table.
+SELECT count(), max(value) FROM remote('127.0.0.2', view(SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.abr))
+WHERE ts >= toDateTime('2026-06-01 00:00:00')
+SETTINGS analyzer_inline_views = 0;
+
+SELECT count(), max(value) FROM remote('127.0.0.2', view(SELECT ts, value FROM {CLICKHOUSE_DATABASE:Identifier}.abr_view))
+WHERE ts >= toDateTime('2026-06-01 00:00:00')
+SETTINGS analyzer_inline_views = 0;
+
 -- The queries on the shard chose interval 1 from their time filter.
 -- The shard runs in the default database of its connection, so its entries are found through the initial queries.
 SYSTEM FLUSH LOGS query_log;

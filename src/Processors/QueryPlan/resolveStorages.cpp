@@ -388,6 +388,11 @@ bool queryPlanReadsStorageRequiringFullQuery(const QueryPlan & plan, const Conte
             if (table_node && table_node->getStorage()->readRequiresFullQuery())
                 return true;
         }
+        else if (const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node->step.get()))
+        {
+            if (reading_from_table_function->readsStorageRequiringFullQuery())
+                return true;
+        }
 
         for (const auto * child : node->children)
             stack.push(child);
