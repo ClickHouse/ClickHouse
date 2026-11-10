@@ -1,0 +1,13 @@
+group by, first	[(100,4),(101,4),(102,4),(103,4),(104,4),(105,4),(106,4)]
+group by, repeated	[(100,4),(101,4),(102,4),(103,4),(104,4),(105,4),(106,4)]
+order by, first	[2,4,6,8,10,12,14]
+order by, repeated	[2,4,6,8,10,12,14]
+groupby	1	1	1
+orderby	1	1	1
+alter, first	[(100,4,4),(101,4,4),(102,4,4),(103,4,4),(104,4,4),(105,4,4),(106,4,4)]
+alter, repeated	[(100,4,4),(101,4,4),(102,4,4),(103,4,4),(104,4,4),(105,4,4),(106,4,4)]
+alter	1	1
+join desc, first	7	7
+join asc, first	7	7
+join desc, repeated	7	896
+join asc, repeated	7	896

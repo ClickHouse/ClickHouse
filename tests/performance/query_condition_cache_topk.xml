@@ -48,6 +48,18 @@
                  auto_statistics_types = ''
     </create_query>
 
+    <!-- The same data with a `minmax` index on the sort column. The threshold stays below the maximum of every granule,
+         so the index skips nothing, yet the repeated runs read only the granules the cache did not record. -->
+    <create_query>
+        CREATE TABLE qcc_topk_minmax_test (id UInt32, v UInt32, payload FixedString(256), INDEX v_mm v TYPE minmax GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 8192,
+                 min_bytes_for_wide_part = 0,
+                 min_bytes_for_full_part_storage = 0,
+                 add_minmax_index_for_numeric_columns = 0,
+                 auto_statistics_types = ''
+    </create_query>
+
     <fill_query>
         INSERT INTO qcc_topk_test
         SELECT rand(), number, randomFixedString(256)
@@ -60,6 +72,10 @@
 
     <!-- Freeze the part name for the rest of the test. -->
     <fill_query>SYSTEM STOP MERGES qcc_topk_test</fill_query>
+
+    <fill_query>INSERT INTO qcc_topk_minmax_test SELECT * FROM qcc_topk_test WHERE v &lt; 4000000</fill_query>
+    <fill_query>OPTIMIZE TABLE qcc_topk_minmax_test FINAL</fill_query>
+    <fill_query>SYSTEM STOP MERGES qcc_topk_minmax_test</fill_query>
 
     <settings>
         <use_top_k_dynamic_filtering>1</use_top_k_dynamic_filtering>
@@ -80,5 +96,8 @@
     <!-- QCC disabled: baseline, every run pays the full WHERE-filter cost. -->
     <query>SELECT v FROM qcc_topk_test WHERE payload = 'no_match' ORDER BY v ASC LIMIT 10 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
 
+    <query>SELECT v FROM qcc_topk_minmax_test WHERE startsWith(payload, 'ab') ORDER BY v DESC LIMIT 10 SETTINGS use_query_condition_cache = 1, optimize_move_to_prewhere = 1 FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS qcc_topk_test</drop_query>
+    <drop_query>DROP TABLE IF EXISTS qcc_topk_minmax_test</drop_query>
 </test>

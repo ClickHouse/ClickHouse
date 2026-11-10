@@ -238,6 +238,9 @@ public:
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
 
+    /// Adds to the PREWHERE-unmatched marks the marks of the task that the `minmax` top-K index puts beyond the running threshold now.
+    void addMarksBeyondTopKThreshold();
+
     void addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getQueryConditionCacheAttributableMarks() const { return query_condition_cache_attributable_marks; }
 
@@ -247,7 +250,7 @@ public:
     /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
     /// See Issue #104781.
     /// With `prewhere_filters_by_top_k_threshold`, the PREWHERE holds the `__topKFilter` of the read as a conjunct, and
-    /// the marks skipped by the primary key against the same top-K threshold do not count.
+    /// the marks skipped against the same top-K threshold do not count.
     bool readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const;
 
     /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
@@ -302,6 +305,8 @@ private:
 
     /// Tracks which mark ranges are not matched by PREWHERE (needed for query condition cache)
     MarkRanges prewhere_unmatched_marks;
+    /// The marks the task was created with, kept only with an index reader: `mark_ranges` is consumed while reading.
+    MarkRanges assigned_mark_ranges;
     MarkRanges query_condition_cache_attributable_marks;
 
     BlockSizeParams block_size_params;

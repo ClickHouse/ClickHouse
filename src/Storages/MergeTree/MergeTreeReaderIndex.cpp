@@ -23,9 +23,14 @@ bool MergeTreeReaderIndex::canSkipAnyMark() const
     return index_read_result && index_read_result->canSkipAnyMark();
 }
 
-bool MergeTreeReaderIndex::canSkipAnyMarkBesidesTopKPrimaryKey() const
+bool MergeTreeReaderIndex::canSkipAnyMarkBesidesTopKThreshold() const
 {
-    return index_read_result && index_read_result->canSkipAnyMarkBesidesTopKPrimaryKey();
+    return index_read_result && index_read_result->canSkipAnyMarkBesidesTopKThreshold();
+}
+
+bool MergeTreeReaderIndex::isMarkBeyondTopKThreshold(size_t mark) const
+{
+    return index_read_result && index_read_result->isMarkBeyondTopKThreshold(mark);
 }
 
 MergeTreeReaderIndex::MergeTreeReaderIndex(

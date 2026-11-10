@@ -120,9 +120,12 @@ public:
     virtual bool canSkipAnyMark() const { return false; }
 
     /// Like `canSkipAnyMark`, but leaving out the marks skipped only because every row of the mark lies beyond a
-    /// running top-K threshold (by the primary key). The `__topKFilter` in PREWHERE drops the rows of such a mark
-    /// anyway, so the mark can still be attributed to a PREWHERE that holds this filter.
-    virtual bool canSkipAnyMarkBesidesTopKPrimaryKey() const { return canSkipAnyMark(); }
+    /// running top-K threshold. The `__topKFilter` in PREWHERE drops the rows of such a mark anyway, so the mark
+    /// can still be attributed to a PREWHERE that holds this filter.
+    virtual bool canSkipAnyMarkBesidesTopKThreshold() const { return canSkipAnyMark(); }
+
+    /// Whether a `minmax` top-K index puts every row of the mark beyond the running top-K threshold now.
+    virtual bool isMarkBeyondTopKThreshold(size_t /*mark*/) const { return false; }
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
