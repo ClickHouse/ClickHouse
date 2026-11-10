@@ -822,9 +822,24 @@ private:
     }
 
 #if USE_SIMSIMD
+    template <typename CalcT>
+    using SimdScalar = std::conditional_t<std::is_same_v<CalcT, Int8>, simsimd_i8_t,
+        std::conditional_t<std::is_same_v<CalcT, BFloat16>, simsimd_bf16_t,
+            std::conditional_t<std::is_same_v<CalcT, Float32>, simsimd_f32_t, simsimd_f64_t>>>;
+
+    /// The exact type of the kernel: calling it through a punned type fails Clang CFI (`cfi-icall`).
+    template <typename CalcT>
+    using SimdKernel = void (*)(const SimdScalar<CalcT> *, const SimdScalar<CalcT> *, simsimd_size_t, simsimd_distance_t *);
+
+    template <typename CalcT>
+    static void callSimdKernel(SimdKernel<CalcT> kernel, const CalcT * a, const CalcT * b, size_t n, Float64 * res)
+    {
+        kernel(reinterpret_cast<const SimdScalar<CalcT> *>(a), reinterpret_cast<const SimdScalar<CalcT> *>(b), n, res);
+    }
+
     /// Resolve the SimSIMD kernel for this distance metric and calculation type, or nullptr if none exists.
     template <typename CalcT>
-    static simsimd_metric_dense_punned_t resolveSimdKernel()
+    static SimdKernel<CalcT> resolveSimdKernel()
     {
         const simsimd_datatype_t datatype = std::is_same_v<CalcT, Int8>
             ? simsimd_datatype_i8_k
@@ -838,7 +853,7 @@ private:
         /// as `distanceScalar` above, while its `l2` and `cos` are not.
         if (Kernel::metric_kind == simsimd_metric_dot_k && is_floating_point<CalcT> && used_capability == simsimd_cap_serial_k)
             return nullptr;
-        return std::bit_cast<simsimd_metric_dense_punned_t>(simd_kernel); /// NOLINT(bugprone-bitwise-pointer-cast)
+        return std::bit_cast<SimdKernel<CalcT>>(simd_kernel); /// NOLINT(bugprone-bitwise-pointer-cast)
     }
 #endif
 
@@ -1129,7 +1144,7 @@ private:
         const Word centre_fill = precision < sizeof(Word) * 8 ? static_cast<Word>(Word(1) << (sizeof(Word) * 8 - 1 - precision)) : Word(0);
 
 #if USE_SIMSIMD
-        simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<CalcT>();
+        SimdKernel<CalcT> simd_kernel = resolveSimdKernel<CalcT>();
         /// SimSIMD's i8 kernels accumulate in int32, which overflows for large dimensions (the scalar
         /// fallback accumulates in Float64). Use the scalar path beyond the overflow-safe dimension.
         if constexpr (std::is_same_v<CalcT, Int8>)
@@ -1287,7 +1302,7 @@ private:
 #if USE_SIMSIMD
                 /// Branch is scary, but clang hoists it out of the loop.
                 if (simd_kernel)
-                    simd_kernel(dst, ref_data, used_dims, res);
+                    callSimdKernel(simd_kernel, dst, ref_data, used_dims, res);
                 else
 #endif
                     Kernel::distance(dst, ref_data, used_dims, res);
@@ -1361,7 +1376,7 @@ private:
         auto block_row = [&](size_t r) -> Float32 * { return block.data() + r * padded_array_size; };
 
 #if USE_SIMSIMD
-        simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<Float32>();
+        SimdKernel<Float32> simd_kernel = resolveSimdKernel<Float32>();
 #endif
 
 #if USE_X86_64_MULTITARGET_CODE
@@ -1421,7 +1436,7 @@ private:
 #if USE_SIMSIMD
                 /// Branch is scary, but clang hoists it out of the loop.
                 if (simd_kernel)
-                    simd_kernel(dst, ref_data, used_dims, res);
+                    callSimdKernel(simd_kernel, dst, ref_data, used_dims, res);
                 else
 #endif
                     Kernel::distance(dst, ref_data, used_dims, res);
