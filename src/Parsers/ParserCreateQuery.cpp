@@ -236,8 +236,8 @@ bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserStatisticsDeclarationWithoutTypes::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-
-    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    /// Used by `DROP`, `CLEAR` and `MATERIALIZE STATISTICS`, where column names may be query parameters.
+    ParserList columns_p(std::make_unique<ParserIdentifier>(/* allow_query_parameter_ = */ true), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr columns;
 
