@@ -4138,13 +4138,13 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
 }
 
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(5) > div > span {
+[role="menu"]:has(.nav-dropdown-item[href$="/clickstack/observability"]) > .nav-dropdown-item:nth-child(5) > div > span {
     font-size: 0 !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span::before {
     content: "Cloud";
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(5) > div > span::before {
+[role="menu"]:has(.nav-dropdown-item[href$="/clickstack/observability"]) > .nav-dropdown-item:nth-child(5) > div > span::before {
     content: "Observability";
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href="/products/agentic-data-stack/overview"] {
