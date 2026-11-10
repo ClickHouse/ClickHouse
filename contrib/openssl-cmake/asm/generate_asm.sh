@@ -3,7 +3,9 @@ set -euo pipefail
 
 OPENSSL_SOURCE_DIR="${1:-${OPENSSL_SOURCE_DIR:-$(pwd)/../../openssl}}"
 OPENSSL_BINARY_DIR="${2:-${OPENSSL_BINARY_DIR:-$(pwd)}}"
-CC="${CC:-cc}"
+# The x86_64 perlasm scripts pick the instruction sets to emit by probing `$CC`. Only the GNU
+# assembler probe enables AVX-512 (e.g. in `chacha-x86_64.s`); with clang the paths are dropped.
+CC="${CC:-gcc}"
 
 mkdir_and_run() {
     local file_in="$1"
@@ -17,6 +19,8 @@ mkdir_and_run() {
 
 declare -a jobs=(
     # ARCH_AMD64
+    "crypto/aes/asm/aes-cbc-vaes-x86_64.pl crypto/aes/aes-cbc-vaes-x86_64.s"
+    "crypto/aes/asm/aes-cfb-avx512.pl crypto/aes/aes-cfb-avx512.s"
     "crypto/aes/asm/aes-x86_64.pl crypto/aes/aes-x86_64.s"
     "crypto/aes/asm/aesni-mb-x86_64.pl crypto/aes/aesni-mb-x86_64.s"
     "crypto/aes/asm/aesni-sha1-x86_64.pl crypto/aes/aesni-sha1-x86_64.s"
@@ -41,6 +45,7 @@ declare -a jobs=(
     "crypto/ec/asm/ecp_nistz256-x86_64.pl crypto/ec/ecp_nistz256-x86_64.s"
     "crypto/ec/asm/x25519-x86_64.pl crypto/ec/x25519-x86_64.s"
     "crypto/md5/asm/md5-x86_64.pl crypto/md5/md5-x86_64.s"
+    "crypto/ml_dsa/asm/ml_dsa_ntt-x86_64.pl crypto/ml_dsa/ml_dsa_ntt-x86_64.s"
     "crypto/modes/asm/aes-gcm-avx512.pl crypto/modes/aes-gcm-avx512.s"
     "crypto/modes/asm/aesni-gcm-x86_64.pl crypto/modes/aesni-gcm-x86_64.s"
     "crypto/modes/asm/ghash-x86_64.pl crypto/modes/ghash-x86_64.s"
@@ -51,15 +56,21 @@ declare -a jobs=(
     "crypto/sha/asm/keccak1600-avx512.pl crypto/sha/keccak1600-avx512.s"
     "crypto/sha/asm/keccak1600-avx512vl.pl crypto/sha/keccak1600-avx512vl.s"
     "crypto/sha/asm/keccak1600-x86_64.pl crypto/sha/keccak1600-x86_64.s"
+    "crypto/sha/asm/keccak1600x4-avx512vl.pl crypto/sha/keccak1600x4-avx512vl.s"
     "crypto/sha/asm/sha1-mb-x86_64.pl crypto/sha/sha1-mb-x86_64.s"
     "crypto/sha/asm/sha1-x86_64.pl crypto/sha/sha1-x86_64.s"
     "crypto/sha/asm/sha256-mb-x86_64.pl crypto/sha/sha256-mb-x86_64.s"
     "crypto/sha/asm/sha512-x86_64.pl crypto/sha/sha256-x86_64.s"
     "crypto/sha/asm/sha512-x86_64.pl crypto/sha/sha512-x86_64.s"
+    "crypto/sm3/asm/sm3-x86_64.pl crypto/sm3/sm3-x86_64.S"
+    "crypto/sm4/asm/sm4-x86_64.pl crypto/sm4/sm4-x86_64.S"
     "crypto/whrlpool/asm/wp-x86_64.pl crypto/whrlpool/wp-x86_64.s"
     "crypto/x86_64cpuid.pl crypto/x86_64cpuid.s"
 
     # ARCH_AARCH64
+    "crypto/aes/asm/aes-sha1-armv8.pl crypto/aes/aes-sha1-armv8.S linux64"
+    "crypto/aes/asm/aes-sha256-armv8.pl crypto/aes/aes-sha256-armv8.S linux64"
+    "crypto/aes/asm/aes-sha512-armv8.pl crypto/aes/aes-sha512-armv8.S linux64"
     "crypto/aes/asm/aesv8-armx.pl crypto/aes/aesv8-armx.S linux64"
     "crypto/aes/asm/bsaes-armv8.pl crypto/aes/bsaes-armv8.S linux64"
     "crypto/aes/asm/vpaes-armv8.pl crypto/aes/vpaes-armv8.S linux64"
@@ -74,6 +85,7 @@ declare -a jobs=(
     "crypto/modes/asm/aes-gcm-armv8_64.pl crypto/modes/asm/aes-gcm-armv8_64.S linux64"
     "crypto/modes/asm/ghashv8-armx.pl crypto/modes/ghashv8-armx.S linux64"
     "crypto/poly1305/asm/poly1305-armv8.pl crypto/poly1305/poly1305-armv8.S linux64"
+    "crypto/poly1305/asm/poly1305-armv9-sve2.pl crypto/poly1305/poly1305-armv9-sve2.S linux64"
     "crypto/sha/asm/keccak1600-armv8.pl crypto/sha/keccak1600-armv8.S linux64"
     "crypto/sha/asm/sha1-armv8.pl crypto/sha/sha1-armv8.S linux64"
     "crypto/sha/asm/sha512-armv8.pl crypto/sha/sha256-armv8.S linux64"

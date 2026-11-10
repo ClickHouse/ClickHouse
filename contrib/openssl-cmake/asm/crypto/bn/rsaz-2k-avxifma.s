@@ -1135,6 +1135,7 @@ ossl_extract_multiplier_2x20_win5_avx:
 	vmovdqu	%ymm7,224(%rdi)
 	vmovdqu	%ymm8,256(%rdi)
 	vmovdqu	%ymm9,288(%rdi)
+	vzeroupper
 	.byte	0xf3,0xc3
 .cfi_endproc	
 .size	ossl_extract_multiplier_2x20_win5_avx, .-ossl_extract_multiplier_2x20_win5_avx

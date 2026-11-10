@@ -67,7 +67,7 @@ elseif(ARCH_AMD64)
         add_definitions(-DL_ENDIAN)
     else()
         set(PLATFORM_DIRECTORY linux_x86_64)
-        add_definitions(-DAES_ASM -DBSAES_ASM -DCMLL_ASM -DECP_NISTZ256_ASM -DGHASH_ASM -DKECCAK1600_ASM -DMD5_ASM -DOPENSSL_BN_ASM_GF2m -DOPENSSL_BN_ASM_MONT -DOPENSSL_BN_ASM_MONT5 -DOPENSSL_CPUID_OBJ -DOPENSSL_IA32_SSE2 -DPOLY1305_ASM -DRC4_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DVPAES_ASM -DWHIRLPOOL_ASM -DX25519_ASM -DL_ENDIAN)
+        add_definitions(-DAES_ASM -DBSAES_ASM -DCMLL_ASM -DECP_NISTZ256_ASM -DGHASH_ASM -DKECCAK1600_ASM -DMD5_ASM -DOPENSSL_BN_ASM_GF2m -DOPENSSL_BN_ASM_MONT -DOPENSSL_BN_ASM_MONT5 -DOPENSSL_CPUID_OBJ -DOPENSSL_IA32_SSE2 -DOPENSSL_SM3_ASM -DPOLY1305_ASM -DRC4_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DSM4_ASM -DVPAES_ASM -DWHIRLPOOL_ASM -DX25519_ASM -DL_ENDIAN)
     endif()
 elseif(ARCH_AARCH64)
     if(OS_DARWIN)
@@ -127,25 +127,64 @@ if(NOT ARCH_S390X)
 endif()
 
 set(CRYPTO_SRC
-    common/providers/der_digests_gen.c
-    common/providers/der_dsa_gen.c
-    common/providers/der_ec_gen.c
-    common/providers/der_ecx_gen.c
-    common/providers/der_ml_dsa_gen.c
-    common/providers/der_rsa_gen.c
-    common/providers/der_slh_dsa_gen.c
-    common/providers/der_sm2_gen.c
-    common/providers/der_wrap_gen.c
+    common/crypto/asn1/asn1_err.c
+    common/crypto/async/async_err.c
+    common/crypto/bio/bio_err.c
+    common/crypto/bn/bn_err.c
+    common/crypto/buffer/buf_err.c
+    common/crypto/cmp/cmp_err.c
+    common/crypto/cms/cms_err.c
+    common/crypto/comp/comp_err.c
+    common/crypto/conf/conf_err.c
+    common/crypto/cpt_err.c
+    common/crypto/crmf/crmf_err.c
+    common/crypto/ct/ct_err.c
+    common/crypto/dh/dh_err.c
+    common/crypto/dsa/dsa_err.c
+    common/crypto/dso/dso_err.c
+    common/crypto/ec/ec_err.c
+    common/crypto/encode_decode/decoder_err.c
+    common/crypto/encode_decode/encoder_err.c
+    common/crypto/ess/ess_err.c
+    common/crypto/evp/evp_err.c
+    common/crypto/http/http_err.c
+    common/crypto/objects/obj_err.c
+    common/crypto/ocsp/ocsp_err.c
+    common/crypto/pem/pem_err.c
+    common/crypto/pkcs12/pk12err.c
+    common/crypto/pkcs7/pkcs7err.c
+    common/crypto/property/property_err.c
+    common/crypto/rand/rand_err.c
+    common/crypto/rsa/rsa_err.c
+    common/crypto/sm2/sm2_err.c
+    common/crypto/ssl_err.c
+    common/crypto/store/store_err.c
+    common/crypto/ts/ts_err.c
+    common/crypto/ui/ui_err.c
+    common/crypto/x509/v3err.c
+    common/crypto/x509/x509_err.c
+    common/providers/common/der/der_digests_gen.c
+    common/providers/common/der/der_dsa_gen.c
+    common/providers/common/der/der_ec_gen.c
+    common/providers/common/der/der_ecx_gen.c
+    common/providers/common/der/der_hkdf_gen.c
+    common/providers/common/der/der_ml_dsa_gen.c
+    common/providers/common/der/der_rsa_gen.c
+    common/providers/common/der/der_slh_dsa_gen.c
+    common/providers/common/der/der_sm2_gen.c
+    common/providers/common/der/der_wrap_gen.c
+    common/providers/common/provider_err.c
 
-    common/params_idx.c
-
+    ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc_vaes_intrinsic.c
     ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cfb.c
     ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_ecb.c
     ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_ige.c
     ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_misc.c
     ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_ofb.c
     ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_wrap.c
+    ${OPENSSL_SOURCE_DIR}/crypto/aligned_alloc.c
     ${OPENSSL_SOURCE_DIR}/crypto/aria/aria.c
+    ${OPENSSL_SOURCE_DIR}/crypto/array_alloc.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_bitstr.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_d2i_fp.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_digest.c
@@ -161,12 +200,12 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_strex.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_strnid.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_time.c
+    ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_time_posix.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_type.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_utctm.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_utf8.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_verify.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/ameth_lib.c
-    ${OPENSSL_SOURCE_DIR}/crypto/asn1/asn1_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/asn1_gen.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/asn1_item_list.c
     ${OPENSSL_SOURCE_DIR}/crypto/asn1/asn1_lib.c
@@ -215,7 +254,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/async/arch/async_posix.c
     ${OPENSSL_SOURCE_DIR}/crypto/async/arch/async_win.c
     ${OPENSSL_SOURCE_DIR}/crypto/async/async.c
-    ${OPENSSL_SOURCE_DIR}/crypto/async/async_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/async/async_wait.c
     ${OPENSSL_SOURCE_DIR}/crypto/bf/bf_cfb64.c
     ${OPENSSL_SOURCE_DIR}/crypto/bf/bf_ecb.c
@@ -231,7 +269,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/bio/bio_addr.c
     ${OPENSSL_SOURCE_DIR}/crypto/bio/bio_cb.c
     ${OPENSSL_SOURCE_DIR}/crypto/bio/bio_dump.c
-    ${OPENSSL_SOURCE_DIR}/crypto/bio/bio_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/bio/bio_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/bio/bio_meth.c
     ${OPENSSL_SOURCE_DIR}/crypto/bio/bio_print.c
@@ -258,7 +295,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_depr.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_dh.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_div.c
-    ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_exp.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_exp2.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_gcd.c
@@ -275,14 +311,13 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_print.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_rand.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_recp.c
-    ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_rsa_fips186_4.c
+    ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_rsa_fips186_5.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_shift.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_sqr.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_sqrt.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_word.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_x931p.c
     ${OPENSSL_SOURCE_DIR}/crypto/bsearch.c
-    ${OPENSSL_SOURCE_DIR}/crypto/buffer/buf_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/buffer/buffer.c
     ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_cfb.c
     ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_ctr.c
@@ -298,7 +333,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/cmp/cmp_asn.c
     ${OPENSSL_SOURCE_DIR}/crypto/cmp/cmp_client.c
     ${OPENSSL_SOURCE_DIR}/crypto/cmp/cmp_ctx.c
-    ${OPENSSL_SOURCE_DIR}/crypto/cmp/cmp_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/cmp/cmp_genm.c
     ${OPENSSL_SOURCE_DIR}/crypto/cmp/cmp_hdr.c
     ${OPENSSL_SOURCE_DIR}/crypto/cmp/cmp_http.c
@@ -316,10 +350,11 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_ec.c
     ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_enc.c
     ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_env.c
-    ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_ess.c
     ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_io.c
     ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_kari.c
+    ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_kem.c
+    ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_kemri.c
     ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_pwri.c
     ${OPENSSL_SOURCE_DIR}/crypto/cms/cms_rsa.c
@@ -328,12 +363,10 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/comp/c_brotli.c
     ${OPENSSL_SOURCE_DIR}/crypto/comp/c_zlib.c
     ${OPENSSL_SOURCE_DIR}/crypto/comp/c_zstd.c
-    ${OPENSSL_SOURCE_DIR}/crypto/comp/comp_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/comp/comp_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/comp_methods.c
     ${OPENSSL_SOURCE_DIR}/crypto/conf/conf_api.c
     ${OPENSSL_SOURCE_DIR}/crypto/conf/conf_def.c
-    ${OPENSSL_SOURCE_DIR}/crypto/conf/conf_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/conf/conf_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/conf/conf_mall.c
     ${OPENSSL_SOURCE_DIR}/crypto/conf/conf_mod.c
@@ -343,15 +376,12 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/core_algorithm.c
     ${OPENSSL_SOURCE_DIR}/crypto/core_fetch.c
     ${OPENSSL_SOURCE_DIR}/crypto/core_namemap.c
-    ${OPENSSL_SOURCE_DIR}/crypto/cpt_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/cpuid.c
     ${OPENSSL_SOURCE_DIR}/crypto/crmf/crmf_asn.c
-    ${OPENSSL_SOURCE_DIR}/crypto/crmf/crmf_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/crmf/crmf_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/crmf/crmf_pbm.c
     ${OPENSSL_SOURCE_DIR}/crypto/cryptlib.c
     ${OPENSSL_SOURCE_DIR}/crypto/ct/ct_b64.c
-    ${OPENSSL_SOURCE_DIR}/crypto/ct/ct_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/ct/ct_log.c
     ${OPENSSL_SOURCE_DIR}/crypto/ct/ct_oct.c
     ${OPENSSL_SOURCE_DIR}/crypto/ct/ct_policy.c
@@ -389,14 +419,12 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_backend.c
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_check.c
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_depr.c
-    ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_gen.c
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_group_params.c
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_kdf.c
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_key.c
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_meth.c
-    ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_pmeth.c
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_prn.c
     ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_rfc5114.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_ameth.c
@@ -404,19 +432,16 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_backend.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_check.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_depr.c
-    ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_gen.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_key.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_meth.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_ossl.c
-    ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_pmeth.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_prn.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_sign.c
     ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_vrf.c
     ${OPENSSL_SOURCE_DIR}/crypto/dso/dso_dl.c
     ${OPENSSL_SOURCE_DIR}/crypto/dso/dso_dlfcn.c
-    ${OPENSSL_SOURCE_DIR}/crypto/dso/dso_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/dso/dso_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/dso/dso_openssl.c
     ${OPENSSL_SOURCE_DIR}/crypto/dso/dso_vms.c
@@ -439,13 +464,11 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_curve.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_cvt.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_deprecated.c
-    ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_key.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_kmeth.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_mult.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_oct.c
-    ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_pmeth.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ec_print.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ecdh_kdf.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ecdh_ossl.c
@@ -460,11 +483,9 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ecx_backend.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ecx_key.c
     ${OPENSSL_SOURCE_DIR}/crypto/ec/ecx_meth.c
-    ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/decoder_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/decoder_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/decoder_meth.c
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/decoder_pkey.c
-    ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/encoder_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/encoder_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/encoder_meth.c
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/encoder_pkey.c
@@ -476,16 +497,13 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/err/err_prn.c
     ${OPENSSL_SOURCE_DIR}/crypto/err/err_save.c
     ${OPENSSL_SOURCE_DIR}/crypto/ess/ess_asn1.c
-    ${OPENSSL_SOURCE_DIR}/crypto/ess/ess_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/ess/ess_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/asymcipher.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/bio_b64.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/bio_enc.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/bio_md.c
-    ${OPENSSL_SOURCE_DIR}/crypto/evp/bio_ok.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/c_allc.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/c_alld.c
-    ${OPENSSL_SOURCE_DIR}/crypto/evp/cmeth_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/ctrl_params_translate.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/dh_ctrl.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/dh_support.c
@@ -513,15 +531,17 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/evp/e_xcbc_d.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/ec_ctrl.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/ec_support.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/enc_b64_avx2.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/enc_b64_scalar.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/encode.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_cnf.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_enc.c
-    ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_fetch.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_key.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_pbe.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_pkey.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_pkey_type.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_rand.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/evp_utils.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/exchange.c
@@ -573,7 +593,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/hpke/hpke.c
     ${OPENSSL_SOURCE_DIR}/crypto/hpke/hpke_util.c
     ${OPENSSL_SOURCE_DIR}/crypto/http/http_client.c
-    ${OPENSSL_SOURCE_DIR}/crypto/http/http_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/http/http_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/idea/i_cbc.c
     ${OPENSSL_SOURCE_DIR}/crypto/idea/i_cfb64.c
@@ -621,15 +640,12 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/o_fopen.c
     ${OPENSSL_SOURCE_DIR}/crypto/o_init.c
     ${OPENSSL_SOURCE_DIR}/crypto/o_str.c
-    ${OPENSSL_SOURCE_DIR}/crypto/o_time.c
     ${OPENSSL_SOURCE_DIR}/crypto/objects/o_names.c
     ${OPENSSL_SOURCE_DIR}/crypto/objects/obj_dat.c
-    ${OPENSSL_SOURCE_DIR}/crypto/objects/obj_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/objects/obj_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/objects/obj_xref.c
     ${OPENSSL_SOURCE_DIR}/crypto/ocsp/ocsp_asn.c
     ${OPENSSL_SOURCE_DIR}/crypto/ocsp/ocsp_cl.c
-    ${OPENSSL_SOURCE_DIR}/crypto/ocsp/ocsp_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/ocsp/ocsp_ext.c
     ${OPENSSL_SOURCE_DIR}/crypto/ocsp/ocsp_http.c
     ${OPENSSL_SOURCE_DIR}/crypto/ocsp/ocsp_lib.c
@@ -646,7 +662,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/params_from_text.c
     ${OPENSSL_SOURCE_DIR}/crypto/passphrase.c
     ${OPENSSL_SOURCE_DIR}/crypto/pem/pem_all.c
-    ${OPENSSL_SOURCE_DIR}/crypto/pem/pem_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/pem/pem_info.c
     ${OPENSSL_SOURCE_DIR}/crypto/pem/pem_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/pem/pem_oth.c
@@ -671,7 +686,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/pkcs12/p12_p8e.c
     ${OPENSSL_SOURCE_DIR}/crypto/pkcs12/p12_sbag.c
     ${OPENSSL_SOURCE_DIR}/crypto/pkcs12/p12_utl.c
-    ${OPENSSL_SOURCE_DIR}/crypto/pkcs12/pk12err.c
     ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/bio_pk7.c
     ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/pk7_asn1.c
     ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/pk7_attr.c
@@ -679,11 +693,9 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/pk7_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/pk7_mime.c
     ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/pk7_smime.c
-    ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/pkcs7err.c
     ${OPENSSL_SOURCE_DIR}/crypto/poly1305/poly1305.c
     ${OPENSSL_SOURCE_DIR}/crypto/property/defn_cache.c
     ${OPENSSL_SOURCE_DIR}/crypto/property/property.c
-    ${OPENSSL_SOURCE_DIR}/crypto/property/property_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/property/property_parse.c
     ${OPENSSL_SOURCE_DIR}/crypto/property/property_query.c
     ${OPENSSL_SOURCE_DIR}/crypto/property/property_string.c
@@ -696,7 +708,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/quic_vlint.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/prov_seed.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_deprecated.c
-    ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_pool.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_uniform.c
@@ -715,7 +726,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_chk.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_crpt.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_depr.c
-    ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_gen.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_meth.c
@@ -725,7 +735,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_oaep.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_ossl.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_pk1.c
-    ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_pmeth.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_prn.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_pss.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_saos.c
@@ -744,6 +753,7 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/sha/sha1dgst.c
     ${OPENSSL_SOURCE_DIR}/crypto/sha/sha256.c
     ${OPENSSL_SOURCE_DIR}/crypto/sha/sha3.c
+    ${OPENSSL_SOURCE_DIR}/crypto/sha/sha3_encode.c
     ${OPENSSL_SOURCE_DIR}/crypto/sha/sha512.c
     ${OPENSSL_SOURCE_DIR}/crypto/siphash/siphash.c
     ${OPENSSL_SOURCE_DIR}/crypto/sleep.c
@@ -758,16 +768,13 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/slh_dsa/slh_wots.c
     ${OPENSSL_SOURCE_DIR}/crypto/slh_dsa/slh_xmss.c
     ${OPENSSL_SOURCE_DIR}/crypto/sm2/sm2_crypt.c
-    ${OPENSSL_SOURCE_DIR}/crypto/sm2/sm2_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/sm2/sm2_key.c
     ${OPENSSL_SOURCE_DIR}/crypto/sm2/sm2_sign.c
     ${OPENSSL_SOURCE_DIR}/crypto/sm3/legacy_sm3.c
     ${OPENSSL_SOURCE_DIR}/crypto/sm3/sm3.c
     ${OPENSSL_SOURCE_DIR}/crypto/sm4/sm4.c
     ${OPENSSL_SOURCE_DIR}/crypto/sparse_array.c
-    ${OPENSSL_SOURCE_DIR}/crypto/ssl_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/stack/stack.c
-    ${OPENSSL_SOURCE_DIR}/crypto/store/store_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_meth.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_result.c
@@ -778,6 +785,7 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/thread/arch/thread_posix.c
     ${OPENSSL_SOURCE_DIR}/crypto/thread/arch/thread_win.c
     ${OPENSSL_SOURCE_DIR}/crypto/thread/internal.c
+    ${OPENSSL_SOURCE_DIR}/crypto/threads_common.c
     ${OPENSSL_SOURCE_DIR}/crypto/threads_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/threads_none.c
     ${OPENSSL_SOURCE_DIR}/crypto/threads_pthread.c
@@ -786,7 +794,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/trace.c
     ${OPENSSL_SOURCE_DIR}/crypto/ts/ts_asn1.c
     ${OPENSSL_SOURCE_DIR}/crypto/ts/ts_conf.c
-    ${OPENSSL_SOURCE_DIR}/crypto/ts/ts_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/ts/ts_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/ts/ts_req_print.c
     ${OPENSSL_SOURCE_DIR}/crypto/ts/ts_req_utils.c
@@ -796,7 +803,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/ts/ts_rsp_verify.c
     ${OPENSSL_SOURCE_DIR}/crypto/ts/ts_verify_ctx.c
     ${OPENSSL_SOURCE_DIR}/crypto/txt_db/txt_db.c
-    ${OPENSSL_SOURCE_DIR}/crypto/ui/ui_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/ui/ui_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/ui/ui_null.c
     ${OPENSSL_SOURCE_DIR}/crypto/ui/ui_openssl.c
@@ -868,13 +874,11 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/x509/v3_usernotice.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/v3_utf8.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/v3_utl.c
-    ${OPENSSL_SOURCE_DIR}/crypto/x509/v3err.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509_acert.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509_att.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509_cmp.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509_d2.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509_def.c
-    ${OPENSSL_SOURCE_DIR}/crypto/x509/x509_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509_ext.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509_lu.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509_meth.c
@@ -917,7 +921,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/providers/common/der/der_sm2_sig.c
     ${OPENSSL_SOURCE_DIR}/providers/common/digest_to_nid.c
     ${OPENSSL_SOURCE_DIR}/providers/common/provider_ctx.c
-    ${OPENSSL_SOURCE_DIR}/providers/common/provider_err.c
     ${OPENSSL_SOURCE_DIR}/providers/common/provider_seeding.c
     ${OPENSSL_SOURCE_DIR}/providers/common/provider_util.c
     ${OPENSSL_SOURCE_DIR}/providers/common/securitycheck.c
@@ -927,16 +930,27 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/providers/implementations/asymciphers/sm2_enc.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_cbc_hmac_sha.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_cbc_hmac_sha1_etm_hw.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_cbc_hmac_sha1_hw.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_cbc_hmac_sha256_etm_hw.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_cbc_hmac_sha256_hw.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_cbc_hmac_sha512_etm_hw.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_cbc_hmac_sha_etm.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_ccm.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_ccm_hw.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_gcm.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_gcm_hw.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_gcm_hw_ppc.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_gcm_siv.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_gcm_siv_hw.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_gcm_siv_polyval.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_hw.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_hw_aesni.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_hw_armv8.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_hw_rv32i.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_hw_rv64i.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_hw_s390x.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_hw_t4.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_ocb.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_ocb_hw.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_siv.c
@@ -1003,11 +1017,13 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/blake2_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/blake2b_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/blake2s_prov.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/cshake_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/digestcommon.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/md4_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/md5_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/md5_sha1_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/mdc2_prov.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/ml_dsa_mu_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/null_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/ripemd_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/digests/sha2_prov.c
@@ -1035,14 +1051,16 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/argon2.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/hkdf.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/hmacdrbg_kdf.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/ikev2kdf.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/kbkdf.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/krb5kdf.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/pbkdf1.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/pbkdf2.c
-    ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/pbkdf2_fips.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/pkcs12kdf.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/pvkkdf.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/scrypt.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/snmpkdf.c
+    ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/srtpkdf.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/sshkdf.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/sskdf.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/tls1_prf.c
@@ -1145,6 +1163,8 @@ elseif(ARCH_AMD64)
         )
     else()
         set(CRYPTO_SRC ${CRYPTO_SRC}
+            asm/crypto/aes/aes-cbc-vaes-x86_64.s
+            asm/crypto/aes/aes-cfb-avx512.s
             asm/crypto/aes/aes-x86_64.s
             asm/crypto/aes/aesni-mb-x86_64.s
             asm/crypto/aes/aesni-sha1-x86_64.s
@@ -1169,6 +1189,7 @@ elseif(ARCH_AMD64)
             asm/crypto/ec/ecp_nistz256-x86_64.s
             asm/crypto/ec/x25519-x86_64.s
             asm/crypto/md5/md5-x86_64.s
+            asm/crypto/ml_dsa/ml_dsa_ntt-x86_64.s
             asm/crypto/modes/aes-gcm-avx512.s
             asm/crypto/modes/aesni-gcm-x86_64.s
             asm/crypto/modes/ghash-x86_64.s
@@ -1176,17 +1197,21 @@ elseif(ARCH_AMD64)
             asm/crypto/rc4/rc4-md5-x86_64.s
             asm/crypto/rc4/rc4-x86_64.s
             asm/crypto/sha/keccak1600-x86_64.s
+            asm/crypto/sha/keccak1600x4-avx512vl.s
             asm/crypto/sha/sha1-mb-x86_64.s
             asm/crypto/sha/sha1-x86_64.s
             asm/crypto/sha/sha256-mb-x86_64.s
             asm/crypto/sha/sha256-x86_64.s
             asm/crypto/sha/sha512-x86_64.s
+            asm/crypto/sm3/sm3-x86_64.S
+            asm/crypto/sm4/sm4-x86_64.S
             asm/crypto/whrlpool/wp-x86_64.s
             asm/crypto/x86_64cpuid.s
             ${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-gcc.c
             ${OPENSSL_SOURCE_DIR}/crypto/bn/rsaz_exp.c
             ${OPENSSL_SOURCE_DIR}/crypto/bn/rsaz_exp_x2.c
             ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistz256.c
+            ${OPENSSL_SOURCE_DIR}/crypto/sha/sha3_x4_avx512vl.c
         )
     endif()
 elseif(ARCH_AARCH64)
@@ -1206,8 +1231,9 @@ elseif(ARCH_AARCH64)
         )
     else()
         set(CRYPTO_SRC ${CRYPTO_SRC}
-            common/params_idx.c
-
+            asm/crypto/aes/aes-sha1-armv8.S
+            asm/crypto/aes/aes-sha256-armv8.S
+            asm/crypto/aes/aes-sha512-armv8.S
             asm/crypto/aes/aesv8-armx.S
             asm/crypto/aes/bsaes-armv8.S
             asm/crypto/aes/vpaes-armv8.S
@@ -1222,6 +1248,7 @@ elseif(ARCH_AARCH64)
             asm/crypto/modes/asm/aes-gcm-armv8_64.S
             asm/crypto/modes/ghashv8-armx.S
             asm/crypto/poly1305/poly1305-armv8.S
+            asm/crypto/poly1305/poly1305-armv9-sve2.S
             asm/crypto/sha/keccak1600-armv8.S
             asm/crypto/sha/sha1-armv8.S
             asm/crypto/sha/sha256-armv8.S
@@ -1264,9 +1291,6 @@ elseif(ARCH_PPC64LE)
         ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600.c
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
     )
-    if (OS_LINUX)
-        set(CRYPTO_SRC ${CRYPTO_SRC} ${OPENSSL_SOURCE_DIR}/engines/e_afalg.c)
-    endif()
 elseif(ARCH_S390X)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         asm/crypto/aes/aes-s390x.S
@@ -1333,6 +1357,14 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/d1_lib.c
     ${OPENSSL_SOURCE_DIR}/ssl/d1_msg.c
     ${OPENSSL_SOURCE_DIR}/ssl/d1_srtp.c
+    ${OPENSSL_SOURCE_DIR}/ssl/d1_transcript.c
+    ${OPENSSL_SOURCE_DIR}/ssl/dgram_demux.c
+    ${OPENSSL_SOURCE_DIR}/ssl/dtls_conn_lookup.c
+    ${OPENSSL_SOURCE_DIR}/ssl/dtls_record_rx.c
+    ${OPENSSL_SOURCE_DIR}/ssl/ech/ech_helper.c
+    ${OPENSSL_SOURCE_DIR}/ssl/ech/ech_internal.c
+    ${OPENSSL_SOURCE_DIR}/ssl/ech/ech_ssl_apis.c
+    ${OPENSSL_SOURCE_DIR}/ssl/ech/ech_store.c
     ${OPENSSL_SOURCE_DIR}/ssl/methods.c
     ${OPENSSL_SOURCE_DIR}/ssl/pqueue.c
     ${OPENSSL_SOURCE_DIR}/ssl/priority_queue.c
@@ -1381,7 +1413,6 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_wire_pkt.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/uint_set.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/dtls_meth.c
-    ${OPENSSL_SOURCE_DIR}/ssl/record/methods/ssl3_meth.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/tls13_meth.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/tls1_meth.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/tls_common.c
@@ -1432,7 +1463,12 @@ set(SSL_SRC
 #
 # SRP API is deprecated in OpenSSL 3.0.
 # https://docs.openssl.org/3.1/man3/SRP_Calc_B/#history
+#
+# OpenSSL 4.1 deprecates APIs that are still widely used by contribs and by ClickHouse itself (e.g.
+# `ASN1_STRING_length`, `X509_check_host`). `OPENSSL_API_COMPAT` keeps everything deprecated after
+# 4.0 in the library.
 add_definitions(-DOPENSSL_NO_DEPRECATED)
+add_definitions(-DOPENSSL_API_COMPAT=40000)
 add_definitions(-DOPENSSL_NO_ENGINE)
 add_definitions(-DOPENSSL_NO_SRP)
 
@@ -1455,6 +1491,19 @@ add_definitions(-DSTATIC_LEGACY)
 target_include_directories(crypto
     SYSTEM PUBLIC "common/include"
     PRIVATE "${PLATFORM_DIRECTORY}/include_private")
+
+# Since OpenSSL 4.1, the error tables and many private headers are generated at build time. `common`
+# mirrors the layout of OpenSSL's build tree; the per-directory paths are for sources that include a
+# generated header from their own directory (e.g. `#include "obj_dat.h"` in `crypto/objects/obj_dat.c`).
+target_include_directories(crypto
+    PRIVATE "common"
+    PRIVATE "common/providers/common/include"
+    PRIVATE "common/providers/implementations/include"
+    PRIVATE "common/crypto"
+    PRIVATE "common/crypto/asn1"
+    PRIVATE "common/crypto/bn"
+    PRIVATE "common/crypto/conf"
+    PRIVATE "common/crypto/objects")
 
 target_include_directories(crypto
     SYSTEM PUBLIC ${OPENSSL_SOURCE_DIR}/include

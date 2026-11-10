@@ -1,4 +1,5 @@
 .text
+.machine	"z10"
 
 .type	__KeccakF1600,@function
 .align	32
@@ -463,4 +464,4 @@ iotas:
 	.quad	0x0000000080000001
 	.quad	0x8000000080008008
 .size	iotas,.-iotas
-.asciz	"Keccak-1600 absorb and squeeze for s390x, CRYPTOGAMS by <appro@openssl.org>"
+.asciz	"Keccak-1600 absorb and squeeze for s390x, CRYPTOGAMS by <https://github.com/dot-asm>"
