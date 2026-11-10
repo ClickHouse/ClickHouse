@@ -417,8 +417,11 @@ public:
             enumerate_settings,
             [this](const ISerialization::SubstreamPath & path)
             {
-                if (!ISerialization::isEphemeralSubcolumn(path, path.size()))
-                    stream_layouts.try_emplace(streamName(path), resolveStream(path));
+                if (ISerialization::isEphemeralSubcolumn(path, path.size()))
+                    return;
+                String name = streamName(path);
+                if (!stream_layouts.contains(name))
+                    stream_layouts.emplace(std::move(name), resolveStream(path));
             },
             ISerialization::SubstreamData(serialization).withType(target_type));
     }
@@ -543,9 +546,12 @@ private:
             || data_ref.granule_bytes + data_ref.pending->byteSize() >= GRANULE_BYTES;
     }
 
+    /// `completesGranule`, or the pending rows take `PENDING_BYTES`. Checked for every row added one at a time.
     static bool isPendingFull(const Data & data_ref)
     {
-        return completesGranule(data_ref) || data_ref.pending->byteSize() >= PENDING_BYTES;
+        const size_t bytes = data_ref.pending->byteSize();
+        return data_ref.granule_rows + data_ref.pending->size() >= GRANULE_ROWS || data_ref.granule_bytes + bytes >= GRANULE_BYTES
+            || bytes >= PENDING_BYTES;
     }
 
     void addRows(Data & data_ref, const IColumn & column, size_t row_begin, size_t row_end) const
