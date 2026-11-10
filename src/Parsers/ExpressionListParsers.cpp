@@ -1508,13 +1508,12 @@ protected:
     }
 };
 
-/// Marks the list of subscripts of `arr[i, j]` or the empty subscript of `arr[]`, see `expandSubscripts`.
-static constexpr std::string_view subscripts_marker = "__subscripts";
-
+/// The list of subscripts of `arr[i, j]` or the empty subscript of `arr[]` is marked by an `ASTExpressionList`
+/// in place of the subscript, see `expandSubscripts`. The parser does not produce an `ASTExpressionList` as an operand
+/// otherwise, so the marker cannot be confused with an expression written in the query, e.g. a function call.
 static bool isSubscriptsMarker(const IAST * node)
 {
-    const auto * function = node ? node->as<ASTFunction>() : nullptr;
-    return function && function->name == subscripts_marker;
+    return node && node->as<ASTExpressionList>();
 }
 
 /// Layer for arrayElement square brackets operator
@@ -1538,7 +1537,9 @@ protected:
             return true;
         }
 
-        node = makeASTFunction(String(subscripts_marker), std::move(elements));
+        auto marker = make_intrusive<ASTExpressionList>();
+        marker->children = std::move(elements);
+        node = std::move(marker);
         return true;
     }
 };
@@ -1650,7 +1651,7 @@ static void expandSubscripts(ASTPtr & node, size_t depth, size_t max_depth)
         if (isSubscriptsMarker(subscript.get()))
         {
             has_marker = true;
-            const auto & subscripts = subscript->as<ASTFunction &>().arguments->children;
+            const auto & subscripts = subscript->children;
             if (subscripts.empty())
                 chain.push_back(nullptr);
             else
@@ -3801,7 +3802,7 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
                 if (!layers.back()->getResult(res))
                     break;
 
-                has_subscripts_markers |= isSubscriptsMarker(res.get());
+                has_subscripts_markers |= typeid_cast<ArrayElementLayer *>(layers.back().get()) && isSubscriptsMarker(res.get());
 
                 /// Bracket layers can fold into one `ASTLiteral`, which `max_ast_depth` does not see,
                 /// so they count towards the parse depth from push to pop.
