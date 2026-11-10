@@ -42,10 +42,14 @@ bool keyArgumentTypesAreAllowed(const ColumnsWithTypeAndName & columns, bool all
 
 }
 
-bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys)
+bool isExpressionFunctionOfKeys(
+    const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys, const QueryTreeNodes & aggregation_keys)
 {
+    auto is_aggregation_key = [&](const QueryTreeNodePtr & candidate)
+    { return !aggregation_keys.empty() && isGroupByKeyAfterAggregation(candidate, aggregation_keys); };
+
     auto * function = node->as<FunctionNode>();
-    if (!function || function->getArguments().getNodes().empty())
+    if (!function || function->getArguments().getNodes().empty() || is_aggregation_key(node))
         return false;
 
     /// Aggregate and window functions are allowed as keys (for example in LIMIT BY), but they are
@@ -82,7 +86,7 @@ bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNo
             {
                 auto * func = candidate->as<FunctionNode>();
                 auto & arguments = func->getArguments().getNodes();
-                if (arguments.empty())
+                if (arguments.empty() || (!found && is_aggregation_key(candidate)))
                     return false;
 
                 if (!found)
@@ -114,7 +118,7 @@ bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNo
     return found_at_least_one_usage;
 }
 
-void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys)
+void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys, const QueryTreeNodes & aggregation_keys)
 {
     QueryTreeNodePtrWithHashSet key_set(keys.begin(), keys.end());
 
@@ -122,7 +126,7 @@ void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys)
     new_keys.reserve(keys.size());
     for (auto & key : keys)
     {
-        if (!isExpressionFunctionOfKeys(key, key_set))
+        if (!isExpressionFunctionOfKeys(key, key_set, aggregation_keys))
             new_keys.push_back(key);
     }
 

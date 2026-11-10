@@ -263,14 +263,25 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
-/// `positional_arguments_already_resolved` is set for all queries from other servers, but some of them are sent as they are written:
-/// the queries of remote dictionaries and some `INSERT SELECT`. Parts of distributed reads are printed from a resolved query
-/// (with parallel replicas, some versions do not increase the depth).
-bool cannotBeSentAsWritten(const ContextPtr & context)
+/// Aliases of a resolved expression are removed at the end of `resolveQuery` if they are registered for that.
+/// Registers the same ones of its copy: the two must stay equal, and a query printed for another server must not have
+/// different expressions with the same alias.
+void registerAliasesOfCopy(
+    const QueryTreeNodePtr & node,
+    const QueryTreeNodePtr & copy,
+    const std::unordered_map<const IQueryTreeNode *, ScopeAliases *> & registered)
 {
-    const auto & client_info = context->getClientInfo();
-    return client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
-        || ((client_info.distributed_depth > 0 || client_info.collaborate_with_initiator) && !context->hasInsertionTableColumnsDescription());
+    if (!node)
+        return;
+
+    if (auto it = registered.find(node.get()); it != registered.end())
+    {
+        it->second->node_to_remove_aliases.push_back(copy);
+        return;
+    }
+
+    for (const auto [child, child_copy] : std::views::zip(node->getChildren(), copy->getChildren()))
+        registerAliasesOfCopy(child, child_copy, registered);
 }
 
 /// Hides lambda argument names in the scopes they belong to and restores them on destruction.
@@ -951,6 +962,8 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     if (positional_arguments_already_resolved)
         return;
 
+    std::unordered_map<const IQueryTreeNode *, ScopeAliases *> registered;
+
     auto & node_list_typed = node_list->as<ListNode &>();
 
     for (auto & node : node_list_typed.getNodes())
@@ -1002,6 +1015,12 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         *node_to_replace = projection_nodes[pos]->clone();
         if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
         {
+            if (registered.empty())
+                for (auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+                    for (const auto & node_to_remove_aliases : current_scope->aliases.node_to_remove_aliases)
+                        registered.emplace(node_to_remove_aliases.get(), &current_scope->aliases);
+
+            registerAliasesOfCopy(projection_nodes[pos], *node_to_replace, registered);
             resolved_expressions[*node_to_replace] = it->second;
         }
     }
@@ -7949,20 +7968,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 if (const auto * constant_node = original_node->as<ConstantNode>())
                     if (const auto & source_expression = constant_node->getSourceExpression())
                         matched = source_expression->isEqual(*node);
-
-            /// Positions are replaced with copies of projection expressions before a query is printed, so the aliases inside are repeated,
-            /// and one of the two printed expressions can lose them. They do not matter if no name in the query refers to them:
-            /// then only projection aliases are used (`JOIN USING` with this setting does not record the aliases that it uses).
-            if (!matched && positional_arguments_already_resolved && cannotBeSentAsWritten(scope.context)
-                && !scope.context->getSettingsRef()[Setting::analyzer_compatibility_join_using_top_level_identifier]
-                && std::ranges::all_of(scope.used_alias_names, [&](const auto & name) { return projection_alias_names.contains(name); }))
-            {
-                auto lhs = original_node->clone();
-                auto rhs = node->clone();
-                removeAliasesRecursive(lhs);
-                removeAliasesRecursive(rhs);
-                matched = lhs->isEqual(*rhs);
-            }
 
             if (!matched)
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,

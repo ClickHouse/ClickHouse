@@ -16,11 +16,13 @@ class QueryNode;
 
 /// Returns true if `node` is an ordinary deterministic function computed only from `keys` (every
 /// column it reads is one of the keys). Such a value is the same for all rows in a group, so this
-/// key can be dropped without changing the grouping.
-bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys);
+/// key can be dropped without changing the grouping. The values of `aggregation_keys` are not
+/// computed from the columns they read.
+bool isExpressionFunctionOfKeys(
+    const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys, const QueryTreeNodes & aggregation_keys = {});
 
 /// Removes, in place, every key that is a function of the other keys.
-void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys);
+void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys, const QueryTreeNodes & aggregation_keys = {});
 
 /// Returns a new key list with injective functions replaced by their non-constant arguments. An
 /// injective function gives the same grouping as its arguments, so the result does not change. When

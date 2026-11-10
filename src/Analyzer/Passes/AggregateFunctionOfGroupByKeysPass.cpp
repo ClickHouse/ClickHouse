@@ -5,6 +5,7 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
@@ -37,7 +38,14 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<EliminateFunctionVisitor>;
     using Base::Base;
 
-    using GroupByKeysStack = std::vector<QueryTreeNodePtrWithHashSet>;
+    struct GroupByKeys
+    {
+        QueryTreeNodePtrWithHashSet keys;
+        /// Keys that are not in every grouping set. They have default values in the other sets, also if they are functions of `keys`.
+        QueryTreeNodePtrWithHashSet keys_of_some_sets;
+    };
+
+    using GroupByKeysStack = std::vector<GroupByKeys>;
 
     bool collecting_output_nodes = true;
 
@@ -92,15 +100,25 @@ public:
             /// while the argument of the aggregate function keeps its type, so the replacement would not match it.
             group_by_keys_stack.push_back({});
         }
+        else if (std::ranges::any_of(
+                     query_node->getOrderBy().getNodes(),
+                     [](const QueryTreeNodePtr & sort_node) { return sort_node->as<SortNode &>().withFill(); }))
+        {
+            /// `WITH FILL` generates different values for the key and for the aggregate function.
+            group_by_keys_stack.push_back({});
+        }
         else
         {
             QueryTreeNodePtrWithHashSet group_by_keys;
+            QueryTreeNodePtrWithHashSet keys_of_some_sets;
             bool first_grouping_set = true;
             for (auto & group_key : query_node->getGroupBy().getNodes())
             {
                 /// For grouping sets case collect only keys that are presented in every set.
                 if (auto * list = group_key->as<ListNode>())
                 {
+                    keys_of_some_sets.insert(list->getNodes().begin(), list->getNodes().end());
+
                     if (first_grouping_set)
                     {
                         for (auto & group_elem : list->getNodes())
@@ -123,7 +141,11 @@ public:
                     group_by_keys.insert(group_key);
                 }
             }
-            group_by_keys_stack.push_back(std::move(group_by_keys));
+
+            for (const auto & group_key : group_by_keys)
+                keys_of_some_sets.erase(group_key);
+
+            group_by_keys_stack.push_back({std::move(group_by_keys), std::move(keys_of_some_sets)});
         }
     }
 
@@ -248,9 +270,9 @@ private:
         return adaptor->getFunction()->useDefaultImplementationForLowCardinalityColumns();
     }
 
-    bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
+    bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const GroupByKeys & group_by_keys)
     {
-        if (group_by_keys.empty())
+        if (group_by_keys.keys.empty())
             return false;
 
         auto * function = node->as<FunctionNode>();
@@ -300,7 +322,10 @@ private:
             auto [candidate, parents_are_only_deterministic] = candidates.back();
             candidates.pop_back();
 
-            bool found = group_by_keys.contains(candidate);
+            if (group_by_keys.keys_of_some_sets.contains(candidate))
+                return false;
+
+            bool found = group_by_keys.keys.contains(candidate);
 
             switch (candidate->getNodeType())
             {
