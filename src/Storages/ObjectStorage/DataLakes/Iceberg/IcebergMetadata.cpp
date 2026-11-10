@@ -85,6 +85,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/PartitionCommands.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <Common/ProfileEvents.h>
@@ -123,6 +124,11 @@ extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_metadata_prefetch_pause[];
 }
 
 namespace Setting
@@ -325,6 +331,9 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
 
     try
     {
+        /// Lets a test hold the refresher before it reads the latest metadata
+        FailPointInjection::pauseFailPoint(FailPoints::iceberg_metadata_prefetch_pause);
+
         if (!Context::getGlobalContextInstance())
         {
             /// Should never happen, but if seen, this is clear indicator that the task should be started/stopped via startup/shutdown mechanism (check TODOs above)
