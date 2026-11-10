@@ -795,6 +795,51 @@ inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_
     return 0 == memcmpSmallLikeZeroPaddedAllowOverflow15(a, a_size, b, b_size);
 }
 
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+/// Compare the common prefix of `UInt8` columns without ordering mismatching characters.
+inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const UInt8 * a, size_t a_size, const UInt8 * b, size_t b_size)
+{
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
+
+    const size_t min_size = std::min(a_size, b_size);
+    for (size_t offset = 0; offset < min_size; offset += 16)
+    {
+#if defined(__AVX512BW__) && defined(__AVX512VL__)
+        uint16_t mask = _mm_cmp_epi8_mask(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(b + offset)),
+            _MM_CMPINT_NE);
+#elif defined(__SSE2__)
+        uint16_t mask = static_cast<uint16_t>(~_mm_movemask_epi8(_mm_cmpeq_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(b + offset)))));
+#else
+        uint64_t mask = ~getNibbleMask(vceqq_u8(
+            vld1q_u8(reinterpret_cast<const unsigned char *>(a + offset)),
+            vld1q_u8(reinterpret_cast<const unsigned char *>(b + offset))));
+#endif
+        if (mask)
+        {
+#if defined(__SSE2__)
+            offset += std::countr_zero(mask);
+#else
+            offset += std::countr_zero(mask) >> 2;
+#endif
+            if (offset < min_size)
+                return false;
+            break;
+        }
+    }
+
+    if (a_size == b_size)
+        return true;
+
+    const UInt8 * longest = a_size > b_size ? a : b;
+    return memoryIsZeroSmallAllowOverflow15(longest + min_size, std::max(a_size, b_size) - min_size);
+}
+#endif
+
 inline int memcmpSmallCharsAllowOverflow15(const UInt8 * a, size_t a_size, const UInt8 * b, size_t b_size)
 {
     /// Normalize to -1/0/1 because the JIT caller truncates i32 to i8,

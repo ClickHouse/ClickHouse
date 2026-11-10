@@ -71,17 +71,25 @@ namespace detail
 inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
 {
     __msan_unpoison_overflow_15(src, n);
-    while (n > 0)
+    if (n <= 0)
+        return;
+    vst1q_s8(reinterpret_cast<signed char *>(dst), vld1q_s8(reinterpret_cast<const signed char *>(src)));
+    if (n <= 16)
+        return;
+
+    size_t offset = 16;
+    while (offset + 16 < static_cast<size_t>(n))
     {
-        vst1q_s8(reinterpret_cast<signed char *>(dst), vld1q_s8(reinterpret_cast<const signed char *>(src)));
-
-        dst += 16;
-        src += 16;
-        n -= 16;
-
-        /// Avoid clang loop-idiom optimization, which transforms vst1q_s8 to built-in memcpy
+        const auto head = vld1q_s8(reinterpret_cast<const signed char *>(src + offset));
+        const auto tail = vld1q_s8(reinterpret_cast<const signed char *>(src + offset + 16));
+        vst1q_s8(reinterpret_cast<signed char *>(dst + offset), head);
+        vst1q_s8(reinterpret_cast<signed char *>(dst + offset + 16), tail);
+        offset += 32;
+        /// Avoid the loop-idiom optimization replacing the vector stores with `memcpy`.
         __asm__ __volatile__("" : : : "memory");
     }
+    if (offset < static_cast<size_t>(n))
+        vst1q_s8(reinterpret_cast<signed char *>(dst + offset), vld1q_s8(reinterpret_cast<const signed char *>(src + offset)));
 }
 }
 
