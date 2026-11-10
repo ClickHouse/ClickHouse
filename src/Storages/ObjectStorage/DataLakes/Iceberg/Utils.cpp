@@ -16,6 +16,7 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/CompressionMethod.h>
+#include <IO/ZstdContext.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -38,6 +39,7 @@
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/PODArray.h>
 #include <Common/ErrnoException.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
@@ -91,6 +93,7 @@ extern const int NOT_IMPLEMENTED;
 extern const int FILE_ALREADY_EXISTS;
 extern const int STALE_VERSION;
 extern const int S3_ERROR;
+extern const int ZSTD_ENCODER_FAILED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -348,7 +351,25 @@ void writeMessageToFile(
     write_settings.object_storage_write_if_match = write_if_match;
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
-    if (compression_method != CompressionMethod::None)
+    if (compression_method == CompressionMethod::Zstd)
+    {
+        /// One call with the whole message, so that zstd sizes its context to the message rather than to the level.
+        ZstdCCtxPtr cctx(ZSTD_createCCtx());
+        if (!cctx)
+            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "Cannot create a zstd compression context");
+        PODArray<char> compressed(ZSTD_compressBound(data.size()));
+        size_t result = ZSTD_CCtx_setParameter(
+            cctx.get(), ZSTD_c_compressionLevel, static_cast<int>(context->getSettingsRef()[Setting::output_format_compression_level]));
+        if (!ZSTD_isError(result))
+            result = ZSTD_CCtx_setParameter(cctx.get(), ZSTD_c_checksumFlag, 1);
+        if (!ZSTD_isError(result))
+            result = ZSTD_compress2(cctx.get(), compressed.data(), compressed.size(), data.data(), data.size());
+        if (ZSTD_isError(result))
+            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "Cannot compress Iceberg metadata with zstd: {}", ZSTD_getErrorName(result));
+        buffer_metadata->write(compressed.data(), result);
+        buffer_metadata->finalize();
+    }
+    else if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
         /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`),
