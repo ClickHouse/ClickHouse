@@ -13,10 +13,12 @@
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
 #include <Core/UUID.h>
+#include <Core/Defines.h>
+#include <Core/Names.h>
+#include <base/unit.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <Formats/FormatSettings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -67,6 +69,7 @@ struct OvercommitTracker;
 namespace DB
 {
 
+struct FormatSettings;
 class ASTSelectQuery;
 
 class SystemLogs;
@@ -662,6 +665,9 @@ protected:
     /// Set for CREATE queries a Replicated database replays from a definition it already stored.
     /// Such a definition describes existing state, so validation that may reject a new one must not run.
     bool is_recovery_from_stored_metadata = false;
+    /// Set while analyzing expressions that are executed later in the background, without a user:
+    /// mutations and the expressions stored in a table definition.
+    bool is_analyzing_background_expressions = false;
     /// `EXPLAIN WHATIF` plans the query without the projections that it weighs, so its plans skip the forced projection check
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
@@ -886,6 +892,7 @@ public:
     /// present to be able to add, remove or update warnings from the table
     enum class WarningType
     {
+        AI_FUNCTION_IN_BACKGROUND_OPERATION,
         AST_FUZZER_IS_ENABLED,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
@@ -1464,18 +1471,22 @@ public:
     std::shared_ptr<StreamingCursor> getStreamingCursor() const;
 
     /// I/O formats.
+    /// The overloads without FormatSettings exist so that this header does not need its definition.
+    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
     InputFormatPtr getInputFormat(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        const std::optional<FormatSettings> & format_settings,
         const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
         const std::optional<UInt64> & min_block_size_rows = std::nullopt,
         const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
-    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const;
+    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
+    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const;
 
     InterserverIOHandler & getInterserverIOHandler();
     const InterserverIOHandler & getInterserverIOHandler() const;
@@ -2061,6 +2072,7 @@ public:
     void setStopIntrospectionServersCallback(StopIntrospectionServersCallback && callback);
 
     void shutdown();
+    bool isShutdownCalled() const;
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
@@ -2076,6 +2088,9 @@ public:
     bool skipsForcedProjectionCheck() const { return skip_forced_projection_check; }
     void setSkipForcedProjectionCheck() { skip_forced_projection_check = true; }
     void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
+
+    bool isAnalyzingBackgroundExpressions() const { return is_analyzing_background_expressions; }
+    void setAnalyzingBackgroundExpressions(bool value) { is_analyzing_background_expressions = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
