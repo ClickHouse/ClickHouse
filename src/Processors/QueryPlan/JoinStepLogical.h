@@ -6,8 +6,6 @@
 #include <utility>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-
-#include <span>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -95,7 +93,6 @@ public:
     JoinOperator & getJoinOperator() { return join_operator; }
 
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
-    const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
 
     std::vector<JoinActionRef> getInputActions() const;
     std::vector<JoinActionRef> getOutputActions() const;
@@ -201,20 +198,8 @@ public:
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
-
-    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
-
-    /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
-    /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join
-    /// stands such a column - NULL where it is Nullable, the default otherwise - so a `Nullable` column
-    /// passed through here tells which rows matched. Only the expressions change: the caller updates the
-    /// input headers once it has passed what it needs.
-    void addPassThroughColumn(const ColumnWithTypeAndName & column, JoinTableSide side);
-
-    /// Makes an input the join already reads one of its outputs as well, last, the way
-    /// `addPassThroughColumn` passes a new one. `input` must be an input of `getActionsDAG`.
-    void addInputToOutputs(const ActionsDAG::Node * input);
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
@@ -233,30 +218,6 @@ protected:
     void updateOutputHeader() override;
 
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
-
-    /// Everything removeUnusedColumns needs to know, computed without touching the step.
-    /// Shared by removeUnusedColumns and getUnneededColumns so their answers cannot differ.
-    struct UnneededColumnsPlan
-    {
-        /// What the join does not need of each side.
-        UnneededInputPositions unneeded_input_positions;
-        /// The DAG outputs that go away, as positions in `getOutputs()`, sorted:
-        /// the unneeded ones, except an existing dummy column.
-        /// A dropped output is also erased from `actions_after_join`, the nodes computed on the joined block,
-        /// so that the list does not point to a node removed from the DAG.
-        /// The dummy column, when one is added, is appended after the outputs that remain.
-        std::vector<size_t> dropped_output_positions;
-        /// Nodes that have to survive pruning besides the kept outputs: the join conditions, and one
-        /// input per side that would otherwise lose every column.
-        ActionsDAG::NodeRawConstPtrs extra_pruning_roots;
-
-        /// Whether removeUnusedActions would erase any node.
-        bool removes_any_action = false;
-        /// Set when no output is left and the step has to put its dummy column back.
-        bool adds_dummy_output = false;
-    };
-
-    UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
 
     std::vector<std::pair<String, String>> describeJoinProperties() const;
     JoinEstimation getEstimation() const;
@@ -319,7 +280,7 @@ public:
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
     String getName() const override { return "JoinStepLogicalLookup"; }
 
-    QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
+    QueryPlanRawPtrs getChildPlans() override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 

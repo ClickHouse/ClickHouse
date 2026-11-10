@@ -10,6 +10,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Access/IAccessStorage.h>
 
 
@@ -227,12 +229,14 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     return true;
 }
+}
 
-std::map<String, Documentation> ParserCreateMaskingPolicy::getDocumentation() const
+namespace DB
 {
-    std::map<String, Documentation> documentation;
 
-    documentation["CREATE MASKING POLICY"] =
+void registerStatementMaskingPolicy(StatementFactory & factory)
+{
+    factory.registerStatement("CREATE MASKING POLICY",
     {
         .description = R"DOCS_MD(
 import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
@@ -328,9 +332,9 @@ CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]tab
 )",
         .parent = "CREATE",
         .related = {"ALTER MASKING POLICY", "CREATE ROW POLICY", "DROP", "SHOW"},
-    };
+    });
 
-    documentation["ALTER MASKING POLICY"] =
+    factory.registerStatement("ALTER MASKING POLICY",
     {
         .description = R"DOCS_MD(
 import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
@@ -360,9 +364,7 @@ ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
 )",
         .parent = "ALTER",
         .related = {"CREATE MASKING POLICY", "ALTER", "SHOW"},
-    };
-
-    return documentation;
+    });
 }
 
 }

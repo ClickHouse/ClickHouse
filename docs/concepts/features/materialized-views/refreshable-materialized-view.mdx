@@ -48,10 +48,6 @@ SYSTEM REFRESH VIEW table_name_mv;
 You can also cancel, stop, or start a view.
 For more details, see the [managing refreshable materialized views](/reference/statements/system#managing-refreshable-materialized-views) documentation.
 
-<Warning>
-Refreshable materialized views whose refreshes are not coordinated through ClickHouse Keeper forget when they last refreshed, so after a server restart they can all refresh at once. See [What happens to refreshable materialized views when the server restarts](/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) for which views are affected and how to start them again one at a time.
-</Warning>
-
 ## When was a refreshable materialized view last refreshed? {#when-was-a-refreshable-materialized-view-last-refreshed}
 
 To find out when a refreshable materialized view was last refreshed, you can query the [`system.view_refreshes`](/reference/system-tables/view_refreshes) system table, as shown below:

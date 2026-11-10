@@ -30,7 +30,7 @@ SET allow_experimental_ts_to_grid_aggregate_function = 1;
 WITH
     1734955380 AS start, 1734955680 AS end, 15 AS step, 15 AS staleness,
     timeSeriesRange(start, end, step) as grid
-SELECT arrayZip(grid, timeSeriesLastToGrid(start, end, step, staleness)(timestamp, value)) FROM ts_raw_data;
+SELECT arrayZip(grid, timeSeriesResampleToGridWithStaleness(start, end, step, staleness)(timestamp, value)) FROM ts_raw_data;
 
 WITH
     1734955380 AS start, 1734955680 AS end, 15 AS step, 300 AS window,

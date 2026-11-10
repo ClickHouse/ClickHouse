@@ -8,6 +8,8 @@
 #include <Parsers/Access/parseAccessRightsElements.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -59,7 +61,7 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoles().useIDMode(id_mode).allowQueryParameters();
+            roles_p.allowRoles().useIDMode(id_mode);
             if (is_revoke)
                 roles_p.allowAll();
 
@@ -82,7 +84,7 @@ namespace
 
             ASTPtr ast;
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoles().allowUsers().allowCurrentUser().allowAll(is_revoke).allowQueryParameters();
+            roles_p.allowRoles().allowUsers().allowCurrentUser().allowAll(is_revoke);
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
@@ -199,11 +201,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->cluster = std::move(cluster);
     query->access_rights_elements = std::move(elements);
     query->roles = std::move(roles);
-    if (query->roles && query->roles->hasQueryParameters())
-        query->children.push_back(query->roles);
     query->grantees = std::move(grantees);
-    if (query->grantees && query->grantees->hasQueryParameters())
-        query->children.push_back(query->grantees);
     query->admin_option = admin_option;
     query->replace_access = replace_access;
     query->replace_granted_roles = replace_role;
@@ -211,12 +209,14 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     return true;
 }
+}
 
-std::map<String, Documentation> ParserGrantQuery::getDocumentation() const
+namespace DB
 {
-    std::map<String, Documentation> documentation;
 
-    documentation["GRANT"] =
+void registerStatementGrant(StatementFactory & factory)
+{
+    factory.registerStatement("GRANT",
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -374,6 +374,15 @@ The hierarchy of privileges in ClickHouse is shown below:
       - `SHOW ROW POLICIES`
       - `SHOW SETTINGS PROFILES`
       - `SHOW USERS`
+  - [`AI FUNCTIONS`](#ai-functions)
+    - `aiClassify`
+    - `aiEmbed`
+    - `aiExtract`
+    - `aiFilter`
+    - `aiGenerate`
+    - `aiRedact`
+    - `aiSimilarity`
+    - `aiTranslate`
   - [`ALTER`](#alter)
     - `ALTER DATABASE`
       - `ALTER DATABASE SETTINGS`
@@ -503,7 +512,6 @@ The hierarchy of privileges in ClickHouse is shown below:
       - `SYSTEM DROP QUERY CACHE`
       - `SYSTEM DROP S3 CLIENT CACHE`
       - `SYSTEM DROP SCHEMA CACHE`
-      - `SYSTEM DROP TIME SERIES CACHES`
       - `SYSTEM DROP UNCOMPRESSED CACHE`
     - `SYSTEM DROP REPLICA`
     - `SYSTEM FAILPOINT`
@@ -521,7 +529,6 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM REPLICATION QUEUES`
     - `SYSTEM REPLICA READINESS`
     - `SYSTEM RESET DDL WORKER`
-    - `SYSTEM RESET FILELOG`
     - `SYSTEM RESTART DISK`
     - `SYSTEM RESTART REPLICA`
     - `SYSTEM RESTORE REPLICA`
@@ -842,6 +849,25 @@ Allows using [introspection](/concepts/features/performance/troubleshoot/samplin
   - `addressToSymbol`. Level: `GLOBAL`
   - `demangle`. Level: `GLOBAL`
 
+### AI FUNCTIONS {#ai-functions}
+
+Allows using [AI functions](/reference/functions/regular-functions/ai-functions). Calling an AI function also requires the `NAMED COLLECTION` privilege on the selected credentials.
+
+- `AI FUNCTIONS`. Level: `GROUP`
+  - `aiClassify`. Level: `GLOBAL`
+  - `aiEmbed`. Level: `GLOBAL`
+  - `aiExtract`. Level: `GLOBAL`
+  - `aiFilter`. Level: `GLOBAL`
+  - `aiGenerate`. Level: `GLOBAL`
+  - `aiRedact`. Level: `GLOBAL`
+  - `aiSimilarity`. Level: `GLOBAL`
+  - `aiTranslate`. Level: `GLOBAL`
+
+Examples:
+
+- `GRANT AI FUNCTIONS ON *.* TO john`
+- `GRANT aiGenerate, aiClassify ON *.* TO john`
+
 ### SOURCES {#sources}
 
 Allows using external data sources. Applies to source-backed [database engines](/reference/engines/database-engines/index), [table engines](/reference/engines/table-engines/index), and [table functions](/reference/functions/table-functions/index).
@@ -1035,9 +1061,9 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 )",
         .related = {"REVOKE", "CHECK GRANT", "CREATE USER", "CREATE ROLE", "SET ROLE", "SHOW"},
-    };
+    });
 
-    documentation["REVOKE"] =
+    factory.registerStatement("REVOKE",
     {
         .description = R"DOCS_MD(
 Revokes privileges from users or roles.
@@ -1087,9 +1113,7 @@ REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.t
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 )",
         .related = {"GRANT", "CHECK GRANT", "SHOW"},
-    };
-
-    return documentation;
+    });
 }
 
 }

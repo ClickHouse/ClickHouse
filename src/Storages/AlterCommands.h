@@ -95,8 +95,6 @@ struct AlterCommand
 
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
-    /// The expression of an `EPHEMERAL` column was not written by the user, so it is not formatted back.
-    bool ephemeral_default = false;
 
     /// For COMMENT column or table
     std::optional<String> comment;
@@ -263,6 +261,9 @@ public:
         ContextPtr context,
         bool share_nested_offsets = true,
         const MergeTreeSettings * settings_defaults = nullptr) const;
+
+    /// Indices the commands actually add: `ADD INDEX IF NOT EXISTS` of an existing name adds nothing.
+    NameSet getAddedIndexNames(const IndicesDescription & existing) const;
 
     /// At least one command modify settings or comments.
     bool hasNonReplicatedAlterCommand() const;

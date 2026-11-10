@@ -21,10 +21,7 @@ workflow = Workflow.Config(
         # Reruns the PR's new/changed stateless tests against the merge group
         # state, catching semantic conflicts with `master` changes that landed
         # after the PR's last CI run (e.g. a new randomized setting in
-        # `tests/clickhouse-test`). Also reruns the tests that `master` added or
-        # changed after the PR's last CI run, which the PR may break (see
-        # `Targeting.get_merge_queue_drift_tests`). Self-skips when there are no
-        # such tests.
+        # `tests/clickhouse-test`). Self-skips when the PR changes no tests.
         *JobConfigs.stateless_tests_flaky_mq_jobs,
         # Reruns the documentation examples against the merge group state, so a
         # pull request and a `master` commit that are each green on their own

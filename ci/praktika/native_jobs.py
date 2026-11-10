@@ -86,19 +86,6 @@ def _is_praktika_job(job_name):
     return False
 
 
-def _publish_latest_docker_manifest(workflow, branch):
-    """`latest` is a mutable alias shared by every consumer of the images, so only
-    a run on the workflow's own branch may move it. A workflow that declares no
-    branches cannot name that branch, and moving a public mutable tag is exactly
-    the kind of consequential action a fallback path must not take, so that case
-    refuses to publish rather than falling back to the unguarded behaviour."""
-    if not workflow.set_latest_for_docker_merged_manifest:
-        return False
-    if not workflow.branches:
-        return False
-    return branch in workflow.branches
-
-
 def _build_dockers(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     dockers = workflow.dockers
@@ -195,14 +182,13 @@ def _build_dockers(workflow, job_name):
         and job_name == Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
     ):
         print("Start docker manifest merge")
-        add_latest = _publish_latest_docker_manifest(workflow, Info().git_branch)
         for docker in dockers:
             results.append(
                 Docker.merge_manifest(
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=add_latest,
+                    add_latest=workflow.set_latest_for_docker_merged_manifest,
                 )
             )
 
@@ -239,19 +225,11 @@ def _submodule_auth_env(workflow) -> dict:
 def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     """Compute a content-addressed hash of submodule SHAs and ensure a cache
     archive exists in S3.  Stores the hash in workflow_config so that downstream
-    jobs with needs_submodules=True can restore it.
-
-    The hash covers only the submodules affecting these jobs, so that a bump of a
-    submodule that none of them uses (e.g. test data excluded from their digests)
-    does not invalidate the cache. Such a submodule is still archived at whatever
-    commit it had when the archive was created; a job checking out another commit
-    of it fetches that commit from the remote."""
+    jobs with needs_submodules=True can restore it."""
     stop_watch = Utils.Stopwatch()
     info = ""
     try:
-        submodule_shas = Digest.get_submodule_shas_for_jobs(
-            [job for job in workflow.jobs if job.needs_submodules]
-        )
+        submodule_shas = Digest.get_submodule_shas()
         if not submodule_shas:
             print("WARNING: No submodules found, skipping submodule cache")
             return Result.create_from(

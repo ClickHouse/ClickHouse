@@ -26,7 +26,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
-#include <base/insertAtEnd.h>
+#include <Storages/StorageFactory.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
@@ -83,12 +83,6 @@ namespace
     {
         if (table_name.database != DatabaseCatalog::SYSTEM_DATABASE)
             return false;
-
-#if CLICKHOUSE_CLOUD
-        /// `system.masking_policies` backs an access entity, so it belongs to this list.
-        if (table_name.table == "masking_policies")
-            return true;
-#endif
 
         return (table_name.table == "users") || (table_name.table == "roles") || (table_name.table == "settings_profiles")
             || (table_name.table == "row_policies") || (table_name.table == "quotas");
@@ -304,6 +298,7 @@ void RestorerFromBackup::loadSystemAccessTables()
 void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
 {
     AccessRightsElements required_access;
+    AccessRights required_access_rights;
 
     {
         std::lock_guard lock{mutex};
@@ -384,7 +379,17 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 continue;
             }
 
-            if (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
+            const bool is_temporary = (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE);
+
+            /// The definition comes from the backup, and the table is created by an internal query that checks
+            /// nothing, so settings that send the data elsewhere are authorized here, as for `CREATE`.
+            /// An external engine replaced by `Null` sends nothing, but temporary tables keep their engine.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist
+                && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
+                required_access.append_range(StorageFactory::instance().getExportAccess(create));
+
+            if (is_temporary)
             {
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
                     required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
@@ -392,7 +397,6 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             }
 
             AccessFlags flags;
-            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
 
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
             {
@@ -420,15 +424,12 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             required_access.emplace_back(flags, table_name.database, table_name.table);
         }
 
+        required_access_rights = AccessRights{required_access};
+        /// Partial revokes in restored grants must not remove the rights required to restore other objects.
         if (access_restorer)
-            insertAtEnd(required_access, access_restorer->getRequiredAccess());
+            required_access_rights.makeUnion(access_restorer->getRequiredAccess());
     }
 
-    /// We convert to AccessRights to check if we have the rights contained in our current access.
-    /// This handles the situation when restoring partial revoked grants:
-    /// GRANT SELECT ON *.*
-    /// REVOKE SELECT FROM systems.*
-    const auto & required_access_rights = AccessRights{required_access};
     const auto & current_user_access_rights = context->getAccess()->getAccessRightsWithImplicit();
     if (current_user_access_rights->contains(required_access_rights))
         return;
@@ -647,8 +648,6 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Execute CREATE DATABASE query.
         InterpreterCreateQuery interpreter{create_database_query, create_query_context};
         interpreter.setInternal(true);
-        /// The `ON CLUSTER` path gets the same flag from `QueryFlags::distributed_backup_restore` in `DDLWorker`.
-        interpreter.setIsRestoreFromBackup(true);
         interpreter.execute();
     }
     catch (Exception & e)

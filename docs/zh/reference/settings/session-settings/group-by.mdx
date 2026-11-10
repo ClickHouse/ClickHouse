@@ -14,7 +14,9 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## group_by_overflow_mode {#group_by_overflow_mode}
+<div id="group_by_overflow_mode">
+  ## group_by_overflow_mode
+</div>
 
 <SettingsInfoBlock type="OverflowModeGroupBy" default_value="throw" />
 
@@ -26,7 +28,9 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 使用 `any` 值可以执行 `GROUP BY` 的近似计算。这种近似计算的效果取决于数据的统计特性。
 
-## group_by_top_k_optimization_observation_rows {#group_by_top_k_optimization_observation_rows}
+<div id="group_by_top_k_optimization_observation_rows">
+  ## group_by_top_k_optimization_observation_rows
+</div>
 
 <ExperimentalBadge />
 
@@ -40,32 +44,25 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这不会影响不含 `ORDER BY` 的 `GROUP BY keys LIMIT K` 查询，这类查询始终禁用冻结：该形态的执行计划包含一个合成排序，只有堆能够限制哈希表时才有收益，因此冻结堆会使执行计划比未优化的计划更慢。
 
-## group_by_top_k_optimization_shared_boundary {#group_by_top_k_optimization_shared_boundary}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置：在各聚合线程之间共享最紧的 top-K 跳过边界，使本地键排名靠后的线程可以依据其他线程发布的边界跳过行。previous_value=false，因此将 `compatibility` 设置为 26.10 之前的版本时，会恢复为各线程独立维护边界。"}]}]} />
-
-用于 `enable_group_by_top_k_optimization`：在各聚合线程之间共享最紧的跳过边界。每个线程每处理完一个块，若其自身 top-K 集合的边界收紧了，就会发布该边界；所有线程都依据已发布的最优边界 (而不只是自身的边界) 来跳过行。只要存在 `K` 个严格优于某行的键，就足以证明该行不可能进入最终结果，无论这些键由哪个线程持有。因此，共享边界不会改变结果，只是让本地键排名靠后的线程 (例如键值在表中呈聚集分布时) 能够跳过那些原本会被白白聚合的行。
-
-可选值：
-
-* 0 — 禁用。
-* 1 — 启用。
-
-## group_by_two_level_threshold {#group_by_two_level_threshold}
+<div id="group_by_two_level_threshold">
+  ## group_by_two_level_threshold
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 键的数量达到多少时开始启用两级聚合。0 表示未设置该阈值。
 
-## group_by_two_level_threshold_bytes {#group_by_two_level_threshold_bytes}
+<div id="group_by_two_level_threshold_bytes">
+  ## group_by_two_level_threshold_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="50000000" />
 
 当聚合状态的大小达到多少字节时，开始使用两级聚合。0 表示未设置阈值。当至少一个阈值达到条件时，将使用两级聚合。
 
-## group_by_use_nulls {#group_by_use_nulls}
+<div id="group_by_use_nulls">
+  ## group_by_use_nulls
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

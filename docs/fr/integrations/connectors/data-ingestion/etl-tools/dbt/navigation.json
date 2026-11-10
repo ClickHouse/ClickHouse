@@ -3,7 +3,6 @@
   "group": "dbt",
   "pages": [
     "fr/integrations/connectors/data-ingestion/etl-tools/dbt/index",
-    "fr/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform",
     "fr/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
     "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
     "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",

@@ -1060,7 +1060,7 @@ namespace
         }
 
         std::string_view enumDataTypeValueToString(NumberType value) const { return std::string_view{enum_data_type->getNameForValue(value)}; }
-        NumberType stringToEnumDataTypeValue(const absl::string_view & str) const { return enum_data_type->getValue(str); }
+        NumberType stringToEnumDataTypeValue(const absl::string_view & str) const { return enum_data_type->getValue(std::string(str)); }
 
         void prepareEnumMapping()
         {
@@ -4225,6 +4225,9 @@ namespace
             if (!name_and_type)
                 return std::nullopt;
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(name_and_type->type.get());
+            /// The key or the value of the map entry was skipped as unsupported, so the map is skipped as a whole.
+            if (tuple_type->getElements().size() != 2)
+                return std::nullopt;
             return NameAndTypePair{name_and_type->name, std::make_shared<DataTypeMap>(tuple_type->getElements())};
         }
 

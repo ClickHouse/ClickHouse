@@ -2,7 +2,7 @@
 sidebarTitle: 'Confluent Cloud 上的 Kafka Connector Sink'
 slug: /integrations/kafka/cloud/confluent/sink-connector
 description: '在 Confluent Cloud 上使用全托管 ClickHouse Connector Sink 的指南'
-title: 'Confluent Cloud 上的全托管 ClickHouse Connector Sink'
+title: '将 Confluent Cloud 与 ClickHouse 集成'
 keywords: ['Kafka', 'Confluent Cloud']
 doc_type: 'guide'
 integration:
@@ -27,33 +27,47 @@ picture-in-picture"
   </Frame>
 </div>
 
-## 前置条件 {#prerequisites}
+<div id="prerequisites">
+  ## 前置条件
+</div>
 
 我们假定你已熟悉以下内容：
 
 * [ClickHouse Connector Sink](/zh/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
 * Confluent Cloud
 
-## ClickHouse 官方 Kafka 连接器与 Confluent Cloud 集成 {#the-official-kafka-connector-from-clickhouse-with-confluent-cloud}
+<div id="the-official-kafka-connector-from-clickhouse-with-confluent-cloud">
+  ## ClickHouse 官方 Kafka 连接器与 Confluent Cloud 集成
+</div>
 
-#### 创建 Topic {#create-a-topic}
+<div id="create-a-topic">
+  #### 创建 Topic
+</div>
 
 在 Confluent Cloud 上创建 topic 非常简单，详细说明请参见[此处](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html)。
 
-#### 重要说明 {#important-notes}
+<div id="important-notes">
+  #### 重要说明
+</div>
 
 * Kafka topic 名称必须与 ClickHouse 表名保持一致。如需调整，可使用转换器 (例如 [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)) 。
 * 分区更多并不一定意味着性能更高——更多详情和性能优化建议，请参阅我们即将发布的指南。
 
-#### 准备连接信息 {#gather-your-connection-details}
+<div id="gather-your-connection-details">
+  #### 准备连接信息
+</div>
 
 <ConnectionDetails />
 
-#### 安装 Connector {#install-connector}
+<div id="install-connector">
+  #### 安装 Connector
+</div>
 
 按照[官方文档](https://docs.confluent.io/cloud/current/connectors/cc-clickhouse-sink-connector/cc-clickhouse-sink.html)中的说明，在 Confluent Cloud 上安装全托管的 ClickHouse Sink Connector。
 
-#### 配置 Connector {#configure-the-connector}
+<div id="configure-the-connector">
+  #### 配置 Connector
+</div>
 
 在配置 ClickHouse Sink Connector 时，您需要提供以下信息：
 
@@ -69,6 +83,8 @@ Confluent Cloud UI 支持高级配置选项，可用于调整轮询间隔、批�
   在 Confluent Cloud 上，调整某些设置 (例如 [拉取设置](/zh/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink#fetch-settings) 和 [轮询设置](/zh/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink#poll-settings)) 需要通过 Confluent Cloud 提交支持工单。
 </Note>
 
-#### 已知限制 {#known-limitations}
+<div id="known-limitations">
+  #### 已知限制
+</div>
 
 * 请参阅[官方文档中的 Connectors 限制列表](https://docs.confluent.io/cloud/current/connectors/cc-clickhouse-sink-connector/cc-clickhouse-sink.html#limitations)
