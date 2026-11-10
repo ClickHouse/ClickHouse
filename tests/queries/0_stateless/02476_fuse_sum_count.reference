@@ -295,3 +295,127 @@ QUERY id: 0
 0	0	nan
 45	10	4.5	Decimal(38, 0)	UInt64	Float64
 45	10	4.5	Decimal(38, 0)	UInt64	Float64
+9	12	2	2	2
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(plus(b, 1)) Int64
+    sum(plus(b, 2)) Int64
+    avg(b) Float64
+    avg(b) Float64
+    avg(b) Float64
+  PROJECTION
+    LIST id: 1, nodes: 5
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, alias: sum(__table1.b), function_name: tupleElement, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: b, result_type: Int8, source_id: 9
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+            FUNCTION id: 11, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 12, nodes: 2
+                  CONSTANT id: 13, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 14, alias: count(__table1.b), function_name: tupleElement, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 15, nodes: 2
+                        FUNCTION id: 6, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                          ARGUMENTS
+                            LIST id: 7, nodes: 1
+                              COLUMN id: 8, column_name: b, result_type: Int8, source_id: 9
+                        CONSTANT id: 16, constant_value: UInt64_2, constant_value_type: UInt8
+      FUNCTION id: 17, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 18, nodes: 2
+            FUNCTION id: 19, alias: sum(__table1.b), function_name: tupleElement, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 20, nodes: 2
+                  FUNCTION id: 6, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: b, result_type: Int8, source_id: 9
+                  CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
+            FUNCTION id: 22, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 23, nodes: 2
+                  CONSTANT id: 24, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 25, alias: count(__table1.b), function_name: tupleElement, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 26, nodes: 2
+                        FUNCTION id: 6, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                          ARGUMENTS
+                            LIST id: 7, nodes: 1
+                              COLUMN id: 8, column_name: b, result_type: Int8, source_id: 9
+                        CONSTANT id: 27, constant_value: UInt64_2, constant_value_type: UInt8
+      FUNCTION id: 28, alias: avg(__table1.b), function_name: divide, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 29, nodes: 2
+            FUNCTION id: 30, function_name: tupleElement, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 31, nodes: 2
+                  FUNCTION id: 6, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: b, result_type: Int8, source_id: 9
+                  CONSTANT id: 32, constant_value: UInt64_1, constant_value_type: UInt8
+            FUNCTION id: 33, function_name: toFloat64, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 34, nodes: 1
+                  FUNCTION id: 35, function_name: tupleElement, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 36, nodes: 2
+                        FUNCTION id: 6, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                          ARGUMENTS
+                            LIST id: 7, nodes: 1
+                              COLUMN id: 8, column_name: b, result_type: Int8, source_id: 9
+                        CONSTANT id: 37, constant_value: UInt64_2, constant_value_type: UInt8
+      FUNCTION id: 38, alias: avg(__table1.b), function_name: divide, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 39, nodes: 2
+            FUNCTION id: 40, function_name: tupleElement, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 41, nodes: 2
+                  FUNCTION id: 6, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: b, result_type: Int8, source_id: 9
+                  CONSTANT id: 42, constant_value: UInt64_1, constant_value_type: UInt8
+            FUNCTION id: 43, function_name: toFloat64, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 44, nodes: 1
+                  FUNCTION id: 45, function_name: tupleElement, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 46, nodes: 2
+                        FUNCTION id: 6, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                          ARGUMENTS
+                            LIST id: 7, nodes: 1
+                              COLUMN id: 8, column_name: b, result_type: Int8, source_id: 9
+                        CONSTANT id: 47, constant_value: UInt64_2, constant_value_type: UInt8
+      FUNCTION id: 48, alias: (avg(__table1.b)), function_name: divide, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 49, nodes: 2
+            FUNCTION id: 50, function_name: tupleElement, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 51, nodes: 2
+                  FUNCTION id: 6, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: b, result_type: Int8, source_id: 9
+                  CONSTANT id: 52, constant_value: UInt64_1, constant_value_type: UInt8
+            FUNCTION id: 53, function_name: toFloat64, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 54, nodes: 1
+                  FUNCTION id: 55, function_name: tupleElement, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 56, nodes: 2
+                        FUNCTION id: 6, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                          ARGUMENTS
+                            LIST id: 7, nodes: 1
+                              COLUMN id: 8, column_name: b, result_type: Int8, source_id: 9
+                        CONSTANT id: 57, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE id: 9, alias: __table1, table_name: default.fuse_tbl

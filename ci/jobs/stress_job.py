@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
+from ci.jobs.ci_utils import SANITIZERS
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.find_tests import Targeting
@@ -169,6 +170,14 @@ def get_additional_envs(info, check_name: str) -> List[str]:
     result.append(
         f"STRESS_GLOBAL_TIME_LIMIT={'3600' if is_extended_run() else '1200'}"
     )
+
+    # Sanitizer builds have no jemalloc. The server dumps heap profiles here on peak growth
+    # and on hitting its memory limit (jemalloc_flush_profile.yaml from tests/config), and
+    # stress_tests.lib archives them.
+    if not any(san in check_name for san in SANITIZERS):
+        result.append(
+            "MALLOC_CONF=prof_prefix:/var/log/clickhouse-server/jemalloc_profiles/clickhouse.jemalloc"
+        )
 
     return result
 

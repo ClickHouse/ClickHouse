@@ -1,8 +1,10 @@
+#include <Formats/FormatSettings.h>
 #include <sys/types.h>
 
 #include <optional>
 
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
@@ -234,6 +236,12 @@ public:
             if (!done)
             {
                 /// Rollback partial writes.
+                /// It must not be interrupted by the memory limit: otherwise the table is left with
+                /// unsaved indices in memory, which are written by the next `INSERT`.
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+                /// Remove excessive indices first: it cannot fail, unlike the truncation of files below.
+                storage.removeUnsavedIndices(lock);
 
                 /// No more writing.
                 data_out->cancel();
@@ -244,9 +252,6 @@ public:
 
                 /// Truncate files to the older sizes.
                 storage.file_checker.repair();
-
-                /// Remove excessive indices.
-                storage.removeUnsavedIndices(lock);
             }
         }
         catch (...)
@@ -788,7 +793,7 @@ void registerStorageStripeLog(StorageFactory & factory)
                 args.engine_name, args.engine_args.size());
 
         String disk_name = getDiskName(*args.storage_def, args.getContext());
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        DiskPtr disk = args.getDisk(disk_name);
 
         return std::make_shared<StorageStripeLog>(
             disk,

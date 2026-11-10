@@ -5,7 +5,6 @@
 -- and (b) raised `BAD_ARGUMENTS` for any multi-column SELECT because a single
 -- alias was applied to N projection columns.
 SET inject_random_order_for_select_without_order_by = 1;
-SET enable_analyzer = 1;
 
 -- Single-column CTAS: column name must be `number`, not the internal UUID alias.
 DROP TABLE IF EXISTS t_ctas_single;
@@ -37,8 +36,8 @@ UNION ALL
 SELECT number, number + 2 AS n1 FROM numbers(2)
 FORMAT Null;
 
--- ORDER BY rand() injection must still happen for the wrapped query.
--- A simple SELECT should produce a Sorting step in the plan; a SELECT with explicit
--- ORDER BY must not produce a second one.
-SELECT count() FROM (EXPLAIN PLAN SELECT number FROM numbers(5)) WHERE explain LIKE '%Sorting%';
-SELECT count() FROM (EXPLAIN PLAN SELECT number FROM numbers(5) ORDER BY number) WHERE explain LIKE '%Sorting%';
+-- SHUFFLE injection must still happen for the wrapped query.
+-- A simple SELECT should produce a Shuffle step in the plan; a SELECT with explicit
+-- ORDER BY must not.
+SELECT count() FROM (EXPLAIN PLAN SELECT number FROM numbers(5)) WHERE trimLeft(explain) LIKE 'Shuffle%';
+SELECT count() FROM (EXPLAIN PLAN SELECT number FROM numbers(5) ORDER BY number) WHERE explain LIKE '%Shuffle%';

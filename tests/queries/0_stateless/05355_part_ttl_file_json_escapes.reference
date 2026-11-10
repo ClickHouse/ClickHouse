@@ -1,0 +1,6 @@
+the value is not a string: BAD_TTL_FILE
+the string is never closed: BAD_TTL_FILE
+no hex digits after backslash-u: BAD_TTL_FILE
+rows in the table	1
+decoded escapes	4122425C432F4408450C460A470D480949D0964A
+parts left in detached	3

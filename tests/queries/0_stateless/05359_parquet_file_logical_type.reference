@@ -21,7 +21,7 @@ not_file	Tuple(\n    uri String,\n    other UInt64)
 Row 1:
 ──────
 id:                       0
-file:                     ('s3://bucket/object_0',0,0,'application/octet-stream','MD5:cfcd208495d565ef66e7dff9f98764da','')
+file:                     ('s3://bucket/object_0',0,0,'application/octet-stream','sipHash128:8b0b836069a91c43c1552354d9a2b3f5','')
 files:                    []
 maybe_file:               (NULL)
 file_map:                 {'a':(0)}
@@ -32,7 +32,7 @@ inline_file.content_type: application/octet-stream
 Row 2:
 ──────
 id:                       1
-file:                     ('',100,10,'application/octet-stream','MD5:c4ca4238a0b923820dcc509a6f75849b','x')
+file:                     ('',100,10,'application/octet-stream','sipHash128:e2756d8f7a583ca23016e03447724de7','x')
 files:                    [('file_0',0)]
 maybe_file:               ('https://example.com/1')
 file_map:                 {'a':(-1)}
@@ -43,7 +43,7 @@ inline_file.content_type: application/octet-stream
 Row 3:
 ──────
 id:                       2
-file:                     ('s3://bucket/object_2',200,20,'image/png','MD5:c81e728d9d4c2f636f067f89cc14862c','xx')
+file:                     ('s3://bucket/object_2',200,20,'image/png','sipHash128:4809cb4528e00621cf626be9fa14e2bf','xx')
 files:                    [('file_0',0),('file_1',NULL)]
 maybe_file:               (NULL)
 file_map:                 {'a':(-2)}

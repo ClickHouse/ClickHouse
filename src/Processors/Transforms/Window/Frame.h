@@ -20,9 +20,10 @@ public:
     explicit Frame(const WindowTransformParams & params_);
 
     void enterPartition(RowNumber partition_start);
-    void advance(const SlidingBlocks & blocks, const RowPoint & current, const Partition & partition);
+    void advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition);
 
     const FrameBounds & bounds() const;
+    Int64 firstRowToRead() const;
 
 private:
     const WindowTransformParams & params;
