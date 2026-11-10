@@ -4,6 +4,7 @@
 #include <string_view>
 #include <utility>
 #include <Common/Exception.h>
+#include <Common/SecretString.h>
 
 namespace DB
 {
@@ -76,7 +77,7 @@ struct ProxyConfiguration
     Protocol original_request_protocol = Protocol::HTTP;
     std::string no_proxy_hosts = std::string{};
     std::string username = std::string{};
-    std::string password = std::string{};
+    SecretString password = SecretString{};
 
     bool isEmpty() const { return host.empty(); }
 };

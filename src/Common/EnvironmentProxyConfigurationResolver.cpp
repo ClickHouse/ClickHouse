@@ -105,7 +105,7 @@ namespace
             request_protocol,
             no_proxy_hosts_string,
             username,
-            password
+            SecretString(password)
         };
     }
 }

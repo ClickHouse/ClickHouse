@@ -38,7 +38,7 @@ HTTPBasicCredentials::HTTPBasicCredentials()
 }
 
 
-HTTPBasicCredentials::HTTPBasicCredentials(const std::string& username, const std::string& password):
+HTTPBasicCredentials::HTTPBasicCredentials(std::string_view username, std::string_view password):
 	_username(username),
 	_password(password)
 {

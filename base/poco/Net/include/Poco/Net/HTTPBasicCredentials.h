@@ -41,7 +41,7 @@ namespace Net
         HTTPBasicCredentials();
         /// Creates an empty HTTPBasicCredentials object.
 
-        HTTPBasicCredentials(const std::string & username, const std::string & password);
+        HTTPBasicCredentials(std::string_view username, std::string_view password);
         /// Creates a HTTPBasicCredentials object with the given username and password.
 
         explicit HTTPBasicCredentials(const HTTPRequest & request);
