@@ -324,9 +324,6 @@ catch (Exception & e)
 
 bool IDisk::isCaseInsensitive()
 {
-    /// Check the cached result before `isReadOnly`: this method is called for every column substream of every granule
-    /// written (see `MergeTreeDataPartWriterWide::getStreamName`), and on object storage disks `isReadOnly` takes
-    /// a mutex (`MultiVersion<S3Settings>::get`), which becomes a bottleneck with many writing threads.
     if (is_case_sensitivity_checked)
         return is_case_insensitive;
 
