@@ -953,7 +953,7 @@ SetPtr PreparedSetsCache::findBuilt(const String & key)
     {
         return it->second.future.get();
     }
-    catch (...)
+    catch (...) // Ok: a failed build is not reusable, the caller builds its own set
     {
         return nullptr;
     }
