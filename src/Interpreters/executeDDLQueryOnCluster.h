@@ -49,4 +49,8 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
 
 bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context);
 
+/// Whether the hosts of an `ON CLUSTER` query submitted with `context` run it as the initiating user and roles:
+/// the server setting `distributed_ddl_use_initial_user_and_roles` is on and the entry format carries the user.
+bool distributedDDLWorkersUseInitiatorUser(ContextPtr context);
+
 }

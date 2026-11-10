@@ -30,11 +30,14 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
@@ -97,6 +100,72 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A `Replicated`-database host applies the statement without the submitting user. `ON CLUSTER` does
+/// not reach this: it is refused unless its hosts run as the initiating user.
+void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
+{
+    StorageMetadataHandle metadata;
+    if (table)
+        metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+
+    bool adds_transform = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+            continue;
+
+        if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+            if (hasTextIndexPreOrPostProcessor(*declaration))
+                adds_transform = true;
+    }
+
+    /// Against the schema the whole statement produces: a command of the same statement can change what
+    /// an alias in a transform expands to. Transforms only, so other statements get no extra analysis.
+    if (!adds_transform || !metadata)
+        return;
+
+    AlterCommands commands;
+    /// Runs of consecutive metadata commands; `runCommandSegments` commits each run on its own.
+    size_t metadata_segments = 0;
+    bool previous_is_metadata = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command_ast = child->as<ASTAlterCommand>();
+        std::optional<AlterCommand> command;
+        if (command_ast->type != ASTAlterCommand::EXECUTE_COMMAND)
+            command = AlterCommand::parse(command_ast);
+
+        if (command)
+        {
+            if (!previous_is_metadata)
+                ++metadata_segments;
+            commands.emplace_back(std::move(*command));
+        }
+        previous_is_metadata = command.has_value();
+    }
+
+    /// Applying every command at once would reject statements the executor, which commits segment by
+    /// segment, accepts. `AlterCommands::apply` authorizes each segment as the user anyway.
+    if (metadata_segments > 1)
+        return;
+
+    /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it.
+    commands.validate(table, context);
+
+    bool share_nested = true;
+    if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    StorageInMemoryMetadata metadata_copy = *metadata;
+    commands.prepare(metadata_copy, share_nested);
+    table->checkAlterIsPossible(commands, context);
+    /// As the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one.
+    removeImplicitStatistics(metadata_copy.columns);
+    commands.apply(metadata_copy, context, share_nested);
+
+}
 
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 {
@@ -575,6 +644,17 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
         checkNoRowPolicyForExport(alter, getContext());
 
+        /// The hosts would resolve the transform with full access, so refuse it before dispatch.
+        if (!distributedDDLWorkersUseInitiatorUser(getContext()))
+            for (const auto & child : alter.command_list->children)
+            {
+                const auto & command = child->as<const ASTAlterCommand &>();
+                if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+                    continue;
+                if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+                    rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+            }
+
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -588,6 +668,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+
+    checkAddedIndexPermissions(alter, table, getContext());
+
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
