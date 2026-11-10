@@ -18,9 +18,6 @@ template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
 public:
-    /// Inserts the rows of a stored block into `table`, allocating in the arena of build stream `stream`.
-    static BuildResult insertFromBlockImpl(HashJoin & join, HashJoinTable & table, const HashJoinTable::InsertRows & rows, size_t stream);
-
     static JoinResultPtr joinBlockImpl(
         const HashJoin & join,
         Block block,

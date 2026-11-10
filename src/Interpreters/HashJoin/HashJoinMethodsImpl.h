@@ -14,21 +14,6 @@ namespace DB
 {
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
-    HashJoin & join, HashJoinTable & table, const HashJoinTable::InsertRows & rows, size_t stream)
-{
-    static_assert((STRICTNESS == JoinStrictness::Asof) == std::is_same_v<MapsTemplate, HashJoin::MapsAsof>);
-    const HashJoinTable::InsertSettings settings{
-        .any_take_last_row = join.anyTakeLastRow(),
-        .enable_software_prefetch = join.enableSoftwarePrefetch(),
-        .must_keep_right_blocks = join.mustKeepRightBlocks(),
-        .asof_type = join.getAsofType(),
-        .asof_inequality = join.getAsofInequality()};
-    const auto add_bytes = [&](size_t bytes) { join.data->addBytes(join.data->bucket_bytes, bytes); };
-    return table.insert<MapsTemplate>(settings, rows, stream, add_bytes);
-}
-
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     const HashJoin & join, Block block, const Block & block_with_columns_to_add, bool is_join_get)
 {

@@ -3,12 +3,19 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/joinDispatch.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <base/scope_guard.h>
 
 #include <limits>
 #include <numeric>
+
+namespace ProfileEvents
+{
+extern const Event HashJoinPreallocatedElementsInHashTables;
+}
 
 namespace DB
 {
@@ -84,6 +91,50 @@ std::vector<std::unique_ptr<Arena>> HashJoinTable::releaseArenas()
         if (arena && arena->allocatedBytes() != 0)
             res.push_back(std::move(arena));
     return res;
+}
+
+BuildResult HashJoinTable::insertSlots(
+    const InsertFunctions & functions,
+    JoinBuild::InsertKeysArgs args,
+    std::span<const ScatteredBlock::Selector> per_slot,
+    BuildResult result,
+    absl::FunctionRef<void(size_t)> add_bytes)
+{
+    /// No other call allocates in the arena meanwhile. The guard also counts what was allocated before a throw, as the slots do below.
+    const size_t arena_bytes_before = args.pool.allocatedBytes();
+    SCOPE_EXIT({ add_bytes(args.pool.allocatedBytes() - arena_bytes_before); });
+
+    auto insert_slot = [&](size_t slot)
+    {
+        const ScatteredBlock::Selector & selector = per_slot[slot];
+        const size_t bytes_before = functions.slot_bytes(slots, args.map, slot);
+        /// Under the slot lock so a concurrent limit check cannot miss this slot. Also when an insert throws: the
+        /// rows before it stay in the map, and `StorageJoin` keeps serving them.
+        SCOPE_EXIT({ add_bytes(functions.slot_bytes(slots, args.map, slot) - bytes_before); });
+
+        /// Checked here, so that a slot with nothing to reserve skips the call.
+        if (const size_t reserved = slots.mayReserve(slot) ? functions.reserve_on_first_insert(slots, args.map, slot) : 0)
+            ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserved);
+
+        const bool row_list = !selector.isContinuousRange();
+        if (row_list)
+        {
+            const auto & indexes = selector.getIndexes().getData();
+            args.rows = {.rows = indexes.data(), .size = indexes.size()};
+        }
+        else
+        {
+            const auto range = selector.getRange();
+            args.rows = {.first = range.first, .size = range.second - range.first};
+        }
+        const BuildResult slot_result = functions.insert_keys[row_list](args);
+
+        result.is_inserted |= slot_result.is_inserted;
+        result.all_values_unique &= slot_result.all_values_unique;
+    };
+
+    slots.insert(per_slot, insert_slot);
+    return result;
 }
 
 void HashJoinTable::throwKeysNotRecoverable(Type type)
