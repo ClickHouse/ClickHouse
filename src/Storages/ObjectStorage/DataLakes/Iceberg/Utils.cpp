@@ -91,6 +91,7 @@ extern const int NOT_IMPLEMENTED;
 extern const int FILE_ALREADY_EXISTS;
 extern const int STALE_VERSION;
 extern const int S3_ERROR;
+extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -2618,6 +2619,11 @@ PartitionColumnValues getIdentityPartitionColumnValues(
     }
 
     return result;
+}
+
+bool isCommitStateUnknown(const DB::Exception & e)
+{
+    return e.code() == DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 }
