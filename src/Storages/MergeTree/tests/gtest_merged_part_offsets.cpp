@@ -782,6 +782,9 @@ TEST(MergedPartOffsetsTest, DropsOutOfOrderThrows)
         merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size(), part_offsets.data()), DB::Exception);
 }
 
+/// LOGICAL_ERROR aborts in debug and sanitizer builds, so it can only be caught in other builds.
+#ifndef DEBUG_OR_SANITIZER_BUILD
+
 TEST(MergedPartOffsetsTest, DropsOffsetBeyondPartRowsThrows)
 {
     MergedPartOffsets merged_offsets(std::vector<UInt64>{2});
@@ -791,3 +794,20 @@ TEST(MergedPartOffsetsTest, DropsOffsetBeyondPartRowsThrows)
     EXPECT_THROW(
         merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size(), part_offsets.data()), DB::Exception);
 }
+
+#else
+
+TEST(MergedPartOffsetsDeathTest, DropsOffsetBeyondPartRowsAborts)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    MergedPartOffsets merged_offsets(std::vector<UInt64>{2});
+
+    std::vector<UInt64> part_indices = {0};
+    std::vector<UInt64> part_offsets = {5};
+    EXPECT_DEATH(
+        merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size(), part_offsets.data()),
+        "Got row with offset 5 for source part 0 that has only 2 rows");
+}
+
+#endif
