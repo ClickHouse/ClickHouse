@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/array/emptyArrayToSingle.h>
