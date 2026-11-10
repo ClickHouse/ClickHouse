@@ -107,9 +107,6 @@
                 "item": "Open source"
               },
               {
-                "$ref": "./clickstack/navigation.json"
-              },
-              {
                 "$ref": "./chdb/navigation.json"
               },
               {
