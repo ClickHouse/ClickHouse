@@ -12,11 +12,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# enable_analyzer = 1: the query condition cache only works with the analyzer.
 # max_block_size = 8192: one granule per block. Without `PREWHERE` (randomized `optimize_move_to_prewhere = 0`),
 # `FilterTransform` records only chunks whose rows are all filtered out, and a bigger block would mix the
 # non-matching granules with the matching ones, so nothing would be cached even for a deterministic condition.
-common_settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true, enable_analyzer = 1, max_block_size = 8192"
+common_settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true, max_block_size = 8192"
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS tab;

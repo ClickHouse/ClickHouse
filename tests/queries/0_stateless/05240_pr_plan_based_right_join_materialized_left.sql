@@ -43,7 +43,6 @@ CREATE VIEW v_left AS SELECT key FROM t_left;
 CREATE MATERIALIZED VIEW mv_left ENGINE = MergeTree ORDER BY key AS SELECT key FROM t_left;
 INSERT INTO t_left SELECT number FROM numbers(5, 3);
 
-SET enable_analyzer = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
