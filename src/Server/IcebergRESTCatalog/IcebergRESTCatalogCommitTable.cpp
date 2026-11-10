@@ -35,6 +35,8 @@ namespace IcebergRESTCatalog
 
 using namespace Iceberg;
 
+/// TODO: add a fuzzer for the requirements and updates of a commit request.
+
 /// Requirements.
 
 namespace
@@ -408,7 +410,9 @@ Poco::JSON::Object::Ptr buildMetadataFromStagedCreateCommit(const Poco::JSON::Ar
         }
         else if (action == "upgrade-format-version")
         {
-            /// TODO: support format version 3.
+            /// The client sends the format version it wants for the new table.
+            /// `buildInitialTableMetadata` always builds version 2 metadata, so only version 2 is accepted.
+            /// TODO: support format versions 1 and 3. Both need changes in `addSnapshot`.
             const auto format_version = getInteger(*update_object, f_format_version);
             if (format_version != 2)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only format-version 2 is supported, got {}", format_version);
