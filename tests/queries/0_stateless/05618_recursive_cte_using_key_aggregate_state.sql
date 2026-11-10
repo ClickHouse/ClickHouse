@@ -32,6 +32,42 @@ WITH RECURSIVE t USING KEY (k) AS
 )
 SELECT k FROM t; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- `Variant` reports itself comparable regardless of its variants, also when nested in a container type.
+WITH RECURSIVE t USING KEY (k) AS
+(
+    SELECT toUInt64(1) AS k, CAST(tuple(initializeAggregation('sumState', number + 1)), 'Tuple(Variant(AggregateFunction(sum, UInt64), String))') AS s FROM numbers(1)
+    UNION ALL
+    SELECT k, s FROM t WHERE k < 1
+)
+SELECT k FROM t; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+WITH RECURSIVE t USING KEY (k) AS
+(
+    SELECT toUInt64(1) AS k, CAST([initializeAggregation('sumState', number + 1)], 'Array(Variant(AggregateFunction(sum, UInt64), String))') AS s FROM numbers(1)
+    UNION ALL
+    SELECT k, s FROM t WHERE k < 1
+)
+SELECT k FROM t; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- `Dynamic` and `JSON` hold values of types that are only known at run time, aggregate states included.
+WITH RECURSIVE t USING KEY (k) AS
+(
+    SELECT toUInt64(1) AS k, CAST(initializeAggregation('sumState', number + 1), 'Dynamic') AS s FROM numbers(1)
+    UNION ALL
+    SELECT k, CAST(initializeAggregation('sumState', finalizeAggregation(dynamicElement(s, 'AggregateFunction(sum, UInt64)')) + toUInt64(1)), 'Dynamic')
+    FROM t
+    WHERE finalizeAggregation(dynamicElement(s, 'AggregateFunction(sum, UInt64)')) < 3
+)
+SELECT k, finalizeAggregation(dynamicElement(s, 'AggregateFunction(sum, UInt64)')) FROM t; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+WITH RECURSIVE t USING KEY (k) AS
+(
+    SELECT toUInt64(1) AS k, CAST(concat('{"a":', toString(number), '}'), 'JSON') AS s FROM numbers(1)
+    UNION ALL
+    SELECT k, s FROM t WHERE k < 1
+)
+SELECT k FROM t; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- The same computation over a plain value reaches the fixpoint.
 WITH RECURSIVE t USING KEY (k) AS
 (

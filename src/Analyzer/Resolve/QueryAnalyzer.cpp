@@ -53,7 +53,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -163,17 +162,17 @@ namespace ErrorCodes
 namespace
 {
 
-/// `IDataType::isComparableForEquality` follows the nested types of the container types, but `Variant`
-/// reports itself comparable regardless of its variants.
+/// Whether `IColumn::compareAt` establishes equality for every value of the type. `isComparableForEquality`
+/// alone is not enough: `Variant` reports itself comparable regardless of its variants, also when it is
+/// nested in a container type, and `Dynamic` and `JSON` hold values of types that are only known at run
+/// time, aggregate function states included. Walk the declared type tree and reject those.
 bool canCompareValuesForEquality(const DataTypePtr & type)
 {
-    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+    return !anyInTypeTree(*type, [](const IDataType & nested_type)
     {
-        const auto & variants = variant_type->getVariants();
-        return std::all_of(variants.begin(), variants.end(), [](const DataTypePtr & variant) { return canCompareValuesForEquality(variant); });
-    }
-
-    return type->isComparableForEquality();
+        WhichDataType which(nested_type);
+        return which.isDynamic() || which.isObject() || !nested_type.isComparableForEquality();
+    });
 }
 
 /// A `MATERIALIZED` CTE is materialized once, so its body cannot be correlated.
@@ -8411,7 +8410,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         /// key, and the comparison is `IColumn::compareAt`, which cannot establish equality for every type:
         /// `ColumnAggregateFunction::compareAt` reports every pair of states as equal, so a row whose aggregate
         /// state changed would be dropped and the recursion would stop early with a wrong result. Reject such
-        /// column types, including when nested in a container type.
+        /// column types, including when nested in a container type or possible at run time in `Dynamic` or `JSON`.
         if (!recursive_cte_table->key_columns.empty())
         {
             for (const auto & column : recursive_cte_table->columns)
