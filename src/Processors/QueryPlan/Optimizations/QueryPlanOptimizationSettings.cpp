@@ -492,8 +492,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
     automatic_parallel_replicas_remember_boundary = from[Setting::automatic_parallel_replicas_remember_boundary];
     automatic_parallel_replicas_undecided_retry_after_executions = from[Setting::automatic_parallel_replicas_undecided_retry_after_executions];
-    if (automatic_parallel_replicas_mode)
-        hash_join_statistics_reads = std::make_shared<HashJoinStatisticsReads>();
     parallel_replicas_boundary_settings_hash = parallelReplicasBoundarySettingsHash(from);
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi

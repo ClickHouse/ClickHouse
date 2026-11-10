@@ -10,7 +10,6 @@
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
 #include <Compression/ICompressionCodec.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -111,8 +110,11 @@ public:
         /// The executions since, counted on the shared entry so that concurrent ones take turns: every one in
         /// `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan, the others skip.
         mutable std::atomic<UInt64> executions{0};
-        /// What join reordering read when both plans were built: a change in any of them may change both plans.
-        HashJoinStatisticsReads join_statistics;
+        /// No earlier entry was replaced: this is the first time building the plan for this key ended without a
+        /// decision. Then the turn of the first execution after it comes at once. The first execution of a join is
+        /// what measures its hash table, and join reordering takes row counts from that, so the build after it often
+        /// orders both plans alike.
+        bool first = false;
         /// For `CollectorUnsupported`: the key of the statistics the collection was for, and the statistics stored
         /// under it when the collection started. A collection that succeeds after that replaces them, and then this
         /// entry no longer holds, however the two finished relative to each other.
@@ -124,25 +126,14 @@ public:
     std::shared_ptr<const Undecided> getUndecided(UInt64 root_key) const;
 
     void setUndecided(
-        UInt64 root_key,
-        UndecidedReason reason,
-        HashJoinStatisticsReads join_statistics,
-        size_t statistics_key = 0,
-        std::shared_ptr<const Entry> statistics_at_start = nullptr);
+        UInt64 root_key, UndecidedReason reason, size_t statistics_key = 0, std::shared_ptr<const Entry> statistics_at_start = nullptr);
 
     void forgetUndecided(UInt64 root_key);
 
 private:
     using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
 
-    struct UndecidedWeight
-    {
-        size_t operator()(const Undecided & undecided) const
-        {
-            return sizeof(Undecided) + undecided.join_statistics.capacity() * sizeof(HashJoinStatisticsRead);
-        }
-    };
-    using UndecidedCache = DB::CacheBase<UInt64, Undecided, std::hash<UInt64>, UndecidedWeight>;
+    using UndecidedCache = DB::CacheBase<UInt64, Undecided>;
 
     CachePtr stats_cache;
     std::shared_ptr<BoundaryCache> boundary_cache;
@@ -206,13 +197,11 @@ struct RuntimeDataflowStatisticsBlock
     };
 
     /// `undecided_key`, when not zero, is the key `RuntimeDataflowStatisticsCache::setUndecided` records under when a
-    /// step cannot collect, with `join_statistics`: what join reordering read when the plans were built.
-    RuntimeDataflowStatisticsBlock(
-        size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_key_ = 0, HashJoinStatisticsReads join_statistics_ = {})
+    /// step cannot collect.
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_key_ = 0)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
         , undecided_key(undecided_key_)
-        , join_statistics(std::move(join_statistics_))
         , statistics_at_start(undecided_key ? getRuntimeDataflowStatisticsCache().getStatsEntry(cache_key) : nullptr)
     {
         if (cache_key == 0)
@@ -227,7 +216,6 @@ struct RuntimeDataflowStatisticsBlock
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
     const UInt64 undecided_key = 0;
-    const HashJoinStatisticsReads join_statistics;
     /// The statistics under `cache_key` when this collection started; see `RuntimeDataflowStatisticsCache::Undecided`.
     const std::shared_ptr<const RuntimeDataflowStatistics> statistics_at_start;
 

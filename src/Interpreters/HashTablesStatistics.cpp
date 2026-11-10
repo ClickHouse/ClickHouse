@@ -31,22 +31,6 @@ std::optional<Entry> HashTablesStatistics<Entry>::getSizeHint(const Params & par
 
 /// Collection and use of the statistics should be enabled.
 template <typename Entry>
-std::optional<Entry> HashTablesStatistics<Entry>::findEntry(UInt64 key)
-{
-    CachePtr cache;
-    {
-        std::lock_guard lock(mutex);
-        cache = hash_table_stats;
-    }
-    if (cache)
-    {
-        if (const auto entry = cache->get(key))
-            return *entry;
-    }
-    return std::nullopt;
-}
-
-template <typename Entry>
 void HashTablesStatistics<Entry>::update(const Entry & new_entry, const Params & params)
 {
     if (!params.isCollectionAndUseEnabled())

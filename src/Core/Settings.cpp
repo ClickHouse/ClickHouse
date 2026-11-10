@@ -9863,11 +9863,11 @@ a decision in automatic parallel replicas: the two plans could not be compared, 
 in the plan built with them, or a step of the plan cannot collect the statistics. Concurrent executions take turns:
 one in every `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan again.
 
+After the first such outcome for a query plan, the next execution builds the plan again at once: the first execution
+of a join measures its hash table, and join reordering takes row counts from that, so the next build often orders both
+plans alike. Statistics that change later are noticed on the next turn.
+
 Building that plan costs about as much as planning the query again, which is most of the run time of a short query.
-The plan is built again at once, without waiting for its turn, when one of the hash table statistics that join
-reordering took row counts from for the last build has appeared, disappeared, or changed by more than twice since:
-then both plans may come out different. A smaller change can reorder the joins too, but is only noticed when the next
-turn builds the plan; otherwise a table that is inserted into all the time would build it on every execution.
 
 0 - build the plan with parallel replicas on every execution.
 )", 0, \

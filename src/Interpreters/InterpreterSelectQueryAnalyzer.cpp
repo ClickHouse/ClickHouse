@@ -191,18 +191,18 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
     {
         LOG_TRACE(logger, "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
-        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings, .hash_join_statistics_reads = {}};
+        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
     }
     if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
     {
         LOG_TRACE(logger, "Setting 'cluster_for_parallel_replicas' is empty. Skipping building query plan with parallel replicas.");
-        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings, .hash_join_statistics_reads = {}};
+        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
     }
     /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
     if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         LOG_TRACE(logger, "The query is a secondary query. Skipping building query plan with parallel replicas.");
-        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape, .hash_join_statistics_reads = {}};
+        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
     }
     // We shouldn't apply heuristic since this plan is meant to be a plan with enforced parallel replicas usage
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
@@ -232,13 +232,13 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
         if (!eligibility_context->canUseParallelReplicasOnInitiator())
         {
             LOG_TRACE(logger, "Parallel replicas cannot be used for this query. Skipping building query plan with parallel replicas.");
-            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings, .hash_join_statistics_reads = {}};
+            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
         }
 
         if (!canQueryPossiblyUseParallelReplicas(single_node_query_tree, eligibility_context))
         {
             LOG_TRACE(logger, "Parallel replicas cannot read anything for this query. Skipping building query plan with parallel replicas.");
-            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape, .hash_join_statistics_reads = {}};
+            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
         }
     }
 
@@ -283,7 +283,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
     {
         LOG_TRACE(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
-        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape, .hash_join_statistics_reads = {}};
+        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
     }
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
@@ -302,15 +302,9 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     /// Without this the same subqueries are executed a second time
     /// just to plan a candidate that might be thrown away.
     reuseBuiltSets(plan, built_sets);
-    /// `automatic_parallel_replicas_mode` is off for this plan, but what its joins were ordered by is part of why
-    /// the automatic mode could not use it.
-    auto hash_join_statistics_reads = std::make_shared<HashJoinStatisticsReads>();
-    optimization_settings.hash_join_statistics_reads = hash_join_statistics_reads;
     plan.optimize(optimization_settings);
     return PlanWithParallelReplicas{
-        .plan = std::make_unique<QueryPlan>(std::move(plan)),
-        .skip_reason = PlanWithParallelReplicas::SkipReason::None,
-        .hash_join_statistics_reads = std::move(*hash_join_statistics_reads)};
+        .plan = std::make_unique<QueryPlan>(std::move(plan)), .skip_reason = PlanWithParallelReplicas::SkipReason::None};
 }
 }
 

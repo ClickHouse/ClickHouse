@@ -16,7 +16,6 @@
 
 #include <algorithm>
 #include <optional>
-#include <tuple>
 
 
 namespace ProfileEvents
@@ -64,25 +63,14 @@ std::shared_ptr<const RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStat
 }
 
 void RuntimeDataflowStatisticsCache::setUndecided(
-    UInt64 root_key,
-    UndecidedReason reason,
-    HashJoinStatisticsReads join_statistics,
-    size_t statistics_key,
-    std::shared_ptr<const Entry> statistics_at_start)
+    UInt64 root_key, UndecidedReason reason, size_t statistics_key, std::shared_ptr<const Entry> statistics_at_start)
 {
     auto undecided = std::make_shared<Undecided>();
     undecided->reason = reason;
+    /// Two executions can race here, and then both entries count as the first, which costs one more build.
+    undecided->first = !undecided_cache->get(root_key);
     undecided->statistics_key = statistics_key;
     undecided->statistics_at_start = std::move(statistics_at_start);
-
-    std::ranges::sort(join_statistics, {}, [](const auto & read) { return std::tie(read.key, read.source_rows); });
-    /// The two plans often read the same key. A key read twice may have found different entries, if an execution
-    /// updated it in between; keep both.
-    const auto [first, last] = std::ranges::unique(join_statistics);
-    join_statistics.erase(first, last);
-    join_statistics.shrink_to_fit();
-    undecided->join_statistics = std::move(join_statistics);
-
     undecided_cache->set(root_key, undecided);
 }
 
@@ -109,7 +97,6 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
             dataflow_cache.setUndecided(
                 undecided_key,
                 RuntimeDataflowStatisticsCache::UndecidedReason::CollectorUnsupported,
-                join_statistics,
                 cache_key,
                 statistics_at_start);
         return;

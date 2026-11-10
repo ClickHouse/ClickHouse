@@ -4,7 +4,6 @@
 #include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
 #include <Core/Joins.h>
-#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -32,7 +31,6 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
-#include <algorithm>
 #include <limits>
 #include <map>
 #include <optional>
@@ -824,44 +822,6 @@ ProfileEvents::Event eventOf(UndecidedReason reason)
     }
 }
 
-std::optional<size_t> hashJoinSourceRows(UInt64 key)
-{
-    if (const auto entry = getHashTablesStatistics<HashJoinEntry>().findEntry(key))
-        return entry->source_rows;
-    return std::nullopt;
-}
-
-/// What join reordering read while this plan and the plan with parallel replicas were optimized: the latter is often
-/// ordered differently, which is why it could not be used.
-HashJoinStatisticsReads joinStatisticsReads(const QueryPlanOptimizationSettings & optimization_settings, const HashJoinStatisticsReads & of_replicas_plan)
-{
-    HashJoinStatisticsReads reads;
-    if (optimization_settings.hash_join_statistics_reads)
-        reads = *optimization_settings.hash_join_statistics_reads;
-    reads.insert(reads.end(), of_replicas_plan.begin(), of_replicas_plan.end());
-    return reads;
-}
-
-/// Whether any of the hash table statistics that join reordering read when `undecided` was recorded reads
-/// differently now. An entry that appeared counts: join reordering prefers a measured row count to an estimate, so
-/// the first execution of a join is often what makes the two plans agree. A row count counts only when it moved by
-/// more than `HashJoinEntry::MAX_OVERESTIMATION_FACTOR` either way: the stored entry is replaced whenever a hash table
-/// grows at all, so on a table inserted into all the time an exact comparison would build the plan on every execution.
-bool joinStatisticsChanged(const RuntimeDataflowStatisticsCache::Undecided & undecided)
-{
-    return std::ranges::any_of(
-        undecided.join_statistics,
-        [](const auto & read)
-        {
-            const auto now = hashJoinSourceRows(read.key);
-            if (now.has_value() != read.source_rows.has_value())
-                return true;
-            if (!now)
-                return false;
-            const auto [smaller, larger] = std::minmax(*now, *read.source_rows);
-            return larger > smaller * HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
-        });
-}
 }
 
 namespace QueryPlanOptimizations
@@ -876,8 +836,7 @@ static bool decideAtBoundary(
     const CoordinatedReads * reads,
     const QueryPlanPtr & plan_with_parallel_replicas,
     const QueryPlan::Node * replicas_plan_boundary,
-    UInt64 undecided_key,
-    const HashJoinStatisticsReads * replicas_plan_join_statistics_reads);
+    UInt64 undecided_key);
 
 void considerEnablingParallelReplicas(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan & query_plan)
@@ -1114,8 +1073,7 @@ void considerEnablingParallelReplicas(
             /*reads=*/nullptr,
             /*plan_with_parallel_replicas=*/nullptr,
             /*replicas_plan_boundary=*/nullptr,
-            undecided_key,
-            /*replicas_plan_join_statistics_reads=*/nullptr))
+            undecided_key))
     {
         /// Counted here rather than at each decline in `decideAtBoundary`, so that none of them is missed.
         ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasDecidedWithoutBuildingPlan);
@@ -1124,25 +1082,20 @@ void considerEnablingParallelReplicas(
 
     /// The last build of the replicas plan for this plan ended without a decision, so this one would likely end
     /// the same way. Nothing makes that certain - the data, the replicas and the statistics the joins are ordered
-    /// by all change under the same key - so skip a number of executions rather than for good, and build at once
-    /// when what the joins were ordered by has changed by more than `joinStatisticsChanged` tolerates; a smaller
-    /// change waits for the next turn. Everything above, which is cheap, is checked every time.
+    /// by all change under the same key - so skip a number of executions rather than for good. Everything above,
+    /// which is cheap, is checked every time.
     if (undecided_key)
     {
-        const auto undecided = stats_cache.getUndecided(undecided_key);
-        if (undecided && joinStatisticsChanged(*undecided))
-            LOG_TRACE(
-                getLogger("AutoParallelReplicas"),
-                "The hash table statistics the joins were ordered by changed since the last build of the plan with parallel "
-                "replicas ended without a decision. Building it again");
-        else if (undecided)
+        if (const auto undecided = stats_cache.getUndecided(undecided_key))
         {
             /// Take turns rather than wait for the outcome of the retry: however many executions run at once, one in
-            /// `retry_after + 1` builds the plan, and the rest skip it until a new outcome replaces the entry.
+            /// `retry_after + 1` builds the plan, and the rest skip it until a new outcome replaces the entry. After
+            /// the first outcome for this plan the first turn is the one that builds (see `Undecided::first`).
             const UInt64 retry_after = optimization_settings.automatic_parallel_replicas_undecided_retry_after_executions;
             /// The largest value cannot have one added; it is far beyond any count of executions anyway.
             const UInt64 period = retry_after == std::numeric_limits<UInt64>::max() ? retry_after : retry_after + 1;
-            if (const auto turn = undecided->executions.fetch_add(1, std::memory_order_relaxed) % period; turn < retry_after)
+            const UInt64 execution = undecided->executions.fetch_add(1, std::memory_order_relaxed);
+            if (const auto turn = (undecided->first ? execution + period - 1 : execution) % period; turn < retry_after)
             {
                 ProfileEvents::increment(eventOf(undecided->reason));
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRetryDeferred);
@@ -1194,7 +1147,7 @@ void considerEnablingParallelReplicas(
     {
         ProfileEvents::increment(eventOf(reason));
         if (undecided_key)
-            stats_cache.setUndecided(undecided_key, reason, joinStatisticsReads(optimization_settings, build_result.hash_join_statistics_reads));
+            stats_cache.setUndecided(undecided_key, reason);
     };
 
     auto * const replicas_plan_boundary = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
@@ -1275,8 +1228,7 @@ void considerEnablingParallelReplicas(
         &reads,
         plan_with_parallel_replicas,
         replicas_plan_boundary,
-        undecided_key,
-        &build_result.hash_join_statistics_reads);
+        undecided_key);
     chassert(!needs_replicas_plan);
 }
 
@@ -1286,7 +1238,6 @@ void considerEnablingParallelReplicas(
 /// replicas plan yet - the boundary came from the cache - so the caller is to build the replicas plan and call
 /// again with the boundary it matches. `reads` comes with the replicas plan, and is null when that is. With a
 /// non-zero `undecided_key`, an outcome that leaves no decision is remembered under it, and a decision forgets it.
-/// `replicas_plan_join_statistics_reads` is what join reordering read for the replicas plan, null when that is.
 static bool decideAtBoundary(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan & query_plan,
@@ -1296,8 +1247,7 @@ static bool decideAtBoundary(
     const CoordinatedReads * const reads,
     const QueryPlanPtr & plan_with_parallel_replicas,
     const QueryPlan::Node * const replicas_plan_boundary,
-    const UInt64 undecided_key,
-    const HashJoinStatisticsReads * const replicas_plan_join_statistics_reads)
+    const UInt64 undecided_key)
 {
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
@@ -1356,10 +1306,7 @@ static bool decideAtBoundary(
     {
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         if (undecided_key)
-            stats_cache.setUndecided(
-                undecided_key,
-                UndecidedReason::PlansNotComparable,
-                joinStatisticsReads(optimization_settings, *replicas_plan_join_statistics_reads));
+            stats_cache.setUndecided(undecided_key, UndecidedReason::PlansNotComparable);
     };
     if (const auto stats = stats_cache.getStats(single_replica_plan_boundary_hash))
     {
@@ -1596,11 +1543,7 @@ static bool decideAtBoundary(
             return true;
 
         auto statistics_block
-            = std::make_shared<RuntimeDataflowStatisticsBlock>(
-                single_replica_plan_boundary_hash,
-                rows_to_read,
-                undecided_key,
-                undecided_key ? joinStatisticsReads(optimization_settings, *replicas_plan_join_statistics_reads) : HashJoinStatisticsReads{});
+            = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read, undecided_key);
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
 
         /// A replica whose partial aggregation uses memory-bound merging sorts its output by the group
