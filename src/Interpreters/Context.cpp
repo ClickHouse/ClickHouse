@@ -2924,34 +2924,6 @@ ClassifierPtr Context::getWorkloadClassifier() const
     return getSchedulingGroup()->getClassifier();
 }
 
-namespace
-{
-
-/// The query settings that a query is scheduled under, besides `workload`, each with the
-/// `ClassifierSettings` field it sets and the type of that field. A new scheduling setting is added
-/// here and in `ClassifierSettings`.
-#define APPLY_FOR_QUERY_SCHEDULING_SETTINGS(M) \
-    M(weight, weight, Float64) \
-    M(weight_lowering_factor, weight_lowering_factor, Float64) \
-    M(weight_lowering_age_seconds, weight_lowering_age_seconds, Float64) \
-    M(weight_lowering_cpu_seconds, weight_lowering_cpu_seconds, Float64) \
-    M(weight_lowering_io_bytes, weight_lowering_io_bytes, Float64) \
-    M(workload_priority, priority, Priority)
-
-ClassifierSettings makeClassifierSettings(const Settings & query_settings, bool throw_on_unknown_workload)
-{
-    ClassifierSettings result;
-    result.throw_on_unknown_workload = throw_on_unknown_workload;
-#define M(SETTING, FIELD, TYPE) result.FIELD = TYPE{query_settings[Setting::SETTING]};
-    APPLY_FOR_QUERY_SCHEDULING_SETTINGS(M)
-#undef M
-    return result;
-}
-
-#undef APPLY_FOR_QUERY_SCHEDULING_SETTINGS
-
-}
-
 QuerySchedulingGroupPtr Context::getSchedulingGroup() const
 {
     // A copy of a query context (e.g. the context of a subquery) is a part of that query.
@@ -2962,7 +2934,15 @@ QuerySchedulingGroupPtr Context::getSchedulingGroup() const
     // Pass the query's scheduling settings so the classifier can build this query's scheduling
     // context. `throw_on_unknown_workload` is read here (not under `mutex`) to avoid locking the
     // shared mutex under `mutex`.
-    ClassifierSettings settings = makeClassifierSettings(query_settings, getThrowOnUnknownWorkload());
+    ClassifierSettings settings{
+        .throw_on_unknown_workload = getThrowOnUnknownWorkload(),
+        .weight = query_settings[Setting::weight],
+        .weight_lowering_factor = query_settings[Setting::weight_lowering_factor],
+        .weight_lowering_age_seconds = query_settings[Setting::weight_lowering_age_seconds],
+        .weight_lowering_cpu_seconds = query_settings[Setting::weight_lowering_cpu_seconds],
+        .weight_lowering_io_bytes = query_settings[Setting::weight_lowering_io_bytes],
+        .priority = Priority{query_settings[Setting::workload_priority]},
+    };
     const String workload = query_settings[Setting::workload];
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getSchedulingGroup() should not be called before proper `workload` is set
