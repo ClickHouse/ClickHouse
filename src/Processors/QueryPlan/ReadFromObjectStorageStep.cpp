@@ -24,6 +24,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 
 #include <algorithm>
@@ -51,6 +52,16 @@ namespace Setting
 namespace DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsBool paimon_incremental_read;
+}
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char datalake_distributed_worker_latest_snapshot[];
 }
 
 
@@ -307,7 +318,22 @@ void ReadFromObjectStorageStep::createIterator()
     auto context = getContext();
 
     /// The TopK query condition cache key is made from the same table state the files are read from.
-    iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
+    /// A distributed worker of a format whose exact snapshot arrives in every task object must not pin
+    /// its local latest snapshot: the iterator of a distributed read does not use the table state, and
+    /// pinning a newer version than the one of the tasks would break reading those tasks.
+    if (distributed_processing && configuration->supportsDistributedReadWithExplicitSchema())
+        iterator_metadata = storage_snapshot->metadata;
+    else
+    {
+        fiu_do_on(FailPoints::datalake_distributed_worker_latest_snapshot,
+        {
+            if (distributed_processing && configuration->isDataLakeConfiguration()
+                && !(storage_snapshot->metadata && storage_snapshot->metadata->datalake_table_state.has_value()))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed data lake worker attempted to fetch its local latest snapshot");
+        });
+
+        iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
+    }
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
