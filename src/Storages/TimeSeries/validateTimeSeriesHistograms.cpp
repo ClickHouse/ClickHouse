@@ -49,17 +49,22 @@ namespace
         }
 
         template <typename... Args>
-        [[noreturn]] void fail(size_t sample, fmt::format_string<Args...> format, Args &&... args) const
+        [[noreturn]] ALWAYS_INLINE void fail(size_t sample, fmt::format_string<Args...> format, Args &&... args) const
+        {
+            failWithMessage(sample, fmt::format(format, std::forward<Args>(args)...));
+        }
+
+    private:
+        [[noreturn]] void failWithMessage(size_t sample, const String & message) const
         {
             WriteBufferFromOwnString timestamp_text;
             timestamp_type->getDefaultSerialization()->serializeText(timestamps, sample, timestamp_text, {});
             /// `offsets[i]` is the end of the samples of row `i`, so the row of a sample is the first offset greater than its number.
             const size_t row = std::upper_bound(offsets.begin(), offsets.end(), sample) - offsets.begin();
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid histogram sample #{} in row #{} with timestamp {}: {}",
-                sample, row, timestamp_text.str(), fmt::format(format, std::forward<Args>(args)...));
+                sample, row, timestamp_text.str(), message);
         }
 
-    private:
         const IColumn & timestamps;
         const ColumnArray::Offsets & offsets;
         const DataTypePtr timestamp_type;
@@ -224,7 +229,7 @@ namespace
         FailAtRow(const InvalidHistogramThrower & thrower_, size_t row_) : thrower(thrower_), row(row_) { }
 
         template <typename... Args>
-        [[noreturn]] void operator()(fmt::format_string<Args...> format, Args &&... args) const
+        [[noreturn]] ALWAYS_INLINE void operator()(fmt::format_string<Args...> format, Args &&... args) const
         {
             thrower.fail(row, format, std::forward<Args>(args)...);
         }
