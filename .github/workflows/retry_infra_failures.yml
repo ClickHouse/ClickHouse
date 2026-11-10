@@ -354,8 +354,12 @@ jobs:
               # And it must come from this PR: another open PR can share the
               # commit, so the marker is posted with the Praktika report URL of
               # its PR (`?PR=<n>&`).
-              finish_window=$(echo "$jobs_raw" | jq -r '
-                [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
+              # `jobs_raw` holds one JSON document per page (a PR run has more
+              # than 100 jobs), so slurp the pages: a per-page filter would
+              # print an empty window for every page without the job, and the
+              # extra line would break the time comparison below.
+              finish_window=$(echo "$jobs_raw" | jq -s -r '
+                [.[].jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
                 first // {} | [(.started_at // ""), (.completed_at // "")] | @tsv
               ')
               finish_started_at=$(echo "$finish_window" | cut -f1)
