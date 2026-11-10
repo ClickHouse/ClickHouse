@@ -1,0 +1,17 @@
+['DateTime(\'UTC\')','DateTime(\'Europe/Paris\')']
+['1970-01-01 00:00:00','1970-01-01 01:00:00']
+['DateTime64(3, \'UTC\')','DateTime64(3, \'Asia/Tokyo\')']
+['Array(DateTime(\'UTC\'))','Array(DateTime(\'Europe/Paris\'))']
+\N	true
+\N	2
+['Bool','UInt8']
+Array(Bool)	\N	\N	[]	[true]
+Array(UInt8)	\N	\N	[3]	[]
+Bool	\N	true	[]	[]
+DateTime(\'Europe/Paris\')	\N	\N	[]	[]
+DateTime(\'UTC\')	\N	\N	[]	[]
+UInt8	2	\N	[]	[]
+Array(Bool)	\N	\N	[]	[true]
+Array(UInt8)	\N	\N	[3]	[]
+Bool	\N	true	[]	[]
+UInt8	2	\N	[]	[]

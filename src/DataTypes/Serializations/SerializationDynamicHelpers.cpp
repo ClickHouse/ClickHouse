@@ -89,7 +89,11 @@ bool areJSONSubcolumnTypesCompatible(const DataTypeObject & lhs, const DataTypeO
 
 bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataType & rhs, bool for_read)
 {
-    if (lhs.equals(rhs))
+    /// `IDataType::equals` ignores custom names (`Bool` and `UInt8` share `DataTypeNumber<UInt8>`) and
+    /// timezones (`DateTime('UTC')` and `DateTime('Europe/Paris')`), while a `Dynamic` value keeps them
+    /// as part of its logical type. Accept equal types only when their names also match; otherwise
+    /// fall through to the recursive checks below, whose leaves then reject the pair.
+    if (lhs.equals(rhs) && lhs.getName() == rhs.getName())
         return true;
 
     if (const auto * lhs_json = typeid_cast<const DataTypeObject *>(&lhs))
@@ -224,9 +228,13 @@ bool dynamicStorageTypesHaveCompatibleIdentity(const IDataType & existing_type, 
             if (!dynamicStorageTypesHaveCompatibleIdentity(*existing_elements[i], *inserted_elements[i]))
                 return false;
         }
+
+        return true;
     }
 
-    return true;
+    /// A leaf type must keep its exact identity, including the parts `IDataType::equals` ignores,
+    /// such as the timezone of `DateTime` and `DateTime64` or a custom name like `Bool`.
+    return existing_type.getName() == inserted_type.getName();
 }
 
 /// Iterate over rows in Dynamic column and create an indexes column with indexes of each type in the flattened list.
