@@ -163,6 +163,11 @@ public:
         auto target = tryGetTargetTable();
         return target && target->supportsOptimizationToTupleElementSubcolumns();
     }
+    bool hasBucketedMapSerialization() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->hasBucketedMapSerialization();
+    }
     bool supportsParallelInsert() const override
     {
         auto target = tryGetTargetTable();
