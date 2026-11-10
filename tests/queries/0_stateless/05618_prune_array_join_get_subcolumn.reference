@@ -1,0 +1,36 @@
+-- one subcolumn
+6
+nst.x Array(UInt64)
+-- LEFT ARRAY JOIN
+0
+1
+2
+3
+nst.x Array(UInt64)
+-- subcolumn of an element
+0
+1
+2
+nst.z Array(Array(UInt64))
+-- getSubcolumn and tupleElement
+1	a
+2	b
+3	c
+nst.x Array(UInt64)
+nst.y Array(String)
+-- the query uses the whole tuple
+1	(1,'a',[1])
+2	(2,'b',[2,3])
+3	(3,'c',[])
+nst.x Array(UInt64)
+nst.y Array(String)
+nst.z Array(Array(UInt64))
+-- subquery
+a
+b
+c
+nst.y Array(String)
+-- join_use_nulls
+3	2
+\N	9
+nst.x Array(UInt64)
