@@ -37,9 +37,8 @@ workflow = Workflow.Config(
         # are left to the flaky check above; the integration job reruns the
         # integration test modules `master` changed (see
         # `Targeting.get_merge_queue_drift_tests`). The queue is meant to fail
-        # fast: both jobs stop at 3 failed tests, and at 20 minutes from their
-        # start without failing, so they do not extend the queue latency past
-        # the flaky check.
+        # fast: both jobs stop at 3 failed tests, and at 30 minutes from their
+        # start without failing.
         *JobConfigs.stateless_tests_targeted_mq_jobs,
         *JobConfigs.integration_test_targeted_mq_jobs,
         # Reruns the documentation examples against the merge group state, so a
@@ -69,9 +68,7 @@ workflow = Workflow.Config(
     enable_cidb=True,
     enable_merge_ready_status=True,
     enable_commit_status_on_failure=True,
-    # Config-time skip for the stateless flaky check on PRs that change no
-    # stateless tests, so non-test PRs do not schedule the runner and restore
-    # the binary only for the job to self-skip inside `functional_tests.py`.
+    enable_job_filtering_by_changes=True,
     workflow_filter_hooks=[should_skip_merge_queue_job],
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
