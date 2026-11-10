@@ -2,6 +2,7 @@
 #include "config.h"
 #if USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -14,25 +15,33 @@ namespace DB
 
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
-    std::vector<size_t> row_group_ids;
+    RowGroupIndices row_group_ids;
+    std::optional<std::pair<UInt64, UInt64>> byte_range;
 
     ParquetFileBucketInfo() = default;
-    explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
-    void serialize(WriteBuffer & buffer) override;
-    void deserialize(ReadBuffer & buffer) override;
+    explicit ParquetFileBucketInfo(const RowGroupIndices & row_group_ids_);
+    ParquetFileBucketInfo(UInt64 offset, UInt64 length);
+    void serialize(WriteBuffer & buffer, size_t protocol_version) const override;
+    void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
     String getIdentifier() const override;
     String getFormatName() const override
     {
         return "Parquet";
     }
-    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
+    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
 struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
-    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    VectorWithMemoryTracking<FileBucketInfoPtr> splitToBuckets(
+        size_t bucket_size,
+        ReadBuffer & buf,
+        const RelativePathWithMetadata & object,
+        const FormatSettings & format_settings_,
+        const ContextPtr & context) override;
+    VectorWithMemoryTracking<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t file_size, const VectorWithMemoryTracking<UInt64> & split_offsets) override;
 };
 
 class KeyCondition;
@@ -66,8 +75,8 @@ public:
 
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
-    std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
-    std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
+    std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override;
+    VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
     bool isTopKFilterApplied() const override;
     bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
 
@@ -79,6 +88,8 @@ public:
 private:
     Chunk read() override;
 
+    void prefetch() override;
+
     void onCancel() noexcept override;
 
     const FormatSettings format_settings;
@@ -88,12 +99,17 @@ private:
     ParquetMetadataCachePtr metadata_cache;
     const std::optional<RelativePathWithMetadata> object_with_metadata;
 
-    /// (This mutex is not important. It protects `reader.emplace` in a weird case where onCancel()
+    /// (This mutex is not important. It protects setting `reader` in a weird case where onCancel()
     ///  may be called in parallel with first read(). ReadManager itself is thread safe for that,
-    ///  but initializing vs checking the std::optional would race without this mutex.)
+    ///  but initializing vs checking the pointer would race without this mutex.)
     std::mutex reader_mutex;
 
-    std::optional<Parquet::ReadManager> reader;
+    std::unique_ptr<Parquet::ReadManager> reader;
+    /// Has the file footer, but is not initialized: initializing it starts reading and decoding the column chunks.
+    std::unique_ptr<Parquet::ReadManager> reader_with_footer;
+    std::optional<ParquetMetadataCacheKey> footer_cache_key;
+    ParquetMetadataCache::MappedPtr footer_cache_cell;
+    bool footer_cache_hit = false;
     bool reported_count = false; // if need_only_count
 
     /// The rows were replaced by min / max from column chunk statistics; no row groups were read.
@@ -102,8 +118,10 @@ private:
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;
 
+    void readFileFooterIfNeeded();
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
+    Parquet::RowGroupSelection rowGroupSelection() const;
 
     /// nullopt if the metadata cache is not used.
     std::optional<ParquetMetadataCacheKey> getMetadataCacheKey() const;
@@ -136,7 +154,7 @@ struct ParquetCachedStatisticsFilter
 private:
     std::shared_ptr<const KeyCondition> key_condition;
     /// Positions are in the header followed by `FormatFilterInfo::additional_columns`, as `key_condition` was built for.
-    std::vector<std::pair<size_t, String>> column_keys;
+    VectorWithMemoryTracking<std::pair<size_t, String>> column_keys;
     DataTypes key_types;
 };
 

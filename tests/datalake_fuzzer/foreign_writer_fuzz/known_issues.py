@@ -21,29 +21,19 @@ class KnownIssue:
 
 KNOWN_ISSUES = [
     KnownIssue(
-        "delta_trivial_count_with_deletion_vectors",
-        "https://github.com/ClickHouse/ClickHouse/issues/114933",
-        "Delta Lake trivial `count()` sums `numRecords` and ignores deletion vectors; the trivial count is checked with `optimize_trivial_count_query = 0` only on tables with deletion vectors.",
-    ),
-    KnownIssue(
         "hudi_merge_on_read",
         "https://github.com/ClickHouse/ClickHouse/issues/114994",
         "Hudi Merge-on-Read log files are ignored; the Hudi writer creates Copy-on-Write tables only.",
     ),
     KnownIssue(
-        "hudi_replacecommit",
-        "https://github.com/ClickHouse/ClickHouse/issues/123954",
-        "Hudi `replacecommit` is ignored, so file groups replaced by `insert_overwrite` are still read; the Hudi writer does not overwrite.",
-    ),
-    KnownIssue(
-        "paimon_schema_change_without_snapshot",
-        "https://github.com/ClickHouse/ClickHouse/issues/128308",
-        "Paimon `ALTER TABLE` writes a new schema without a new snapshot; ClickHouse keeps reading with the schema of the latest snapshot, so an added column is unknown until the next commit. The checks are skipped until the next snapshot.",
+        "paimon_primary_key_tables",
+        "https://github.com/ClickHouse/ClickHouse/issues/128549",
+        "Paimon primary-key tables are refused with `NOT_IMPLEMENTED` because merge-on-read is not implemented (https://github.com/ClickHouse/ClickHouse/pull/113460); the Paimon writer creates append-only tables.",
     ),
     KnownIssue(
         "paimon_columns_by_name",
-        "https://github.com/ClickHouse/ClickHouse/issues/127545",
-        "Paimon columns are resolved by name instead of field id, so values of renamed or dropped and re-added columns are wrong; the Paimon writer does not rename or drop columns.",
+        "https://github.com/ClickHouse/ClickHouse/issues/128541",
+        "Paimon columns are resolved by name instead of field id; since https://github.com/ClickHouse/ClickHouse/pull/127816 a data file written before a rename or a drop and re-add is refused with `NOT_IMPLEMENTED`; the Paimon writer does not rename or drop columns.",
     ),
     KnownIssue(
         "paimon_date_before_epoch",
@@ -61,14 +51,9 @@ KNOWN_ISSUES = [
         "A Paimon `ROW` (struct) column makes the table unreadable (`Unsupported Paimon type: ROW`, `Paimon/Types.h`); the Paimon writer does not use structs.",
     ),
     KnownIssue(
-        "clickhouse_iceberg_v1_metadata",
-        "https://github.com/ClickHouse/ClickHouse/issues/128301",
-        "ClickHouse-written Iceberg format version 1 metadata lacks the required `schema` field, so PyIceberg cannot open the table; the ClickHouse Iceberg writer uses format version 2.",
-    ),
-    KnownIssue(
-        "clickhouse_iceberg_bool",
-        "https://github.com/ClickHouse/ClickHouse/issues/128303",
-        "ClickHouse cannot create an Iceberg table with a `Bool` column (`Unsupported type for iceberg Bool`); the ClickHouse Iceberg writer does not use `Bool`.",
+        "clickhouse_iceberg_compaction_after_schema_change",
+        "https://github.com/ClickHouse/ClickHouse/issues/120833",
+        "ClickHouse Iceberg compaction (`OPTIMIZE`) after a `DELETE` on a schema-evolved table rewrites the metadata under schema-id 0, which then fails with `ICEBERG_SPECIFICATION_VIOLATION`; the ClickHouse Iceberg writer does not compact.",
     ),
     KnownIssue(
         "clickhouse_iceberg_timestamp_ntz",

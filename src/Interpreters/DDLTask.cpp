@@ -5,6 +5,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <IO/Operators.h>
@@ -59,6 +60,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_IS_PROHIBITED;
     extern const int DNS_ERROR;
     extern const int UNKNOWN_USER;
     extern const int UNKNOWN_ROLE;
@@ -827,19 +829,15 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
 
-        /// Make sure that we did not disable replicated DDL queries
-        const auto & macros = from_context->getMacros();
-        bool should_check_stop_flag = macros->getMacroMap().contains("replica");
-        if (should_check_stop_flag)
-        {
-            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
-            stop_flag_path = macros->expand(stop_flag_path);
+        /// Make sure that we did not disable replicated DDL queries. The in-memory flag rejects the entries
+        /// that are processed after `SYSTEM STOP REPLICATED DDL QUERIES`, and the flag in Keeper makes the commit
+        /// fail for the entries that passed this check before the stop.
+        if (!DatabaseCatalog::instance().canPerformReplicatedDDLQueries())
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Replicated DDL queries are disabled");
 
-            zookeeper->createAncestors(stop_flag_path);
-
-            txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
-            txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
-        }
+        String stop_flag_path = getStopReplicatedDDLQueriesFlagPath(*database);
+        txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
+        txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
     }
 
     txn->addOp(getOpToUpdateLogPointer());
@@ -849,6 +847,14 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     ops.clear();
 
     return query_context;
+}
+
+String DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath(const DatabaseReplicated & database)
+{
+    /// The ephemeral flag of a killed server stays in Keeper until its session expires, so the path identifies
+    /// the current process to not mistake that flag for the flag of this process after a restart.
+    static const String process_id = toString(UUIDHelpers::generateV4());
+    return fmt::format("{}/stop_replicated_ddl_queries_{}", database.replica_path, process_id);
 }
 
 Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
