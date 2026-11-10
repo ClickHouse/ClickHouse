@@ -20,6 +20,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
