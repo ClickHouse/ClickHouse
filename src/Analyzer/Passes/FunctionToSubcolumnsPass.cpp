@@ -839,6 +839,10 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
 bool storageAllowsTransformer(const IStorage & storage, TypeIndex type_id, const String & function_name)
 {
+    /// Without buckets the key subcolumn `m.key_<key>` reads the whole Map, so `m['key']` is not rewritten to it.
+    if (function_name == "arrayElement" && type_id == TypeIndex::Map && !storage.hasBucketedMapSerialization())
+        return false;
+
     if (storage.supportsOptimizationToSubcolumns())
         return true;
     return storage.supportsOptimizationToTupleElementSubcolumns() && type_id == TypeIndex::Tuple && function_name == "tupleElement";

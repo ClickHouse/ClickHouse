@@ -6,6 +6,7 @@
 -- and the text index has to look through the cast: for an index on `mapValues(m)`.
 -- The same applies to every conversion that does not change a non-NULL value: adding or dropping `LowCardinality` or
 -- `Nullable` (adding also as `toNullable`, which `join_use_nulls` emits in pushed-down filters), at any depth of `Array`.
+-- The rewrite applies only to bucketed Maps, so the tables with Maps use `with_buckets`.
 
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
@@ -23,7 +24,8 @@ CREATE TABLE tab_values
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
 INSERT INTO tab_values VALUES (1, {'level':'error','msg':'disk is full'}), (2, {'level':'warn','msg':'disk is slow'}), (3, {'level':'error','msg':'network is down'}), (4, {});
 
@@ -57,7 +59,8 @@ CREATE TABLE tab_values_n
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
 INSERT INTO tab_values_n VALUES (1, {'level':'error'}), (2, {'level':'error'}), (3, {'level':'warn'}), (4, {'level':NULL});
 
