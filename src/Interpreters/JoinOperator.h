@@ -113,7 +113,6 @@ struct JoinSettings
     bool collect_hash_table_stats_during_joins;
     UInt64 max_size_to_preallocate_for_joins;
     UInt64 parallel_hash_join_threshold;
-    HashJoinLayout hash_join_layout;
     UInt64 join_output_by_rowlist_perkey_rows_threshold;
     bool allow_experimental_join_right_table_sorting;
     UInt64 join_to_sort_minimum_perkey_rows;
@@ -127,7 +126,6 @@ struct JoinSettings
     bool use_hash_table_stats_for_join_reordering;
     bool enable_hash_join_row_store;
     Float64 min_rows_ratio_for_hash_join_row_store;
-    UInt64 min_string_column_bytes_for_hash_join_row_store;
 
     bool enable_join_fixed_hash_table_conversion;
     bool enable_join_key_only_hash_tables;
@@ -138,10 +136,6 @@ struct JoinSettings
 
     explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
     JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version);
-
-    /// Whether `join_algorithms` is the built-in default of `join_algorithm`, whose algorithm the join order optimizer may
-    /// choose per join. Any other list is a priority list the user chose, used as it is.
-    bool hasDefaultJoinAlgorithms() const;
 
     /// `join_operator` is the step the settings are serialized for: whether a downgraded plan can be
     /// handed to an older peer depends on which algorithm of the preference list that step reaches.

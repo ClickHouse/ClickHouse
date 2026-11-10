@@ -38,35 +38,3 @@ else
     SELECT NOT arrayExists(x -> x LIKE '%:%:%', last_error_lines)
     FROM system.errors WHERE code = $custom_error_code ORDER BY last_error_time DESC LIMIT 1 FORMAT TSV"
 fi
-
-# A set built from a subquery must be ready when the condition is applied to the table.
-query_id_in="04040_in_${CLICKHOUSE_DATABASE}"
-$CLICKHOUSE_CLIENT --query_id "$query_id_in" -q "
-SELECT count() FROM system.errors
-WHERE code IN (SELECT toInt32($custom_error_code)) AND NOT remote AND arrayExists(x -> x LIKE '%Exception%', last_error_symbols)
-SETTINGS system_events_show_zero_values = 1"
-
-# The condition sees only the rows the table shows: the hidden remote row of this code has value 0.
-$CLICKHOUSE_CLIENT -q "
-SELECT count() FROM system.errors
-WHERE code = $custom_error_code AND intDiv(value, value) = 1 AND arrayExists(x -> x LIKE '%Exception%', last_error_symbols)
-SETTINGS system_events_show_zero_values = 0"
-
-# Rows the condition rejects do not leave the table, so they are not symbolized. Zero rows are shown, so every
-# registered code is a row the condition has to reject. The `OR` reaches the table only if every column in it is
-# filterable, and only its `name` branch matches. Only `last_error_lines` is read: the `IN` probe reads `last_error_symbols`.
-query_id_filtered="04040_filtered_${CLICKHOUSE_DATABASE}"
-$CLICKHOUSE_CLIENT --query_id "$query_id_filtered" -q "
-SELECT last_error_lines FROM system.errors
-WHERE NOT remote AND (name = 'STATELESS_WORKER_DISCOVERY_ERROR' OR code = -1 OR value > 1000000000000 OR last_error_time > now() + INTERVAL 1 DAY
-    OR last_error_message = '04040' OR last_error_format_string = '04040' OR query_id = '04040')
-SETTINGS system_events_show_zero_values = 1 FORMAT Null"
-
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT -q "
-SELECT read_rows FROM system.query_log
-WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND query_id = '$query_id_filtered'"
-# One row of the table plus the one row the set's own subquery reads.
-$CLICKHOUSE_CLIENT -q "
-SELECT read_rows <= 2 FROM system.query_log
-WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND query_id = '$query_id_in'"

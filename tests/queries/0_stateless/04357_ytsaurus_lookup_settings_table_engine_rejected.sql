@@ -2,8 +2,8 @@
 -- dictionary-source lookup path. The `YTsaurus` table engine and the `ytsaurus` table function do full-table
 -- reads and never issue lookups, so these settings must be rejected there instead of being silently ignored.
 
-SET enable_ytsaurus_table_engine = 1;
-SET enable_ytsaurus_table_function = 1;
+SET allow_experimental_ytsaurus_table_engine = 1;
+SET allow_experimental_ytsaurus_table_function = 1;
 
 DROP TABLE IF EXISTS t_yt_ok;
 

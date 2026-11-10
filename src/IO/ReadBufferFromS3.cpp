@@ -21,7 +21,6 @@
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentThread.h>
-#include <Common/HTTPConnectionInfo.h>
 #include <base/sleep.h>
 
 #include <cstdint>
@@ -224,7 +223,7 @@ bool ReadBufferFromS3::nextImpl()
                 else
                 {
                     /// use the buffer returned by `impl`
-                    setWorkingBuffer(impl->buffer(), impl->offset());
+                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
                 }
             }
 
@@ -277,7 +276,7 @@ bool ReadBufferFromS3::nextImpl()
     /// `readMetadataFile`) inherits the corrupt bounds.
     if (use_external_buffer)
         assertWorkingBufferContainedIn(impl->buffer(), internal_buffer);
-    setWorkingBuffer(impl->buffer(), impl->offset());
+    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
@@ -389,9 +388,6 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings[S3RequestSetting::max_single_read_retries].value,
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
-
-    /// Throws the cancellation cause, and is a no-op off-query, so an ordinary network error still retries.
-    CurrentThread::checkIfNotCancelled();
 
     if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {
@@ -535,17 +531,6 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
     }
 }
 
-void ReadBufferFromS3::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)
-{
-    if (impl)
-    {
-        impl->detachSession();
-        resetWorkingBuffer();
-        impl.reset();
-    }
-    read_settings.io_scheduling = io_scheduling;
-}
-
 void ReadBufferFromS3::setReadUntilEnd()
 {
     if (read_until_position)
@@ -677,7 +662,6 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
     /// Measures time-to-first-byte: just the GetObject API call, not data transfer.
     /// Each sendRequest call is logged individually, unlike HDFS/Local which aggregate.
-    HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
     Stopwatch blob_log_watch;
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
