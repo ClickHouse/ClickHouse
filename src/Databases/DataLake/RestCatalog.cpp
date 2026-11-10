@@ -2103,7 +2103,7 @@ void RestCatalog::createTableAtDefaultLocation(const String & namespace_name, co
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, /* allow_retries */ false);
     }
     catch (const DB::HTTPException & ex)
     {
