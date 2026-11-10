@@ -320,6 +320,18 @@ def test_http_commands_complete(started_cluster):
     assert f"/{dirname}/{child_a}" in rewritten_unicode
     assert rewritten_unicode.endswith(" myvalue")
 
+    # Missing parent: Tab is best-effort (empty completions, HTTP 200), not 500.
+    missing_parent_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": "ls /does_not_exist/", "cwd": "/"},
+    )
+    assert missing_parent_resp.status_code == 200
+    missing_parent_body = missing_parent_resp.json()
+    assert missing_parent_body["completions"] == []
+    assert missing_parent_body["replace_start"] == len("ls ".encode("utf-8"))
+
     with keeper_utils.KeeperClient.from_cluster(
         cluster, keeper_ip=leader.ip_address, port=9181
     ) as client:

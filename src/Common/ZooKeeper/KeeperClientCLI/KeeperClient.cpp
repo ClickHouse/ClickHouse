@@ -323,7 +323,17 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
     else
         parent_path = getAbsolutePath(unescaped_parent);
 
-    Strings children = zookeeper->getChildren(parent_path);
+    Strings children;
+    try
+    {
+        children = zookeeper->getChildren(parent_path);
+    }
+    catch (const Coordination::Exception &)
+    {
+        /// Best-effort: a missing parent (or any other Keeper RPC failure) is
+        /// "no matches". Do not abort `clickhouse-keeper-client` or HTTP `complete=`.
+        return result;
+    }
 
     struct CompletionCandidate
     {
@@ -388,11 +398,18 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
         for (const auto & candidate : candidates)
             paths_to_check.push_back(candidate.full_path);
 
-        auto responses = zookeeper->exists(paths_to_check);
-        for (size_t i = 0; i < candidates.size(); ++i)
+        try
         {
-            if (responses[i].error == Coordination::Error::ZOK)
-                has_children[i] = responses[i].stat.numChildren > 0;
+            auto responses = zookeeper->exists(paths_to_check);
+            for (size_t i = 0; i < candidates.size(); ++i)
+            {
+                if (responses[i].error == Coordination::Error::ZOK)
+                    has_children[i] = responses[i].stat.numChildren > 0;
+            }
+        }
+        catch (const Coordination::Exception &)
+        {
+            return result;
         }
     }
 
