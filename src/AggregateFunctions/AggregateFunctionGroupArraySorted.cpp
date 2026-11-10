@@ -396,7 +396,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        const auto & rhs_values = this->data(rhs).values;
+        const auto & rhs_values = data(rhs).values;
         if (!rhs_values || rhs_values->empty())
             return;
 
@@ -408,7 +408,7 @@ public:
     /// The same format as for the values kept in a `Field`.
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        const auto & values = this->data(place).values;
+        const auto & values = data(place).values;
         IColumn::Permutation permutation;
         size_t size = getSortedPermutation(values, permutation);
         writeVarUInt(size, buf);
@@ -453,7 +453,7 @@ public:
         auto & result_array = assert_cast<ColumnArray &>(to);
         auto & result_array_offsets = result_array.getOffsets();
 
-        const auto & values = this->data(place).values;
+        const auto & values = data(place).values;
         IColumn::Permutation permutation;
         size_t size = getSortedPermutation(values, permutation);
 
@@ -475,7 +475,7 @@ private:
 
     MutableColumnPtr & getValues(AggregateDataPtr __restrict place) const
     {
-        auto & values = this->data(place).values;
+        auto & values = data(place).values;
         if (!values)
             values = data_type->createColumn();
         return values;
