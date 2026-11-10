@@ -7,21 +7,15 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
-#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/TraceSender.h>
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
-#include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
-#include <base/EnumReflection.h>
-#include <base/demangle.h>
 #include <base/errnoToString.h>
-#include <base/scope_guard.h>
 #include <Common/logger_useful.h>
-#include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
 
 
@@ -31,56 +25,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TIMEOUT_EXCEEDED;
-}
-
-namespace
-{
-
-/// Frames in the main object may arrive here already reduced to physical file offsets (see run()),
-/// and SymbolIndex::findSymbol accepts either representation.
-std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
-{
-    std::string result;
-    const bool show_addresses = StackTrace::showAddresses();
-
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-    const SymbolIndex & symbol_index = SymbolIndex::instance();
-#endif
-
-    for (size_t frame = 0; frame < trace.size(); ++frame)
-    {
-        std::string_view name = "?";
-
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-        DemangleResult demangled;
-        if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
-        {
-            demangled = tryDemangle(symbol->name);
-            name = demangled ? std::string_view(demangled.get()) : std::string_view(symbol->name);
-        }
-#endif
-
-        if (show_addresses)
-            result += fmt::format("{}{}. 0x{:x} {}", frame ? "\n" : "", frame, trace[frame], name);
-        else
-            result += fmt::format("{}{}. {}", frame ? "\n" : "", frame, name);
-    }
-
-    return result;
-}
-
-/// The first byte of a pipe message: 0 for a trace (`TraceSender::send`), 1 to stop the collector, 2 for a `flush` marker.
-constexpr char FLUSH_MARKER = 2;
-
 }
 
 TraceCollector::TraceCollector()
 {
-    /// The budget belongs to this collector's lifetime: a trace can only be delivered while one
-    /// exists, and the server constructs exactly one, before any threshold can be published.
-    MemoryTracker::resetLargeAllocationTraceBudget();
-
     TraceSender::pipe.open();
 
     /** Turn write end of pipe to non-blocking mode to avoid deadlocks
@@ -196,16 +144,9 @@ void TraceCollector::run()
     {
         while (true)
         {
-            char message_type = 0;
-            readChar(message_type, in);
-            if (message_type == FLUSH_MARKER)
-            {
-                std::lock_guard lock(TraceSender::flush_mutex);
-                ++TraceSender::flush_completed;
-                TraceSender::flush_cv.notify_all();
-                continue;
-            }
-            if (message_type)
+            char is_last = 0;
+            readChar(is_last, in);
+            if (is_last)
                 break;
 
             std::string query_id;
@@ -264,24 +205,6 @@ void TraceCollector::run()
             ProfileEvents::Count increment = 0;
             readPODBinary(increment, in);
 
-            /// Mirrored to the log before the trace_log insert below, because a server whose global
-            /// tracker has run away fails every system-log flush while still writing its log file,
-            /// and that is exactly the state this trace type exists to diagnose.
-            if (trace_type == TraceType::MemoryLargeAllocation)
-            {
-                LOG_WARNING(
-                    getLogger("MemoryTracker"),
-                    "Single charge of {} to the global memory tracker on thread {} "
-                    "(blocked context: {}). Global tracked total when logged: {}. Stack trace:\n{}",
-                    ReadableSize(size),
-                    thread_id,
-                    static_cast<VariableContext>(memory_blocked_context) == VariableContext::Max
-                        ? std::string_view("none")
-                        : magic_enum::enum_name(static_cast<VariableContext>(memory_blocked_context)),
-                    ReadableSize(total_memory_tracker.get()),
-                    symbolizeNormalizedTrace(trace));
-            }
-
             if (auto trace_log = getTraceLog())
             {
                 // time and time_in_microseconds are both being constructed from the same timespec so that the
@@ -327,24 +250,6 @@ void TraceCollector::run()
         tryLogCurrentException("TraceCollector");
         throw;
     }
-}
-
-void TraceCollector::flush()
-{
-    std::unique_lock lock(TraceSender::flush_mutex);
-    {
-        TraceSender::in_flight.fetch_add(1);
-        SCOPE_EXIT(TraceSender::in_flight.fetch_sub(1));
-        /// A full pipe drops the marker like it drops traces, then there is nothing to wait for.
-        if (!TraceSender::isCollecting() || ::write(TraceSender::pipe.fds_rw[1], &FLUSH_MARKER, 1) != 1)
-            return;
-    }
-
-    /// The markers reach the pipe in the order of their numbers, and the collector reads the pipe in order.
-    const UInt64 marker = ++TraceSender::flush_requested;
-    constexpr auto timeout = std::chrono::seconds(180);
-    if (!TraceSender::flush_cv.wait_for(lock, timeout, [&] { return TraceSender::flush_completed >= marker; }))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded ({} s) while waiting for the trace collector", timeout.count());
 }
 
 }

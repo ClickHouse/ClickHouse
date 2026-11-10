@@ -9,13 +9,17 @@ sidebarTitle: 'Helm'
 
 يتناول هذا الدليل تثبيت ClickHouse Operator باستخدام مخططات Helm.
 
-## المتطلبات الأساسية {#prerequisites}
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
 
 * عنقود Kubernetes بالإصدار 1.28.0 أو أحدث
 * Helm بالإصدار 3.0 أو أحدث
 * أن يكون kubectl مُعَدًّا للتواصل مع عنقودك
 
-## تثبيت Helm {#install-helm}
+<div id="install-helm">
+  ## تثبيت Helm
+</div>
 
 إذا لم يكن Helm مُثبّتًا لديك:
 
@@ -29,7 +33,9 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm version
 ```
 
-## تثبيت ClickHouse Operator {#install-the-operator}
+<div id="install-the-operator">
+  ## تثبيت ClickHouse Operator
+</div>
 
 <Note>
   ينشر مخطط Helm، افتراضيًا، ClickHouse Operator مع تفعيل webhooks، ويتطلب تثبيت cert-manager.
@@ -39,7 +45,9 @@ helm version
 helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-manager --create-namespace --set crds.enabled=true
 ```
 
-### من مستودع Helm من نوع OCI {#from-oci-helm-repository}
+<div id="from-oci-helm-repository">
+  ### من مستودع Helm من نوع OCI
+</div>
 
 ثبّت أحدث إصدار
 
@@ -58,7 +66,9 @@ helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-man
        --set manager.image.tag=<operator version>
 ```
 
-### من الـ مخطط المحلي {#from-local-chart}
+<div id="from-local-chart">
+  ### من الـ مخطط المحلي
+</div>
 
 استنسخ المستودع وثبّت باستخدام الـ مخطط المحلي:
 
@@ -68,35 +78,8 @@ cd clickhouse-operator
 helm install clickhouse-operator ./dist/chart
 ```
 
-### مراقبة مساحات أسماء محددة {#watch-namespaces}
-
-يراقب المشغّل افتراضيًا جميع مساحات الأسماء. اضبط `controller.watchNamespaces` لتقييد نطاق المراقبة.
-تُصيَّر العناصر بوصفها قوالب، لذا يُحَلّ `{{ .Release.Namespace }}` إلى مساحة الأسماء التي ثُبِّت فيها الإصدار،
-ويمكن الجمع بينه وبين مساحات أسماء ثابتة:
-
-```yaml
-controller:
-  watchNamespaces:
-    - "{{ .Release.Namespace }}"
-    - team-a
-```
-
-في سطر الأوامر، يفسّر `--set` الأقواس المعقوصة على أنها صيغة قائمة، لذا استخدم `--set-json` (مع Helm v3.10 أو أحدث):
-`--set-json 'controller.watchNamespaces=["{{ .Release.Namespace }}"]'`.
-
-لمراقبة مساحة الأسماء الخاصة بالإصدار فقط، مع RBAC مقصور على نطاق مساحة الأسماء:
-
-```yaml
-controller:
-  watchNamespaces:
-    - "{{ .Release.Namespace }}"
-rbac:
-  namespaced: true
-```
-
-عند ضبط `rbac.namespaced: true`، تتحول صلاحيات مدير المشغّل إلى Role/RoleBinding ضمن مساحة الأسماء التي ثُبّت فيها الإصدار،
-لذا تتطلب مراقبة مساحات الأسماء الأخرى صلاحيات RBAC على مستوى العنقود (وهو الإعداد الافتراضي).
-
-### خيارات التهيئة المتقدمة {#configuration-options}
+<div id="configuration-options">
+  ### خيارات التهيئة المتقدمة
+</div>
 
 للاطلاع على خيارات التهيئة المتقدمة، راجع ملف [values.yaml](https://github.com/ClickHouse/clickhouse-operator/blob/main/dist/chart/values.yaml) في مخطط Helm

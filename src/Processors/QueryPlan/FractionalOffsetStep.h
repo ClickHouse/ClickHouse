@@ -24,9 +24,6 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    /// Like `FractionalLimitStep`: the fraction is resolved against the whole result.
-    bool supportsDataflowStatisticsCollection() const override { return true; }
-
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }
 

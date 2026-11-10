@@ -64,15 +64,11 @@ public:
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
-    std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
-    bool isTopKFilterApplied() const override;
-    bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
-
-    /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
-    void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
 
 private:
     Chunk read() override;
+
+    void prefetch() override;
 
     void onCancel() noexcept override;
 
@@ -83,28 +79,24 @@ private:
     ParquetMetadataCachePtr metadata_cache;
     const std::optional<RelativePathWithMetadata> object_with_metadata;
 
-    /// (This mutex is not important. It protects `reader.emplace` in a weird case where onCancel()
+    /// (This mutex is not important. It protects setting `reader` in a weird case where onCancel()
     ///  may be called in parallel with first read(). ReadManager itself is thread safe for that,
-    ///  but initializing vs checking the std::optional would race without this mutex.)
+    ///  but initializing vs checking the pointer would race without this mutex.)
     std::mutex reader_mutex;
 
-    std::optional<Parquet::ReadManager> reader;
+    std::unique_ptr<Parquet::ReadManager> reader;
+    /// Has the file footer, but is not initialized: initializing it starts reading and decoding the column chunks.
+    std::unique_ptr<Parquet::ReadManager> reader_with_footer;
     bool reported_count = false; // if need_only_count
-
-    /// The rows were replaced by min / max from column chunk statistics; no row groups were read.
-    bool min_max_from_statistics = false;
 
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;
 
+    void readFileFooterIfNeeded();
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 
-    /// nullopt if the metadata cache is not used.
-    std::optional<ParquetMetadataCacheKey> getMetadataCacheKey() const;
-    std::shared_ptr<const Parquet::FileFooter> readFileFooter(Parquet::Prefetcher & prefetcher) const;
-    /// For count(), which needs no column chunks.
-    std::shared_ptr<const Parquet::FileFooter> getFileFooter(Parquet::Prefetcher & prefetcher) const;
+    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };
 
 class NativeParquetSchemaReader final : public ISchemaReader
@@ -119,7 +111,7 @@ private:
     void initializeIfNeeded();
 
     Parquet::ReadOptions read_options;
-    std::shared_ptr<const Parquet::FileFooter> file_footer;
+    parquet::format::FileMetaData file_metadata;
     bool initialized = false;
 };
 

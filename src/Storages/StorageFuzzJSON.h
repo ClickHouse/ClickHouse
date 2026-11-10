@@ -53,8 +53,6 @@ public:
 
     std::string getName() const override { return "FuzzJSON"; }
 
-    bool supportsTruncate() const override { return false; }
-
     static VirtualColumnsDescription createVirtuals();
 
     using StorageWithCommonVirtualColumns::read;

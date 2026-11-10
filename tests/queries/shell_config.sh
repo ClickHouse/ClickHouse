@@ -113,8 +113,7 @@ export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
 export CLICKHOUSE_PORT_SSH=${CLICKHOUSE_PORT_SSH:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=tcp_ssh_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_SSH=${CLICKHOUSE_PORT_SSH:="9022"}
 
-# Without a colon: `clickhouse-test` exports an empty identity once resolved, so do not resolve it again.
-export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=zookeeper.identity 2>/dev/null)} 2>/dev/null
+export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=zookeeper.identity 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=""}
 
 # keeper-client
@@ -187,30 +186,12 @@ function clickhouse_client_removed_host_parameter()
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub(r'--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
 
-# `clickhouse-test` kills a test after `CLICKHOUSE_TEST_TIMEOUT` seconds, but a loop must also end on its own: when
-# the runner dies before that kill, an unbounded loop spins forever on the host. Use `while clickhouse_test_time_left`
-# instead of `while true`. Exported, so that loops in `bash -c` workers and in nested `shell_config.sh` share it.
-export CLICKHOUSE_TEST_DEADLINE=${CLICKHOUSE_TEST_DEADLINE:-$((EPOCHSECONDS + ${CLICKHOUSE_TEST_TIMEOUT:-600}))}
-function clickhouse_test_time_left()
-{
-    ((EPOCHSECONDS < CLICKHOUSE_TEST_DEADLINE)) && return 0
-    # A loop that reaches the deadline did not get what it was waiting for: fail the test instead of going on.
-    echo "The ${CLICKHOUSE_TEST_TIMEOUT:-600}s test deadline expired in a 'while clickhouse_test_time_left' loop" >&2
-    return 1
-}
-export -f clickhouse_test_time_left
-
 function wait_for_query_to_start()
 {
     local query_id="$1"
     local timeout="${2:-120}"
-    # PID of the client running the query, optional: a short query can start and end between two polls.
-    local client_pid="${3:-}"
     local start=$EPOCHSECONDS
     while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$query_id' SETTINGS use_query_cache = 0") == 0 ]]; do
-        if [[ -n "$client_pid" ]] && ! kill -0 "$client_pid" 2>/dev/null; then
-            return 0
-        fi
         if ((EPOCHSECONDS - start > timeout)); then
             echo "Timeout waiting for query $query_id to start" >&2
             exit 1
@@ -240,17 +221,6 @@ function random_str()
     # LC_ALL=C: macOS `tr` errors with "Illegal byte sequence" on the non-UTF-8
     # bytes from /dev/urandom under a UTF-8 locale.
     LC_ALL=C tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
-}
-
-# Repeat a string N times: rep '(' 100
-function rep()
-{
-    local s=$1 n=$2 i
-    if [[ ${#s} == 1 ]]; then
-        head -c "$n" /dev/zero | tr '\0' "$s"
-    else
-        for ((i = 0; i < n; i++)); do printf '%s' "$s"; done
-    fi
 }
 
 function query_with_retry()

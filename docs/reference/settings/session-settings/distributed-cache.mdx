@@ -34,14 +34,6 @@ Only has an effect in ClickHouse Cloud. A setting for testing purposes, do not c
 
 Only has an effect in ClickHouse Cloud. Allow to bypass distributed cache connection pool
 
-## distributed_cache_client_id {#distributed_cache_client_id}
-
-<CloudOnlyBadge/>
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "New setting (CI tests only) to override the distributed cache client id per query."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": ""},{"label": "New setting (CI tests only) to override the distributed cache client id per query."}]}]}/>
-
-Only has an effect in ClickHouse Cloud. A setting used only for CI tests - overrides the registry-configured distributed cache client id for this query's requests when non-empty. Lets tests spread data across a bounded set of client ids while keeping the same data on the same client id. It requires `ci_mode` to be enabled in the distributed cache client config: when it is not (the default, as in production), a query that routes a read or write through the distributed cache fails with `SUPPORT_IS_DISABLED` instead of silently falling back to the configured client id. Queries that never reach the distributed cache are unaffected, so the value is ignored there.
-
 ## distributed_cache_connect_backoff_max_ms {#distributed_cache_connect_backoff_max_ms}
 
 <CloudOnlyBadge/>

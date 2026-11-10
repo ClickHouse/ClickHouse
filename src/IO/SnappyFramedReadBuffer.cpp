@@ -10,7 +10,6 @@
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
 #include <base/unaligned.h>
-#include <bit>
 
 namespace DB
 {
@@ -39,7 +38,7 @@ constexpr size_t MAX_UNCOMPRESSED_CHUNK_SIZE = 65536;
 uint32_t maskedCrc32c(const char * data, size_t size)
 {
     uint32_t crc = crc32c::Crc32c(data, size);
-    return std::rotr(crc, 15) + 0xa282ead8;
+    return ((crc >> 15) | (crc << 17)) + 0xa282ead8;
 }
 
 }
@@ -47,6 +46,7 @@ uint32_t maskedCrc32c(const char * data, size_t size)
 SnappyFramedReadBuffer::SnappyFramedReadBuffer(
     std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
     : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
+    , decompress_buffer(MAX_UNCOMPRESSED_CHUNK_SIZE)
 {
 }
 
@@ -169,7 +169,6 @@ bool SnappyFramedReadBuffer::nextImpl()
                     "Snappy chunk claims uncompressed length {} which exceeds the framing format limit of {}{}",
                     uncompressed_length, MAX_UNCOMPRESSED_CHUNK_SIZE, getExceptionEntryWithFileName(*in));
 
-            decompress_buffer.resize(uncompressed_length);
             if (!snappy::RawUncompress(compressed, payload_size, decompress_buffer.data()))
                 throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
                     "Snappy decompression failed{}",
@@ -212,7 +211,7 @@ bool SnappyFramedReadBuffer::nextImpl()
             /// Snappy framing format encodes the masked CRC-32C as little-endian.
             uint32_t expected_crc = unalignedLoadLittleEndian<uint32_t>(chunk_buf.data());
 
-            decompress_buffer.assign(chunk_buf.data() + 4, payload_size);
+            memcpy(decompress_buffer.data(), chunk_buf.data() + 4, payload_size);
 
             uint32_t actual_crc = maskedCrc32c(decompress_buffer.data(), payload_size);
             if (actual_crc != expected_crc)

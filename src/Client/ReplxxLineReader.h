@@ -12,6 +12,11 @@ namespace DB
 class ReplxxLineReader : public LineReader
 {
 public:
+    /// The highlighter callback of replxx, which also reports whether the last token of the
+    /// query is a delimiter: it sets `last_is_delimiter` to true or false, or leaves it intact
+    /// when this cannot be determined (e.g. the query ends with whitespace).
+    using Highlighter = std::function<void(const String & query, std::vector<replxx::Replxx::Color> & colors, int cursor_position, bool & last_is_delimiter)>;
+
     struct Options
     {
         Suggest & suggest;
@@ -23,18 +28,10 @@ public:
         bool interactive_history_legacy_keymap = false;
         /// Show as-you-type autocompletion hints (ghost text). Requires color (highlighting).
         bool enable_hints = true;
-        /// Use the asynchronously loaded suggestion dictionary for as-you-type hints. Client
-        /// slash commands are static and remain available when this is disabled.
-        bool enable_suggestion_hints = true;
-        /// Offer the `/`-commands of the client (`/help`, `/clear`, ...) at the beginning of the
-        /// input, as hints and as Tab completions. Off by default: `keeper-client` and
-        /// `clickhouse-disks` reuse this reader and have commands of their own, so a leading `/`
-        /// means something else there (the beginning of a path).
-        bool enable_slash_commands = false;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
-        replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+        Highlighter highlighter;
         std::istream & input_stream = std::cin;
         std::ostream & output_stream = std::cout;
         int in_fd = STDIN_FILENO;
@@ -47,10 +44,6 @@ public:
 
     void enableBracketedPaste() override;
     void disableBracketedPaste() override;
-
-    /// If highlight is on, we will set a flag to denote whether the last token is a delimiter.
-    /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.
-    static void setLastIsDelimiter(bool flag);
 
     /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
@@ -84,18 +77,19 @@ private:
     bool hintChosen();
 
     replxx::Replxx rx;
-    replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+    Highlighter highlighter;
+
+    /// If highlight is on, the highlighter reports whether the last token is a delimiter.
+    /// This is used to determine the behavior of <ENTER> key when multiline is enabled.
+    /// It is a member rather than a global, because several readers can work concurrently
+    /// in one process (client sessions embedded into the server).
+    bool last_is_delimiter = false;
 
     /// Suggestion dictionary; used both for Tab completion and as-you-type hints, and updated
     /// with identifiers from committed queries to prioritize recently-used words.
     Suggest & suggest;
 
     const char * word_break_characters;
-
-    /// Whether the `/`-commands of the client are offered as hints and completions (see Options).
-    const bool enable_slash_commands;
-    /// Whether ordinary as-you-type hints may query the asynchronously loaded suggestion dictionary.
-    const bool enable_suggestion_hints;
 
     // used to call flock() to synchronize multiple clients using same history file
     int history_file_fd = -1;
