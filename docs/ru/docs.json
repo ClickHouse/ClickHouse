@@ -14,24 +14,19 @@
           "item": "ClickHouse"
         },
         {
-          "$ref": "./get-started/navigation.json",
-          "icon": "/images/icons/icon-get-started.svg"
+          "$ref": "./get-started/navigation.json"
         },
         {
-          "$ref": "./guides/navigation.json",
-          "icon": "/images/icons/icon-guides.svg"
+          "$ref": "./guides/navigation.json"
         },
         {
-          "$ref": "./concepts/navigation.json",
-          "icon": "/images/icons/icon-concepts.svg"
+          "$ref": "./concepts/navigation.json"
         },
         {
-          "$ref": "./reference/navigation.json",
-          "icon": "/images/icons/icon-reference.svg"
+          "$ref": "./reference/navigation.json"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json",
-          "icon": "/images/icons/icon-postgres.svg"
+          "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
       "tab": "Базы данных"
@@ -44,8 +39,7 @@
           "item": "Развертывания"
         },
         {
-          "$ref": "./products/cloud/navigation.json",
-          "icon": "/images/icons/icon-clickhouse-cloud.svg"
+          "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
@@ -59,8 +53,7 @@
           "item": "Приложения"
         },
         {
-          "$ref": "./clickstack/navigation.json",
-          "icon": "/images/icons/icon-clickstack.svg"
+          "$ref": "./clickstack/navigation.json"
         },
         {
           "href": "https://langfuse.com/docs",
@@ -82,12 +75,10 @@
           ]
         },
         {
-          "$ref": "./chdb/navigation.json",
-          "icon": "/images/icons/icon-chdb.svg"
+          "$ref": "./chdb/navigation.json"
         },
         {
-          "$ref": "./products/kubernetes-operator/navigation.json",
-          "icon": "/images/icons/icon-kubernetes-operator.svg"
+          "$ref": "./products/kubernetes-operator/navigation.json"
         },
         {
           "href": "https://www.librechat.ai/docs",
@@ -106,16 +97,13 @@
           ]
         },
         {
-          "$ref": "./integrations/clickpipes/navigation.json",
-          "icon": "/images/icons/icon-clickpipes.svg"
+          "$ref": "./integrations/clickpipes/navigation.json"
         },
         {
-          "$ref": "./integrations/language-clients/navigation.json",
-          "icon": "/images/icons/icon-language-clients.svg"
+          "$ref": "./integrations/language-clients/navigation.json"
         },
         {
-          "$ref": "./integrations/connectors/navigation.json",
-          "icon": "/images/icons/icon-connectors.svg"
+          "$ref": "./integrations/connectors/navigation.json"
         }
       ],
       "tab": "Интеграции"
@@ -123,20 +111,16 @@
     {
       "menu": [
         {
-          "$ref": "./resources/support-center/navigation.json",
-          "icon": "/images/icons/icon-support-center.svg"
+          "$ref": "./resources/support-center/navigation.json"
         },
         {
-          "$ref": "./resources/develop-contribute/navigation.json",
-          "icon": "/images/icons/icon-contribute.svg"
+          "$ref": "./resources/develop-contribute/navigation.json"
         },
         {
-          "$ref": "./resources/changelogs/navigation.json",
-          "icon": "/images/icons/icon-changelogs.svg"
+          "$ref": "./resources/changelogs/navigation.json"
         },
         {
-          "$ref": "./resources/about/navigation.json",
-          "icon": "/images/icons/icon-about.svg"
+          "$ref": "./resources/about/navigation.json"
         }
       ],
       "tab": "Ресурсы"
