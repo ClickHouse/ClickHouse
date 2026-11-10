@@ -234,7 +234,7 @@ public:
         std::lock_guard cache_lock(mutex);
 
         /// Insert the new value only if the token is still in present in insert_tokens.
-        /// (The token may be absent because of a concurrent clear() call).
+        /// (The token may be absent because of a concurrent `clear` or `removeAndCancelPendingInsertions` call).
         bool result = false;
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
@@ -281,6 +281,20 @@ public:
     {
         std::lock_guard lock(mutex);
         cache_policy->remove(predicate);
+    }
+
+    /// Like `remove`, and also cancels the pending insertions of the matching keys, as `clear` does for all keys: a `getOrSet`
+    /// that is producing the value of such a key when this is called returns that value, but does not insert it into the cache.
+    /// The predicate gets only the key, because a pending insertion has no value in the cache yet.
+    void removeAndCancelPendingInsertions(std::function<bool(const Key &)> predicate)
+    {
+        std::lock_guard lock(mutex);
+        std::erase_if(insert_tokens, [&](const auto & key_and_token) { return predicate(key_and_token.first); });
+        /// A named `std::function`, because a lambda would also convert to some key types, such as `UInt128`, and make the
+        /// call ambiguous with `remove(const Key &)`.
+        std::function<bool(const Key &, const MappedPtr &)> entry_predicate
+            = [&](const Key & key, const MappedPtr &) { return predicate(key); };
+        cache_policy->remove(entry_predicate);
     }
 
     /// O(1) "remove iff" by key: looks up the resident under `key` and
@@ -433,7 +447,12 @@ private:
         void cleanup(std::lock_guard<std::mutex> & /* token_lock */, std::lock_guard<std::mutex> & /* cache_lock */)
             TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
-            token->cache.insert_tokens.erase(*key);
+            /// After `clear` or `removeAndCancelPendingInsertions` removed this token, another `getOrSet` may have added
+            /// a new token for the same key. That one belongs to a pending insertion that is not cancelled, so keep it.
+            /// We only erase if the pointers are equal, that way we know it's not from a different `getOrSet`.
+            auto & tokens = token->cache.insert_tokens;
+            if (auto it = tokens.find(*key); it != tokens.end() && it->second == token)
+                tokens.erase(it);
             token->cleaned_up = true;
             cleaned_up = true;
         }

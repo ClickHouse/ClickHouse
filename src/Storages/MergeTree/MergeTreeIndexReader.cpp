@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
@@ -11,6 +12,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char vector_similarity_index_cache_pause_before_insert[];
 }
 
 /// Mirrors IMergeTreeDataPart::getFileSizeOrZeroResolved: the on-disk name (original or hashed)
@@ -212,7 +218,12 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
                                           index->getFileName(),
                                           mark};
 
-        granule = vector_similarity_index_cache->getOrSet(key, load_func);
+        granule = vector_similarity_index_cache->getOrSet(key, [&](MergeTreeIndexGranulePtr & loaded_granule)
+        {
+            load_func(loaded_granule);
+            /// Lets a test drop the cache entries of the table after the granule is loaded and before it is inserted.
+            FailPointInjection::pauseFailPoint(FailPoints::vector_similarity_index_cache_pause_before_insert);
+        });
     }
     else
     {
