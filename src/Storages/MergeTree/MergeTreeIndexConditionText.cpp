@@ -1360,10 +1360,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     bool candidate_for_exact_mode = true;
     bool is_map_element_value = false;
+    /// The plan does not preprocess a map element, so a preprocessor index does not look up a default needle:
+    /// the atom only keeps the rewrite.
+    bool rewrite_only = false;
     if (traverseMapElementValueNode(function_node, index_column_node, value_field))
     {
         has_index_column = true;
         is_map_element_value = true;
+        rewrite_only = has_preprocessor && isMapValueDefault(value_field.safeGet<String>(), header);
 
         /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
         /// because we have to match the specific key to the value and therefore execute a real filter.
@@ -1514,7 +1518,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
         if (value_data_type.isString())
         {
-            search_tokens = stringToTokens(value_field, /*compact=*/ function_name == "hasAllTokens");
+            if (!rewrite_only)
+                search_tokens = stringToTokens(value_field, /*compact=*/ function_name == "hasAllTokens");
         }
         else
         {
@@ -1529,7 +1534,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 search_tokens = postprocessor->processTokens(std::move(search_tokens));
         }
 
-        const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, search_tokens);
+        const bool keeps_absent_key_rows = rewrite_only || (is_map_element_value && absentMapValueMatches(function_name, search_tokens));
         const auto read_mode = keeps_absent_key_rows ? TextIndexDirectReadMode::None : direct_read_mode;
 
         if (function_name == "hasAnyTokens")
@@ -1709,6 +1714,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(unique_tokens)));
 
+            return true;
+        }
+
+        if (rewrite_only)
+        {
+            out.function = RPNElement::FUNCTION_UNKNOWN;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::All, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>{}));
             return true;
         }
 

@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS tab_pre_nul;
 DROP TABLE IF EXISTS tab_string;
 DROP TABLE IF EXISTS tab_nullable;
 DROP TABLE IF EXISTS tab_post_throw;
+DROP TABLE IF EXISTS tab_pre_throw;
 
 -- The postprocessor maps every token without a lowercase letter to '#', including the default's '\0\0\0'.
 -- The last column adds a condition the index is used for.
@@ -316,6 +317,35 @@ SELECT 'post throw', 'no index',
     (SELECT groupArray(h) FROM (SELECT hasAnyTokens(m['k'], '223') AS h FROM tab_post_throw ORDER BY id))
 SETTINGS use_skip_indexes = 0;
 
+-- The preprocessor rejects both default needles, '' and '\0\0\0', but no stored value.
+CREATE TABLE tab_pre_throw (id UInt32, s Map(String, String), f Map(String, FixedString(3)),
+    INDEX tix_s mapValues(s) TYPE text(tokenizer = ngrams(3), preprocessor = toString(toUInt64(mapValues(s)))),
+    INDEX tix_f mapValues(f) TYPE text(tokenizer = ngrams(3), preprocessor = toString(toUInt64(mapValues(f)))))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_pre_throw VALUES (1, map(), map()), (2, map('k', '123'), map('k', '123'));
+
+SELECT 'pre throw', 'subcolumns=1',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(s['k'], '') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(s['k'], '') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAllTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(f['k'], repeat(char(0), 3)) ORDER BY id))
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'pre throw', 'subcolumns=0',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(s['k'], '') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(s['k'], '') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAllTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(f['k'], repeat(char(0), 3)) ORDER BY id))
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'pre throw', 'no index',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(s['k'], '') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(s['k'], '') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAllTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(f['k'], repeat(char(0), 3)) ORDER BY id))
+SETTINGS use_skip_indexes = 0;
+
 DROP TABLE tab_post;
 DROP TABLE tab_post_lc;
 DROP TABLE tab_phrase;
@@ -327,3 +357,4 @@ DROP TABLE tab_pre_nul;
 DROP TABLE tab_string;
 DROP TABLE tab_nullable;
 DROP TABLE tab_post_throw;
+DROP TABLE tab_pre_throw;
