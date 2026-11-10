@@ -126,7 +126,12 @@ StoragePolicyPtr StorageFactory::Arguments::getStoragePolicy(const String & name
 {
     auto storage_policy = getContext()->getStoragePolicy(name);
     if (!isLoadingFromExistingMetadata(mode))
+    {
         DiskFromAST::ensureStoragePolicyIsAllowed(name, getLocalContext());
+        /// A short `ATTACH` uses the policy of its own stored definition, which is exempt like loading at start.
+        if (!query.attach_short_syntax)
+            DiskFromAST::ensureStoragePolicyHostsAreAllowed(name, getLocalContext());
+    }
     return storage_policy;
 }
 

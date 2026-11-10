@@ -509,11 +509,29 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         # A new wrapper takes the old custom disk by name, without building an HDFS object storage.
         for wrapper in wrapper_disks:
             assert_rejected(wrapper)
+        # The policy of a custom disk selects that disk, so its endpoint is checked like the disk itself.
+        # `Distributed` checks its policy before it resolves the cluster, which is not defined here.
+        for query in [
+            "CREATE TABLE t_rejected_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x "
+            "SETTINGS storage_policy = '__old_hdfs'",
+            "CREATE TABLE t_rejected_hdfs_disk (x UInt32) "
+            "ENGINE = Distributed(no_cluster, default, t_default_policy, rand(), '__old_hdfs')",
+            "ALTER TABLE t_default_policy MODIFY SETTING storage_policy = '__old_hdfs'",
+        ]:
+            error = node.query_and_get_error(query)
+            assert "UNACCEPTABLE_URL" in error, error
 
     # Created before the list excludes hdfs1: loaded from metadata on restart, so they are only reported.
     create("t_existing_hdfs_disk", existing_disk)
     create("t_locations_hdfs_disk", locations_disk, settings=include_settings)
     create("t_named_hdfs_disk", named_disk)
+    # The policy of a custom disk may be used while the host of that disk is allowed.
+    node.query(
+        "CREATE TABLE t_policy_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS storage_policy = '__old_hdfs'"
+    )
+    node.query("INSERT INTO t_policy_hdfs_disk VALUES (1)")
+    node.query("CREATE TABLE t_default_policy (x UInt32) ENGINE = MergeTree ORDER BY x")
     create("t_macro_hdfs_disk", macro_disk)
     create("t_include_wrapper_disk", include_wrapper_disk, settings=include_settings)
     # The disk is cached when it is created, even if a MergeTree table on an empty read-only disk then fails.
@@ -530,6 +548,13 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         # Identical definitions reuse the disks created before the list was tightened.
         assert_reuse_rejected()
         assert_rejected(read_only_disk)
+
+        # A short ATTACH uses the policy of its stored definition, so it is not checked.
+        node.query("DETACH TABLE t_policy_hdfs_disk")
+        node.query("ATTACH TABLE t_policy_hdfs_disk")
+        assert node.query("SELECT x FROM t_policy_hdfs_disk") == "1\n"
+        # On restart its policy exists only once the table that declares `old_hdfs` is loaded.
+        node.query("DROP TABLE t_policy_hdfs_disk SYNC")
 
         # The cached wrapper still delegates to old_hdfs even though its include now names a server disk.
         node.replace_in_config(include_config, "<disk>old_hdfs</disk>", "<disk>default</disk>")
@@ -560,6 +585,11 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         node.query("ATTACH TABLE t_existing_hdfs_disk")
         assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
 
-    for table in ["t_existing_hdfs_disk", "t_locations_hdfs_disk", "t_named_hdfs_disk"]:
+    for table in [
+        "t_existing_hdfs_disk",
+        "t_locations_hdfs_disk",
+        "t_named_hdfs_disk",
+        "t_default_policy",
+    ]:
         node.query(f"DROP TABLE {table} SYNC")
     node.query("DROP TABLE IF EXISTS t_ro_hdfs_disk SYNC")
