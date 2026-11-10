@@ -51,7 +51,9 @@ public:
 
     bool isRemote() const override { return true; }
     void removeObjectIfExists(const DB::StoredObject &) override {}
-    void removeObjectsIfExist(const DB::StoredObjects &) override {}
+    void removeObjectsIfExist(
+        const DB::StoredObjects &,
+        DB::StoredObjects *) override {}
 
     void copyObject(
         const DB::StoredObject &,

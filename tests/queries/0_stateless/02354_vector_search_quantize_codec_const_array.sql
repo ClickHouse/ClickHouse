@@ -2,7 +2,7 @@
 -- reach the `Quantized` serializer as a `ColumnConst(Array)`. The write path must materialize it rather than reject the
 -- cast to `ColumnArray`. Covers a data-independent method (`int8`) and the trained `product` method (whose training also casts).
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 DROP TABLE IF EXISTS quantize_const_flat;
 CREATE TABLE quantize_const_flat (id UInt32, vec Array(Float32) CODEC(Quantized('int8', 8))) ENGINE = MergeTree ORDER BY id;

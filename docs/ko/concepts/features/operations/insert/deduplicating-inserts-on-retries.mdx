@@ -2,13 +2,15 @@
 slug: /guides/developer/deduplicating-inserts-on-retries
 title: '재시도 시 삽입 중복 제거'
 description: '삽입 작업 재시도 시 중복 데이터 방지'
-keywords: ['중복 제거', '중복 제거하다', '삽입 재시도', '삽입']
+keywords: ['중복 제거', '중복 제거하다', '삽입 재시도', '삽입', '비동기 삽입']
 doc_type: 'guide'
 ---
 
-삽입 작업은 타임아웃과 같은 오류로 인해 때때로 실패할 수 있습니다. 삽입이 실패하면 데이터가 실제로 성공적으로 삽입되었을 수도 있고, 그렇지 않을 수도 있습니다. 이 가이드에서는 동일한 데이터가 두 번 이상 삽입되지 않도록 삽입 재시도 시 중복 제거를 활성화하는 방법을 설명합니다.
+삽입 작업은 타임아웃과 같은 오류로 인해 때때로 실패할 수 있습니다. 삽입이 실패하면 데이터가 실제로 성공적으로 삽입되었을 수도 있고, 그렇지 않을 수도 있습니다. 이 가이드에서는 동일한 데이터가 두 번 이상 삽입되지 않도록 삽입 재시도 시 중복 제거가 작동하는 방식을 설명합니다.
 
 삽입을 재시도하면 ClickHouse는 해당 데이터가 이미 성공적으로 삽입되었는지 확인합니다. 삽입된 데이터가 중복으로 표시되면 ClickHouse는 이를 대상 테이블에 삽입하지 않습니다. 하지만 사용자에게는 데이터가 정상적으로 삽입된 것과 동일하게 작업 성공 상태가 반환됩니다.
+
+중복 제거는 동기 삽입, 비동기 삽입 및 `INSERT ... SELECT` 쿼리를 지원합니다. `deduplicate_insert` 설정 하나로 동기 및 비동기 삽입을 제어합니다. `INSERT ... SELECT`에는 추가 주의가 필요하며 전용 설정이 있습니다. [삽입 중복 제거를 제어하는 설정](#settings-that-control-insert-deduplication)을 참조하십시오.
 
 <div id="limitations">
   ## 제한 사항
@@ -26,25 +28,72 @@ doc_type: 'guide'
 
 재시도하는 동안 다른 삽입 작업이 `*_deduplication_window`를 초과해 발생하면 중복 제거가 의도대로 작동하지 않을 수 있습니다. 이 경우 동일한 데이터가 여러 번 삽입될 수 있습니다.
 
-<div id="enabling-insert-deduplication-on-retries">
-  ## 재시도 시 삽입 중복 제거 활성화
+<div id="settings-that-control-insert-deduplication">
+  ## 삽입 중복 제거를 제어하는 설정
 </div>
 
+ClickHouse는 다음 두 조건이 모두 충족될 때만 삽입 시 중복을 제거합니다.
+
+1. 대상 테이블에서 중복 제거 로그를 유지합니다. 이는 테이블 수준 설정입니다.
+2. 쿼리 수준에서 중복 제거가 활성화되어 있습니다. 이는 쿼리 수준 설정입니다.
+
 <div id="insert-deduplication-for-tables">
-  ### 테이블의 삽입 중복 제거
+  ### 테이블 수준 설정
 </div>
 
 **삽입 시 중복 제거는 `*MergeTree` 엔진에서만 지원됩니다.**
 
-`*ReplicatedMergeTree` 엔진에서는 삽입 중복 제거가 기본적으로 활성화되어 있으며, [`replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) 및 [`replicated_deduplication_window_seconds`](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) 설정으로 제어됩니다. 복제되지 않은 `*MergeTree` 엔진에서는 중복 제거가 [`non_replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) 설정으로 제어됩니다.
+`*ReplicatedMergeTree` 엔진에서는 중복 제거 로그가 기본적으로 활성화되어 있으며, [`replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) 및 [`replicated_deduplication_window_seconds`](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) 설정으로 제어됩니다. 복제되지 않은 `*MergeTree` 엔진에서는 로그가 [`non_replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) 설정으로 제어되며, 기본값은 `0`입니다. 따라서 일반 `MergeTree` 테이블은 해당 윈도우를 양수 값으로 설정하기 전까지 아무것도 중복 제거하지 않습니다.
 
 위 설정은 테이블의 중복 제거 로그에 대한 매개변수를 결정합니다. 중복 제거 로그에는 제한된 개수의 `block_id`가 저장되며, 이 값이 중복 제거 동작 방식을 결정합니다(아래 참조).
 
+<Note>
+  [`replicated_deduplication_window_for_async_inserts`](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_for_async_inserts) 및 [`replicated_deduplication_window_seconds_for_async_inserts`](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds_for_async_inserts)는 레거시 설정입니다. 이제 동기 및 비동기 삽입은 하나의 중복 제거 로그를 공유하므로 `replicated_deduplication_window`가 둘 다 제어합니다. 레거시 설정은 롤링 업그레이드 중에 중요한 기존 ClickHouse Keeper 디렉터리의 범위만 제한했습니다.
+</Note>
+
 <div id="query-level-insert-deduplication">
-  ### 쿼리 수준 삽입 중복 제거
+  ### 쿼리 수준 설정
 </div>
 
-설정 `insert_deduplicate=1`을 사용하면 쿼리 수준의 중복 제거가 활성화됩니다. `insert_deduplicate=0`으로 데이터를 삽입한 경우, 이후 `insert_deduplicate=1`로 삽입을 다시 시도하더라도 해당 데이터는 중복 제거되지 않습니다. 이는 `insert_deduplicate=0`으로 삽입할 때는 각 블록에 대한 `block_id`가 기록되지 않기 때문입니다.
+| 설정                                                                                                                                                    | 적용 대상                      | 기본값                    | 용도                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ---------------------- | ------------------------------------------- |
+| [`deduplicate_insert`](/ko/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)                                                    | 동기 또는 비동기 방식의 모든 `INSERT`  | `enable`               | 삽입 중복 제거의 기본 스위치                            |
+| [`deduplicate_insert_select`](/ko/reference/settings/session-settings/deduplicate-insert#deduplicate_insert_select)                                      | `INSERT ... SELECT`        | `enable_when_possible` | `SELECT` 결과를 재현할 수 없을 때의 처리 방식을 결정합니다       |
+| [`insert_deduplication_token`](/ko/reference/settings/session-settings/insert#insert_deduplication_token)                                                | 모든 `INSERT`                | `''`                   | 데이터 대신 사용자가 제공한 문자열로 삽입을 식별합니다              |
+| [`deduplicate_blocks_in_dependent_materialized_views`](/ko/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) | materialized view에 종속된 테이블 | `1`                    | 종속 materialized view의 대상 테이블까지 중복 제거를 확장합니다 |
+
+`deduplicate_insert`는 세 가지 값을 허용합니다.
+
+* `enable` — `INSERT` 쿼리에 대해 중복 제거가 활성화됩니다.
+* `disable` — `INSERT` 쿼리에 대해 중복 제거가 비활성화됩니다.
+* `backward_compatible_choice` — 레거시 설정인 `insert_deduplicate`(동기 삽입) 및 `async_insert_deduplicate`(비동기 삽입)가 이 결정을 내립니다.
+
+`deduplicate_insert = disable`로 실행되는 쿼리는 해당 블록의 `block_id`를 기록하지 않습니다. 따라서 나중에 `deduplicate_insert = enable`로 삽입을 재시도하더라도 이러한 데이터는 중복 제거할 수 없습니다. 대상 테이블에 중복 제거 로그가 없는 경우에도 마찬가지입니다. 아무것도 기록되지 않으므로 재시도 시 대조할 항목도 없습니다.
+
+<div id="precedence">
+  ### precedence
+</div>
+
+1. `INSERT ... SELECT` 쿼리에서는 `deduplicate_insert_select`이 적용됩니다. [INSERT ... SELECT의 중복 제거](#deduplication-for-insert-select)를 참조하십시오.
+2. 그 밖의 모든 `INSERT`에서는 `deduplicate_insert`이 적용됩니다.
+3. `deduplicate_insert`이 `backward_compatible_choice`인 경우에만 `insert_deduplicate` 및 `async_insert_deduplicate`를 읽습니다.
+
+<div id="legacy-and-obsolete-settings">
+  ### 레거시 및 더 이상 사용되지 않는 설정
+</div>
+
+| 설정                                                                                                       | 상태                                                              | 대신 사용할 항목                   |
+| -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------- |
+| [`insert_deduplicate`](/ko/reference/settings/session-settings/insert#insert_deduplicate)                   | 레거시. `deduplicate_insert = backward_compatible_choice`일 때만 읽습니다 | `deduplicate_insert`        |
+| [`async_insert_deduplicate`](/ko/reference/settings/session-settings/async-insert#async_insert_deduplicate) | 레거시. `deduplicate_insert = backward_compatible_choice`일 때만 읽습니다 | `deduplicate_insert`        |
+| `insert_select_deduplicate`                                                                              | 더 이상 사용되지 않음. 효과 없음                                             | `deduplicate_insert_select` |
+| `update_insert_deduplication_token_in_dependent_materialized_views`                                      | 더 이상 사용되지 않음. 효과 없음                                             | —                           |
+
+<Warning>
+  버전 26.2부터 `deduplicate_insert`의 기본값은 `enable`입니다. 따라서 `insert_deduplicate = 0`만 설정해서는 더 이상 중복 제거를 비활성화할 수 없습니다. 중복 제거를 비활성화하려면 `deduplicate_insert = disable`로 설정하십시오.
+</Warning>
+
+버전 26.2에서는 `async_insert` 및 `deduplicate_blocks_in_dependent_materialized_views`의 기본값도 활성화됨으로 변경되었습니다. [`compatibility`](/ko/reference/settings/session-settings/compatibility#compatibility) 설정은 이 3개 설정을 모두 제어합니다. `compatibility`를 `26.2` 이전 버전으로 설정하면 이 설정들은 이전 기본값을 유지합니다. 즉, `deduplicate_insert`는 `backward_compatible_choice`가 되며, 이 경우 `insert_deduplicate` 및 `async_insert_deduplicate`가 결정합니다. 명시적으로 지정한 설정은 항상 적용되며 `compatibility`의 영향을 받지 않습니다.
 
 <div id="how-insert-deduplication-works">
   ## 삽입 중복 제거의 작동 방식
@@ -54,12 +103,79 @@ ClickHouse에 데이터를 삽입하면 행 수와 바이트 수를 기준으로
 
 `*MergeTree` 엔진을 사용하는 테이블에서는 각 블록에 해당 블록 데이터의 해시값인 고유한 `block_id`가 할당됩니다. 이 `block_id`는 삽입 작업의 고유 키로 사용됩니다. 중복 제거 로그에서 동일한 `block_id`가 발견되면 해당 블록은 중복으로 간주되며 테이블에 삽입되지 않습니다.
 
-이 방식은 삽입마다 서로 다른 데이터가 포함되는 경우에 효과적입니다. 하지만 동일한 데이터를 의도적으로 여러 번 삽입해야 하는 경우에는 중복 제거 과정을 제어하기 위해 `insert_deduplication_token` 설정을 사용해야 합니다. 이 설정을 사용하면 각 삽입에 대해 고유한 토큰을 지정할 수 있으며, ClickHouse는 이를 기준으로 데이터가 중복인지 판단합니다.
+이 방식은 삽입마다 서로 다른 데이터가 포함되는 경우에 효과적입니다. 하지만 동일한 데이터를 의도적으로 여러 번 삽입해야 하는 경우에는 중복 제거 과정을 제어하기 위해 `insert_deduplication_token` 설정을 사용해야 합니다. 이 설정을 사용하면 각 삽입에 대해 고유한 토큰을 지정할 수 있으며, ClickHouse는 이를 기준으로 데이터가 중복인지 판단합니다. `insert_deduplication_token`의 우선순위가 더 높습니다. 토큰이 제공되면 ClickHouse는 데이터의 해시 합을 사용하지 않습니다.
 
 `INSERT ... VALUES` 쿼리의 경우, 삽입된 데이터를 블록으로 나누는 방식은 결정적이며 설정값에 따라 정해집니다. 따라서 삽입을 재시도할 때는 최초 작업과 동일한 설정값을 사용해야 합니다.
 
-`INSERT ... SELECT` 쿼리의 경우에는 쿼리의 `SELECT` 부분이 매 작업마다 동일한 순서로 동일한 데이터를 반환하는 것이 중요합니다. 다만 실제로는 이를 달성하기가 어렵습니다. 재시도 시 데이터 순서를 안정적으로 유지하려면 쿼리의 `SELECT` 부분에 `ORDER BY ALL` 절을 정의하십시오. 현재는 쿼리에서 반드시 정확히 `ORDER BY ALL`을 사용해야 합니다. `ORDER BY` 지원은 아직 구현되지 않았으므로, 쿼리의 `SELECT` 부분은 안정적인 것으로 간주되지 않습니다. 또한 재시도 사이에 선택 대상 테이블이 업데이트될 수 있다는 점도 유의해야 합니다. 이 경우 결과 데이터가 변경되어 중복 제거가 수행되지 않을 수 있습니다. 또한 대량의 데이터를 삽입하는 경우에는 삽입 후 생성되는 블록 수가 중복 제거 로그 윈도우를 초과할 수 있으며, 이 경우 ClickHouse가 해당 블록을 중복 제거해야 하는지 판단하지 못할 수 있습니다.
-현재 `INSERT ... SELECT`의 동작은 `insert_select_deduplicate` 설정으로 제어됩니다. 이 설정은 `INSERT ... SELECT` 쿼리로 삽입된 데이터에 중복 제거를 적용할지 여부를 결정합니다. 자세한 내용과 사용 예시는 링크된 문서를 참조하십시오.
+<div id="deduplication-for-insert-select">
+  ## `INSERT ... SELECT`의 중복 제거
+</div>
+
+`INSERT ... SELECT` 쿼리에서는 매 시도마다 `SELECT` 부분이 동일한 데이터를 동일한 순서로 반환해야 합니다. 그렇지 않으면 블록과 `block_id`가 달라져 재시도가 중복으로 인식되지 않습니다.
+
+ClickHouse는 원본 데이터가 변경되지 않았는지 확인할 수 없지만, 쿼리 자체가 재현 가능한 결과를 생성하는지는 확인할 수 있습니다. 다음 두 조건을 모두 충족하면 `SELECT`는 **안정적**인 것으로 처리됩니다.
+
+* 쿼리에 `ORDER BY ALL` 절이 포함되어 있습니다. 리터럴 `ORDER BY ALL`만 인식됩니다. 일반적인 `ORDER BY <expressions>`는 인식되지 않으며, 2개 이상의 `SELECT`를 `UNION`한 쿼리는 안정적인 것으로 처리되지 않습니다.
+* 읽기 파이프라인이 단일 스트림으로 끝납니다.
+
+비어 있지 않은 `insert_deduplication_token`은 안정성을 대체할 수 있는 동등한 수단입니다. 이 경우 데이터가 아니라 토큰으로 삽입을 식별하기 때문입니다.
+
+`deduplicate_insert_select` 설정으로 수행할 작업을 선택합니다.
+
+| 값                             | 동작                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `enable_when_possible` (기본값)  | `SELECT`가 안정적이거나 토큰이 설정된 경우 중복을 제거합니다. 그렇지 않으면 중복 제거를 건너뛰고 서버 로그에 메시지를 기록합니다.                           |
+| `force_enable`                | 항상 중복을 제거합니다. `SELECT`가 안정적이지 않고 토큰도 설정되지 않은 경우 `DEDUPLICATION_IS_NOT_POSSIBLE` 예외를 발생시킵니다.             |
+| `enable_even_for_bad_queries` | 안정성과 관계없이 중복을 제거합니다. 이전 버전과의 호환성을 위해 유지됩니다. 불안정한 `SELECT`에서는 재시도가 대개 중복으로 인식되지 않으므로 다른 값을 사용하는 것이 좋습니다. |
+| `disable`                     | `INSERT ... SELECT`에 대해 중복 제거를 수행하지 않습니다.                                                               |
+
+`enable_when_possible` 및 `enable_even_for_bad_queries`는 `deduplicate_insert` 설정도 따릅니다. 이 값이 `disable`이면 쿼리에 중복 제거가 적용되지 않습니다. `force_enable`은 `deduplicate_insert`를 재정의합니다.
+
+선택한 테이블은 재시도 사이에 업데이트될 수 있다는 점에 유의하십시오. 이 경우 두 방식은 서로 반대로 동작합니다.
+
+* `insert_deduplication_token`이 없으면 `block_id`는 데이터에서 계산됩니다. 변경된 결과로 인해 다른 `block_id`가 생성되므로 중복 제거가 수행되지 않으며, 재시도 시 첫 번째 시도에서 이미 기록한 데이터에 새 데이터가 추가로 삽입됩니다.
+* `insert_deduplication_token`이 있으면 토큰만으로 삽입을 식별합니다. 재시도 시 다른 데이터가 삽입되었을 수 있더라도 중복으로 인식되어 삭제됩니다.
+
+재시도가 어떤 의미를 가져야 하는지에 맞는 방식을 선택하십시오. 또한 대량의 데이터를 삽입하면 블록 수가 중복 제거 로그 윈도우를 오버플로우할 수 있으며, 이 경우 ClickHouse는 블록을 중복 제거해야 하는지 알 수 없습니다.
+
+<div id="deduplication-for-asynchronous-inserts">
+  ## 비동기 삽입의 중복 제거
+</div>
+
+비동기 삽입([`async_insert`](/ko/reference/settings/session-settings/async-insert#async_insert), 버전 26.2부터 기본 활성화)은 동기 삽입과 마찬가지로 재시도 시 중복 제거됩니다. `deduplicate_insert`는 두 방식 모두를 제어하므로 별도의 설정은 필요하지 않습니다.
+
+두 삽입 방식은 하나의 중복 제거 로그를 공유하고 동일한 방식으로 `block_id`를 계산합니다. 따라서 중복 제거에 영향을 주지 않고 클라이언트를 동기 삽입과 비동기 삽입 간에 전환할 수 있습니다. 한 모드에서 전송한 재시도도 다른 모드에서 전송한 시도의 중복으로 인식됩니다. 중복 제거에 의존하는 테이블에서도 워크로드를 동기 삽입에서 비동기 삽입으로 안전하게 전환할 수 있습니다.
+
+<Note>
+  버전 26.2 이전에는 비동기 삽입의 중복 제거가 기본적으로 비활성화되어 있었으며, `async_insert_deduplicate`로 제어되었습니다. 이제 이 설정은 `deduplicate_insert`가 `backward_compatible_choice`인 경우에만 읽습니다.
+</Note>
+
+<div id="asynchronous-insert-deduplication-granularity">
+  ### 중복 제거 세분화 수준
+</div>
+
+서버는 여러 비동기 삽입을 하나의 배치로 묶어, 서로 다른 파티션 키 값마다 최소 하나씩 하나 이상의 파트에 기록합니다. 중복 제거는 배치 단위가 아니라 사용자 쿼리 단위로 수행됩니다.
+
+* 큐에 있는 각 쿼리는 배치에 하나의 중복 제거 토큰을 추가합니다.
+* 토큰은 쿼리에서 제공된 경우 `insert_deduplication_token`의 값이고, 그렇지 않은 경우 해당 쿼리가 추가한 행의 해시입니다.
+* 배칭은 토큰에 영향을 주지 않으며, `insert_deduplication_token`은 쿼리가 배치로 묶이는 방식에 영향을 주지 않습니다.
+
+이로 인해 다음과 같은 두 가지 결과가 발생합니다.
+
+* 배치 내 한 쿼리가 중복인 경우 ClickHouse는 해당 쿼리의 행만 제거합니다. 배치의 나머지 행은 정상적으로 삽입됩니다. 모든 행이 제거된 경우에만 파트 전체를 건너뜁니다.
+* 동일한 배치에 있는 두 쿼리가 같은 토큰을 가지면, 두 번째 쿼리는 파트가 기록되기 전에 삭제됩니다. 이는 파티션별로 적용됩니다. 두 쿼리가 서로 다른 파티션에 행을 기록하면 둘 다 유지됩니다.
+
+[`system.events`](/ko/reference/system-tables/events)의 `DuplicatedAsyncInserts` 및 `SelfDuplicatedAsyncInserts` 이벤트는 이 두 가지 사례를 집계합니다.
+
+<div id="asynchronous-inserts-and-materialized-views">
+  ### 비동기 삽입 및 materialized view
+</div>
+
+비동기 삽입의 중복 제거는 종속 materialized view와 연동됩니다. 규칙은 간단합니다. 블록 하나가 들어오면 블록 하나가 나옵니다. 뷰의 내부 쿼리가 입력 블록 하나를 출력 블록 하나로 변환하면 중복 제거가 작동합니다. 뷰가 두 번째 블록을 내보내면 ClickHouse에서 `NOT_IMPLEMENTED` 예외가 발생합니다.
+
+뷰의 출력이 하나의 블록에 담기지 않으면 두 번째 블록을 내보냅니다. [`max_block_size`](/ko/reference/settings/session-settings/max#max_block_size)는 하나의 블록에 담을 수 있는 행 수를 설정합니다. 컬럼 변환, 필터링, 집계는 행을 추가하지 않으므로 항상 하나의 블록으로 유지됩니다. `JOIN`은 행을 추가할 수 있습니다. 결과가 `max_block_size` 이하이면 작동하지만, 이를 초과하면 실패합니다.
+
+둘 이상의 블록을 내보내는 뷰를 통해 삽입하려면 `deduplicate_blocks_in_dependent_materialized_views = 0`을 설정하거나 동기 삽입을 사용하십시오.
 
 <div id="insert-deduplication-with-materialized-views">
   ## materialized view에서의 삽입 중복 제거
@@ -67,16 +183,15 @@ ClickHouse에 데이터를 삽입하면 행 수와 바이트 수를 기준으로
 
 테이블에 하나 이상의 materialized view가 있으면, 삽입된 데이터는 정의된 변환을 거쳐 해당 뷰의 대상에도 삽입됩니다. 변환된 데이터도 재시도 시 중복 제거됩니다. ClickHouse는 대상 테이블에 삽입된 데이터를 중복 제거하는 것과 동일한 방식으로 materialized view에 대해서도 중복 제거를 수행합니다.
 
-다음 소스 테이블 설정으로 이 과정을 제어할 수 있습니다.
+다음 원본 테이블 설정으로 이 과정을 제어할 수 있습니다.
 
 * [`replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)
 * [`replicated_deduplication_window_seconds`](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
 * [`non_replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
 
-사용자 프로필 설정 [`deduplicate_blocks_in_dependent_materialized_views`](/ko/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)도 활성화해야 합니다.
-`insert_deduplicate=1`을 활성화하면 삽입된 데이터가 소스 테이블에서 중복 제거됩니다. `deduplicate_blocks_in_dependent_materialized_views=1` 설정을 사용하면 종속 테이블에서도 추가로 중복 제거가 활성화됩니다. 전체 중복 제거가 필요하면 두 설정을 모두 활성화해야 합니다.
+materialized view의 대상 테이블에서 중복 제거는 사용자 프로필 설정 [`deduplicate_blocks_in_dependent_materialized_views`](/ko/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)의 추가 제어를 받으며, 이 설정은 버전 26.2부터 기본적으로 활성화되어 있습니다. 두 설정 모두 중복 제거를 허용해야 합니다. `deduplicate_insert`는 원본 테이블에 삽입된 데이터를 중복 제거하고, `deduplicate_blocks_in_dependent_materialized_views`는 종속 테이블의 데이터도 추가로 중복 제거합니다. 전체 중복 제거가 필요하면 두 설정을 모두 활성화하십시오.
 
-materialized view의 대상 테이블에 블록을 삽입할 때 ClickHouse는 소스 테이블의 `block_id`와 추가 식별자를 결합한 문자열을 해시하여 `block_id`를 계산합니다. 이를 통해 materialized view 내에서 정확한 중복 제거가 보장되며, materialized view의 대상 테이블에 도달하기 전에 어떤 변환이 적용되었는지와 관계없이 원래 삽입된 기준에 따라 데이터를 구분할 수 있습니다.
+materialized view의 대상 테이블에 블록을 삽입할 때 ClickHouse는 원본 테이블의 `block_id`와 추가 식별자를 결합한 문자열을 해시하여 `block_id`를 계산합니다. 이를 통해 materialized view 내에서 정확한 중복 제거가 보장되며, materialized view의 대상 테이블에 도달하기 전에 어떤 변환이 적용되었는지와 관계없이 원래 삽입된 기준에 따라 데이터를 구분할 수 있습니다.
 
 <div id="examples">
   ## 예시
@@ -122,11 +237,11 @@ SET min_insert_block_size_bytes=0;
 
 위 설정을 사용하면 행(row)이 1개만 포함된 일련의 블록으로 이루어진 테이블(table)에서 데이터를 선택할 수 있습니다. 이러한 작은 블록은 더 큰 블록으로 합쳐지지 않으며, 테이블에 삽입될 때까지 그대로 유지됩니다.
 
+기본적으로 활성화되어 있지만, materialized view에서 중복 제거를 명시적으로 설정합니다:
+
 ```sql
 SET deduplicate_blocks_in_dependent_materialized_views=1;
 ```
-
-materialized view에 대해 중복 제거를 활성화해야 합니다:
 
 ```sql
 INSERT INTO dst SELECT

@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 
+#include <Interpreters/QueryExecutionCounters.h>
+
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/RecursiveCTESource.h>
@@ -15,7 +17,11 @@ ReadFromRecursiveCTEStep::ReadFromRecursiveCTEStep(SharedHeader output_header_, 
 
 void ReadFromRecursiveCTEStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    pipeline.init(Pipe(std::make_shared<RecursiveCTESource>(getOutputHeader(), recursive_cte_union_node)));
+    /// The name of the scope is taken here, while this pipeline is being assembled, and not inside the
+    /// source: it has to be the same name every time this pipeline is assembled again, which a name
+    /// derived from the source object could not be.
+    pipeline.init(Pipe(std::make_shared<RecursiveCTESource>(
+        getOutputHeader(), recursive_cte_union_node, QueryExecutionCounters::makeScopeForPipelineBuiltLater("recursive_cte"))));
 
     /// A recursive CTE is produced by a single stateful source: every iteration reads the result of the
     /// previous one, so the source cannot be parallelized internally and the pipeline starts with a single

@@ -1,0 +1,42 @@
+runtime filter reaches the file read's PREWHERE (expect 1):
+1
+without runtime filters the same anchor is absent (expect 0):
+0
+cache engages on this file, run 1 (expect 1):
+1
+cache engages on this file, run 2 (expect 1):
+1
+the same join without runtime filters (expect 0):
+0
+join with a runtime filter (expect 0):
+0
+plain read of the same predicate, cache on (expect 1429):
+1429
+plain read of the same predicate, cache off (expect 1429):
+1429
+deterministic PREWHERE reaches the file read (expect 1):
+1
+deterministic PREWHERE, run 1 (expect 5001):
+5001
+deterministic PREWHERE, run 2 (expect 5001):
+5001
+first plain read was a cache miss (expect 1):
+1
+second plain read was a cache hit (expect 1):
+1
+the join's own predicate is cache-eligible without a runtime filter (expect 1):
+1
+the runtime-filter query recorded no cache miss (expect 0):
+0
+the runtime-filter query recorded no cache hit (expect 0):
+0
+the runtime filter was consulted (expect 1):
+1
+the runtime filter removed rows (expect 1):
+1
+without runtime filters the same counter is absent (expect 0):
+0
+deterministic PREWHERE run 1 was a cache miss (expect 1):
+1
+deterministic PREWHERE run 2 was a cache hit (expect 1):
+1

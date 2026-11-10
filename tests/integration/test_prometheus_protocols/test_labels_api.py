@@ -79,10 +79,10 @@ def setup():
         )
         node.query(
             "CREATE TABLE prometheus_no_bounds ENGINE=TimeSeries "
-            "SETTINGS store_min_time_and_max_time = 0"
+            "SETTINGS store_time_ranges = 0"
         )
         node.query(
-            "INSERT INTO prometheus_no_bounds (metric_name, tags, time_series) VALUES "
+            "INSERT INTO prometheus_no_bounds (metric_name, tags, samples) VALUES "
             "('cpu_usage', {'host': 'server1'}, [(toDateTime64(1000, 3), 0.5)])"
         )
         send_test_data()
@@ -174,7 +174,7 @@ def test_labels_empty_optional_parameters_are_ignored():
 
 
 def test_labels_time_range_is_ignored_without_stored_time_bounds():
-    # Without stored min_time/max_time the time range is ignored (a superset is allowed by Prometheus).
+    # Without stored time ranges the time range is ignored (a superset is allowed by Prometheus).
     data = get_json_from_api("/no_bounds/api/v1/labels?start=2000&end=3000")["data"]
     assert data == ["__name__", "host"]
 

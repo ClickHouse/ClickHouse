@@ -71,6 +71,18 @@ public:
 
     void setPreSwapCheck(PreSwapCheck check) { pre_swap_check = std::move(check); }
 
+    /// Skip this query's own access check. Set only for the internal publishing rename of
+    /// `doCreateOrReplaceTable`: it renames from a random `_tmp_replace_*` name that no grant can
+    /// cover, and `getRequiredAccess` would also ask for `CREATE TABLE`/`INSERT` on the final name,
+    /// which are not the grants of a view's or a dictionary's kind. The caller authorizes the
+    /// privileges that matter against the user-visible names instead (see `getRequiredAccess` of
+    /// `InterpreterCreateQuery` and the pre-swap check above). Never set this for a user rename.
+    void setSkipAccessCheck(bool skip) { skip_access_check = skip; }
+
+    /// Keep the view-dependency edges of a renamed source table on its old name, as `EXCHANGE` does.
+    /// For an internal rename that moves a table away to create its replacement under the same name.
+    void setKeepSourceViewDependencies(bool keep) { keep_source_view_dependencies = keep; }
+
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
     bool renamedInsteadOfExchange() const { return renamed_instead_of_exchange; }
@@ -89,6 +101,8 @@ private:
 
     ASTPtr query_ptr;
     bool renamed_instead_of_exchange{false};
+    bool skip_access_check{false};
+    bool keep_source_view_dependencies{false};
     PreSwapCheck pre_swap_check;
 };
 

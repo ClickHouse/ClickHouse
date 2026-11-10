@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/Names.h>
+#include <Common/PODArray.h>
 
 #include <map>
 
@@ -65,16 +66,25 @@ public:
     bool hasNext() const;
 
 private:
-    /// Element-space filtered variant of next(): applies array_join->element_filter to the nested
-    /// element columns of one window and expands only the surviving elements.
+    /// Element-space filtered variant of next(): runs the element filter over one window (row columns
+    /// it reads are broadcast to the elements) and expands only the survivors.
     Block nextWithElementFilter();
+
+    void initAnyArray();
+    const PaddedPODArray<UInt64> & anyOffsets() const;
+    ColumnPtr cutAnyArray(size_t start, size_t length) const;
+    /// Window of the joined column `name` as a full ColumnArray, padded for aligned LEFT ARRAY JOIN.
+    ColumnPtr cutArrayJoinColumn(const String & name, const ColumnPtr & column, const ColumnPtr & cut_any_col, size_t window_rows) const;
 
     const ArrayJoinAction * array_join;
     Block block;
     bool enable_lazy_columns_replication;
 
+    /// Array of the first joined column, padded for LEFT ARRAY JOIN and resized if unaligned.
     ColumnPtr any_array_map_ptr;
-    const ColumnArray * any_array;
+    /// Null if the joined column is replicated, then replicated_offsets is used instead.
+    const ColumnArray * any_array = nullptr;
+    PaddedPODArray<UInt64> replicated_offsets;
     /// If LEFT ARRAY JOIN, then we create columns in which empty arrays are replaced by arrays with one element - the default value.
     std::map<String, ColumnPtr> non_empty_array_columns;
 

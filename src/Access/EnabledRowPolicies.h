@@ -28,6 +28,9 @@ struct RowPolicyFilter
 
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 
+/// Combines two prepared row policy filters with a logical AND and retains their contributing policies.
+RowPolicyFilterPtr combineRowPolicyFilters(RowPolicyFilterPtr filter, RowPolicyFilterPtr combine_with_filter);
+
 
 /// Provides fast access to row policies' conditions for a specific user and tables.
 class EnabledRowPolicies

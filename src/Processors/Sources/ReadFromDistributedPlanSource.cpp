@@ -5,6 +5,7 @@
 #include <Processors/Chunk.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <base/scope_guard.h>
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 #include <Common/Epoll.h>
@@ -19,6 +20,9 @@ void ReadFromDistributedPlanSource::cleanupLocked()
         return;
     /// Mark cleaned up before the call so a throwing cleanup is not retried.
     cleaned_up = true;
+    /// The cleanup records the outcomes of the tasks it cancels; afterwards this source reports the
+    /// failure, if any, and the result reader reports one it records later.
+    SCOPE_EXIT(cancellation->markExecutionFinished());
     if (distributed_query_executor)
         distributed_query_executor->cleanup();
 }
@@ -27,7 +31,8 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
 {
     std::lock_guard lock(executor_mutex);
 
-    /// Cancelled (via onCancel) or already finished - stop without launching/continuing work.
+    /// Cancelled (via onCancel or by the result reader) or already finished - stop without
+    /// launching/continuing work.
     if (cleaned_up || cancellation->isCancelled())
     {
         cleanupLocked();
@@ -43,7 +48,7 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         {
             started = true;
             distributed_query_executor = createDistributedQueryExecutor(
-                unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::tryGetQueryContext(), cancellation, stage_wakeup);
+                unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::tryGetQueryContext(), cancellation, cancellation->getWakeup());
             distributed_query_executor->start();
         }
 
@@ -56,6 +61,8 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         if (distributed_query_executor->execute(stage_poll_timeout_ms))
         {
             cleanupLocked();
+            /// The result reader may have lost its connection meanwhile and recorded that here.
+            cancellation->rethrowIfFailed();
             return std::nullopt;
         }
     }
@@ -65,6 +72,9 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         /// rethrow this root cause.
         cancellation->recordCurrentException();
         cleanupLocked();
+        /// The cleanup may have recorded the root cause of the exception caught here, e.g. the task
+        /// failure behind a closed connection, so report the recorded failure.
+        cancellation->rethrowIfFailed();
         throw;
     }
 
@@ -94,13 +104,13 @@ std::tuple<int, uint32_t, Int64> ReadFromDistributedPlanSource::scheduleForEvent
 {
     /// Wake on the executor's notification, and fall back to the interval so a state change that
     /// does not notify still gets noticed.
-    return {stage_wakeup->fd(), EPOLLIN | EPOLLERR, stage_poll_interval_ms};
+    return {cancellation->getWakeup()->fd(), EPOLLIN | EPOLLERR, stage_poll_interval_ms};
 }
 
 void ReadFromDistributedPlanSource::onAsyncJobReady()
 {
     /// Drains nothing when the interval fired instead of a notification; the fd is non-blocking.
-    stage_wakeup->drain();
+    cancellation->getWakeup()->drain();
     waiting_for_stages = false;
 }
 #endif
@@ -111,8 +121,6 @@ void ReadFromDistributedPlanSource::onCancel() noexcept
     /// under the lock. Without active cleanup, cancellation is only seen on the next tryGenerate,
     /// which may never come once the pipeline is cancelled.
     cancellation->cancel();
-    /// Wake a parked source so it observes the cancellation now instead of at the next interval.
-    notifyStageWakeup(stage_wakeup);
     try
     {
         /// Wake exchange waiters before taking the lock: the lock holder itself may be blocked

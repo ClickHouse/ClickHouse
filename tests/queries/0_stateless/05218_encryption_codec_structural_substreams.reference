@@ -1,0 +1,13 @@
+dd	dd	['Delta(1), LZ4, AES_128_GCM_SIV']
+dd	dd.size0	['LZ4, AES_128_GCM_SIV']
+lc	lc	['AES_128_GCM_SIV']
+lc	lc.dict	['AES_128_GCM_SIV']
+n	n	['Delta(1), LZ4, AES_128_GCM_SIV']
+n	n.null	['LZ4, AES_128_GCM_SIV']
+nd	nd	['LZ4, AES_128_GCM_SIV']
+nd	nd.null	['LZ4, AES_128_GCM_SIV']
+nd	nd.size	['LZ4, AES_128_GCM_SIV']
+s	s	['LZ4, AES_128_GCM_SIV']
+s	s.size	['LZ4, AES_128_GCM_SIV']
+1000	499500	1000
+1

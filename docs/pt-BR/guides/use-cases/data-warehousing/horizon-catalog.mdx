@@ -1,0 +1,148 @@
+---
+slug: /use-cases/data-lake/horizon-catalog
+sidebarTitle: 'Catálogo Horizon'
+title: 'Catálogo Snowflake Horizon'
+description: 'Consulte e grave tabelas Iceberg gerenciadas pela Snowflake por meio do Snowflake Horizon Catalog usando o DataLakeCatalog do ClickHouse.'
+keywords: ['Horizon', 'Snowflake', 'Iceberg', 'Lago de dados', 'Polaris']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+O ClickHouse pode se conectar ao [Snowflake Horizon Catalog](https://docs.snowflake.com/en/user-guide/tables-iceberg-access-using-external-query-engine-snowflake-horizon)
+por meio da API REST do Iceberg exposta pelo Horizon (com tecnologia do Apache Polaris).
+Isso permite **ler e gravar** tabelas Iceberg gerenciadas pelo Snowflake no ClickHouse usando o
+mecanismo de banco de dados `DataLakeCatalog` com `catalog_type = 'horizon'`.
+
+O Horizon é relacionado ao Snowflake Open Catalog / Polaris auto-hospedado, mas não é o mesmo:
+
+|                        | Open Catalog / Polaris (`catalog_type = 'rest'`) | Horizon (`catalog_type = 'horizon'`)                                                                                                         |
+| ---------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Endpoint               | URI do Open Catalog ou do Polaris auto-hospedado | `https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog`                                                                         |
+| Warehouse              | Nome do catálogo Polaris / warehouse             | Nome do **banco de dados** do Snowflake (geralmente em letras maiúsculas)                                                                    |
+| Escopo de autenticação | `PRINCIPAL_ROLE:ALL` (típico)                    | `session:role:<ROLE>`                                                                                                                        |
+| Credencial             | `client_id:client_secret`                        | PAT ou JWT de par de chaves como `catalog_credential` (OAuth client&#95;secret; sem divisão em &#39;:&#39;), ou `auth_header` do tipo bearer |
+
+<Note>
+  Como este recurso está em beta, habilite-o com:
+  `SET allow_experimental_database_iceberg = 1;`
+  (ou `SET allow_database_iceberg = 1;`, dependendo da versão do ClickHouse).
+</Note>
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Uma conta Snowflake com tabelas Iceberg gerenciadas pela Snowflake
+* Endpoint REST do Horizon Iceberg:
+  `https://<organization>-<account>.snowflakecomputing.com/polaris/api/catalog`
+* Uma função do Snowflake com privilégios nas tabelas Iceberg (e privilégios de gravação se você for executar INSERT)
+* Autenticação por um dos seguintes métodos:
+  * Token de acesso programático (PAT)
+  * JWT de par de chaves trocado por um token de acesso
+  * Token de acesso OAuth externo (como `auth_header` do tipo bearer)
+* Armazenamento de objetos acessível pelo ClickHouse (recomendam-se credenciais fornecidas)
+* ClickHouse com suporte ao DataLakeCatalog Iceberg
+
+<div id="connecting">
+  ## Criar uma conexão
+</div>
+
+<div id="option-a-programmatic-access-token-recommended">
+  ### Opção A: token de acesso programático (recomendado)
+</div>
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE horizon_catalog
+ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
+SETTINGS
+    catalog_type = 'horizon',
+    warehouse = 'ICEBERG_TEST_DB',
+    catalog_credential = '<PAT>',
+    auth_scope = 'session:role:DATA_ENGINEER',
+    oauth_server_uri = 'https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog/v1/oauth/tokens',
+    vended_credentials = 1;
+```
+
+`warehouse` deve ser o nome do **banco de dados** no Snowflake (não de um warehouse virtual do Snowflake).
+Identificadores do Snowflake sem aspas são escritos em maiúsculas.
+
+<div id="option-b-pre-exchanged-bearer-access-token">
+  ### Opção B: Token de acesso Bearer obtido previamente
+</div>
+
+```sql
+CREATE DATABASE horizon_catalog
+ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
+SETTINGS
+    catalog_type = 'horizon',
+    warehouse = 'ICEBERG_TEST_DB',
+    auth_header = 'Authorization: Bearer <ACCESS_TOKEN>',
+    vended_credentials = 1;
+```
+
+<div id="query">
+  ## Consultar tabelas Iceberg
+</div>
+
+```sql
+USE horizon_catalog;
+SHOW TABLES;
+
+SELECT count(*) FROM `PUBLIC.test_table`;
+SHOW CREATE TABLE `PUBLIC.test_table`;
+```
+
+<Note>
+  O espaço de nomes (schema) e a tabela geralmente são referenciados como `` `SCHEMA.table` ``, a menos que
+  os espaços de nomes experimentais para tabelas estejam habilitados.
+</Note>
+
+<div id="write">
+  ## Caminho de gravação
+</div>
+
+Com uma função que tenha INSERT/UPDATE/DELETE (e CREATE ICEBERG TABLE ao criar tabelas),
+o ClickHouse pode gravar usando o mesmo catálogo:
+
+```sql
+-- Insert into an existing Snowflake-managed Iceberg table
+INSERT INTO horizon_catalog.`PUBLIC.test_table`
+SELECT
+    number AS id,
+    concat('name_', toString(number)) AS name
+FROM numbers(100);
+
+-- Create a new Iceberg table in the Horizon catalog (requires CREATE ICEBERG TABLE)
+CREATE TABLE horizon_catalog.`PUBLIC.clickhouse_written`
+(
+    id Int64,
+    name String
+)
+ENGINE = Iceberg;
+```
+
+A sintaxe exata de `CREATE TABLE` depende do suporte a escrita do ClickHouse Iceberg / DataLakeCatalog para catálogos REST
+na versão em uso; falhas de privilégio no Snowflake são exibidas como erros HTTP do catálogo.
+
+<div id="loading">
+  ## Carregamento no MergeTree
+</div>
+
+```sql
+CREATE TABLE my_clickhouse_table
+(
+    id Int64,
+    name String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO my_clickhouse_table
+SELECT * FROM horizon_catalog.`PUBLIC.test_table`;
+```

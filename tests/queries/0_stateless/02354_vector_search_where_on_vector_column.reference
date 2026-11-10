@@ -1,0 +1,12 @@
+WHERE on the vector column, no rescoring, no implicit PREWHERE: correct result
+0
+WHERE on the vector column, no rescoring, default PREWHERE settings: correct result
+0
+WHERE on the vector column, rescoring: correct result
+0
+no WHERE, no rescoring: the vector column is replaced (control)
+1
+WHERE on the vector column, no rescoring: the vector column is kept
+1
+WHERE on another column, no rescoring: the vector column is replaced
+1

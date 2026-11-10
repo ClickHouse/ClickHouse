@@ -347,10 +347,10 @@ SELECT * FROM t_null FORMAT TSKV
 x=1    y=\N
 ```
 
-:::note
+<Note>
 When there are a large number of small columns, this format is ineffective, and there is generally no reason to use it. 
 Nevertheless, it is no worse than the [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) format in terms of efficiency.
-:::
+</Note>
 
 For parsing, any order is supported for the values of the different columns. 
 It is acceptable for some values to be omitted as they are treated as equal to their default values.

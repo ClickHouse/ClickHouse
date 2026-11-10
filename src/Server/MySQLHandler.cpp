@@ -2,8 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <optional>
+#include <Access/AccessControl.h>
+#include <Access/Authentication.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/User.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -12,6 +16,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -27,10 +32,19 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTShowColumnsQuery.h>
+#include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParser.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/TokenIterator.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
@@ -59,8 +73,12 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool prefer_column_name_to_alias;
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsDialect dialect;
+    extern const SettingsBool implicit_select;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
 }
@@ -68,6 +86,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
+    extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
 }
 
 using namespace MySQLProtocol;
@@ -84,17 +103,30 @@ using Poco::Net::SSLManager;
 namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
     extern const int OPENSSL_ERROR;
+    extern const int SOCKET_TIMEOUT;
     extern const int SYNTAX_ERROR;
+    extern const int TOO_MANY_COLUMNS;
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
 
 static const size_t PACKET_HEADER_SIZE = 4;
 static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
+
+/** The handshake response is read before the client is authenticated, so its size has to be bounded.
+  * The fields it carries are a user name, a database name, an authentication plugin name and an
+  * authentication response, so this is generous: a real client sends a few hundred bytes.
+  * Without a bound, a peer can make the server grow memory while sending a response that never ends:
+  * `MySQLPacketPayloadReadBuffer` follows a chain of maximum-size (16 MiB) packets as one logical
+  * message, and the fields inside the response are read up to a terminator.
+  */
+static const size_t MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE = 64 * 1024;
 
 static bool checkShouldReplaceQuery(const String & query, const String & prefix)
 {
@@ -553,6 +585,8 @@ void MySQLHandler::run()
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket(), write_event);
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
+    in->setHandshakeTimeout(server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds]);
+
     try
     {
         Handshake handshake(server_capabilities, connection_id, VERSION_STRING + String("-") + VERSION_NAME,
@@ -579,7 +613,10 @@ void MySQLHandler::run()
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
-        if (secure_required && !(client_capabilities & CLIENT_SSL))
+        /// Check the actual state of the transport, not the capability bit advertised by the client:
+        /// a client can set `CLIENT_SSL` in a plaintext `HandshakeResponse` without ever sending an
+        /// `SSLRequest`, and then the connection stays unencrypted.
+        if (secure_required && !secure_connection)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
 
         /// An empty user name means the default session user: the `default_session_user`
@@ -600,6 +637,8 @@ void MySQLHandler::run()
         }
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
+
+        in->clearHandshakeTimeout();
 
         try
         {
@@ -672,8 +711,12 @@ void MySQLHandler::run()
                     case COM_STMT_CLOSE:
                         comStmtClose(payload);
                         break;
+                    case COM_STMT_RESET:
+                        comStmtReset(payload);
+                        break;
                     default:
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.", command);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.",
+                            static_cast<int>(static_cast<unsigned char>(command)));
                 }
             }
             catch (const NetException & exc)
@@ -710,7 +753,24 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
         while (pos < count)
         {
-            int ret = socket().receiveBytes(buf.data() + pos, static_cast<uint32_t>(packet_size - pos));
+            /// Per call: `receiveBytes` restarts the socket timeout.
+            in->applyHandshakeDeadlineToSocket();
+
+            int ret = 0;
+            try
+            {
+                ret = socket().receiveBytes(buf.data() + pos, static_cast<uint32_t>(packet_size - pos));
+            }
+            catch (const Poco::TimeoutException &)
+            {
+                /// Report it the way the buffer does, not as Poco's bare "Timeout".
+                throw NetException(
+                    ErrorCodes::SOCKET_TIMEOUT,
+                    "Timeout exceeded while reading from socket (peer: {}, local: {}, {} ms)",
+                    socket().peerAddress().toString(),
+                    socket().address().toString(),
+                    socket().getReceiveTimeout().totalMilliseconds());
+            }
             if (ret == 0)
             {
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: 3", std::to_string(pos));
@@ -729,8 +789,19 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     }
     else
     {
+        if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+                payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
+
+        /// A well-formed client never sends more than the packet it declared in the
+        /// header. Without this check `packet_size - pos` underflows when pos > packet_size,
+        /// turning the copyData() below into an unbounded pre-auth read (read until EOF).
+        if (pos > packet_size)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Malformed MySQL handshake packet: received {} bytes, but packet declares {}", pos, packet_size);
         WriteBufferFromOwnString buf_for_handshake_response;
         buf_for_handshake_response.write(buf.data(), pos);
         copyData(*packet_endpoint->in, buf_for_handshake_response, packet_size - pos);
@@ -745,16 +816,19 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 {
     try
     {
-        const auto user_authentication_types = session->getAuthenticationTypesOrLogInFailure(user_name);
+        /// Logs a login failure and throws if there is no such user.
+        session->getAuthenticationTypesOrLogInFailure(user_name);
 
-        for (const auto user_authentication_type : user_authentication_types)
+        /// For compatibility with the JavaScript MySQL client, the `mysql_native_password` plugin (Native41) is used
+        /// when it can fully authenticate the user. Otherwise the `sha256_password` plugin is used: it transmits the
+        /// actual password string, which is then checked via the `BasicCredentials` path, the same as for the native
+        /// and HTTP protocols. See `Authentication::mysqlNative41CannotVerify`.
+        /// The user can be altered while the client is answering, so this choice is only a hint: `IAccessStorage::authenticateImpl`
+        /// re-checks it against the snapshot of the user it authenticates with and rejects Native41 credentials if needed.
+        const auto user = session->globalContext()->getAccessControl().read<User>(user_name);
+        if (std::ranges::any_of(user->authentication_methods, DB::Authentication::mysqlNative41CannotVerify))
         {
-            // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible
-            // (if password is specified using double SHA1). Otherwise, SHA256 plugin is used.
-            if (user_authentication_type == DB::AuthenticationType::SHA256_PASSWORD)
-            {
-                authPluginSSL();
-            }
+            authPluginSSL();
         }
 
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
@@ -797,16 +871,11 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
-        /// Report the same type, charset and flags as result-set metadata (`getColumnDefinition`) does
-        /// for this column, so `COM_FIELD_LIST` and a plain `SELECT` describe the column identically:
-        /// string columns as `utf8mb4_0900_ai_ci` strings (matching the handshake collation),
-        /// numeric and other non-string columns as `binary` with their native wire types.
-        ColumnDefinition type_definition = getColumnDefinition(column.name, column.type);
-        ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name,
-            type_definition.character_set, type_definition.column_length, type_definition.column_type,
-            type_definition.flags, type_definition.decimals, true
-        );
+        /// Describe the column with `getColumnDefinition`, as result-set metadata does,
+        /// so `COM_FIELD_LIST` and a plain `SELECT` of the column describe it identically.
+        ResultColumnOrigin origin{.database = database, .table = packet.table, .org_table = packet.table, .column = column.name};
+        ColumnDefinition column_definition = getColumnDefinition(column.name, column.type, &origin);
+        column_definition.is_comm_field_list_response = true;
         packet_endpoint->sendPacket(column_definition);
     }
     packet_endpoint->sendPacket(OKPacket(0xfe, client_capabilities, 0, 0, 0));
@@ -829,46 +898,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
     }
     else
     {
-        String replacement_query;
-        bool should_replace = false;
+        std::optional<String> replacement_query = getReplacementQuery(query);
         bool with_output = false;
-
-        // Queries replacements
-        for (auto const & [query_to_replace, replacement_fn] : queries_replacements)
-        {
-            if (checkShouldReplaceQuery(query, query_to_replace))
-            {
-                should_replace = true;
-                replacement_query = replacement_fn(query);
-                break;
-            }
-        }
-
-        // Settings replacements
-        if (!should_replace)
-        {
-            for (auto const & [mysql_setting, clickhouse_setting] : settings_replacements)
-            {
-                const auto replacement_query_opt = setSettingReplacementQuery(query, mysql_setting, clickhouse_setting);
-                if (replacement_query_opt.has_value())
-                {
-                    should_replace = true;
-                    replacement_query = replacement_query_opt.value();
-                    break;
-                }
-            }
-        }
 
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
-        /// --- Workaround for Bug 56173.
-        auto settings = query_context->getSettingsCopy();
-        if (!settings[Setting::allow_experimental_analyzer])
-        {
-            settings[Setting::prefer_column_name_to_alias] = true;
-            query_context->setSettings(settings);
-        }
+        const auto & settings = query_context->getSettingsRef();
 
         /// Update timeouts
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
@@ -892,7 +928,11 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         format_settings.mysql_wire.sequence_id = &sequence_id;
         format_settings.mysql_wire.binary_protocol = binary_protocol;
 
-        auto set_result_details = [&with_output](const QueryResultDetails & details)
+        /// Filled by `set_result_details`, which is called before the output format writes the column definitions.
+        ResultColumnOrigins result_column_origins;
+        format_settings.mysql_wire.result_column_origins = &result_column_origins;
+
+        auto set_result_details = [&with_output, &result_column_origins](const QueryResultDetails & details)
         {
             if (details.format)
             {
@@ -901,15 +941,19 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
                 with_output = true;
             }
+
+            result_column_origins = details.result_column_origins;
         };
 
-        if (should_replace)
+        QueryFlags query_flags{.collect_result_column_origins = true};
+
+        if (replacement_query)
         {
-            ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
+            ReadBufferFromString replacement(*replacement_query);
+            executeQuery(replacement, *out, query_context, set_result_details, query_flags, format_settings);
         }
         else
-            executeQuery(payload, *out, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(payload, *out, query_context, set_result_details, query_flags, format_settings);
 
 
         if (!with_output)
@@ -917,16 +961,95 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
     }
 }
 
+std::optional<String> MySQLHandler::getReplacementQuery(const String & query) const
+{
+    for (const auto & [query_to_replace, replacement_fn] : queries_replacements)
+        if (checkShouldReplaceQuery(query, query_to_replace))
+            return replacement_fn(query);
+
+    for (const auto & [mysql_setting, clickhouse_setting] : settings_replacements)
+        if (auto replacement_query = setSettingReplacementQuery(query, mysql_setting, clickhouse_setting))
+            return replacement_query;
+
+    return {};
+}
+
+Block MySQLHandler::describePreparedStatement(const String & statement, ResultColumnOrigins & result_column_origins)
+{
+    /// Answered with an OK packet by `comQuery`.
+    if (isFederatedServerSetupSetCommand(statement))
+        return {};
+
+    std::optional<String> replacement_query = getReplacementQuery(statement);
+    const String & query = replacement_query ? *replacement_query : statement;
+
+    auto query_context = session->makeQueryContext();
+    query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
+    QueryScope query_scope = QueryScope::create(query_context);
+
+    const auto & settings = query_context->getSettingsRef();
+
+    /// Only queries in the ClickHouse dialect can be analyzed here; for others the result is described at execution.
+    if (settings[Setting::dialect] != Dialect::clickhouse)
+        return {};
+
+    /// Only read-only queries returning a result set are described, as mutations must not be executed here.
+    const char * begin = query.data();
+    const char * end = begin + query.size();
+    ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+    ASTPtr ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+    const bool returns_result_set = ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectIntersectExceptQuery>()
+        || ast->as<ASTShowTablesQuery>() || ast->as<ASTShowColumnsQuery>() || ast->as<ASTShowIndexesQuery>() || ast->as<ASTDescribeQuery>()
+        || ast->as<ASTShowCreateTableQuery>() || ast->as<ASTShowCreateViewQuery>() || ast->as<ASTShowCreateDatabaseQuery>()
+        || ast->as<ASTShowCreateDictionaryQuery>() || ast->as<ASTExistsTableQuery>() || ast->as<ASTExistsViewQuery>()
+        || ast->as<ASTExistsDatabaseQuery>() || ast->as<ASTExistsDictionaryQuery>();
+    if (!returns_result_set)
+        return {};
+
+    /// Build the query the same way its execution does (with the settings, the access checks, the limits and an entry
+    /// in the process list), but don't run it: only the header of its result is needed here.
+    QueryResultDetails result_details;
+    BlockIO io = executeQuery(query, query_context, QueryFlags{.collect_result_column_origins = true}, QueryProcessingStage::Complete, &result_details).second;
+    Block header = io.pipeline.getHeader();
+    result_column_origins = std::move(result_details.result_column_origins);
+
+    /// The pipeline is reset before `onFinish`, so nothing is written into the query result cache.
+    io.resetPipeline(/*cancel=*/ true);
+    io.onFinish();
+    return header;
+}
+
 void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 {
     String statement;
     readStringUntilEOF(statement, payload);
 
+    /// Like MySQL, describe the result columns in the response, so clients know the shape of the result before executing the statement.
+    ResultColumnOrigins result_column_origins;
+    Block header = describePreparedStatement(statement, result_column_origins);
+    if (header.columns() > std::numeric_limits<uint16_t>::max())
+        throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "The prepared statement returns {} columns, while the MySQL protocol supports at most {}",
+            header.columns(), std::numeric_limits<uint16_t>::max());
+
     auto statement_id_opt = emplacePreparedStatement(std::move(statement));
-    if (statement_id_opt.has_value())
-        packet_endpoint->sendPacket(PreparedStatementResponseOK(statement_id_opt.value(), 0, 0, 0));
-    else
+    if (!statement_id_opt.has_value())
+    {
         packet_endpoint->sendPacket(ERRPacket());
+        return;
+    }
+
+    packet_endpoint->sendPacket(PreparedStatementResponseOK(statement_id_opt.value(), static_cast<uint16_t>(header.columns()), 0, 0));
+
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        const auto & column = header.getByPosition(i);
+        const ResultColumnOrigin * origin = result_column_origins.size() == header.columns() ? &result_column_origins[i] : nullptr;
+        packet_endpoint->sendPacket(getColumnDefinition(column.name, column.type, origin));
+    }
+
+    if (header.columns() && !(client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
+        packet_endpoint->sendPacket(EOFPacket(0, 0));
 }
 
 void MySQLHandler::comStmtExecute(ReadBuffer & payload)
@@ -950,6 +1073,23 @@ void MySQLHandler::comStmtClose(ReadBuffer & payload)
     // No response packet is sent back to the client.
     erasePreparedStatement(statement_id);
 };
+
+void MySQLHandler::comStmtReset(ReadBuffer & payload)
+{
+    uint32_t statement_id = 0;
+    payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
+
+    // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_reset.html
+    // Resets the data sent with `COM_STMT_SEND_LONG_DATA` and closes the cursor of the statement.
+    // Neither is supported, so there is nothing to reset, but the statement must exist.
+    {
+        std::lock_guard<std::mutex> lock(prepared_statements_mutex);
+        if (!prepared_statements.contains(statement_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown prepared statement with id {}", statement_id);
+    }
+
+    packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, 0, 0, 0));
+}
 
 std::optional<UInt32> MySQLHandler::emplacePreparedStatement(String statement)
 {
@@ -1048,15 +1188,47 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
     secure_connection = true;
 
+    const std::shared_ptr<ReadBufferFromPocoSocket> previous_in = in;
+
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
-    ss->setReceiveTimeout(socket().getReceiveTimeout());
-    ss->setSendTimeout(socket().getSendTimeout());
+    /// Not from the plaintext socket: the deadline clamped those, and they would be restored later.
+    const Settings & handshake_settings = server.context()->getSettingsRef();
+    ss->setReceiveTimeout(handshake_settings[Setting::receive_timeout]);
+    ss->setSendTimeout(handshake_settings[Setting::send_timeout]);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*ss);
     sequence_id = 2;
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
-    packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
+
+    in->adoptHandshakeDeadlineFrom(*previous_in);
+
+    /// Reading HandshakeResponse from the secure socket, bounded the same way as on the plaintext
+    /// path: read the packet header, reject an oversized declared payload before reading it, and
+    /// then read exactly as many bytes as it declares. The bound has to be applied to the logical
+    /// MySQL payload rather than to the underlying stream: `MySQLPacketPayloadReadBuffer` reports
+    /// end of file as soon as the stream under it ends, so a stream cut off at the limit would make
+    /// a truncated packet look like a complete one.
+    char header[PACKET_HEADER_SIZE];
+    in->readStrict(header, PACKET_HEADER_SIZE);
+
+    size_t payload_size = unalignedLoad<uint32_t>(header) & 0xFFFFFFu;
+    if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+            "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+            payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
+    size_t packet_sequence_id = static_cast<uint8_t>(header[3]);
+    if (packet_sequence_id != sequence_id)
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+            "Received packet with wrong sequence-id: {}. Expected: {}.",
+            packet_sequence_id, static_cast<unsigned int>(sequence_id));
+
+    WriteBufferFromOwnString buf_for_handshake_response;
+    copyData(*in, buf_for_handshake_response, payload_size);
+    ReadBufferFromString handshake_response_payload(buf_for_handshake_response.str());
+    packet.readPayloadWithUnpacked(handshake_response_payload);
+    packet_endpoint->sequence_id++;
 }
 
 #endif

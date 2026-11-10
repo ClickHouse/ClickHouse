@@ -6,9 +6,7 @@ title: 'H3 인덱스를 다루는 함수'
 doc_type: 'reference'
 ---
 
-<div id="h3-index">
-  ## H3 인덱스
-</div>
+## H3 인덱스 {#h3-index}
 
 [H3](https://h3geo.org/)는 지구 표면을 균일한 육각형 셀의 격자로 나누는 지리 공간 인덱싱 시스템입니다. 이 시스템은 계층 구조를 가지며, 즉 최상위 수준의 각 육각형(&quot;parent&quot;)은 크기가 더 작은 균일한 7개의 육각형(&quot;children&quot;)으로 분할될 수 있고, 이러한 방식이 계속 반복됩니다.
 
@@ -20,9 +18,7 @@ H3 인덱스는 주로 위치를 버킷으로 그룹화하거나 그 밖의 지�
 
 H3 시스템에 대한 전체 설명은 [Uber Engineering 사이트](https://www.uber.com/blog/h3/)에서 확인할 수 있습니다.
 
-<div id="h3isvalid">
-  ## h3IsValid
-</div>
+## h3IsValid {#h3isvalid}
 
 숫자가 유효한 [H3](#h3-index) 인덱스인지 확인합니다.
 
@@ -53,9 +49,7 @@ SELECT h3IsValid(630814730351855103) AS h3IsValid;
 └───────────┘
 ```
 
-<div id="h3getresolution">
-  ## h3GetResolution
-</div>
+## h3GetResolution {#h3getresolution}
 
 지정된 [H3](#h3-index) 인덱스의 해상도를 반환합니다.
 
@@ -86,9 +80,7 @@ SELECT h3GetResolution(639821929606596015) AS resolution;
 └────────────┘
 ```
 
-<div id="h3edgeangle">
-  ## h3EdgeAngle
-</div>
+## h3EdgeAngle {#h3edgeangle}
 
 [H3](#h3-index) 육각형 변의 평균 길이를 그라드 단위로 계산합니다.
 
@@ -118,9 +110,7 @@ SELECT h3EdgeAngle(10) AS edgeAngle;
 └───────────────────────┘
 ```
 
-<div id="h3edgelengthm">
-  ## h3EdgeLengthM
-</div>
+## h3EdgeLengthM {#h3edgelengthm}
 
 [H3](#h3-index) 육각형의 변 길이 평균을 미터 단위로 계산합니다.
 
@@ -150,9 +140,7 @@ SELECT h3EdgeLengthM(15) AS edgeLengthM;
 └─────────────┘
 ```
 
-<div id="h3edgelengthkm">
-  ## h3EdgeLengthKm
-</div>
+## h3EdgeLengthKm {#h3edgelengthkm}
 
 [H3](#h3-index) 육각형의 변 길이 평균을 킬로미터 단위로 계산합니다.
 
@@ -182,9 +170,7 @@ SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
 └──────────────┘
 ```
 
-<div id="geotoh3">
-  ## geoToH3
-</div>
+## geoToH3 {#geotoh3}
 
 지정된 해상도의 [H3](#h3-index) 점 인덱스 `(lat, lon)`를 반환합니다.
 
@@ -219,9 +205,7 @@ SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
 └────────────────────┘
 ```
 
-<div id="h3togeo">
-  ## h3ToGeo
-</div>
+## h3ToGeo {#h3togeo}
 
 주어진 [H3](#h3-index) 인덱스에 해당하는 중심점의 위도와 경도를 반환합니다.
 
@@ -253,9 +237,7 @@ SELECT h3ToGeo(644325524701193974) AS coordinates;
 └───────────────────────────────────────┘
 ```
 
-<div id="h3togeoboundary">
-  ## h3ToGeoBoundary
-</div>
+## h3ToGeoBoundary {#h3togeoboundary}
 
 주어진 H3 인덱스의 경계에 해당하는 `(lat, lon)` 쌍의 배열을 반환합니다.
 
@@ -285,9 +267,7 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="h3kring">
-  ## h3kRing
-</div>
+## h3kRing {#h3kring}
 
 주어진 육각형에서 반경 `k` 이내에 있는 모든 [H3](#h3-index) 육각형을 무작위 순서로 나열합니다.
 
@@ -324,11 +304,11 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
 └────────────────────┘
 ```
 
-<div id="h3polygontocells">
-  ## h3PolygonToCells
-</div>
+## h3PolygonToCells {#h3polygontocells}
 
-제공된 Geometry(링 또는 (multi-)polygon)에 포함된 지정된 해상도의 육각형을 반환합니다.
+제공된 Geometry(링 또는 (multi-)polygon)에 포함된 지정된 해상도의 육각형을 반환합니다. Geometry가 육각형의 중심을 포함할 때 해당 육각형이 포함된 것으로 간주하며, 이는 [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment)의 포함 모드 `0`입니다.
+
+Geometry의 모든 꼭짓점은 구면 위에 있어야 합니다. 경도는 `[-180, 180]`, 위도는 `[-90, 90]`도 범위여야 합니다. 반환되는 셀의 순서는 보장되지 않으므로 순서가 중요할 때는 배열을 정렬하십시오.
 
 **구문**
 
@@ -356,21 +336,21 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ```text title="Response"
 ┌────────────h3index─┐
-│ 608692970769612799 │
-│ 608692971927240703 │
 │ 608692970585063423 │
-│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
+│ 608692970769612799 │
+│ 608692970819944447 │
+│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
 
-<div id="h3polygontocellswithcontainment">
-  ## h3PolygonToCellsWithContainment
-</div>
+## h3PolygonToCellsWithContainment {#h3polygontocellswithcontainment}
 
 H3 Experimental 포함 모드를 사용하여 제공된 geometry가 차지하는 영역을 지정된 해상도의 육각형으로 덮어 반환합니다. geometry는 링 또는 (multi-)polygon일 수 있습니다.
+
+geometry의 모든 꼭짓점은 구면 위에 있어야 합니다. 경도는 `[-180, 180]`, 위도는 `[-90, 90]`도 범위여야 합니다. 반환되는 셀의 순서는 보장되지 않으므로 순서가 중요할 때는 배열을 정렬하십시오.
 
 이 함수는 `flags`를 다음 H3 포함 모드에 매핑합니다:
 
@@ -396,7 +376,7 @@ h3PolygonToCellsWithContainment(geometry, resolution, flags)
 
 **반환 값**
 
-* 선택한 포함 모드에 따른 H3 인덱스 배열입니다. [Array](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+* 선택한 포함 모드에 따른 H3 인덱스 배열입니다. [배열](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
 
 **예시**
 
@@ -412,9 +392,7 @@ SELECT
    └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="h3getbasecell">
-  ## h3GetBaseCell
-</div>
+## h3GetBaseCell {#h3getbasecell}
 
 [H3](#h3-index) 인덱스의 기본 셀 번호를 반환합니다.
 
@@ -444,9 +422,7 @@ SELECT h3GetBaseCell(612916788725809151) AS basecell;
 └──────────┘
 ```
 
-<div id="h3hexaream2">
-  ## h3HexAreaM2
-</div>
+## h3HexAreaM2 {#h3hexaream2}
 
 주어진 해상도에서 육각형의 평균 면적을 제곱미터(m²) 단위로 반환합니다.
 
@@ -476,9 +452,7 @@ SELECT h3HexAreaM2(13) AS area;
 └──────┘
 ```
 
-<div id="h3hexareakm2">
-  ## h3HexAreaKm2
-</div>
+## h3HexAreaKm2 {#h3hexareakm2}
 
 주어진 해상도에서 평균 육각형 면적을 제곱킬로미터 단위로 반환합니다.
 
@@ -508,9 +482,7 @@ SELECT h3HexAreaKm2(13) AS area;
 └───────────┘
 ```
 
-<div id="h3indexesareneighbors">
-  ## h3IndexesAreNeighbors
-</div>
+## h3IndexesAreNeighbors {#h3indexesareneighbors}
 
 주어진 [H3](#h3-index) 인덱스가 서로 인접해 있는지 반환합니다.
 
@@ -542,9 +514,7 @@ SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
 └───┘
 ```
 
-<div id="h3tochildren">
-  ## h3ToChildren
-</div>
+## h3ToChildren {#h3tochildren}
 
 주어진 [H3](#h3-index) 인덱스의 자식 인덱스 배열을 반환합니다.
 
@@ -575,9 +545,7 @@ SELECT h3ToChildren(599405990164561919, 6) AS children;
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="h3toparent">
-  ## h3ToParent
-</div>
+## h3ToParent {#h3toparent}
 
 지정된 [H3](#h3-index) 인덱스를 포함하는 상위(더 낮은 해상도의) 인덱스를 반환합니다.
 
@@ -608,9 +576,7 @@ SELECT h3ToParent(599405990164561919, 3) AS parent;
 └────────────────────┘
 ```
 
-<div id="h3tostring">
-  ## h3ToString
-</div>
+## h3ToString {#h3tostring}
 
 인덱스의 `H3Index` 표현을 문자열 형식으로 변환합니다.
 
@@ -638,9 +604,7 @@ SELECT h3ToString(617420388352917503) AS h3_string;
 └─────────────────┘
 ```
 
-<div id="stringtoh3">
-  ## stringToH3
-</div>
+## stringToH3 {#stringtoh3}
 
 문자열 형식을 `H3Index`(UInt64) 형식으로 변환합니다.
 
@@ -670,9 +634,7 @@ SELECT stringToH3('89184926cc3ffff') AS index;
 └────────────────────┘
 ```
 
-<div id="h3getresolution">
-  ## h3GetResolution
-</div>
+## h3GetResolution {#h3getresolution-1}
 
 [H3](#h3-index) 인덱스의 해상도를 반환합니다.
 
@@ -702,9 +664,7 @@ SELECT h3GetResolution(617420388352917503) AS res;
 └─────┘
 ```
 
-<div id="h3isresclassiii">
-  ## h3IsResClassIII
-</div>
+## h3IsResClassIII {#h3isresclassiii}
 
 [H3](#h3-index) 인덱스가 Class III 방향 해상도인지 여부를 반환합니다.
 
@@ -735,9 +695,7 @@ SELECT h3IsResClassIII(617420388352917503) AS res;
 └─────┘
 ```
 
-<div id="h3ispentagon">
-  ## h3IsPentagon
-</div>
+## h3IsPentagon {#h3ispentagon}
 
 이 [H3](#h3-index) 인덱스가 오각형 셀을 나타내는지 반환합니다.
 
@@ -768,9 +726,7 @@ SELECT h3IsPentagon(644721767722457330) AS pentagon;
 └──────────┘
 ```
 
-<div id="h3getfaces">
-  ## h3GetFaces
-</div>
+## h3GetFaces {#h3getfaces}
 
 지정된 [H3](#h3-index) 인덱스가 교차하는 정이십면체의 면을 반환합니다.
 
@@ -800,9 +756,7 @@ SELECT h3GetFaces(599686042433355775) AS faces;
 └───────┘
 ```
 
-<div id="h3cellaream2">
-  ## h3CellAreaM2
-</div>
+## h3CellAreaM2 {#h3cellaream2}
 
 주어진 H3 인덱스에 해당하는 특정 셀의 정확한 면적을 제곱미터 단위로 반환합니다.
 
@@ -832,9 +786,7 @@ SELECT h3CellAreaM2(579205133326352383) AS area;
 └────────────────────┘
 ```
 
-<div id="h3cellarearads2">
-  ## h3CellAreaRads2
-</div>
+## h3CellAreaRads2 {#h3cellarearads2}
 
 주어진 H3 인덱스에 해당하는 특정 셀의 정확한 면적을 제곱 라디안 단위로 반환합니다.
 
@@ -864,9 +816,7 @@ SELECT h3CellAreaRads2(579205133326352383) AS area;
 └─────────────────────┘
 ```
 
-<div id="h3tocenterchild">
-  ## h3ToCenterChild
-</div>
+## h3ToCenterChild {#h3tocenterchild}
 
 주어진 [H3](#h3-index)에서 지정된 해상도의 중심 자식(더 세분화된) [H3](#h3-index) 인덱스를 반환합니다.
 
@@ -897,9 +847,7 @@ SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
 └────────────────────┘
 ```
 
-<div id="h3exactedgelengthm">
-  ## h3ExactEdgeLengthM
-</div>
+## h3ExactEdgeLengthM {#h3exactedgelengthm}
 
 입력된 h3 인덱스가 나타내는 에지의 정확한 길이를 미터 단위로 반환합니다.
 
@@ -929,9 +877,7 @@ SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 └──────────────────┘
 ```
 
-<div id="h3exactedgelengthkm">
-  ## h3ExactEdgeLengthKm
-</div>
+## h3ExactEdgeLengthKm {#h3exactedgelengthkm}
 
 입력된 h3 인덱스가 나타내는 에지의 정확한 길이를 킬로미터 단위로 반환합니다.
 
@@ -961,9 +907,7 @@ SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 └───────────────────┘
 ```
 
-<div id="h3exactedgelengthrads">
-  ## h3ExactEdgeLengthRads
-</div>
+## h3ExactEdgeLengthRads {#h3exactedgelengthrads}
 
 입력 H3 인덱스로 표현된 에지의 정확한 길이를 라디안 단위로 반환합니다.
 
@@ -993,9 +937,7 @@ SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthR
 └─────────────────────┘
 ```
 
-<div id="h3numhexagons">
-  ## h3NumHexagons
-</div>
+## h3NumHexagons {#h3numhexagons}
 
 지정된 해상도에서 고유한 H3 인덱스 개수를 반환합니다.
 
@@ -1025,9 +967,7 @@ SELECT h3NumHexagons(3) AS numHexagons;
 └─────────────┘
 ```
 
-<div id="h3pointdistm">
-  ## h3PointDistM
-</div>
+## h3PointDistM {#h3pointdistm}
 
 GeoCoord 점(위도/경도) 쌍 간의 &quot;great circle&quot; 또는 &quot;haversine&quot; 거리를 미터 단위로 반환합니다.
 
@@ -1058,9 +998,7 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 └────────────────────┘
 ```
 
-<div id="h3pointdistkm">
-  ## h3PointDistKm
-</div>
+## h3PointDistKm {#h3pointdistkm}
 
 GeoCoord 점(위도/경도) 쌍 사이의 &quot;great circle&quot; 또는 &quot;haversine&quot; 거리를 킬로미터 단위로 반환합니다.
 
@@ -1091,9 +1029,7 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 └────────────────────┘
 ```
 
-<div id="h3pointdistrads">
-  ## h3PointDistRads
-</div>
+## h3PointDistRads {#h3pointdistrads}
 
 GeoCoord 점(위도/경도) 쌍 사이의 &quot;great circle&quot; 또는 &quot;haversine&quot; 거리를 라디안으로 반환합니다.
 
@@ -1124,9 +1060,7 @@ SELECT h3PointDistRads(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistRads;
 └────────────────────┘
 ```
 
-<div id="h3getres0indexes">
-  ## h3GetRes0Indexes
-</div>
+## h3GetRes0Indexes {#h3getres0indexes}
 
 해상도 0의 모든 H3 인덱스로 이루어진 배열을 반환합니다.
 
@@ -1152,9 +1086,7 @@ SELECT h3GetRes0Indexes AS indexes ;
 └─────────────────────────────────────────────┘
 ```
 
-<div id="h3getpentagonindexes">
-  ## h3GetPentagonIndexes
-</div>
+## h3GetPentagonIndexes {#h3getpentagonindexes}
 
 지정된 해상도의 모든 오각형 H3 인덱스를 반환합니다.
 
@@ -1184,9 +1116,7 @@ SELECT h3GetPentagonIndexes(3) AS indexes;
 └────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="h3line">
-  ## h3Line
-</div>
+## h3Line {#h3line}
 
 주어진 두 인덱스 사이를 잇는 인덱스 선을 반환합니다.
 
@@ -1217,9 +1147,7 @@ h3Line(start,end)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="h3distance">
-  ## h3Distance
-</div>
+## h3Distance {#h3distance}
 
 주어진 두 인덱스 사이의 거리를 그리드 셀 단위로 반환합니다.
 
@@ -1252,9 +1180,7 @@ h3Distance(start,end)
 └──────────┘
 ```
 
-<div id="h3hexring">
-  ## h3HexRing
-</div>
+## h3HexRing {#h3hexring}
 
 지정된 origin h3Index를 중심으로 길이 k인 육각형 링의 인덱스를 반환합니다.
 
@@ -1287,9 +1213,7 @@ h3HexRing(index, k)
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="h3getunidirectionaledge">
-  ## h3GetUnidirectionalEdge
-</div>
+## h3GetUnidirectionalEdge {#h3getunidirectionaledge}
 
 인접한 두 H3 셀 인덱스(원점 및 대상)에 대한 에지 H3 인덱스를 반환합니다. 입력 중 하나라도 유효한 H3 셀이 아니면 예외가 발생합니다(`functions_h3_default_if_invalid` 설정으로 제어됨). 유효하지만 서로 이웃하지 않는 셀(같은 셀이 두 번 지정된 경우 포함)의 경우 `0`을 반환합니다.
 
@@ -1320,9 +1244,7 @@ h3GetUnidirectionalEdge(originIndex, destinationIndex)
 └─────────────────────┘
 ```
 
-<div id="h3unidirectionaledgeisvalid">
-  ## h3UnidirectionalEdgeIsValid
-</div>
+## h3UnidirectionalEdgeIsValid {#h3unidirectionaledgeisvalid}
 
 주어진 H3Index가 유효한 에지 인덱스인지 판별합니다. 에지이면 1을 반환하고, 아니면 0을 반환합니다.
 
@@ -1353,9 +1275,7 @@ h3UnidirectionalEdgeIsValid(index)
 └────────────┘
 ```
 
-<div id="h3getoriginindexfromunidirectionaledge">
-  ## h3GetOriginIndexFromUnidirectionalEdge
-</div>
+## h3GetOriginIndexFromUnidirectionalEdge {#h3getoriginindexfromunidirectionaledge}
 
 에지 H3Index에서 원점 육각형 인덱스를 반환합니다. 입력이 유효한 방향성 에지가 아니면 예외를 발생시킵니다(`functions_h3_default_if_invalid` 설정으로 제어됨). 해당 설정이 활성화된 경우에만 `0`을 반환합니다.
 
@@ -1386,9 +1306,7 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 └────────────────────┘
 ```
 
-<div id="h3getdestinationindexfromunidirectionaledge">
-  ## h3GetDestinationIndexFromUnidirectionalEdge
-</div>
+## h3GetDestinationIndexFromUnidirectionalEdge {#h3getdestinationindexfromunidirectionaledge}
 
 에지 H3Index로부터 대상 육각형 인덱스를 반환합니다. 입력이 유효한 방향성 에지가 아니면 예외를 발생시킵니다(`functions_h3_default_if_invalid` 설정으로 제어됨). 해당 설정이 활성화된 경우에만 `0`을 반환합니다.
 
@@ -1419,9 +1337,7 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 └────────────────────┘
 ```
 
-<div id="h3getindexesfromunidirectionaledge">
-  ## h3GetIndexesFromUnidirectionalEdge
-</div>
+## h3GetIndexesFromUnidirectionalEdge {#h3getindexesfromunidirectionaledge}
 
 주어진 에지 H3Index로부터 원점 및 대상 육각형 인덱스를 반환합니다.
 
@@ -1456,9 +1372,7 @@ h3GetIndexesFromUnidirectionalEdge(edge)
 └─────────────────────────────────────────┘
 ```
 
-<div id="h3getunidirectionaledgesfromhexagon">
-  ## h3GetUnidirectionalEdgesFromHexagon
-</div>
+## h3GetUnidirectionalEdgesFromHexagon {#h3getunidirectionaledgesfromhexagon}
 
 지정된 H3Index의 모든 에지를 반환합니다. 입력이 유효한 H3 셀이 아닌 경우 예외를 발생시킵니다(`functions_h3_default_if_invalid` 설정으로 제어됨). 이 설정이 활성화된 경우에만 빈 배열을 반환합니다.
 
@@ -1489,9 +1403,7 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="h3getunidirectionaledgeboundary">
-  ## h3GetUnidirectionalEdgeBoundary
-</div>
+## h3GetUnidirectionalEdgeBoundary {#h3getunidirectionaledgeboundary}
 
 에지를 구성하는 좌표를 반환합니다. 입력이 유효한 방향성 에지가 아니면 예외를 발생시킵니다(`functions_h3_default_if_invalid` 설정으로 제어됨). 해당 설정이 활성화된 경우에만 빈 배열을 반환합니다.
 

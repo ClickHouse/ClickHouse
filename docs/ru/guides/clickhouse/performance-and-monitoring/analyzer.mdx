@@ -10,15 +10,13 @@ doc_type: 'reference'
 В ClickHouse версии `24.3` анализатор включен по умолчанию.
 Подробнее о принципах его работы можно прочитать [здесь](/ru/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
 
-<div id="known-incompatibilities">
-  ## Известные несовместимости
-</div>
+Начиная с версии `26.9` анализатор обязателен: настройка `enable_analyzer` устарела, попытка задать ей значение `0` отклоняется, а анализ запросов, который ClickHouse использовал до версии `24.3`, больше не поддерживается. Перечисленные ниже несовместимости описывают, чем отличался прежний анализ, чтобы можно было обновить написанный под него запрос; чтобы увидеть его поведение, выполните запрос на версии ClickHouse старше `26.9`.
+
+## Известные несовместимости {#known-incompatibilities}
 
 Несмотря на исправление большого количества ошибок и внедрение новых оптимизаций, это также приводит к некоторым несовместимым изменениям в поведении ClickHouse. Ознакомьтесь со следующими изменениями, чтобы понять, как переписать ваши запросы для анализатора.
 
-<div id="invalid-queries-are-no-longer-optimized">
-  ### Некорректные запросы больше не оптимизируются
-</div>
+### Некорректные запросы больше не оптимизируются {#invalid-queries-are-no-longer-optimized}
 
 Прежняя инфраструктура планирования запросов применяла оптимизации на уровне AST до этапа проверки запроса.
 Оптимизации могли переписать исходный запрос так, чтобы он стал корректным и исполнимым.
@@ -27,9 +25,7 @@ doc_type: 'reference'
 Это означает, что некорректные запросы, которые раньше можно было выполнить, теперь не поддерживаются.
 В таких случаях запрос необходимо исправить вручную.
 
-<div id="example-1">
-  #### Пример 1
-</div>
+#### Пример 1 {#example-1}
 
 Следующий запрос использует столбец `number` в списке проекций, хотя после агрегации доступно только `toString(number)`.
 В старом анализаторе `GROUP BY toString(number)` оптимизировалось до `GROUP BY number,`, что делало запрос корректным.
@@ -40,9 +36,7 @@ FROM numbers(1)
 GROUP BY toString(number)
 ```
 
-<div id="example-2">
-  #### Пример 2
-</div>
+#### Пример 2 {#example-2}
 
 Та же проблема возникает и в этом запросе. Столбец `number` используется после агрегации с другим ключом.
 Прежний анализатор запросов исправлял этот запрос, перемещая фильтр `number > 5` из условия `HAVING` в условие `WHERE`.
@@ -69,9 +63,7 @@ GROUP BY n
 
 Для упрощения миграции анализатор может воспроизводить прежнее преобразование `HAVING` в `WHERE` для неагрегатных AND-конъюнктов. Чтобы включить это поведение, задайте `analyzer_compatibility_allow_non_aggregate_in_having = 1`. Этот параметр доступен начиная с ClickHouse `26.7`. Параметр игнорируется для `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` и `GROUPING SETS`. Конъюнкты, содержащие агрегатные функции, `grouping` или недетерминированные функции, остаются в `HAVING`; если какой-либо конъюнкт содержит оконную функцию или функцию с сохранением состояния (например, `rowNumberInBlock`), преобразование отключается для всего `HAVING`, что соответствует прежнему поведению.
 
-<div id="create-view-with-invalid-query">
-  ### `CREATE VIEW` с некорректным запросом
-</div>
+### `CREATE VIEW` с некорректным запросом {#create-view-with-invalid-query}
 
 Анализатор всегда выполняет проверку типов.
 Ранее можно было создать `VIEW` с некорректным запросом `SELECT`.
@@ -79,9 +71,7 @@ GROUP BY n
 
 Теперь создать `VIEW` таким способом нельзя.
 
-<div id="example-view">
-  #### Пример
-</div>
+#### Пример {#example-view}
 
 ```sql
 CREATE TABLE source (data String)
@@ -93,13 +83,9 @@ AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
 FROM source;
 ```
 
-<div id="known-incompatibilities-of-the-join-clause">
-  ### Известные несовместимости предложения `JOIN`
-</div>
+### Известные несовместимости предложения `JOIN` {#known-incompatibilities-of-the-join-clause}
 
-<div id="join-using-column-from-projection">
-  #### `JOIN` с использованием столбца из проекции
-</div>
+#### `JOIN` с использованием столбца из проекции {#join-using-column-from-projection}
 
 По умолчанию псевдоним из списка `SELECT` нельзя использовать в качестве ключа `JOIN USING`.
 
@@ -119,9 +105,7 @@ USING (b);
 Если эта настройка имеет значение `false`, по умолчанию используется условие JOIN `t1.b = t2.b`, и запрос вернёт `2, 'one'`.
 Если `b` отсутствует в `t1`, запрос завершится ошибкой.
 
-<div id="changes-in-behavior-with-join-using-and-aliasmaterialized-columns">
-  #### Изменения в поведении `JOIN USING` со столбцами `ALIAS`/`MATERIALIZED`
-</div>
+#### Изменения в поведении `JOIN USING` со столбцами `ALIAS`/`MATERIALIZED` {#changes-in-behavior-with-join-using-and-aliasmaterialized-columns}
 
 В анализаторе использование `*` в запросе `JOIN USING` со столбцами `ALIAS` или `MATERIALIZED` по умолчанию включает эти столбцы в результирующий набор.
 
@@ -144,9 +128,7 @@ FULL JOIN t2 USING (payload);
 
 Чтобы результаты были предсказуемыми и согласованными, особенно при миграции старых запросов на анализатор, рекомендуется явно указывать столбцы в секции `SELECT`, а не использовать `*`.
 
-<div id="handling-of-type-modifiers-for-columns-in-using-clause">
-  #### Обработка модификаторов типов столбцов в предложении `USING`
-</div>
+#### Обработка модификаторов типов столбцов в предложении `USING` {#handling-of-type-modifiers-for-columns-in-using-clause}
 
 В анализаторе правила определения общего супертипа для столбцов, указанных в предложении `USING`, были унифицированы, чтобы результаты стали более предсказуемыми,
 особенно при работе с такими модификаторами типов, как `LowCardinality` и `Nullable`.
@@ -165,9 +147,7 @@ USING (id);
 
 В этом запросе общий супертип для `id` определяется как `String`, а модификатор `LowCardinality` из `t1` отбрасывается.
 
-<div id="projection-column-names-changes">
-  ### Изменения в именах столбцов проекции
-</div>
+### Изменения в именах столбцов проекции {#projection-column-names-changes}
 
 При вычислении имён проекции псевдонимы не подставляются.
 
@@ -175,27 +155,26 @@ USING (id);
 SELECT
     1 + 1 AS x,
     x + 1
-SETTINGS enable_analyzer = 0
 FORMAT PrettyCompact
+```
 
+До версии `24.3` второй столбец получал имя по подставленному псевдониму:
+
+```text
    ┌─x─┬─plus(plus(1, 1), 1)─┐
 1. │ 2 │                   3 │
    └───┴─────────────────────┘
+```
 
-SELECT
-    1 + 1 AS x,
-    x + 1
-SETTINGS enable_analyzer = 1
-FORMAT PrettyCompact
+Анализатор сохраняет псевдоним в имени:
 
+```text
    ┌─x─┬─plus(x, 1)─┐
 1. │ 2 │          3 │
    └───┴────────────┘
 ```
 
-<div id="incompatible-function-arguments-types">
-  ### Несовместимые типы аргументов функции
-</div>
+### Несовместимые типы аргументов функции {#incompatible-function-arguments-types}
 
 В анализатор вывод типов происходит на этапе начального анализа запроса.
 Это означает, что проверка типов выполняется до укороченного вычисления, поэтому аргументы функции `if` всегда должны иметь общий супертип.
@@ -206,39 +185,24 @@ FORMAT PrettyCompact
 SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 ```
 
-<div id="heterogeneous-clusters">
-  ### Неоднородные кластеры
-</div>
+### Неоднородные кластеры {#heterogeneous-clusters}
 
-Анализатор существенно меняет протокол обмена данными между серверами в кластере. Поэтому выполнять распределённые запросы на серверах с разными значениями настройки `enable_analyzer` невозможно.
+Анализатор существенно меняет протокол обмена данными между серверами в кластере. Поэтому невозможно выполнять распределённые запросы на серверах, которые расходятся в том, используется ли анализатор, — а для кластера серверов версий старше `26.9` это означает серверы с разными значениями настройки `enable_analyzer`.
 
-<div id="mutations-are-interpreted-by-previous-analyzer">
-  ### Мутации обрабатываются предыдущим анализатором
-</div>
+В сервере версии `26.10` и новее другого механизма анализа запросов не осталось, поэтому он игнорирует значение, присылаемое более старым initiator, и в любом случае анализирует запрос с помощью анализатора. Два варианта анализа именуют результирующие столбцы по-разному, а initiator сопоставляет блок, возвращаемый сегментом, по имени столбца, поэтому такой запрос может завершиться на initiator ошибкой `NOT_FOUND_COLUMN_IN_BLOCK` — например, когда в нём выбирается функция, записанная в неканоническом регистре (`hostname()`), которую анализатор приводит к каноническому имени (`hostName()`). Поэтому в кластере, всё ещё работающем со старым механизмом анализа запросов, необходимо установить `enable_analyzer = 1` на каждом сервере до того, как любой из них будет обновлён до `26.10`.
 
-Мутации по-прежнему используют старый анализатор.
-Это означает, что некоторые новые возможности ClickHouse SQL нельзя использовать в мутациях. Например, оператор `QUALIFY`.
-Текущий статус можно проверить [здесь](https://github.com/ClickHouse/ClickHouse/issues/61563).
-
-<div id="unsupported-features">
-  ### Неподдерживаемые возможности
-</div>
+### Неподдерживаемые возможности {#unsupported-features}
 
 Ниже приведен список возможностей, которые анализатор пока не поддерживает:
 
 * Индекс Annoy.
 * Индекс Hypothesis. Работа над ним ведется [здесь](https://github.com/ClickHouse/ClickHouse/pull/48381).
-* Оконное представление не поддерживается. Его поддержка в будущем не планируется.
 
-<div id="cloud-migration">
-  ## Миграция в Cloud
-</div>
+## Миграция в Cloud {#cloud-migration}
 
 Мы включаем анализатор на всех экземплярах, где он сейчас отключен, чтобы обеспечить новые функциональные возможности и оптимизации производительности. Это изменение ужесточает правила области видимости в SQL, поэтому клиентам потребуется вручную обновить запросы, которые им не соответствуют.
 
-<div id="migration-workflow">
-  ### Процесс миграции
-</div>
+### Процесс миграции {#migration-workflow}
 
 1. Определите запрос, отфильтровав записи в `system.query_log` по `normalized_query_hash`:
 
@@ -250,21 +214,18 @@ LIMIT 1
 SETTINGS skip_unavailable_shards=1
 ```
 
-2. Выполните запрос при включенном анализаторе, добавив следующие настройки.
+2. Выполните запрос с анализатором, добавив настройку совместимости (compatibility setting), которая восстанавливает разрешение идентификаторов прежнего анализа, если запрос на это опирается.
 
 ```sql
 SETTINGS
-    enable_analyzer=1,
     analyzer_compatibility_join_using_top_level_identifier=1
 ```
 
-3. Доработайте запрос и проверьте, что его результаты совпадают с выводом при отключённом анализаторе.
+3. Доработайте запрос и проверьте, что его результаты совпадают с выводом, который запрос давал до миграции.
 
 Ознакомьтесь с наиболее частыми несовместимостями, обнаруженными в ходе внутреннего тестирования.
 
-<div id="unknown-expression-identifier">
-  ### Неизвестный идентификатор выражения
-</div>
+### Неизвестный идентификатор выражения {#unknown-expression-identifier}
 
 Ошибка: `Unknown expression identifier ... in scope ... (UNKNOWN_IDENTIFIER)`. Код исключения: 47
 
@@ -277,9 +238,7 @@ SETTINGS
 * Ключи JOIN: используйте ON с полными выражениями вместо USING, если ключ — это псевдоним.
 * Во внешних запросах обращайтесь к псевдониму самого подзапроса/CTE, а не к таблицам внутри него.
 
-<div id="non-aggregated-columns-in-group-by">
-  ### Неагрегированные столбцы в GROUP BY
-</div>
+### Неагрегированные столбцы в GROUP BY {#non-aggregated-columns-in-group-by}
 
 Ошибка: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. Код исключения: 215
 
@@ -298,9 +257,7 @@ SELECT user_id, any(device_id) FROM table GROUP BY user_id
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
 ```
 
-<div id="non-aggregated-columns-in-having">
-  ### Неагрегированные столбцы в HAVING
-</div>
+### Неагрегированные столбцы в HAVING {#non-aggregated-columns-in-having}
 
 Ошибка: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. Код исключения: 215
 
@@ -316,33 +273,38 @@ SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
 SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
-<div id="duplicate-cte-names">
-  ### Дублирующиеся имена CTE
-</div>
+### Повторяющиеся имена CTE {#duplicate-cte-names}
 
 Ошибка: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Код исключения: 179
 
-Причина: Старый анализатор допускал определение нескольких общих табличных выражений (WITH ...) с одним и тем же именем, когда более позднее выражение перекрывало предыдущее. Анализатор не допускает такой неоднозначности.
+Причина: старый анализатор позволял определять несколько общих табличных выражений (WITH ...) с одинаковым именем, при этом более позднее определение перекрывало предыдущее. Новый анализатор по умолчанию не допускает такой неоднозначности.
 
-Решение: Переименуйте повторяющиеся CTE, чтобы их имена были уникальными.
+Решение: переименуйте повторяющиеся CTE так, чтобы их имена стали уникальными. В качестве временной меры на период миграции можно включить `analyzer_compatibility_allow_cte_redefinition = 1` (доступно начиная с ClickHouse `26.10`) и тем самым восстановить прежнее поведение: ссылка привязывается к последнему определению имени, которое не разрешается в данный момент. Благодаря этому переопределение может обращаться к предыдущему определению, а тело запроса — к последнему.
+
+Ограничения: CTE, объявленное как `MATERIALIZED`, и CTE в предложении `WITH RECURSIVE` нельзя переопределить даже при включенной настройке. Кроме того, одна конструкция запроса обрабатывается иначе, чем в старом анализаторе: CTE, объявленное между двумя определениями одного и того же имени, тоже привязывается к последнему определению, тогда как старый анализатор привязывал его к определению, видимому в месте его объявления.
 
 ```sql
-/* ИСХОДНЫЙ ЗАПРОС */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- Переопределено
+/* ORIGINAL QUERY */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
-/* ИСПРАВЛЕННЫЙ ЗАПРОС */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+/* FIXED QUERY */
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
-<div id="ambiguous-column-identifiers">
-  ### Неоднозначные идентификаторы столбцов
-</div>
+### Неоднозначные идентификаторы столбцов {#ambiguous-column-identifiers}
 
 Ошибка: `JOIN [JOIN TYPE] ambiguous identifier ... (AMBIGUOUS_IDENTIFIER)` Код исключения: 207
 
@@ -358,9 +320,7 @@ SELECT table1.ID AS ID FROM table1, table2 WHERE ID...
 SELECT table1.ID AS ID_RENAMED FROM table1, table2 WHERE ID_RENAMED...
 ```
 
-<div id="invalid-usage-of-final">
-  ### Недопустимое использование FINAL
-</div>
+### Недопустимое использование FINAL {#invalid-usage-of-final}
 
 Ошибка: `Table expression modifiers FINAL are not supported for subquery...` или `Storage ... doesn't support FINAL` (`UNSUPPORTED_METHOD`). Коды исключений: 1, 181
 
@@ -379,9 +339,7 @@ SELECT * FROM (SELECT * FROM my_table) AS subquery FINAL ...
 SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
 ```
 
-<div id="countdistinct-case-insensitivity">
-  ### Чувствительность функции `countDistinct()` к регистру
-</div>
+### Чувствительность функции `countDistinct()` к регистру {#countdistinct-case-insensitivity}
 
 Ошибка: `Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`. Код исключения: 46
 

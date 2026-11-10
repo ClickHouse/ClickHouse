@@ -29,12 +29,18 @@ public:
 
     bool withTies() const { return with_ties; }
 
+    QueryPlanStepPtr clone() const override;
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     bool hasCorrelatedExpressions() const override { return false; }
+
+    /// The fraction is resolved against the whole result, so `apply_prelimit` never pushes this to a
+    /// shard and it runs on the initiator.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -26,6 +27,7 @@
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
 #include <base/scope_guard.h>
+#include <fmt/ranges.h>
 #include <sys/mman.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Exception.h>
@@ -51,6 +53,7 @@ namespace ProfileEvents
     extern const Event KeeperReadSnapshotObject;
     extern const Event KeeperReadSnapshotFailed;
     extern const Event KeeperReadSnapshotDeferred;
+    extern const Event KeeperReadSnapshotStreamingSeeks;
     extern const Event KeeperSnapshotRemoteLoaderErrors;
     extern const Event KeeperSaveSnapshotObject;
     extern const Event KeeperSaveSnapshotFailed;
@@ -78,15 +81,21 @@ namespace CoordinationSetting
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsUInt64 min_request_size_for_cache;
+    extern const CoordinationSettingsInt64 snapshot_zstd_compression_level;
     extern const CoordinationSettingsUInt64 snapshots_to_keep;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+    extern const CoordinationSettingsBool snapshot_transfer_remote_disk_streaming;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
+
+static constexpr uint64_t nuraft_snapshot_sync_req_framing_size = 89;
 
 /// nuraft::snapshot holds only Raft metadata (last_log_idx, last_log_term, size, cluster_config).
 static nuraft::ptr<nuraft::snapshot> cloneSnapshotMeta(nuraft::snapshot & s)
@@ -100,6 +109,18 @@ static bool sameSnapshotIdentity(const nuraft::snapshot & lhs, const nuraft::sna
 {
     return lhs.get_last_log_idx() == rhs.get_last_log_idx()
         && lhs.get_last_log_term() == rhs.get_last_log_term();
+}
+
+/// A legacy entry from a very old leader has no zxid. Such leaders used the log index as the zxid.
+/// This is safe: the log index is never smaller than the zxid, because every log entry advances
+/// the log index, but only requests advance the zxid. Batch entries always have a zxid.
+static void assignZxidToLegacyEntry(KeeperRequestBatch & batch, uint64_t log_idx)
+{
+    if (batch.first_zxid != 0)
+        return;
+    if (batch.requests.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch.requests.size());
+    batch.first_zxid = static_cast<int64_t>(log_idx);
 }
 
 KeeperStateMachine::KeeperStateMachine(
@@ -121,7 +142,8 @@ KeeperStateMachine::KeeperStateMachine(
     , snapshot_manager(
           keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshots_to_keep],
           keeper_context_,
-          keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format])
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format],
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshot_zstd_compression_level])
 {
 }
 
@@ -149,7 +171,10 @@ void KeeperStateMachine::init()
             auto new_storage = KeeperStorage::create(
                 keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
                 superdigest, keeper_context, /* initialize_system_nodes */ false);
-            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *new_storage);
+            /// Loading the latest local snapshot during startup — the only place where
+            /// `remove_orphaned_nodes_on_startup` recovery is allowed to remove orphaned nodes.
+            auto snapshot_deserialization_result
+                = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *new_storage, /*allow_orphaned_nodes_removal=*/ true);
             auto latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
             chassert(latest_snapshot_info);
 
@@ -168,6 +193,10 @@ void KeeperStateMachine::init()
             advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
             cluster_config = snapshot_deserialization_result.cluster_config;
             keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
+            /// Verified by `KeeperServer::startup` via `findOrphanConflictInLogTail` once the log store
+            /// is loaded -- we cannot check it here because the log store does not exist yet.
+            removed_orphan_subtree_roots = std::move(snapshot_deserialization_result.removed_orphan_subtree_roots);
+            removed_orphan_ephemeral_sessions = std::move(snapshot_deserialization_result.removed_orphan_ephemeral_sessions);
         }
         catch (...)
         {
@@ -220,12 +249,11 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 
         if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
         {
-            auto request_for_session = parseRequest(entry->get_buf(), /*final=*/false);
-            if (!request_for_session->zxid)
-                request_for_session->zxid = log_idx;
-            request_for_session->log_idx = log_idx;
+            auto batch = parseRequestBatch(entry->get_buf(), /*final=*/false);
+            assignZxidToLegacyEntry(*batch, log_idx);
+            batch->log_idx = log_idx;
 
-            preprocess(*request_for_session, lock_mutex);
+            preprocessBatch(*batch, lock_mutex);
         }
 
         if ((i + 1) % 50000 == 0)
@@ -237,31 +265,526 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 namespace
 {
 
-void assertDigest(
-    const KeeperDigest & expected,
-    const KeeperDigest & actual,
-    const Coordination::ZooKeeperRequest & request,
-    uint64_t log_idx,
-    uint64_t session_id,
-    bool committing)
+/// How much of the tree around an enumerated path a request observes; decides how far from a removed
+/// subtree the path may sit before the request would replay differently.
+enum class RequestPathKind
 {
-    if (!KeeperStorage::checkDigest(expected, actual))
+    /// Only the node itself: whether it exists and stats that removing a subtree never touches (its
+    /// `version`, `mzxid`, `pzxid`, ACL, and anything else in `Stat` except `numChildren` and
+    /// `cversion`). Orphan cleanup repairs only `numChildren` and the children set of the removed
+    /// root's direct parent, so such a request replays identically unless the node itself was removed.
+    /// This also covers writes that rewrite only such fields of the node (`Set`, `SetACL`).
+    NodeOnly,
+    /// The node itself and its direct children: whether it exists, its data, version and ACL, and the
+    /// `Stat` it reports (which carries `numChildren` and `cversion`) or an explicit children listing.
+    /// Nothing below the children is observed.
+    NodeAndChildren,
+    /// The whole subtree rooted at this path: a recursive listing or a recursive removal walks every
+    /// descendant, so losing any of them changes the result.
+    Subtree,
+    /// Only the stats this node accumulates as the *parent* of a created or removed child: a
+    /// create/remove bumps the parent's `numChildren`, `cversion` and `pzxid`.
+    ParentStats,
+};
+
+/// Enumerate the node paths a request refers to, calling `f(std::string_view, RequestPathKind)` for
+/// each. Returns false for request types we do not recognise, so the caller can fail closed.
+///
+/// Keep in sync with `callOnConcreteRequestType` in KeeperStorageImpl.cpp: a new op num that is not
+/// listed here is reported as a conflict rather than silently skipped.
+template <typename F>
+bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
+{
+    using Coordination::OpNum;
+    switch (request.getOpNum())
     {
-        LOG_FATAL(
-            getLogger("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}' at log index {} for session {}.\nExpected digest - {}, actual digest - {} "
-            "(digest {}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
-            committing ? "committing" : "preprocessing",
-            request.getOpNum(),
-            log_idx,
-            session_id,
-            expected.value,
-            actual.value,
-            expected.version,
-            request.toString());
-        std::terminate();
+        case OpNum::Multi:
+        case OpNum::MultiRead:
+        {
+            /// `ZooKeeperMultiRequest::getPath()` returns an empty string, so the sub-requests
+            /// carry the actual paths and must be walked.
+            const auto & multi = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(request);
+            for (const auto & sub_request : multi.requests)
+            {
+                if (!sub_request)
+                    return false;
+                if (!forEachRequestPath(*sub_request, f))
+                    return false;
+            }
+            return true;
+        }
+        /// These touch no node path at all.
+        ///
+        /// `Sync` carries a path but never reads or writes the tree -- its handler ignores the storage
+        /// argument entirely and just echoes the path back (see `process(const ZooKeeperSyncRequest &,
+        /// KeeperStorage & /* storage */, ...)` in KeeperStorageImpl.cpp). Treating its path as touched
+        /// would make a harmless tail entry such as `Sync("/")` conflict with every removed subtree and
+        /// block recovery for no reason.
+        ///
+        /// `AddWatch`, `CheckWatch` and `RemoveWatch` carry a path too, but their handlers only add,
+        /// look up or drop entries in the watch maps (`KeeperStorage::addPersistentWatch`,
+        /// `containsWatch`, `removePersistentWatch`); they never consult the node tree or its stats,
+        /// and no watch map is restored from a snapshot. Replaying them after orphan cleanup therefore
+        /// produces exactly the state an unrepaired replica ends up with, even when the path lies in a
+        /// pruned subtree. These read requests land in the log only under `quorum_reads`, and treating
+        /// them as touched paths would turn a safe recovery tail into a false `CORRUPTED_DATA`.
+        ///
+        case OpNum::Heartbeat:
+        case OpNum::Auth:
+        case OpNum::SessionID:
+        case OpNum::Error:
+        case OpNum::Sync:
+        case OpNum::AddWatch:
+        case OpNum::CheckWatch:
+        case OpNum::RemoveWatch:
+            return true;
+        /// `Close` is deliberately NOT path-free: it carries no path, but its handler removes every
+        /// ephemeral node owned by the session and updates their parents' stats
+        /// (`prepareRemoveEphemeralNodes` in KeeperStorageImpl.cpp). The paths it touches are only known
+        /// from the session's ephemeral bookkeeping, so `findOrphanConflictInLogTail` verifies it
+        /// separately before calling this function; reaching it here (e.g. nested in a `Multi`) fails closed.
+        case OpNum::Close:
+            return false;
+        /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` must not
+        /// be called on them: it dereferences `data_watches[0]` without checking that the list is
+        /// non-empty). `KeeperStorage::setWatches` resolves the data, child (list), and exist watch paths
+        /// against the tree -- whether the node exists, its `mzxid` for a data watch and its `pzxid` for a
+        /// child watch decide between an immediate `DELETED`/`CHANGED`/`CREATED` watch event and
+        /// re-registering the watch -- so a watch on a pruned path would replay differently after orphan
+        /// cleanup. None of these fields is touched on a surviving node, so they only conflict inside the
+        /// removed region. The persistent (and persistent recursive) watch lists of `SetWatches2` are
+        /// registered without consulting the tree, exactly like `AddWatch` above, so they are not checked.
+        case OpNum::SetWatch:
+        case OpNum::SetWatch2:
+        {
+            const auto & set_watches = dynamic_cast<const Coordination::SetWatchesRequest &>(request);
+            for (const auto & path : set_watches.data_watches)
+                f(path, RequestPathKind::NodeOnly);
+            for (const auto & path : set_watches.child_watches)
+                f(path, RequestPathKind::NodeOnly);
+            for (const auto & path : set_watches.exist_watches)
+                f(path, RequestPathKind::NodeOnly);
+            return true;
+        }
+        /// Everything else has a meaningful single path.
+        case OpNum::Reconfig:
+        case OpNum::Get:
+        case OpNum::Exists:
+        case OpNum::Create:
+        case OpNum::Create2:
+        case OpNum::CreateContainer:
+        case OpNum::CreateIfNotExists:
+        case OpNum::CreateTTL:
+        case OpNum::Remove:
+        case OpNum::TryRemove:
+        case OpNum::RemoveRecursive:
+        case OpNum::Set:
+        case OpNum::SetACL:
+        case OpNum::GetACL:
+        case OpNum::List:
+        case OpNum::SimpleList:
+        case OpNum::FilteredList:
+        case OpNum::FilteredListWithStatsAndData:
+        case OpNum::ListRecursive:
+        case OpNum::ListWithOptions:
+        case OpNum::Check:
+        case OpNum::CheckNotExists:
+        case OpNum::CheckStat:
+        {
+            const auto path = request.getPath();
+
+            /// Some request forms are rejected by their handlers before the tree is consulted, on every
+            /// replica alike, so they change nothing and replay identically after orphan cleanup:
+            ///  - `RemoveRecursive` of `/` or of anything under the internal Keeper path returns
+            ///    `ZBADARGUMENTS` (`preprocess` for `ZooKeeperRemoveRecursiveRequest` in
+            ///    KeeperStorageImpl.cpp);
+            ///  - `ListWithOptions` with an unsupported options version (`ZUNIMPLEMENTED`), or recursive
+            ///    with a watch (`ZBADARGUMENTS`), in its `processLocal`.
+            /// Reporting their paths would turn a harmless tail entry such as `RemoveRecursive("/")` into
+            /// a false conflict with every removed subtree.
+            if (request.getOpNum() == OpNum::RemoveRecursive
+                && (path == "/" || Coordination::matchPath(path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH))
+                return true;
+            if (request.getOpNum() == OpNum::ListWithOptions)
+            {
+                const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
+                if (lwo.options_version != Coordination::ListOptionsVersion::V1 || (lwo.options.recursive && lwo.has_watch))
+                    return true;
+            }
+
+            /// `RemoveRecursive` walks and deletes the whole subtree (and compares its size against
+            /// `remove_nodes_limit`), `ListRecursive` returns every descendant, and `Reconfig` rewrites
+            /// the configuration subtree: all three observe arbitrarily deep descendants, so a removed
+            /// subtree anywhere below them changes the outcome. `ListWithOptions` can be recursive
+            /// depending on its options. `Check` and `CheckNotExists` compare only the node's existence,
+            /// ACL and `version`. `Set` and `SetACL` check the node's existence, ACL and `version`/`aversion`
+            /// and rewrite only the node's own data or ACL and version fields (`Set` also increments the
+            /// parent's `cversion`, which orphan cleanup never changes); neither reads the node's children or
+            /// `numChildren`, so the state they leave is the same after orphan cleanup. `CheckStat` compares exactly the fields of `stat_to_check` that are not
+            /// `-1` (`checkNodeStat` in KeeperStorageImpl.cpp), so it observes the children only when it
+            /// compares `numChildren` or `cversion`. Everything else in this group resolves the node
+            /// itself and at most its direct children.
+            auto kind = RequestPathKind::NodeAndChildren;
+            if (request.getOpNum() == OpNum::RemoveRecursive || request.getOpNum() == OpNum::ListRecursive
+                || request.getOpNum() == OpNum::Reconfig)
+                kind = RequestPathKind::Subtree;
+            else if (request.getOpNum() == OpNum::Check || request.getOpNum() == OpNum::CheckNotExists
+                || request.getOpNum() == OpNum::Set || request.getOpNum() == OpNum::SetACL)
+                kind = RequestPathKind::NodeOnly;
+            else if (request.getOpNum() == OpNum::CheckStat)
+            {
+                const auto & check = dynamic_cast<const Coordination::ZooKeeperCheckRequest &>(request);
+                if (check.stat_to_check && check.stat_to_check->numChildren == -1 && check.stat_to_check->cversion == -1)
+                    kind = RequestPathKind::NodeOnly;
+            }
+            if (request.getOpNum() == OpNum::ListWithOptions)
+            {
+                const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
+                if (lwo.options.recursive)
+                    kind = RequestPathKind::Subtree;
+            }
+            f(path, kind);
+
+            /// A sequential create does not touch the path it carries: the storage appends a zero-padded
+            /// sequence number taken from the parent, so the node actually created is
+            /// `<path><seq_num>` (`path_created` in KeeperStorageImpl.cpp). We cannot know the sequence
+            /// number here, but the created node is always a direct child of the same parent, and the
+            /// parent's children set and `seq_num`/`numChildren` are exactly what the create resolves
+            /// against, so checking the parent covers it.
+            if (const auto * create = dynamic_cast<const Coordination::ZooKeeperCreateRequest *>(&request);
+                create != nullptr && create->is_sequential)
+                f(Coordination::parentNodePath(path), RequestPathKind::NodeAndChildren);
+
+            /// Creates and removes also mutate the stats of the target's parent (`numChildren`,
+            /// `cversion`, `pzxid` -- see the create/remove handlers in KeeperStorageImpl.cpp), so a
+            /// sibling operation under a parent whose children were pruned replays against repaired
+            /// stats and silently diverges from replicas that still hold the lost children.
+            switch (request.getOpNum())
+            {
+                case OpNum::Create:
+                case OpNum::Create2:
+                case OpNum::CreateContainer:
+                case OpNum::CreateIfNotExists:
+                case OpNum::CreateTTL:
+                case OpNum::Remove:
+                case OpNum::TryRemove:
+                case OpNum::RemoveRecursive:
+                    f(Coordination::parentNodePath(path), RequestPathKind::ParentStats);
+                    break;
+                default:
+                    break;
+            }
+
+            return true;
+        }
     }
+    return false;
 }
+
+/// Whether a request that observes `path` in the way described by `kind` would replay differently
+/// after the subtree rooted at `subtree_root` was removed.
+///
+/// Removing that subtree changes exactly two things: the root and its descendants are gone, and the
+/// root's direct parent lost a child (`numChildren`, `cversion`, `pzxid`, children set). Every other
+/// node in the tree -- including strict ancestors further up the chain -- is byte for byte what a
+/// replica that still holds the lost nodes has, so a request observing only such a node replays
+/// identically and must not block recovery. Hence:
+///  - the path is the removed root or below it: our tree lost those nodes, so the request resolves
+///    differently (`Create`/`Set` -> `ZNONODE`). Conflicts for every kind;
+///  - the path is the direct parent of the removed root: its children set and `numChildren` differ
+///    from the tree the log was written against, so e.g. `Remove` returns `ZOK` here but was
+///    `ZNOTEMPTY`, `Create <root>` succeeds here but was `ZNODEEXISTS`, and a sibling create/remove
+///    updates the parent's stats from a repaired base. Conflicts for every kind except `NodeOnly`,
+///    whose observed fields are unchanged there;
+///  - the path is a higher strict ancestor: only a request that walks the whole subtree
+///    (`RemoveRecursive`, `ListRecursive`) sees the difference. A `Set`, `Get`, `List` or sibling
+///    create on such an ancestor does not, and returns `false` here.
+bool conflictsWithRemovedSubtree(std::string_view path, RequestPathKind kind, std::string_view subtree_root)
+{
+    if (Coordination::matchPath(path, subtree_root) != Coordination::PathMatchResult::NOT_MATCH)
+        return true;
+
+    if (kind == RequestPathKind::NodeOnly)
+        return false;
+
+    if (Coordination::matchPath(subtree_root, path) != Coordination::PathMatchResult::IS_CHILD)
+        return false;
+
+    return kind == RequestPathKind::Subtree || path == Coordination::parentNodePath(subtree_root);
+}
+
+}
+
+std::optional<KeeperStateMachine::OrphanLogTailConflict>
+KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end_idx)
+{
+    if (removed_orphan_subtree_roots.empty())
+        return {};
+
+    const auto roots_str = fmt::format("{}", fmt::join(removed_orphan_subtree_roots, ", "));
+
+    start_idx = std::min(start_idx, end_idx);
+    if (start_idx == end_idx)
+    {
+        LOG_INFO(
+            log,
+            "No local log entries above the snapshot, nothing can reference the {} removed orphaned subtree root(s): [{}]",
+            removed_orphan_subtree_roots.size(),
+            roots_str);
+        persistRepairedSnapshot();
+        removed_orphan_subtree_roots.clear();
+        removed_orphan_ephemeral_sessions.clear();
+        return {};
+    }
+
+    /// Fail closed on anything that prevents us from reading the range. Neither branch is reachable
+    /// today (`KeeperServer::startup` attaches the log store first, and `Changelog` already refuses to
+    /// start on a gap between the snapshot and the oldest log entry), but a future reordering must
+    /// fail loudly instead of skipping the verification.
+    if (!log_store)
+    {
+        OrphanLogTailConflict conflict;
+        conflict.reason = "the log store is not available, so the local log tail cannot be verified";
+        return conflict;
+    }
+
+    if (log_store->start_index() > start_idx)
+    {
+        OrphanLogTailConflict conflict;
+        conflict.reason = fmt::format(
+            "log entries between the snapshot and the start of the log are missing (need from {}, log starts at {}), so the "
+            "local log tail cannot be verified",
+            start_idx,
+            log_store->start_index());
+        return conflict;
+    }
+
+    LOG_INFO(
+        log,
+        "Verifying local log entries [{}, {}) against {} removed orphaned subtree root(s): [{}]",
+        start_idx,
+        end_idx,
+        removed_orphan_subtree_roots.size(),
+        roots_str);
+
+    static constexpr uint64_t max_entries_without_warning = 1'000'000;
+    if (end_idx - start_idx > max_entries_without_warning)
+        LOG_WARNING(log, "There are {} local log entries to verify, this may take a while", end_idx - start_idx);
+
+    /// Read in batches: the same range is materialised again by `preprocessUncommittedLogEntries`
+    /// right after startup, so keep this verification's peak memory flat.
+    static constexpr uint64_t batch_size = 10'000;
+    for (uint64_t batch_begin = start_idx; batch_begin < end_idx; batch_begin += batch_size)
+    {
+        const uint64_t batch_end = std::min(batch_begin + batch_size, end_idx);
+        auto entries = log_store->log_entries(batch_begin, batch_end);
+        if (!entries || entries->size() != batch_end - batch_begin)
+        {
+            OrphanLogTailConflict conflict;
+            conflict.reason = fmt::format(
+                "the log store returned {} entries for the range [{}, {}), so the local log tail cannot be verified",
+                entries ? entries->size() : 0,
+                batch_begin,
+                batch_end);
+            return conflict;
+        }
+
+        for (size_t i = 0; i < entries->size(); ++i)
+        {
+            auto & entry = (*entries)[i];
+            const uint64_t log_idx = batch_begin + i;
+
+            if (!entry || entry->get_val_type() != nuraft::log_val_type::app_log)
+                continue;
+
+            KeeperRequestBatchPtr batch;
+            try
+            {
+                /// `final=true` keeps this scan out of `parsed_batch_cache`: the entries are parsed
+                /// again during the real preprocessing pass and we must not disturb that.
+                batch = parseRequestBatch(entry->get_buf(), /*final=*/true);
+            }
+            catch (...)
+            {
+                OrphanLogTailConflict conflict;
+                conflict.log_idx = log_idx;
+                conflict.reason
+                    = fmt::format("the entry cannot be parsed ({}), so it cannot be verified", getCurrentExceptionMessage(false));
+                return conflict;
+            }
+
+            if (!batch)
+                continue;
+
+            /// A batch is applied request by request in order, so checking each request against the
+            /// removed subtrees in order is the same as checking a tail of single-request entries.
+            for (const auto & request_for_session : batch->requests)
+            {
+                if (!request_for_session.request)
+                    continue;
+
+                const auto & request = *request_for_session.request;
+
+                /// `Close` names no path itself: the storage removes every ephemeral node owned by the
+                /// session and decrements each parent's `numChildren` / `cversion`
+                /// (`prepareRemoveEphemeralNodes`). Two ways this replays differently after orphan cleanup:
+                ///  - the session owned a pruned ephemeral: other replicas still remove it (and update its
+                ///    parent), we have nothing to remove;
+                ///  - the session owns a surviving ephemeral under a repaired parent: the parent's stats
+                ///    are updated from a different base, exactly like a sibling `Remove` in the tail.
+                if (request.getOpNum() == Coordination::OpNum::Close)
+                {
+                    const auto session_id = request_for_session.session_id;
+                    if (std::binary_search(removed_orphan_ephemeral_sessions.begin(), removed_orphan_ephemeral_sessions.end(), session_id))
+                    {
+                        OrphanLogTailConflict found;
+                        found.log_idx = log_idx;
+                        found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                        found.reason = fmt::format(
+                            "the entry closes session {} which owned ephemeral nodes that were removed from the snapshot, so the close "
+                            "would no longer remove them and update their parents' stats",
+                            session_id);
+                        return found;
+                    }
+
+                    std::vector<std::string> session_ephemerals;
+                    {
+                        std::lock_guard ephemeral_lock(storage->ephemeral_mutex);
+                        if (auto ephemerals_it = storage->committed_ephemerals.find(session_id);
+                            ephemerals_it != storage->committed_ephemerals.end())
+                            session_ephemerals.assign(ephemerals_it->second.begin(), ephemerals_it->second.end());
+                    }
+                    std::sort(session_ephemerals.begin(), session_ephemerals.end());
+
+                    for (const auto & ephemeral_path : session_ephemerals)
+                    {
+                        const auto parent = Coordination::parentNodePath(ephemeral_path);
+                        for (const auto & subtree_root : removed_orphan_subtree_roots)
+                        {
+                            if (conflictsWithRemovedSubtree(ephemeral_path, RequestPathKind::NodeAndChildren, subtree_root)
+                                || conflictsWithRemovedSubtree(parent, RequestPathKind::ParentStats, subtree_root))
+                            {
+                                OrphanLogTailConflict found;
+                                found.log_idx = log_idx;
+                                found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                                found.request_path = ephemeral_path;
+                                found.subtree_root = subtree_root;
+                                found.reason = fmt::format(
+                                    "the entry closes session {} which owns this ephemeral node under a parent whose children were removed "
+                                    "from the snapshot, so the parent's stats would be updated from a repaired base",
+                                    session_id);
+                                return found;
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                std::optional<OrphanLogTailConflict> conflict;
+                const bool recognised = forEachRequestPath(
+                    request,
+                    [&](std::string_view path, RequestPathKind kind)
+                    {
+                        if (conflict)
+                            return;
+
+                        /// Every request routed here carries a real path (the ones that do not are handled
+                        /// above), so this means a new request type was added without deciding which group it
+                        /// belongs to. Fail closed explicitly rather than leaning on what `matchPath` happens
+                        /// to return for an empty path.
+                        if (path.empty())
+                        {
+                            OrphanLogTailConflict empty_path;
+                            empty_path.log_idx = log_idx;
+                            empty_path.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                            empty_path.reason = "the request has no path, so the nodes it touches cannot be determined";
+                            conflict = std::move(empty_path);
+                            return;
+                        }
+
+                        for (const auto & subtree_root : removed_orphan_subtree_roots)
+                        {
+                            if (conflictsWithRemovedSubtree(path, kind, subtree_root))
+                            {
+                                /// Some create/remove variants are no-ops that return before touching the
+                                /// parent's stats. `CreateIfNotExists` returns `ZOK` without modifying the
+                                /// parent when the target already exists; `TryRemove` returns `ZOK` and
+                                /// `Remove` returns `ZNONODE` when the target does not exist. In all three
+                                /// cases the request replays identically after orphan cleanup, so the
+                                /// `ParentStats` conflict is a false positive.
+                                ///
+                                /// We check the committed snapshot state: the log tail has not been replayed
+                                /// yet, so the snapshot reflects the last committed tree. An earlier tail
+                                /// entry that flips this node's existence would itself conflict with the same
+                                /// removed subtree (it is a create/remove under the repaired parent) and
+                                /// would have already been reported, so reaching this point means no earlier
+                                /// entry has changed the node.
+                                if (kind == RequestPathKind::ParentStats)
+                                {
+                                    const auto op = request.getOpNum();
+                                    const auto target = request.getPath();
+                                    const bool target_exists = storage->nodes_storage->getCommittedNodeSimple(target, nullptr, nullptr);
+
+                                    if (op == Coordination::OpNum::CreateIfNotExists && target_exists)
+                                        return;
+
+                                    if ((op == Coordination::OpNum::TryRemove || op == Coordination::OpNum::Remove) && !target_exists)
+                                        return;
+                                }
+
+                                OrphanLogTailConflict found;
+                                found.log_idx = log_idx;
+                                found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                                found.request_path = std::string{path};
+                                found.subtree_root = subtree_root;
+                                found.reason = kind == RequestPathKind::ParentStats
+                                    ? "the entry creates or removes a node under a parent whose children were removed from the snapshot, "
+                                      "so the parent's stats would be updated from a repaired base"
+                                    : "the entry references a path that was removed from the snapshot, or the parent of one";
+                                conflict = std::move(found);
+                                return;
+                            }
+                        }
+                    });
+
+                if (!recognised)
+                {
+                    OrphanLogTailConflict unrecognised;
+                    unrecognised.log_idx = log_idx;
+                    unrecognised.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                    unrecognised.reason = "the request type is not recognised, so the paths it touches cannot be determined";
+                    return unrecognised;
+                }
+
+                if (conflict)
+                    return conflict;
+            }
+        }
+
+        if ((batch_end - start_idx) % 50'000 == 0)
+            LOG_TRACE(log, "Verified {}/{} entries", batch_end - start_idx, end_idx - start_idx);
+    }
+
+    LOG_INFO(
+        log,
+        "Verified local log entries [{}, {}): none of them reference the {} removed orphaned subtree root(s)",
+        start_idx,
+        end_idx,
+        removed_orphan_subtree_roots.size());
+
+    persistRepairedSnapshot();
+
+    /// One-shot startup token: clearing makes a second call a no-op and keeps a stale value from
+    /// surviving into a later `apply_snapshot` that replaces `storage`.
+    removed_orphan_subtree_roots.clear();
+    removed_orphan_subtree_roots.shrink_to_fit();
+    removed_orphan_ephemeral_sessions.clear();
+    removed_orphan_ephemeral_sessions.shrink_to_fit();
+    return {};
+}
+
+namespace
+{
 
 /// Macros to construct timed lock guards for state_machine_storage_mutex with appropriate ProfileEvents.
 /// We cannot use a factory function because TSA does not track lock ownership across function boundaries.
@@ -279,6 +802,15 @@ union XidHelper
         uint32_t upper;
     } parts;
     int64_t xid;
+};
+
+/// Requests with these xids don't go through the parsed request cache.
+constexpr std::array non_cacheable_xids{
+    Coordination::WATCH_XID,
+    Coordination::PING_XID,
+    Coordination::AUTH_XID,
+    Coordination::CLOSE_XID,
+    Coordination::CLOSE_XID_64,
 };
 
 }
@@ -310,51 +842,51 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
     if (!keeper_context->localLogsPreprocessed())
         return result;
 
-    auto request_for_session = parseRequest(data, /*final=*/false);
-    if (!request_for_session->zxid)
-        request_for_session->zxid = log_idx;
+    auto batch = parseRequestBatch(data, /*final=*/false);
+    assignZxidToLegacyEntry(*batch, log_idx);
+    batch->log_idx = log_idx;
 
-    request_for_session->log_idx = log_idx;
-
-    const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+    const auto maybe_log_opentelemetry_spans = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
     {
-        request_for_session->request->spans.maybeInitialize(
-            KeeperSpan::PreCommit,
-            request_for_session->request->tracing_context.get(),
-            start_time_us);
+        for (const auto & request_for_session : batch->requests)
+        {
+            request_for_session.request->spans.maybeInitialize(
+                KeeperSpan::PreCommit,
+                request_for_session.request->tracing_context.get(),
+                start_time_us);
 
-        request_for_session->request->spans.maybeFinalize(
-            KeeperSpan::PreCommit,
-            [&]
-            {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                    {"keeper.session_id", request_for_session->session_id},
-                    {"keeper.xid", request_for_session->request->xid},
-                    {"raft.log_idx", log_idx},
-                };
-            },
-            status,
-            error_message);
+            request_for_session.request->spans.maybeFinalize(
+                KeeperSpan::PreCommit,
+                [&]
+                {
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request_for_session.request->getOpNum())},
+                        {"keeper.session_id", request_for_session.session_id},
+                        {"keeper.xid", request_for_session.request->xid},
+                        {"raft.log_idx", log_idx},
+                    };
+                },
+                status,
+                error_message);
+        }
     };
 
     try
     {
-        preprocess(*request_for_session, /*lock_mutex=*/ true);
+        preprocessBatch(*batch, /*lock_mutex=*/ true);
     }
     catch (...)
     {
-        maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+        maybe_log_opentelemetry_spans(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
         throw;
     }
 
-    maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
+    maybe_log_opentelemetry_spans(OpenTelemetry::SpanStatus::OK, "");
 
     return result;
 }
 
-// Serialize the request for the log entry
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::serializeRequestInOldFormat(const KeeperRequestForSession & request_for_session)
 {
     DB::WriteBufferFromNuraftBuffer write_buf;
     DB::writeIntBinary(request_for_session.session_id, write_buf);
@@ -388,21 +920,35 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::getZooKeeperLogEntry(const Keepe
         request->tracing_context->serialize(write_buf);
     }
 
-    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
+    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequestInOldFormat,
+    /// patchSerializedRequestBatch and the PreAppendLogLeader callback handler (which adds bytes missing in older versions)
     return write_buf.getBuffer();
 }
 
-std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
-    nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
+bool KeeperStateMachine::shouldCacheParsedEntry(int64_t session_id, int64_t xid, size_t entry_size) const
+{
+    return min_request_size_to_cache != 0 && session_id != -1
+        && session_id != keeper_internal_ttl_garbage_collector_session_id
+        && session_id != keeper_internal_container_garbage_collector_session_id
+        && entry_size >= min_request_size_to_cache
+        && std::all_of(
+            non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
+}
+
+KeeperRequestBatchPtr KeeperStateMachine::parseRequestInOldFormat(
+    nuraft::buffer & data,
+    bool final,
+    ZooKeeperLogSerializationVersion * serialization_version,
+    size_t * patched_fields_offset)
 {
     ReadBufferFromNuraftBuffer buffer(data);
-    auto request_for_session = std::make_shared<KeeperRequestForSession>();
-    readIntBinary(request_for_session->session_id, buffer);
+    int64_t session_id = 0;
+    readIntBinary(session_id, buffer);
 
     int32_t length = 0;
     Coordination::read(length, buffer);
     /// Request should not exceed max_request_size (this is verified in KeeperTCPHandler)
-    if (length < 0)
+    if (length < static_cast<int32_t>(sizeof(uint32_t)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid request length: {}", length);
 
     /// because of backwards compatibility, only 32bit xid could be written
@@ -416,33 +962,35 @@ std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
     auto buffer_position = buffer.getPosition();
     buffer.seek(length - sizeof(uint32_t), SEEK_CUR);
 
-    if (request_end_position)
-        *request_end_position = buffer.getPosition();
+    if (patched_fields_offset)
+        *patched_fields_offset = buffer.getPosition();
 
     using enum ZooKeeperLogSerializationVersion;
     ZooKeeperLogSerializationVersion version = INITIAL;
 
+    int64_t time = 0;
+    int64_t zxid = 0;
+    KeeperDigest digest;
+
     if (!buffer.eof())
     {
         version = WITH_TIME;
-        readIntBinary(request_for_session->time, buffer);
+        readIntBinary(time, buffer);
     }
     else
-        request_for_session->time
-            = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     if (!buffer.eof())
     {
         version = WITH_ZXID_DIGEST;
 
-        readIntBinary(request_for_session->zxid, buffer);
+        readIntBinary(zxid, buffer);
 
         chassert(!buffer.eof());
 
-        request_for_session->digest.emplace();
-        readIntBinary(request_for_session->digest->version, buffer);
-        if (request_for_session->digest->version != KeeperDigestVersion::NO_DIGEST || !buffer.eof())
-            readIntBinary(request_for_session->digest->value, buffer);
+        readIntBinary(digest.version, buffer);
+        if (digest.version != KeeperDigestVersion::NO_DIGEST || !buffer.eof())
+            readIntBinary(digest.value, buffer);
     }
 
     if (!buffer.eof())
@@ -467,108 +1015,332 @@ std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
     if (serialization_version)
         *serialization_version = version;
 
-    int64_t xid = xid_helper.xid;
-
-    buffer.seek(buffer_position, SEEK_SET);
-
-    static constexpr std::array non_cacheable_xids{
-        Coordination::WATCH_XID,
-        Coordination::PING_XID,
-        Coordination::AUTH_XID,
-        Coordination::CLOSE_XID,
-        Coordination::CLOSE_XID_64,
-    };
-
-    const bool should_cache
-        = min_request_size_to_cache != 0 && request_for_session->session_id != -1
-        && request_for_session->session_id != keeper_internal_ttl_garbage_collector_session_id && data.size() >= min_request_size_to_cache
-        && std::all_of(
-              non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
+    const int64_t xid = xid_helper.xid;
+    const bool should_cache = shouldCacheParsedEntry(session_id, xid, data.size());
 
     if (should_cache)
     {
         std::lock_guard lock(request_cache_mutex);
-        if (auto xid_to_request_it = parsed_request_cache.find(request_for_session->session_id);
-            xid_to_request_it != parsed_request_cache.end())
+        if (auto xid_to_batch_it = parsed_batch_cache.find(session_id); xid_to_batch_it != parsed_batch_cache.end())
         {
-            auto & xid_to_request = xid_to_request_it->second;
-            if (auto request_it = xid_to_request.find(xid); request_it != xid_to_request.end())
+            auto & xid_to_batch = xid_to_batch_it->second;
+            if (auto batch_it = xid_to_batch.find(xid); batch_it != xid_to_batch.end())
             {
+                auto batch = batch_it->second;
+                chassert(batch->requests.size() == 1);
+                /// Reapply the patchable fields on every parse: the leader may have patched the
+                /// buffer in place since a previous parse cached the entry.
+                batch->first_zxid = zxid;
+                batch->digest = digest;
                 if (final)
-                {
-                    auto request = std::move(request_it->second);
-                    xid_to_request.erase(request_it);
-                    return request;
-                }
-                return request_it->second;
+                    xid_to_batch.erase(batch_it);
+                return batch;
             }
         }
     }
 
+    buffer.seek(buffer_position, SEEK_SET);
+
     Coordination::OpNum opnum = {};
     Coordination::read(opnum, buffer);
 
-    request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
-    request_for_session->request->xid = xid;
-    request_for_session->request->readImpl(buffer);
+    auto batch = std::make_shared<KeeperRequestBatch>();
+    batch->first_zxid = zxid;
+    batch->digest = digest;
+    auto & request_for_session = batch->requests.emplace_back();
+    request_for_session.session_id = session_id;
+    request_for_session.time = time;
+    request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request_for_session.request->xid = xid;
+    request_for_session.request->readImpl(buffer);
 
     if (tracing_context)
-        request_for_session->request->tracing_context = std::move(tracing_context);
+        request_for_session.request->tracing_context = std::move(tracing_context);
 
     if (should_cache && !final)
     {
         std::lock_guard lock(request_cache_mutex);
-        parsed_request_cache[request_for_session->session_id].emplace(xid, request_for_session);
+        parsed_batch_cache[session_id].emplace(xid, batch);
     }
 
-    return request_for_session;
+    return batch;
 }
 
-std::optional<KeeperDigest> KeeperStateMachine::preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) TSA_NO_THREAD_SAFETY_ANALYSIS
+std::vector<nuraft::ptr<nuraft::buffer>> KeeperStateMachine::serializeRequestBatch(const KeeperRequestBatch & batch, uint64_t log_entry_version)
 {
-    const auto op_num = request_for_session.request->getOpNum();
+    chassert(!batch.requests.empty());
 
-    KeeperDigest digest_after_preprocessing;
+    if (log_entry_version > MAX_SUPPORTED_LOG_ENTRY_VERSION)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported log entry version {}", log_entry_version);
+
+    if (log_entry_version == 0)
+    {
+        /// Legacy format: one log entry per request, for compatibility with older servers.
+        std::vector<nuraft::ptr<nuraft::buffer>> entries;
+        entries.reserve(batch.requests.size());
+        for (const auto & request_for_session : batch.requests)
+            entries.push_back(serializeRequestInOldFormat(request_for_session));
+        return entries;
+    }
+
+    DB::WriteBufferFromNuraftBuffer write_buf;
+
+    writeIntBinary(BATCH_ENTRY_MARKER_BASE + static_cast<int64_t>(log_entry_version), write_buf);
+    /// See `BATCH_ENTRY_MARKER_BASE` for the rules of changing this format.
+    constexpr uint32_t header_size = BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET
+        + sizeof(int64_t) /*first_zxid*/ + sizeof(uint8_t) + sizeof(uint64_t) /*digest*/
+        + sizeof(int64_t) /*committed_log_idx*/ + sizeof(int32_t) /*dispatcher_server_id*/
+        + sizeof(uint32_t) /*request count*/;
+    writeIntBinary(header_size, write_buf);
+
+    /// Patchable fields. On the dispatcher side these are placeholders (zxids are not assigned
+    /// yet); the leader overwrites them in place in the PreAppendLogLeader callback
+    /// (patchSerializedRequestBatch).
+    chassert(write_buf.offset() == BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET);
+    writeIntBinary(batch.first_zxid, write_buf);
+    writeIntBinary(static_cast<uint8_t>(batch.digest.version), write_buf);
+    writeIntBinary(batch.digest.value, write_buf);
+    writeIntBinary(batch.committed_log_idx, write_buf);
+
+    writeIntBinary(batch.dispatcher_server_id, write_buf);
+    writeIntBinary(static_cast<uint32_t>(batch.requests.size()), write_buf);
+
+    for (const auto & request_for_session : batch.requests)
+    {
+        const auto & request = request_for_session.request;
+
+        writeIntBinary(request_for_session.session_id, write_buf);
+        writeIntBinary(request->xid, write_buf);
+        writeIntBinary(request_for_session.time, write_buf);
+
+        writeIntBinary(static_cast<uint8_t>(request->tracing_context != nullptr), write_buf);
+        if (request->tracing_context)
+            request->tracing_context->serialize(write_buf);
+
+        /// Similarly to header_size, new fields can be added after the request.
+        uint32_t request_size = static_cast<uint32_t>(Coordination::size(request->getOpNum()) + request->sizeImpl());
+        writeIntBinary(request_size, write_buf);
+        Coordination::write(request->getOpNum(), write_buf);
+        request->writeImpl(write_buf);
+    }
+
+    return {write_buf.getBuffer()};
+}
+
+void KeeperStateMachine::patchSerializedRequestBatch(
+    nuraft::buffer & data, ZooKeeperLogSerializationVersion serialization_version, size_t patched_fields_offset, const KeeperRequestBatch & batch)
+{
+    chassert(data.size() > patched_fields_offset);
+    if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::REQUEST_BATCH)
+        chassert(batch.requests.size() == 1);
+
+    auto * fields_start = reinterpret_cast<BufferBase::Position>(data.data_begin() + patched_fields_offset);
+    WriteBufferFromPointer write_buf(fields_start, data.size() - patched_fields_offset);
+    if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::REQUEST_BATCH)
+        writeIntBinary(batch.requests[0].time, write_buf);
+    writeIntBinary(batch.first_zxid, write_buf);
+    writeIntBinary(static_cast<uint8_t>(batch.digest.version), write_buf);
+    writeIntBinary(batch.digest.value, write_buf);
+    if (serialization_version >= KeeperStateMachine::ZooKeeperLogSerializationVersion::REQUEST_BATCH)
+        writeIntBinary(batch.committed_log_idx, write_buf);
+    write_buf.finalize();
+}
+
+KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
+    nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * patched_fields_offset)
+{
+    ReadBufferFromNuraftBuffer buffer(data);
+
+    int64_t marker = 0;
+    readIntBinary(marker, buffer);
+
+    if (marker >= BATCH_ENTRY_MARKER_BASE + BATCH_ENTRY_VERSION_RANGE)
+    {
+        /// Legacy format: the entry is a single request, and `marker` is its session id.
+        /// For legacy versions `patched_fields_offset` is the request end position; which
+        /// patchable fields follow it is determined by `serialization_version`.
+        return parseRequestInOldFormat(data, final, serialization_version, patched_fields_offset);
+    }
+
+    const auto batch_version = static_cast<uint64_t>(marker - BATCH_ENTRY_MARKER_BASE);
+    if (batch_version != 1)
+        throw Exception(
+            ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "Unsupported batch log entry version {} (supported: 1). Upgrade all servers in the cluster "
+            "before increasing `write_log_entry_version`",
+            batch_version);
+
+    if (serialization_version)
+        *serialization_version = ZooKeeperLogSerializationVersion::REQUEST_BATCH;
+    if (patched_fields_offset)
+        *patched_fields_offset = BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET;
+
+    uint32_t header_size = 0;
+    readIntBinary(header_size, buffer);
+
+    int64_t committed_log_idx = 0;
+    int64_t first_zxid = 0;
+    KeeperDigest digest;
+    readIntBinary(first_zxid, buffer);
+    uint8_t digest_version = 0;
+    readIntBinary(digest_version, buffer);
+    digest.version = static_cast<KeeperDigestVersion>(digest_version);
+    readIntBinary(digest.value, buffer);
+    readIntBinary(committed_log_idx, buffer);
+
+    int32_t dispatcher_server_id = -1;
+    readIntBinary(dispatcher_server_id, buffer);
+    uint32_t request_count = 0;
+    readIntBinary(request_count, buffer);
+
+    /// Skip header fields appended by future format extensions.
+    if (header_size < static_cast<size_t>(buffer.getPosition()) || header_size > data.size())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA, "Corrupted batch log entry: invalid header size {} in entry of {} bytes", header_size, data.size());
+    buffer.seek(header_size, SEEK_SET);
+
+    /// Loose lower bound on the serialized size of one request, only used to reject corrupted
+    /// counts before reserving memory.
+    constexpr size_t min_request_record_size = 3 * sizeof(int64_t) + sizeof(uint8_t) + sizeof(uint32_t) + sizeof(int32_t);
+    if (request_count == 0 || request_count > (data.size() - header_size) / min_request_record_size)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA, "Corrupted batch log entry: {} requests don't fit in {} bytes", request_count, data.size());
+
+    /// Reapply the patchable fields on every parse: the leader may have patched the buffer in
+    /// place since a previous parse cached the batch.
+    const auto update_patched_fields = [&](KeeperRequestBatch & batch)
+    {
+        batch.committed_log_idx = committed_log_idx;
+        batch.first_zxid = first_zxid;
+        batch.digest = digest;
+    };
+
+    /// The batch cache is keyed by (session_id, xid) of the first request.
+    int64_t first_session_id = 0;
+    int64_t first_xid = 0;
+    readIntBinary(first_session_id, buffer);
+    readIntBinary(first_xid, buffer);
+    buffer.seek(header_size, SEEK_SET);
+
+    const bool should_cache = shouldCacheParsedEntry(first_session_id, first_xid, data.size());
+
+    if (should_cache)
+    {
+        std::lock_guard lock(request_cache_mutex);
+        if (auto xid_to_batch_it = parsed_batch_cache.find(first_session_id); xid_to_batch_it != parsed_batch_cache.end())
+        {
+            auto & xid_to_batch = xid_to_batch_it->second;
+            if (auto batch_it = xid_to_batch.find(first_xid); batch_it != xid_to_batch.end())
+            {
+                auto batch = batch_it->second;
+                chassert(batch->requests.size() == request_count);
+                update_patched_fields(*batch);
+                if (final)
+                    xid_to_batch.erase(batch_it);
+                return batch;
+            }
+        }
+    }
+
+    auto batch = std::make_shared<KeeperRequestBatch>();
+    batch->dispatcher_server_id = dispatcher_server_id;
+    batch->requests.reserve(request_count);
+
+    for (uint32_t i = 0; i < request_count; ++i)
+    {
+        auto & request_for_session = batch->requests.emplace_back();
+        readIntBinary(request_for_session.session_id, buffer);
+        int64_t xid = 0;
+        readIntBinary(xid, buffer);
+        readIntBinary(request_for_session.time, buffer);
+
+        uint8_t has_tracing_context = 0;
+        readIntBinary(has_tracing_context, buffer);
+        std::shared_ptr<OpenTelemetry::TracingContext> tracing_context;
+        if (has_tracing_context)
+        {
+            tracing_context = std::make_shared<OpenTelemetry::TracingContext>();
+            tracing_context->deserialize(buffer);
+        }
+
+        uint32_t request_size = 0;
+        readIntBinary(request_size, buffer);
+        const size_t body_end_position = static_cast<size_t>(buffer.getPosition()) + request_size;
+        if (body_end_position > data.size())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA, "Corrupted batch log entry: request {} of {} exceeds the entry", i, request_count);
+
+        Coordination::OpNum opnum = {};
+        Coordination::read(opnum, buffer);
+        request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+        request_for_session.request->xid = xid;
+        request_for_session.request->readImpl(buffer);
+        if (static_cast<size_t>(buffer.getPosition()) > body_end_position)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Corrupted batch log entry: request {} of {} has declared size {} but parsing consumed more",
+                i,
+                request_count,
+                request_size);
+        /// Skip request fields appended by future format extensions.
+        buffer.seek(body_end_position, SEEK_SET);
+
+        if (tracing_context)
+            request_for_session.request->tracing_context = std::move(tracing_context);
+    }
+
+    if (static_cast<size_t>(buffer.getPosition()) != data.size())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Corrupted batch log entry: {} bytes left over after parsing {} requests",
+            data.size() - buffer.getPosition(),
+            request_count);
+
+    update_patched_fields(*batch);
+
+    if (should_cache && !final)
+    {
+        std::lock_guard lock(request_cache_mutex);
+        parsed_batch_cache[first_session_id].emplace(first_xid, batch);
+    }
+
+    return batch;
+}
+
+std::optional<KeeperDigest> KeeperStateMachine::preprocessBatch(const KeeperRequestBatch & batch, bool lock_mutex) TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    /// `findOrphanConflictInLogTail` must have run (and cleared this) before any request is
+    /// preprocessed. If it did not, orphaned nodes were removed from the snapshot without verifying the
+    /// local log tail against them -- see `KeeperServer::startup`.
+    chassert(removed_orphan_subtree_roots.empty());
+    chassert(!batch.requests.empty());
+    chassert(batch.first_zxid != 0);
+
+    std::optional<KeeperDigest> digest_after_preprocessing;
     try
     {
         ProfiledSharedLock lock(state_machine_storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds, std::defer_lock);
         if (lock_mutex)
             lock.lock();
 
-        if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
-            return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
-
-        if (storage->isFinalized())
-            return std::nullopt;
-
-        digest_after_preprocessing = storage->preprocessRequest(
-            request_for_session.request,
-            request_for_session.session_id,
-            request_for_session.time,
-            request_for_session.zxid,
-            true /* check_acl */,
-            request_for_session.digest,
-            request_for_session.log_idx);
+        digest_after_preprocessing = storage->preprocessBatch(batch, /*check_acl=*/true);
     }
     catch (...)
     {
         LOG_FATAL(
             log,
             "Failed to preprocess stored log at index {}: {}",
-            request_for_session.log_idx,
+            batch.log_idx,
             getCurrentExceptionMessage(true, true, false));
         LOG_FATAL(log, "Aborting to avoid inconsistent state");
         abort();
     }
 
-    if (keeper_context->digestEnabled() && request_for_session.digest)
-        assertDigest(
-            *request_for_session.digest,
-            digest_after_preprocessing,
-            *request_for_session.request,
-            request_for_session.log_idx,
-            request_for_session.session_id,
-            false);
+    if (!digest_after_preprocessing)
+        return std::nullopt;
+
+    if (keeper_context->digestEnabled())
+        assertDigest(batch, *digest_after_preprocessing, "preprocessing");
 
     return digest_after_preprocessing;
 }
@@ -588,7 +1360,8 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
 
     const auto & request = static_cast<const Coordination::ZooKeeperReconfigRequest &>(*request_for_session.request);
     const int64_t session_id = request_for_session.session_id;
-    const int64_t zxid = request_for_session.zxid;
+    /// Reconfig requests don't go through raft, so they have no zxid.
+    const int64_t zxid = 0;
 
     using enum Coordination::Error;
     auto bad_request = [&](Coordination::Error code = ZBADARGUMENTS) -> KeeperResponseForSession
@@ -650,110 +1423,120 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
+    auto batch = parseRequestBatch(data, true);
+    assignZxidToLegacyEntry(*batch, log_idx);
+    batch->log_idx = log_idx;
 
-    auto request_for_session = parseRequest(data, true);
-    if (!request_for_session->zxid)
-        request_for_session->zxid = log_idx;
-
-    request_for_session->log_idx = log_idx;
-
-    if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session, /*lock_mutex=*/ true))
+    if (!keeper_context->localLogsPreprocessed() && !preprocessBatch(*batch, /*lock_mutex=*/ true))
         return nullptr;
 
-    const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+    /// Responses are only needed on the server that owns the batch's client sessions (the one
+    /// whose dispatcher produced the batch); other servers would just discard them in their
+    /// response threads. -1 means the owner is unknown (e.g. a legacy log entry), then produce
+    /// responses everywhere. `Close` is the exception: `sessionCleanerTask` on the leader sends
+    /// it for sessions whose connection is on another server, so its response is always produced.
+    const bool produce_responses = batch->dispatcher_server_id == -1
+        || batch->dispatcher_server_id == keeper_context->getServerID();
+
+    for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
     {
-        request_for_session->request->spans.maybeInitialize(
-            KeeperSpan::Commit,
-            request_for_session->request->tracing_context.get(),
-            start_time_us);
+        const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
-        request_for_session->request->spans.maybeFinalize(
-            KeeperSpan::Commit,
-            [&]
-            {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                    {"keeper.session_id", request_for_session->session_id},
-                    {"keeper.xid", request_for_session->request->xid},
-                    {"raft.log_idx", log_idx},
-                };
-            },
-            status,
-            error_message);
-    };
+        const auto & request_for_session = batch->requests[request_idx];
+        bool is_last_in_batch = request_idx + 1 == batch->requests.size();
 
-    try
-    {
-        const auto op_num = request_for_session->request->getOpNum();
-        if (op_num == Coordination::OpNum::SessionID)
+        const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
         {
-            const Coordination::ZooKeeperSessionIDRequest & session_id_request
-                = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
-            int64_t session_id = 0;
-            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
-            KeeperResponseForSession response_for_session;
-            response_for_session.session_id = -1;
-            response_for_session.response = response;
-            response_for_session.request = request_for_session->request;
+            request_for_session.request->spans.maybeInitialize(
+                KeeperSpan::Commit,
+                request_for_session.request->tracing_context.get(),
+                start_time_us);
 
-            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-            session_id = storage->getSessionID(session_id_request.session_timeout_ms);
-            LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
-            response->session_id = session_id;
-            if (response_callback)
-                response_callback(std::move(response_for_session));
-        }
-        else
-        {
-            if (op_num == Coordination::OpNum::Close)
-            {
-                std::lock_guard cache_lock(request_cache_mutex);
-                parsed_request_cache.erase(request_for_session->session_id);
-            }
-
-            {
-                KEEPER_STORAGE_LOCK_SHARED(lock);
+            request_for_session.request->spans.maybeFinalize(
+                KeeperSpan::Commit,
+                [&]
                 {
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request_for_session.request->getOpNum())},
+                        {"keeper.session_id", request_for_session.session_id},
+                        {"keeper.xid", request_for_session.request->xid},
+                        {"raft.log_idx", log_idx},
+                    };
+                },
+                status,
+                error_message);
+        };
+
+        try
+        {
+            const auto op_num = request_for_session.request->getOpNum();
+            if (op_num == Coordination::OpNum::SessionID)
+            {
+                const Coordination::ZooKeeperSessionIDRequest & session_id_request
+                    = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
+
+                KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+                int64_t session_id = storage->getSessionID(session_id_request.session_timeout_ms);
+                LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
+
+                if (produce_responses && response_callback)
+                {
+                    std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response
+                        = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
+                    response->session_id = session_id;
+                    KeeperResponseForSession response_for_session;
+                    response_for_session.session_id = -1;
+                    response_for_session.response = std::move(response);
+                    response_for_session.request = request_for_session.request;
+                    response_callback(std::move(response_for_session));
+                }
+
+                if (is_last_in_batch)
+                    storage->endProcessBatch(*batch);
+            }
+            else
+            {
+                if (op_num == Coordination::OpNum::Close)
+                {
+                    std::lock_guard cache_lock(request_cache_mutex);
+                    parsed_batch_cache.erase(request_for_session.session_id);
+                }
+
+                {
+                    KEEPER_STORAGE_LOCK_SHARED(lock);
                     ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
-                    KeeperResponsesForSessions responses_for_sessions
-                        = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
+                    KeeperResponsesForSessions responses_for_sessions = storage->processOneRequest(
+                        request_for_session.request, request_for_session.session_id, batch->getZxid(request_idx), produce_responses);
                     for (auto & response_for_session : responses_for_sessions)
                     {
                         if (response_for_session.response->xid != Coordination::WATCH_XID)
-                            response_for_session.request = request_for_session->request;
+                            response_for_session.request = request_for_session.request;
 
                         if (response_callback)
                             response_callback(std::move(response_for_session));
                     }
-                }
 
-                if (keeper_context->digestEnabled() && request_for_session->digest)
-                    assertDigest(
-                        *request_for_session->digest,
-                        storage->getNodesDigest(true, /*lock_transaction_mutex=*/true),
-                        *request_for_session->request,
-                        request_for_session->log_idx,
-                        request_for_session->session_id,
-                        true);
+                    if (is_last_in_batch)
+                        storage->endProcessBatch(*batch);
+                }
             }
+
+            ProfileEvents::increment(ProfileEvents::KeeperCommits);
+
+            if (commit_callback)
+                commit_callback(log_idx, request_for_session, batch->dispatcher_server_id);
+        }
+        catch (...)
+        {
+            maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+            tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
+            throw;
         }
 
-        ProfileEvents::increment(ProfileEvents::KeeperCommits);
-
-        if (commit_callback)
-            commit_callback(log_idx, *request_for_session);
-
-        keeper_context->setLastCommitIndex(log_idx);
-    }
-    catch (...)
-    {
-        maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
-        tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
-        throw;
+        maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
     }
 
-    maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
+    keeper_context->setLastCommitIndex(log_idx);
 
     return nullptr;
 }
@@ -929,7 +1712,11 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
                     storage = KeeperStorage::create(
                         keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
                         superdigest, keeper_context, /* initialize_system_nodes */ false);
-                    auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *storage);                    /// This repeats the pre-reset prefix check deliberately. It
+                    /// A snapshot received from another node must be applied faithfully — orphaned
+                    /// nodes must never be removed here, otherwise this replica would diverge.
+                    auto snapshot_deserialization_result
+                        = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *storage, /*allow_orphaned_nodes_removal=*/ false);
+                    /// This repeats the pre-reset prefix check deliberately. It
                     /// catches future divergence between
                     /// `deserializeSnapshotMetadataFromBuffer` and
                     /// `deserializeSnapshotFromBuffer`.
@@ -997,23 +1784,15 @@ void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
     if (!keeper_context->localLogsPreprocessed())
         return;
 
-    auto request_for_session = parseRequest(data, true);
-    // If we received a log from an older node, use the log_idx as the zxid
-    // log_idx will always be larger or equal to the zxid so we can safely do this
-    // (log_idx is increased for all logs, while zxid is only increased for requests)
-    if (!request_for_session->zxid)
-        request_for_session->zxid = log_idx;
-
-    rollbackRequest(*request_for_session, false);
+    auto batch = parseRequestBatch(data, true);
+    assignZxidToLegacyEntry(*batch, log_idx);
+    rollbackRequestBatch(*batch, false);
 }
 
-void KeeperStateMachine::rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing)
+void KeeperStateMachine::rollbackRequestBatch(const KeeperRequestBatch & batch, bool allow_missing)
 {
-    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-        return;
-
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    storage->rollbackRequest(request_for_session.zxid, allow_missing);
+    storage->rollbackBatch(batch, allow_missing);
 }
 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
@@ -1021,6 +1800,15 @@ nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
     /// Just return the latest snapshot.
     std::lock_guard lock(snapshots_lock);
     return latest_snapshot_meta;
+}
+
+void KeeperStateMachine::persistRepairedSnapshot()
+{
+    std::lock_guard snapshots_guard(snapshots_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_guard);
+    KeeperStorageSnapshot snapshot(storage.get(), latest_snapshot_meta, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
+    auto file_info = snapshot_manager.rewriteSnapshotAfterRecovery(snapshot);
+    latest_snapshot_size.store(file_info->disk->getFileSize(file_info->path), std::memory_order_relaxed);
 }
 
 SnapshotFileInfoPtr KeeperStateMachine::writeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
@@ -1453,18 +2241,13 @@ struct ISnapshotLoader
 
     virtual uint64_t fileSize() const = 0;
 
-    /// Return a stable pointer to bytes [offset, offset+length).
-    /// For remote disk: loads data on demand under an internal mutex.
-    /// Returns nullptr on any error; call getLastError() to retrieve the exception.
-    virtual nuraft::byte * getChunk(uint64_t offset, uint64_t length, LoggerPtr log) = 0;
-
-    /// Returns the stored exception if a previous getChunk call failed, nullptr otherwise.
-    virtual std::exception_ptr getLastError() const { return nullptr; }
+    /// Copy bytes [offset, offset+length) into `dst`; throws on error.
+    virtual void readChunk(uint64_t offset, uint64_t length, char * dst, LoggerPtr log) = 0;
 };
 
 /// Remote disk loader: reads the snapshot file from remote storage into a shared in-memory buffer,
 /// serving chunks to concurrent followers without re-reading from remote storage.
-/// All fields are protected by load_mutex; init() and getChunk() acquire it internally.
+/// All fields are protected by `load_mutex`; `init` and `readChunk` acquire it internally.
 struct RemoteSnapshotLoader : public ISnapshotLoader
 {
     uint64_t snapshot_id = 0;
@@ -1539,17 +2322,10 @@ struct RemoteSnapshotLoader : public ISnapshotLoader
         return file_size;
     }
 
-    std::exception_ptr getLastError() const override
+    void readChunk(uint64_t offset, uint64_t length, char * dst, LoggerPtr log_) override
     {
         if (has_error.load(std::memory_order_acquire))
-            return last_error;
-        return nullptr;
-    }
-
-    nuraft::byte * getChunk(uint64_t offset, uint64_t length, LoggerPtr log_) override
-    {
-        if (has_error.load(std::memory_order_relaxed))
-            return nullptr;
+            std::rethrow_exception(last_error);
 
         const uint64_t needed = offset + length;
 
@@ -1558,12 +2334,13 @@ struct RemoteSnapshotLoader : public ISnapshotLoader
         if (loaded_bytes.load(std::memory_order_acquire) >= needed)
         {
             LOG_TEST(log_, "Snapshot at offset {} is already loaded (lock-free)", offset);
-            return buf->data_begin() + offset;
+            memcpy(dst, buf->data_begin() + offset, length);
+            return;
         }
 
         std::lock_guard lock(load_mutex);
         if (has_error.load(std::memory_order_relaxed))
-            return nullptr;
+            std::rethrow_exception(last_error);
         const uint64_t current = loaded_bytes.load(std::memory_order_relaxed);
         if (current < needed)
         {
@@ -1579,7 +2356,7 @@ struct RemoteSnapshotLoader : public ISnapshotLoader
             {
                 onException(log_, "Failed to read snapshot chunk");
                 ProfileEvents::increment(ProfileEvents::KeeperSnapshotRemoteLoaderErrors);
-                return nullptr;
+                throw;
             }
             loaded_bytes.store(needed, std::memory_order_release);
             if (needed == file_size)
@@ -1590,7 +2367,7 @@ struct RemoteSnapshotLoader : public ISnapshotLoader
         }
         else
             LOG_TEST(log_, "Snapshot at offset {} is already loaded", offset);
-        return buf->data_begin() + offset;
+        memcpy(dst, buf->data_begin() + offset, length);
     }
 };
 
@@ -1659,9 +2436,9 @@ struct LocalSnapshotLoader : private boost::noncopyable, public ISnapshotLoader
 
     uint64_t fileSize() const override { return file_size; }
 
-    nuraft::byte * getChunk(uint64_t offset, uint64_t /*length*/, LoggerPtr /*log_*/) override
+    void readChunk(uint64_t offset, uint64_t length, char * dst, LoggerPtr /*log_*/) override
     {
-        return mmap_ptr + offset;
+        memcpy(dst, mmap_ptr + offset, length);
     }
 
     ~LocalSnapshotLoader() override
@@ -1674,6 +2451,46 @@ struct LocalSnapshotLoader : private boost::noncopyable, public ISnapshotLoader
         }
     }
 
+};
+
+/// Remote disk loader for `snapshot_transfer_remote_disk_streaming`: owned by one transfer, so followers
+/// never share a cursor or an error, and no copy of the whole snapshot is kept in memory.
+struct StreamingSnapshotLoader : public ISnapshotLoader
+{
+    uint64_t file_size = 0;
+    std::unique_ptr<ReadBufferFromFileBase> reader;
+
+    bool init(uint64_t log_idx, const SnapshotFileInfo & info, LoggerPtr log_) override
+    {
+        try
+        {
+            file_size = info.disk->getFileSize(info.path);
+            if (file_size == 0)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Snapshot {} on remote disk has zero size", log_idx);
+            reader = info.disk->readFile(info.path, getReadSettings(), file_size);
+            return true;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log_, fmt::format("Failed to open snapshot {} for streaming transfer", log_idx));
+            return false;
+        }
+    }
+
+    uint64_t fileSize() const override { return file_size; }
+
+    void readChunk(uint64_t offset, uint64_t length, char * dst, LoggerPtr /*log_*/) override
+    {
+        /// NuRaft re-requests an object after an RPC error or a requeue, so the reader may be elsewhere.
+        const auto position = static_cast<off_t>(offset);
+        if (reader->getPosition() != position)
+        {
+            if (reader->seek(position, SEEK_SET) != position)
+                throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot seek snapshot reader to offset {}", offset);
+            ProfileEvents::increment(ProfileEvents::KeeperReadSnapshotStreamingSeeks);
+        }
+        reader->readStrict(dst, length);
+    }
 };
 
 /// Per-follower state kept alive across chunked snapshot transfer on the leader.
@@ -1706,6 +2523,7 @@ int KeeperStateMachine::read_logical_snp_obj(
     SnapshotFileInfoPtr pin;  // populated under the lock for obj_id == 0
     std::shared_ptr<ISnapshotLoader> remote_loader;
     const uint64_t configured_chunk_size = keeper_context->getCoordinationSettings()[CoordinationSetting::snapshot_transfer_chunk_size];
+    const bool streaming = keeper_context->getCoordinationSettings()[CoordinationSetting::snapshot_transfer_remote_disk_streaming];
 
     if (obj_id == 0)
     {
@@ -1731,7 +2549,7 @@ int KeeperStateMachine::read_logical_snp_obj(
 
         /// Cache one remote loader. A request for another `log_idx` replaces
         /// the cache, while active transfers keep their own `shared_ptr`.
-        if (!isLocalDisk(*pin->disk))
+        if (!streaming && !isLocalDisk(*pin->disk))
         {
             /// The remote loader cache is valid for exactly one `log_idx`.
             /// Drop it before serving a different retained snapshot.
@@ -1754,13 +2572,13 @@ int KeeperStateMachine::read_logical_snp_obj(
 
     if (obj_id == 0)
     {
-        const bool is_local_disk = !remote_loader;
-        LOG_DEBUG(log, "Opening snapshot {} on {} disk for transfer",
-                  s.get_last_log_idx(), is_local_disk ? "local" : "remote");
+        const bool is_local_disk = isLocalDisk(*pin->disk);
 
         std::shared_ptr<ISnapshotLoader> loader;
         if (is_local_disk)
             loader = std::make_shared<LocalSnapshotLoader>();
+        else if (streaming)
+            loader = std::make_shared<StreamingSnapshotLoader>();
         else
             loader = remote_loader;
 
@@ -1783,6 +2601,17 @@ int KeeperStateMachine::read_logical_snp_obj(
         const uint64_t file_size = loader->fileSize();
         /// `chunk_size == 0` sends the whole file in one object.
         const uint64_t effective_chunk_size = configured_chunk_size == 0 ? file_size : configured_chunk_size;
+        if (configured_chunk_size == 0
+            && file_size + s.serialize()->size() + nuraft_snapshot_sync_req_framing_size > static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))
+        {
+            LOG_ERROR(log, "Snapshot {} of size {} does not fit into a single NuRaft message and cannot be sent with "
+                "`snapshot_transfer_chunk_size` = 0. Set `snapshot_transfer_chunk_size` after all Keeper nodes are upgraded to 26.5 or newer",
+                s.get_last_log_idx(), file_size);
+            return -1;
+        }
+        LOG_DEBUG(log, "Serving snapshot {} from {}: {} bytes in objects of {} bytes", s.get_last_log_idx(),
+                  is_local_disk ? "local disk" : (streaming ? "remote disk, streaming" : "remote disk through the shared in-memory copy"),
+                  file_size, effective_chunk_size);
         /// Member order makes `loader` close handles before `pin` may unlink.
         user_snp_ctx = new SnapshotTransferCtx{
             .chunk_size = effective_chunk_size,
@@ -1823,30 +2652,10 @@ int KeeperStateMachine::read_logical_snp_obj(
     const auto chunk_size = std::min(ctx->chunk_size, file_size - offset);
     is_last_obj = (offset + chunk_size == file_size);
 
-    nuraft::byte * src_ptr = ctx->loader->getChunk(offset, chunk_size, log);
-    if (!src_ptr)
-    {
-        {
-            std::lock_guard lock(snapshots_lock);
-            /// Only reset if this is the same loader instance that's currently cached
-            /// — a concurrent follower may have already replaced snapshot_loader_info.
-            if (snapshot_loader_info == ctx->loader)
-            {
-                snapshot_loader_info.reset();
-                snapshot_loader_info_log_idx = 0;
-            }
-        }
-        auto err = ctx->loader->getLastError();
-        free_user_snp_ctx(user_snp_ctx);
-        if (err)
-            LOG_ERROR(log, "RemoteSnapshotLoader failed to read chunk: {}", getExceptionMessage(err, /*with_stacktrace=*/false));
-        return -1;
-    }
-
     try
     {
         data_out = nuraft::buffer::alloc(chunk_size);
-        data_out->put_raw(src_ptr, chunk_size);
+        ctx->loader->readChunk(offset, chunk_size, reinterpret_cast<char *>(data_out->data_begin()), log);
     }
     catch (...)
     {

@@ -66,29 +66,29 @@ print(f"Execution time: {result.elapsed()} seconds")
 ```python
 import chdb
 
-# Создать соединение (по умолчанию в памяти)
+# Создание соединения (":memory:" is a temporary, non-persistent database)
 conn = chdb.connect(":memory:")
-# Или использовать файловое хранилище: conn = chdb.connect("mydata.db")
+# Or use file-based: conn = chdb.connect("mydata.db")
 
-# Создать курсор для выполнения запросов
+# Create cursor for query execution
 cur = conn.cursor()
 
-# Выполнить запросы
+# Выполнение запросов
 cur.execute("SELECT number, toString(number) as str FROM system.numbers LIMIT 3")
 
-# Получить результаты разными способами
-print(cur.fetchone())    # Одна строка: (0, '0')
-print(cur.fetchmany(2))  # Несколько строк: ((1, '1'), (2, '2'))
+# Fetch results in different ways
+print(cur.fetchone())    # Single row: (0, '0')
+print(cur.fetchmany(2))  # Multiple rows: ((1, '1'), (2, '2'))
 
-# Получить метаданные
+# Получение метаданных
 print(cur.column_names())  # ['number', 'str']
 print(cur.column_types())  # ['UInt64', 'String']
 
-# Использовать курсор как итератор
+# Use cursor as iterator
 for row in cur:
     print(row)
 
-# Всегда закрывать ресурсы
+# Always close resources
 cur.close()
 conn.close()
 ```

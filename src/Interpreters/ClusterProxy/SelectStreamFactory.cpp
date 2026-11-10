@@ -4,7 +4,9 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -13,6 +15,7 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -34,13 +37,13 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsUInt64 distributed_group_by_no_merge;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace ErrorCodes
@@ -55,56 +58,6 @@ namespace FailPoints
 
 namespace ClusterProxy
 {
-
-/// select query has database, table and table function names as AST pointers
-/// Creates a copy of query, changes database, table and table function names.
-ASTPtr rewriteSelectQuery(
-    ContextPtr context,
-    const ASTPtr & query,
-    const std::string & remote_database,
-    const std::string & remote_table,
-    ASTPtr table_function_ptr)
-{
-    auto modified_query_ast = query->clone();
-
-    ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
-
-    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
-    // settings won't break any remote parser. It's also more reasonable since the query settings
-    // are written into the query context and will be sent by the query pipeline.
-    select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-
-    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        if (table_function_ptr)
-            select_query.addTableFunction(table_function_ptr);
-        else
-            select_query.replaceDatabaseAndTable(remote_database, remote_table);
-
-        /// Restore long column names (cause our short names are ambiguous).
-        /// TODO: aliased table functions & CREATE TABLE AS table function cases
-        if (!table_function_ptr)
-        {
-            RestoreQualifiedNamesVisitor::Data data;
-            data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
-            data.remote_table.database = remote_database;
-            data.remote_table.table = remote_table;
-            RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
-        }
-    }
-
-    /// To make local JOIN works, default database should be added to table names.
-    /// But only for JOIN section, since the following should work using default_database:
-    /// - SELECT * FROM d WHERE value IN (SELECT l.value FROM l) ORDER BY value
-    ///   (see 01487_distributed_in_not_default_db)
-    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
-        /* only_replace_current_database_function_= */false,
-        /* only_replace_in_join_= */true);
-    visitor.visit(modified_query_ast);
-
-    return modified_query_ast;
-}
-
 
 SelectStreamFactory::SelectStreamFactory(
     SharedHeader header_,
@@ -158,10 +111,32 @@ void SelectStreamFactory::createForShardImpl(
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker) const
 {
-    auto emplace_local_stream = [&]()
+    ContextPtr context_without_parallel_replicas;
+
+    /// `local_storage` is the table the local plan will read, null when it is not resolved.
+    auto emplace_local_stream = [&](const StoragePtr & local_storage)
     {
+        /// A local plan does not go through `ReadFromRemote`, so nothing sets `cluster_for_parallel_replicas`
+        /// to this hop's cluster and the read would be scoped by another one. Keep parallel replicas only
+        /// for a nested `Distributed`, which sets up its own cluster. A `View` over a `Distributed` is left
+        /// out: it reads without parallel replicas, as it did before.
+        auto local_context = context;
+        if (context->canUseTaskBasedParallelReplicas()
+            && !castStorage<StorageDistributed>(local_storage, DeferredTable::Load))
+        {
+            if (!context_without_parallel_replicas)
+            {
+                auto mutable_context = Context::createCopy(context);
+                Settings settings_without_parallel_replicas = mutable_context->getSettingsCopy();
+                settings_without_parallel_replicas[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+                mutable_context->setSettings(settings_without_parallel_replicas);
+                context_without_parallel_replicas = std::move(mutable_context);
+            }
+            local_context = context_without_parallel_replicas;
+        }
+
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, *header, local_context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -175,7 +150,7 @@ void SelectStreamFactory::createForShardImpl(
 
         /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColumns,
         /// But distributed_group_by_no_merge requires Complete.
-        if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
+        if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
                 query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
@@ -184,10 +159,7 @@ void SelectStreamFactory::createForShardImpl(
         }
         else
         {
-            if (settings[Setting::allow_experimental_analyzer])
-                std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
-            else
-                shard_header = header;
+            std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         }
 
         /// Strip initiator-only settings from the query text forwarded to the shard. The AST carries them
@@ -259,17 +231,17 @@ void SelectStreamFactory::createForShardImpl(
                     unavailable_shard_tracker->onShardSkipped();
             }
             else
-                emplace_local_stream();  /// Let it fail the usual way.
+                emplace_local_stream(main_table_storage);  /// Let it fail the usual way.
 
             return;
         }
 
-        const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
+        const auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(main_table_storage, DeferredTable::Load).get();
 
         if (!replicated_storage)
         {
             /// Table is not replicated, use local server.
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
@@ -277,7 +249,7 @@ void SelectStreamFactory::createForShardImpl(
 
         if (!max_allowed_delay)
         {
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
@@ -285,7 +257,7 @@ void SelectStreamFactory::createForShardImpl(
 
         if (local_delay < max_allowed_delay)
         {
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
@@ -312,7 +284,7 @@ void SelectStreamFactory::createForShardImpl(
         if (!shard_info.hasRemoteConnections())
         {
             /// There are no remote replicas but we are allowed to fall back to stale local replica.
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
