@@ -29,7 +29,7 @@ namespace DB
 {
 
 
-/// The `DWARF` input format backed by the Rust parser (`rust/workspace/dwarf`).
+/// The `DWARF` input format backed by the Rust parser (`contrib/dwarf-cmake`).
 ///
 /// This class only owns the input bytes, the worker threads and the delivery queue, and it turns the
 /// column buffers filled by Rust into ClickHouse columns. Parsing of the ELF container, the DWARF

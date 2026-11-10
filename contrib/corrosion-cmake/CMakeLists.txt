@@ -67,16 +67,6 @@ else()
 endif()
 
 option(ENABLE_RUST "Enable rust" ${DEFAULT_ENABLE_RUST})
-if (NOT ENABLE_LIBRARIES OR NOT ENABLE_RUST OR SANITIZE STREQUAL "memory" OR OS_DARWIN OR OS_FREEBSD OR OS_WASM OR ARCH_S390X OR ARCH_RISCV64)
-    set(ENABLE_DWARF_PARSER_DEFAULT OFF)
-else()
-    set(ENABLE_DWARF_PARSER_DEFAULT ${ENABLE_LIBRARIES})
-endif()
-option(ENABLE_DWARF_PARSER "Enable DWARF input format" ${ENABLE_DWARF_PARSER_DEFAULT})
-if ((NOT ENABLE_RUST OR SANITIZE STREQUAL "memory" OR OS_DARWIN OR OS_FREEBSD OR OS_WASM OR ARCH_S390X OR ARCH_RISCV64) AND ENABLE_DWARF_PARSER)
-    message(STATUS "Disabling DWARF input format because Rust is disabled or target/sanitizer is unsupported")
-    set(ENABLE_DWARF_PARSER OFF CACHE INTERNAL "" FORCE)
-endif()
 if(NOT ENABLE_RUST)
     message(STATUS "Not using Rust")
     return()
@@ -163,7 +153,7 @@ if (CXX_PUBLIC_DEFS)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXX_PUBLIC_DEFS}")
 endif()
 
-if(CCACHE_EXECUTABLE MATCHES "/chcache$" OR CCACHE_EXECUTABLE MATCHES "/sccache$")
+if(CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
     set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
 else()
@@ -276,6 +266,10 @@ message(STATUS "RUSTFLAGS: ${RUSTFLAGS}")
 message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
 set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
+
+# Every member of the workspace is imported with exactly this path: corrosion names the cargo target directory
+# after the manifest path string, so this is what makes them share one.
+set(RUST_CONTRIB_WORKSPACE_MANIFEST "${ClickHouse_SOURCE_DIR}/contrib/rust-contrib-workspace/Cargo.toml" CACHE INTERNAL "Rust config")
 
 # Sanitizer instrumentation combined with opt-level=3 and the default codegen-units=16
 # causes LLVM to use too much memory while compiling large crates like cranelift-codegen
@@ -400,8 +394,7 @@ function(clickhouse_config_crate_flags target_name)
     #
     # For workspace crates the .a may land in a parent directory rather than
     # CMAKE_CURRENT_BINARY_DIR.  Set IMPORTED_LOCATION on the target before
-    # calling this function if the default path is wrong (see wasmtime for an
-    # example).
+    # calling this function if the default path is wrong.
     get_target_property(_rust_lib_path ${target_name} IMPORTED_LOCATION)
     if (NOT _rust_lib_path OR _rust_lib_path MATCHES "NOTFOUND")
         set(_rust_lib_path "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")

@@ -185,6 +185,56 @@ open(os.path.join(work, 'valid_v5.elf'), 'wb').write(make_elf({
     '.debug_line_str': debug_line_str,
 }))
 
+# 1b. DWARF4 valid fixture: root DW_AT_GNU_addr_base=8 used by attr_int (low_pc -> 0x3000,
+#     entry_pc via DW_FORM_GNU_addr_index(1) -> 0x4000) while prepass ignores DW_AT_GNU_addr_base
+#     (unit base_address reads .debug_addr[0] = 0x1000), DWARF4 .debug_ranges base selection,
+#     tombstone and wrapping, and DWARF4 1-based .debug_line filename table.
+debug_str_v4 = b'cu_v4\x00'
+debug_addr_v4 = struct.pack('<QQQ', 0x1000, 0x3000, 0x4000)
+debug_ranges_v4 = (
+    struct.pack('<QQ', 0x10, 0x20) +
+    struct.pack('<QQ', 0xffffffffffffffff, 0x5000) +
+    struct.pack('<QQ', 0x1, 0x3) +
+    struct.pack('<QQ', 0xfffffffffffffffe, 0x9) +
+    struct.pack('<QQ', 0xfffffffffffffffd, 0x9) +
+    struct.pack('<QQ', 0, 0)
+)
+prose_v4 = (
+    bytes([1, 1, 1, 0xfb, 14, 13]) +
+    bytes([0] * 12) +
+    b'dir\x00\x00' +
+    b'v4.c\x00\x01\x00\x00\x00'
+)
+line_body_v4 = struct.pack('<HI', 4, len(prose_v4)) + prose_v4
+debug_line_v4 = struct.pack('<I', len(line_body_v4)) + line_body_v4
+abbrev_v4 = (
+    uleb(1) + uleb(0x11) + bytes([1]) +
+    uleb(0x03) + uleb(0x0e) +
+    uleb(0x2133) + uleb(0x17) +
+    uleb(0x11) + uleb(0x01) +
+    uleb(0x10) + uleb(0x17) +
+    bytes([0, 0]) +
+    uleb(2) + uleb(0x2e) + bytes([0]) +
+    uleb(0x52) + uleb(0x1f01) +
+    uleb(0x3a) + uleb(0x0b) +
+    uleb(0x58) + uleb(0x0b) +
+    uleb(0x55) + uleb(0x17) +
+    bytes([0, 0, 0])
+)
+die1_v4 = bytes([1]) + struct.pack('<IIQI', 0, 8, 0x1000, 0)
+die2_v4 = bytes([2]) + uleb(1) + bytes([1, 0]) + struct.pack('<I', 0)
+dies_v4 = die1_v4 + die2_v4 + bytes([0])
+info_v4_body = struct.pack('<HIB', 4, 0, 8) + dies_v4
+info_v4 = struct.pack('<I', len(info_v4_body)) + info_v4_body
+open(os.path.join(work, 'valid_v4.elf'), 'wb').write(make_elf({
+    '.debug_abbrev': abbrev_v4,
+    '.debug_info': info_v4,
+    '.debug_str': debug_str_v4,
+    '.debug_addr': debug_addr_v4,
+    '.debug_ranges': debug_ranges_v4,
+    '.debug_line': debug_line_v4,
+}))
+
 # 2. Malformed DWARF cases that must fail with CANNOT_PARSE_DWARF:
 # a) addr_size = 1
 bad_addr1_body = struct.pack('<IHIB', 2 + 4 + 1 + 2, 4, 0, 1) + bytes([1, 0])
@@ -225,6 +275,12 @@ PY
 ${CLICKHOUSE_LOCAL} -q "
 SELECT offset, size, tag, unit_name, unit_offset, ancestor_tags, name, decl_file, decl_line, ranges, attr_name, attr_form, attr_int, attr_str
 FROM file('${WORK_DIR}/valid_v5.elf', DWARF)
+ORDER BY offset
+"
+
+${CLICKHOUSE_LOCAL} -q "
+SELECT offset, size, tag, unit_name, unit_offset, ancestor_tags, name, decl_file, decl_line, ranges, attr_name, attr_form, attr_int, attr_str
+FROM file('${WORK_DIR}/valid_v4.elf', DWARF)
 ORDER BY offset
 "
 
