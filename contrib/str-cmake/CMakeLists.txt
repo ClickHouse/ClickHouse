@@ -8,6 +8,35 @@ if (NOT OBJCOPY_PATH)
     message (FATAL_ERROR "pg83/str requires objcopy to export the libc symbols")
 endif ()
 
+set (str_native_contracts OFF)
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    string (TOLOWER "${CMAKE_HOST_SYSTEM_PROCESSOR}" str_host_processor)
+    if ((ARCH_AMD64 AND str_host_processor MATCHES "^(x86_64|amd64)$") OR
+        (ARCH_AARCH64 AND str_host_processor MATCHES "^(aarch64|arm64)$"))
+        set (str_native_contracts ON)
+    endif ()
+endif ()
+if (ARCH_AMD64)
+    set (str_contract_arch amd64)
+else ()
+    set (str_contract_arch arm64)
+endif ()
+set (str_contract_command
+    "${CMAKE_COMMAND}"
+    "-DSTR_CONTRACT_NATIVE=${str_native_contracts}"
+    "-DSTR_CONTRACT_ARCH=${str_contract_arch}"
+    "-DSTR_CONTRACT_CC=${CMAKE_C_COMPILER}"
+    "-DSTR_CONTRACT_SOURCE=${STR_SOURCE_DIR}"
+    "-DSTR_CONTRACT_ARCHIVE=${CMAKE_CURRENT_BINARY_DIR}/libstr-prefixed.a"
+    "-DSTR_CONTRACT_OUT=${CMAKE_CURRENT_BINARY_DIR}/contract-tests"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/native_contracts.cmake")
+set (str_contract_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/native_contracts.cmake"
+    "${STR_SOURCE_DIR}/tst/test.c"
+    "${STR_SOURCE_DIR}/tst/cached_bulk.c"
+    "${STR_SOURCE_DIR}/tst/dispatch_threads.c"
+    "${STR_SOURCE_DIR}/tst/aarch64_selected.c")
+
 if (ARCH_AARCH64)
     include (aarch64.cmake)
     return ()
@@ -24,11 +53,11 @@ foreach (unit sse2 sse42 avx2 evex evex512 dispatch)
         INTERPROCEDURAL_OPTIMIZATION FALSE LINK_LIBRARIES "")
     # The post-pass consumes machine code, so disable LTO and stale source-level debug data.
     # Whole-program vtables require LTO; override the inherited release flag too.
-    # Retain every frame pointer: the post-pass removes unwind information.
+    # Regenerate unwind rows after rewriting; retain the compiler's frame effects.
     target_compile_options (str_${unit} PRIVATE
         -O3 -fno-builtin -fno-stack-protector -fno-lto -fno-whole-program-vtables -g0 -fPIC
         -ffunction-sections -fdata-sections
-        -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer)
+        -fno-omit-frame-pointer -momit-leaf-frame-pointer -fasynchronous-unwind-tables)
     if (unit STREQUAL "sse2" OR unit STREQUAL "dispatch")
         target_compile_options (str_${unit} PRIVATE -march=x86-64)
     elseif (unit STREQUAL "sse42")
@@ -58,14 +87,18 @@ add_custom_command (
     OUTPUT "${str_archive}"
     BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/libstr-prefixed.a" "${CMAKE_CURRENT_BINARY_DIR}/post/report.txt"
     COMMAND "${STR_PYTHON_EXECUTABLE}" "${STR_SOURCE_DIR}/dev/post.py"
-        --check --out "${CMAKE_CURRENT_BINARY_DIR}/post"
+        --roundtrip --check --out "${CMAKE_CURRENT_BINARY_DIR}/roundtrip"
+        ${str_objects}
+    COMMAND "${STR_PYTHON_EXECUTABLE}" "${STR_SOURCE_DIR}/dev/post.py"
+        --check --unwind --out "${CMAKE_CURRENT_BINARY_DIR}/post"
         --archive "${CMAKE_CURRENT_BINARY_DIR}/libstr-prefixed.a"
         --report "${CMAKE_CURRENT_BINARY_DIR}/post/report.txt"
         --passes fold,rename,tail,hot,thread,ktest,kor,kfirst,lea,copy,tramp,vzu
         ${str_objects}
+    COMMAND ${str_contract_command}
     COMMAND "${OBJCOPY_PATH}" ${str_rename_options}
         "${CMAKE_CURRENT_BINARY_DIR}/libstr-prefixed.a" "${str_archive}"
-    DEPENDS ${str_objects} ${str_post_sources} "${STR_SOURCE_DIR}/dev/phases.json"
+    DEPENDS ${str_objects} ${str_post_sources} ${str_contract_sources} "${STR_SOURCE_DIR}/dev/phases.json"
     COMMAND_EXPAND_LISTS
     VERBATIM)
 add_custom_target (str_archive DEPENDS "${str_archive}")

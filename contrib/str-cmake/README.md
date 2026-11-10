@@ -18,7 +18,9 @@ notes.
 
 Each translation unit is compiled for its own CPU level. The dispatcher and
 SSE2 implementation retain the x86-64 baseline. Upstream selects the appropriate
-configuration at runtime, with a valid SSE2 table available before constructors.
+configuration at runtime, with an immutable SSE2 table available before constructors.
+Public entries acquire an atomic pointer to the selected immutable table;
+initialization publishes that pointer instead of overwriting live function slots.
 
 The upstream Python post-pass is required to produce a linkable archive. It
 specializes implementations for each dispatch configuration and rewrites their
@@ -27,11 +29,25 @@ disables LTO for these objects, and renames the public symbols after the pass
 so that the pass still recognizes its internal calls. The archive is loaded
 before the LLVM libc archive, whose overlapping memory definitions are weak.
 
-The pass discards unwind metadata. Every function is compiled with frame
-pointers, and its frame-removal pass is disabled to preserve frame-chain
-profiling. Source-level debug information is disabled because the pass does not
+The pass regenerates `.eh_frame` rows for the final instruction layout,
+including configuration copies and duplicated tails. It checks preserved compiler
+frame effects and the final control-flow graph, and rejects unsupported unwind
+instructions or inconsistent frame states. Functions retain asynchronous unwind
+information. The compiler may omit leaf frames; nonleaf frame pointers remain,
+and the post-pass frame-removal optimization stays disabled. Source-level debug
+information is disabled because the pass does not
 remap it to the rewritten code. Function symbols remain available. Native
-profiling must verify that stacks traverse the rewritten functions correctly.
+profiling must also verify stacks through the actual linked provider.
+
+Archive generation round-trips the actual x86 compiler objects before applying
+the rewriting passes. On target-native Linux builds it also runs contracts
+against the actual prefixed archive and independent host libc before publishing
+the public archive. The x86 checks cover every executable ISA configuration,
+one-slot mixes, cached-copy/fill thresholds and overlapping ranges, and
+publication with an early constructor worker. ARM checks run
+both the selected hardware path and forced NEON. Cross builds explicitly skip
+execution; they do not report a native contract pass. Logs and the archive hash
+are retained below the build directory's `contract-tests` directory.
 
 ## Experimental AArch64 provider
 

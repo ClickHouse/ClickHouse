@@ -50,8 +50,9 @@ endforeach ()
 set (str_archive "${CMAKE_CURRENT_BINARY_DIR}/libstr.a")
 add_custom_command (
     OUTPUT "${str_archive}"
+    COMMAND ${str_contract_command}
     COMMAND "${OBJCOPY_PATH}" ${str_rename_options} $<TARGET_FILE:str_prefixed> "${str_archive}"
-    DEPENDS str_prefixed
+    DEPENDS str_prefixed ${str_contract_sources}
     COMMAND_EXPAND_LISTS
     VERBATIM)
 add_custom_target (str_archive DEPENDS "${str_archive}")
