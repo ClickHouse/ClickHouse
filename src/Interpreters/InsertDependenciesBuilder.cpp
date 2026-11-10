@@ -134,6 +134,7 @@ namespace Setting
     extern const SettingsBool materialized_views_squash_parallel_inserts;
     extern const SettingsBool parallel_view_processing;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
 }
@@ -808,7 +809,45 @@ void registerHiddenPreWriteChecks(
     const HiddenCheckOrigin & origin,
     size_t depth,
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
-    bool follow_dependent_views = true);
+    bool follow_dependent_views = true,
+    const Names * insert_columns = nullptr);
+
+/// The columns a forwarding storage lists in the nested INSERT into the table behind it. A `Buffer` writes the blocks
+/// of its own structure (see `StorageBuffer::writeBlockToDestination`), and a `Distributed` table sends its own columns
+/// to the local shards (see `StorageDistributed::write`).
+Names getForwardedColumns(const IStorage & storage, const ContextPtr & context, bool allow_materialized)
+{
+    const auto metadata = storage.getInMemoryMetadataPtr(context, false);
+    return allow_materialized ? metadata->getSampleBlock().getNames() : metadata->getSampleBlockNonMaterialized().getNames();
+}
+
+/// The kinds of the target tables a nested INSERT into `time_series` writes into. `insert_columns` are the columns that
+/// INSERT lists, null if it lists none - it writes all the columns then. The `TimeSeriesSink` of the nested INSERT
+/// creates the pipelines only of these targets, so the checks of the other targets must not be registered: their failure
+/// would reject a write that never touches them.
+std::vector<ViewTarget::Kind> getTimeSeriesInsertTargetKinds(
+    const StorageTimeSeries & time_series, const ContextPtr & context, const Names * insert_columns)
+{
+    Names columns;
+    if (insert_columns)
+    {
+        /// Only the columns of the table are written, see `StorageBuffer::writeBlockToDestination`. A forwarding storage
+        /// with none of them writes nothing into the table.
+        const auto metadata = time_series.getInMemoryMetadataPtr(context, false);
+        for (const auto & name : *insert_columns)
+            if (metadata->getColumns().has(name))
+                columns.push_back(name);
+        if (columns.empty())
+            return {};
+    }
+
+    const auto targets = time_series.getInsertTargets(columns);
+    std::vector<ViewTarget::Kind> kinds;
+    for (auto kind : StorageTimeSeries::getTargetKinds())
+        if (time_series.hasTarget(kind) && targets.contains(kind))
+            kinds.push_back(kind);
+    return kinds;
+}
 
 /// Records the current exception, thrown while the deferred pre-write checks of a hidden write were being
 /// prepared (e.g. the definer of a view behind the forwarding sink cannot be resolved), as the outcome of a
@@ -900,7 +939,8 @@ void registerHiddenPreWriteChecksImpl(
     const HiddenCheckOrigin & origin,
     size_t depth,
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
-    bool follow_dependent_views)
+    bool follow_dependent_views,
+    const Names * insert_columns)
 {
     if (!storage || depth > max_insert_forwarding_depth)
         return;
@@ -932,20 +972,23 @@ void registerHiddenPreWriteChecksImpl(
         /// of the nested INSERT into the buffer, when it writes into the destination, and not by the outer
         /// sink. It registers the same checks once more, and observes their outcome if the decision has been
         /// made by then, see `InsertStartGate::addCheck`.
+        const auto destination_context = buffer->getDestinationWriteContext();
+        const auto buffer_columns = getForwardedColumns(*buffer, destination_context, /* allow_materialized= */ true);
         registerHiddenPreWriteChecks(
             buffer->getDestinationTable(),
-            buffer->getDestinationWriteContext(),
+            destination_context,
             gates,
             HiddenCheckOrigin{origin.forwarded_to, storage, /* enforced_here= */ false},
             depth + 1,
-            result);
+            result,
+            /* follow_dependent_views= */ true,
+            &buffer_columns);
         return;
     }
     if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(storage.get()))
     {
-        for (auto kind : StorageTimeSeries::getTargetKinds())
-            if (time_series->hasTarget(kind))
-                registerHiddenPreWriteChecks(time_series->tryGetTargetTable(kind, context), context, gates, origin, depth + 1, result);
+        for (auto kind : getTimeSeriesInsertTargetKinds(*time_series, context, insert_columns))
+            registerHiddenPreWriteChecks(time_series->tryGetTargetTable(kind, context), context, gates, origin, depth + 1, result);
         return;
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
@@ -958,13 +1001,18 @@ void registerHiddenPreWriteChecksImpl(
     }
     if (const auto * distributed = dynamic_cast<const StorageDistributed *>(storage.get()))
     {
-        registerHiddenPreWriteChecks(tryGetDistributedLocalTarget(*distributed, context), context, gates, origin, depth + 1, result);
+        const auto distributed_columns
+            = getForwardedColumns(*distributed, context, context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
+        registerHiddenPreWriteChecks(
+            tryGetDistributedLocalTarget(*distributed, context), context, gates, origin, depth + 1, result,
+            /* follow_dependent_views= */ true, &distributed_columns);
         return;
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
     {
+        /// The write into a proxy is the write into its nested storage, with the same columns.
         registerHiddenPreWriteChecks(
-            proxy->getNested(), context, gates, origin, depth + 1, result, /* follow_dependent_views= */ false);
+            proxy->getNested(), context, gates, origin, depth + 1, result, /* follow_dependent_views= */ false, insert_columns);
         return;
     }
 
@@ -986,11 +1034,12 @@ void registerHiddenPreWriteChecks(
     const HiddenCheckOrigin & origin,
     size_t depth,
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
-    bool follow_dependent_views)
+    bool follow_dependent_views,
+    const Names * insert_columns)
 {
     try
     {
-        registerHiddenPreWriteChecksImpl(storage, context, gates, origin, depth, result, follow_dependent_views);
+        registerHiddenPreWriteChecksImpl(storage, context, gates, origin, depth, result, follow_dependent_views, insert_columns);
     }
     catch (...) // Ok: the error is deferred to the write, see `deferHiddenPreWriteCheckFailure`.
     {
@@ -1013,10 +1062,13 @@ std::vector<SinkToStorage::HiddenPreWriteCheck> collectHiddenPreWriteChecks(
 {
     std::vector<SinkToStorage::HiddenPreWriteCheck> result;
 
-    auto add_forwarded_to = [&](const StoragePtr & target, const ContextPtr & target_context)
+    /// `insert_columns`: the columns the nested INSERT lists, see `getForwardedColumns`.
+    auto add_forwarded_to = [&](const StoragePtr & target, const ContextPtr & target_context, const Names * insert_columns = nullptr)
     {
         if (target)
-            registerHiddenPreWriteChecks(target, target_context, gates, HiddenCheckOrigin{target->getStorageID(), storage}, 1, result);
+            registerHiddenPreWriteChecks(
+                target, target_context, gates, HiddenCheckOrigin{target->getStorageID(), storage}, 1, result,
+                /* follow_dependent_views= */ true, insert_columns);
     };
 
     /// The write into a proxy (e.g. a table created `AS remote(...)`, a `StorageTableFunctionProxy`) returns the
@@ -1034,7 +1086,11 @@ std::vector<SinkToStorage::HiddenPreWriteCheck> collectHiddenPreWriteChecks(
     if (const auto * alias = dynamic_cast<const StorageAlias *>(forwarding.get()))
         add_forwarded_to(alias->tryGetTargetTable(), context);
     else if (const auto * buffer = dynamic_cast<const StorageBuffer *>(forwarding.get()))
-        add_forwarded_to(buffer->getDestinationTable(), buffer->getDestinationWriteContext());
+    {
+        const auto destination_context = buffer->getDestinationWriteContext();
+        const auto buffer_columns = getForwardedColumns(*buffer, destination_context, /* allow_materialized= */ true);
+        add_forwarded_to(buffer->getDestinationTable(), destination_context, &buffer_columns);
+    }
     else if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(forwarding.get()))
     {
         for (auto kind : StorageTimeSeries::getTargetKinds())
@@ -1042,7 +1098,11 @@ std::vector<SinkToStorage::HiddenPreWriteCheck> collectHiddenPreWriteChecks(
                 add_forwarded_to(time_series->tryGetTargetTable(kind, context), context);
     }
     else if (const auto * distributed = dynamic_cast<const StorageDistributed *>(forwarding.get()))
-        add_forwarded_to(tryGetDistributedLocalTarget(*distributed, context), context);
+    {
+        const auto distributed_columns
+            = getForwardedColumns(*distributed, context, context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
+        add_forwarded_to(tryGetDistributedLocalTarget(*distributed, context), context, &distributed_columns);
+    }
 
     return result;
 }

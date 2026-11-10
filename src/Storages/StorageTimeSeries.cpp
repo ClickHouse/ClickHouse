@@ -22,6 +22,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
@@ -286,6 +287,43 @@ const StorageTimeSeries::Target * StorageTimeSeries::tryGetTarget(ViewTarget::Ki
 bool StorageTimeSeries::hasTarget(ViewTarget::Kind target_kind) const
 {
     return tryGetTarget(target_kind) != nullptr;
+}
+
+
+StorageTimeSeries::InsertTargets StorageTimeSeries::getInsertTargets(const Names & insert_columns) const
+{
+    auto is_insert_column = [&](const String & name)
+    {
+        return insert_columns.empty() || std::find(insert_columns.begin(), insert_columns.end(), name) != insert_columns.end();
+    };
+
+    InsertTargets result;
+    result.tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
+        || is_insert_column(TimeSeriesColumnNames::Tags)
+        || is_insert_column(TimeSeriesColumnNames::getOuterSamples(getVersion()));
+
+    result.metric_families = is_insert_column(TimeSeriesColumnNames::MetricFamily)
+        || is_insert_column(TimeSeriesColumnNames::Type)
+        || is_insert_column(TimeSeriesColumnNames::Unit)
+        || is_insert_column(TimeSeriesColumnNames::Help);
+    return result;
+}
+
+
+bool StorageTimeSeries::InsertTargets::contains(ViewTarget::Kind target_kind) const
+{
+    switch (target_kind)
+    {
+        case ViewTarget::Tags:
+        case ViewTarget::TimeRanges:
+        case ViewTarget::Samples:
+        case ViewTarget::RecentSamples:
+            return tags_and_samples;
+        case ViewTarget::MetricFamilies:
+            return metric_families;
+        default:
+            return false;
+    }
 }
 
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -68,6 +69,21 @@ public:
     {
         return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies};
     }
+
+    /// The groups of target tables an `INSERT` into this table writes into, depending on the columns it lists
+    /// (empty `insert_columns` means all the columns), see `TimeSeriesSink`.
+    struct InsertTargets
+    {
+        /// The "tags" and "samples" tables, and the optional "time ranges" and "recent samples" tables.
+        bool tags_and_samples = false;
+        /// The "metric families" table.
+        bool metric_families = false;
+
+        /// Whether the target of `target_kind` belongs to one of the groups above. The optional targets the table
+        /// does not have (see `hasTarget`) are not checked here.
+        bool contains(ViewTarget::Kind target_kind) const;
+    };
+    InsertTargets getInsertTargets(const Names & insert_columns) const;
 
     /// Return the caches used to skip the rows already written to the "tags" and "metric families" tables,
     /// or null if the cache is disabled by the settings (see `tags_deduplication_cache_size_bytes`

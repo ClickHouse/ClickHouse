@@ -849,19 +849,9 @@ TimeSeriesSink::TimeSeriesSink(
 {
     /// Determine which target tables need pipelines based on the columns mentioned in the INSERT query.
     /// If insert_columns is empty (e.g. INSERT INTO mytable VALUES ...), all columns are being inserted.
-    auto is_insert_column = [&](const String & name)
-    {
-        return (insert_columns_.empty() || std::find(insert_columns_.begin(), insert_columns_.end(), name) != insert_columns_.end());
-    };
-
-    insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
-        || is_insert_column(TimeSeriesColumnNames::Tags)
-        || is_insert_column(TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion()));
-
-    insert_metric_families = is_insert_column(TimeSeriesColumnNames::MetricFamily)
-        || is_insert_column(TimeSeriesColumnNames::Type)
-        || is_insert_column(TimeSeriesColumnNames::Unit)
-        || is_insert_column(TimeSeriesColumnNames::Help);
+    const auto targets = time_series_storage.getInsertTargets(insert_columns_);
+    insert_tags_and_samples = targets.tags_and_samples;
+    insert_metric_families = targets.metric_families;
 
     /// The target pipelines are not created here: they are nested `INSERT`s into the inner tables, and
     /// they must observe the `InsertStartGates` registry of the outer query, which is only handed to
