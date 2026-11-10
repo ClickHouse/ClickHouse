@@ -4,8 +4,9 @@
 /// WebAssembly parser (`utils/wasm-parser`) reports it as `partial_ast`.
 ///
 /// Capture is off unless the caller points `Expected::partial_ast` at a `PartialASTState`. In the server
-/// the pointer is always null, and in a build without formatting it is null at compile time. Each hook then costs one branch on the pointer, taken before any other
-/// argument is evaluated, so a failure path neither allocates nor copies anything for capture. A parser
+/// the pointer is always null, and in a build without formatting it is null at compile time. Each hook
+/// then costs one branch on the pointer, taken before any other argument is evaluated, so a failure
+/// path neither allocates nor copies anything for capture. A parser
 /// that assembles the tree so far also builds a closure of references to its locals on each call, which is
 /// a few stores and no allocation, and `ParserSelectQuery` holds a `PartialASTSelectScope`, which is one
 /// more branch on entry and one on exit.

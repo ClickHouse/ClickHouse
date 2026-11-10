@@ -195,10 +195,31 @@ so far, as `partial_ast`, right after `error` (`SELECT a FROM`):
   `SETTINGS` fails on the same token.
 * Not captured, because there is no slot for what failed, or nothing failed in the statement: an
   `ALTER` command in parentheses that lacks only its `)` (in `ALTER TABLE t (DROP COLUMN a`, the
-  `Error` takes the place of that command, here of `command_list` as it is the first), a `CREATE TABLE` that parsed in full and is rejected for
-  combining `SQL SECURITY` with `AS [db.]table` or a table function, and input after a statement
-  that parsed (`CREATE TABLE t (a UInt8) COMMENT 'x' ENGINE =`). A `WITH` at the start of a
-  statement does not commit it to `SELECT` or `INSERT`, so a failure in it is not captured either.
+  `Error` takes the place of that command, here of `command_list` as it is the first), a
+  `CREATE TABLE` that parsed in full and is rejected for combining `SQL SECURITY` with
+  `AS [db.]table` or a table function, and input after a statement that parsed
+  (`CREATE TABLE t (a UInt8) COMMENT 'x' ENGINE =`). A `WITH` at the start of a statement does not
+  commit it to `SELECT` or `INSERT`, so a failure in it is not captured either.
+* Not captured, or captured in the wrong slot, because the parser of a list stops after its last
+  good element and the parser around it goes on:
+  * A failure in an element after the first of an expression list has no `partial_ast`:
+    `SELECT a, b +`, `SELECT a AS`, `SELECT a FROM t GROUP BY a, b +`,
+    `SELECT a FROM t ORDER BY a, b +`, `SELECT a FROM t LIMIT 1 BY a, b +`, and
+    `CREATE DICTIONARY d (a UInt8, b UInt8) PRIMARY KEY a, b +`, while the same failure in the
+    first element (`SELECT a +`) is captured. In `ALTER TABLE t UPDATE a = 1, b =`, the `Error` is
+    the `predicate` of the command, and the `b =` being written is not in the tree.
+  * A failure inside `INTERPOLATE (...)` after an `ORDER BY` is reported as `order_by` being the
+    `Error`: `SELECT a FROM t ORDER BY a WITH FILL INTERPOLATE (` loses the list that parsed.
+  * A first word of a keyword of two words, written after a clause that parsed, has no
+    `partial_ast` until the second word is there: `SELECT a FROM t ORDER`, `... GROUP`,
+    `SELECT 1 UNION`, `SELECT 1 UNION ALL`, `SELECT a FROM t ORDER BY a WITH`,
+    `INSERT INTO t SELECT * FROM u ORDER`, and `CREATE TABLE t (a UInt8) ENGINE = MergeTree ORDER`
+    (likewise `PARTITION`, `PRIMARY` and `SAMPLE`). `error.expected` still names the second word.
+  * Pipe syntax: a failure in an operator has no `partial_ast`, as in `FROM t |> WHERE` and
+    `FROM t |> JOIN u ON`, although a `SELECT` nested in an operator is captured.
+  * In a column list, a `CODEC` declaration that is cut short in its first word
+    (`CREATE TABLE t (p Tuple(j JSON, m UInt8), CODEC p.j`) parses as a column named `CODEC`, and
+    the `Error` follows it.
 * A partial tree is held to the node limits of an `ast`, 1000 levels and 50000 nodes. One past
   them is not reported at all, and neither is a statement around it that failed at the same
   place - `SELECT 1 + 1 + ... FROM` with a few thousand terms has no `partial_ast`, and neither
@@ -296,7 +317,7 @@ the latter is in every build and the former goes with `-DENABLE_FORMATTING=OFF`.
 
 Brotli is what a browser will actually get, and it is 25% better than gzip here.
 
-`MAX_SIZE_*` in `CMakeLists.txt` holds a ceiling above each of these, 0.3% to 3.5% over when last
+`MAX_SIZE_*` in `CMakeLists.txt` holds a ceiling above each of these, 0.2% to 3.3% over when last
 raised, which the `parser-size` test asserts. Raise the ceiling and update this table in the same
 change as any growth that is meant to happen.
 
@@ -325,7 +346,7 @@ Sorted by brotli, which is what a browser negotiates:
 
 The row to measure against is **`libpg-query`**: the same idea, a production database's own parser
 compiled to WebAssembly rather than reimplemented. With its glue it is 183463 brotli against this
-build's 210699 — the same ballpark, for a grammar of comparable size. The full build is not that
+build's 211253 — the same ballpark, for a grammar of comparable size. The full build is not that
 comparison: none of the others ship an AST-as-JSON interface in both directions, which is what
 separates its row from the minimal one.
 

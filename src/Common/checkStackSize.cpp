@@ -208,7 +208,8 @@ void checkStackSize()
 
 size_t getStackSizeHeadroom()
 {
-    /// Not checked for coroutines, as in `checkStackSize`.
+    /// Unlike `checkStackSize`, which throws within `COROUTINE_STACK_RESERVE` of the bottom of the stack of
+    /// a coroutine, this does not look at coroutine stacks. Silk fibers are not checked by either.
     if (StackfulCoroutine::getCurrentCoroutine())
         return SIZE_MAX;
 
