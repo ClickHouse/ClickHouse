@@ -32,7 +32,8 @@ SELECT
     ProfileEvents['DirectInsertedRows'] + ProfileEvents['MaterializedViewInsertedRows'] = ProfileEvents['InsertedRows'],
     ProfileEvents['DirectInsertedBytes'] + ProfileEvents['MaterializedViewInsertedBytes'] = ProfileEvents['InsertedBytes']
 FROM system.query_log
-WHERE log_comment LIKE 'refresh of ' || currentDatabase() || '.rmv_metrics_rmv%'
+WHERE current_database = currentDatabase()
+  AND log_comment LIKE 'refresh of ' || currentDatabase() || '.rmv_metrics_rmv%'
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
 ORDER BY event_time DESC
