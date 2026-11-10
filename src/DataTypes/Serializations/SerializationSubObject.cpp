@@ -80,6 +80,20 @@ bool SerializationSubObject::supportsPooling() const
     return true;
 }
 
+MutableColumnPtr SerializationSubObject::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    /// The typed paths that are not SHARED are read into their columns by their own serializations, which may be Sparse.
+    auto & column_object = assert_cast<ColumnObject &>(*column);
+    auto & typed_paths = column_object.getTypedPaths();
+    for (const auto & [path, serialization] : typed_paths_serializations)
+    {
+        auto & path_column = typed_paths.at(path.substr(paths_prefix.size()));
+        path_column = serialization->wrapColumnForDeserialization(path_column->cloneEmpty());
+    }
+    column_object.rebuildSortedTypedPathColumns();
+    return column;
+}
+
 struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeBinaryBulkState
 {
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> typed_path_states;
@@ -129,7 +143,6 @@ void SerializationSubObject::enumerateStreams(
         auto path_data = SubstreamData(serialization)
                              .withType(type_object ? type_object->getTypedPaths().at(path.substr(paths_prefix.size())) : nullptr)
                              .withColumn(column_object ? column_object->getTypedPaths().at(path.substr(paths_prefix.size())) : nullptr)
-                             .withSerializationInfo(data.serialization_info)
                              .withDeserializeState(deserialize_state ? deserialize_state->typed_path_states.at(path) : nullptr);
         settings.path.back().data = path_data;
         serialization->enumerateStreams(settings, callback, path_data);
