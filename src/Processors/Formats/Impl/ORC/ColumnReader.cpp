@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ORC/ColumnReader.h>
+#include <Processors/Formats/Impl/ORC/Timezone.h>
 
 #include <base/arithmeticOverflow.h>
 #include <Common/DateLUTImpl.h>
@@ -6,8 +7,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/DateLUT.h>
-
-#include <cctz/time_zone.h>
 
 #include <algorithm>
 #include <bit>
@@ -18,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 }
@@ -359,44 +357,6 @@ public:
 private:
     std::unique_ptr<IntRleDecoder> length_rle;
     std::unique_ptr<InputByteStream> blob_stream;
-};
-
-/// The UTC offset of a time zone as the reference implementation sees it: before the first transition
-/// it uses the oldest standard time, not the local mean time of tzdata (Asia/Shanghai +08:00, not +08:05:43).
-class TimezoneOffset
-{
-public:
-    explicit TimezoneOffset(const DateLUTImpl & lut_)
-        : lut(lut_)
-    {
-        cctz::time_zone tz;
-        if (!cctz::load_time_zone(std::string(lut.getTimeZone()), &tz))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot load time zone {}", lut.getTimeZone());
-        cctz::time_zone::civil_transition transition;
-        if (!tz.next_transition(cctz::time_point<cctz::seconds>::min(), &transition))
-            return;
-        const auto first = tz.lookup(transition.to).trans;
-        for (auto time = first;;)
-        {
-            const auto lookup = tz.lookup(time);
-            if (!lookup.is_dst)
-            {
-                first_transition = first.time_since_epoch().count();
-                ancient_offset = lookup.offset;
-                return;
-            }
-            if (!tz.next_transition(time, &transition))
-                return;
-            time = tz.lookup(transition.to).trans;
-        }
-    }
-
-    Int64 operator()(Int64 t) const { return t < first_transition ? ancient_offset : lut.timezoneOffset(t); }
-
-private:
-    const DateLUTImpl & lut;
-    Int64 first_transition = std::numeric_limits<Int64>::min();
-    Int64 ancient_offset = 0;
 };
 
 class TimestampColumnReader final : public ColumnReader

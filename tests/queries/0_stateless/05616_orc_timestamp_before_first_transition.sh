@@ -21,4 +21,20 @@ $CLICKHOUSE_LOCAL -q "
     INTO OUTFILE '$FILE' TRUNCATE FORMAT ORC SETTINGS output_format_orc_writer_time_zone_name = 'America/Los_Angeles'"
 $CLICKHOUSE_LOCAL -q "SELECT ts FROM file('$FILE', ORC, 'ts DateTime64(0, \'UTC\')')"
 
+# Europe/Lisbon starts with a no-op transition record in 1884 that keeps the local mean time (-00:36:45).
+$CLICKHOUSE_LOCAL -q "
+    SELECT toDateTime64('1850-01-01 00:00:00', 0, 'UTC') AS ts
+    INTO OUTFILE '$FILE' TRUNCATE FORMAT ORC"
+$CLICKHOUSE_LOCAL -q "SELECT ts FROM file('$FILE', ORC, 'ts DateTime64(0, \'UTC\')') SETTINGS input_format_orc_reader_time_zone_name = 'Europe/Lisbon'"
+
+# The timestamp statistics must agree with the values that are read, or the filter pushdown drops the row.
+$CLICKHOUSE_LOCAL -q "
+    SELECT toDateTime64('1850-01-01 00:00:00', 9, 'UTC') AS ts
+    INTO OUTFILE '$FILE' TRUNCATE FORMAT ORC SETTINGS output_format_orc_writer_time_zone_name = 'America/Los_Angeles'"
+for push_down in 0 1; do
+    $CLICKHOUSE_LOCAL -q "
+        SELECT $push_down, ts FROM file('$FILE', ORC, 'ts DateTime64(9, \'UTC\')')
+        WHERE ts = toDateTime64('1849-12-31 16:00:00', 9, 'UTC') SETTINGS input_format_orc_filter_push_down = $push_down"
+done
+
 rm -f "$FILE"
