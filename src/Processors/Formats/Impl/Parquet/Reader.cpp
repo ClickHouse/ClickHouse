@@ -5115,14 +5115,14 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         row_subgroup.nested_array_offsets.push_back({output_info.rep, &offsets});
         SCOPE_EXIT({ row_subgroup.nested_array_offsets.pop_back(); });
 
-        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), offsets.back(), skip_cast);
+        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), offsets.back());
         res = ColumnArray::create(std::move(nested), std::move(offsets_column));
     }
     else if (kind == TypeIndex::Tuple)
     {
         MutableColumns columns;
         for (size_t idx : output_info.nested_columns)
-            columns.push_back(formOutputColumn(row_subgroup, idx, num_rows, skip_cast));
+            columns.push_back(formOutputColumn(row_subgroup, idx, num_rows));
         if (columns.empty())
             res = ColumnTuple::create(num_rows);
         else
@@ -5150,7 +5150,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
                 output_info.input_type->getName());
         }
         chassert(output_info.nested_columns.size() == 1);
-        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), num_rows, skip_cast);
+        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), num_rows);
         res = ColumnMap::create(std::move(nested));
     }
 
@@ -5163,6 +5163,8 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     chassert(res->getDataType() == output_info.input_type->getColumnType());
 
+    /// `skip_cast` applies to this node only: the `input_type` of a compound node is built from the
+    /// output types of its children, so the children are always cast to their own output types.
     if (output_info.needs_cast && !skip_cast)
     {
         auto col = castColumn(
