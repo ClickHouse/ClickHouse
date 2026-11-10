@@ -2747,6 +2747,34 @@ static bool queryTreeHasNodeWithOwnViewInnerContext(const QueryTreeNodePtr & roo
     return false;
 }
 
+/// Whether the query tree contains a constant folded from a scalar subquery. The analyzer executes such a
+/// subquery while it resolves the tree, before the planner of an enclosing subquery cached with
+/// `query_cache_use_only_when_data_was_not_changed` installs the object-set capture that keeps an
+/// unvalidated cache entry of the scalar subquery from being served. The rows of the scalar can therefore be
+/// older than the hashes taken here, and the constant that replaced the subquery hides its tables from them.
+static bool queryTreeHasConstantFoldedFromSubquery(const QueryTreeNodePtr & root)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_visit{root.get()};
+    while (!nodes_to_visit.empty())
+    {
+        const auto * node = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+        {
+            auto source_type = constant_node->getSourceExpression()->getNodeType();
+            if (source_type == QueryTreeNodeType::QUERY || source_type == QueryTreeNodeType::UNION)
+                return true;
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child.get());
+    }
+
+    return false;
+}
+
 /// When the query cache is restricted to consistent results, returns the combined modification hash of the
 /// referenced tables to fold into the (subquery) cache key. If consistency cannot be guaranteed, resets
 /// `should_cache`, so the subquery is not cached.
@@ -2772,6 +2800,12 @@ static std::optional<UInt128> prepareSubqueryCacheReferencedTablesModificationHa
     /// planned under its own context, whose dependencies the AST does not carry: fail closed.
     if (should_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed]
         && queryTreeHasNodeWithOwnViewInnerContext(query_tree))
+        should_cache = false;
+
+    /// A scalar subquery was executed during analysis, possibly from an unvalidated cache entry, and its
+    /// tables are not in the AST hashed below: fail closed. See `queryTreeHasConstantFoldedFromSubquery`.
+    if (should_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed]
+        && queryTreeHasConstantFoldedFromSubquery(query_tree))
         should_cache = false;
 
     if (should_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed])
