@@ -66,7 +66,7 @@ protected:
         Poco::JSON::Object::Ptr request_body,
         const String & method,
         bool ignore_result,
-        bool allow_retries = true) const override;
+        bool allow_retries) const override;
 
 private:
     const String region;

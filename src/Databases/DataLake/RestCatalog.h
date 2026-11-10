@@ -245,7 +245,7 @@ protected:
         Poco::JSON::Object::Ptr request_body,
         const String & method,
         bool ignore_result,
-        bool allow_retries = true) const;
+        bool allow_retries) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 
