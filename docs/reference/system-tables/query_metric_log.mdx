@@ -157,6 +157,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_IcebergMetadataJSONParses` ([UInt64](/reference/data-types/int-uint)) — Number of times an Iceberg `metadata.json` was parsed. The parsing happens on every access, also when the file content is served from the Iceberg metadata cache.
 - `ProfileEvent_IcebergMetadataJSONParsedBytes` ([UInt64](/reference/data-types/int-uint)) — Total size of the Iceberg `metadata.json` content parsed.
 - `ProfileEvent_IcebergMetadataJSONParseMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent parsing Iceberg `metadata.json` files.
+- `ProfileEvent_IcebergMetadataJSONValidations` ([UInt64](/reference/data-types/int-uint)) — Number of times an Iceberg `metadata.json` was checked for the fields the Iceberg specification requires. A file served from the Iceberg metadata cache is checked once.
 - `ProfileEvent_IcebergManifestListsRead` ([UInt64](/reference/data-types/int-uint)) — Number of Iceberg manifest lists read from storage (not served from the Iceberg metadata cache).
 - `ProfileEvent_IcebergManifestListsReadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent reading and decoding Iceberg manifest lists from storage.
 - `ProfileEvent_IcebergManifestFilesRead` ([UInt64](/reference/data-types/int-uint)) — Number of Iceberg manifest files read from storage (not served from the Iceberg metadata cache).

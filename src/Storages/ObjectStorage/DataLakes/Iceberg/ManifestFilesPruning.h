@@ -70,6 +70,8 @@ private:
     std::optional<DB::KeyCondition> nullable_partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
+    /// Float bounds exclude NaN, so these are used for a data file unless its `nan_value_counts` proves the column has none.
+    std::unordered_map<Int32, DB::KeyCondition> nan_relaxed_min_max_key_conditions;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;
     std::unordered_map<Int32, DB::DataTypePtr> min_max_column_types;
 

@@ -719,7 +719,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
                 filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
 
             for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
-                read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+                read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
         {
