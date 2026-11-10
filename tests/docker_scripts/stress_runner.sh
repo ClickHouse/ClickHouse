@@ -48,7 +48,7 @@ export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
 # run before start_seaweedfs to have valid aws creds
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_seaweedfs stateless || { echo "Failed to start seaweedfs"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
