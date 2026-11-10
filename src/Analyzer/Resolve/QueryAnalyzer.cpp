@@ -126,7 +126,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 

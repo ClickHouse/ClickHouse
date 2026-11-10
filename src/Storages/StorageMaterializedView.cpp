@@ -583,6 +583,8 @@ void StorageMaterializedView::readImpl(
         read_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
         read_query->replaceDatabaseAndTable(storage_id);
         local_context->getQueryContext()->addSQLSecurityOverriddenBody(getStorageID(), context, read_query);
+        /// `storage->read` below bypasses the planner, which records what a read accesses.
+        context->getQueryContext()->addQueryAccessInfo(storage_id, column_names);
     }
 
     storage->read(query_plan, column_names, target_storage_snapshot, src_table_query_info, context, processed_stage, max_block_size, num_streams);

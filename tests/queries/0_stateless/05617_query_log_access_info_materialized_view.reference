@@ -17,3 +17,6 @@ insert_into_view
 read_definer
 read_legacy
 read_target
+mv read child rows
+read_definer	SELECT id FROM dst_definer	dst_definer	dst_definer.id
+read_memory	SELECT id FROM dst_chain	dst_chain	dst_chain.id

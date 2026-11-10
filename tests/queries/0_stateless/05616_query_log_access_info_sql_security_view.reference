@@ -30,5 +30,9 @@ none	1	1	0
 param	1	1	0
 sealed	1	1	0
 sealed_twice	1	1	0
-before_start child rows
-ExceptionBeforeStart	definer	1
+failed query child rows
+before_start	ExceptionBeforeStart	definer	1
+while_processing	ExceptionWhileProcessing	definer	1
+row policies
+0	1
+1	0

@@ -15,6 +15,10 @@ CREATE VIEW v_sealed DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT name,
 CREATE VIEW v_none SQL SECURITY NONE AS SELECT name, sum(id) AS s FROM t_private GROUP BY name;
 CREATE VIEW v_nested DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT name FROM v_sealed WHERE s > 0;
 CREATE VIEW v_param DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT name, sum(id) AS s FROM t_private WHERE id > {p:UInt64} GROUP BY name;
+CREATE TABLE t_policy (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_policy VALUES (1), (2);
+CREATE ROW POLICY p_policy ON t_policy USING id > 1 TO ALL;
+CREATE VIEW v_policy DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT id FROM t_policy;
 
 SELECT name FROM t_private GROUP BY name ORDER BY name SETTINGS log_comment = 'direct' FORMAT Null;
 SELECT name FROM v_definer GROUP BY name ORDER BY name SETTINGS log_comment = 'definer' FORMAT Null;
@@ -32,6 +36,8 @@ SELECT name FROM v_param(p = 0) UNION ALL SELECT name FROM v_param(p = 1) SETTIN
 
 -- The body's own optimization fails while the caller is still planning, after the body was registered.
 SELECT name FROM v_sealed SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p_missing', log_comment = 'before_start' FORMAT Null; -- { serverError INCORRECT_DATA }
+SELECT throwIf(s > 0) FROM v_sealed SETTINGS log_comment = 'while_processing' FORMAT Null; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT id FROM v_policy SETTINGS log_comment = 'policy' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -70,7 +76,20 @@ WHERE current_database = currentDatabase()
 GROUP BY log_comment
 ORDER BY log_comment;
 
-SELECT 'before_start child rows';
-SELECT type, multiIf(user = currentUser(), 'definer', user = '', 'none', 'other') AS identity, has(tables, currentDatabase() || '.t_private') AS reads_table
+SELECT 'failed query child rows';
+SELECT
+    log_comment,
+    type,
+    multiIf(user = currentUser(), 'definer', user = '', 'none', 'other') AS identity,
+    has(tables, currentDatabase() || '.t_private') AS reads_table
 FROM system.query_log
-WHERE current_database = currentDatabase() AND NOT is_initial_query AND log_comment = 'before_start';
+WHERE current_database = currentDatabase() AND NOT is_initial_query AND log_comment IN ('before_start', 'while_processing')
+ORDER BY log_comment;
+
+SELECT 'row policies';
+SELECT is_initial_query, length(used_row_policies)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'policy'
+ORDER BY is_initial_query;
+
+DROP ROW POLICY p_policy ON t_policy;

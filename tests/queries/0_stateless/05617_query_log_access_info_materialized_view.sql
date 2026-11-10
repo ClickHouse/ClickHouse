@@ -20,12 +20,13 @@ CREATE MATERIALIZED VIEW mv_legacy TO dst_legacy AS SELECT id FROM src;
 
 INSERT INTO src SETTINGS log_comment = 'insert', max_block_size = 1, max_insert_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 0
 SELECT number FROM numbers(4);
-INSERT INTO mv_definer SETTINGS log_comment = 'insert_into_view' VALUES (5, 'five');
+INSERT INTO mv_definer SETTINGS log_comment = 'insert_into_view', async_insert = 0 VALUES (5, 'five');
 
 -- Read rows, not an aggregate: an aggregate may be answered from part statistics without reading any part,
 -- and then no partition is recorded.
 SELECT id FROM dst_definer ORDER BY id SETTINGS log_comment = 'read_target' FORMAT Null;
 SELECT id FROM mv_definer ORDER BY id SETTINGS log_comment = 'read_definer' FORMAT Null;
+SELECT id FROM mv_chain ORDER BY id SETTINGS log_comment = 'read_memory' FORMAT Null;
 SELECT id FROM mv_legacy ORDER BY id SETTINGS log_comment = 'read_legacy' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
@@ -65,4 +66,15 @@ SELECT log_comment
 FROM system.user_query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('insert', 'insert_into_view', 'read_target', 'read_definer', 'read_legacy')
+ORDER BY log_comment;
+
+SELECT 'mv read child rows';
+SELECT
+    log_comment,
+    replaceAll(query, currentDatabase() || '.', '') AS body,
+    arrayStringConcat(arrayMap(x -> replaceAll(x, currentDatabase() || '.', ''), tables), ',') AS tables_read,
+    arrayStringConcat(arrayMap(x -> replaceAll(x, currentDatabase() || '.', ''), columns), ',') AS columns_read
+FROM system.query_log
+WHERE current_database = currentDatabase() AND NOT is_initial_query AND type = 'QueryFinish'
+    AND log_comment IN ('read_definer', 'read_memory')
 ORDER BY log_comment;
