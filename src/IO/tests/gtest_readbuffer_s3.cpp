@@ -831,7 +831,7 @@ TEST(DeleteFilesFromS3, ChangedObjectWinsOverOtherErrors)
     try
     {
         DB::deleteFilesFromS3(
-            client, "test_bucket", {"rewritten", "denied"}, /*if_exists=*/true, capabilities,
+            client, "test_bucket", {"rewritten", "denied"}, /*if_exists=*/true, capabilities, DB::S3::S3RequestSettings(),
             /*batch_size=*/1000, /*blob_storage_log=*/nullptr, {}, {}, std::nullopt, /*successful_keys=*/nullptr,
             /*etags_to_match=*/{"\"etag-1\"", ""});
         FAIL() << "Expected an exception";
@@ -872,7 +872,7 @@ TEST(DeleteFilesFromS3, ChangedObjectInLaterChunkIsFoundAfterOtherError)
     try
     {
         DB::deleteFilesFromS3(
-            client, "test_bucket", {"denied", "deleted", "rewritten", "other"}, /*if_exists=*/true, capabilities,
+            client, "test_bucket", {"denied", "deleted", "rewritten", "other"}, /*if_exists=*/true, capabilities, DB::S3::S3RequestSettings(),
             /*batch_size=*/2, /*blob_storage_log=*/nullptr, {}, {}, std::nullopt, /*successful_keys=*/nullptr,
             /*etags_to_match=*/{"\"etag-1\"", "\"etag-2\"", "\"etag-3\"", "\"etag-4\""});
         FAIL() << "Expected an exception";

@@ -50,7 +50,7 @@ class ArrowColumnToCHColumn;
 class ShutdownHelper;
 
 /// Reads Vortex files (https://docs.vortex.dev/) through the Rust bindings in
-/// `rust/workspace/vortex`. The bindings own no threads: a scan is split into tasks that wait in
+/// `contrib/vortex-cmake`. The bindings own no threads: a scan is split into tasks that wait in
 /// two queues, one for decoding and one for reads, and ClickHouse decides when and on which thread
 /// each of them runs. The library calls `onNotify` when it queues a task, driver tasks on the
 /// parsing and download pools run them in batches, and a decoded chunk arrives at `onChunk` on the

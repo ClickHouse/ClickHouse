@@ -8,6 +8,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <memory>
+#include <optional>
 
 
 namespace DB
@@ -16,6 +17,7 @@ namespace DB
 namespace S3
 {
     class Client;
+    struct S3RequestSettings;
 }
 
 class S3Capabilities;
@@ -40,6 +42,7 @@ void deleteFileFromS3(
     const String & version_id = {});
 
 /// Deletes multiple files from S3 using batch requests when it's possible.
+/// `request_settings` selects the checksum algorithm sent with `DeleteObjects` (`delete_checksum_algorithm`).
 /// `etags_to_match`, if not empty, is parallel to `keys` and pins each delete to one generation (see `deleteFileFromS3`);
 /// refused objects are reported with `FILE_CHANGED_DURING_READ` only after all others are deleted.
 void deleteFilesFromS3(
@@ -48,6 +51,7 @@ void deleteFilesFromS3(
     const Strings & keys,
     bool if_exists,
     S3Capabilities & s3_capabilities,
+    const S3::S3RequestSettings & request_settings,
     size_t batch_size = 1000,
     BlobStorageLogWriterPtr blob_storage_log = nullptr,
     const Strings & local_paths_for_blob_storage_log = {},

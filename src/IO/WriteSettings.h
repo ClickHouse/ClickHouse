@@ -39,9 +39,12 @@ struct WriteSettings
     bool is_initial_access_check = false;
 
     /// A requested compare-and-swap. Honoured only by S3-like object storages; a storage that cannot
-    /// express the condition must refuse the write, never perform it unconditionally.
+    /// express the condition must refuse the write, never perform it unconditionally, unless
+    /// `object_storage_write_if_none_match_best_effort` is set.
     std::string object_storage_write_if_none_match;
     std::string object_storage_write_if_match;
+    /// `object_storage_write_if_none_match` may be dropped where the storage cannot express it (a multipart upload to GCS).
+    bool object_storage_write_if_none_match_best_effort = false;
 
     /// Pins a guarded copy to the source generation the caller inspected (its ETag): the copy fails
     /// instead of silently carrying a newer one. Empty means no pin.
