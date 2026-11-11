@@ -66,14 +66,6 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
     params.mode = mode;
     params.is_restore_from_backup = is_restore_from_backup;
 
-    /// A full-definition ATTACH is user input: its copy is checked as a new table, while the table itself,
-    /// whose inner tables exist, is normalized as an existing one.
-    if (isFreshDefinition(mode) && !params.isNewTable())
-    {
-        auto copy = boost::static_pointer_cast<ASTCreateQuery>(create_query.clone());
-        normalizeTimeSeriesDefinition(*copy, context, LoadingStrictnessLevel::CREATE, is_restore_from_backup);
-    }
-
     /// Only a new table needs the information from outside its definition; the other tables must exist then
     /// (on ATTACH they may not be loaded yet).
     if (params.isNewTable())

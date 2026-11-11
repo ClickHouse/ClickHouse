@@ -2539,8 +2539,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     bool is_new_table = params.isNewTable();
 
     /// Whether the create query may come from an older version, so it can be converted to the current form.
-    /// The initial CREATE query is excluded: it must be written in the current form already.
-    bool can_convert = (params.mode != LoadingStrictnessLevel::CREATE) || params.is_restore_from_backup;
+    /// A fresh definition is excluded: it must be written in the current form already.
+    bool can_convert = !isFreshDefinition(params.mode) || params.is_restore_from_backup;
 
     /// Convert the create_query if it was created before the `version` setting was introduced.
     if (can_convert && !hasExplicitTimeSeriesVersion(create_query))

@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS ts_ext;
 DROP TABLE IF EXISTS ts_base;
+DROP TABLE IF EXISTS ext_samples;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- UNIQUE KEY with a table TTL
@@ -113,6 +114,15 @@ ATTACH TABLE ts_ext UUID '05621000-0000-0000-0000-000000000023' ENGINE = TimeSer
     METRIC FAMILIES `.inner_id.metricfamilies.05621000-0000-0000-0000-000000000022`;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'ts_ext';
 DROP TABLE ts_ext;
+-- The columns of a TimeSeries table attached with a full definition follow its external targets, like on CREATE
+CREATE TABLE ext_samples (id Tuple(UInt64, LowCardinality(UUID)), timestamp DateTime64(6), value Float32) ENGINE = MergeTree ORDER BY (id, timestamp);
+ATTACH TABLE ts_ext UUID '05621000-0000-0000-0000-000000000024' ENGINE = TimeSeries SETTINGS version = 9, recent_samples_ttl_seconds = 0, store_time_ranges = 0
+    SAMPLES ext_samples
+    TAGS `.inner_id.tags.05621000-0000-0000-0000-000000000022`
+    METRIC FAMILIES `.inner_id.metricfamilies.05621000-0000-0000-0000-000000000022`;
+SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'ts_ext' AND name = 'samples';
+DROP TABLE ts_ext;
+DROP TABLE ext_samples;
 DROP TABLE ts_base;
 
 -- A short ATTACH of a valid table still works
