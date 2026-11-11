@@ -1211,7 +1211,10 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     std::vector<ColumnsStatistics> parts_statistics(parts.size());
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
     const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/false);
-    estimator_builder.setCardinalityPolicy(metadata_snapshot, (*getSettings())[MergeTreeSetting::auto_statistics_assume_floats_distinct]);
+    estimator_builder.setCardinalityPolicy(metadata_snapshot);
+    /// The values of these columns are assumed to be distinct, and no part has statistics of them: the assumption
+    /// needs only the number of rows, which the parts know without loading anything.
+    const Names columns_without_statistics = estimator_builder.getAssumedDistinctColumnsWithoutStatistics(required_columns_set);
     loadStatisticsOfPartsInParallel(
         parts.size(),
         local_context->getSettingsRef()[Setting::max_threads],
@@ -1231,9 +1234,14 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         },
         [&](size_t part_index)
         {
-            estimator_builder.incrementRowCount(parts[part_index].data_part->rows_count);
+            const auto & part = parts[part_index].data_part;
+            estimator_builder.incrementRowCount(part->rows_count);
             for (const auto & [column_name, stat] : parts_statistics[part_index])
                 estimator_builder.addStatistics(column_name, stat);
+            /// A part written before the column was added stores none of its values.
+            for (const auto & column_name : columns_without_statistics)
+                if (!parts_statistics[part_index].contains(column_name) && part->getColumnPosition(column_name))
+                    estimator_builder.addRowsWithoutStatistics(column_name, part->rows_count);
             parts_statistics[part_index] = {};
         });
 

@@ -50,14 +50,18 @@ explicit uniq, dropped
 x	basic(auto)
 x	['Basic']	901
 basic only
-f64	['Basic']	1000
+f64	['Basic']	\N
 u64	['Basic']	\N
 uniq only
 f64	
 u64	uniq_v2(auto)
-f64	[]	\N
+f64	[]	1000
 u64	['UniqV2']	10
 prewhere, assumed
 Prewhere filter column: and(equals(f, 100.5_Float64), equals(i, 10_UInt8)) (removed)
 prewhere, not assumed
 Prewhere filter column: and(equals(i, 10_UInt8), equals(f, 100.5_Float64)) (removed)
+prewhere, uniq only
+Prewhere filter column: and(equals(f, 100.5_Float64), equals(i, 10_UInt8)) (removed)
+prewhere, only Float columns
+Prewhere filter column: and(equals(f, 100.5_Float64), less(g, 5000_UInt16)) (removed)

@@ -168,10 +168,15 @@ public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
-    /// Decides for which columns without a counted cardinality all non-NULL values are assumed to be distinct,
-    /// see `shouldAssumeAllDistinct`. `assume_floats_distinct` is the MergeTree setting
-    /// `auto_statistics_assume_floats_distinct`. Without a policy, nothing is assumed.
-    void setCardinalityPolicy(StorageMetadataPtr metadata, bool assume_floats_distinct);
+    /// The table metadata decides for which columns without a counted cardinality all non-NULL values are assumed
+    /// to be distinct, see `shouldAssumeAllDistinct`. Without a policy, nothing is assumed.
+    void setCardinalityPolicy(StorageMetadataPtr metadata);
+    /// The columns of `column_names` for which `shouldAssumeAllDistinctWithoutStatistics` holds: the parts have no
+    /// statistics of them to load. Pass the rows of every part that stores such a column to `addRowsWithoutStatistics`.
+    Names getAssumedDistinctColumnsWithoutStatistics(const NameSet & column_names) const;
+    /// Counts the rows of a part without statistics of the column, see `getAssumedDistinctColumnsWithoutStatistics`.
+    /// If no part has statistics of it, the estimator gets statistics of just these rows, all the assumption needs.
+    void addRowsWithoutStatistics(const String & column_name, UInt64 rows);
     /// See `ColumnStatistics::setCardinality`; the column must have statistics.
     void setCardinality(const String & column_name, UInt64 cardinality);
     ConditionSelectivityEstimatorPtr getEstimator() const;
@@ -180,7 +185,8 @@ private:
     bool has_data = false;
     ConditionSelectivityEstimatorPtr estimator;
     StorageMetadataPtr policy_metadata;
-    bool policy_assume_floats_distinct = false;
+    /// See `addRowsWithoutStatistics`.
+    std::unordered_map<String, UInt64> rows_without_statistics;
 };
 
 }

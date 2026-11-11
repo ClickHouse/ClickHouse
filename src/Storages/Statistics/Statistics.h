@@ -166,6 +166,9 @@ public:
     /// `Basic` statistics built from the rows, bounds and NULL count of data that was not read.
     static std::shared_ptr<ColumnStatistics> createBasicFromSummary(
         const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
+    /// Statistics without any statistics object, only the number of rows. For a column whose values are assumed to
+    /// be distinct (`shouldAssumeAllDistinctWithoutStatistics`), the parts know it without statistics files.
+    static std::shared_ptr<ColumnStatistics> createRowCountOnly(const DataTypePtr & data_type, UInt64 rows);
 
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);
@@ -211,7 +214,7 @@ public:
     /// Returns std::nullopt if the cardinality is counted (`hasCardinality`) or the type doesn't qualify. Ignores
     /// `setAssumeAllDistinct`, i.e. the caller decides whether the assumption applies.
     std::optional<UInt64> estimateAssumedDistinctCardinality() const;
-    /// Set by owners that know the policy (the table metadata and settings, see `shouldAssumeAllDistinct`).
+    /// Set by owners that know the policy (the table metadata, see `shouldAssumeAllDistinct`).
     /// Off by default, so statistics built for writing, merging and mutating parts are unaffected.
     void setAssumeAllDistinct(bool value) { assume_all_distinct = value; }
     /// Sets the number of distinct values `estimateCardinality` returns, known outside the statistics objects (from data
@@ -309,8 +312,9 @@ private:
 void removeImplicitStatistics(ColumnsDescription & columns);
 /// Adds the statistics types listed in `statistics_types_str` (the `auto_statistics_types` setting) as
 /// implicit statistics to every suitable column. If `assume_floats_distinct` is set, implicit `uniq` and
-/// `uniq_v2` are left out for the column types accepted by `canAssumeAllDistinctByType`; explicit
-/// statistics are never removed.
+/// `uniq_v2` are left out for the column types accepted by `canAssumeAllDistinctByType`, and such a column
+/// without an explicit uniq is marked with `ColumnStatisticsDescription::assume_all_distinct` instead;
+/// explicit statistics are never removed.
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str, bool assume_floats_distinct);
 
 /// True for `Float32` / `Float64`, also inside `Nullable`. False for `BFloat16` (at most 65536 distinct
@@ -320,11 +324,17 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
 bool canAssumeAllDistinctByType(const DataTypePtr & type);
 
 /// Whether the optimizer assumes that all non-NULL values of `column` are distinct when a part has no
-/// uniq sketch for it. Policy shared by the estimator builder and `system.parts_columns`: the setting
-/// `auto_statistics_assume_floats_distinct` is on, the type is accepted by `canAssumeAllDistinctByType`, and
-/// the metadata declares no `uniq` / `uniq_v2` for the column. A declared `uniq` that a part lacks means the
-/// part has not been materialized yet (or the setting is off, so the implicit `uniq` is declared).
-bool shouldAssumeAllDistinct(const ColumnDescription & column, bool assume_floats_distinct_setting);
+/// uniq sketch for it. Policy shared by the estimator builder and `system.parts_columns`: `addImplicitStatistics`
+/// left out the implicit `uniq` / `uniq_v2` of the column (`ColumnStatisticsDescription::assume_all_distinct`),
+/// so nothing is assumed where no sketch was asked for. The type must be accepted by `canAssumeAllDistinctByType`,
+/// and the metadata must declare no `uniq` / `uniq_v2` for the column: a declared `uniq` that a part lacks means
+/// the part has not been materialized yet.
+bool shouldAssumeAllDistinct(const ColumnDescription & column);
+
+/// Whether `shouldAssumeAllDistinct` holds and `column` declares no statistics at all (e.g. with
+/// `auto_statistics_types = 'uniq_v2'`), so the parts have no statistics of it to load. The assumption then needs
+/// only the number of rows, which every part knows: the estimator takes it from the parts.
+bool shouldAssumeAllDistinctWithoutStatistics(const ColumnDescription & column);
 
 /// Whether statistics record the exact minimum and maximum of a column of this type. Only
 /// numeric-like columns are tracked, and by both statistics types that store min/max: `minmax`

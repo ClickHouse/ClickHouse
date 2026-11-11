@@ -2506,10 +2506,12 @@ When enabled, the implicit statistics from [auto_statistics_types](#auto_statist
 always distinct and the sketch costs CPU and memory on every insert and merge. Instead, wherever the optimizer needs
 the number of distinct values of such a column and no sketch exists, it assumes that all non-`NULL` values are
 distinct. The assumed value is capped using `basic` statistics: rows equal to the default value (`0`) count as one
-value, and a column with equal minimum and maximum has one value.
+value, and a column with equal minimum and maximum has one value. If the column has no statistics at all (e.g. with
+`auto_statistics_types = 'uniq_v2'`), the number of rows is assumed.
 
 - Only implicit statistics are affected: an explicit `STATISTICS(uniq)` or `STATISTICS(uniq_v2)` on a column still
   builds a sketch, and the optimizer then uses it.
+- Nothing is assumed if `auto_statistics_types` contains neither `uniq` nor `uniq_v2`.
 - `BFloat16` and `LowCardinality(...)` columns are not affected.
 - Existing parts are rebuilt with the new set of statistics on their next merge, or with
   `ALTER TABLE ... MATERIALIZE STATISTICS`.

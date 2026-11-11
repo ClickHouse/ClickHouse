@@ -740,6 +740,16 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
     return column_stats;
 }
 
+std::shared_ptr<ColumnStatistics> ColumnStatistics::createRowCountOnly(const DataTypePtr & data_type, UInt64 rows)
+{
+    ColumnStatisticsDescription stats_desc;
+    stats_desc.data_type = data_type;
+
+    auto column_stats = std::make_shared<ColumnStatistics>(stats_desc);
+    column_stats->rows = rows;
+    return column_stats;
+}
+
 std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
 {
     UInt16 version_raw{};
@@ -1158,6 +1168,8 @@ void removeImplicitStatistics(ColumnsDescription & columns)
                     else
                         ++it;
                 }
+                /// Set together with the implicit statistics, see `addImplicitStatistics`.
+                column_desc.statistics.assume_all_distinct = false;
             });
     }
 }
@@ -1185,18 +1197,27 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
         /// The values of such columns are almost always distinct, so a sketch costs CPU and memory on every
         /// insert and merge without telling the optimizer much. It assumes distinct values instead.
         /// Only the implicit statistics are affected: explicit ones are already on the column.
+        bool assume_all_distinct = false;
         if (assume_floats_distinct && canAssumeAllDistinctByType(column.type))
         {
-            stats_desc.types_to_desc.erase(StatisticsType::Uniq);
-            stats_desc.types_to_desc.erase(StatisticsType::UniqV2);
+            size_t left_out_uniq = stats_desc.types_to_desc.erase(StatisticsType::Uniq);
+            left_out_uniq += stats_desc.types_to_desc.erase(StatisticsType::UniqV2);
+
+            /// Only where a sketch was asked for, and not if an explicit one is built anyway.
+            const auto & declared = column.statistics.types_to_desc;
+            assume_all_distinct = left_out_uniq > 0 && !declared.contains(StatisticsType::Uniq) && !declared.contains(StatisticsType::UniqV2);
         }
 
-        if (!stats_desc.empty())
+        if (!stats_desc.empty() || assume_all_distinct != column.statistics.assume_all_distinct)
         {
             columns.modify(
                 column.name,
                 [&](ColumnDescription & column_desc)
-                { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
+                {
+                    if (!stats_desc.empty())
+                        column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true);
+                    column_desc.statistics.assume_all_distinct = assume_all_distinct;
+                });
         }
     }
 }
@@ -1221,13 +1242,19 @@ bool canAssumeAllDistinctByType(const DataTypePtr & type)
     return WhichDataType(removeNullable(type)).isNativeFloat();
 }
 
-bool shouldAssumeAllDistinct(const ColumnDescription & column, bool assume_floats_distinct_setting)
+bool shouldAssumeAllDistinct(const ColumnDescription & column)
 {
-    if (!assume_floats_distinct_setting || !canAssumeAllDistinctByType(column.type))
+    if (!column.statistics.assume_all_distinct || !canAssumeAllDistinctByType(column.type))
         return false;
 
+    /// `addImplicitStatistics` doesn't set the flag then, but a declared uniq wins in any case.
     const auto & declared = column.statistics.types_to_desc;
     return !declared.contains(StatisticsType::Uniq) && !declared.contains(StatisticsType::UniqV2);
+}
+
+bool shouldAssumeAllDistinctWithoutStatistics(const ColumnDescription & column)
+{
+    return shouldAssumeAllDistinct(column) && column.statistics.empty();
 }
 
 }

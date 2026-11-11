@@ -700,10 +700,30 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     /// estimator still works with the compatible parts instead of crashing.
 }
 
-void ConditionSelectivityEstimatorBuilder::setCardinalityPolicy(StorageMetadataPtr metadata, bool assume_floats_distinct)
+void ConditionSelectivityEstimatorBuilder::setCardinalityPolicy(StorageMetadataPtr metadata)
 {
     policy_metadata = std::move(metadata);
-    policy_assume_floats_distinct = assume_floats_distinct;
+}
+
+Names ConditionSelectivityEstimatorBuilder::getAssumedDistinctColumnsWithoutStatistics(const NameSet & column_names) const
+{
+    Names result;
+    if (!policy_metadata)
+        return result;
+
+    const auto & columns = policy_metadata->getColumns();
+    for (const auto & column_name : column_names)
+    {
+        const auto * column = columns.tryGet(column_name);
+        if (column && shouldAssumeAllDistinctWithoutStatistics(*column))
+            result.push_back(column_name);
+    }
+    return result;
+}
+
+void ConditionSelectivityEstimatorBuilder::addRowsWithoutStatistics(const String & column_name, UInt64 rows)
+{
+    rows_without_statistics[column_name] += rows;
 }
 
 void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_name, UInt64 cardinality)
@@ -713,7 +733,17 @@ void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
-    if (!has_data)
+    /// The columns no part has statistics of get statistics of just their number of rows. If some parts do have
+    /// statistics of such a column (e.g. a sketch built before its implicit uniq was left out), only those are used,
+    /// like the statistics of other columns that only some of the parts have.
+    for (const auto & [column_name, rows] : rows_without_statistics)
+    {
+        const auto * column = policy_metadata ? policy_metadata->getColumns().tryGet(column_name) : nullptr;
+        if (column && shouldAssumeAllDistinctWithoutStatistics(*column) && !estimator->column_estimators.contains(column_name))
+            estimator->column_estimators[column_name].stats = ColumnStatistics::createRowCountOnly(column->type, rows);
+    }
+
+    if (!has_data && estimator->column_estimators.empty())
         return nullptr;
 
     /// `column_estimator.stats` is the estimator's own copy (see `addStatistics`), not an object shared through
@@ -725,7 +755,7 @@ ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstima
         if (policy_metadata)
         {
             if (const auto * column = policy_metadata->getColumns().tryGet(column_name))
-                assume_all_distinct = shouldAssumeAllDistinct(*column, policy_assume_floats_distinct);
+                assume_all_distinct = shouldAssumeAllDistinct(*column);
         }
         column_estimator.stats->setAssumeAllDistinct(assume_all_distinct);
     }
