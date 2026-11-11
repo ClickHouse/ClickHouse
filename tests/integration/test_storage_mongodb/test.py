@@ -1085,6 +1085,24 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                     )
                     == count
                 )
+
+        # A `Bool` column keeps a BSON number outside `{0, 1}` as it is. `=` matches it, but no member of `IN` does.
+        collection.insert_one({"flag": 2, "n": 2})
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            expected = {
+                "flag = 2.0": "1\n",
+                "flag != 2.0": "4\n",
+                "flag IN (2.0)": "0\n",
+                "flag NOT IN (2.0)": "5\n",
+                "flag NOT IN (toFloat32(2))": "5\n",
+                "flag NOT IN (0, toFloat32(2))": "3\n",
+                "flag NOT IN (2)": "5\n",
+            }
+            actual = {
+                predicate: node.query(f"SELECT count() FROM {source} WHERE {predicate}")
+                for predicate in expected
+            }
+            assert actual == expected
     finally:
         node.query(f"DROP TABLE {collection_name}")
         collection.drop()
