@@ -158,13 +158,13 @@ def wait_until(query, expected, timeout=30):
     assert False, f"{query} did not return {expected!r} in {timeout} s"
 
 
-def start_delayed_insert(database, query_id):
+def start_delayed_insert(database, query_id, table="dist", settings=""):
     errors = []
 
     def insert():
         try:
             node.http_query(
-                f"INSERT INTO {database}.dist SETTINGS async_insert = 0 VALUES (1)",
+                f"INSERT INTO {database}.{table} SETTINGS async_insert = 0{settings} VALUES (1)",
                 method="POST",
                 params={"query_id": query_id},
                 timeout=600,
@@ -236,6 +236,32 @@ def test_kill_delayed_insert(started_cluster):
     assert shard.query("SELECT count() FROM dist_kill.data") == "11\n"
 
     drop_database("dist_kill")
+
+
+@pytest.mark.parametrize("foreground", [0, 1])
+def test_kill_insert_delayed_by_local_shard(started_cluster, foreground):
+    # `outer` writes its local shard into `dist` through a nested pipeline.
+    database = f"dist_nested_{foreground}"
+    query_id = f"{database}_delayed_insert"
+    create_distributed_over_delay_threshold(database)
+    node.query(
+        f"CREATE TABLE {database}.outer (x UInt64) "
+        f"ENGINE = Distributed(local_cluster, {database}, dist)"
+    )
+    thread, errors = start_delayed_insert(
+        database,
+        query_id,
+        table="outer",
+        settings=f", prefer_localhost_replica = 1, distributed_foreground_insert = {foreground}",
+    )
+
+    node.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC", timeout=60)
+
+    thread.join(60)
+    assert not thread.is_alive()
+    assert len(errors) == 1 and "QUERY_WAS_CANCELLED" in errors[0], errors
+
+    drop_database(database)
 
 
 def test_async_insert_flush_cancelled_in_delay_at_shutdown(started_cluster):

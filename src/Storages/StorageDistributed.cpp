@@ -2399,7 +2399,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
     relative_data_path = new_path_to_table_data;
 }
 
-void StorageDistributed::delayInsertOrThrowIfNeeded(const std::atomic<bool> & is_cancelled) const
+void StorageDistributed::delayInsertOrThrowIfNeeded(const std::function<bool()> & is_cancelled) const
 {
     if (!(*distributed_settings)[DistributedSetting::bytes_to_throw_insert] &&
         !(*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
@@ -2428,7 +2428,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded(const std::atomic<bool> & is
         do {
             delayed_ms += step_ms;
             std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
-        } while (!is_cancelled && !getContext()->isShutdownCalled() && *totalBytes(getContext()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
+        } while (!is_cancelled() && !getContext()->isShutdownCalled() && *totalBytes(getContext()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
 
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInserts);
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInsertsMilliseconds, delayed_ms);
@@ -2439,7 +2439,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded(const std::atomic<bool> & is
             formatReadableSizeWithBinarySuffix(new_total_bytes),
             delayed_ms);
 
-        if (new_total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && !is_cancelled && !getContext()->isShutdownCalled())
+        if (new_total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && !is_cancelled() && !getContext()->isShutdownCalled())
         {
             ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
             throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
