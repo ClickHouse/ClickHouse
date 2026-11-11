@@ -1,9 +1,13 @@
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <optional>
+#include <string_view>
 
 #include <base/types.h>
+
+#include <Common/StringUtils.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -105,6 +109,31 @@ struct ParallelReadResponse
     void deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
 };
 
+
+/// Suffix appended to a parallel-replicas stream id when one table is read as several independent
+/// streams (`<full table name>#split_{i}`, see `ReadFromMergeTree::spreadMarkRangesAmongStreams`).
+/// Everything before it is the full name of the table the stream reads.
+inline constexpr std::string_view PARALLEL_REPLICAS_STREAM_SPLIT_SUFFIX = "#split_";
+
+/// Returns the full table name a parallel-replicas stream id refers to, i.e. the stream id with the
+/// `#split_{i}` suffix stripped.
+///
+/// The suffix is appended after the whole (back-quoted where needed) table name, so a real suffix is
+/// always the trailing `#split_` followed by decimal digits and nothing else. A quoted identifier may
+/// itself contain `#split_` (a table named `t#split_1`), and such an occurrence must be kept: the
+/// table is registered under its full name, so stripping there would lose the part name identity.
+inline std::string_view tableNameOfParallelReplicasStream(std::string_view stream_id)
+{
+    const auto suffix_pos = stream_id.rfind(PARALLEL_REPLICAS_STREAM_SPLIT_SUFFIX);
+    if (suffix_pos == std::string_view::npos)
+        return stream_id;
+
+    const auto split_index = stream_id.substr(suffix_pos + PARALLEL_REPLICAS_STREAM_SPLIT_SUFFIX.size());
+    if (split_index.empty() || !std::all_of(split_index.begin(), split_index.end(), isNumericASCII))
+        return stream_id;
+
+    return stream_id.substr(0, suffix_pos);
+}
 
 /// The set of parts (their names) along with ranges to read which is sent back
 /// to the initiator by remote replicas during parallel reading.
