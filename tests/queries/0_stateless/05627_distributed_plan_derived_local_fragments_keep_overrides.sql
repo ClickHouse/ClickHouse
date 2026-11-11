@@ -29,7 +29,7 @@ SET distributed_plan_workers_num = 3, distributed_plan_execute_locally = 1,
     enable_join_runtime_filters = 0;
 
 SET use_skip_indexes_on_data_read = 1, compile_expressions = 1, min_count_to_compile_expression = 0;
-SET log_comment = '05626_distributed_plan_derived_local_fragments';
+SET log_comment = '05627_distributed_plan_derived_local_fragments';
 
 SELECT 'join with a skip-index filter and a JIT-eligible expression matches single-node';
 SELECT count(), sum(b.v + 1) FROM t_dp_big AS b INNER JOIN t_dp_small AS s ON b.v = s.id
@@ -53,7 +53,7 @@ WHERE event_date >= yesterday() AND type = 'QueryStart'
       SELECT query_id FROM system.query_log
       WHERE event_date >= yesterday() AND type = 'QueryStart'
         AND current_database = currentDatabase()
-        AND Settings['log_comment'] = '05626_distributed_plan_derived_local_fragments'
+        AND Settings['log_comment'] = '05627_distributed_plan_derived_local_fragments'
         AND query = 'main'
       ORDER BY event_time_microseconds DESC
       LIMIT 1)

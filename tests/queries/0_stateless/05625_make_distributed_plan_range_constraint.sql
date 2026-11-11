@@ -8,10 +8,10 @@
 -- `should not be changed`, which the Cloud test harness treats as a skip, so the expectations
 -- assume no ambient pin.
 
-DROP SETTINGS PROFILE IF EXISTS profile_05624;
-CREATE SETTINGS PROFILE profile_05624 SETTINGS make_distributed_plan MAX 0;
+DROP SETTINGS PROFILE IF EXISTS profile_05625;
+CREATE SETTINGS PROFILE profile_05625 SETTINGS make_distributed_plan MAX 0;
 
-SET profile = 'profile_05624';
+SET profile = 'profile_05625';
 
 SELECT 'not derived under the range constraint';
 SET distributed_plan_workers_num = 3;
@@ -19,4 +19,4 @@ SELECT getSetting('make_distributed_plan');
 
 SET make_distributed_plan = 1; -- { serverError SETTING_CONSTRAINT_VIOLATION }
 
-DROP SETTINGS PROFILE profile_05624;
+DROP SETTINGS PROFILE profile_05625;
