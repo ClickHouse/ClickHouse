@@ -25,7 +25,6 @@
 #include <Analyzer/Passes/ConvertEmptyStringComparisonToFunctionPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
-#include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
@@ -304,7 +303,6 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<RegexpFunctionRewritePass>());
 
     manager.addPass(std::make_unique<RewriteSumFunctionWithSumAndCountPass>());
-    manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<RewriteArrayFilterLengthToArrayCountPass>());

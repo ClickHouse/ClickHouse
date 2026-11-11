@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: uses Parquet format which is not available in fast test.
-
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/106833
 -- A query over a file()/Parquet source with both an explicit PREWHERE and a WHERE used to
 -- crash with "Logical error: updateFormatPrewhereInfo called more than once" when
