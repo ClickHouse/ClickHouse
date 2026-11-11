@@ -143,42 +143,52 @@ std::optional<DataTypePtr> tryGetAliasType(const ASTIdentifier & identifier, con
     return getTupleElementType(it->second, std::span(identifier.name_parts).subspan(1));
 }
 
+/// The type with which a string literal compared with an identifier is converted.
+struct LiteralConversion
+{
+    DataTypePtr type;
+    /// Whether the precision is that of the type of the identifier where the mutation runs, see `getDateTimeColumnType`.
+    bool follows_identifier_type = false;
+
+    explicit operator bool() const { return type != nullptr; }
+};
+
 /// The same for an identifier, which may name a parameter of an enclosing lambda or an element of one, an alias, a column or a
 /// subcolumn.
-DataTypePtr getDateTimeColumnType(
+LiteralConversion getDateTimeColumnType(
     const ASTIdentifier & identifier,
     const ColumnsDescription & columns,
     const AliasTypes & aliases,
     const LambdaParameters & lambda_parameters)
 {
     if (const auto parameter_type = tryGetLambdaParameterType(identifier, lambda_parameters))
-        return *parameter_type ? getZonelessDateTimeType(*parameter_type) : nullptr;
+        return {*parameter_type ? getZonelessDateTimeType(*parameter_type) : nullptr};
     if (const auto alias_type = tryGetAliasType(identifier, aliases))
     {
         if (!*alias_type)
-            return nullptr;
+            return {};
         auto datetime_type = getZonelessDateTimeType(*alias_type);
         /// If the identifier can name a column or a subcolumn instead, the literal converted in the time zone of the session is
         /// right for both only if the column is a `DateTime` or `DateTime64` without a time zone too, such as `event` in
-        /// `toNullable(event) AS event` or `toDateTime64(event, 3) AS event`. It is converted with the higher precision of the
-        /// two, so that neither drops what it compares, such as the fraction of a second of a `DateTime64(3)` column in
-        /// `toDateTime(event) AS event`, or of its element `n.ts` in `CAST(n, 'Tuple(ts DateTime)') AS n`: then it is compared
-        /// with either of them as the session would compare the string, except for a fraction of a second that the one with the
-        /// lower precision would ignore.
+        /// `toNullable(event) AS event`. If their precisions differ, such as in `toDateTime64(event, 3) AS event` of a `DateTime`
+        /// column, the comparison reads the string with the precision of the one that the identifier names, which depends on the
+        /// settings with which the mutation runs, so the literal is converted to the type of the identifier there.
         const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier.name());
         if (datetime_type && column)
         {
-            const auto column_datetime_type = getZonelessDateTimeType(column->type);
+            auto column_datetime_type = getZonelessDateTimeType(column->type);
             if (!column_datetime_type)
-                return nullptr;
-            if (getDateTimeScale(*column_datetime_type) > getDateTimeScale(*datetime_type))
-                return column_datetime_type;
+                return {};
+            const auto alias_scale = getDateTimeScale(*datetime_type);
+            const auto column_scale = getDateTimeScale(*column_datetime_type);
+            if (alias_scale != column_scale)
+                return {alias_scale > column_scale ? datetime_type : column_datetime_type, /*follows_identifier_type=*/ true};
         }
-        return datetime_type;
+        return {datetime_type};
     }
     /// A subcolumn too, such as `n.ts` of `n Tuple(ts DateTime)`.
     const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier.name());
-    return column ? getZonelessDateTimeType(column->type) : nullptr;
+    return {column ? getZonelessDateTimeType(column->type) : nullptr};
 }
 
 /// The type of `argument` of a higher-order function if it is a column, a subcolumn, a lambda parameter or an alias with a
@@ -280,6 +290,29 @@ ASTPtr wrapWithTimezone(const ASTPtr & literal_ast, const DataTypePtr & datetime
     return makeASTFunction("toDateTime", literal_ast, std::move(tz_literal));
 }
 
+/// Wraps `literal_ast` if it is a string literal that `conversion` converts, for a comparison with `identifier_ast`. Returns
+/// whether it did. If the precision follows the type of the identifier, the literal is read with the highest precision in the
+/// time zone and cast to the type of the identifier, `CAST(toDateTime64('...', 9, 'tz'), toTypeName(identifier))`, which drops
+/// the fraction of a second beyond its precision as the comparison of the string does, except that it rounds an instant before
+/// 1970 toward zero instead of down.
+bool tryWrapLiteral(ASTPtr & literal_ast, const ASTPtr & identifier_ast, const LiteralConversion & conversion, const String & timezone)
+{
+    const auto * literal = literal_ast->as<ASTLiteral>();
+    if (!conversion || !literal || literal->value.getType() != Field::Types::String)
+        return false;
+    if (!conversion.follows_identifier_type)
+    {
+        literal_ast = wrapWithTimezone(literal_ast, conversion.type, timezone);
+        return true;
+    }
+    /// The maximum precision of a `DateTime64`, nanoseconds.
+    static constexpr UInt64 max_scale = 9;
+    auto read = makeASTFunction(
+        "toDateTime64", literal_ast, make_intrusive<ASTLiteral>(Field(max_scale)), make_intrusive<ASTLiteral>(Field(timezone)));
+    literal_ast = makeASTFunction("CAST", std::move(read), makeASTFunction("toTypeName", identifier_ast->clone()));
+    return true;
+}
+
 /// For a comparison like `column >= 'datetime-string'`, try to wrap the string
 /// literal with an explicit timezone cast. Modifies the AST in place.
 /// Returns true if any literal was wrapped.
@@ -297,27 +330,15 @@ bool tryWrapComparisonLiteral(
     /// Check left=identifier, right=string-literal
     if (const auto * id = left->as<ASTIdentifier>())
     {
-        if (auto dt = getDateTimeColumnType(*id, columns, aliases, lambda_parameters))
-        {
-            if (const auto * lit = right->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
-            {
-                right = wrapWithTimezone(right, dt, timezone);
-                wrapped = true;
-            }
-        }
+        if (tryWrapLiteral(right, left, getDateTimeColumnType(*id, columns, aliases, lambda_parameters), timezone))
+            wrapped = true;
     }
 
     /// Check right=identifier, left=string-literal (e.g. '2000-01-01' <= time)
     if (const auto * id = right->as<ASTIdentifier>())
     {
-        if (auto dt = getDateTimeColumnType(*id, columns, aliases, lambda_parameters))
-        {
-            if (const auto * lit = left->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
-            {
-                left = wrapWithTimezone(left, dt, timezone);
-                wrapped = true;
-            }
-        }
+        if (tryWrapLiteral(left, right, getDateTimeColumnType(*id, columns, aliases, lambda_parameters), timezone))
+            wrapped = true;
     }
 
     return wrapped;
@@ -339,8 +360,8 @@ bool tryWrapInLiterals(
     if (!id)
         return false;
 
-    auto dt = getDateTimeColumnType(*id, columns, aliases, lambda_parameters);
-    if (!dt)
+    const auto conversion = getDateTimeColumnType(*id, columns, aliases, lambda_parameters);
+    if (!conversion)
         return false;
 
     bool wrapped = false;
@@ -350,13 +371,8 @@ bool tryWrapInLiterals(
     auto wrap_children = [&](ASTs & children)
     {
         for (auto & child : children)
-        {
-            if (const auto * lit = child->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
-            {
-                child = wrapWithTimezone(child, dt, timezone);
+            if (tryWrapLiteral(child, left, conversion, timezone))
                 wrapped = true;
-            }
-        }
     };
 
     if (auto * tuple_func = right->as<ASTFunction>(); tuple_func && tuple_func->name == "tuple" && tuple_func->arguments)

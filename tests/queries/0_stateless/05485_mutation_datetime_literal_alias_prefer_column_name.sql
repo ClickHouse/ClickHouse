@@ -26,15 +26,48 @@ ALTER TABLE t_prefer_other DELETE WHERE isNotNull(identity(other) AS event) AND 
 SELECT extract(command, 'event = [^)]*\\)') FROM system.mutations WHERE database = currentDatabase() AND table = 't_prefer_other';
 SELECT id FROM t_prefer_other ORDER BY id;
 
--- A `Memory` table runs the mutation in the session, where the identifier names the `DateTime64(3)` column, while the alias is
--- a `DateTime`: a conversion with the type of the alias would drop the fraction of a second, so the literal is converted with
--- the precision of the column.
+-- A `Memory` table runs the mutation in the session, where the identifier names the column, while a background mutation of
+-- `MergeTree` names the alias. If their precisions differ, the comparison reads the string with the precision of the one that
+-- it names, so the literal is read in the time zone of the session and cast to the type of the identifier where the mutation
+-- runs, and the mutation deletes the rows that the same condition selects in the session, with `=` and `!=`, for a
+-- `DateTime64(3)` column and a `DateTime` alias and the other way round.
 SELECT '--- an alias with another precision than the column';
 DROP TABLE IF EXISTS t_prefer_precision;
 CREATE TABLE t_prefer_precision (id UInt8, event DateTime64(3)) ENGINE = Memory;
 INSERT INTO t_prefer_precision VALUES (1, '2020-01-01 00:00:00.500'), (2, '2020-01-01 00:00:00.000');
+SELECT id FROM t_prefer_precision WHERE isNotNull(toDateTime(event) AS event) AND event = '2020-01-01 00:00:00.500';
 ALTER TABLE t_prefer_precision DELETE WHERE isNotNull(toDateTime(event) AS event) AND event = '2020-01-01 00:00:00.500';
 SELECT id FROM t_prefer_precision ORDER BY id;
+DROP TABLE IF EXISTS t_prefer_precision_ne;
+CREATE TABLE t_prefer_precision_ne (id UInt8, event DateTime64(3)) ENGINE = Memory;
+INSERT INTO t_prefer_precision_ne VALUES (1, '2020-01-01 00:00:00.500'), (2, '2020-01-01 00:00:00.000');
+SELECT id FROM t_prefer_precision_ne WHERE isNotNull(toDateTime(event) AS event) AND event != '2020-01-01 00:00:00.500';
+ALTER TABLE t_prefer_precision_ne DELETE WHERE isNotNull(toDateTime(event) AS event) AND event != '2020-01-01 00:00:00.500';
+SELECT id FROM t_prefer_precision_ne ORDER BY id;
+
+SELECT '--- an alias with a higher precision than the column';
+DROP TABLE IF EXISTS t_prefer_precision_reverse;
+CREATE TABLE t_prefer_precision_reverse (id UInt8, event DateTime) ENGINE = Memory;
+INSERT INTO t_prefer_precision_reverse VALUES (1, '2020-01-01 00:00:00'), (2, '2020-01-01 00:00:01');
+SELECT id FROM t_prefer_precision_reverse WHERE isNotNull(toDateTime64(event, 3) AS event) AND event = '2020-01-01 00:00:00.500';
+ALTER TABLE t_prefer_precision_reverse DELETE WHERE isNotNull(toDateTime64(event, 3) AS event) AND event = '2020-01-01 00:00:00.500';
+SELECT id FROM t_prefer_precision_reverse ORDER BY id;
+DROP TABLE IF EXISTS t_prefer_precision_reverse_ne;
+CREATE TABLE t_prefer_precision_reverse_ne (id UInt8, event DateTime) ENGINE = Memory;
+INSERT INTO t_prefer_precision_reverse_ne VALUES (1, '2020-01-01 00:00:00'), (2, '2020-01-01 00:00:01');
+SELECT id FROM t_prefer_precision_reverse_ne WHERE isNotNull(toDateTime64(event, 3) AS event) AND event != '2020-01-01 00:00:00.500';
+ALTER TABLE t_prefer_precision_reverse_ne DELETE WHERE isNotNull(toDateTime64(event, 3) AS event) AND event != '2020-01-01 00:00:00.500';
+SELECT id FROM t_prefer_precision_reverse_ne ORDER BY id;
+
+-- The background mutation of `MergeTree`, where `event` names the `DateTime64(3)` alias, reads the literal in the time zone
+-- of the session too: it deletes the row at midnight in Tokyo, not the one at midnight in UTC.
+SELECT '--- the same for MergeTree';
+DROP TABLE IF EXISTS t_prefer_precision_merge_tree;
+CREATE TABLE t_prefer_precision_merge_tree (id UInt8, event DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_prefer_precision_merge_tree VALUES (1, 1577804400), (2, 1577836800);
+ALTER TABLE t_prefer_precision_merge_tree DELETE WHERE isNotNull(toDateTime64(event, 3) AS event) AND event <= '2020-01-01 00:00:00.500';
+SELECT extract(command, 'event <= .*') FROM system.mutations WHERE database = currentDatabase() AND table = 't_prefer_precision_merge_tree';
+SELECT id FROM t_prefer_precision_merge_tree ORDER BY id;
 
 -- The same for an element of a tuple: `n.ts` names the `DateTime64(3)` element of the column, but the `DateTime` one of the
 -- alias.
@@ -67,6 +100,10 @@ SELECT id FROM t_prefer_nested ORDER BY id;
 DROP TABLE t_prefer_temporal;
 DROP TABLE t_prefer_other;
 DROP TABLE t_prefer_precision;
+DROP TABLE t_prefer_precision_ne;
+DROP TABLE t_prefer_precision_reverse;
+DROP TABLE t_prefer_precision_reverse_ne;
+DROP TABLE t_prefer_precision_merge_tree;
 DROP TABLE t_prefer_tuple;
 DROP TABLE t_prefer_tuple_merge_tree;
 DROP TABLE t_prefer_nested;

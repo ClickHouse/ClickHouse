@@ -6,11 +6,22 @@ event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
 event = \'2020-01-01 00:00:00\')
 1
 --- an alias with another precision than the column
+1
+2
+2
+1
+--- an alias with a higher precision than the column
+1
+2
+2
+1
+--- the same for MergeTree
+event <= CAST(toDateTime64(\'2020-01-01 00:00:00.500\', 9, \'Asia/Tokyo\'), toTypeName(event))))
 2
 --- an alias of a tuple with another precision of an element than the column
 2
 --- the same for MergeTree
-n.ts = toDateTime64(\'2020-01-01 00:00:00\', 3, \'Asia/Tokyo\')))
+n.ts = CAST(toDateTime64(\'2020-01-01 00:00:00\', 9, \'Asia/Tokyo\'), toTypeName(n.ts))))
 2
 --- aliases inside the expression of an alias with the name of a column
 3
