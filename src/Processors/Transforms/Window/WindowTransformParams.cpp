@@ -218,6 +218,27 @@ WindowDescription prepareDescriptionForExecution(
     return prepared;
 }
 
+WindowFunctionRequirements collectRequirements(const WindowDescription & description, const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
+{
+    WindowFunctionRequirements requirements;
+    for (const auto & function : functions)
+    {
+        if (auto general = asGeneralWindowFunction(function.aggregate_function))
+            requirements = unionOf(requirements, general->getRequirements(description));
+        else
+            requirements = unionOf(requirements, WindowFunctionRequirements{.frame_start = true, .frame_end = true});
+    }
+
+    return requirements;
+}
+
+bool needsPeerGroupIndexes(const WindowDescription & description, const WindowFunctionRequirements & requirements)
+{
+    const bool functions_read_peer_groups = requirements.peers_start || requirements.peers_end;
+    const bool frame_reads_peer_groups = (requirements.frame_start || requirements.frame_end) && description.frame.type != WindowFrame::FrameType::ROWS;
+    return functions_read_peer_groups || frame_reads_peer_groups;
+}
+
 }
 
 WindowTransformParams WindowTransformParams::create(
@@ -229,8 +250,11 @@ WindowTransformParams WindowTransformParams::create(
     auto partition_by_indices = findPositions(header, window_description.partition_by);
     auto order_by_indices = findPositions(header, window_description.order_by);
     auto should_materialize = markColumnsToMaterialize(header, window_description.partition_by, window_description.order_by, functions);
-    auto range_offset_comparator = chooseRangeOffsetComparator(header, window_description.frame, window_description.order_by, order_by_indices);
-    auto description = prepareDescriptionForExecution(header, window_description, order_by_indices);
+    auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
+    auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, window_description.order_by, order_by_indices);
+    auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
+    auto requirements = collectRequirements(description, functions);
+    auto needs_peer_group_indexes = needsPeerGroupIndexes(description, requirements);
 
     return WindowTransformParams{
         std::move(header),
@@ -239,6 +263,8 @@ WindowTransformParams WindowTransformParams::create(
         std::move(order_by_indices),
         std::move(should_materialize),
         std::move(range_offset_comparator),
+        std::move(requirements),
+        std::move(needs_peer_group_indexes),
     };
 }
 

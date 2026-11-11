@@ -22,7 +22,7 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.peers = true, .partition = true};
+        return WindowFunctionRequirements{.peers_end = true, .partition_end = true};
     }
 
     Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
