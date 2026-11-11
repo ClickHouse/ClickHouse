@@ -21,7 +21,7 @@ extern const int LOGICAL_ERROR;
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 struct RuntimeFilterIndexAnalysisDescriptor;
-using RuntimeFilterIndexAnalysisDescriptors = std::vector<RuntimeFilterIndexAnalysisDescriptor>;
+using RuntimeFilterIndexAnalysisDescriptors = VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor>;
 struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 
