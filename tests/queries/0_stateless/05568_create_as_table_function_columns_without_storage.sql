@@ -30,6 +30,9 @@ CREATE TABLE t_url_missing (a UInt8, x String) AS url('http://127.0.0.1:1/f.csv'
 CREATE TABLE t_url_query (a UInt8, x String) AS url('http://127.0.0.1:1/f.csv?x=1', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
 CREATE TABLE t_url_pattern (a UInt8, k String) AS url('http://127.0.0.1:1/{k=v1,k=v2}/f.csv', 'CSV', 'a UInt8');
 CREATE TABLE t_url_pattern_missing (a UInt8, j String) AS url('http://127.0.0.1:1/{k=v1,k=v2}/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+-- A table reads a `*` in the path literally, without listing index pages, so it is not a glob either.
+CREATE TABLE t_url_star (a UInt8, k String) AS url('http://127.0.0.1:1/k=v/*.csv', 'CSV', 'a UInt8');
+CREATE TABLE t_url_star_missing (a UInt8, x UInt8) AS url('http://127.0.0.1:1/*.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
 
 SELECT '--- a data lake that has no metadata yet';
 CREATE TABLE t_iceberg (a UInt8, _path String) AS icebergLocal(currentDatabase() || '_05568_ice', 'Parquet', 'a UInt8');
@@ -41,4 +44,5 @@ DROP TABLE t_s3_path;
 DROP TABLE t_s3_pattern;
 DROP TABLE t_url;
 DROP TABLE t_url_pattern;
+DROP TABLE t_url_star;
 DROP TABLE t_iceberg;
