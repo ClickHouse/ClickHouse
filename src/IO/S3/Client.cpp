@@ -1079,15 +1079,10 @@ void Client::slowDownAfterRetryableError() const
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
 
         /// Nothing notifies a cancelled query or merge, so poll for cancellation between short slices.
-        /// A cancelled request stops waiting and makes its single attempt.
         static constexpr UInt64 cancellation_check_interval_ms = 100;
         while (sleep_ms > 0)
         {
-            if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-            {
-                LOG_TRACE(log, "Query is cancelled, stop waiting for the retry time");
-                return;
-            }
+            CurrentThread::checkIfNotCancelled();
             const UInt64 slice_ms = std::min(sleep_ms, cancellation_check_interval_ms);
             sleepForMilliseconds(slice_ms);
             sleep_ms -= slice_ms;

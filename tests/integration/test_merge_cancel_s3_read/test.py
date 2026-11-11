@@ -877,8 +877,7 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
 # does not observe cancellation in the shared backoff waits until the step ends.
 SLOW_BACKOFF_STEP_SECONDS = 30
 
-# A cancelled request ends its wait within one polling slice. Then it makes its single attempt,
-# which the mock holds for 1 s before it resets the connection.
+# A cancelled request ends its wait within one polling slice and throws without an attempt.
 CANCELLED_WAIT_BUDGET_SECONDS = 10
 
 WRITE_ATTEMPTS_QUERY = (
