@@ -1024,7 +1024,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         if (use_legacy_bucket_0)
             candidate_paths.push_back(getProcessedPathWithBucket(zk_path, 0));
 
-        /// Every file up to the greatest pointer is processed. All found pointers are removed.
+        /// Every file up to the greatest pointer is processed.
         std::vector<std::string> old_processed_paths;
         NodeMetadata processed_node;
         for (const auto & path : candidate_paths)
