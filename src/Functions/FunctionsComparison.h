@@ -1945,12 +1945,13 @@ private:
         const size_t num_positions = const_elements.column->size();
 
         /// The gathered pairs grouped by the position of the constant element, in their order.
-        std::vector<size_t> group_begin(num_positions + 1, 0);
+        PaddedPODArray<size_t> group_begin(num_positions + 1, 0);
         for (size_t j = 0; j < gathered.num_elements; ++j)
             ++group_begin[positions[j] + 1];
         for (size_t p = 0; p < num_positions; ++p)
             group_begin[p + 1] += group_begin[p];
-        std::vector<size_t> group_fill(group_begin.begin(), group_begin.end() - 1);
+        PaddedPODArray<size_t> group_fill;
+        group_fill.assign(group_begin.begin(), group_begin.end() - 1);
         auto grouped = ColumnUInt64::create(gathered.num_elements);
         auto & grouped_data = grouped->getData();
         for (size_t j = 0; j < gathered.num_elements; ++j)
