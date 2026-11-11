@@ -27,10 +27,13 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
 
+#include <TableFunctions/TableFunctionFactory.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <WindowFunctions/IGeneralWindowFunction.h>
@@ -1023,6 +1026,51 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));
     step->setStepDescription("Project only used columns");
     return step;
+}
+
+/// AST-level subquery detector, the counterpart of containsSubqueryNode for the predicates the
+/// pushdown injects as shard-side filters (the view's row policy and view-keyed
+/// additional_table_filters), which are not part of the outer query tree. They are coordinator-side
+/// filters on the normal StorageView path; a subquery inside them would be evaluated per-shard once
+/// the optimization fires, with the same divergence risk described above, so suppress the
+/// optimization when present. Mirrors hasSubquery in StorageView.cpp.
+///
+/// Like containsSubqueryNode, this also treats a bare `IN some_table` / `IN some_table_function(...)`
+/// as a subquery. The expression parser produces an ASTFunction from the IN family whose right-hand
+/// side is an ASTIdentifier (the table name) or an ASTFunction naming a table function, never an
+/// ASTSubquery, so the plain ASTSubquery check above misses it, while the analyzer resolves that
+/// identifier as a table and reads it exactly the way a subquery would - on each shard once folded
+/// into the shipped query. Only the right-hand side of an IN is inspected.
+bool astContainsSubquery(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    if (ast->as<ASTSubquery>())
+        return true;
+
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->arguments && isNameOfInFunction(function->name))
+    {
+        const auto & arguments = function->arguments->children;
+        if (arguments.size() >= 2)
+        {
+            const auto & right = arguments[1];
+            if (right->as<ASTIdentifier>())
+                return true;
+
+            if (const auto * right_function = right->as<ASTFunction>();
+                right_function && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
+                return true;
+        }
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (astContainsSubquery(child))
+            return true;
+    }
+    return false;
 }
 
 }
