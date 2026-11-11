@@ -2569,15 +2569,6 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         }
     }
 
-    /// A full-definition ATTACH is user input, so its settings are checked like those of a new table.
-    if (!is_new_table && isFreshDefinition(params.mode))
-    {
-        TimeSeriesSettings settings;
-        if (create_query.storage)
-            settings.loadFromQuery(*create_query.storage);
-        checkTimeSeriesSettings(settings);
-    }
-
     /// Whether the query itself declares the optional targets. This is checked before applyASClause,
     /// so the flags don't count a target copied from the `AS <other_table>` clause.
     bool has_recent_samples_definition = hasTimeSeriesTargetDefinition(create_query, ViewTarget::RecentSamples);

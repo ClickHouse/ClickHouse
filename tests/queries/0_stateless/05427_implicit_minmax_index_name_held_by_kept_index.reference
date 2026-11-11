@@ -1,3 +1,4 @@
+-- a new definition cannot use a reserved name
 -- load path
 auto_minmax_index__block_number	set	1	Explicit
 auto_minmax_index_a	minmax	8	Explicit

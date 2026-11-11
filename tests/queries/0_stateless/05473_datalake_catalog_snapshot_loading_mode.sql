@@ -4,6 +4,9 @@
 -- `snapshot_loading_mode` accepts only 'auto', 'all' and 'refs'.
 -- `ATTACH` does not connect to the catalog, so the endpoint does not have to exist.
 
+-- A full-definition `ATTACH` is gated like `CREATE`.
+SET allow_database_iceberg = 1;
+
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier}

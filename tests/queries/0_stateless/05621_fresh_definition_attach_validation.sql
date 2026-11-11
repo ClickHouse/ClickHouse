@@ -81,6 +81,15 @@ ATTACH TABLE t UUID '05621000-0000-0000-0000-000000000015' (a String) ENGINE = F
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary; -- { serverError UNKNOWN_DATABASE_ENGINE }
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary; -- { serverError UNKNOWN_DATABASE_ENGINE }
 
+-- TimeSeries inner column of a wrong type
+SET enable_time_series_table = 1;
+CREATE TABLE t ENGINE = TimeSeries SAMPLES INNER COLUMNS(min_time DateTime64(3)); -- { serverError BAD_TYPE_OF_FIELD }
+ATTACH TABLE t UUID '05621000-0000-0000-0000-000000000016' ENGINE = TimeSeries SAMPLES INNER COLUMNS(min_time DateTime64(3)); -- { serverError BAD_TYPE_OF_FIELD }
+
+-- TimeSeries inner engine not allowed for its target
+CREATE TABLE t ENGINE = TimeSeries RECENT SAMPLES INNER ENGINE = Memory; -- { serverError INCORRECT_QUERY }
+ATTACH TABLE t UUID '05621000-0000-0000-0000-000000000017' ENGINE = TimeSeries RECENT SAMPLES INNER ENGINE = Memory; -- { serverError INCORRECT_QUERY }
+
 -- A short ATTACH of a valid table still works
 DETACH TABLE src;
 ATTACH TABLE src;

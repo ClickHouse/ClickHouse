@@ -81,12 +81,19 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/persist" \
     -q "SELECT x FROM t" \
     -- --default_database="${SHORT_DB}"
 
-# ATTACH carries the name past the check by design, and the budget here is 0, so this name is over
-# the limit. Reading it back in a later process asserts the load path does not reject it.
+# A full-definition ATTACH is a new definition, so it is rejected like CREATE.
+echo "--- long default_database: a full-definition ATTACH is rejected up front ---"
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/long_attach" \
+    -q "ATTACH TABLE ta UUID '11111111-2222-3333-4444-555555555555' (a UInt8) ENGINE = MergeTree ORDER BY a" \
+    -- --default_database="${LONG_DB}" 2>&1 | grep -o -m1 'ARGUMENT_OUT_OF_BOUND'
+
+# A table stored in a database that got a long name loads in a later process: the table is created in a
+# short-named database whose stored metadata is then renamed on disk to the long name.
 echo "--- long default_database: an over-limit name already on disk still loads ---"
 ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/attached" \
-    -q "ATTACH TABLE ta UUID '11111111-2222-3333-4444-555555555555' (a UInt8) ENGINE = MergeTree ORDER BY a; INSERT INTO ta VALUES (7); SELECT 'attach accepted'" \
-    -- --default_database="${LONG_DB}"
+    -q "CREATE DATABASE db04884_src ENGINE = Atomic; CREATE TABLE db04884_src.ta (a UInt8) ENGINE = MergeTree ORDER BY a; INSERT INTO db04884_src.ta VALUES (7); SELECT 'table stored'"
+mv "${WORKING_FOLDER}/attached/metadata/db04884_src.sql" "${WORKING_FOLDER}/attached/metadata/${LONG_DB}.sql"
+mv "${WORKING_FOLDER}/attached/metadata/db04884_src" "${WORKING_FOLDER}/attached/metadata/${LONG_DB}"
 ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/attached" \
     -q "SELECT count(), sum(a) FROM ta" \
     -- --default_database="${LONG_DB}"

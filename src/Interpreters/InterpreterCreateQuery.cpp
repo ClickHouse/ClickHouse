@@ -2861,6 +2861,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (isFreshDefinition(mode))
             database->checkTableNameLength(create.getTable());
     }
+    else if (isFreshDefinition(mode))
+    {
+        /// A full-definition ATTACH into a database that reattaches it without the checks above.
+        database->checkTableNameLength(create.getTable());
+    }
 
     data_path = database->getTableDataPath(create);
     // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
