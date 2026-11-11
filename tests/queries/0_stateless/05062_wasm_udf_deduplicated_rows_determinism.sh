@@ -47,9 +47,10 @@ SELECT 'distinct results over full argument', uniqExact(${FUNCTION}(v)) > 50 FRO
 SELECT 'deduplicated over sparse argument when declared deterministic', uniqExact(${FUNCTION_DETERMINISTIC}(v)) <= 10 FROM sparse_argument;
 SELECT 'deduplicated over low cardinality argument when declared deterministic', uniqExact(${FUNCTION_DETERMINISTIC}(v)) <= 10 FROM low_cardinality_argument;
 
--- With parallel replicas, every replica is a remote one and has to find the function.
+-- Without the local plan, every replica is a remote one and has to find the function.
 SELECT 'computed on remote replicas', count() FROM full_argument WHERE ${FUNCTION_DETERMINISTIC}(v) >= 0
-    SETTINGS parallel_replicas_local_plan = 0, automatic_parallel_replicas_mode = 0;
+    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0, automatic_parallel_replicas_mode = 0;
 "
 
 ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS ${FUNCTION}"
