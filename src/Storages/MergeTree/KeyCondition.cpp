@@ -2843,6 +2843,34 @@ static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & colum
 }
 
 
+/// Converts a `Tuple`, `Array` or `Map` constant into `target_type` the way the comparison does, with a cast of its
+/// column; a `Field` conversion converts the elements without their types. The bound is read back from the
+/// cast column so that every element has the carrier of the key's values. Returns `Null` when the cast does
+/// not round-trip or does not exist.
+static Field castCompositeConstant(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & target_type)
+{
+    /// A `FixedString` element is compared zero-padded, so it matches several `String` values, not the one
+    /// its cast to `String` (which drops trailing zero bytes) names.
+    if (anyInTypeTree(*type, [](const IDataType & node) { return isFixedString(node); })
+        && anyInTypeTree(*target_type, [](const IDataType & node) { return isString(node); }))
+        return {};
+
+    try
+    {
+        const ColumnPtr cast_column = castColumn({column, type, ""}, target_type);
+        if ((*castColumn({cast_column, target_type, ""}, type))[0] != (*column)[0])
+            return {};
+        return (*cast_column)[0];
+    }
+    catch (const Exception & e)
+    {
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+        return {};
+    }
+}
+
+
 /// Whether two `Field`s stand for the same value. `Field::operator==` answers only for values carried
 /// the same way, which is what the round trip below needs everywhere except inside a `Dynamic`: a
 /// `Dynamic` keeps the type each value was inserted with, so a value that went to the key column's
@@ -5830,6 +5858,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             .argument_num_of_space_filling_curve = std::nullopt,
             .const_value = transformed.value,
             .const_type = transformed.type,
+            .const_column = {},
             .const_is_fixed_string = transformed.is_fixed_string,
             .is_relaxed = is_relaxed,
             .reverse_comparison = transformed.reverse_comparison});
@@ -5890,6 +5919,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
                 .argument_num_of_space_filling_curve = argument_num_of_space_filling_curve,
                 .const_value = const_value,
                 .const_type = const_type,
+                .const_column = removeNullable(constant_for_transform.column),
                 .const_is_fixed_string = isFixedStringConstant(const_value, *constant_for_transform.column, const_type),
                 .is_relaxed = false});
         }
@@ -6171,7 +6201,10 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 if (!const_type->equals(*common_type))
                 {
                     /// An unrepresentable constant cannot supply a comparison bound.
-                    Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                    const bool is_composite = isTuple(const_type) || isArray(const_type) || isMap(const_type);
+                    Field converted = candidate.const_column && is_composite
+                        ? castCompositeConstant(candidate.const_column, const_type, common_type)
+                        : tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
                     if (converted.isNull())
                         return std::nullopt;
 
