@@ -64,9 +64,7 @@ public:
         }
     };
 
-    /// The updates below are no-ops unless `segment_window` is the current window. The caller changes the sizes of
-    /// `get_bytes` before an update that adds bytes and after one that removes them, so that the counters do not
-    /// exceed the sizes.
+    /// The updates below are no-ops unless `segment_window` is the current window.
     void addPassiveBytes(Window segment_window, Int64 bytes, bool large);
     void apply(Window segment_window, const Delta & delta);
 

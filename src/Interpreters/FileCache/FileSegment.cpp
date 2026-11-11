@@ -1703,21 +1703,9 @@ void FileSegment::addReservedSize(Int64 delta)
     reserved_size += static_cast<size_t>(delta);
     if (removed_from_cache)
         return;
-    /// The sizes grow before the counters and shrink after them.
-    auto & sizes = cache->getSegmentSizes();
-    const Int64 new_segments = counted_in_segment_sizes ? 0 : 1;
-    if (delta >= 0)
-    {
-        sizes.add(size_class, new_segments, delta);
-        if (efficiency)
-            efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
-    }
-    else
-    {
-        if (efficiency)
-            efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
-        sizes.add(size_class, new_segments, delta);
-    }
+    cache->getSegmentSizes().add(size_class, counted_in_segment_sizes ? 0 : 1, delta);
+    if (efficiency)
+        efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
     counted_in_segment_sizes = true;
 }
 
@@ -1738,21 +1726,13 @@ void FileSegment::onRangeShrunk(size_t old_range_size)
     std::lock_guard lock(efficiency_mutex);
     const auto new_class = cache->getSegmentSizes().getClass(range().size());
     const auto bytes = static_cast<Int64>(reserved_size.load());
-    auto move_sizes = [&sizes = cache->getSegmentSizes(), counted = counted_in_segment_sizes, old_class = size_class, new_class, bytes]
+    if (counted_in_segment_sizes)
     {
-        if (!counted)
-            return;
-        sizes.add(old_class, -1, -bytes);
-        sizes.add(new_class, 1, bytes);
-    };
-    /// Only the large class gains or loses bytes: its size grows before the counters and shrinks after them.
-    const bool becomes_large = new_class.large && !size_class.large;
-    if (becomes_large)
-        move_sizes();
+        cache->getSegmentSizes().add(size_class, -1, -bytes);
+        cache->getSegmentSizes().add(new_class, 1, bytes);
+    }
     if (efficiency)
         efficiency->shrink(cache->getEfficiency(), old_range_size, range().size(), bytes, size_class.large, new_class.large);
-    if (!becomes_large)
-        move_sizes();
     size_class = new_class;
 }
 
@@ -1763,12 +1743,11 @@ void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
     std::lock_guard lock(efficiency_mutex);
     removed_from_cache = true;
     const auto bytes = static_cast<Int64>(reserved_size.load());
-    /// The counters shrink before the sizes.
-    if (efficiency)
-        efficiency->remove(cache->getEfficiency(), range().size(), bytes, size_class.large);
     if (counted_in_segment_sizes)
         cache->getSegmentSizes().add(size_class, -1, -bytes);
     counted_in_segment_sizes = false;
+    if (efficiency)
+        efficiency->remove(cache->getEfficiency(), range().size(), bytes, size_class.large);
 }
 
 bool FileSegment::wasServedFromCache() const
