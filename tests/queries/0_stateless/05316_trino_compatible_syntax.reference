@@ -1,0 +1,48 @@
+-- TRY_CAST
+123	\N	\N	1.5
+Nullable(Int64)
+1
+\N
+3
+2020-01-02	\N
+1	1
+1	607668569663131286404589520	1
+\N	\N
+-- ARRAY[...]
+[1,2,3]	[]	['a','b']	Array(Nullable(UInt8))
+[[1,2],[3,4]]	[(1,2),(3,4)]	2
+[0,0]
+[1,2]
+['x']	[[1]]	Array(UInt8)
+[0]
+[1]
+[[1],[2]]
+20	[1,2]
+10
+10
+[5,6]
+-- Composite types
+[1,2]	Array(Int32)
+{'a':1}	Map(String, Int64)
+[[1,2]]	Array(Array(Int32))
+CREATE TABLE default.t_trino_types\n(\n    `a` Array(Int32),\n    `m` Map(String, Float64)\n)\nENGINE = Memory
+-- Functions
+1	1	3
+1
+1	1	1
+29	4	60	53	2020	2024-02-29
+1
+2024-02-29 13:14:15
+[1,2,3]
+2
+[2,3]	[(1,'a'),(2,NULL)]
+['a','b']	[1,2]
+clickhouse.com	https
+example.com
+a+b%26c	a b&c
+8	14	6
+616263	abc	MFRGG===	abc
+UUID
+-- Aggregate functions
+1	false	true	true
+8	14	6

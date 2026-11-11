@@ -21,6 +21,7 @@
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/ProcessList.h>
 
 
@@ -32,6 +33,12 @@ namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
+    extern const SettingsBool fsync_metadata;
+}
+
+namespace FailPoints
+{
+    extern const char rename_database_after_dependency_check[];
 }
 
 namespace ErrorCodes
@@ -412,7 +419,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
 void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                       ContextPtr query_context)
+                                       const String & statement, ContextPtr query_context)
 {
     auto db_disk = getDisk();
 
@@ -438,13 +445,23 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         /// TODO better detection and recovery
 
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
-        db_disk->moveFile(table_metadata_tmp_path, table_metadata_path); /// Commit point (a sort of)
+        if (table_metadata_tmp_path.empty())
+        {
+            if (db_disk->existsFileOrDirectory(table_metadata_path))
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", table_metadata_path);
+            writeMetadataFile(db_disk, table_metadata_path, statement, query_context->getSettingsRef()[Setting::fsync_metadata]); /// Commit point (a sort of)
+        }
+        else
+        {
+            db_disk->moveFile(table_metadata_tmp_path, table_metadata_path); /// Commit point (a sort of)
+        }
         attachTableUnlocked(query.getTable(), table);   /// Should never throw
         table_name_to_path.emplace(query.getTable(), table_data_path);
     }
     catch (...)
     {
-        db_disk->removeFileIfExists(table_metadata_tmp_path);
+        if (!table_metadata_tmp_path.empty())
+            db_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
     if (table->storesDataOnDisk())
@@ -768,6 +785,24 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
     }
 
+    /// The rename re-keys every table of the database under the new name in the server-wide dependency
+    /// graph, which can close a cycle - the simplest case being a table `db.t = Alias(<new name>, t)`,
+    /// accepted at `CREATE` because the target database did not exist yet and thus becoming a
+    /// self-reference. Refuse such a rename before anything is modified, the same way `RENAME TABLE`
+    /// refuses it for a single table. The check is done here, under `mutex` and the exclusive database
+    /// DDL lock held by the caller, so that it sees exactly the set of tables that is about to be
+    /// re-keyed below: no table can be created, attached or dropped in between.
+    Strings table_names;
+    table_names.reserve(tables.size());
+    for (const auto & table : tables)
+        table_names.push_back(table.first);
+    DatabaseCatalog::instance().checkDatabaseCanBeRenamedWithNoCyclicDependencies(database_name, new_name, table_names);
+
+    /// Lets a test hold the rename between the dependency check and the catalog rewrite, to prove
+    /// that a concurrent `CREATE TABLE` cannot slip a new table into the database at this point, and
+    /// that a concurrent `CREATE TABLE` in another database cannot close a cycle that this check missed.
+    FailPointInjection::pauseFailPoint(FailPoints::rename_database_after_dependency_check);
+
 
     try
     {
@@ -788,12 +823,18 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     String old_path_to_table_symlinks;
 
     {
+        /// `updateDatabaseName` repeats the cycle check under the same lock as the rewrite, because DDL in
+        /// other databases is not excluded by our locks and may have added a dependency edge since the
+        /// check above. If it refuses the rename, the catalog is untouched; put the metadata file back.
+        try
         {
-            Strings table_names;
-            table_names.reserve(tables.size());
-            for (auto & table : tables)
-                table_names.push_back(table.first);
             DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
+        }
+        catch (...)
+        {
+            default_db_disk->moveFile(new_metadata_file_path, old_metadata_file_path);
+            tryCreateMetadataSymlink();
+            throw;
         }
         database_name = new_name;
 
@@ -922,7 +963,7 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;
         chassert(engine_define);
-        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, isLoadingFromExistingMetadata(args.mode));
+        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, args.isLoadingFromExistingMetadata());
 
         return make_shared<DatabaseAtomic>(
             args.database_name, args.metadata_path, args.uuid, args.context, database_metadata_disk_settings);
