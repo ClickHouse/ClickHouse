@@ -1,0 +1,85 @@
+<!--
+    Query shapes at full scale on the 100 M rows of `hits_100m_single`: time-zone bucketing (15-minute buckets at a half-hour
+    offset, weeks and weekdays in DST zones), formatting of 200 M timestamps in two zones, `DateTime64` arithmetic; sessions by
+    `lagInFrame` over 17.6 M user partitions; `DISTINCT` over 6 M strings; `LIMIT BY` on a primary-key prefix (in key order on
+    each stream, then one hash pass over 22 M rows) and by hash over 17.6 M keys.
+    Spilling is off (the default ratio thresholds depend on the host memory), so every sort, aggregation and `DISTINCT` stays in
+    memory, up to about 2.6 GB per query.
+    The setup runs every query once inside a check against another path: arithmetic instead of the time-zone functions (the
+    Kolkata offset is a multiple of 15 minutes; all timestamps fall in July 2013 or on 2013-08-01, when New York is at UTC-4
+    and Berlin at UTC+2), arrays instead of the window function, `GROUP BY` instead of `DISTINCT` and `LIMIT BY`; it also checks
+    the in-order `LIMIT BY` pipeline, and in `system.query_log` that no check spilled.
+    Per server and invocation: no table data written; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="60">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <max_bytes_ratio_before_external_sort>0</max_bytes_ratio_before_external_sort>
+    <max_bytes_ratio_before_external_group_by>0</max_bytes_ratio_before_external_group_by>
+    <max_bytes_ratio_before_external_distinct>0</max_bytes_ratio_before_external_distinct>
+</settings>
+
+<fill_query>SELECT throwIf(count() != 100000000 OR min(EventTime) &lt; toDateTime('2013-04-01 00:00:00', 'UTC') OR max(EventTime) >= toDateTime('2013-10-01 00:00:00', 'UTC')) FROM hits_100m_single</fill_query>
+<fill_query>SELECT 1 FORMAT Null SETTINGS log_comment = 'query_shapes_hits.start'</fill_query>
+
+<fill_query>
+    SELECT throwIf((SELECT (count(), sum(cityHash64(toUInt32(t), toUInt64(w), d, c))) FROM (
+            SELECT toStartOfInterval(EventTime, INTERVAL 15 MINUTE, 'Asia/Kolkata') AS t, toStartOfWeek(EventTime, 1, 'America/New_York') AS w, toDayOfWeek(EventTime, 0, 'Europe/Berlin') AS d, count() AS c
+            FROM hits_100m_single GROUP BY t, w, d))
+        != (SELECT (count(), sum(cityHash64(t, w, d, c))) FROM (
+            SELECT intDiv(toUInt32(EventTime), 900) * 900 AS t, toUInt64(intDiv(toUInt32(EventTime) - 14400, 86400) - (intDiv(toUInt32(EventTime) - 14400, 86400) + 3) % 7) AS w,
+                toUInt8((intDiv(toUInt32(EventTime) + 7200, 86400) + 3) % 7 + 1) AS d, count() AS c
+            FROM hits_100m_single GROUP BY t, w, d)))
+    SETTINGS log_comment = 'query_shapes_hits.check'
+</fill_query>
+<fill_query>
+    SELECT throwIf((SELECT sum(cityHash64(formatDateTime(EventTime, '%Y-%m-%d %H:%i:%S', 'Europe/Berlin'))), sum(cityHash64(toString(ClientEventTime, 'Asia/Tokyo'))) FROM hits_100m_single)
+        != (SELECT sum(cityHash64(toString(toDateTime(toUInt32(EventTime) + 7200, 'UTC')))), sum(cityHash64(formatDateTime(toDateTime(toUInt32(ClientEventTime) + 32400, 'UTC'), '%Y-%m-%d %H:%i:%S'))) FROM hits_100m_single))
+    SETTINGS log_comment = 'query_shapes_hits.check'
+</fill_query>
+<fill_query>
+    SELECT throwIf((SELECT sum(dateDiff('second', ClientEventTime, EventTime, 'UTC')), sum(toUnixTimestamp64Milli(toStartOfInterval(toDateTime64(EventTime, 3, 'UTC') + toIntervalMillisecond(WatchID % 1000), INTERVAL 250 MILLISECOND))) FROM hits_100m_single)
+        != (SELECT sum(toInt64(toUInt32(EventTime)) - toUInt32(ClientEventTime)), sum(toUInt32(EventTime) * 1000 + intDiv(WatchID % 1000, 250) * 250) FROM hits_100m_single))
+    SETTINGS log_comment = 'query_shapes_hits.check'
+</fill_query>
+<fill_query>
+    SELECT throwIf((SELECT countIf(EventTime > prev + 1800) FROM (SELECT EventTime, lagInFrame(EventTime, 1, EventTime) OVER (PARTITION BY UserID ORDER BY EventTime ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prev FROM hits_100m_single))
+        != (SELECT sum(arrayCount((t, p) -> t > p + 1800, arrayPopFront(ts), arrayPopBack(ts))) FROM (SELECT arraySort(groupArray(EventTime)) AS ts FROM hits_100m_single GROUP BY UserID)))
+    SETTINGS log_comment = 'query_shapes_hits.check'
+</fill_query>
+<fill_query>
+    SELECT throwIf((SELECT count(), sum(cityHash64(SearchPhrase)) FROM (SELECT DISTINCT SearchPhrase FROM hits_100m_single))
+        != (SELECT count(), sum(cityHash64(SearchPhrase)) FROM (SELECT SearchPhrase FROM hits_100m_single GROUP BY SearchPhrase)))
+    SETTINGS log_comment = 'query_shapes_hits.check'
+</fill_query>
+<fill_query>
+    SELECT throwIf((SELECT count(), sum(cityHash64(CounterID, EventDate, h)) FROM (SELECT CounterID, EventDate, intHash32(UserID) AS h FROM hits_100m_single LIMIT 1 BY CounterID, EventDate, h))
+        != (SELECT count(), sum(cityHash64(CounterID, EventDate, h)) FROM (SELECT CounterID, EventDate, intHash32(UserID) AS h FROM hits_100m_single GROUP BY CounterID, EventDate, h)))
+    SETTINGS log_comment = 'query_shapes_hits.check'
+</fill_query>
+<fill_query>
+    SELECT throwIf((SELECT count(), sum(cityHash64(UserID)) FROM (SELECT UserID FROM hits_100m_single LIMIT 2 BY UserID))
+        != (SELECT sum(least(c, 2)), sum(least(c, 2) * cityHash64(UserID)) FROM (SELECT UserID, count() AS c FROM hits_100m_single GROUP BY UserID)))
+    SETTINGS log_comment = 'query_shapes_hits.check'
+</fill_query>
+<fill_query>SELECT throwIf(countIf(explain LIKE '%LimitBySortedStreamTransform%') = 0) FROM (EXPLAIN PIPELINE SELECT CounterID, EventDate, intHash32(UserID) AS h FROM hits_100m_single LIMIT 1 BY CounterID, EventDate, h)</fill_query>
+<fill_query>SYSTEM FLUSH LOGS</fill_query>
+<fill_query>
+    SELECT throwIf(count() != 7 OR max(ProfileEvents['ExternalProcessingFilesTotal']) != 0 OR max(memory_usage) > 6000000000, 'a check is missing in query_log, spilled or used too much memory')
+    FROM system.query_log
+    WHERE type = 'QueryFinish' AND log_comment = 'query_shapes_hits.check'
+        AND event_time_microseconds > (SELECT max(event_time_microseconds) FROM system.query_log WHERE log_comment = 'query_shapes_hits.start')
+</fill_query>
+
+<query>SELECT toStartOfInterval(EventTime, INTERVAL 15 MINUTE, 'Asia/Kolkata') AS t, toStartOfWeek(EventTime, 1, 'America/New_York') AS w, toDayOfWeek(EventTime, 0, 'Europe/Berlin') AS d, count() AS c FROM hits_100m_single GROUP BY t, w, d FORMAT Null</query>
+<query>SELECT sum(cityHash64(formatDateTime(EventTime, '%Y-%m-%d %H:%i:%S', 'Europe/Berlin'))), sum(cityHash64(toString(ClientEventTime, 'Asia/Tokyo'))) FROM hits_100m_single FORMAT Null</query>
+<query>SELECT sum(dateDiff('second', ClientEventTime, EventTime, 'UTC')), sum(toUnixTimestamp64Milli(toStartOfInterval(toDateTime64(EventTime, 3, 'UTC') + toIntervalMillisecond(WatchID % 1000), INTERVAL 250 MILLISECOND))) FROM hits_100m_single FORMAT Null</query>
+<query>SELECT countIf(EventTime > prev + 1800) FROM (SELECT EventTime, lagInFrame(EventTime, 1, EventTime) OVER (PARTITION BY UserID ORDER BY EventTime ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prev FROM hits_100m_single) FORMAT Null</query>
+<query>SELECT DISTINCT SearchPhrase FROM hits_100m_single FORMAT Null</query>
+<query>SELECT CounterID, EventDate, intHash32(UserID) AS h FROM hits_100m_single LIMIT 1 BY CounterID, EventDate, h FORMAT Null</query>
+<query>SELECT UserID FROM hits_100m_single LIMIT 2 BY UserID FORMAT Null</query>
+
+</test>

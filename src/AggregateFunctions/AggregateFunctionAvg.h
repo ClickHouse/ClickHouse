@@ -556,6 +556,15 @@ public:
         increment(place, sum_data.get());
     }
 
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const override
+    {
+        if constexpr (is_decimal<Numerator>)
+            increment(place, sum.safeGet<DecimalField<Numerator>>().getValue());
+        else
+            increment(place, sum.safeGet<Numerator>());
+        this->data(place).denominator += count;
+    }
+
     String getName() const override { return "avg"; }
 
 #if USE_EMBEDDED_COMPILER

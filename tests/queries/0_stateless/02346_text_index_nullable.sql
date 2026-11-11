@@ -1,3 +1,4 @@
+-- Tags: no-msan
 -- Tests for text index on Nullable columns and arrays with Nullable elements.
 -- NULL values must be silently skipped during index construction; they must
 -- not match any token search and must not cause exceptions.

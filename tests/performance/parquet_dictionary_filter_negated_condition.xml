@@ -1,0 +1,23 @@
+<!--
+    The Parquet dictionary filter cannot skip a row group for `x != c` or `x NOT IN (...)`, so it must not read
+    and hash a dictionary page for them. `phrase` is like `SearchPhrase` in `hits.parquet`: fully dictionary-encoded,
+    about 30000 distinct values per row group, and `''` in every row group. The queries run on one thread so that
+    the numbers do not depend on the number of cores of the runner.
+-->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_dictionary_filter_negated.parquet', Parquet)
+        SELECT if(number % 10 = 0, '', concat('phrase_', toString(intHash64(number) % 30000))) AS phrase
+        FROM numbers(20000000)
+        SETTINGS output_format_parquet_row_group_size = 100000,
+                 output_format_parquet_write_bloom_filter = 0,
+                 engine_file_truncate_on_insert = 1,
+                 max_block_size = 100000,
+                 max_insert_block_size = 100000,
+                 max_threads = 1,
+                 max_insert_threads = 1
+    ]]></fill_query>
+
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_negated.parquet', Parquet) WHERE phrase != '' SETTINGS max_threads = 1, max_parsing_threads = 1 FORMAT Null]]></query>
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_negated.parquet', Parquet) WHERE phrase NOT IN ('', 'phrase_1') SETTINGS max_threads = 1, max_parsing_threads = 1 FORMAT Null]]></query>
+</test>
