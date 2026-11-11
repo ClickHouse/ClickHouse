@@ -18,7 +18,7 @@ ClickHouse는 데이터 삽입 속도를 우선하도록 설계되었습니다. 
 <div class="transparent-table">
   |                                                                                       |                                                                                                                                                                                                                        |
   | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <span className="ch-image-sm">![중복 제거 로고](/images/guides/developer/de_duplication.webp)</span> | ClickHouse는 중복 제거를 비롯한 여러 주제에 대한 무료 교육을 제공합니다.  [Deleting and Updating Data training module](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse>)은 시작하기에 좋은 자료입니다. |
+  | <span className="ch-image-sm">![중복 제거 로고](/images/guides/developer/de_duplication.webp)</span> | ClickHouse는 중복 제거를 비롯한 여러 주제에 대한 무료 교육을 제공합니다.  [Deleting and Updating Data training module](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461>)은 시작하기에 좋은 자료입니다. |
 </div>
 
 <div id="options-for-deduplication">
@@ -31,7 +31,7 @@ ClickHouse에서는 다음 테이블 엔진을 사용해 중복 제거를 구현
 
 2. 행 축약: `CollapsingMergeTree` 및 `VersionedCollapsingMergeTree` 테이블 엔진은 기존 행을 &quot;취소&quot;하고 새 행을 삽입하는 방식으로 동작합니다. `ReplacingMergeTree`보다 구현은 더 복잡하지만, 데이터가 아직 머지되었는지 여부를 신경 쓰지 않고도 쿼리와 집계를 더 간단하게 작성할 수 있습니다. 이 두 테이블 엔진은 데이터를 자주 업데이트해야 할 때 유용합니다.
 
-아래에서 이 두 기법을 모두 살펴보겠습니다. 자세한 내용은 무료 온디맨드 [Deleting and Updating Data training module](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse>)을 확인하십시오.
+아래에서 이 두 기법을 모두 살펴보겠습니다. 자세한 내용은 무료 온디맨드 [Deleting and Updating Data training module](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461>)을 확인하십시오.
 
 <div id="using-replacingmergetree-for-upserts">
   ## 업서트를 위해 ReplacingMergeTree 사용
@@ -162,7 +162,7 @@ GROUP BY (id, author, comment)
 
 위 쿼리에서 보인 것처럼 그룹화하는 방식은 실제로 `FINAL` 키워드를 사용하는 것보다 쿼리 성능 측면에서 더 효율적일 수 있습니다.
 
-[Deleting and Updating Data training module](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse>)에서는 이 예시를 더 자세히 설명하며, `ReplacingMergeTree`와 함께 `version` 컬럼을 사용하는 방법도 다룹니다.
+[Deleting and Updating Data training module](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461>)에서는 이 예시를 더 자세히 설명하며, `ReplacingMergeTree`와 함께 `version` 컬럼을 사용하는 방법도 다룹니다.
 
 <div id="using-collapsingmergetree-for-updating-columns-frequently">
   ## 컬럼을 자주 업데이트할 때 CollapsingMergeTree 사용하기

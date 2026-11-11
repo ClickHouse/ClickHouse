@@ -18,7 +18,7 @@ ClickHouse 在数据插入方面是为高速度而设计的。存储文件是不
 <div class="transparent-table">
   |                                                                                   |                                                                                                                                                                                     |
   | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <span className="ch-image-sm">![去重标志](/images/guides/developer/de_duplication.webp)</span> | ClickHouse 提供关于去重及许多其他主题的免费培训。[Deleting and Updating Data 培训模块](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse>)是一个很好的入门起点。 |
+  | <span className="ch-image-sm">![去重标志](/images/guides/developer/de_duplication.webp)</span> | ClickHouse 提供关于去重及许多其他主题的免费培训。[Deleting and Updating Data 培训模块](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461>)是一个很好的入门起点。 |
 </div>
 
 <div id="options-for-deduplication">
@@ -31,7 +31,7 @@ ClickHouse 使用以下表引擎实现去重：
 
 2. 行折叠：`CollapsingMergeTree` 和 `VersionedCollapsingMergeTree` 表引擎采用这样一种逻辑：先将现有行“抵消”，再插入新行。与 `ReplacingMergeTree` 相比，它们实现起来更复杂，但查询和聚合写起来会更简单，因为无需关心数据是否已经完成合并。这两种表引擎在需要频繁更新数据时尤其有用。
 
-下面我们将介绍这两种技术。更多详情，请参阅我们的免费按需 [Deleting and Updating Data 培训模块](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse>)。
+下面我们将介绍这两种技术。更多详情，请参阅我们的免费按需 [Deleting and Updating Data 培训模块](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461>)。
 
 <div id="using-replacingmergetree-for-upserts">
   ## 使用 ReplacingMergeTree 实现 Upsert
@@ -162,7 +162,7 @@ GROUP BY (id, author, comment)
 
 实际上，像上面查询那样进行分组，其效率 (就查询性能而言) 实际上可能高于使用 `FINAL` 关键字。
 
-我们的 [Deleting and Updating Data 培训模块](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse>) 对这个示例做了更深入的讲解，包括如何将 `version` 列与 `ReplacingMergeTree` 搭配使用。
+我们的 [Deleting and Updating Data 培训模块](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461>) 对这个示例做了更深入的讲解，包括如何将 `version` 列与 `ReplacingMergeTree` 搭配使用。
 
 <div id="using-collapsingmergetree-for-updating-columns-frequently">
   ## 使用 CollapsingMergeTree 频繁更新列
