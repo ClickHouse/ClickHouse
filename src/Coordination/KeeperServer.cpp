@@ -964,13 +964,15 @@ void KeeperServer::putLocalReadRequests(const KeeperRequestsForSessions & reques
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
     }
 
-    if (!isLeader())
     {
         std::lock_guard lock(session_touches_mutex);
-        for (const auto & request_for_session : requests)
+        if (!isLeader())
         {
-            if (request_for_session.session_id >= 0)
-                pending_session_touches.insert(request_for_session.session_id);
+            for (const auto & request_for_session : requests)
+            {
+                if (request_for_session.session_id >= 0)
+                    pending_session_touches.insert(request_for_session.session_id);
+            }
         }
     }
 
@@ -1249,15 +1251,21 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     ///  here could come from the dispatcher on another node.)
     LockMemoryExceptionInThread blocker{VariableContext::Global};
 
-    if (type == nuraft::cb_func::BecomeLeader)
+    if (type == nuraft::cb_func::BecomeLeader || type == nuraft::cb_func::BecomeFollower)
     {
         session_expiry_queue_refreshed_for_leadership = false;
+        /// Do not carry pending touches into another leadership term.
+        std::lock_guard lock(session_touches_mutex);
+        pending_session_touches.clear();
+    }
+
+    if (type == nuraft::cb_func::BecomeLeader)
+    {
         startLeaderUptimeMetrics();
         finishLeaderElectionMetrics();
     }
     else if (type == nuraft::cb_func::BecomeFollower)
     {
-        session_expiry_queue_refreshed_for_leadership = false;
         stopLeaderUptimeMetrics();
     }
     else if (type == nuraft::cb_func::RejectedCommittedLogRollback)
