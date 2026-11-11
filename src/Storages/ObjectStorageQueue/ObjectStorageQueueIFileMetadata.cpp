@@ -422,13 +422,16 @@ void ObjectStorageQueueIFileMetadata::refreshProcessingNode(size_t refresh_inter
         }
         if (code == Coordination::Error::ZBADVERSION)
         {
+            /// Only this refresh ever updates the node, so a version mismatch means either the
+            /// node was removed (and possibly recreated by another server), or our own earlier
+            /// `Set` was applied but its response was lost and the read above was stale.
+            /// Re-read to tell the two apart.
             Coordination::Stat current_stat;
             std::string current_data;
             if (zk_client->tryGet(processing_node_path, current_data, &current_stat)
                 && current_data == processor_info)
             {
-                /// A concurrent refresh, or a refresh whose response was lost, already
-                /// renewed this exact claim. Use its version for the commit fence.
+                /// Still our claim. Use the current version for the commit fence.
                 processing_node_version = current_stat.version;
                 return;
             }

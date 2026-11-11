@@ -294,17 +294,22 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
         }
         if (code == Coordination::Error::ZBADVERSION)
         {
+            /// Only this refresh ever updates the lock, so a version mismatch means either the
+            /// lock was removed (and possibly re-acquired by another server), or our own earlier
+            /// `Set` was applied but its response was lost and the read above was stale.
+            /// Re-read to tell the two apart.
             Coordination::Stat current_stat;
             std::string current_data;
             if (zk_client->tryGet(bucket_info->bucket_lock_path, current_data, &current_stat)
                 && current_data == bucket_info->processor_info)
             {
-                /// A concurrent refresh, or a refresh whose response was lost, already
-                /// renewed this exact lock. Use its version for the release fence.
+                /// Still our lock. Use the current version for the release fence.
                 bucket_lock_version = current_stat.version;
                 return;
             }
             ownership_lost = true;
+            if (!current_data.empty())
+                current_owner = current_data;
         }
         else if (code == Coordination::Error::ZNONODE)
             ownership_lost = true;
