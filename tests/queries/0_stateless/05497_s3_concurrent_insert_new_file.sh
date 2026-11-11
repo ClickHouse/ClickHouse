@@ -89,19 +89,25 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_05497"
 # them may be acknowledged.
 conflict="test_05497_conflict_${CLICKHOUSE_DATABASE}_${RANDOM}"
 slow_query_id="05497_slow_${CLICKHOUSE_DATABASE}_${RANDOM}"
+release="$out.release"
 $CLICKHOUSE_CLIENT --s3_truncate_on_insert 1 \
     -q "INSERT INTO FUNCTION s3(s3_conn, filename='$conflict', format=Parquet, structure='a UInt64') SELECT 0"
+# The name is derived when the sink is built, before the server asks for data, and the object is uploaded when the
+# data ends: the slow writer keeps its input open until the fast one has finished, and sends its row on its own.
 (
-    if $CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 --max_block_size 1 --query_id "$slow_query_id" \
-        -q "INSERT INTO FUNCTION s3(s3_conn, filename='$conflict', format=Parquet, structure='a UInt64') SELECT 1 + sleepEachRow(0.9) FROM numbers(4)" \
-        2> "$out.slow.err"; then
+    if { echo 1; for _ in $(seq 1 3000); do [ -f "$release" ] && break; sleep 0.1; done; } \
+        | $CLICKHOUSE_CLIENT --async_insert 0 --input_format_parallel_parsing 0 --max_insert_block_size 1 \
+            --s3_create_new_file_on_insert 1 --query_id "$slow_query_id" \
+            -q "INSERT INTO FUNCTION s3(s3_conn, filename='$conflict', format=Parquet, structure='a UInt64') FORMAT TSV" \
+            2> "$out.slow.err"; then
         echo 1 > "$out.slow.ok"
     fi
 ) &
 slow_pid=$!
-# Rows are read only once the pipeline runs, and so after the sink of the slow writer has derived its name.
-for _ in $(seq 1 300); do
-    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$slow_query_id' AND read_rows > 0")" = 1 ] && break
+# A row the server has received proves that the slow writer has derived its name.
+deadline=$((SECONDS + 60))
+until [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$slow_query_id' AND written_rows > 0")" = 1 ]; do
+    [ "$SECONDS" -lt "$deadline" ] || { echo "the slow writer has not sent its row"; break; }
     sleep 0.1
 done
 if $CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 \
@@ -109,7 +115,9 @@ if $CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 \
     2> "$out.fast.err"; then
     echo 2 > "$out.fast.ok"
 fi
+touch "$release"
 wait "$slow_pid"
+rm -f "$release"
 
 for w in slow fast; do
     if [ ! -f "$out.$w.ok" ] && ! grep -q 'pre-conditions you specified did not hold' "$out.$w.err"; then
