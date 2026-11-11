@@ -486,13 +486,15 @@ namespace
     /// Adds to a query selecting from the tags table the filter of the time series by their time ranges stored in the time ranges table:
     ///
     ///     SELECT ... FROM tags_table
-    ///     LEFT JOIN (SELECT id, 1 AS matched FROM time_ranges_table
-    ///                WHERE max_time >= <min_time> AND min_time <= <max_time> [AND <id is in one of metric_id_ranges>]) AS time_ranges_subquery USING (id)
+    ///     ANY LEFT JOIN (SELECT id, 1 AS matched FROM time_ranges_table
+    ///                    WHERE max_time >= <min_time> AND min_time <= <max_time> [AND <id is in one of metric_id_ranges>]) AS time_ranges_subquery USING (id)
     ///     WHERE <conditions of the query> AND (time_ranges_subquery.matched = 1 [OR <id is outside all of metric_id_ranges>])
     ///
     /// The join is a merge join over both tables read in the order of `id` (see StorageTimeSeriesSelector::applySettingsForSelectIDsQuery):
     /// no set is built, the reading stops as soon as the query has enough rows, and the expressions of the SELECT list see only
     /// the time series passing the filter (`timeSeriesStoreTags` registers the tags of the time series it's applied to).
+    /// The join is `ANY`: the time ranges table keeps one row per time series per insert until its parts are merged, and the subquery
+    /// returns only `id` and a constant, so one matching row is enough and a tags row isn't repeated for every unmerged row.
     /// With `metric_id_ranges` the time ranges table is read by its primary key over the ranges of the selected metrics, and the time series
     /// with identifiers outside the ranges (written with another id generator) are kept without filtering by time.
     void addTimeRangesTableJoin(
@@ -524,11 +526,11 @@ namespace
             subquery_select->setExpression(ASTSelectQuery::Expression::WHERE, makeASTForLogicalAnd(std::move(time_range_conditions)));
         }
 
-        /// LEFT JOIN (<subquery>) AS time_ranges_subquery USING (id)
+        /// ANY LEFT JOIN (<subquery>) AS time_ranges_subquery USING (id)
         {
             auto table_join = make_intrusive<ASTTableJoin>();
             table_join->kind = JoinKind::Left;
-            table_join->strictness = JoinStrictness::All;
+            table_join->strictness = JoinStrictness::Any;
             table_join->using_expression_list = make_intrusive<ASTExpressionList>();
             table_join->using_expression_list->children.push_back(id->clone());
             table_join->children.push_back(table_join->using_expression_list);
@@ -674,7 +676,7 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
-        /// If there is a time ranges table: LEFT JOIN it and keep the time series with a matching time range (see addTimeRangesTableJoin).
+        /// If there is a time ranges table: ANY LEFT JOIN it and keep the time series with a matching time range (see addTimeRangesTableJoin).
         applyTimeRangeFilterToSelectIDsQuery(*select_query, time_ranges_table_id, time_range_to_filter_ids, metric_id_ranges, table_timestamp_type);
 
         return wrapIntoSelectWithUnionQuery(std::move(select_query));
@@ -1072,7 +1074,7 @@ namespace
         /// i.e. fails the remaining matchers or does not hash into the range.
         ///
         ///     SELECT 1 FROM (
-        ///         SELECT id FROM tags_table [LEFT JOIN <time ranges> USING (id)]
+        ///         SELECT id FROM tags_table [ANY LEFT JOIN <time ranges> USING (id)]
         ///         WHERE <__name__ matcher> AND <time range filter>
         ///           AND (NOT (<other matchers>) OR tupleElement(id, 1) != <first_component>))
         ///     LIMIT 1
