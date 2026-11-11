@@ -99,6 +99,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
     extern const char object_storage_queue_pause_after_commit[];
+    extern const char object_storage_queue_fail_unregister_active[];
 }
 
 namespace ServerSetting
@@ -870,12 +871,21 @@ void StorageObjectStorageQueue::setStreamingTaskActiveRegistry(
     if (!task_has_active_registry)
         return;
 
-    task_has_active_registry = false;
     chassert(active_registry_users > 0);
-    --active_registry_users;
-
-    if (active_registry_users == 0)
+    /// Remove the Keeper node before releasing the last lease. If the removal fails, the lease
+    /// stays and the next inactive poll of this task retries it. Otherwise a node left behind
+    /// by a transient Keeper failure would never be retried while the table stays inactive,
+    /// and the cleanup would treat all claims of this table as owned by a live consumer.
+    if (active_registry_users == 1)
+    {
+        fiu_do_on(FailPoints::object_storage_queue_fail_unregister_active, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to unregister from the active registry");
+        });
         metadata.unregisterActive(getStorageID());
+    }
+
+    task_has_active_registry = false;
+    --active_registry_users;
 }
 
 void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
