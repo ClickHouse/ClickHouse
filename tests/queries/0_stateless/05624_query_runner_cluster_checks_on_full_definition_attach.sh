@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
-# no-replicated-database: the statement runs from the DDL queue there, where the REMOTE grant of the creating user is not checked.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,12 +16,15 @@ ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${user} IDENTIFIED WITH plaintext_password BY 'password'"
 ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TABLE, DROP TABLE ON ${CLICKHOUSE_DATABASE}.* TO ${user}"
 ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON QueryRunner TO ${user}"
+${CLICKHOUSE_CLIENT} -q "GRANT CLUSTER ON *.* TO ${user}"
 
 CLIENT_AS_USER="${CLICKHOUSE_CLIENT} --user ${user} --password password"
 
 echo "without the REMOTE grant"
 ${CLIENT_AS_USER} -q "CREATE TABLE runner_c (query String) ENGINE = ${ENGINE}; -- { serverError ACCESS_DENIED }"
 ${CLIENT_AS_USER} -q "ATTACH TABLE runner_a $(uuid_clause) (query String) ENGINE = ${ENGINE}; -- { serverError ACCESS_DENIED }"
+${CLIENT_AS_USER} -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.runner_c ON CLUSTER test_shard_localhost (query String) ENGINE = ${ENGINE}; -- { serverError ACCESS_DENIED }"
+${CLIENT_AS_USER} -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.runner_a $(uuid_clause) ON CLUSTER test_shard_localhost (query String) ENGINE = ${ENGINE}; -- { serverError ACCESS_DENIED }"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = currentDatabase()"
 
 echo "with the REMOTE grant"

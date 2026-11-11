@@ -391,14 +391,24 @@ const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const
 
 AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & create) const
 {
+    return collectAccess(create, &StorageFeatures::get_export_access_fn);
+}
+
+AccessRightsElements StorageFactory::getCreateAccess(const ASTCreateQuery & create) const
+{
+    return collectAccess(create, &StorageFeatures::get_create_access_fn);
+}
+
+AccessRightsElements StorageFactory::collectAccess(const ASTCreateQuery & create, GetExportAccessFn * StorageFeatures::*access_fn) const
+{
     AccessRightsElements res;
     auto add = [&](const ASTStorage & storage)
     {
         if (!storage.engine || !storage.settings)
             return;
         auto it = storages.find(storage.engine->name);
-        if (it != storages.end() && it->second.features.get_export_access_fn)
-            res.append_range(it->second.features.get_export_access_fn(storage.settings->changes));
+        if (it != storages.end() && it->second.features.*access_fn)
+            res.append_range((it->second.features.*access_fn)(storage.settings->changes));
     };
 
     if (create.storage)

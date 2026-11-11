@@ -4375,6 +4375,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
     required_access.append_range(StorageFactory::instance().getExportAccess(create));
+    required_access.append_range(StorageFactory::instance().getCreateAccess(create));
 
     return required_access;
 }

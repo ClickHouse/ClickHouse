@@ -1,6 +1,7 @@
 #include <Storages/StorageQueryRunner.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/DefinerDependencies.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -894,6 +895,15 @@ static void validateColumns(const ColumnsDescription & columns)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "A QueryRunner table requires the 'query String' column");
 }
 
+/// The cluster mode runs the inserted queries on the hosts of a cluster, like the `remote` table function does.
+static AccessRightsElements getQueryRunnerCreateAccess(const SettingsChanges & changes)
+{
+    const Field * cluster = changes.tryGet("cluster");
+    if (!cluster || (cluster->getType() == Field::Types::String && cluster->safeGet<String>().empty()))
+        return {};
+    return {AccessRightsElement(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::REMOTE))};
+}
+
 void registerStorageQueryRunner(StorageFactory & factory);
 void registerStorageQueryRunner(StorageFactory & factory)
 {
@@ -955,6 +965,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_sql_security = true,
         .has_builtin_setting_fn = QueryRunnerSettings::hasBuiltin,
+        .get_create_access_fn = getQueryRunnerCreateAccess,
     },
     Documentation{.description = R"DOC(A table engine whose write path runs queries instead of storing data. Rows inserted into a `QueryRunner` table are dispatched as queries to be executed (synchronously or asynchronously); it is used to orchestrate and run queries through an `INSERT` interface.)DOC"});
 }
