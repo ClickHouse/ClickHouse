@@ -23,6 +23,10 @@ FROM numbers(2) AS o ORDER BY o.number;
 SELECT o.number, NOT EXISTS (SELECT max(i.number) FROM numbers(2) AS i WHERE i.number = o.number AND i.number IN (SELECT 1))
 FROM numbers(2) AS o ORDER BY o.number;
 
+SELECT '-- a NULL outer key';
+SELECT o.k, EXISTS (SELECT count() FROM (SELECT toNullable(number) AS k FROM numbers(2)) AS i WHERE i.k = o.k AND i.k IN (SELECT 1))
+FROM (SELECT arrayJoin([toNullable(1), NULL]) AS k) AS o ORDER BY o.k NULLS LAST;
+
 SELECT '-- dictGet with and without the rewrite into a set';
 SELECT o.number, EXISTS (
     SELECT count() FROM numbers(2) AS i
