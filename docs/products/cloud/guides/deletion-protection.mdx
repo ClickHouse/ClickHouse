@@ -21,6 +21,8 @@ While protection is on, delete requests are refused. `DELETE /v1/organizations/{
 
 Turning protection on or off uses the [`control-plane:service:delete`](/cloud/security/console-roles) permission. Organization admins have this permission. See [Console roles and permissions](/cloud/security/console-roles).
 
+Turning protection on also requires deletion protection to be available for the organization. ClickHouse Cloud organizations have it. A create or update that sets `deletionProtection` to `true` returns HTTP `400` when the organization does not. Turning protection off does not use that check: a request that sets `deletionProtection` to `false` is accepted, including for a service that is already protected.
+
 | Action | Permission |
 | --- | --- |
 | Turn the console switch on or off | `control-plane:service:delete` on the service |
@@ -51,7 +53,9 @@ curl --silent --user "$KEY_ID:$KEY_SECRET" \
   -d '{"deletionProtection": true}'
 ```
 
-To delete a protected service, turn protection off, stop the service, then delete it:
+To delete a protected service, turn protection off, stop the service, wait until it is stopped, and then delete it. `PATCH .../state` with `"command": "stop"` requires `control-plane:service:manage` and returns before the service has stopped. A delete while the service is still `stopping` is rejected. A delete against a protected service returns `409` and leaves the service in place.
+
+Turn protection off:
 
 ```bash
 curl --silent --user "$KEY_ID:$KEY_SECRET" \
@@ -59,21 +63,37 @@ curl --silent --user "$KEY_ID:$KEY_SECRET" \
   -H "Content-Type: application/json" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
   -d '{"deletionProtection": false}'
+```
 
+Request a stop:
+
+```bash
 curl --silent --user "$KEY_ID:$KEY_SECRET" \
   -X PATCH \
   -H "Content-Type: application/json" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/state" \
   -d '{"command": "stop"}'
+```
+
+Wait until `result.state` is `stopped`, then delete:
+
+```bash
+while [ "$(curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  | jq -r '.result.state')" != "stopped" ]; do
+  sleep 5
+done
 
 curl --silent --user "$KEY_ID:$KEY_SECRET" \
   -X DELETE \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID"
 ```
 
-`PATCH .../state` with `"command": "stop"` requires `control-plane:service:manage`. Wait until the service is stopped before calling delete. A delete against a protected service returns `409` and leaves the service in place.
-
 ## Terraform {#terraform}
+
+<Note>
+`deletion_protection` is not in the latest released provider, [v3.43.0](https://github.com/ClickHouse/terraform-provider-clickhouse/releases/tag/v3.43.0). The attribute was added in [terraform-provider-clickhouse#799](https://github.com/ClickHouse/terraform-provider-clickhouse/pull/799), which is merged and not yet in a release. The example below fails on v3.43.0 with an unsupported argument. Use a provider release after v3.43.0 that includes the attribute.
+</Note>
 
 The `clickhouse_service` resource accepts `deletion_protection`. While it is `true`, `terraform destroy` and any change that would replace the service fail. Set it to `false` and apply that change on its own, then destroy the service.
 
@@ -87,4 +107,4 @@ resource "clickhouse_service" "example" {
 }
 ```
 
-Setting `deletion_protection = true` when creating a service needs an API key that can delete all services in the organization. Changing it later needs delete permission on that service. See the [`clickhouse_service` resource](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/service).
+Setting `deletion_protection = true` when creating a service needs an API key that can delete all services in the organization. Changing it later needs delete permission on that service.
