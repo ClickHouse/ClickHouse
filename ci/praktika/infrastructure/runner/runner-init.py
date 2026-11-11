@@ -1052,14 +1052,7 @@ def run(
 
 
 def run_bash(cmd: str, sudo: bool = False, verbose: bool = False) -> None:
-    # Default is fail-only logging: stdout/stderr are captured into pipes and
-    # only emitted on a non-zero exit. Successful output is dropped because
-    # `bash -x` traces every command substitution, and several Linux scripts
-    # (e.g. `setup_tailscale` in `init-network.sh`) expand SSM-fetched
-    # secrets — leaving them in plaintext in stderr would land them in
-    # CloudWatch. `verbose=True` opts back into emitting on success, used by
-    # `configure_macos` so the brew/install progress reaches the CloudWatch
-    # agent (which tails the runner-init process output).
+    # Without verbose, output is dropped on success: `bash -x` would leave SSM secrets in CloudWatch.
     argv = ["bash", "-euxo", "pipefail"]
     if sudo:
         argv = ["sudo"] + argv
@@ -1067,15 +1060,21 @@ def run_bash(cmd: str, sudo: bool = False, verbose: bool = False) -> None:
         argv,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT if verbose else subprocess.PIPE,
         text=True,
     )
-    stdout, stderr = proc.communicate(cmd)
-    if proc.returncode != 0:
-        log(f"\nstdout:\n {stdout}\nstderr:\n {stderr}")
-        raise RuntimeError("bash script failed")
     if verbose:
-        log(f"\nstdout:\n {stdout}\nstderr:\n {stderr}")
+        proc.stdin.write(cmd)
+        proc.stdin.close()
+        for line in proc.stdout:
+            print(line, end="", flush=True)
+        proc.wait()
+    else:
+        stdout, stderr = proc.communicate(cmd)
+        if proc.returncode != 0:
+            log(f"\nstdout:\n {stdout}\nstderr:\n {stderr}")
+    if proc.returncode != 0:
+        raise RuntimeError(f"bash script failed with exit code {proc.returncode}")
 
 
 if __name__ == "__main__":
