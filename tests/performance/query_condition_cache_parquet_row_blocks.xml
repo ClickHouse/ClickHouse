@@ -1,0 +1,21 @@
+<test>
+    <!-- Repeated selective queries over a Parquet file in a `File` table: most row groups have a matching row,
+         so only the 8192-row blocks of the query condition cache let a rerun skip most of the file.
+         The cache is used only once the file is at least 3 seconds old. -->
+
+    <create_query>CREATE TABLE qcc_rb (URL String, SearchPhrase String, Title String, UserID Int64) ENGINE = File(Parquet)</create_query>
+
+    <fill_query>INSERT INTO qcc_rb SELECT URL, SearchPhrase, Title, UserID FROM hits_10m_single</fill_query>
+    <fill_query>SELECT sleep(2) FORMAT Null</fill_query>
+    <fill_query>SELECT sleep(2) FORMAT Null</fill_query>
+
+    <settings>
+        <use_query_condition_cache>1</use_query_condition_cache>
+    </settings>
+
+    <query>SELECT SearchPhrase, min(URL), count() AS c FROM qcc_rb WHERE URL LIKE '%google%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT SearchPhrase, min(URL), min(Title), count() AS c, count(DISTINCT UserID) FROM qcc_rb WHERE Title LIKE '%Google%' AND URL NOT LIKE '%.google.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT count() FROM qcc_rb WHERE URL != '' AND SearchPhrase != '' FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS qcc_rb</drop_query>
+</test>

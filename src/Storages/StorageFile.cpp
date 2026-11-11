@@ -2266,6 +2266,7 @@ Chunk StorageFileSource::generate()
             /// A row group may be skipped iff either verdict excludes it.
             /// A statistics-only TopN read (`filter_rows = false`) is a plain read for the cache.
             FileBucketInfoPtr buckets_to_read;
+            std::shared_ptr<const VectorWithMemoryTracking<bool>> row_blocks_to_read;
             std::optional<UInt64> plain_condition_hash;
             if (format_filter_info && format_filter_info->condition_hash
                 && (!format_filter_info->top_k_filter || !format_filter_info->top_k_filter->filter_rows
@@ -2296,9 +2297,14 @@ Chunk StorageFileSource::generate()
                         for (size_t i = 0; i < marks->size(); ++i)
                             (*matching_marks)[i] = (*matching_marks)[i] && (*marks)[i];
                 };
+                std::optional<VectorWithMemoryTracking<bool>> matching_row_blocks;
                 if (plain_condition_hash)
-                    merge_matching_marks(query_condition_cache->read(
-                        query_condition_cache_table_id, cache_file_key, *plain_condition_hash, /*increment_profile_events=*/false));
+                {
+                    auto file_marks = query_condition_cache->readFile(
+                        query_condition_cache_table_id, cache_file_key, *plain_condition_hash, /*increment_profile_events=*/false);
+                    merge_matching_marks(std::move(file_marks.buckets));
+                    matching_row_blocks = std::move(file_marks.row_blocks);
+                }
                 if (top_k_condition_hash)
                 {
                     auto marks = query_condition_cache->read(
@@ -2331,7 +2337,8 @@ Chunk StorageFileSource::generate()
                     }
                     merge_matching_marks(std::move(marks));
                 }
-                ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+                ProfileEvents::increment(
+                    matching_marks || matching_row_blocks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
 
                 if (matching_marks.has_value())
                 {
@@ -2365,6 +2372,27 @@ Chunk StorageFileSource::generate()
                             continue;
                         }
                     }
+                }
+
+                if (matching_row_blocks.has_value())
+                {
+                    size_t num_blocks = matching_row_blocks->size();
+                    size_t num_matching = static_cast<size_t>(std::count(matching_row_blocks->begin(), matching_row_blocks->end(), true));
+                    LOG_DEBUG(
+                        getLogger("StorageFile"),
+                        "Query condition cache has dropped {}/{} row blocks for condition {} in file {}.",
+                        num_blocks - num_matching,
+                        num_blocks,
+                        format_filter_info->filter_actions_dag->dumpNames(),
+                        current_path);
+
+                    if (num_matching == 0)
+                    {
+                        read_buf.reset();
+                        continue;
+                    }
+                    if (num_matching < num_blocks)
+                        row_blocks_to_read = std::make_shared<const VectorWithMemoryTracking<bool>>(std::move(*matching_row_blocks));
                 }
             }
 
@@ -2405,6 +2433,10 @@ Chunk StorageFileSource::generate()
             }
 
             input_format->setBucketsToRead(split_file ? split_file->buckets.at(split_file_bucket) : buckets_to_read);
+            if (split_file)
+                row_blocks_to_read = split_file->row_blocks_to_read;
+            if (row_blocks_to_read)
+                input_format->setRowBlocksToRead(row_blocks_to_read);
             input_format->setSerializationHints(serialization_hints);
 
             if (need_only_count)
@@ -2614,6 +2646,19 @@ Chunk StorageFileSource::generate()
                         getContext());
                 }
 
+                if (format_filter_info->condition_hash && !format_filter_info->top_k_filter)
+                {
+                    auto row_blocks = input_format->getMatchedRowBlocks();
+                    auto query_condition_cache = getContext()->getQueryConditionCache();
+                    if (row_blocks && query_condition_cache)
+                        query_condition_cache->writeRowBlocks(
+                            query_condition_cache_table_id,
+                            cache_file_key,
+                            *format_filter_info->condition_hash,
+                            format_filter_info->filter_actions_dag->dumpNames(),
+                            *row_blocks);
+                }
+
                 if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
                     input_format->cacheFilterColumnStatistics();
             }
@@ -2657,22 +2702,38 @@ void StorageFileSource::finishReadingSplitFileBucket()
     bool can_write = !isCancelled() && format_filter_info && format_filter_info->condition_hash && current_file_version_settled
         && query_condition_cache_table_id != UUIDHelpers::Nil;
     std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> buckets_opt;
+    std::optional<VectorWithMemoryTracking<bool>> row_blocks;
     if (can_write)
     {
         /// Re-stat, to not write an entry derived from bytes the version token no longer describes.
         if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+        {
             buckets_opt = input_format->getMatchedBuckets();
+            row_blocks = input_format->getMatchedRowBlocks();
+        }
         can_write = buckets_opt.has_value();
     }
 
     size_t total_row_groups = 0;
     std::unordered_set<size_t> matched_row_groups;
+    bool write_row_blocks = false;
+    VectorWithMemoryTracking<bool> matched_row_blocks;
     {
         std::lock_guard lock(split_file->mutex);
         if (can_write && split_file->can_write_query_condition_cache)
         {
             split_file->total_row_groups = buckets_opt->second;
             split_file->matched_row_groups.insert(buckets_opt->first.begin(), buckets_opt->first.end());
+
+            /// A row block may span row groups of several buckets.
+            if (!row_blocks || (!split_file->matched_row_blocks.empty() && split_file->matched_row_blocks.size() != row_blocks->size()))
+                split_file->can_write_row_blocks = false;
+            else if (split_file->matched_row_blocks.empty())
+                split_file->matched_row_blocks = std::move(*row_blocks);
+            else
+                for (size_t i = 0; i < row_blocks->size(); ++i)
+                    if ((*row_blocks)[i])
+                        split_file->matched_row_blocks[i] = true;
         }
         else
         {
@@ -2685,16 +2746,29 @@ void StorageFileSource::finishReadingSplitFileBucket()
 
         total_row_groups = split_file->total_row_groups;
         matched_row_groups = std::move(split_file->matched_row_groups);
+        write_row_blocks = split_file->can_write_row_blocks;
+        matched_row_blocks = std::move(split_file->matched_row_blocks);
     }
 
+    const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
     writeQueryConditionCacheEntry(
         query_condition_cache_table_id,
-        QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version),
+        cache_file_key,
         *format_filter_info->condition_hash,
         format_filter_info->filter_actions_dag->dumpNames(),
         total_row_groups,
         matched_row_groups,
         getContext());
+
+    if (!write_row_blocks)
+        return;
+    if (auto query_condition_cache = getContext()->getQueryConditionCache())
+        query_condition_cache->writeRowBlocks(
+            query_condition_cache_table_id,
+            cache_file_key,
+            *format_filter_info->condition_hash,
+            format_filter_info->filter_actions_dag->dumpNames(),
+            matched_row_blocks);
 }
 
 std::optional<UInt64> StorageFileSource::getTopKConditionHashForCurrentFile() const
@@ -3161,11 +3235,13 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
     {
         if (auto query_condition_cache = context->getQueryConditionCache())
         {
-            auto matching_marks = query_condition_cache->read(
+            auto file_marks = query_condition_cache->readFile(
                 query_condition_cache_table_id,
                 QueryConditionCache::makeFilePartName(path, split_file->file_cache_version),
                 *format_filter_info->condition_hash,
                 /*increment_profile_events=*/ false);
+            auto & matching_marks = file_marks.buckets;
+            auto & matching_row_blocks = file_marks.row_blocks;
 
             RowGroupIndices matching_row_groups;
             VectorWithMemoryTracking<FileBucketInfoPtr> buckets;
@@ -3186,7 +3262,17 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
                     return nullptr;
             }
 
-            ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+            size_t num_matching_row_blocks = 0;
+            if (matching_row_blocks)
+            {
+                num_matching_row_blocks = static_cast<size_t>(std::count(matching_row_blocks->begin(), matching_row_blocks->end(), true));
+                /// Likewise when no row block of the file can match.
+                if (num_matching_row_blocks == 0)
+                    return nullptr;
+            }
+
+            ProfileEvents::increment(
+                matching_marks || matching_row_blocks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
 
             if (matching_marks)
             {
@@ -3205,6 +3291,20 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
 
                 /// Fewer buckets may be left, and they are still read as a split file.
                 split_file->buckets = std::move(buckets);
+            }
+
+            if (matching_row_blocks)
+            {
+                LOG_DEBUG(
+                    getLogger("StorageFile"),
+                    "Query condition cache has dropped {}/{} row blocks for condition {} in file {}.",
+                    matching_row_blocks->size() - num_matching_row_blocks,
+                    matching_row_blocks->size(),
+                    format_filter_info->filter_actions_dag->dumpNames(),
+                    path);
+
+                if (num_matching_row_blocks < matching_row_blocks->size())
+                    split_file->row_blocks_to_read = std::make_shared<const VectorWithMemoryTracking<bool>>(std::move(*matching_row_blocks));
             }
         }
     }

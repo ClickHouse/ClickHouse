@@ -265,6 +265,17 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             std::lock_guard lock(reader_mutex);
             reader = std::move(reader_with_footer);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
+            reader->reader.rows_per_row_block = QUERY_CONDITION_CACHE_ROWS_PER_BLOCK;
+            /// A lazy materialization read reads chosen rows only, so which rows pass the filter is unknown there.
+            reader->reader.track_matched_row_blocks = format_filter_info->condition_hash.has_value() && !format_filter_info->rows_to_read;
+            if (row_blocks_to_read)
+            {
+                size_t total_rows = 0;
+                for (const auto & row_group : reader->reader.file_metadata().row_groups)
+                    total_rows += size_t(std::max<Int64>(row_group.num_rows, 0));
+                if (row_blocks_to_read->size() == (total_rows + QUERY_CONDITION_CACHE_ROWS_PER_BLOCK - 1) / QUERY_CONDITION_CACHE_ROWS_PER_BLOCK)
+                    reader->reader.row_blocks_to_read = row_blocks_to_read;
+            }
             /// Of the readers of a split file, only one records the statistics (of all row groups, also of the other buckets).
             if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition
                 && !(buckets_to_read && buckets_to_read->is_split_for_parallel_reading && !buckets_to_read->keeps_filter_column_statistics))
@@ -545,6 +556,20 @@ Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
         return Parquet::RowGroupByteRange{buckets_to_read->byte_range->first, buckets_to_read->byte_range->second};
     }
     return UnorderedSetWithMemoryTracking<UInt64>(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
+}
+
+std::optional<VectorWithMemoryTracking<bool>> ParquetV3BlockInputFormat::getMatchedRowBlocks() const
+{
+    if (!reader || !reader->reader.track_matched_row_blocks)
+        return std::nullopt;
+    return reader->reader.getMatchedRowBlocks();
+}
+
+void ParquetV3BlockInputFormat::setRowBlocksToRead(std::shared_ptr<const VectorWithMemoryTracking<bool>> row_blocks)
+{
+    if (reader)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader already initialized");
+    row_blocks_to_read = std::move(row_blocks);
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
