@@ -88,12 +88,19 @@ locate_worktree_git_dir()
 gitlinks()
 {
     awk -F '\t' '
+        function unsafe(x) { return x == "" || x ~ /^[-\/]/ || x ~ /(^|\/)\.\.?(\/|$)/ }
         FNR == NR { if ($2 == "path") name_of[$3] = $1; else url[$1] = $3; next }
         {
             split($1, meta, " ")
             if (meta[3] != "0") { printf "FAILED: %s: unmerged submodule, resolve the conflict first\n", $2 > "/dev/stderr"; exit 1 }
             if (!($2 in name_of)) { printf "FAILED: %s: not in .gitmodules\n", $2 > "/dev/stderr"; exit 1 }
-            printf "%s\t%s\t%s\t%s\n", meta[2], $2, name_of[$2], url[name_of[$2]]
+            # Names and paths become directories under the git dir and the worktree: no options, absolute paths, or
+            # "." and ".." components (git itself rejects such names).
+            n = name_of[$2]
+            if (meta[2] !~ /^[0-9a-f]+$/ || unsafe($2) || unsafe(n)) {
+                printf "FAILED: unsafe submodule: commit %s, path %s, name %s\n", meta[2], $2, n > "/dev/stderr"; exit 1
+            }
+            printf "%s\t%s\t%s\t%s\n", meta[2], $2, n, url[n]
         }' \
         <(git -C "$1" config --file .gitmodules --get-regexp '^submodule\..*\.(path|url)$' |
             awk '{ key = $1; sub(/^submodule\./, "", key); kind = key; sub(/^.*\./, "", kind); sub(/\.[^.]*$/, "", key)
@@ -138,7 +145,7 @@ git_store()
 # and the history of the commit is broken.
 fetch_pin()
 {
-    git_store "$1" fetch -q --update-shallow "$2" "$3:refs/pins/$3" || die "fetch of $3 from $2 into $1"
+    git_store "$1" fetch -q --update-shallow -- "$2" "$3:refs/pins/$3" || die "fetch of $3 from $2 into $1"
     [ "$(git_store "$1" rev-parse -q --verify "refs/pins/$3^{commit}" || true)" = "$3" ] ||
         die "fetch of $3 from $2 into $1: the commit did not arrive"
     git_store "$1" rev-list --max-count=2 "$3" > /dev/null || die "fetch of $3 from $2 into $1: the history is broken"
@@ -171,8 +178,10 @@ refresh_main_stores()
         then
             continue
         fi
+        # The URL comes from the branch of the worktree, which can be someone else's: allow only plain repository URLs.
         case $url in
-            ./* | ../*) die "$path: relative submodule URLs are not supported: $url" ;;
+            https://* | ssh://* | file://* | /* | git@[A-Za-z0-9]*:*) ;;
+            *) die "$path: unsupported submodule URL: $url (allowed: https://, ssh://, git@host:path, file://, absolute path)" ;;
         esac
         store=$GD/modules/$name
         if [ ! -d "$store" ]
@@ -180,7 +189,7 @@ refresh_main_stores()
             note "main git data: cloning new submodule $path"
             mkdir -p "$(dirname "$store")"
             tmp=$(mktemp -d "$GD/worktree-sh.XXXXXX")
-            git clone -q --no-checkout --separate-git-dir="$store" "$url" "$tmp/files"
+            git clone -q --no-checkout --separate-git-dir="$store" -- "$url" "$tmp/files"
             rm -rf "$tmp"
             # The same relative path that `git submodule update --init` writes, so that the main checkout can init it.
             up=$(printf '%s' "modules/$name" | awk -F / '{ for (i = 0; i <= NF; ++i) printf "../" }')
