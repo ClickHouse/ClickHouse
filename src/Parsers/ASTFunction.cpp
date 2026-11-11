@@ -644,8 +644,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY
-        && !isWindowFunction())
+    /// `f | g` has no function-call form: `__compose(f, g)` parses back as an ordinary call.
+    const bool is_compose_operator = name == "__compose"sv;
+    if (isOperator() && arguments && !parameters && (frame.allow_operators || is_compose_operator)
+        && getNullsAction() == NullsAction::EMPTY && !isWindowFunction())
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -1029,7 +1031,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         /// function name a user can define a function with, so only a call the parser marked as
         /// operator syntax is formatted back as the operator. The name must stay in sync with
         /// `function_composition_name` in `Analyzer/Resolve/FunctionCompositionRewrite.h`.
-        if (!written && arguments->children.size() == 2 && name == "__compose"sv && isOperator())
+        if (!written && arguments->children.size() == 2 && is_compose_operator && isOperator())
         {
             if (frame.need_parens)
                 ostr << '(';

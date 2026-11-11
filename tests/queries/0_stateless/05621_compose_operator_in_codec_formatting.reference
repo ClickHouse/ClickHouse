@@ -1,0 +1,5 @@
+CREATE TABLE t (`c` UInt64 CODEC(arrayMap(toString(_) | toString(_), a), LZ4)) ENGINE = Memory
+CREATE TABLE t (`c` UInt64 STATISTICS(arrayMap(toString(_) | toString(_), a))) ENGINE = Memory
+CREATE TABLE t (`c` UInt64 CODEC(arrayMap(lambda(tuple(x), (plus(x, 1) | toString(_)) | upper(_)), a), LZ4)) ENGINE = Memory
+CREATE TABLE t (`c` UInt64 CODEC(arrayMap(__compose(toString(_), toString(_)), a), LZ4)) ENGINE = Memory
+SELECT arrayMap(toString(_) | upper(_), _CAST([1, 2], \'Array(UInt8)\'))\nFROM system.one
