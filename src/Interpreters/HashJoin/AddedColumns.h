@@ -23,6 +23,18 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class MatchedRowsStats;
 
+/** The probe key columns of a source block with negative zeros replaced by positive zeros, one list per JOIN clause
+  * (an element is `nullptr` if the key column has no negative zeros). The key getters compare the keys bitwise, so this
+  * is done before the keys are looked up, and it is whole-block work. A probe that hits `max_joined_block_rows` is
+  * continued over the remaining suffix of the same source block, so the columns are prepared by the first dispatch
+  * over the block and reused by the continuations, see `HashJoin::ContinuationResult`.
+  */
+struct CanonicalJoinKeys
+{
+    bool prepared = false;
+    std::vector<Columns> clauses;
+};
+
 struct JoinOnKeyColumns
 {
     Names key_names;
@@ -38,9 +50,12 @@ struct JoinOnKeyColumns
 
     Sizes key_sizes;
 
+    /// `canonical_keys` are the key columns of the source block with negative zeros replaced by positive zeros
+    /// (see `CanonicalJoinKeys`). If `prepare_canonical_keys`, they are computed and stored there,
+    /// otherwise the ones prepared by an earlier dispatch over the same source block are used.
     JoinOnKeyColumns(
         const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
-        bool keep_lowcardinality = false);
+        bool keep_lowcardinality, Columns & canonical_keys, bool prepare_canonical_keys);
 
     bool isRowFiltered(size_t i) const
     {

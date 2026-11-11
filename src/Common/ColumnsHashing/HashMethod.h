@@ -169,19 +169,20 @@ struct HashMethodOneNumberInRange : public columns_hashing_impl::HashMethodBase<
     /// Owns the key column with negative zeros replaced by positive zeros, if there were any.
     ColumnPtr canonicalized_column;
 
-    HashMethodOneNumberInRange(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
-        : HashMethodOneNumberInRange(key_columns[0])
+    HashMethodOneNumberInRange(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange rows = {})
+        : HashMethodOneNumberInRange(key_columns[0], rows.negative_zeros_canonicalized)
     {
     }
 
     /// See the comment on the constructors of `HashMethodOneNumber`.
-    ALWAYS_INLINE explicit HashMethodOneNumberInRange(const IColumn * column) : Base(column)
+    ALWAYS_INLINE explicit HashMethodOneNumberInRange(const IColumn * column, bool negative_zeros_canonicalized = false) : Base(column)
     {
         if constexpr (nullable)
             column = checkAndGetColumn<ColumnNullable>(*column).getNestedColumnPtr().get();
 
         /// See the comment in `HashMethodOneNumber`.
-        canonicalized_column = canonicalizeNegativeZero(*column);
+        if (!negative_zeros_canonicalized)
+            canonicalized_column = canonicalizeNegativeZero(*column);
         if (canonicalized_column)
             column = canonicalized_column.get();
 

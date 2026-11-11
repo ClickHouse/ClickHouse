@@ -79,4 +79,36 @@
     SETTINGS join_algorithm = 'hash', max_threads = 1,
              max_block_size = 8000, query_plan_join_swap_table = 'false'
     </query>
+  <!-- The same with `Float64` keys, whose negative zeros are canonicalized once per probe block, not per continuation. -->
+  <query>
+    SELECT count(), sum(length(l.payload))
+    FROM
+    (
+        SELECT number AS v, toFloat64(number % 4) AS k,
+               repeat(toString(number), 128) AS payload
+        FROM numbers(8000)
+    ) AS l
+    LEFT ALL JOIN
+    (
+        SELECT toFloat64(number % 4) AS k, intDiv(number, 4) AS v
+        FROM numbers(256)
+    ) AS r ON l.k = r.k AND r.v &lt; l.v % 64
+    SETTINGS join_algorithm = 'hash', max_threads = 1,
+             max_block_size = 8000, query_plan_join_swap_table = 'false', max_joined_block_size_rows = 64
+    </query>
+  <query>
+    SELECT count()
+    FROM
+    (
+        SELECT number AS v, toFloat64(number % 4) AS k
+        FROM numbers(32768)
+    ) AS l
+    LEFT ALL JOIN
+    (
+        SELECT toFloat64(number % 4) AS k, intDiv(number, 4) AS v
+        FROM numbers(256)
+    ) AS r ON l.k = r.k AND r.v &lt; l.v % 64
+    SETTINGS join_algorithm = 'hash', max_threads = 1,
+             max_block_size = 32768, query_plan_join_swap_table = 'false', max_joined_block_size_rows = 64
+    </query>
 </test>

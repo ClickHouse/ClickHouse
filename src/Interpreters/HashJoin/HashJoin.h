@@ -40,6 +40,7 @@ class ExpressionActions;
 using Sizes = std::vector<size_t>;
 
 class MatchedRowsStats;
+struct CanonicalJoinKeys;
 
 namespace JoinStuff
 {
@@ -853,7 +854,7 @@ private:
 
     class ContinuationResult;
 
-    JoinResultPtr runJoinDispatch(ScatteredBlock block);
+    JoinResultPtr runJoinDispatch(ScatteredBlock block, CanonicalJoinKeys & canonical_join_keys);
 
     bool preferUseMapsAll() const;
 
