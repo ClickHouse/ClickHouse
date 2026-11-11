@@ -813,18 +813,23 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     if (params.bucket_top_k)
     {
-        const bool counts_rows
-            = typeid_cast<const AggregateFunctionCount *>(params.aggregates[params.bucket_top_k_rank_index].function.get()) != nullptr;
+        const auto & rank_function = *params.aggregates[params.bucket_top_k_rank_index].function;
         if (is_simple_count)
             bucket_top_k_rank = BucketTopKRank::InlineCount;
-        else if (counts_rows)
+        else if (typeid_cast<const AggregateFunctionCount *>(&rank_function))
             bucket_top_k_rank = BucketTopKRank::CountState;
         else
             bucket_top_k_rank = BucketTopKRank::FinalizedResult;
-        /// `AggregateFunctionCount` counts every row of a group, and a group has at least one row. Any other
-        /// rank can be 0: `count` and `uniqExact` of a `Nullable` argument skip the NULLs, and `uniqExactIf`
-        /// skips the rows that its condition rejects.
-        bucket_top_k_min_rank = counts_rows ? 1 : 0;
+        /// The rank is a `count`, `uniqExact` or `uniqExactIf` (see `tryPushBucketTopKIntoAggregation`). A
+        /// group has at least one row, and the first row that the function does not skip makes the rank 1. So
+        /// the rank is at least 1 unless the function can skip rows. A wrapper can: `uniqExactIf` skips the
+        /// rows that its condition rejects, and the NULL adapter of a `Nullable` argument skips the NULLs. So
+        /// can a function on an argument that can hold NULL, as `count(x)` of a `Nullable` argument does
+        /// without a wrapper. For example, `uniqExact(number)` ranks at least 1, and `uniqExact(x)` of a
+        /// `Nullable` `x` ranks 0 for a group whose `x` is always NULL.
+        const bool may_skip_rows = rank_function.getNestedFunction()
+            || std::ranges::any_of(rank_function.getArgumentTypes(), [](const DataTypePtr & type) { return canContainNull(*type); });
+        bucket_top_k_min_rank = may_skip_rows ? 0 : 1;
     }
 
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);

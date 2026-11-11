@@ -8,8 +8,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The merge units of an adaptive aggregation that feeds `ORDER BY ... LIMIT n` by a `count` or `uniqExact`
 # share a threshold: the worst of the `n` best ranks that the converted units output, a floor for a descending
 # order and a ceiling for an ascending one. Every later conversion drops the groups ranked worse, and so does
-# a unit that counts first, as `count` among other aggregates does. An ascending order whose threshold reaches
-# the smallest possible rank is settled, so the merge skips the units left.
+# a unit that counts first, as `count` among other aggregates does. An ascending order is settled once its
+# threshold reaches the smallest rank that its aggregate can give a group, so the merge skips the units left.
+# That rank is 0 when the aggregate can skip rows, as one of a `Nullable` argument or `uniqExactIf` can, and 1
+# otherwise.
 #
 # The source has 10000 keys of about 20 rows each, so with `LIMIT 1000` above a unit's group count only the
 # threshold drops groups. Its keys below 100 have only NULL values of `x`, so `count(x)` ranks them 0, and an
@@ -21,7 +23,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # counted, so it turns the settlement off: the last query must fail, although its first units would settle it.
 # `max_threads_min_free_memory_per_thread = 0` keeps the threads whatever the free memory.
 
-source="SELECT toUInt64(intHash64(number) % 10000) AS k, number, if(k < 100, NULL, number) AS x FROM numbers_mt(200000)"
+source="SELECT toUInt64(intHash64(number) % 10000) AS k, number, if(k < 100, NULL, number) AS x, if(k < 1000, 0, number) AS y,
+    if(k < 100, NULL, y) AS z FROM numbers_mt(200000)"
 settings="
     SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size = 8192;
     SET adaptive_aggregator_freeze_threshold = 128;
