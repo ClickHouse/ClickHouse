@@ -49,6 +49,12 @@ Poco::Timestamp::TimeDiff delayToMicroseconds(size_t milliseconds)
     return static_cast<Poco::Timestamp::TimeDiff>(milliseconds) * 1000;
 }
 
+size_t maxParallelTasksPerType(size_t pool_size, double ratio)
+{
+    size_t limit = static_cast<size_t>(static_cast<double>(pool_size) * ratio);
+    return limit ? limit : pool_size;
+}
+
 }
 
 ///
@@ -297,12 +303,12 @@ Coordination::WatchCallbackPtr BackgroundSchedulePoolTaskInfo::getWatchCallback(
 /// BackgroundSchedulePool
 ///
 
-BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t initial_size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name)
+BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t initial_size, double max_parallel_tasks_per_type_ratio, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name)
 {
-    return std::shared_ptr<BackgroundSchedulePool>(new BackgroundSchedulePool(size, initial_size, max_parallel_tasks_per_type, tasks_metric, size_metric, thread_name));
+    return std::shared_ptr<BackgroundSchedulePool>(new BackgroundSchedulePool(size, initial_size, max_parallel_tasks_per_type_ratio, tasks_metric, size_metric, thread_name));
 }
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size_, double max_parallel_tasks_per_type_ratio_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
     : logger(getLogger(fmt::format("BackgroundSchedulePool/{}", toString(thread_name_))))
     , tasks_metric(tasks_metric_)
     /// The metric reports the configured cap (so `system.server_settings` displays
@@ -310,7 +316,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
     /// not the number of currently spawned workers — that is tracked separately by `threads.size()`.
     , size_metric(size_metric_, size_)
     , thread_name(thread_name_)
-    , max_parallel_tasks_per_type(max_parallel_tasks_per_type_ ? max_parallel_tasks_per_type_ : size_)
+    , max_parallel_tasks_per_type_ratio(max_parallel_tasks_per_type_ratio_)
 {
     const size_t initial_size = std::min(size_, initial_size_);
     LOG_INFO(logger, "Create BackgroundSchedulePool with {} initial threads (grows lazily up to {})", initial_size, size_);
@@ -320,6 +326,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
         {
             std::lock_guard tasks_lock(tasks_mutex);
             max_size = size_;
+            max_parallel_tasks_per_type = maxParallelTasksPerType(size_, max_parallel_tasks_per_type_ratio);
             threads.reserve(size_);
             for (size_t i = 0; i < initial_size; ++i)
                 spawnThreadLocked();
@@ -393,8 +400,31 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
         return;
     }
 
+    /// Never lowered: a group may already run more tasks than a lower limit allows.
+    const size_t new_max_parallel_tasks_per_type = maxParallelTasksPerType(new_threads_count, max_parallel_tasks_per_type_ratio);
+    const bool raise_limit = new_max_parallel_tasks_per_type > max_parallel_tasks_per_type;
+    if (raise_limit)
+        runnable_task_types.reserve(task_groups.size());
+
     max_size = new_threads_count;
     size_metric.changeTo(new_threads_count);
+
+    if (raise_limit)
+    {
+        max_parallel_tasks_per_type = new_max_parallel_tasks_per_type;
+
+        /// Groups paused at the old limit are runnable under the new one.
+        for (auto & [task_type, group] : task_groups)
+        {
+            if (!group.runnable_list_pos && !group.tasks.empty())
+            {
+                group.runnable_list_pos = runnable_task_types.size();
+                runnable_task_types.push_back(task_type);
+            }
+        }
+        /// Wake parked workers: the spawn below counts them as available.
+        tasks_cond_var.notify_all();
+    }
 
     /// Consume already-queued demand with the freshly-raised cap. A saturated pool has no parked
     /// workers to wake and may receive no further scheduleTask call for a while, so without spawning
