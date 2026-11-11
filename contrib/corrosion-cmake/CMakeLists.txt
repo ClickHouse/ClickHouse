@@ -39,7 +39,7 @@ endmacro()
 
 # Keep in sync with toolchain in docker images
 # (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
-set(Rust_TOOLCHAIN "nightly-2026-03-22")
+set(Rust_TOOLCHAIN "nightly-2026-11-02")
 
 macro(find_rust)
     set_rust_target()
@@ -255,6 +255,10 @@ message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
 set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 
+# Every member of the workspace is imported with exactly this path: corrosion names the cargo target directory
+# after the manifest path string, so this is what makes them share one.
+set(RUST_CONTRIB_WORKSPACE_MANIFEST "${ClickHouse_SOURCE_DIR}/contrib/rust-contrib-workspace/Cargo.toml" CACHE INTERNAL "Rust config")
+
 # Sanitizer instrumentation combined with opt-level=3 and the default codegen-units=16
 # causes LLVM to use too much memory while compiling large crates like cranelift-codegen
 # and polyglot-sql (with all-dialects). Set opt-level and codegen-units via the Cargo
@@ -370,8 +374,7 @@ function(clickhouse_config_crate_flags target_name)
     #
     # For workspace crates the .a may land in a parent directory rather than
     # CMAKE_CURRENT_BINARY_DIR.  Set IMPORTED_LOCATION on the target before
-    # calling this function if the default path is wrong (see wasmtime for an
-    # example).
+    # calling this function if the default path is wrong.
     get_target_property(_rust_lib_path ${target_name} IMPORTED_LOCATION)
     if (NOT _rust_lib_path OR _rust_lib_path MATCHES "NOTFOUND")
         set(_rust_lib_path "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")

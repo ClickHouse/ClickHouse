@@ -372,7 +372,7 @@ export const PageWrapper = ({ children }) => {
         />
 
         <HeroCard
-          title="我们的解决方案"
+          title="我们的产品"
           galaxyEvent="docs.home.solutions"
           description="我想了解 ClickHouse 解决方案"
           href={localizeHref("/products/cloud/getting-started/intro")}
@@ -383,7 +383,7 @@ export const PageWrapper = ({ children }) => {
       }
           links={[
           { label: "ClickHouse Cloud", href: localizeHref("/products/cloud/getting-started/cloud-get-started") },
-          { label: "ClickStack", href: localizeHref("/clickstack") },
+          { label: "ClickHouse Observability", href: localizeHref("/clickstack") },
           { label: "ClickHouse Managed Postgres", href: localizeHref("/products/managed-postgres/overview") },
           { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
           { label: "chDB", href: localizeHref("/chdb") },
@@ -400,7 +400,7 @@ export const PageWrapper = ({ children }) => {
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
         <HeroCard title="实时分析" galaxyEvent="docs.home.real-time-analytics" description="大规模提供即时洞察和仪表盘。实时分析数十亿行数据，毫秒级返回结果。" href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="可观测性" galaxyEvent="docs.home.observability" description="借助由 ClickHouse 驱动的开源可观测性技术栈 ClickStack，大规模存储和查询日志、指标和链路追踪。" href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="可观测性" galaxyEvent="docs.home.observability" description="借助由 ClickHouse 驱动的开源可观测性技术栈 ClickHouse Observability，大规模存储和查询日志、指标和链路追踪。" href={localizeHref("/clickstack/overview")} showArrow />
 
         <HeroCard title="数据仓储" galaxyEvent="docs.home.data-warehousing" description="即时分析和探索数据，获取洞察并构建应用。通过卸载繁重工作负载，实现更快扩展。" href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
@@ -443,9 +443,9 @@ export const PageWrapper = ({ children }) => {
           </div>
 
           <div className="flex flex-col gap-4">
-            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="由 ClickHouse 驱动的一体化可观测性技术栈，提供针对日志、指标、链路追踪、会话回放和错误的闪电般快速查询与强大聚合能力。" href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="由 ClickHouse 驱动的一体化可观测性技术栈，提供针对日志、指标、链路追踪、会话回放和错误的闪电般快速查询与强大聚合能力。" href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="快速、可扩展、企业级的 Postgres 服务，与 ClickHouse 原生集成。轻松结合使用 Postgres 处理事务，用 ClickHouse 进行分析。" href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.svg" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="快速、可扩展、企业级的 Postgres 服务，与 ClickHouse 原生集成。轻松结合使用 Postgres 处理事务，用 ClickHouse 进行分析。" href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 
