@@ -7,8 +7,10 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
@@ -17,6 +19,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_uniq_to_count;
 }
 
@@ -61,6 +64,37 @@ NamesAndTypes extractProjectionColumnsForGroupBy(const QueryNode * query_node)
         return {};
 
     return result;
+}
+
+/// Whether a query can have several rows with the same values of `GROUP BY` keys.
+bool canHaveSeveralRowsPerGroup(const QueryNode & query_node)
+{
+    /// The groups of different shards are not merged.
+    if (query_node.getContext()->getSettingsRef()[Setting::distributed_group_by_no_merge])
+        return true;
+
+    const auto & keys = query_node.getGroupBy().getNodes();
+    auto adds_rows = [&](const QueryTreeNodePtr & node)
+    {
+        return hasFunctionNode(node, "arrayJoin")
+            && std::ranges::none_of(keys, [&](const QueryTreeNodePtr & key) { return key->isEqual(*node); });
+    };
+
+    for (const auto & node : query_node.getOrderBy().getNodes())
+    {
+        const auto & sort_node = node->as<const SortNode &>();
+        if (sort_node.withFill() || adds_rows(sort_node.getExpression()))
+            return true;
+    }
+
+    if (query_node.hasHaving() && adds_rows(query_node.getHaving()))
+        return true;
+
+    if (query_node.hasQualify() && adds_rows(query_node.getQualify()))
+        return true;
+
+    return std::ranges::any_of(query_node.getLimitBy().getNodes(), adds_rows)
+        || std::ranges::any_of(query_node.getProjection().getNodes(), adds_rows);
 }
 
 /// Whether query_columns equals subquery_columns.
@@ -158,6 +192,22 @@ public:
 
         auto & uniq_arguments_nodes = function_node->getArguments().getNodes();
 
+        /// The arguments must be different columns of the subquery.
+        QueryTreeNodePtrWithHashSet unique_arguments;
+        for (const auto & uniq_argument_node : uniq_arguments_nodes)
+        {
+            const auto * column_node = uniq_argument_node->as<ColumnNode>();
+            if (!column_node || column_node->getColumnSourceOrNull().get() != subquery_node
+                || !unique_arguments.emplace(uniq_argument_node).second)
+                return;
+        }
+
+        /// `arrayJoin` repeats the rows of the subquery.
+        if ((query_node->hasWhere() && hasFunctionNode(query_node->getWhere(), "arrayJoin"))
+            || (query_node->hasPrewhere() && hasFunctionNode(query_node->getPrewhere(), "arrayJoin"))
+            || hasFunctionNode(query_node->getGroupByNode(), "arrayJoin"))
+            return;
+
         /// `uniq` does not count a NULL, but an argument-less `count()` counts the row that
         /// `SELECT DISTINCT` or `GROUP BY` emits for it, so replacing `uniq(x)` with `count()`
         /// would report one distinct value too many. A single argument that can carry a NULL is
@@ -195,6 +245,9 @@ public:
             /// which `count()` would count as additional distinct values.
             if (subquery_node->isGroupByWithRollup() || subquery_node->isGroupByWithCube()
                 || subquery_node->isGroupByWithTotals() || subquery_node->isGroupByWithGroupingSets())
+                return false;
+
+            if (canHaveSeveralRowsPerGroup(*subquery_node))
                 return false;
 
             /// uniq argument node list == subquery group by node list

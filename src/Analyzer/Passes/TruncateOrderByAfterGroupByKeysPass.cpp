@@ -15,6 +15,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_truncate_order_by_after_group_by_keys;
 }
 
@@ -41,6 +42,10 @@ public:
 
         /// Do not optimize with CUBE, ROLLUP, GROUPING SETS — the effective key set varies per row.
         if (query->isGroupByWithCube() || query->isGroupByWithRollup() || query->isGroupByWithGroupingSets())
+            return;
+
+        /// The groups of different shards are not merged.
+        if (getSettings()[Setting::distributed_group_by_no_merge])
             return;
 
         /// WITH TIES semantics depend on the full ORDER BY list.

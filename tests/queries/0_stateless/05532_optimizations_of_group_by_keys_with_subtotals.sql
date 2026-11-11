@@ -19,6 +19,20 @@ SELECT number % 2 AS y, toString(number % 2) AS x, max(x) AS m FROM remote('127.
 SELECT number % 2 AS y, toString(number % 2) AS x, max(concat(x, '!')) AS m, max(y + 1) AS n FROM remote('127.0.0.{2,3}', numbers(4)) GROUP BY GROUPING SETS ((y, x), (y)) ORDER BY ALL;
 SELECT number % 2 AS y, toString(number % 2) AS x FROM remote('127.0.0.{2,3}', numbers(4)) GROUP BY GROUPING SETS ((y, x), (y)) HAVING max(toString(number % 2)) = '1' ORDER BY ALL;
 
+SELECT 'functions of aggregate functions';
+SELECT number % 2 + 1 AS x, negate(x) AS y, negate(any(x)) AS s FROM numbers(4) GROUP BY GROUPING SETS ((1, 2), (1)) ORDER BY ALL;
+SELECT number % 2 + 1 AS x, negate(x) AS y FROM numbers(4) GROUP BY GROUPING SETS ((1, 2), (1)) HAVING negate(max(x)) < 0 ORDER BY ALL;
+SELECT number % 2 + 1 AS x, negate(x) AS y, negate(any(x)) AS s FROM numbers(4) GROUP BY GROUPING SETS ((x, y), (x)) ORDER BY ALL;
+SELECT number % 2 + 1 AS x, negate(x) AS y FROM numbers(4) GROUP BY GROUPING SETS ((x, y), (x)) HAVING negate(max(x)) < 0 ORDER BY ALL;
+SELECT number % 2 + 1 AS x, negate(x) AS y, negate(any(x)) AS s FROM remote('127.0.0.{2,3}', numbers(4)) GROUP BY GROUPING SETS ((1, 2), (1)) ORDER BY ALL;
+SELECT number % 2 + 1 AS x, negate(x) AS y FROM remote('127.0.0.{2,3}', numbers(4)) GROUP BY GROUPING SETS ((1, 2), (1)) HAVING negate(max(x)) < 0 ORDER BY ALL;
+SELECT number % 2 + 1 AS x, negate(x) AS y, negate(any(x)) AS s FROM remote('127.0.0.{2,3}', numbers(4)) GROUP BY GROUPING SETS ((x, y), (x)) ORDER BY ALL;
+SELECT number % 2 + 1 AS x, negate(x) AS y FROM remote('127.0.0.{2,3}', numbers(4)) GROUP BY GROUPING SETS ((x, y), (x)) HAVING negate(max(x)) < 0 ORDER BY ALL;
+SELECT number % 2 + 1 AS x, negate(x) AS y, negate(max(multiIf(1, x, 3))) AS s FROM numbers(4) GROUP BY GROUPING SETS ((1, 2), (1)) ORDER BY ALL;
+SELECT number % 4 + 1 AS x, x IN (1, 2, 3) AS y, (max(x = 1) OR max(x = 2) OR max(x = 3)) AS s FROM numbers(4) GROUP BY GROUPING SETS ((1, 2), (1)) ORDER BY ALL;
+SELECT number % 2 + 1 AS x, negate(x) AS y, negate(max(multiIf(1, x, 3))) AS s FROM numbers(4) GROUP BY GROUPING SETS ((x, y), (x)) ORDER BY ALL;
+SELECT number % 4 + 1 AS x, x IN (1, 2, 3) AS y, (max(x = 1) OR max(x = 2) OR max(x = 3)) AS s FROM numbers(4) GROUP BY GROUPING SETS ((x, y), (x)) ORDER BY ALL;
+
 SELECT 'not deterministic';
 SELECT [number, number + 1] AS a, min(arrayJoin(a)) AS m FROM numbers(2) GROUP BY 1 ORDER BY ALL;
 SELECT [number, number + 1] AS a, min(arrayJoin(a)) AS m FROM numbers(2) GROUP BY a ORDER BY ALL;

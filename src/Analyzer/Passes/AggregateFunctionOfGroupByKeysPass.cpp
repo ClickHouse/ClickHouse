@@ -41,8 +41,9 @@ public:
     struct GroupByKeys
     {
         QueryTreeNodePtrWithHashSet keys;
-        /// Keys that are not in every grouping set. They have default values in the other sets, also if they are functions of `keys`.
-        QueryTreeNodePtrWithHashSet keys_of_some_sets;
+        /// Keys that are not in every grouping set, and their subexpressions. These keys have default values in the other sets,
+        /// also if they are functions of `keys`: neither `max(negate(x))` nor `negate(max(x))` may become the key `negate(x)`.
+        QueryTreeNodePtrWithHashSet parts_of_other_keys;
     };
 
     using GroupByKeysStack = std::vector<GroupByKeys>;
@@ -145,7 +146,25 @@ public:
             for (const auto & group_key : group_by_keys)
                 keys_of_some_sets.erase(group_key);
 
-            group_by_keys_stack.push_back({std::move(group_by_keys), std::move(keys_of_some_sets)});
+            QueryTreeNodePtrWithHashSet parts_of_other_keys;
+            QueryTreeNodes nodes_to_visit;
+            for (const auto & group_key : keys_of_some_sets)
+                nodes_to_visit.push_back(group_key.node);
+
+            while (!nodes_to_visit.empty())
+            {
+                auto part = std::move(nodes_to_visit.back());
+                nodes_to_visit.pop_back();
+
+                if (!parts_of_other_keys.insert(part).second)
+                    continue;
+
+                for (const auto & child : part->getChildren())
+                    if (child)
+                        nodes_to_visit.push_back(child);
+            }
+
+            group_by_keys_stack.push_back({std::move(group_by_keys), std::move(parts_of_other_keys)});
         }
     }
 
@@ -322,7 +341,7 @@ private:
             auto [candidate, parents_are_only_deterministic] = candidates.back();
             candidates.pop_back();
 
-            if (group_by_keys.keys_of_some_sets.contains(candidate))
+            if (group_by_keys.parts_of_other_keys.contains(candidate))
                 return false;
 
             bool found = group_by_keys.keys.contains(candidate);

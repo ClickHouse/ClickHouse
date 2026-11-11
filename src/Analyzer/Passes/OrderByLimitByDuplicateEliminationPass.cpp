@@ -38,8 +38,12 @@ public:
                     continue;
                 }
 
-                auto [_, inserted] = unique_expressions_nodes_set.emplace(sort_node_typed.getExpression().get());
-                if (inserted)
+                const auto * expression = sort_node_typed.getExpression().get();
+
+                /// Different values can be equal with a collation, so the following keys are not redundant after it.
+                const bool redundant = sort_node_typed.getCollator() ? unique_expressions_nodes_set.contains(expression)
+                                                                     : !unique_expressions_nodes_set.emplace(expression).second;
+                if (!redundant)
                     result_nodes.push_back(sort_node);
             }
 
