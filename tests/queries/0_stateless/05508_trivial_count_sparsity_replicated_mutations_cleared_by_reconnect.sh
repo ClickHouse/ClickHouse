@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, zookeeper
+# Tags: no-parallel, no-fasttest, zookeeper, no-shared-merge-tree
 # no-parallel: uses a server-wide failpoint that pauses every lookup of column defaultness stats,
 # and reconnects the server to ZooKeeper.
 # no-fasttest: tests that enable a fail point run alone, and they are kept out of the fast test.
+# no-shared-merge-tree: the test exercises the mutation bookkeeping of `ReplicatedMergeTreeQueue`, which `SharedMergeTree` does not use.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
