@@ -428,6 +428,40 @@ def test_read_in_order_duplicate_keys(started_cluster_iceberg_with_spark, storag
         "max_threads=4, optimize_distinct_in_order=1") == 0
 
 
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+@pytest.mark.parametrize("with_nulls", [True, False])
+def test_read_in_order_nulls_first(started_cluster_iceberg_with_spark, storage_type, with_nulls):
+    """Spark sorts ASC NULLS FIRST by default, while the in-order merge keeps NULLs last.
+    Files with NULL keys must keep the sorting step; files without NULLs still read in order."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = f"test_read_in_order_nulls_first_{storage_type}_{int(with_nulls)}_{get_uuid_str()}"
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id BIGINT, data STRING) USING iceberg")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} WRITE ORDERED BY id ASC NULLS FIRST")
+
+    null = "NULL" if with_nulls else "7"
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES ({null}, 'a'), (3, 'c'), (5, 'e')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'b'), ({null}, 'd'), (2, 'f')")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    query = f"SELECT id FROM {TABLE_NAME} ORDER BY id"
+    expected = instance.query(f"{query} SETTINGS optimize_read_in_order=0")
+    assert expected.split() == (["1", "2", "3", "5", "\\N", "\\N"] if with_nulls else ["1", "2", "3", "5", "7", "7"])
+    for max_threads in [1, 4]:
+        assert instance.query(f"{query} SETTINGS max_threads={max_threads}") == expected
+
+    assert (count_in_pipeline(instance, query, "PartialSortingTransform") > 0) == with_nulls
+
+
 def test_defining_columns_with_special_character(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     table_name = "demo_event_" + get_uuid_str()
