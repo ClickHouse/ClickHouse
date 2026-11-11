@@ -31,6 +31,7 @@ public:
         CLEAR_CONNECTIONS_CACHE,
         PREWARM_MARK_CACHE,
         PREWARM_PRIMARY_INDEX_CACHE,
+        PREWARM_VECTOR_SIMILARITY_INDEX_CACHE,
         CLEAR_MARK_CACHE,
         CLEAR_PRIMARY_INDEX_CACHE,
         CLEAR_STATISTICS_CACHE,
@@ -182,9 +183,13 @@ public:
 
     String getDatabase() const;
     String getTable() const;
+    String getIndex() const;
 
     void setDatabase(const String & name);
     void setTable(const String & name);
+
+    /// Optional `INDEX name` for `SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE FOR TABLE`.
+    ASTPtr index;
 
     String target_function;
     String replica;
@@ -276,6 +281,7 @@ public:
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }
         if (table) { res->table = table->clone(); res->children.push_back(res->table); }
+        if (index) { res->index = index->clone(); res->children.push_back(res->index); }
         if (query_settings) { res->query_settings = query_settings->clone(); res->children.push_back(res->query_settings); }
         if (backup_source) { res->backup_source = backup_source->clone(); res->children.push_back(res->backup_source); }
         if (scheduled_merge_parts) { res->scheduled_merge_parts = scheduled_merge_parts->clone(); res->children.push_back(res->scheduled_merge_parts); }

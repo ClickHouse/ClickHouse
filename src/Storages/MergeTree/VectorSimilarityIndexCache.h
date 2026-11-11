@@ -3,6 +3,7 @@
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Core/UUID.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace ProfileEvents
@@ -59,10 +60,20 @@ struct VectorSimilarityIndexCacheCell
 
     MergeTreeIndexGranulePtr granule;
     size_t memory_bytes;
+    UUID table_uuid = UUIDHelpers::Nil;
+    String part_name;
+    String logical_index_name;
 
-    explicit VectorSimilarityIndexCacheCell(MergeTreeIndexGranulePtr granule_)
+    VectorSimilarityIndexCacheCell(
+        MergeTreeIndexGranulePtr granule_,
+        UUID table_uuid_,
+        String part_name_,
+        String logical_index_name_)
         : granule(std::move(granule_))
         , memory_bytes(granule->memoryUsageBytes() + ENTRY_OVERHEAD_BYTES_GUESS)
+        , table_uuid(table_uuid_)
+        , part_name(std::move(part_name_))
+        , logical_index_name(std::move(logical_index_name_))
     {
     }
 
@@ -92,13 +103,19 @@ public:
 
     /// LoadFunc should have signature () -> MergeTreeIndexGranulePtr.
     template <typename LoadFunc>
-    MergeTreeIndexGranulePtr getOrSet(const Key & key, LoadFunc && load)
+    MergeTreeIndexGranulePtr getOrSet(
+        const Key & key,
+        UUID table_uuid,
+        String part_name,
+        String logical_index_name,
+        LoadFunc && load)
     {
         auto wrapped_load = [&]() -> std::shared_ptr<VectorSimilarityIndexCacheCell>
         {
             MergeTreeIndexGranulePtr granule;
             load(granule);
-            return std::make_shared<VectorSimilarityIndexCacheCell>(std::move(granule));
+            return std::make_shared<VectorSimilarityIndexCacheCell>(
+                std::move(granule), table_uuid, part_name, logical_index_name);
         };
 
         auto result = Base::getOrSet(key, wrapped_load);

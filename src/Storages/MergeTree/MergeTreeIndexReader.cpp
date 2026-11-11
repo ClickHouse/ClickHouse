@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -205,13 +206,19 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     /// the key used during eviction in `IMergeTreeDataPart::removeFromVectorIndexCache`.
     /// The cache key needs the part itself; without one the granule is loaded directly.
     auto concrete_part = data_part_info->getDataPart();
-    if (index->isVectorSimilarityIndex() && concrete_part && concrete_part->getState() == MergeTreeDataPartState::Active)
+    if (vector_similarity_index_cache && index->isVectorSimilarityIndex() && concrete_part
+        && concrete_part->getState() == MergeTreeDataPartState::Active)
     {
         VectorSimilarityIndexCacheKey key{concrete_part->getDataPartStorage().getDiskName() + ":" + concrete_part->getRelativePathOfActivePart(),
                                           index->getFileName(),
                                           mark};
 
-        granule = vector_similarity_index_cache->getOrSet(key, load_func);
+        granule = vector_similarity_index_cache->getOrSet(
+            key,
+            concrete_part->storage.getStorageID().uuid,
+            concrete_part->name,
+            index->index.name,
+            load_func);
     }
     else
     {

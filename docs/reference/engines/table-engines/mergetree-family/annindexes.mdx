@@ -474,6 +474,8 @@ Therefore, please make sure to calculate the vector index size (based on the for
 
 _We reiterate that verifying and, if necessary, increasing the vector index cache should be the first step when investigating slow vector search queries._
 
+Use [`SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE`](/reference/statements/system#prewarm-vector-similarity-index-cache) to load granules of a table before the first search. Cached granules are listed in [`system.vector_similarity_index_cache`](/operations/system-tables/vector_similarity_index_cache). Use [`SYSTEM DROP VECTOR SIMILARITY INDEX CACHE`](/reference/statements/system#drop-vector-similarity-index-cache) to evict the whole cache.
+
 The current size of the vector similarity index cache is shown in [system.metrics](/reference/system-tables/metrics):
 
 ```sql
