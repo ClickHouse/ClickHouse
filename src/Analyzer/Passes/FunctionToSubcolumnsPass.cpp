@@ -637,6 +637,12 @@ void optimizeArrayTupleElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode 
     if (!data_type_tuple)
         return;
 
+    /// A missing stored column may be populated from its parent DEFAULT during a read.
+    /// Reading only a subcolumn bypasses that expression (e.g. with Parquet files).
+    const auto storage_snapshot = getStorageSnapshotForColumnSource(ctx.column_source);
+    if (storage_snapshot && storage_snapshot->metadata->getColumns().hasDefault(ctx.column.name))
+        return;
+
     auto subcolumn_name = getElementSubcolumnName(second_argument_constant_node->getValue(), *data_type_tuple);
     if (!subcolumn_name)
         return;

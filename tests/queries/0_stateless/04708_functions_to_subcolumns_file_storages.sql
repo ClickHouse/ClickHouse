@@ -157,3 +157,45 @@ WHERE explain ILIKE '%column_name: a.1%';
 
 DROP TABLE t_array_tuple_merge;
 DROP TABLE t_array_tuple_file;
+
+-- The Parquet file does not contain 'a'. Reading 'a.code' directly must not drop
+-- the nonempty DEFAULT expression of its parent column.
+DROP TABLE IF EXISTS t_array_tuple_default_merge;
+DROP TABLE IF EXISTS t_array_tuple_default_file;
+
+INSERT INTO FUNCTION file('04708_missing_array_tuple_default.parquet', Parquet, 'id UInt64')
+SELECT toUInt64(1)
+SETTINGS engine_file_truncate_on_insert = 1;
+
+CREATE TABLE t_array_tuple_default_file
+(
+    id UInt64,
+    a Array(Tuple(code UInt32, payload String)) DEFAULT [(42, 'default payload')]
+)
+ENGINE = File(Parquet, '04708_missing_array_tuple_default.parquet');
+
+CREATE TABLE t_array_tuple_default_merge AS t_array_tuple_default_file
+ENGINE = Merge(currentDatabase(), '^t_array_tuple_default_file$');
+
+SELECT '-- missing Parquet Array(Tuple) uses parent DEFAULT in File and Merge';
+SELECT id, tupleElement(a, 'code') FROM t_array_tuple_default_file
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, tupleElement(a, 'code') FROM t_array_tuple_default_file
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT id, tupleElement(a, 'code') FROM t_array_tuple_default_merge
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, tupleElement(a, 'code') FROM t_array_tuple_default_merge
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT id, tupleElement(a, 1) FROM t_array_tuple_default_file
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT '-- defaulted Array(Tuple) parents stay on the function path';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 'code') FROM t_array_tuple_default_file)
+WHERE explain ILIKE '%column_name: a.code%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 'code') FROM t_array_tuple_default_merge)
+WHERE explain ILIKE '%column_name: a.code%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 1) FROM t_array_tuple_default_file)
+WHERE explain ILIKE '%column_name: a.code%';
+
+DROP TABLE t_array_tuple_default_merge;
+DROP TABLE t_array_tuple_default_file;
