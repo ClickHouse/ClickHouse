@@ -8,11 +8,11 @@ doc_type: 'reference'
 
 Because ClickHouse is open-source, it receives many contributions not only from ClickHouse employees but also from the community. These contributions are often developed at different speeds; certain features may require a lengthy prototyping phase or more time for sufficient community feedback and iteration to be considered generally available (GA).
 
-Due to the uncertainty of when features are classified as generally available, we delineate features into three categories: **Beta**, **Experimental**, and **Private preview**.
+Due to the uncertainty of when features are classified as generally available, we delineate features into four categories: **Beta**, **Public preview**, **Experimental**, and **Private preview**.
 
-**Beta** features are officially supported by the ClickHouse team. **Experimental** features are early prototypes driven by either the ClickHouse team or the community and aren't officially supported. **Private preview** features are on a clear path to general availability but still have limited applicability and are not recommended for production use.
+**Beta** features are officially supported by the ClickHouse team. **Public preview** features are largely complete and on a clear path to general availability (GA). **Experimental** features are early prototypes driven by either the ClickHouse team or the community and aren't officially supported. **Private preview** features are on a clear path to general availability but still have limited applicability and are not recommended for production use.
 
-The sections below explicitly describe the properties of **Beta**, **Experimental**, and **Private preview** features:
+The sections below explicitly describe the properties of **Beta**, **Public preview**, **Experimental**, and **Private preview** features:
 
 ## Beta features {#beta-features}
 
@@ -25,6 +25,15 @@ The sections below explicitly describe the properties of **Beta**, **Experimenta
 You can find below the features considered Beta in ClickHouse Cloud and are available for use in your ClickHouse Cloud Services.
 
 Note: please be sure to be using a current version of the ClickHouse [compatibility](/reference/settings/session-settings/compatibility#compatibility) setting to be using a recently introduced feature.
+
+## Public preview features {#public-preview-features}
+
+- Largely complete and on a clear path to general availability (GA)
+- Ready for customer feedback, but not yet beta
+- Not recommended for production use
+- Functionality may change in the future
+- Need to be deliberately enabled, and eligible customers can do this themselves in ClickHouse Cloud
+- Availability may depend on plan or region
 
 ## Experimental features {#experimental-features}
 
@@ -56,7 +65,9 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 
 | Name | Default |
 |------|--------|
+| [adaptive_codec_selection_period](/reference/settings/merge-tree-settings/other#adaptive_codec_selection_period) | `8` |
 | [compute_exact_num_defaults_for_sparse_columns](/reference/settings/merge-tree-settings/other#compute_exact_num_defaults_for_sparse_columns) | `1` |
+| [enable_adaptive_codec_selection](/reference/settings/merge-tree-settings/enable#enable_adaptive_codec_selection) | `0` |
 | [packed_skip_index_max_bytes](/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes) | `1048576` |
 | [enable_reads_from_columns_cache](/reference/settings/session-settings/enable#enable_reads_from_columns_cache) | `1` |
 | [enable_writes_to_columns_cache](/reference/settings/session-settings/enable#enable_writes_to_columns_cache) | `1` |
@@ -94,16 +105,15 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [ai_function_text_default_credentials](/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) | `` |
 | [ai_function_embedding_default_credentials](/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) | `` |
 | [ai_function_allow_insecure_endpoint](/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) | `0` |
-| [enable_alp_codec](/reference/settings/session-settings/enable#enable_alp_codec) | `0` |
 | [enable_pco_codec](/reference/settings/session-settings/enable#enable_pco_codec) | `0` |
-| [allow_experimental_kusto_dialect](/reference/settings/session-settings/allow-experimental#allow_experimental_kusto_dialect) | `0` |
+| [enable_kusto_dialect](/reference/settings/session-settings/enable#enable_kusto_dialect) | `0` |
 | [enable_trino_dialect](/reference/settings/session-settings/enable#enable_trino_dialect) | `0` |
-| [allow_delta_kernel_rs](/reference/settings/session-settings/allow#allow_delta_kernel_rs) | `1` |
 | [allow_insert_into_iceberg](/reference/settings/session-settings/allow#allow_insert_into_iceberg) | `0` |
 | [distributed_plan_partial_aggregation_before_shuffle](/reference/settings/session-settings/distributed-plan#distributed_plan_partial_aggregation_before_shuffle) | `1` |
 | [cascades_aggregation_pushdown](/reference/settings/session-settings/other#cascades_aggregation_pushdown) | `1` |
 | [query_plan_optimize_join_order_algorithm](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) | `dpsub,greedy` |
 | [query_plan_optimize_join_order_conflict_detector](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_conflict_detector) | `c` |
+| [query_plan_join_order_use_interesting_orders](/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders) | `1` |
 
 ## Experimental settings {#experimental-settings}
 
@@ -115,7 +125,6 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_remote_fs_zero_copy_replication](/reference/settings/merge-tree-settings/allow#allow_remote_fs_zero_copy_replication) | `0` |
 | [distributed_index_analysis_min_indexes_bytes_to_activate](/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_indexes_bytes_to_activate) | `1073741824` |
 | [distributed_index_analysis_min_parts_to_activate](/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_parts_to_activate) | `10` |
-| [enable_adaptive_codec_selection](/reference/settings/merge-tree-settings/enable#enable_adaptive_codec_selection) | `0` |
 | [enable_replacing_merge_with_cleanup_for_min_age_to_force_merge](/reference/settings/merge-tree-settings/enable#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge) | `0` |
 | [force_read_through_cache_for_merges](/reference/settings/merge-tree-settings/other#force_read_through_cache_for_merges) | `0` |
 | [merge_selector_algorithm](/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm) | `Simple` |
@@ -152,7 +161,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [use_query_condition_cache_for_time_conditions](/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions) | `0` |
 | [query_condition_cache_time_condition_grid_factor](/reference/settings/session-settings/other#query_condition_cache_time_condition_grid_factor) | `1` |
 | [allow_kafka_offsets_storage_in_keeper](/reference/settings/session-settings/allow#allow_kafka_offsets_storage_in_keeper) | `0` |
-| [allow_experimental_lateral_join](/reference/settings/session-settings/allow-experimental#allow_experimental_lateral_join) | `0` |
+| [enable_lateral_join](/reference/settings/session-settings/enable#enable_lateral_join) | `0` |
 | [parallel_replicas_plan_based](/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based) | `0` |
 | [parallel_replicas_allow_merge_tables](/reference/settings/session-settings/parallel-replicas#parallel_replicas_allow_merge_tables) | `0` |
 | [enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs) | `0` |
@@ -174,17 +183,16 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [wait_changes_become_visible_after_commit_mode](/reference/settings/session-settings/other#wait_changes_become_visible_after_commit_mode) | `wait_unknown` |
 | [wait_changes_become_visible_timeout_ms](/reference/settings/session-settings/other#wait_changes_become_visible_timeout_ms) | `10000` |
 | [implicit_transaction](/reference/settings/session-settings/implicit#implicit_transaction) | `0` |
-| [grace_hash_join_initial_buckets](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) | `1` |
-| [grace_hash_join_max_buckets](/reference/settings/session-settings/grace-hash#grace_hash_join_max_buckets) | `1024` |
 | [join_to_sort_minimum_perkey_rows](/reference/settings/session-settings/join-to#join_to_sort_minimum_perkey_rows) | `40` |
 | [join_to_sort_maximum_table_rows](/reference/settings/session-settings/join-to#join_to_sort_maximum_table_rows) | `10000` |
 | [allow_join_right_table_sorting](/reference/settings/session-settings/allow#allow_join_right_table_sorting) | `0` |
+| [allow_experimental_shuffle_query](/reference/settings/session-settings/allow-experimental#allow_experimental_shuffle_query) | `0` |
 | [enable_streaming_queries](/reference/settings/session-settings/enable#enable_streaming_queries) | `0` |
 | [stop_refreshable_materialized_views_on_startup](/reference/settings/session-settings/other#stop_refreshable_materialized_views_on_startup) | `0` |
-| [allow_experimental_database_materialized_postgresql](/reference/settings/session-settings/allow-experimental#allow_experimental_database_materialized_postgresql) | `0` |
-| [allow_experimental_database_hms_catalog](/reference/settings/session-settings/allow-experimental#allow_experimental_database_hms_catalog) | `0` |
-| [allow_experimental_prql_dialect](/reference/settings/session-settings/allow-experimental#allow_experimental_prql_dialect) | `0` |
-| [allow_experimental_polyglot_dialect](/reference/settings/session-settings/allow-experimental#allow_experimental_polyglot_dialect) | `0` |
+| [enable_database_materialized_postgresql](/reference/settings/session-settings/enable#enable_database_materialized_postgresql) | `0` |
+| [enable_database_hms_catalog](/reference/settings/session-settings/enable#enable_database_hms_catalog) | `0` |
+| [enable_prql_dialect](/reference/settings/session-settings/enable#enable_prql_dialect) | `0` |
+| [enable_polyglot_dialect](/reference/settings/session-settings/enable#enable_polyglot_dialect) | `0` |
 | [enable_json_ast_dialect](/reference/settings/session-settings/enable#enable_json_ast_dialect) | `0` |
 | [polyglot_dialect](/reference/settings/session-settings/other#polyglot_dialect) | `` |
 | [enable_logsql_dialect](/reference/settings/session-settings/enable#enable_logsql_dialect) | `0` |
@@ -194,13 +202,13 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [logsql_message_column](/reference/settings/session-settings/logsql#logsql_message_column) | `_msg` |
 | [enable_adaptive_memory_spill_scheduler](/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler) | `0` |
 | [allow_delta_lake_create_table](/reference/settings/session-settings/allow#allow_delta_lake_create_table) | `0` |
-| [allow_experimental_cleanup_old_data_files_compaction](/reference/settings/session-settings/allow-experimental#allow_experimental_cleanup_old_data_files_compaction) | `0` |
+| [enable_cleanup_old_data_files_compaction](/reference/settings/session-settings/enable#enable_cleanup_old_data_files_compaction) | `0` |
 | [allow_experimental_iceberg_compaction](/reference/settings/session-settings/allow-experimental#allow_experimental_iceberg_compaction) | `0` |
 | [iceberg_manifest_min_count_to_compact](/reference/settings/session-settings/iceberg#iceberg_manifest_min_count_to_compact) | `100` |
 | [allow_iceberg_remove_orphan_files](/reference/settings/session-settings/allow#allow_iceberg_remove_orphan_files) | `0` |
 | [iceberg_orphan_files_older_than_seconds](/reference/settings/session-settings/iceberg#iceberg_orphan_files_older_than_seconds) | `259200` |
 | [iceberg_orphan_files_min_retention_seconds](/reference/settings/session-settings/iceberg#iceberg_orphan_files_min_retention_seconds) | `86400` |
-| [allow_experimental_expire_snapshots](/reference/settings/session-settings/allow-experimental#allow_experimental_expire_snapshots) | `0` |
+| [allow_expire_snapshots](/reference/settings/session-settings/allow#allow_expire_snapshots) | `0` |
 | [write_full_path_in_iceberg_metadata](/reference/settings/session-settings/other#write_full_path_in_iceberg_metadata) | `0` |
 | [iceberg_metadata_compression_method](/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_compression_method) | `` |
 | [distributed_plan_execute_locally](/reference/settings/session-settings/distributed-plan#distributed_plan_execute_locally) | `0` |
@@ -214,24 +222,24 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [distributed_plan_read_in_order](/reference/settings/session-settings/distributed-plan#distributed_plan_read_in_order) | `0` |
 | [distributed_plan_join_runtime_filters](/reference/settings/session-settings/distributed-plan#distributed_plan_join_runtime_filters) | `0` |
 | [distributed_plan_max_buffered_log_rows](/reference/settings/session-settings/distributed-plan#distributed_plan_max_buffered_log_rows) | `100000` |
-| [allow_experimental_ytsaurus_table_engine](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_engine) | `0` |
-| [allow_experimental_ytsaurus_table_function](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_function) | `0` |
-| [allow_experimental_ytsaurus_dictionary_source](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_dictionary_source) | `0` |
+| [enable_ytsaurus_table_engine](/reference/settings/session-settings/enable#enable_ytsaurus_table_engine) | `0` |
+| [enable_ytsaurus_table_function](/reference/settings/session-settings/enable#enable_ytsaurus_table_function) | `0` |
+| [enable_ytsaurus_dictionary_source](/reference/settings/session-settings/enable#enable_ytsaurus_dictionary_source) | `0` |
 | [distributed_plan_force_shuffle_aggregation](/reference/settings/session-settings/distributed-plan#distributed_plan_force_shuffle_aggregation) | `0` |
 | [enable_cascades_optimizer](/reference/settings/session-settings/enable#enable_cascades_optimizer) | `0` |
 | [rewrite_in_to_join](/reference/settings/session-settings/rewrite#rewrite_in_to_join) | `0` |
-| [allow_experimental_paimon_storage_engine](/reference/settings/session-settings/allow-experimental#allow_experimental_paimon_storage_engine) | `0` |
+| [enable_paimon_storage_engine](/reference/settings/session-settings/enable#enable_paimon_storage_engine) | `0` |
 | [paimon_target_snapshot_id](/reference/settings/session-settings/other#paimon_target_snapshot_id) | `-1` |
 | [max_consume_snapshots](/reference/settings/session-settings/max#max_consume_snapshots) | `0` |
 | [use_paimon_partition_pruning](/reference/settings/session-settings/use-paimon#use_paimon_partition_pruning) | `0` |
-| [allow_experimental_object_storage_queue_hive_partitioning](/reference/settings/session-settings/allow-experimental#allow_experimental_object_storage_queue_hive_partitioning) | `0` |
-| [allow_experimental_database_paimon_rest_catalog](/reference/settings/session-settings/allow-experimental#allow_experimental_database_paimon_rest_catalog) | `0` |
+| [enable_object_storage_queue_hive_partitioning](/reference/settings/session-settings/enable#enable_object_storage_queue_hive_partitioning) | `0` |
+| [enable_database_paimon_rest_catalog](/reference/settings/session-settings/enable#enable_database_paimon_rest_catalog) | `0` |
 | [webassembly_udf_max_fuel](/reference/settings/session-settings/webassembly-udf#webassembly_udf_max_fuel) | `100000` |
 | [webassembly_udf_max_memory](/reference/settings/session-settings/webassembly-udf#webassembly_udf_max_memory) | `134217728` |
 | [webassembly_udf_max_input_block_size](/reference/settings/session-settings/webassembly-udf#webassembly_udf_max_input_block_size) | `0` |
 | [webassembly_udf_input_split_memory_ratio](/reference/settings/session-settings/webassembly-udf#webassembly_udf_input_split_memory_ratio) | `0.5` |
 | [webassembly_udf_max_instances](/reference/settings/session-settings/webassembly-udf#webassembly_udf_max_instances) | `32` |
-| [allow_experimental_eval_table_function](/reference/settings/session-settings/allow-experimental#allow_experimental_eval_table_function) | `0` |
+| [enable_eval_table_function](/reference/settings/session-settings/enable#enable_eval_table_function) | `0` |
 
 ## Private preview settings {#private-preview-settings}
 
@@ -248,5 +256,6 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [promql_database](/reference/settings/session-settings/promql#promql_database) | `` |
 | [promql_table](/reference/settings/session-settings/promql#promql_table) | `` |
 | [promql_evaluation_time](/reference/settings/session-settings/promql#promql_evaluation_time) | `auto` |
+| [promql_max_points_per_series](/reference/settings/session-settings/promql#promql_max_points_per_series) | `11000` |
 | [promql_push_down_label_matchers](/reference/settings/session-settings/promql#promql_push_down_label_matchers) | `1` |
 {/*AUTOGENERATED_END*/}
