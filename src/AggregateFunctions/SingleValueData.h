@@ -284,10 +284,11 @@ FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
 //  */
-struct SingleValueDataString final : public SingleValueDataBase
+template <bool is_fixed_string>
+struct SingleValueDataStringImpl final : public SingleValueDataBase
 {
 private:
-    using Self = SingleValueDataString;
+    using Self = SingleValueDataStringImpl;
 
     /// Size of the string plus one. Zero indicates that there is no value.
     UInt32 size = 0;
@@ -335,7 +336,16 @@ public:
     static bool allocatesMemoryInArena() { return true; }
 };
 
+using SingleValueDataString = SingleValueDataStringImpl<false>;
+/// The state format is the one of SingleValueDataGeneric: a bool flag and the N bytes.
+using SingleValueDataFixedString = SingleValueDataStringImpl<true>;
+
+extern template struct SingleValueDataStringImpl<false>;
+extern template struct SingleValueDataStringImpl<true>;
+
 static_assert(sizeof(SingleValueDataString) == SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataString struct");
+static_assert(
+    sizeof(SingleValueDataFixedString) == SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataFixedString struct");
 
 /// For any other value types.
 struct SingleValueDataGeneric final : public SingleValueDataBase
@@ -463,6 +473,8 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
         return new AggregateFunctionTemplate<SingleValueDataFixed<DataTypeDateTime::FieldType>, isMin...>(argument_types);
     if (which.idx == TypeIndex::String)
         return new AggregateFunctionTemplate<SingleValueDataString, isMin...>(argument_types);
+    if (which.idx == TypeIndex::FixedString)
+        return new AggregateFunctionTemplate<SingleValueDataFixedString, isMin...>(argument_types);
 
     if (canUseFieldForValueData(value_type))
         return new AggregateFunctionTemplate<SingleValueDataGeneric, isMin...>(argument_types);
@@ -476,6 +488,7 @@ struct SingleValueDataBaseMemoryBlock
         SingleValueDataBase::MAX_STORAGE_SIZE,
         SingleValueDataNumeric<Decimal256>, /// We check all types in generateSingleValueFromType
         SingleValueDataString,
+        SingleValueDataFixedString,
         SingleValueDataGeneric,
         SingleValueDataGenericWithColumn>
         memory;
