@@ -1050,12 +1050,9 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                 "flag != 0": "2\n",
                 "flag = 2": "0\n",
                 "flag != 2": "4\n",
-                "flag = -1": "0\n",
-                "flag != 256": "4\n",
                 "flag = 2.0": "0\n",
                 "flag != 2.0": "4\n",
                 "flag != toFloat32(2)": "4\n",
-                "flag != -1.0": "4\n",
                 "flag IN (1, 2)": "2\n",
                 "flag NOT IN (2)": "4\n",
                 "flag NOT IN (0, 2)": "2\n",
@@ -1077,12 +1074,29 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                 "flag < toFloat32(2)": "4\n",
                 "flag > -1": "4\n",
                 "flag > 0.5": "2\n",
+                "flag = -1": "0\n",
+                "flag != 256": "4\n",
+                "flag != -1.0": "4\n",
             }.items():
                 assert (
                     node.query(
                         f"SELECT count() FROM {source} WHERE {predicate}",
                         settings={"mongodb_throw_on_unsupported_query": 0},
                     )
+                    == count
+                )
+
+        # A wide integer column takes a `Bool` bound as an `Int64`, since `fieldAsBSONValue` writes no wide integer.
+        for wide_type in ("Int128", "UInt128", "Int256", "UInt256"):
+            wide_source = f"mongodb({arguments}, 'flag {bool_type}, n {wide_type}')"
+            for predicate, count in {
+                "n = true": "2\n",
+                "n != false": "3\n",
+                "n > false": "3\n",
+                "n >= true": "3\n",
+            }.items():
+                assert (
+                    node.query(f"SELECT count() FROM {wide_source} WHERE {predicate}")
                     == count
                 )
 
@@ -1093,7 +1107,7 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                 "flag = 2.0": "1\n",
                 "flag != 2.0": "4\n",
                 "flag IN (2.0)": "0\n",
-                "flag IN (1, 2.0)": "3\n",
+                "flag IN (0, 2.0)": "2\n",
                 "flag NOT IN (2.0)": "5\n",
                 "flag NOT IN (toFloat32(2))": "5\n",
                 "flag NOT IN (0, toFloat32(2))": "3\n",
@@ -1106,6 +1120,47 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
             assert actual == expected
     finally:
         node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
+@pytest.mark.parametrize("bool_type", ["Bool", "Nullable(Bool)"])
+def test_where_bool_wrapped_numbers(started_cluster, bool_type):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "bool_wrapped_numbers"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    # The reader wraps a BSON number in a `Bool` column to `UInt8`: 256 is read as 0, and -1 as 255.
+    collection.insert_many(
+        [
+            {"id": 1, "flag": 2},
+            {"id": 2, "flag": False},
+            {"id": 3, "flag": 256},
+            {"id": 4, "flag": -1},
+        ]
+    )
+
+    node = started_cluster.instances["node"]
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    source = f"mongodb({arguments}, 'id Int32, flag {bool_type}')"
+    try:
+        for query, result in {
+            "SELECT count() FROM {} WHERE flag != 256": "4\n",
+            "SELECT count() FROM {} WHERE flag != -1": "4\n",
+            "SELECT count() FROM {} WHERE flag = 256": "0\n",
+            # The limit is pushed with the filter, so the filter must not return a row that the `WHERE` drops.
+            "SELECT id FROM {} WHERE flag IN (0, 2.0) ORDER BY id LIMIT 1": "2\n",
+        }.items():
+            assert (
+                node.query(
+                    query.format(source),
+                    settings={"mongodb_throw_on_unsupported_query": 0},
+                )
+                == result
+            )
+    finally:
         collection.drop()
 
 

@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/FunctionSecretArgumentsFinder.h>
@@ -46,7 +47,6 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <algorithm>
-#include <cmath>
 #include <memory>
 
 using bsoncxx::builder::basic::document;
@@ -443,14 +443,17 @@ static bool isOutsideBoolDomain(const Field & value, const DataTypePtr & type)
     return isBool(removeNullable(type)) && value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() > 1;
 }
 
-static bool isWholeNumber(const Field & value, const DataTypePtr & type)
+/// The reader converts a BSON number in a `Bool` column to `UInt8` (`BSONElementAsNumber`), so it wraps one outside `[0, 255]`:
+/// BSON 256 is read as 0. A bound is kept in its own BSON type only if this conversion keeps it.
+static bool isKeptByBoolReader(const Field & value, const DataTypePtr & type)
 {
-    if (isInteger(removeNullable(type)))
-        return true;
-    if (value.getType() != Field::Types::Float64)
-        return false;
-    const auto number = value.safeGet<Float64>();
-    return std::isfinite(number) && number == std::trunc(number);
+    return !tryConvertFieldToTypeExact(value, DataTypeUInt8(), type.get()).isNull();
+}
+
+static bool isWideInteger(const DataTypePtr & type)
+{
+    WhichDataType which(removeNullable(type));
+    return which.isInteger() && !which.isNativeInteger();
 }
 
 static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const JoinNode * join_node, const StorageID & storage_id)
@@ -574,13 +577,12 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
                 return {};
             }
             /// A member such as `2.0` converts here to the `UInt8` 2, but the set of `IN` drops it, so it matches no row,
-            /// not even a BSON number 2 that the reader keeps as it is in a `Bool` column. `$in` keeps its own encoding,
-            /// which only returns more rows, but `$nin` must not exclude such a document.
-            const bool outside_bool_domain = isOutsideBoolDomain(converted, column_type);
-            if (isBoolNumberComparison(element_type, column_type) && (func_name == "$in" || !outside_bool_domain))
-                other_encodings.emplace_back(elements[i], element_type);
-            if (outside_bool_domain)
+            /// not even a BSON number 2 that the reader keeps as it is in a `Bool` column. No encoding of it is written:
+            /// `$nin` must not exclude such a document, and `$in` must not return it, since the limit is pushed too.
+            if (isOutsideBoolDomain(converted, column_type))
                 continue;
+            if (isBoolNumberComparison(element_type, column_type))
+                other_encodings.emplace_back(elements[i], element_type);
             converted_elements.push_back(std::move(converted));
         }
 
@@ -593,15 +595,21 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     /// But implicit conversion between numbers works well and doesn't affect the result of WHERE clause.
     if ((!const_type->equals(*column_type) || boolDiffers(const_type, column_type)) && (!is_const_number || !is_column_number))
     {
+        /// `fieldAsBSONValue` writes no wide integer, but a `Bool` bound converts to 0 or 1, which is written as an `Int64`.
+        DataTypePtr bound_type = column_type;
+        if (isBool(removeNullable(const_type)) && isWideInteger(column_type))
+            bound_type = std::make_shared<DataTypeInt64>();
+
         /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
-        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, conversionHint(const_type, column_type));
-        if (isOutsideBoolDomain(converted_value, column_type))
+        auto converted_value = tryConvertFieldToTypeExact(const_value, *bound_type, conversionHint(const_type, bound_type));
+        if (isOutsideBoolDomain(converted_value, bound_type))
             converted_value = Field();
 
         /// No BSON bool equals a whole number that has no `Bool` value, but a BSON number stored in a `Bool` column is
-        /// read as it is. `=` and `!=` then keep the number in its own BSON type, as for a numeric column.
-        const bool keep_own_encoding = converted_value.isNull() && isBoolNumberComparison(const_type, column_type)
-            && isWholeNumber(const_value, const_type) && (func_name == "$eq" || func_name == "$ne");
+        /// read as its `UInt8`. `=` and `!=` then keep a number the `UInt8` holds in its own BSON type, as for a numeric
+        /// column. Another number is refused: `$ne` would drop the rows the reader wraps to other values.
+        const bool keep_own_encoding = converted_value.isNull() && isBoolNumberComparison(const_type, bound_type)
+            && (func_name == "$eq" || func_name == "$ne") && isKeptByBoolReader(const_value, const_type);
 
         if (converted_value.isNull() && !keep_own_encoding)
         {
@@ -612,9 +620,9 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
         if (!keep_own_encoding)
         {
-            if (isBoolNumberComparison(const_type, column_type))
+            if (isBoolNumberComparison(const_type, bound_type))
                 other_encodings.emplace_back(const_value, const_type);
-            const_type = column_type;
+            const_type = bound_type;
             const_value = std::move(converted_value);
         }
     }
