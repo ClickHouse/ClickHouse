@@ -6149,15 +6149,19 @@ def test_standalone_step_range_range():
     )
 
 
-def test_standalone_start_end_instant():
-    # Prometheus 3.7.3 does not support these functions, so compare with constant equivalents.
+# The embedded Prometheus 3.7.3 does not support these functions.
+@pytest.mark.parametrize("function_name", ["start", "end"])
+def test_standalone_start_end_instant(function_name):
     do_query_test(
-        "start()",
+        f"{function_name}()",
         1000.125,
         '{"resultType": "scalar", "result": [1000.125, "1000.125"]}',
         [["1970-01-01 00:16:40.125", 1000.125]],
         prometheus_query="1000.125",
     )
+
+
+def test_standalone_start_end_instant_expressions():
     do_query_test(
         "end() - start()",
         1750000000.125,
@@ -6190,6 +6194,55 @@ def test_standalone_start_end_instant():
     )
     assert data["resultType"] == "scalar"
     assert float(data["result"][1]) == 0
+
+
+@pytest.mark.parametrize(
+    "function_name, expected_value",
+    [("start", "1000.125"), ("end", "1002.375")],
+)
+def test_standalone_start_end_range_boundaries(function_name, expected_value):
+    # Test both boundary values directly, including the end between evaluation steps.
+    timestamps = [1000.125, 1000.625, 1001.125, 1001.625, 1002.125]
+    sql_timestamps = [
+        "1970-01-01 00:16:40.125",
+        "1970-01-01 00:16:40.625",
+        "1970-01-01 00:16:41.125",
+        "1970-01-01 00:16:41.625",
+        "1970-01-01 00:16:42.125",
+    ]
+    expected_http = json.dumps(
+        {
+            "resultType": "matrix",
+            "result": [
+                {
+                    "metric": {},
+                    "values": [[timestamp, expected_value] for timestamp in timestamps],
+                }
+            ],
+        }
+    )
+    expected_sql = (
+        "["
+        + ",".join(
+            f"('{timestamp}',{expected_value})" for timestamp in sql_timestamps
+        )
+        + "]"
+    )
+    do_range_query_test(
+        f"vector({function_name}())",
+        1000.125,
+        1002.375,
+        0.5,
+        expected_http,
+        [["[]", expected_sql]],
+        prometheus_query=f"vector({expected_value})",
+    )
+
+
+@pytest.mark.parametrize("query", ["start(1)", "end(1)", "start(1, 2)", "end(1, 2)"])
+def test_standalone_start_end_reject_arguments(query):
+    assert execute_query_in_clickhouse_sql(query, 1000.125, expect_error=True)
+    assert execute_query_in_clickhouse_http_api(query, 1000.125, expect_error=True)
 
 
 def test_standalone_start_end_range():
