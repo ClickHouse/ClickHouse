@@ -145,14 +145,19 @@ Returns a pretty-printed version of a JSON string with newlines and indentation 
             "Simple object",
             R"(SELECT prettyPrintJSON('{"a":1,"b":"hello"}');)",
             R"(
-{\n    "a": 1,\n    "b": "hello"\n}
+{
+    "a": 1,
+    "b": "hello"
+}
             )"
         },
         {
             "Custom indent",
             R"(SELECT prettyPrintJSON('{"a":1}', 8);)",
             R"(
-{\n        "a": 1\n}
+{
+        "a": 1
+}
             )"
         }
     };

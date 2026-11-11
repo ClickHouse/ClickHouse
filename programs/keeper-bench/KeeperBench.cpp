@@ -1,11 +1,7 @@
-#include <csignal>
-
 #include <iostream>
 #include <boost/program_options.hpp>
-#include <GeneratedRunner.h>
-#include <LogRunner.h>
+#include <Runner.h>
 #include <StorageRunner.h>
-#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
@@ -13,11 +9,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include <boost/program_options/variables_map.hpp>
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_BLOCK_SIGNAL;
-}
 
 namespace
 {
@@ -52,26 +43,13 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
 
     try
     {
-        /// Block SIGINT in the main thread before any other threads are created,
-        /// so that every thread inherits the blocked mask. Otherwise a SIGINT
-        /// delivered to a thread that doesn't block it (e.g. a global thread pool
-        /// thread) terminates the process immediately. The runners poll the
-        /// pending signal with `InterruptListener` and shut down gracefully.
-        sigset_t sig_set;
-        if (sigemptyset(&sig_set)
-            || sigaddset(&sig_set, SIGINT)
-            || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-        {
-            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
-        }
-
         using boost::program_options::value;
 
         boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                                         "produce help message")
             ("config",            value<std::string>()->default_value(""),                      "yaml/xml file containing configuration")
-            ("input-request-log", value<std::string>()->default_value(""),                      "log of requests that will be replayed (enables replay mode, overriding the config's `generator` section)")
+            ("input-request-log", value<std::string>()->default_value(""),                      "log of requests that will be replayed")
             ("setup-nodes-snapshot-path", value<std::string>()->default_value(""),                      "directory containing snapshots with starting state")
             ("concurrency,c",     value<unsigned>(),                                            "number of parallel queries")
             ("report-delay,d",    value<double>(),                                              "delay between intermediate reports in seconds (set 0 to disable reports)")
@@ -115,34 +93,15 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
             return 0;
         }
 
-        if (const auto input_request_log = options["input-request-log"].as<std::string>(); !input_request_log.empty())
-        {
-            LogRunner runner(valueToOptional<unsigned>(options["concurrency"]),
-                             options["config"].as<std::string>(),
-                             input_request_log,
-                             options["setup-nodes-snapshot-path"].as<std::string>(),
-                             options["hosts"].as<Strings>(),
-                             valueToOptional<double>(options["report-delay"]));
-
-            try
-            {
-                runner.runBenchmark();
-            }
-            catch (...)
-            {
-                std::cout << "Got exception while trying to run benchmark: " << DB::getCurrentExceptionMessage(true) << std::endl;
-            }
-
-            return 0;
-        }
-
-        GeneratedRunner runner(valueToOptional<unsigned>(options["concurrency"]),
-                               options["config"].as<std::string>(),
-                               options["hosts"].as<Strings>(),
-                               valueToOptional<double>(options["time-limit"]),
-                               valueToOptional<double>(options["report-delay"]),
-                               options.contains("continue_on_errors") ? std::optional<bool>(true) : std::nullopt,
-                               valueToOptional<size_t>(options["iterations"]));
+        Runner runner(valueToOptional<unsigned>(options["concurrency"]),
+                      options["config"].as<std::string>(),
+                      options["input-request-log"].as<std::string>(),
+                      options["setup-nodes-snapshot-path"].as<std::string>(),
+                      options["hosts"].as<Strings>(),
+                      valueToOptional<double>(options["time-limit"]),
+                      valueToOptional<double>(options["report-delay"]),
+                      options.contains("continue_on_errors") ? std::optional<bool>(true) : std::nullopt,
+                      valueToOptional<size_t>(options["iterations"]));
 
         try
         {
