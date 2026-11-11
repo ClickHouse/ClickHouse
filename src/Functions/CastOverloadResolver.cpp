@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeFactory.h>
