@@ -4564,6 +4564,70 @@ ChainedBuffers bytesAt(size_t offset, const String & data)
 
 }
 
+TEST_F(FileCacheTest, TemporarySegmentRemovedAtLastReleaseUnlessUsed)
+{
+    /// A segment created as temporary leaves the cache at its last release, unless a reader or writer
+    /// outside the temporary-cache mode used it.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+    FileCacheSettings settings;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::boundary_alignment] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    auto cache = std::make_shared<FileCache>("temporary_segments", settings);
+    cache->initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    CreateFileSegmentSettings temporary;
+    temporary.temporary = true;
+    String data(1_KiB, 'x');
+    /// Fills the whole segment; a temporary-mode writer passes `keep_temporary`.
+    auto fill = [&](const FileCacheKey & key, bool keep_temporary)
+    {
+        auto holder = cache->getOrSet(key, 0, data.size(), data.size(), temporary, 0, user);
+        auto & segment = holder->front();
+        EXPECT_EQ(segment.getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        EXPECT_TRUE(segment.reserve(data.size(), 1000, failure_reason));
+        fs::create_directories(cache->getKeyPath(key, user));
+        segment.write(data.data(), data.size(), 0, keep_temporary);
+        return holder;
+    };
+    auto cached = [&](const FileCacheKey & key) { return !cache->tryGetFileSegmentInfos(key, user.user_id).empty(); };
+
+    const auto unused = FileCacheKey::fromPath("temporary_unused");
+    {
+        auto holder = fill(unused, /*keep_temporary=*/true);
+    }
+    EXPECT_FALSE(cached(unused));
+
+    const auto written = FileCacheKey::fromPath("temporary_written_by_normal_writer");
+    {
+        auto holder = fill(written, /*keep_temporary=*/false);
+    }
+    EXPECT_TRUE(cached(written));
+
+    const auto read = FileCacheKey::fromPath("temporary_read_by_normal_reader");
+    {
+        auto holder = fill(read, /*keep_temporary=*/true);
+        holder->front().increasePriority();
+    }
+    EXPECT_TRUE(cached(read));
+
+    /// Another holder delays the removal until its own release.
+    const auto held = FileCacheKey::fromPath("temporary_held_by_other");
+    {
+        auto holder = fill(held, /*keep_temporary=*/true);
+        auto other = cache->getOrSet(held, 0, data.size(), data.size(), CreateFileSegmentSettings{}, 0, user);
+        holder.reset();
+        EXPECT_TRUE(cached(held));
+    }
+    EXPECT_FALSE(cached(held));
+}
+
 TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
 {
     /// In the temporary-cache mode a segment that the reader filled from its start leaves the cache once the
