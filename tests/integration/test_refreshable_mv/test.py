@@ -4,7 +4,7 @@ from random import randint
 import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -866,16 +866,6 @@ def test_attach_while_keeper_is_unreachable(started_cluster, cleanup):
         cluster.start_zookeeper_nodes(zk_nodes)
         cluster.wait_zookeeper_nodes_to_start(zk_nodes)
 
-    def retry_until_success(query, **kwargs):
-        deadline = time.time() + 120
-        while True:
-            try:
-                return node1.query(query, **kwargs)
-            except QueryRuntimeException:
-                if time.time() > deadline:
-                    raise
-                time.sleep(1)
-
     # A refresh fails while its target table is still initializing.
     assert_eq_with_retry(
         node1,
@@ -884,13 +874,22 @@ def test_attach_while_keeper_is_unreachable(started_cluster, cleanup):
         retry_count=240,
     )
     for i in [1, 2]:
-        retry_until_success(f"system refresh view re.mv{i}")
+        exec_query_with_retry(
+            node1, f"system refresh view re.mv{i}", retry_count=120, sleep_time=1
+        )
         node1.query(f"system wait view re.mv{i}")
     assert node1.query("select count() from re.t1") == "20\n"
     assert int(node1.query("select count() from re.t2")) >= 20
 
-    retry_until_success("system sync database replica re")
+    exec_query_with_retry(
+        node1, "system sync database replica re", retry_count=120, sleep_time=1
+    )
     node1.query(
         "create table re.after_keeper (x UInt64) engine ReplicatedMergeTree order by x",
         settings={"database_replicated_initial_query_timeout_sec": 60},
     )
+
+    zk = cluster.get_kazoo_client("zoo1")
+    assert zk.exists(f"{path}/replicas/1")
+    zk.stop()
+    zk.close()
