@@ -18,7 +18,7 @@ doc_type: 'guide'
 <div class="transparent-table">
   |                                                                                                 |                                                                                                                                                                                                                                                               |
   | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <span className="ch-image-sm">![شعار إزالة التكرار](/images/guides/developer/de_duplication.webp)</span> | يوفّر ClickHouse تدريبًا مجانيًا حول إزالة التكرار والعديد من الموضوعات الأخرى. وتُعد [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) نقطة انطلاق جيدة. |
+  | <span className="ch-image-sm">![شعار إزالة التكرار](/images/guides/developer/de_duplication.webp)</span> | يوفّر ClickHouse تدريبًا مجانيًا حول إزالة التكرار والعديد من الموضوعات الأخرى. وتُعد [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse) نقطة انطلاق جيدة. |
 </div>
 
 <div id="options-for-deduplication">
@@ -31,7 +31,7 @@ doc_type: 'guide'
 
 2. طيّ الصفوف: يستخدم محركا الجدول `CollapsingMergeTree` و`VersionedCollapsingMergeTree` منطقًا يُلغى فيه صف موجود ويُدرج صف جديد. وهما أكثر تعقيدًا في التنفيذ من `ReplacingMergeTree`، لكن يمكن أن تكون الاستعلامات وعمليات التجميع أبسط في الكتابة دون الحاجة إلى القلق بشأن ما إذا كانت البيانات قد دُمجت بالفعل أم لا. ويكون محركا الجدول هذان مفيدين عندما تحتاج إلى تحديث البيانات بشكل متكرر.
 
-نستعرض كلتا هاتين الطريقتين أدناه. ولمزيد من التفاصيل، اطّلع على [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) المجانية والمتاحة عند الطلب.
+نستعرض كلتا هاتين الطريقتين أدناه. ولمزيد من التفاصيل، اطّلع على [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse) المجانية والمتاحة عند الطلب.
 
 <div id="using-replacingmergetree-for-upserts">
   ## استخدام ReplacingMergeTree لعمليات upsert
@@ -162,7 +162,7 @@ GROUP BY (id, author, comment)
 
 قد يكون التجميع كما هو موضح في الاستعلام أعلاه أكثر كفاءة بالفعل (من حيث أداء الاستعلام) من استخدام الكلمة المفتاحية `FINAL`.
 
-تتوسع [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) في شرح هذا المثال، بما في ذلك كيفية استخدام عمود `version` مع `ReplacingMergeTree`.
+تتوسع [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse) في شرح هذا المثال، بما في ذلك كيفية استخدام عمود `version` مع `ReplacingMergeTree`.
 
 <div id="using-collapsingmergetree-for-updating-columns-frequently">
   ## استخدام CollapsingMergeTree لتحديث الأعمدة بشكل متكرر
