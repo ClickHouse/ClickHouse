@@ -79,7 +79,7 @@ clickhouse-client -q "INSERT INTO sometable FORMAT CSVWithNames" < data_small_he
   ### ملفات CSV ذات محددات مخصصة
 </div>
 
-إذا كان ملف CSV يستخدم محددًا غير الفاصلة، فيمكننا استخدام الخيار [format&#95;csv&#95;delimiter](/ar/reference/settings/formats#format_csv_delimiter) لتحديد الرمز المناسب:
+إذا كان ملف CSV يستخدم محددًا غير الفاصلة، فيمكننا استخدام الخيار [format&#95;csv&#95;delimiter](/ar/reference/settings/formats/format-csv#format_csv_delimiter) لتحديد الرمز المناسب:
 
 ```sql
 SET format_csv_delimiter = ';'
@@ -91,7 +91,7 @@ SET format_csv_delimiter = ';'
   ### تخطي الأسطر في ملف CSV
 </div>
 
-أحيانًا، قد نحتاج إلى تخطي عدد معيّن من الأسطر أثناء استيراد البيانات من ملف CSV. ويمكن إجراء ذلك باستخدام الخيار [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/ar/reference/settings/formats#input_format_csv_skip_first_lines):
+أحيانًا، قد نحتاج إلى تخطي عدد معيّن من الأسطر أثناء استيراد البيانات من ملف CSV. ويمكن إجراء ذلك باستخدام الخيار [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/ar/reference/settings/formats/input-format#input_format_csv_skip_first_lines):
 
 ```sql
 SET input_format_csv_skip_first_lines = 10
@@ -119,7 +119,7 @@ SELECT count(*) FROM file('data-small.csv', CSV)
   ### التعامل مع قيم NULL في ملفات CSV
 </div>
 
-يمكن تمثيل قيم NULL بطرق مختلفة بحسب التطبيق الذي أنشأ الملف. وبشكل افتراضي، يستخدم ClickHouse القيمة `\N` لتمثيل NULL في CSV. لكن يمكننا تغيير ذلك باستخدام الخيار [format&#95;csv&#95;null&#95;representation](/ar/reference/settings/formats#format_tsv_null_representation).
+يمكن تمثيل قيم NULL بطرق مختلفة بحسب التطبيق الذي أنشأ الملف. وبشكل افتراضي، يستخدم ClickHouse القيمة `\N` لتمثيل NULL في CSV. لكن يمكننا تغيير ذلك باستخدام الخيار [format&#95;csv&#95;null&#95;representation](/ar/reference/settings/formats/format-csv#format_csv_null_representation).
 
 لنفترض أن لدينا ملف CSV التالي:
 
@@ -174,7 +174,7 @@ SELECT * FROM file('nulls.csv')
 clickhouse-client -q "INSERT INTO sometable FORMAT TabSeparated" < data_small.tsv
 ```
 
-هناك أيضًا صيغة [TabSeparatedWithNames](/ar/reference/formats/TabSeparated/TabSeparatedWithNames) تتيح العمل مع ملفات TSV التي تحتوي على صف عناوين. وكما في CSV، يمكننا تخطي أول X أسطر باستخدام الخيار [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/ar/reference/settings/formats#input_format_tsv_skip_first_lines).
+هناك أيضًا صيغة [TabSeparatedWithNames](/ar/reference/formats/TabSeparated/TabSeparatedWithNames) تتيح العمل مع ملفات TSV التي تحتوي على صف عناوين. وكما في CSV، يمكننا تخطي أول X أسطر باستخدام الخيار [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/ar/reference/settings/formats/input-format#input_format_tsv_skip_first_lines).
 
 <div id="raw-tsv">
   ### TSV الخام
@@ -244,7 +244,7 @@ FORMAT CSVWithNames
   ### تصدير CSV باستخدام محددات مخصّصة
 </div>
 
-إذا أردنا استخدام محددات غير الفاصلة، فيمكننا استخدام خيار الإعداد [format&#95;csv&#95;delimiter](/ar/reference/settings/formats#format_csv_delimiter) لهذا الغرض:
+إذا أردنا استخدام محددات غير الفاصلة، فيمكننا استخدام خيار الإعداد [format&#95;csv&#95;delimiter](/ar/reference/settings/formats/format-csv#format_csv_delimiter) لهذا الغرض:
 
 ```sql
 SET format_csv_delimiter = '|'
@@ -271,7 +271,7 @@ FORMAT CSV
   ### تصدير CSV لنظام Windows
 </div>
 
-إذا أردنا أن يعمل ملف CSV بشكل جيد في بيئة Windows، فينبغي مراعاة تفعيل خيار [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/ar/reference/settings/formats#output_format_csv_crlf_end_of_line). سيؤدي ذلك إلى استخدام `\r\n` كفواصل أسطر بدلًا من `\n`:
+إذا أردنا أن يعمل ملف CSV بشكل جيد في بيئة Windows، فينبغي مراعاة تفعيل خيار [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/ar/reference/settings/formats/output-format#output_format_csv_crlf_end_of_line). سيؤدي ذلك إلى استخدام `\r\n` كفواصل أسطر بدلًا من `\n`:
 
 ```sql
 SET output_format_csv_crlf_end_of_line = 1;

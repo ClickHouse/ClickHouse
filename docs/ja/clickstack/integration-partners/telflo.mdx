@@ -1,0 +1,173 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/telflo
+title: 'Telflo を使って OpenTelemetry を ClickStack に送信する'
+sidebarTitle: 'Telflo'
+description: 'テレメトリーを ClickStack に送信する、あるいは ClickHouse へ直接書き込む OpenTelemetry Collector の設定を構築・展開し、collector フリート を Telflo で管理します'
+doc_type: 'guide'
+keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **要点**
+
+  このガイドでは、Telflo が管理する OpenTelemetry Collector から ClickStack へテレメトリーを送信する方法を説明します。本ガイドで学べる内容は次のとおりです。
+
+  * Telflo のビジュアルエディターまたは CLI を使用して collector 設定 を作成する
+  * テレメトリーをオープンソース版または Managed ClickStack へ送信する、あるいは ClickHouse へ直接書き込む
+  * collector のフリートに 設定 をリモートでデプロイする
+  * テレメトリーが ClickStack または ClickHouse のテーブルに到達していることを確認する
+
+  所要時間: 15〜20 分
+</Info>
+
+{/* vale off */}
+
+## Telfloとは？ {#what-is-telflo}
+
+{/* vale on */}
+
+Telfloは、OpenTelemetry Collector向けのベンダー中立なcontrol planeであり、フリート全体にわたるcollector 設定を一元管理できます。ビジュアルエディター、pipelineテスト、設定のリモートデプロイにより、大規模なフリートでも無理なく運用できます。Telfloが管理するのは標準のアップストリームOpenTelemetry collectorのbuildであり、Telflo専用のdistributionや独自のエージェントは存在しません。そのため、チームがすでに運用しているcollectorは同じbuildのまま使い続けられます。
+
+Telfloは[コマンドラインインターフェイス](https://docs.telflo.com/docs/cli/)を通じて、ブラウザー外からも利用できます。これを[ClickStack MCPサーバー](/ja/clickstack/mcp)と組み合わせれば、テレメトリーを問い合わせるエージェントが、そのテレメトリーを生成したpipelineの修正まで行えるようになります。
+
+{/* vale off */}
+
+## なぜ Telflo + ClickStack なのか？ {#why-telflo-clickstack}
+
+{/* vale on */}
+
+ClickStack は、大量のデータのインジェスト、保存、分析クエリを処理します。Telflo は、ClickStack にデータを供給する OpenTelemetry Collector のフリートを、ホスト、クラスター、リージョンを横断して一元的に運用します。
+
+Telflo が提供する機能:
+
+* ホスト、コンテナー、Kubernetes を横断した OpenTelemetry Collector の一元管理
+* 視覚的なパイプライン編集と、フリート全体または単一グループへの制御されたロールアウト
+* 本番環境の collector に反映される前に、サンプルテレメトリーで変更内容を検証
+* 同一のテレメトリーを ClickStack と他の宛先へ同時にルーティング
+* フリートの可視性: どの collector がオンラインか、各 collector が何を実行しているか、どれが設定のずれを起こしているか
+
+<Tip>
+  **重要なポイント**
+
+  * **ClickStack は大規模なインジェスト、保存、クエリを担う**
+  * **Telflo は ClickStack にデータを供給する collector フリートを運用する**
+</Tip>
+
+## 前提条件 {#prerequisites}
+
+* 宛先: [オープンソース版 ClickStack](/ja/clickstack/getting-started/oss)、[Managed ClickStack](/ja/clickstack/getting-started/managed)、またはセルフマネージドの ClickHouse インスタンス
+* Telflo アカウント ([telflo.com でアカウントを作成](https://telflo.com))
+* collector を実行する環境: VM または Kubernetes cluster
+* **オープンソース版 ClickStack**: ClickStack の OTLP endpoint (HTTP は `4318`、gRPC は `4317`) と、HyperDX の **Team Settings → API Keys** で確認できるインジェスト API key ([詳細はこちらのドキュメントを参照](/ja/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+* **Managed ClickStack**: ClickHouse Cloud の service endpoint (ポート `8443`) とインジェスト用ユーザー ([インジェスト用ユーザーの作成](/ja/clickstack/ingesting-data/collector#creating-an-ingestion-user) を参照)
+* **Self-managed ClickHouse**: ClickHouse の endpoint、[ClickStack のテーブル](/ja/clickstack/ingesting-data/schemas) 用の database、およびそれらを作成・書き込みできるユーザー ([インジェスト用ユーザーの作成](/ja/clickstack/ingesting-data/collector#creating-an-ingestion-user-oss) を参照)
+* collector から ClickStack または ClickHouse の endpoint への到達性 (ネットワーク接続)
+
+{/* vale off */}
+
+## ClickStack を Telflo と統合する {#integrate-telflo-clickstack}
+
+{/* vale on */}
+
+<Steps>
+  <Step title="collector configuration を作成する" id="build-configuration">
+    1. Telflo にサインインします。**Configurations** 一覧で **New Configuration** をクリックし、続いて **Blank configuration** をクリックします。
+    2. **Name Your Configuration** で名前を入力し、**Create** をクリックします。
+    3. receiver を追加します。収集するテレメトリーの種類ごとに、パレットからキャンバスへ 1 つずつドラッグします。
+    4. プロセッサを追加します。**Memory Limiter** と **Batch** に加え、collector から送出される前にデータを整形するために必要なプロセッサを追加します。[Telflo がサポートするプロセッサの一覧](https://docs.telflo.com/docs/build/components#processors)を参照してください。
+  </Step>
+
+  <Step title="エクスポーターを追加する" id="add-exporter">
+    3つのパスはいずれも同じエディター、同じパブリッシュ手順、同じフリートを使用し、異なるのはエクスポーターだけです。ご利用のデプロイ形態に応じたタブを選択してください。Open Source ClickStack ではインジェストキーを用いた OTLP を使用し、Managed ClickStack とセルフマネージドの ClickHouse では ClickStack のテーブルへ直接書き込みます。
+
+    <Tabs>
+      <Tab title="Open Source ClickStack">
+        1. **OTLP/HTTP** エクスポーターをキャンバスにドラッグします。
+        2. **Endpoint** に ClickStack の OTLP HTTP endpoint (例: `http://clickstack.example.com:4318`) を指定します。
+        3. **HTTP Headers** で **Add header** をクリックし、**Header name** に `authorization`、**Header value** に `${env:CLICKSTACK_INGESTION_KEY}` を入力します。この値は collector のインストール時に Telflo から入力を求められるため、キーが configuration に保存されることはありません。
+
+        gRPC の場合は、ポート `4317` で **OTLP** エクスポーターを使用し、同じ header を **gRPC Metadata Headers** に設定します。
+      </Tab>
+
+      <Tab title="Managed ClickStack">
+        Managed ClickStack にはゲートウェイ collector が含まれていないため、テレメトリーの送信先となるホスト型の OTLP endpoint はありません。ここで configure する collector がその[ゲートウェイ](/ja/clickstack/ingesting-data/collector#collector-roles)になります。ClickHouse exporter とあわせて **OTLP** receiver を設定すれば、ClickHouse Cloud サービスへ書き込まれます。SDKS や agent collector は、`4318` (HTTP) または `4317` (gRPC) でこの collector に OTLP を送信します。
+
+        1. **ClickHouse** エクスポーターをキャンバスにドラッグします。
+        2. **Endpoint** に ClickHouse Cloud サービスの endpoint (ポート `8443`) を入力し、**Database** に `default`、**Username** にインジェスト用ユーザーを設定します。
+        3. **Password** に `${env:CLICKHOUSE_PASSWORD}` を設定します。この値は collector のインストール時に Telflo から入力を求められるため、認証情報が configuration に保存されることはありません。
+        4. **Schema &amp; Tables** では、[ClickStack のテーブル](/ja/clickstack/ingesting-data/schemas)がまだ存在しない場合、**Create Schema on Startup** を有効のままにしておくと、エクスポーターがテーブルを作成します。作成済みになったら無効にしてください。
+
+        **Batch** はエクスポーターの上流に配置したままにしてください。ClickHouse はバッチ化された insert で最も高い性能を発揮します。すでに [ClickStack collector](/ja/clickstack/ingesting-data/collector#configuring-the-collector) を OTLP ゲートウェイとして運用している場合は、代わりに Open Source ClickStack の手順に従い、その collector に設定した [`OTLP_AUTH_TOKEN`](/ja/clickstack/ingesting-data/collector#securing-the-collector) を header の値として使用することもできます。
+      </Tab>
+
+      <Tab title="Self-managed ClickHouse">
+        ここで configure する collector が[ゲートウェイ](/ja/clickstack/ingesting-data/collector#collector-roles)として機能します。ClickHouse exporter とあわせて **OTLP** receiver を設定してください。SDKS や agent collector がこの collector に OTLP を送信し、collector が ClickHouse に書き込みます。
+
+        1. **ClickHouse** エクスポーターをキャンバスにドラッグします。
+        2. **Endpoint** (例: `https://clickhouse.example.com:8443`) 、**Database**、**Username** を入力します。**Database** には ClickStack のテーブルが存在するデータベースを指定します。
+        3. **Password** に `${env:CLICKHOUSE_PASSWORD}` を設定します。この値は collector のインストール時に Telflo から入力を求められるため、認証情報が configuration に保存されることはありません。
+        4. **Schema &amp; Tables** では、ClickStack のテーブルがまだ存在しない場合、**Create Schema on Startup** を有効のままにしておくと、エクスポーターがテーブルを作成します。作成済みになったら無効にしてください。
+
+        **Batch** はエクスポーターの上流に配置したままにしてください。ClickHouse はバッチ化された insert で最も高い性能を発揮します。すでに [ClickStack collector](/ja/clickstack/ingesting-data/collector#configuring-the-collector) を OTLP ゲートウェイとして運用している場合は、代わりに Open Source ClickStack の手順に従い、その collector に設定した [`OTLP_AUTH_TOKEN`](/ja/clickstack/ingesting-data/collector#securing-the-collector) を header の値として使用することもできます。
+      </Tab>
+    </Tabs>
+
+    receiver からプロセッサを経由してエクスポーターへとエッジを描画し、シグナルごとに 1 つのパイプラインを構成します。status 行には **config valid** か、修正が必要なエラーの件数が表示され、**YAML** タブでは生成された設定を確認できます。
+
+    <Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="ClickHouse exporter が設定された Telflo エディターの collector パイプライン" size="lg" />
+
+    実際に展開する前に、サンプルのテレメトリーを構成に流して、出力結果を確認できます。[Telflo でのテスト](https://docs.telflo.com/docs/testing/overview)を参照してください。また、実現したい内容を説明するだけで、ツールバーの **AI** ボタンから開く Telflo AI アシスタントが構成の作成、検証、テストを代行します。独自のエージェントからも [Telflo CLI](https://docs.telflo.com/docs/cli/) を使って同じことが行えます。
+  </Step>
+
+  <Step title="バージョンをパブリッシュする" id="publish-version">
+    ツールバーの **Publish** をクリックします。パブリッシュされたバージョンは読み取り専用です。引き続き編集する場合は、**Create New Version** をクリックします。
+  </Step>
+
+  <Step title="フリートを作成してデプロイする" id="deploy-collectors">
+    1. **Fleet** に移動し、**New Fleet** をクリックして、collector を実行する場所 (VM または Kubernetes) を選択します。**Name** を入力し、**Create fleet** をクリックします。
+    2. フリートの **Deploy Groups** タブで、**Default** グループの **Assign** をクリックし、パブリッシュ済みの configuration と version を選択します。
+    3. グループの **Install** をクリックし、configuration が参照する各 environment variable の値を入力します。Telflo がそれらをインストールコマンドに追加します。[Telflo のインストール手順](https://docs.telflo.com/docs/fleet-management/install-collectors)に従って、collector を実行させたい場所でそのコマンドを実行します。このコマンドには入力した値とともにフリートのインストール token が含まれるため、機密情報として扱ってください。
+    4. **Collectors** タブでは、collector の状態が **Pending pickup**、**Applying**、**In sync** の順に報告されます。
+
+    変更を rollout するには、新しい version をパブリッシュしてグループに割り当てます。ロールバックする場合は、以前にデプロイした version を割り当てます。
+
+    <Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="ロールアウト後、すべての collector が同期された Telflo フリート" size="lg" />
+  </Step>
+
+  <Step title="テレメトリーを確認する" id="verify-telemetry">
+    HyperDX を開き、**Search** ビューでいずれかのサービスを検索します。メトリクスの場合は **Chart Explorer** を使用します。Managed ClickStack では、ClickHouse Cloud console でサービスを開き、**Launch ClickStack** をクリックします。セルフマネージドの ClickHouse では、[ClickStack のテーブル](/ja/clickstack/ingesting-data/schemas)を直接クエリします。例: `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`
+  </Step>
+</Steps>
+
+## 高度な設定 {#advanced-configuration}
+
+### ファンアウトルーティング {#fan-out-routing}
+
+同一のテレメトリーを、長期保存用の ClickStack、移行期間中の別プラットフォーム、セキュリティ分析用の SIEM へ同時に送信できます。キャンバス上にエクスポーターを追加し、データを流し込むパイプラインに接続してください。あるいは、[Telflo のフローライブラリ](https://telflo.com/flows)にある構築済みパイプラインから始めることもできます。
+
+### 圧縮とパフォーマンス {#compression-and-performance}
+
+* **OTLP/HTTP および OTLP エクスポーター**: **Compression** は gzip のままにします。
+* **ClickHouse exporter**: **Async Insert** は有効のまま、**Compression** は lz4 のままにし、その前段に **Batch** processor を追加します。[Optimizing inserts](/ja/clickstack/ingesting-data/collector#optimizing-inserts) を参照してください。
+
+## 次のステップ {#next-steps}
+
+* **ダッシュボードの構築**: HyperDX でログ、メトリクス、トレースの可視化を作成します
+* **アラートの設定**: ClickStack で重要な状態を監視するアラートを設定します
+* **AI アシスタントによる改善**: パイプラインの調整やテストの提案を依頼できます
+* **他ベンダーからの移行**: [flows](https://telflo.com/flows) は切り替え作業に対応しており、既にフリート上で稼働しているエージェントを置き換えつつ、比較期間中は両方のバックエンドへ二重送信できます
+
+## さらに詳しく {#read-more}
+
+* [Telflo ドキュメント](https://docs.telflo.com/docs)
+* [クイックスタート: 空のキャンバスから collector のデプロイまで](https://docs.telflo.com/docs/getting-started/quickstart)
+* [collector 設定 のテスト](https://docs.telflo.com/docs/testing/overview)
+* [Telflo でのフリート管理](https://docs.telflo.com/docs/fleet-management/overview)
+* [collector のインストール](https://docs.telflo.com/docs/fleet-management/install-collectors)
+* [OpenTelemetry での取り込み](/ja/clickstack/ingesting-data/opentelemetry)
+* [ClickStack のテーブルスキーマ](/ja/clickstack/ingesting-data/schemas)

@@ -1,0 +1,6 @@
+writer part type:
+Compact
+reader after restart:
+1	Hello
+reader after background refresh:
+1	Hello

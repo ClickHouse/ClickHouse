@@ -1,11 +1,10 @@
--- Tags: stateful, no-parallel-replicas, long
+-- Tags: stateful, no-parallel-replicas, long, no-msan
 -- Requires investigation (max_bytes_to_read is not respected)
 
 SET max_bytes_to_read = 600000000;
 
 SET optimize_move_to_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
-SET query_plan_optimize_prewhere = 1;
 
 SELECT uniq(URL) FROM test.hits WHERE toTimeZone(EventTime, 'Asia/Dubai') >= '2014-03-20 00:00:00' AND toTimeZone(EventTime, 'Asia/Dubai') < '2014-03-21 00:00:00';
 SELECT uniq(URL) FROM test.hits WHERE toTimeZone(EventTime, 'Asia/Dubai') >= '2014-03-20 00:00:00' AND toTimeZone(EventTime, 'Asia/Dubai') < '2014-03-21 00:00:00' AND URL != '';

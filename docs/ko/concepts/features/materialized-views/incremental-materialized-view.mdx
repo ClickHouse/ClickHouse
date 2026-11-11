@@ -633,7 +633,7 @@ WHERE DisplayName = 'brand_new_user'
 
 * **삽입 시점 성능을 평가하십시오.** JOIN은 삽입 비용을 증가시키며, 특히 오른쪽 테이블이 큰 경우 그 영향이 더 큽니다. 실제 운영 환경을 대표하는 데이터로 삽입 속도를 벤치마크하십시오.
 
-* **단순 lookup에는 Dictionaries를 우선 사용하십시오**. 비용이 큰 JOIN 연산을 피하려면 키-값 lookup(예: 사용자 ID에서 이름으로)에 [Dictionaries](/ko/concepts/features/dictionaries/index)를 사용하십시오.
+* **단순 lookup에는 Dictionaries를 우선 사용하십시오**. 비용이 큰 JOIN 연산을 피하려면 키-값 lookup(예: 사용자 ID에서 이름으로)에 [Dictionaries](/ko/concepts/features/dictionaries/index)를 사용하십시오. 삽입 시점 lookup을 안정적으로 수행하려면 데이터를 전부 로드하는 딕셔너리 layout을 사용하십시오. [캐시 기반 layout](/ko/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path)을 사용하면 수집이 로컬에 미리 채워진 캐시에 의존하게 될 수 있습니다.
 
 * **머지 효율을 위해 `GROUP BY`와 `ORDER BY`를 일치시키십시오.** `SummingMergeTree` 또는 `AggregatingMergeTree`를 사용할 때는 효율적인 행 머지가 가능하도록 대상 테이블의 `GROUP BY`가 `ORDER BY` 절과 일치해야 합니다.
 
@@ -1047,11 +1047,9 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-<div id="materialized-views-parallel-vs-sequential">
-  ## 병렬 처리와 순차 처리
-</div>
+## 병렬 처리와 순차 처리 {#materialized-views-parallel-vs-sequential}
 
-이전 예시에서 보았듯이, 하나의 테이블은 여러 Materialized View의 source로 사용할 수 있습니다. 이들의 실행 순서는 설정 [`parallel_view_processing`](/ko/reference/settings/session-settings#parallel_view_processing)에 따라 달라집니다.
+이전 예시에서 보았듯이, 하나의 테이블은 여러 Materialized View의 source로 사용할 수 있습니다. 이들의 실행 순서는 설정 [`parallel_view_processing`](/ko/reference/settings/session-settings/parallel#parallel_view_processing)에 따라 달라집니다.
 
 기본적으로 이 설정값은 `0`(`false`)이며, 이 경우 Materialized View는 `uuid` 순서에 따라 순차적으로 실행됩니다.
 

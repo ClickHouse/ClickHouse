@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <map>
@@ -33,11 +34,24 @@
 #include <absl/debugging/stacktrace.h>
 #endif
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+#include <link.h>
+#endif
+
 #if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
 /// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
 #include <execinfo.h>
+#include <mutex>
+#include <pthread.h>
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
+#include <mach/thread_act.h>
+#include <mach-o/ldsyms.h>
+#include <mach-o/loader.h>
+#include <pthread/stack_np.h>
+#include <cstring>
 #endif
 
 #pragma clang diagnostic push
@@ -64,6 +78,24 @@ bool shouldShowAddress(const void * addr)
 
     return show_addresses.load(std::memory_order_relaxed);
 }
+
+/// A fault address above the first page is shown only as an offset inside a loaded object:
+/// the runtime address of the heap, a stack or JIT code must not be published.
+std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr)
+{
+    if (!shouldShowAddress(addr))
+        return {};
+
+    if (reinterpret_cast<uintptr_t>(addr) < 4096)
+        return StackTrace::ResolvedAddress{.address = addr, .object = {}, .kind = StackTrace::AddressKind::Unsupported};
+
+    /// Where the address cannot be resolved into an object (e.g. on FreeBSD),
+    /// `tryResolveAddress` returns the runtime address unchanged, so it must not be shown either.
+    auto resolved = StackTrace::tryResolveAddress(addr);
+    if (!resolved.address || resolved.kind == StackTrace::AddressKind::Unsupported)
+        return {};
+    return resolved;
+}
 }
 
 StackTrace::StackTrace()
@@ -76,6 +108,11 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
+bool StackTrace::showAddresses()
+{
+    return show_addresses.load(std::memory_order_relaxed);
+}
+
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
@@ -84,7 +121,13 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
     {
         using namespace std::string_literals;
 
-        std::string address = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
+        std::string address;
+        if (info.si_addr == nullptr)
+            address = "NULL pointer";
+        else if (const auto resolved = resolveFaultAddress(info.si_addr))
+            address = resolved->object.empty()
+                ? fmt::format("{:#x}", reinterpret_cast<uintptr_t>(resolved->address))
+                : fmt::format("{:#x} in {}", reinterpret_cast<uintptr_t>(resolved->address), resolved->object);
         std::string access = getFaultMemoryAccessType(sig, context);
         if (access.empty())
             access = "<not available>";
@@ -93,6 +136,11 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
 
     if (sig == SIGTSTP)
         return "This is a signal used for debugging purposes by the user.";
+
+#if defined(si_syscall)
+    if (sig == SIGSYS)
+        return fmt::format("System call number: {}. {}", info.si_syscall, message);
+#endif
 
     return message;
 }
@@ -106,10 +154,12 @@ std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
     if (info.si_addr == nullptr)
         return 0;
 
-    if (shouldShowAddress(info.si_addr))
-        return reinterpret_cast<UInt64>(info.si_addr);
+    /// An offset inside another object cannot be told apart from one inside the executable.
+    const auto resolved = resolveFaultAddress(info.si_addr);
+    if (!resolved || resolved->kind == StackTrace::AddressKind::OtherObject)
+        return std::nullopt;
 
-    return std::nullopt;
+    return reinterpret_cast<UInt64>(resolved->address);
 }
 
 std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
@@ -285,6 +335,23 @@ std::string getSignalCodeDescription(int sig, int si_code)
                     return fmt::format("Unknown si_code: {}", si_code);
             }
         }
+        case SIGSYS:
+        {
+            switch (si_code)
+            {
+#if defined(SYS_SECCOMP)
+                case SYS_SECCOMP:
+                    return "The system call is not allowed by the seccomp policy that the server applied to itself. "
+                           "See the `seccomp` server setting.";
+#endif
+#if defined(SYS_USER_DISPATCH)
+                case SYS_USER_DISPATCH:
+                    return "The system call was redirected by syscall user dispatch.";
+#endif
+                default:
+                    return fmt::format("Unknown si_code: {}", si_code);
+            }
+        }
         default:
             return "";
     }
@@ -324,6 +391,152 @@ static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
 #endif
 }
 
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+namespace
+{
+/// Returns the address relative to the object that contains it plus that object, or 0 and `nullptr`
+/// when no loaded object contains it: the runtime address (e.g. of JIT code) must not be published.
+std::pair<uintptr_t, const DB::SymbolIndex::Object *>
+resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
+{
+    const auto * object = symbol_index.findObject(virtual_addr);
+    if (!object)
+        return {0, nullptr};
+    return {uintptr_t(virtual_addr) - uintptr_t(object->address_begin), object};
+}
+
+/// The load bias and the address range of the main executable, read from its own headers,
+/// so that they are known without the symbol index and without taking the loader lock.
+struct MainObjectBounds
+{
+    uintptr_t bias = 0;
+    uintptr_t begin = 0;
+    uintptr_t end = 0;
+};
+}
+#endif
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+/// Defined by the linker at the runtime address of the executable's ELF header.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+extern "C" const ElfW(Ehdr) __ehdr_start; // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+#pragma clang diagnostic pop
+
+namespace
+{
+MainObjectBounds getMainObjectBounds()
+{
+    const auto header = reinterpret_cast<uintptr_t>(&__ehdr_start);
+    const auto * program_headers = reinterpret_cast<const ElfW(Phdr) *>(header + __ehdr_start.e_phoff);
+
+    MainObjectBounds bounds{.bias = header, .begin = UINTPTR_MAX, .end = 0};
+    for (size_t i = 0; i < __ehdr_start.e_phnum; ++i)
+    {
+        const auto & segment = program_headers[i];
+        if (segment.p_type != PT_LOAD)
+            continue;
+        if (segment.p_offset == 0)
+            bounds.bias = header - segment.p_vaddr;
+        bounds.begin = std::min<uintptr_t>(bounds.begin, segment.p_vaddr);
+        bounds.end = std::max<uintptr_t>(bounds.end, segment.p_vaddr + segment.p_memsz);
+    }
+    bounds.begin += bounds.bias;
+    bounds.end += bounds.bias;
+    return bounds;
+}
+}
+#elif defined(OS_DARWIN)
+namespace
+{
+/// The same range as the main executable's `SymbolIndex::Object`: the file-backed segments, so that
+/// offsets are relative to the Mach-O header, which `__TEXT` maps from file offset 0.
+MainObjectBounds getMainObjectBounds()
+{
+    const auto header = reinterpret_cast<uintptr_t>(&_mh_execute_header);
+    const auto * command = reinterpret_cast<const uint8_t *>(&_mh_execute_header + 1);
+
+    uintptr_t slide = 0;
+    MainObjectBounds bounds{.bias = 0, .begin = UINTPTR_MAX, .end = 0};
+    for (uint32_t i = 0; i < _mh_execute_header.ncmds; ++i)
+    {
+        const auto * load_command = reinterpret_cast<const struct load_command *>(command);
+        command += load_command->cmdsize;
+        if (load_command->cmd != LC_SEGMENT_64)
+            continue;
+        const auto * segment = reinterpret_cast<const struct segment_command_64 *>(load_command);
+        if (strncmp(segment->segname, SEG_TEXT, sizeof(segment->segname)) == 0)
+            slide = header - segment->vmaddr;
+        if (segment->filesize == 0 || segment->vmsize == 0)
+            continue;
+        bounds.begin = std::min<uintptr_t>(bounds.begin, segment->vmaddr);
+        bounds.end = std::max<uintptr_t>(bounds.end, segment->vmaddr + segment->vmsize);
+    }
+    bounds.begin += slide;
+    bounds.end += slide;
+    bounds.bias = bounds.begin;
+    return bounds;
+}
+}
+#endif
+
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+namespace
+{
+StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
+{
+    const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
+
+    if (!object)
+        return {nullptr, {}, StackTrace::AddressKind::UnknownMapping};
+    if (object == symbol_index.thisObject())
+        return {reinterpret_cast<const void *>(address), {}, StackTrace::AddressKind::MainObject};
+    return {reinterpret_cast<const void *>(address), object->name, StackTrace::AddressKind::OtherObject};
+}
+}
+#endif
+
+StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
+{
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+    return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
+#else
+    return {virtual_addr, {}, AddressKind::Unsupported};
+#endif
+}
+
+StackTrace::ResolvedAddress StackTrace::tryResolveAddress(const void * virtual_addr)
+{
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+    if (const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized())
+        return ::resolveAddress(*symbol_index, virtual_addr);
+
+    const auto main_object = getMainObjectBounds();
+    const auto address = reinterpret_cast<uintptr_t>(virtual_addr);
+    if (main_object.begin <= address && address < main_object.end)
+        return {reinterpret_cast<const void *>(address - main_object.bias), {}, AddressKind::MainObject};
+    return {nullptr, {}, AddressKind::UnknownMapping};
+#else
+    return {virtual_addr, {}, AddressKind::Unsupported};
+#endif
+}
+
+UInt64 StackTrace::resolveAddressForStorage(const void * virtual_addr)
+{
+    const ResolvedAddress resolved = resolveAddress(virtual_addr);
+    switch (resolved.kind)
+    {
+        case AddressKind::MainObject:
+        case AddressKind::Unsupported:
+            return reinterpret_cast<UInt64>(resolved.address);
+        /// A bare offset cannot say which object it belongs to, and the runtime address must not be published.
+        case AddressKind::OtherObject:
+        case AddressKind::UnknownMapping:
+            return 0;
+    }
+    UNREACHABLE();
+}
+
 void StackTrace::forEachFrame(
     const FramePointers & frame_pointers,
     size_t offset,
@@ -343,9 +556,8 @@ void StackTrace::forEachFrame(
         StackTrace::Frame current_frame;
         DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
-        const auto * object = symbol_index.findObject(current_frame.virtual_addr);
-        uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-        current_frame.physical_addr = reinterpret_cast<void *>(uintptr_t(current_frame.virtual_addr) - virtual_offset);
+        const auto [physical_addr, object] = resolveAddressImpl(symbol_index, current_frame.virtual_addr);
+        current_frame.physical_addr = reinterpret_cast<void *>(physical_addr);
 
         if (object)
         {
@@ -388,8 +600,11 @@ void StackTrace::forEachFrame(
             }
         }
 
-        if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
-            current_frame.symbol = demangle(symbol->name);
+        if (const auto * symbol = symbol_index.findSymbolByAddress(current_frame.virtual_addr))
+        {
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+                current_frame.symbol = demangle(symbol_name);
+        }
 
         for (const auto & frame : inline_frames)
         {
@@ -418,9 +633,9 @@ void StackTrace::forEachFrame(
         StackTrace::Frame current_frame;
         DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
-        current_frame.physical_addr = frame_pointers[i];
+        const auto [physical_addr, object] = resolveAddressImpl(symbol_index, current_frame.virtual_addr);
+        current_frame.physical_addr = reinterpret_cast<void *>(physical_addr);
 
-        const auto * object = symbol_index.findObject(current_frame.virtual_addr);
         if (object)
         {
             current_frame.object = object->name;
@@ -447,8 +662,11 @@ void StackTrace::forEachFrame(
             }
         }
 
-        if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
-            current_frame.symbol = demangle(symbol->name);
+        if (const auto * symbol = symbol_index.findSymbolByAddress(current_frame.virtual_addr))
+        {
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+                current_frame.symbol = demangle(symbol_name);
+        }
 
         for (const auto & frame : inline_frames)
         {
@@ -586,6 +804,188 @@ StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offse
     , frame_pointers(std::move(frame_pointers_))
 {}
 
+#if defined(OS_DARWIN)
+namespace
+{
+
+/// A stopped thread that is exiting unmaps its own stack in a syscall that suspension does not
+/// interrupt, so its frames are copied by the kernel, which reports a fault instead of taking it.
+/// PLCrashReporter reads foreign stacks the same way (`plcrash_async_task_memcpy`).
+bool readFrameRecord(uintptr_t fp, uintptr_t (&record)[2])
+{
+    mach_vm_size_t size = 0;
+    return mach_vm_read_overwrite(mach_task_self(), fp, sizeof(record), reinterpret_cast<mach_vm_address_t>(record), &size)
+            == KERN_SUCCESS
+        && size == sizeof(record);
+}
+
+/// Frame-pointer walk of a stopped thread inside [lo, hi), so a torn or foreign chain ends the walk.
+/// A fiber's chain ends at the null frame pointer that make_fcontext plants (issue #111579).
+size_t walkFramePointers(uintptr_t pc, uintptr_t fp, uintptr_t lo, uintptr_t hi, FramePointers & frames)
+{
+    size_t size = 0;
+    frames[size++] = reinterpret_cast<void *>(pc);
+    while (size < FRAMEPOINTER_CAPACITY)
+    {
+        if (fp < lo || fp >= hi || fp % alignof(uintptr_t) != 0 || hi - fp < 2 * sizeof(uintptr_t))
+            break;
+        uintptr_t record[2];
+        if (!readFrameRecord(fp, record))
+            break;
+        /// Apple's frame record decoder, which strips pointer authentication from arm64e frames.
+        uintptr_t return_address = 0;
+        uintptr_t next_fp = pthread_stack_frame_decode_np(reinterpret_cast<uintptr_t>(record), &return_address);
+        if (return_address == 0)
+            break;
+        frames[size++] = reinterpret_cast<void *>(return_address);
+        /// Frames only grow towards higher addresses; anything else is a terminator or garbage.
+        if (next_fp <= fp)
+            break;
+        fp = next_fp;
+    }
+    return size;
+}
+
+/// The readable mapping containing `address`, for a frame pointer that is off the thread's own stack
+/// (a boost::context fiber stack).
+bool findReadableRegion(uintptr_t address, uintptr_t & lo, uintptr_t & hi)
+{
+    mach_vm_address_t region_address = address;
+    mach_vm_size_t region_size = 0;
+    vm_region_basic_info_data_64_t info{};
+    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object_name = MACH_PORT_NULL;
+    if (mach_vm_region(mach_task_self(), &region_address, &region_size, VM_REGION_BASIC_INFO_64,
+            reinterpret_cast<vm_region_info_t>(&info), &count, &object_name) != KERN_SUCCESS)
+        return false;
+    if (object_name != MACH_PORT_NULL)
+        mach_port_deallocate(mach_task_self(), object_name);
+    /// mach_vm_region returns the first region at or above the address: it may start past it.
+    if (region_address > address || !(info.protection & VM_PROT_READ))
+        return false;
+    lo = region_address;
+    hi = region_address + region_size;
+    return true;
+}
+
+/// x86_64 Darwin binds imports lazily, in dyld under a lock that a stopped thread may hold, so every
+/// external call made while a thread is stopped is bound by calling it once beforehand, as Chromium's
+/// sampling profiler does (`SuspendableThreadDelegateMac`).
+void bindSuspensionCalls()
+{
+    thread_resume(MACH_PORT_NULL);
+#if defined(__aarch64__)
+    arm_thread_state64_t state{};
+    mach_msg_type_number_t count = ARM_THREAD_STATE64_COUNT;
+    thread_get_state(MACH_PORT_NULL, ARM_THREAD_STATE64, reinterpret_cast<thread_state_t>(&state), &count);
+#elif defined(__x86_64__)
+    x86_thread_state64_t state{};
+    mach_msg_type_number_t count = x86_THREAD_STATE64_COUNT;
+    thread_get_state(MACH_PORT_NULL, x86_THREAD_STATE64, reinterpret_cast<thread_state_t>(&state), &count);
+#endif
+    uintptr_t record[2] = {};
+    readFrameRecord(reinterpret_cast<uintptr_t>(&state), record);
+    pthread_stack_frame_decode_np(reinterpret_cast<uintptr_t>(record), nullptr);
+    uintptr_t lo = 0;
+    uintptr_t hi = 0;
+    findReadableRegion(reinterpret_cast<uintptr_t>(&state), lo, hi);
+    mach_port_deallocate(mach_task_self(), MACH_PORT_NULL);
+}
+
+/// One suspension at a time in the process: two threads stopping each other at once (the profiler
+/// sampler and a `system.stack_trace` reader) would never resume.
+std::mutex suspension_mutex;
+
+}
+
+StackTrace::ThreadHandle StackTrace::ThreadHandle::current()
+{
+    pthread_t thread = pthread_self();
+    ThreadHandle handle;
+    handle.mach_thread = pthread_mach_thread_np(thread);
+    handle.thread = thread;
+    handle.stack_hi = reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread));
+    handle.stack_lo = handle.stack_hi - pthread_get_stacksize_np(thread);
+    return handle;
+}
+
+std::optional<StackTrace::ThreadHandle> StackTrace::ThreadHandle::fromMachThread(mach_port_t mach_thread)
+{
+    pthread_t thread = pthread_from_mach_thread_np(mach_thread);
+    if (!thread)
+        return {};
+    ThreadHandle handle;
+    handle.mach_thread = mach_thread;
+    handle.thread = thread;
+    /// Racy with the thread exiting right here; harmless, as `thread_suspend` then fails and nothing
+    /// below is read.
+    handle.stack_hi = reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread));
+    handle.stack_lo = handle.stack_hi - pthread_get_stacksize_np(thread);
+    return handle;
+}
+
+StackTrace::SuspendedThread::SuspendedThread(const ThreadHandle & handle_)
+    : handle(handle_)
+{
+    if (handle.thread == pthread_self())
+        return;
+    [[maybe_unused]] static const bool bound = (bindSuspensionCalls(), true);
+    suspension_mutex.lock();
+    suspended = thread_suspend(handle.mach_thread) == KERN_SUCCESS;
+    if (!suspended)
+        suspension_mutex.unlock();
+}
+
+StackTrace::SuspendedThread::~SuspendedThread()
+{
+    if (suspended)
+    {
+        thread_resume(handle.mach_thread);
+        suspension_mutex.unlock();
+    }
+}
+
+StackTrace StackTrace::SuspendedThread::captureStackTrace() const
+{
+    if (!suspended)
+        return StackTrace(NoCapture{});
+
+    uintptr_t pc = 0;
+    uintptr_t fp = 0;
+#if defined(__aarch64__)
+    arm_thread_state64_t state{};
+    mach_msg_type_number_t count = ARM_THREAD_STATE64_COUNT;
+    if (thread_get_state(handle.mach_thread, ARM_THREAD_STATE64, reinterpret_cast<thread_state_t>(&state), &count) != KERN_SUCCESS)
+        return StackTrace(NoCapture{});
+    pc = arm_thread_state64_get_pc(state);
+    fp = arm_thread_state64_get_fp(state);
+#elif defined(__x86_64__)
+    x86_thread_state64_t state{};
+    mach_msg_type_number_t count = x86_THREAD_STATE64_COUNT;
+    if (thread_get_state(handle.mach_thread, x86_THREAD_STATE64, reinterpret_cast<thread_state_t>(&state), &count) != KERN_SUCCESS)
+        return StackTrace(NoCapture{});
+    pc = state.__rip;
+    fp = state.__rbp;
+#endif
+    if (!pc)
+        return StackTrace(NoCapture{});
+
+    uintptr_t lo = handle.stack_lo;
+    uintptr_t hi = handle.stack_hi;
+
+    FramePointers frames;
+    size_t num_frames = 0;
+    if ((fp >= lo && fp < hi) || findReadableRegion(fp, lo, hi))
+        num_frames = walkFramePointers(pc, fp, lo, hi, frames);
+    else
+    {
+        frames[0] = reinterpret_cast<void *>(pc);
+        num_frames = 1;
+    }
+    return StackTrace(frames, num_frames);
+}
+#endif
+
 void StackTrace::tryCapture()
 {
 #if defined(OS_WASM)
@@ -613,22 +1013,74 @@ void StackTrace::tryCapture()
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
 
-// Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
-// information but pollute stack traces).
+/// The type-erasing wrappers of `std::function`, spelled as they appear after @c replacements dropped
+/// the `::__1` ABI namespace. These are the frames whose demangled names are pure noise: they spell out
+/// the whole captured type and say nothing that the surrounding frames do not already say. Everything
+/// else keeps its name, including a `std::` symbol that merely happens to live in a `__functional`
+/// header (`std::hash`, `std::less`, ...) - such a frame is where the code really is, so its name is
+/// the only useful part of it. In particular, the generic invocation helpers (`std::invoke`,
+/// `std::__invoke`, `std::mem_fn`) are deliberately not here: they are not `std::function`-specific,
+/// and a frame's name can name the callable they dispatch to - a single-frame prefix match cannot tell
+/// a `std::function` trampoline from a direct use, so they keep their names.
+constexpr std::string_view std_function_plumbing[] = {
+    "std::__function::",  /// `__func`, `__value_func`, `__alloc_func`, `__policy_func`, `__policy_invoker`
+};
+
+/// The members of `std::function` itself that carry the noise: the type-erasing call operator, and the
+/// constructors, the assignment operators and the destructor, which copy, move and destroy the captured
+/// callable. Every other member (`swap`, `target`, `target_type`, `operator bool`, ...) does work of its
+/// own and is a normal frame, so it keeps its name. The constructor is spelled both as
+/// `function(std::function<` (the copy and move constructors - spelled with the argument so that the
+/// default constructor `function()` and `function(std::nullptr_t)`, which merely create an empty object
+/// and have short, informative names, are not caught) and as `function<` (the constructor taking a
+/// callable, which is a function template, so its own template arguments follow the name:
+/// `function<MyCallable, void>(MyCallable&&)`); the assignment operator likewise as
+/// `operator=(std::function<` (the copy and move assignment; `operator=(std::nullptr_t)` just resets the
+/// object and stays visible) and as `operator=<` (the callable-taking overload:
+/// `operator=<MyCallable, void>(MyCallable&&)`).
+constexpr std::string_view std_function_noisy_members[]
+    = {"operator()", "function(std::function<", "function<", "~function(", "operator=(std::function<", "operator=<"};
+
+static bool isStdFunctionPlumbing(const String & symbol_name)
+{
+    if (std::ranges::any_of(std_function_plumbing, [&](std::string_view prefix) { return symbol_name.starts_with(prefix); }))
+        return true;
+
+    constexpr std::string_view std_function = "std::function<";
+    if (!symbol_name.starts_with(std_function))
+        return false;
+
+    /// Skip the template argument list to reach the member name: the signature of the callable can nest
+    /// its own `<` and `>`, so the closing bracket is the one that brings the depth back to zero.
+    size_t depth = 1;
+    size_t pos = std_function.size();
+    for (; pos < symbol_name.size() && depth != 0; ++pos)
+    {
+        if (symbol_name[pos] == '<')
+            ++depth;
+        else if (symbol_name[pos] == '>')
+            --depth;
+    }
+    if (depth != 0)
+        return false;
+
+    std::string_view member{symbol_name};
+    member.remove_prefix(pos);
+    if (!member.starts_with("::"))
+        return false;
+    member.remove_prefix(2);
+
+    return std::ranges::any_of(std_function_noisy_members, [&](std::string_view noisy) { return member.starts_with(noisy); });
+}
+
+// Hide the name of `std::function` plumbing frames (the `__func`/`__value_func`/`__policy_func`
+// trampolines from libc++'s `__functional` headers): their demangled names are huge - they spell out
+// the whole captured lambda type - and they say nothing that the surrounding frames don't already say.
 // Replace parts from @c replacements with shorter aliases
 String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
     if (symbol_name.empty())
         return "?";
-
-    if (file.has_value())
-    {
-        std::string_view file_copy = file.value();
-        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
-            file_copy.remove_suffix(file_copy.size() - trim_pos);
-        if (file_copy.ends_with("functional"))
-            return "?";
-    }
 
     // TODO myrrc surely there is a written version already for better in place search&replace
     for (auto [needle, to] : replacements)
@@ -639,6 +1091,22 @@ String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, 
             symbol_name.replace(pos, needle.length(), to);
             pos += to.length();
         }
+    }
+
+    /// The file of a frame is the source line the *instruction* maps to, which is not necessarily
+    /// where the enclosing function is defined: a compiler-generated or inlined `std::function`
+    /// operation puts a line-table entry pointing into `__functional` in the middle of an ordinary
+    /// function. Requiring the symbol to name the plumbing as well keeps the frame of such a function
+    /// named - it is the only useful part of the frame, and dropping it left `trace_full` in
+    /// `system.crash_log` with a bare `?` for the frame that actually crashed. This is much more
+    /// likely in a ThinLTO build, where `std::function` calls are inlined across translation units.
+    if (file.has_value() && isStdFunctionPlumbing(symbol_name))
+    {
+        std::string_view file_copy = file.value();
+        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
+            file_copy.remove_suffix(file_copy.size() - trim_pos);
+        if (file_copy.ends_with("functional"))
+            return "?";
     }
 
     return symbol_name;
@@ -703,7 +1171,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         else
             out << "?";
 
-        if (shouldShowAddress(frame.physical_addr))
+        if (frame.object && shouldShowAddress(frame.physical_addr))
         {
             out << " @ ";
             DB::writePointerHex(frame.physical_addr, out);
@@ -715,7 +1183,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
         if (frame.virtual_addr && shouldShowAddress(frame.virtual_addr))
-            callback(fmt::format("{}. {}", frame_index++, frame.virtual_addr));
+            callback(fmt::format("{}. {:#x}", frame_index++, reinterpret_cast<uintptr_t>(frame.virtual_addr)));
     };
 #endif
 

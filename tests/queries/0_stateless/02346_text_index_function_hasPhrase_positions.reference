@@ -93,7 +93,11 @@ Text index should choose 50% of granules
 Description: text GRANULARITY 100000000
 Parts: 1/1
 Granules: 512/1024
-hasPhrase with 3rd argument bypasses the index
+hasPhrase with a matching 3rd argument uses the index
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 256/1024
+hasPhrase with a different 3rd argument bypasses the index
 NOT hasPhrase - Text index analysis
 NOT hasPhrase should choose all parts and granules
 Description: text GRANULARITY 100000000

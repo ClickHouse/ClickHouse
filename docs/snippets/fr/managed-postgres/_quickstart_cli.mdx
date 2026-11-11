@@ -38,7 +38,7 @@ Créez le service et enregistrez la réponse ; le mot de passe n’est affiché
 clickhousectl cloud postgres create \
   --name quickstart-pg \
   --region us-east-1 \
-  --size c6gd.large \
+  --size m6gd.large \
   --pg-version 18 \
   --json > pg.json
 ```
@@ -52,7 +52,7 @@ La réponse inclut l’ID du service, le nom d’hôte et une chaîne de connexi
   "provider": "aws",
   "region": "us-east-1",
   "postgresVersion": "18",
-  "size": "c6gd.large",
+  "size": "m6gd.large",
   "storageSize": 118,
   "haType": "none",
   "state": "creating",
@@ -175,7 +175,7 @@ INSERT 0 1000
 Time: 84.807 ms
 ```
 
-L’insertion de 1 M de lignes s’effectue en environ 7 secondes sur `c6gd.large` (la plus petite taille), grâce au stockage NVMe. Vérifiez-le avec une requête ; le nombre de lignes varie d’une exécution à l’autre, car les données sont générées avec `random()` :
+L’insertion de 1 M de lignes s’effectue en environ 7 secondes sur `m6gd.large` (la plus petite taille), grâce au stockage NVMe. Vérifiez-le avec une requête ; le nombre de lignes varie d’une exécution à l’autre, car les données sont générées avec `random()` :
 
 ```bash
 psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
@@ -215,7 +215,7 @@ Pour utiliser plutôt un service existant, définissez `CH_ID` à partir de `cli
   ### Répliquer les tables vers ClickHouse
 </div>
 
-Créez un Postgres CDC ClickPipe sur le service ClickHouse, en pointant vers le nom d’hôte de Managed Postgres. Le pipe copie les lignes existantes, puis maintient ClickHouse synchronisé avec les changements ultérieurs :
+Créez un Postgres CDC ClickPipe sur le service ClickHouse, en pointant vers le nom d’hôte de ClickHouse Managed Postgres. Le pipe copie les lignes existantes, puis maintient ClickHouse synchronisé avec les changements ultérieurs :
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)
@@ -307,7 +307,7 @@ SQL
 
 Le heredoc est volontairement non guillemeté, afin que le shell substitue `$CH_HOST` et `$CH_PASSWORD` avant que le SQL n&#39;arrive à Postgres. Les tables répliquées sont désormais visibles comme des tables étrangères dans le schéma `organization` ; les requêtes qui les ciblent s&#39;exécutent dans ClickHouse.
 
-Mesurées sur `c6gd.large` avec ce jeu de données, les requêtes analytiques s&#39;exécutent 6 à 9 fois plus vite via les tables étrangères (par exemple, un GROUP BY avec 5 agrégations : 176 ms via ClickHouse contre 1 133 ms en local ; un JOIN avec agrégations : 298 ms contre 2 764 ms).
+Mesurées sur `m6gd.large` avec ce jeu de données, les requêtes analytiques s&#39;exécutent 6 à 9 fois plus vite via les tables étrangères (par exemple, un GROUP BY avec 5 agrégations : 176 ms via ClickHouse contre 1 133 ms en local ; un JOIN avec agrégations : 298 ms contre 2 764 ms).
 
 <div id="cleanup-resources">
   ## Nettoyage

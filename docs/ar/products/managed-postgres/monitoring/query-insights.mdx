@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Query insights لـ Postgres'
-description: 'بيانات القياس عن بُعد لكل تعليمة في Managed Postgres: كل نمط استعلام تُشغّله قاعدة بياناتك، مرتّب حسب التأثير، مع العدادات التشخيصية التي تشرح سبب بطء كلٍ منها'
+description: 'بيانات القياس عن بُعد لكل تعليمة في ClickHouse Managed Postgres: كل نمط استعلام تُشغّله قاعدة بياناتك، مرتّب حسب التأثير، مع العدادات التشخيصية التي تشرح سبب بطء كلٍ منها'
 keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'الاستعلامات البطيئة', 'p99 latency', 'أنماط الاستعلامات', 'أداء postgres', 'temp blocks', 'parallel workers', 'wal']
 doc_type: 'guide'
 ---
@@ -13,7 +13,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 يلتقط Query Insights بيانات القياس عن بُعد على مستوى كل عبارة من مثيل
-[Managed Postgres](/ar/products/managed-postgres/overview) لديك، ويُرتِّب كل نمط
+[ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) لديك، ويُرتِّب كل نمط
 استعلام حسب مدى تأثيره، بحيث يمكنك الانتقال من &quot;قيمة p99 ترتفع تدريجيًا&quot; إلى &quot;هذا النمط
 يُفرِّغ البيانات إلى القرص&quot; من دون مغادرة Cloud Console.
 
@@ -27,7 +27,7 @@ ClickHouse Cloud. تُطبَّع بيانات القياس عن بُعد داخ�
   ## افتح Query insights
 </div>
 
-افتح مثيل Managed Postgres الخاص بك في Cloud Console وانقر على
+افتح مثيل ClickHouse Managed Postgres الخاص بك في Cloud Console وانقر على
 **Query insights** في الشريط الجانبي الأيسر. تنقسم الصفحة إلى أربعة
 أقسام، بالترتيب الذي ستستخدمها به فعليًا:
 
@@ -257,6 +257,6 @@ ClickHouse. الكود المصدري وتقارير المشكلات متاحة
 
 * [لوحة معلومات المراقبة](/ar/products/managed-postgres/monitoring/dashboard) — مخططات مدمجة للموارد والنشاط
 * [نقطة نهاية Prometheus](/ar/products/managed-postgres/monitoring/prometheus) — اجمع مقاييس على مستوى المضيف إلى حزمة observability الخاصة بك
-* [Managed Postgres OpenAPI](/ar/products/managed-postgres/openapi#query-insights) — استعلم برمجيًا عن الأنماط البطيئة وعمليات التنفيذ الأخيرة
-* [الامتدادات](/ar/products/managed-postgres/extensions) — الامتدادات المتاحة على مثيلات Managed Postgres
+* [ClickHouse Managed Postgres OpenAPI](/ar/products/managed-postgres/openapi#query-insights) — استعلم برمجيًا عن الأنماط البطيئة وعمليات التنفيذ الأخيرة
+* [الامتدادات](/ar/products/managed-postgres/extensions) — الامتدادات المتاحة على مثيلات ClickHouse Managed Postgres
 * [`pg_stat_ch` on GitHub](https://github.com/clickhouse/pg_stat_ch) — الامتداد مفتوح المصدر الذي يدعم Query Insights

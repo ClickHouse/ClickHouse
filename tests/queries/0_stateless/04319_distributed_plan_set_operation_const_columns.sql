@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A distributed set operation (UNION / INTERSECT / EXCEPT) can produce a column as a constant in one
 -- branch and as a full column (aliased from an exchange) in another. Plan serialization re-derives
 -- constness per step, so the branches used to mismatch at the strict set-operation header check.

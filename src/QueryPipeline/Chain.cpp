@@ -1,4 +1,5 @@
 #include <IO/WriteHelpers.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/Chain.h>
 #include <Core/Block.h>

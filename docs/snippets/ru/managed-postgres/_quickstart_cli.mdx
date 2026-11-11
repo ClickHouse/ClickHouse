@@ -38,7 +38,7 @@ clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
 clickhousectl cloud postgres create \
   --name quickstart-pg \
   --region us-east-1 \
-  --size c6gd.large \
+  --size m6gd.large \
   --pg-version 18 \
   --json > pg.json
 ```
@@ -52,7 +52,7 @@ clickhousectl cloud postgres create \
   "provider": "aws",
   "region": "us-east-1",
   "postgresVersion": "18",
-  "size": "c6gd.large",
+  "size": "m6gd.large",
   "storageSize": 118,
   "haType": "none",
   "state": "creating",
@@ -175,7 +175,7 @@ INSERT 0 1000
 Time: 84.807 ms
 ```
 
-Вставка 1 млн строк выполняется примерно за 7 секунд на `c6gd.large` (самом маленьком типоразмере) благодаря NVMe-хранилищу. Проверьте это запросом; количество строк от запуска к запуску различается, потому что данные генерируются с помощью `random()`:
+Вставка 1 млн строк выполняется примерно за 7 секунд на `m6gd.large` (самом маленьком типоразмере) благодаря NVMe-хранилищу. Проверьте это запросом; количество строк от запуска к запуску различается, потому что данные генерируются с помощью `random()`:
 
 ```bash
 psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
@@ -215,7 +215,7 @@ done
   ### Реплицируйте таблицы в ClickHouse
 </div>
 
-Создайте Postgres CDC ClickPipe в сервисе ClickHouse, указав имя хоста Managed Postgres. Пайп скопирует существующие строки, а затем будет поддерживать синхронизацию ClickHouse с текущими изменениями:
+Создайте Postgres CDC ClickPipe в сервисе ClickHouse, указав имя хоста ClickHouse Managed Postgres. Пайп скопирует существующие строки, а затем будет поддерживать синхронизацию ClickHouse с текущими изменениями:
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)
@@ -307,7 +307,7 @@ SQL
 
 Heredoc намеренно оставлен без кавычек, чтобы оболочка подставила `$CH_HOST` и `$CH_PASSWORD` до того, как SQL попадёт в Postgres. Реплицированные таблицы теперь видны как внешние таблицы в схеме `organization`; запросы к ним выполняются в ClickHouse.
 
-По результатам измерений на `c6gd.large` с этим набором данных аналитические запросы через внешние таблицы выполняются в 6–9 раз быстрее (например, `GROUP BY` с 5 агрегациями: 176 мс через ClickHouse против 1 133 мс локально; JOIN с агрегациями: 298 мс против 2 764 мс).
+По результатам измерений на `m6gd.large` с этим набором данных аналитические запросы через внешние таблицы выполняются в 6–9 раз быстрее (например, `GROUP BY` с 5 агрегациями: 176 мс через ClickHouse против 1 133 мс локально; JOIN с агрегациями: 298 мс против 2 764 мс).
 
 <div id="cleanup-resources">
   ## Очистка

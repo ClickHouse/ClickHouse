@@ -42,6 +42,8 @@ CREATE TABLE part_header_r2(x UInt32, y UInt32)
 
 SELECT '*** Test fetches ***';
 INSERT INTO part_header_r1 VALUES (1, 1);
+-- Even with use_minimalistic_part_header_in_zookeeper = 0, a part node holds the compact header and has no children
+SELECT name, numChildren, dataLength > 0 FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/$SHARD/replicas/1$REPLICA/parts';
 INSERT INTO part_header_r2 VALUES (2, 2);
 SYSTEM SYNC REPLICA part_header_r1;
 SYSTEM SYNC REPLICA part_header_r2;
@@ -78,10 +80,10 @@ set ignore_cold_parts_seconds=0;
 SELECT '*** Test part removal ***';
 SELECT '*** replica 1 ***';
 SELECT name FROM system.parts WHERE active AND database = currentDatabase() AND table = 'part_header_r1';
-SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/$SHARD/replicas/1$REPLICA/parts';
+SELECT name, numChildren, dataLength > 0 FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/$SHARD/replicas/1$REPLICA/parts';
 SELECT '*** replica 2 ***';
 SELECT name FROM system.parts WHERE active AND database = currentDatabase() AND table = 'part_header_r2';
-SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/$SHARD/replicas/2$REPLICA/parts';
+SELECT name, numChildren, dataLength > 0 FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/$SHARD/replicas/2$REPLICA/parts';
 
 SELECT '*** Test ALTER ***';
 ALTER TABLE part_header_r1 MODIFY COLUMN y String SETTINGS alter_sync = 2;

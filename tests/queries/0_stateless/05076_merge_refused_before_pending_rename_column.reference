@@ -1,0 +1,12 @@
+pending entry	1	2	1	1
+active parts	all_1_1_0
+active parts	all_2_2_0
+merged into	all_1_2_1_4
+3	String
+3	UInt64
+0	0	0
+1	0	1
+2	0	2
+3	0	str_3
+4	0	str_4
+5	0	str_5

@@ -15,11 +15,4 @@ SQLQueryPiece applyBinaryOperatorAnd(
     SQLQueryPiece && right_argument,
     ConverterContext & context);
 
-/// Check argument types for set binary operator (i.e. one of "and", "or", "unless").
-void checkArgumentTypesForSetBinaryOperator(
-    const PrometheusQueryTree::BinaryOperator * operator_node,
-    const SQLQueryPiece & left_argument,
-    const SQLQueryPiece & right_argument,
-    const ConverterContext & context);
-
 }

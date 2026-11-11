@@ -32,6 +32,8 @@ public:
         , session_token(session_token_)
     {}
 
+    bool isEmpty() const { return access_key_id.empty() || secret_access_key.empty(); }
+
     void addCredentialsToEngineArgs(DB::ASTs & engine_args) const override
     {
         if (engine_args.size() != 1)

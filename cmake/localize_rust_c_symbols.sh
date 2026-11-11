@@ -79,9 +79,13 @@ trap cleanup EXIT
 # metadata, linker scripts); those are non-fatal as long as one member is read.
 # T/D/B/C/W/V are the defined globals and i is an IFUNC (glibc resolves ceil,
 # rint, trunc, ... this way); undefined (U) and local (lowercase) are excluded.
+# Under ThinLTO the reference archives contain LLVM bitcode members, for which
+# llvm-nm prints dashes instead of a hex address; accept both, otherwise the
+# reference set comes out empty and nothing is localized (this is how the Rust
+# cbrt shadowed the llvm-libc one in release builds, which set ENABLE_THINLTO).
 defined_globals() {
     { "$NM" "$1" 2>/dev/null; "$NM" -D "$1" 2>/dev/null; } \
-        | grep -E '^[0-9a-f]+ [TDBCWVi] ' \
+        | grep -E '^([0-9a-f]+|-+) [TDBCWVi] ' \
         | awk '{print $3}' \
         | sed 's/@.*//'
 }
@@ -121,12 +125,15 @@ if [ -s "$LOCALIZE_FILE" ]; then
     # Some Rust archives contain non-ELF members (e.g. debug metadata objects)
     # that cause llvm-objcopy to fail.  In that case, fall back to extracting
     # individual members, processing only valid ELF objects, and repacking.
-    if ! "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" "$LIB_PATH" 2>/dev/null; then
+    # Also drop .llvm_addrsig: objcopy leaves its sh_link at 0, and lld --icf=safe then warns that it ignores it
+    # (an error with --fatal-warnings). Without the table lld treats these objects conservatively, as it does
+    # when it ignores the table. See strip_rust_symbols.sh.
+    if ! "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" --remove-section=.llvm_addrsig "$LIB_PATH" 2>/dev/null; then
         WORK_DIR=$(mktemp -d)
 
         (cd "$WORK_DIR" && "$AR" x "$LIB_PATH")
         for obj in "$WORK_DIR"/*.o; do
-            "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" "$obj" 2>/dev/null || true
+            "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" --remove-section=.llvm_addrsig "$obj" 2>/dev/null || true
         done
         "$AR" rcs "$LIB_PATH" "$WORK_DIR"/*.o
     fi

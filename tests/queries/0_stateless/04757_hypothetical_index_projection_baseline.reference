@@ -1,0 +1,27 @@
+--- projection-served read: baseline is reported, candidate is not_applicable ---
+Baseline (after PK + partition + existing indexes):
+status: not_applicable
+reason: The query is served from projection \'p_b\', so an index on the base table\'s parts would not be read
+--- and the statement succeeds ---
+no exception
+--- with projections off the same candidate is estimated as usual ---
+status: applicable
+source: empirical
+--- plans with no MergeTree read step still report candidates ---
+trivial count
+status: not_applicable
+reason: The query is answered without reading the table\'s parts, so an index on them would not be read
+minmax_count projection
+status: not_applicable
+reason: The query is answered without reading the table\'s parts, so an index on them would not be read
+exact_count projection
+status: not_applicable
+reason: The query is answered without reading the table\'s parts, so an index on them would not be read
+--- a normal projection with no ranges does not fail ---
+no exception
+--- a join is not silently reported as single-table ---
+NOT_IMPLEMENTED
+--- a forced index still fails when nothing is read ---
+INDEX_NOT_USED
+--- but not when skip indexes are off, since a real read ignores the setting ---
+no exception

@@ -7,7 +7,7 @@
 DROP TABLE IF EXISTS t_vert_adaptive;
 
 CREATE TABLE t_vert_adaptive (dt DateTime, n UInt64) ENGINE = MergeTree ORDER BY dt
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1,
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1,
          enable_vertical_merge_algorithm = 1,
          vertical_merge_algorithm_min_columns_to_activate = 1, vertical_merge_algorithm_min_rows_to_activate = 1;
 
@@ -23,7 +23,7 @@ WHERE database = currentDatabase() AND table = 't_vert_adaptive' AND event_type 
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- `n` is gathered vertically and is monotonic, so T64 wins on every block.
-SELECT 'vertical', max(mapContains(codec_block_counts, 'T64')), max(mapContains(codec_block_counts, 'NONE'))
+SELECT 'vertical', max(mapContains(codec_block_counts, 'T64, LZ4')), max(mapContains(codec_block_counts, 'NONE'))
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_vert_adaptive) WHERE column = 'n';
 
 SELECT 'roundtrip', count(), sum(n) FROM t_vert_adaptive;

@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: the distributed-plan probe requires the analyzer.
-
 -- The result type of `IN` over a `LowCardinality` argument must not depend on whether the
 -- right-hand side is a literal list or a subquery: the set is a constant column in the plan
 -- in both cases, so both forms get the `LowCardinality`-wrapped result type. The subquery
@@ -22,6 +19,6 @@ SELECT count() FROM t_lc_in WHERE s IN (SELECT toString(number) FROM numbers(2))
 SELECT '-- the distributed plan round-trip accepts the type';
 SELECT count() FROM t_lc_in WHERE s IN (SELECT toString(number) FROM numbers(2))
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-        enable_parallel_replicas = 0, max_rows_to_group_by = 0;
+        enable_parallel_replicas = 0, max_rows_to_group_by = 0, distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_lc_in;

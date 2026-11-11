@@ -1,0 +1,31 @@
+-- sum(m) - max(m), instant
+[]	1970-01-01 00:02:10.000	6
+-- sum(m) % max(m), instant
+[]	1970-01-01 00:02:10.000	2
+-- sum by (dc) (m) - min by (dc) (m), range
+[('dc','a')]	[('1970-01-01 00:01:40.000',2),('1970-01-01 00:01:50.000',20),('1970-01-01 00:02:00.000',4),('1970-01-01 00:02:10.000',2),('1970-01-01 00:02:20.000',nan)]
+[('dc','b')]	[('1970-01-01 00:01:40.000',4),('1970-01-01 00:01:50.000',5),('1970-01-01 00:02:00.000',4),('1970-01-01 00:02:10.000',4),('1970-01-01 00:02:20.000',4)]
+-- max without (host) (m) - min without (host) (m), range
+[('dc','a')]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',1),('1970-01-01 00:02:20.000',0)]
+[('dc','b')]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:10.000',1),('1970-01-01 00:02:20.000',1)]
+-- the shared argument is a range function, range
+[]	[('1970-01-01 00:01:50.000',19),('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:10.000',6),('1970-01-01 00:02:20.000',nan)]
+-- not shared: different arguments, instant
+[]	1970-01-01 00:02:10.000	0
+-- not shared: different grouping, instant
+[('dc','a')]	1970-01-01 00:02:10.000	1
+[('dc','b')]	1970-01-01 00:02:10.000	3
+-- not shared: the arguments differ by an offset, instant
+[]	1970-01-01 00:02:10.000	6
+-- not shared: bool modifier, instant
+[]	1970-01-01 00:02:10.000	1
+-- not shared: logical operator, instant
+-- not shared: group_left, instant
+[('dc','a')]	1970-01-01 00:02:10.000	1
+[('dc','b')]	1970-01-01 00:02:10.000	3
+-- not shared: by (__name__) with multiple metrics must report duplicate series, instant
+-- not shared: one side is not an aggregation, instant
+-- not shared: quantile is not a one-argument aggregation, instant
+[]	1970-01-01 00:02:10.000	-1.5
+-- invalid: scalar argument is a user error, not a logical error, instant
+-- invalid: range-vector argument is a user error, not a logical error, range

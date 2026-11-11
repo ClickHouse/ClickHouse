@@ -17,20 +17,16 @@ Avec ClickHouse Cloud, vous n’avez jamais à vous soucier de l’application d
 * Pour le calendrier de publication des versions, consultez la page [release status](/fr/resources/changelogs/cloud/release-status)
 
 <Note>
-  Nous introduisons un nouveau mécanisme de mise à niveau, un concept que nous appelons « make before break » (ou MBB). Avec cette nouvelle approche, nous ajoutons des répliques mises à jour avant de supprimer les anciennes pendant l’opération de mise à niveau. Cela permet des mises à niveau plus transparentes et moins perturbatrices pour les workloads en cours d’exécution.
-
-  Dans le cadre de ce changement, les données historiques des tables système seront conservées jusqu’à 30 jours dans le cadre des événements de mise à niveau. En outre, les données des tables système antérieures au 19 décembre 2024 pour les services sur AWS ou GCP, et antérieures au 14 janvier 2025 pour les services sur Azure, ne seront pas conservées dans le cadre de la migration vers les nouveaux niveaux d’organisation.
+  Avec [MBB](/fr/products/cloud/features/autoscaling/make-before-break) dans ClickHouse Cloud, les données historiques des tables système sont conservées jusqu’à 30 jours maximum dans le cadre des événements de mise à niveau.
 </Note>
 
-<div id="version-compatibility">
-  ## Compatibilité des versions
-</div>
+## Compatibilité des versions {#version-compatibility}
 
-Lorsque vous créez un service, le paramètre [`compatibility`](/fr/reference/settings/session-settings#compatibility) est défini sur la version de ClickHouse la plus récente proposée dans ClickHouse Cloud au moment du provisionnement initial de votre service.
+Lorsque vous créez un service, le paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) est défini sur la version de ClickHouse la plus récente proposée dans ClickHouse Cloud au moment du provisionnement initial de votre service.
 
 Le paramètre `compatibility` vous permet d&#39;utiliser les valeurs par défaut des paramètres des versions précédentes. Lorsque votre service est mis à niveau vers une nouvelle version, la version spécifiée pour le paramètre `compatibility` ne change pas. Cela signifie que les valeurs par défaut des paramètres qui existaient lorsque vous avez créé votre service ne changeront pas (sauf si vous avez déjà redéfini ces valeurs par défaut, auquel cas elles seront conservées après la mise à niveau).
 
-Vous ne pouvez pas gérer le paramètre `compatibility` par défaut au niveau du service. Vous devez [contacter l’assistance](https://clickhouse.com/support/program) si vous souhaitez modifier la version définie pour le paramètre `compatibility` par défaut de votre service. En revanche, vous pouvez surcharger le paramètre `compatibility` au niveau de l&#39;utilisateur, du rôle, du profil, de la requête ou de la session à l&#39;aide des mécanismes standard de configuration de ClickHouse, par exemple `SET compatibility = '22.3'` dans une session ou `SETTINGS compatibility = '22.3'` dans une requête.
+Dans ClickHouse Cloud, vous ne pouvez pas gérer directement le paramètre `compatibility` par défaut au niveau du service : vous devez [contacter ClickHouse Support](https://clickhouse.com/support/program) si vous souhaitez modifier la version définie pour le paramètre `compatibility` par défaut de votre service. En revanche, vous pouvez surcharger le paramètre `compatibility` au niveau de l&#39;utilisateur, du rôle, du profil, de la requête ou de la session à l&#39;aide des mécanismes standard de configuration de ClickHouse, par exemple `SET compatibility = '26.8'` dans une session ou `SETTINGS [other settings,] compatibility = '26.8'` dans une requête.
 
 <div id="maintenance-mode">
   ## Mode de maintenance
@@ -56,9 +52,7 @@ Les trois canaux de mise à niveau sont les suivants :
   Les services du niveau Basic sont automatiquement inscrits au canal de mise à niveau rapide
 </Note>
 
-<div id="fast-release-channel-early-upgrades">
-  ### Canal de mise à niveau rapide (mises à niveau anticipées)
-</div>
+### Canal de mise à niveau rapide (mises à niveau anticipées) {#fast-release-channel-early-upgrades}
 
 <ScalePlanFeatureBadge feature="Le canal de mise à niveau rapide" />
 
@@ -113,9 +107,7 @@ Plus précisément, les services vont :
   * Passer à un canal plus lent ne rétrogradera pas votre service et le maintiendra sur sa version actuelle jusqu&#39;à ce qu&#39;une version plus récente soit disponible dans ce canal. Ex. : de Régulier à Lent, de Rapide à Régulier ou Lent
 </Note>
 
-<div id="scheduled-upgrades">
-  ## Mises à niveau planifiées
-</div>
+## Mises à niveau planifiées {#scheduled-upgrades}
 
 <EnterprisePlanFeatureBadge feature="Mises à niveau planifiées" linking_verb_are="true" />
 

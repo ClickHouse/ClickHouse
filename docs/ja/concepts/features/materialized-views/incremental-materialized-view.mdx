@@ -9,9 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-<div id="background">
-  ## 背景
-</div>
+## 背景 {#background}
 
 インクリメンタルmaterialized view (Materialized Views) を使用すると、計算コストをクエリ時から挿入時に移せるため、`SELECT` クエリを高速化できます。
 
@@ -633,7 +631,7 @@ WHERE DisplayName = 'brand_new_user'
 
 * **挿入時のパフォーマンスを評価します。** JOIN は挿入のコストを増加させます。特に右側のテーブルが大きい場合に顕著です。本番相当の代表的なデータを使用して挿入レートをベンチマークしてください。
 
-* **単純なルックアップには Dictionaries を優先します**。高コストな JOIN 演算を避けるため、キー・バリューのルックアップ (例: ユーザー ID から名前) には [Dictionaries](/ja/concepts/features/dictionaries/index) を使用してください。
+* **単純なルックアップには Dictionaries を優先します**。高コストな JOIN 演算を避けるため、キー・バリューのルックアップ (例: ユーザー ID から名前) には [Dictionaries](/ja/concepts/features/dictionaries/index) を使用してください。挿入時のルックアップを確実に行うには、データを完全にロードするタイプの Dictionary レイアウトを使用してください。[キャッシュベースのレイアウト](/ja/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) を使用すると、インジェストがローカルのウォームアップ済みキャッシュに依存してしまう可能性があります。
 
 * **マージ効率のために `GROUP BY` と `ORDER BY` を揃えます。** `SummingMergeTree` または `AggregatingMergeTree` を使用する場合は、効率的に行をマージできるよう、`GROUP BY` がターゲットテーブルの `ORDER BY` 句と一致していることを確認してください。
 
@@ -1047,11 +1045,9 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-<div id="materialized-views-parallel-vs-sequential">
-  ## 並列処理と順次処理
-</div>
+## 並列処理と順次処理 {#materialized-views-parallel-vs-sequential}
 
-前の例で示したように、1 つのテーブルを複数の Materialized View のソースとして使用できます。これらの実行順序は、設定 [`parallel_view_processing`](/ja/reference/settings/session-settings#parallel_view_processing) によって決まります。
+前の例で示したように、1 つのテーブルを複数の Materialized View のソースとして使用できます。これらの実行順序は、設定 [`parallel_view_processing`](/ja/reference/settings/session-settings/parallel#parallel_view_processing) によって決まります。
 
 デフォルトでは、この設定は `0` (`false`) であり、Materialized View は `uuid` の順に順次実行されます。
 

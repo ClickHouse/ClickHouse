@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int HDFS_ERROR;
     extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
+    extern const int READONLY;
 }
 
 /// HDFS has no native ETag, so we synthesise a version identifier from the
@@ -144,6 +145,8 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    throwIfReadonly();
+
     /// A conditional write is a compare-and-swap request. HDFS can express only its If-None-Match
     /// half: `O_CREAT` maps to `Hdfs::Create` alone, which the NameNode rejects when the file exists,
     /// whereas the bare `O_WRONLY` used below maps to `Hdfs::Create | Hdfs::Overwrite` and truncates
@@ -177,9 +180,8 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 
     /// Unlike blob storages, HDFS has real directories, and a file cannot be created in a
     /// directory that does not exist. The generated object keys contain a nested prefix
-    /// (e.g. `abc/xyzxyzxyz...`), so create the parent directory first, like `LocalObjectStorage`
-    /// does. `hdfsCreateDirectory` creates all missing path components and is a no-op if
-    /// the directory already exists.
+    /// (e.g. `abc/xyzxyzxyz...`), so create the parent first; `hdfsCreateDirectory` creates all
+    /// missing path components and is a no-op if the directory already exists.
     const auto parent_path = file_path.parent_path();
     if (!parent_path.empty() && parent_path != "/")
     {
@@ -198,15 +200,14 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
         patchSettings(write_settings),
         buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND,
-        std::move(blob_storage_log),
-        /// So that a canceled write cleans up the emptied prefix directories it created.
-        data_directory);
+        std::move(blob_storage_log));
 }
 
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {
+    throwIfReadonly();
     initializeHDFSFS();
     auto path = object.remote_path;
     if (path.starts_with(url_without_path))
@@ -241,12 +242,6 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
 
     if (res == -1)
         throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
-
-    /// The generated object keys contain a nested directory prefix (e.g. `abc/xyzxyzxyz...`),
-    /// and `writeObject` creates those directories because HDFS, unlike blob storages, has real
-    /// directories. Clean the now-empty prefix directories up to the data directory, like
-    /// `LocalObjectStorage::removeObject` does; the cleanup is best-effort by design.
-    removeEmptiedParentDirectories(hdfs_fs.get(), path, data_directory);
 }
 
 void HDFSObjectStorage::removeObjects(const StoredObjects & objects)
@@ -263,11 +258,18 @@ void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
         removeObject(object);
 }
 
-void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void HDFSObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     initializeHDFSFS();
     for (const auto & object : objects)
+    {
         removeObjectIfExists(object);
+
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bool) const
@@ -343,6 +345,12 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
         if (max_keys && children.size() >= max_keys)
             break;
     }
+}
+
+void HDFSObjectStorage::throwIfReadonly() const
+{
+    if (settings->read_only)
+        throw Exception(ErrorCodes::READONLY, "Cannot write to HDFS `{}`: tables of a DataLakeCatalog database located on HDFS are read-only", url);
 }
 
 void HDFSObjectStorage::copyObject( /// NOLINT

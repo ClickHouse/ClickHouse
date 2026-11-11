@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool s3_ignore_file_doesnt_exist;
     extern const SettingsUInt64 s3_list_object_keys_size;
     extern const SettingsBool s3_skip_empty_files;
+    extern const SettingsBool s3_skip_hidden_files;
     extern const SettingsBool s3_truncate_on_insert;
     extern const SettingsBool s3_throw_on_zero_files_match;
     extern const SettingsBool s3_validate_request_settings;
@@ -110,6 +111,8 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "partition_columns_in_data_file",
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
+    "upload_checksum_algorithm",
+    "use_idempotency_id",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -125,7 +128,12 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
 
 String StorageS3Configuration::getDataSourceDescription() const
 {
-    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / url.bucket;
+    return getDataSourceDescriptionForNamespace(url.bucket);
+}
+
+String StorageS3Configuration::getDataSourceDescriptionForNamespace(const String & object_namespace) const
+{
+    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / object_namespace;
 }
 
 std::string StorageS3Configuration::getPathInArchive() const
@@ -139,8 +147,8 @@ std::string StorageS3Configuration::getPathInArchive() const
 void StorageS3Configuration::check(ContextPtr context)
 {
     validateNamespace(url.bucket);
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
-    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
+    url.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
+    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
     StorageObjectStorageConfiguration::check(context);
 }
 
@@ -161,6 +169,7 @@ StorageObjectStorageQuerySettings StorageS3Configuration::getQuerySettings(const
         .list_object_keys_size = settings[Setting::s3_list_object_keys_size],
         .throw_on_zero_files_match = settings[Setting::s3_throw_on_zero_files_match],
         .ignore_non_existent_file = settings[Setting::s3_ignore_file_doesnt_exist],
+        .skip_hidden_files = settings[Setting::s3_skip_hidden_files],
     };
 }
 
@@ -169,25 +178,22 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     assertInitialized();
 
     if (!headers_from_ast.empty())
-    {
-        s3_settings->auth_settings.headers.insert(
-            s3_settings->auth_settings.headers.end(),
-            headers_from_ast.begin(), headers_from_ast.end());
-    }
+        s3_settings->auth_settings.headers.append(headers_from_ast);
 
     auto client = getClient(
         url, *s3_settings, context, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, /*refresh_credentials_callback*/ std::nullopt,
         is_loading_from_existing_metadata, force_anonymous_load_fallback);
 
-    auto client_refresher = [refresh_credentials_callback, this, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
+    S3ObjectStorage::S3CredentialsRefreshCallback client_refresher;
+    if (refresh_credentials_callback)
     {
-        if (!refresh_credentials_callback)
-            return nullptr;
-        auto new_client = getClient(
-            url, *s3_settings, context_, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, refresh_credentials_callback,
-            is_loading_from_existing_metadata, force_anonymous_load_fallback);
-        return new_client;
-    };
+        client_refresher = [refresh_credentials_callback, this, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
+        {
+            return getClient(
+                url, *s3_settings, context_, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, refresh_credentials_callback,
+                is_loading_from_existing_metadata, force_anonymous_load_fallback);
+        };
+    }
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
         std::make_unique<S3Settings>(*s3_settings),
@@ -212,7 +218,11 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     const String raw_collection_url = collection.get<String>("url");
     const String collection_url = StorageURL::resolveURLBase(raw_collection_url, settings[Setting::s3_base].value, "s3_base");
     if (collection_url != raw_collection_url)
+    {
+        /// Resolving against `s3_base` replaces the stored `url`, which could send the stored credentials to another host.
+        checkNamedCollectionOverride(collection, "url", context);
         url_overridden_by_base_setting = collection_url;
+    }
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
@@ -270,6 +280,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         }
 
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
     }
 
     if (collection.has("partition_columns_in_data_file"))
@@ -802,6 +813,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         }
 
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
     }
 
     if (auto partition_columns_in_data_file_value = getFromPositionOrKeyValue<bool>("partition_columns_in_data_file", args, engine_args_to_idx, key_value_args);
@@ -883,9 +895,15 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
 }
 
 static void addStructureAndFormatToArgsIfNeededS3(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure, size_t max_number_of_arguments)
+    ASTs & args,
+    const String & structure_,
+    const String & format_,
+    ContextPtr context,
+    bool with_structure,
+    size_t max_number_of_arguments,
+    bool is_replayed_definition)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
@@ -1172,7 +1190,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(std::move(parsed_arguments));
-    keys = {url.key};
+    setPaths({url.key});
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 }
@@ -1189,7 +1207,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
         String path = object_storage_disk->getObjectStorage()->getCommonKeyPrefix();
         fs::path root = path;
         setPathForRead(String(root / suffix));
-        keys = {String(root / suffix)};
+        setPaths({String(root / suffix)});
     }
 }
 
@@ -1198,7 +1216,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
-    keys = {url.key};
+    setPaths({url.key});
     chassert(s3_settings != nullptr);
     if (!biglake_adc_client_id.empty())
     {
@@ -1215,7 +1233,13 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
     addStructureAndFormatToArgsIfNeededS3(
-        args, structure_, format_, context, with_structure, S3StorageParsedArguments::getMaxNumberOfArguments(with_structure));
+        args,
+        structure_,
+        format_,
+        context,
+        with_structure,
+        S3StorageParsedArguments::getMaxNumberOfArguments(with_structure),
+        is_replayed_definition);
 }
 }
 

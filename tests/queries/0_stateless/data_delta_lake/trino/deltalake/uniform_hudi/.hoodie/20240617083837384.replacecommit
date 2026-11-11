@@ -1,0 +1,11 @@
+{
+  "partitionToWriteStats" : { },
+  "compacted" : false,
+  "extraMetadata" : {
+    "schema" : "{\"type\":\"record\",\"name\":\"struct\",\"fields\":[{\"name\":\"col1\",\"type\":[\"null\",\"int\"]}]}",
+    "delta-timestamp" : "1718613517384",
+    "delta-version" : "0"
+  },
+  "operationType" : null,
+  "partitionToReplaceFileIds" : { }
+}

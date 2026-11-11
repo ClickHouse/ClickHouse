@@ -10,6 +10,7 @@
 namespace DB
 {
 class IBackupEntry;
+class WriteBuffer;
 
 /// A mutation entry for non-replicated MergeTree storage engines.
 /// Stores information about mutation in file mutation_*.txt.
@@ -37,6 +38,11 @@ struct MergeTreeMutationEntry
     /// If it is true, then mutation is done. If it is false,
     /// then mutation may be already done but not processed by this thread.
     bool is_done = false;
+
+    /// Time when the mutation was observed as done. Tracked in memory only (not persisted
+    /// in the mutation file): zero if the mutation is not done yet or if it was completed
+    /// before the table was loaded (e.g. before a server restart).
+    time_t finish_time = 0;
 
     UInt64 block_number = 0;
 
@@ -67,7 +73,9 @@ struct MergeTreeMutationEntry
 
     void removeFile();
 
-    void writeCSN(CSN csn_);
+    /// Rewrites the file with the `csn:` line through a temporary file. `sync_directory` is
+    /// `fsync_part_directory`: it fsyncs the mutations directory after the rename.
+    void writeCSN(CSN csn_, bool sync_directory);
 
     std::shared_ptr<const IBackupEntry> backup() const;
 
@@ -79,6 +87,10 @@ struct MergeTreeMutationEntry
     MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_);
 
     ~MergeTreeMutationEntry();
+
+private:
+    /// Serializes everything except the `csn:` line, in the format the loading constructor reads.
+    void writeRecord(WriteBuffer & out) const;
 };
 
 }

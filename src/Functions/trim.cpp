@@ -21,8 +21,8 @@ namespace
 {
 
 /// Membership table for the optional second argument of trim* functions.
-/// Unlike `SearchSymbols` (a SIMD primitive capped at 16 symbols), it supports
-/// a trim character set of any length and looks up each byte in O(1).
+/// Unlike `find_first_symbols` (a SIMD primitive with a compile-time set of at most
+/// 16 symbols), it supports a trim character set of any length and looks up each byte in O(1).
 using TrimCharsTable = std::array<bool, 256>;
 
 class FunctionTrim final : public IFunction
@@ -42,19 +42,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"input_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {"trim_character", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeString>();
+        return "(StringOrFixedString, [const String]) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -339,9 +329,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimLeft('ClickHouse', 'Click');",
         R"(
-┌─trimLeft('Cl⋯', 'Click')─┐
-│ House                    │
-└──────────────────────────┘
+┌─trimLeft('ClickHouse', 'Click')─┐
+│ House                           │
+└─────────────────────────────────┘
         )"
     }
     };
@@ -364,9 +354,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimRight('ClickHouse','House');",
         R"(
-┌─trimRight('C⋯', 'House')─┐
-│ Click                    │
-└──────────────────────────┘
+┌─trimRight('ClickHouse', 'House')─┐
+│ Click                            │
+└──────────────────────────────────┘
         )"
     }
     };
@@ -387,9 +377,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimBoth('$$ClickHouse$$', '$')",
         R"(
-┌─trimBoth('$$⋯se$$', '$')─┐
-│ ClickHouse               │
-└──────────────────────────┘
+┌─trimBoth('$$ClickHouse$$', '$')─┐
+│ ClickHouse                      │
+└─────────────────────────────────┘
         )"
     }
     };

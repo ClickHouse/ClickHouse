@@ -26,6 +26,7 @@ public:
 
     String getID(char) const override { return "SettingsProfileElement"; }
     ASTPtr clone() const override { return make_intrusive<ASTSettingsProfileElement>(*this); }
+    bool hasSecretParts() const override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -47,6 +48,7 @@ public:
 
     String getID(char) const override { return "SettingsProfileElements"; }
     ASTPtr clone() const override;
+    bool hasSecretParts() const override;
 
     void setUseInheritKeyword(bool use_inherit_keyword_);
 
@@ -76,6 +78,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    bool hasSecretParts() const override;
 
     void add(ASTAlterSettingsProfileElements && other);
 

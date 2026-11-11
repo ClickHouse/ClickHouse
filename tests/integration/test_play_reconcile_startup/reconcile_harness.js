@@ -196,12 +196,30 @@ function makeElement(tag) {
         applyColumnColors() {},
         applyPinnedColumns() {},
         refreshColumnColor() {},
+        refreshSortIndicators() {},
+        refreshFilterIndicators() {},
+        refreshCellControls() {},
+        renderPagination() {},
         transposeIfNeeded() {},
         _changeTableLayout() {},
+        finalizeFailedTable() {},
+        /// Read by `postSingle` before a failed run drops its page (the offset the streamed rows
+        /// were numbered from); the stub never paginates, so it is the unpaginated first page.
+        _rowNumberOffset() { return 0; },
         start() {},
         finish() {},
         updateProgress() {},
         updateText() {},
+        resetViewToggles() {},
+        setViewState() {},
+        showView() {},
+        enableViews() {},
+        finalizeMetrics() {},
+        feedProfileEvents() {},
+        adoptResourceState() {},
+        renderResourcesFrom() {},
+        appendLog() {},
+        updateMetrics() {},
         attachShadow() { return makeElement('shadow-root'); },
     };
     return el;
@@ -266,7 +284,8 @@ function makeIndexedDB(seedTabs, seedMeta, openDelayMs) {
     const stores = new Map();
     stores.set('tabs', { keyPath: 'id', data: new Map((seedTabs || []).map(r => [r.id, structuredClone(r)])) });
     stores.set('meta', { keyPath: 'key', data: new Map(seedMeta ? [['state', structuredClone(seedMeta)]] : []) });
-    const stats = { persistCount: 0 };
+    /// `openFired` records that the load window has closed: the open callback below has run.
+    const stats = { persistCount: 0, openFired: false };
 
     function makeStoreHandle(name) {
         const s = stores.get(name);
@@ -293,6 +312,7 @@ function makeIndexedDB(seedTabs, seedMeta, openDelayMs) {
             /// `openDelayMs` lets a scenario make `IndexedDB.open` slower than any auto-run that
             /// races startup reconciliation (see the stale-reload-run-race scenario).
             setTimeout(() => {
+                stats.openFired = true;
                 req.result = {
                     objectStoreNames: { contains: (n) => stores.has(n) },
                     createObjectStore(n, opts) {
@@ -415,7 +435,7 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
         atob: (b64) => Buffer.from(b64, 'base64').toString('binary'),
         btoa: (bin) => Buffer.from(bin, 'binary').toString('base64'),
         TextEncoder, TextDecoder,
-        URL, URLSearchParams,
+        URL, URLSearchParams, FormData,
         Event, CustomEvent,
         AbortController,
         structuredClone,
@@ -469,8 +489,16 @@ async function runScenario(js, config) {
     /// (see the dirty-startup scenario): run `config.duringLoad(sandbox)` inside the `openDelayMs`
     /// window, before `reconcileStartup` takes over the workspace (`bootstrap_settled`).
     if (config.duringLoad) {
-        await sleep(config.duringLoadDelayMs || 5);
+        /// The bootstrap is synchronous and `IndexedDB.open` can only resolve through a
+        /// `setTimeout`, so yielding to microtasks alone keeps the interaction before the open.
+        await Promise.resolve();
+        if (stats.openFired)
+            throw new Error('duringLoad ran after the IndexedDB open completed: the load window closed early');
+        if (vm.runInContext('bootstrap_settled', sandbox))
+            throw new Error('duringLoad ran after reconciliation settled: the load window closed early');
         config.duringLoad(sandbox);
+        if (!vm.runInContext('bootstrap_dirty', sandbox))
+            throw new Error('duringLoad did not mark the bootstrap workspace dirty');
     }
     /// Startup is asynchronous: `reconcileStartup` awaits IndexedDB and ends with the debounced
     /// `scheduleSave` (400 ms), whose `persist` writes the reconciled workspace back. Wait for
@@ -864,7 +892,9 @@ async function main() {
         const r = await runScenario(js, {
             href: base + '?tab=Scratch#' + stale_hash,
             historyState: { tabId: 't7', tabName: 'Scratch' },
-            openDelayMs: 30,
+            /// A zero-delay open leaves no wall-clock margin, so the load-window interaction below
+            /// holds only if it is ordered structurally rather than by timing.
+            openDelayMs: 0,
             duringLoad: (sandbox) => {
                 vm.runInContext(
                     "query_area.value = 'SELECT 999';" +
@@ -1051,6 +1081,207 @@ async function main() {
                 && r2.sandbox.history.state && r2.sandbox.history.state.params && r2.sandbox.history.state.params.x === '42'
                 && r2.persisted.length === 1 && r2.persisted[0].params && r2.persisted[0].params.x === '42',
             { url: r2.sandbox.location.href, state: r2.sandbox.history.state, persisted: r2.persisted.map(p => p.params) });
+    }
+
+    /// Guard (the `run=1` marker is per-tab, not per-session): opening a `?run=1` link must not
+    /// make OTHER tabs' URLs auto-runnable. The directive belongs to the load's own target tab;
+    /// a clean, run-backed tab that an editor-only writer happens to sync next (here: a tab
+    /// switch) must keep writing plain URLs, or a later ordinary reload would auto-execute its
+    /// query — possibly a write or DDL statement — that the user never asked to re-run.
+    {
+        const scratch_hash = Buffer.from('SELECT 7', 'utf8').toString('base64');
+        const r = await runScenario(js, {
+            href: base + '?tab=Scratch&run=1#' + scratch_hash,
+            historyState: null,
+            seedTabs: [
+                { id: 't7', title: 'Scratch', query: 'SELECT 7', params: {}, result: null, lastSavedQuery: 'SELECT 7' },
+                /// The result's connection must MATCH the live one, otherwise `run=1` would be
+                /// dropped by the connection-divergence check instead of by the policy under test.
+                { id: 't8', title: 'Report', query: 'SELECT 8', params: {},
+                  result: { ran: true, query: 'SELECT 8', params: {}, database: null,
+                            url: new URL(base).origin, user: '' },
+                  lastSavedQuery: 'SELECT 8' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+        /// Sanity: `Report` really is the clean, run-backed tab this contract is about — otherwise
+        /// the assertion below would pass for the trivial reason that no tab could carry `run=1`.
+        check('run-marker-per-tab', 'the Report tab is clean, run-backed and on the live connection',
+            vm.runInContext("(() => { const t = tabs.find(x => x.title === 'Report');" +
+                " return tabReflectsRun(t) && !liveDivergedFromRun(t.result); })()", r.sandbox),
+            vm.runInContext("JSON.stringify(tabs.map(t => ({ t: t.title, reflects: tabReflectsRun(t)," +
+                " diverged: liveDivergedFromRun(t.result) })))", r.sandbox));
+        /// Sanity: the load's directive is still live at the moment of the switch, so the
+        /// assertion below is about the per-tab policy and not about a spent global.
+        check('run-marker-per-tab', 'the load carries the `run=1` directive',
+            vm.runInContext('run_immediately', r.sandbox), null);
+        await vm.runInContext("switchToTab(tabs.find(t => t.title === 'Report').id)", r.sandbox);
+        await sleep(50);
+        check('run-marker-per-tab', "the switched-to tab's URL does not inherit the load's `run=1`",
+            new URL(r.sandbox.location.href).searchParams.get('run') === null,
+            r.sandbox.location.href);
+        check('run-marker-per-tab', "the switched-to tab's history entry does not inherit the policy",
+            !(r.sandbox.history.state && r.sandbox.history.state.runnableUrl),
+            r.sandbox.history.state);
+    }
+
+    /// Guard (a legacy Back/Forward entry clears an adopted policy): a history entry written
+    /// before `runnableUrl` was serialized carries no policy field; its own `run` marker is the
+    /// only evidence. Navigating from a modern `runnableUrl: true` entry to such a plain legacy
+    /// entry must CLEAR the tab's adopted policy, not merely fail to promote it: the restored tab
+    /// is clean and run-backed, so the next structural rewrite (`refreshCurrentHistoryEntry`)
+    /// would otherwise re-stamp the plain legacy entry as `?run=1`, and a later ordinary reload
+    /// would auto-execute a query the user never asked to re-run.
+    {
+        const origin = new URL(base).origin;
+        const report_hash = Buffer.from('SELECT 8', 'utf8').toString('base64');
+        const r = await runScenario(js, {
+            href: base + '?tab=Report',
+            historyState: null,
+            seedTabs: [
+                /// The result's connection must MATCH the live one, otherwise `run=1` would be
+                /// dropped by the connection-divergence check instead of by the policy under test.
+                { id: 't8', title: 'Report', query: 'SELECT 8', params: {},
+                  result: { ran: true, query: 'SELECT 8', params: {}, database: null,
+                            url: origin, user: '' },
+                  lastSavedQuery: 'SELECT 8' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+        const entryState = (extra) => Object.assign({
+            tabId: 't8', tabName: 'Report', query: 'SELECT 8', params: {},
+            result: { ran: true, query: 'SELECT 8', params: {}, database: null,
+                      url: origin, user: '' },
+            connectionServer: origin, connectionUser: '',
+        }, extra);
+        /// Back to a MODERN entry carrying the policy: the tab adopts it. This is the "promote"
+        /// direction, asserted so the clearing below cannot pass by never adopting a policy at all.
+        const modern = entryState({ runnableUrl: true });
+        r.sandbox.location._apply(base + '?tab=Report#' + report_hash);
+        r.sandbox.history.state = modern;
+        vm.runInContext(`window.onpopstate({ isTrusted: true, state: ${JSON.stringify(modern)} })`, r.sandbox);
+        await sleep(50);
+        check('legacy-popstate-clears-policy', 'a Back to a modern `runnableUrl: true` entry adopts the policy',
+            vm.runInContext("!!tabs.find(t => t.id === 't8').runnableUrl", r.sandbox),
+            vm.runInContext("JSON.stringify(tabs.map(t => ({ t: t.title, runnableUrl: t.runnableUrl })))", r.sandbox));
+        /// Back again, to a LEGACY entry of the same tab: `history.state` predates `runnableUrl`
+        /// (no such field) and the popped URL carries no `run`. The adopted policy must be cleared.
+        const legacy = entryState({});
+        r.sandbox.location._apply(base + '?tab=Report#' + report_hash);
+        r.sandbox.history.state = legacy;
+        vm.runInContext(`window.onpopstate({ isTrusted: true, state: ${JSON.stringify(legacy)} })`, r.sandbox);
+        await sleep(50);
+        check('legacy-popstate-clears-policy', 'a Back to a plain legacy entry clears the adopted policy',
+            vm.runInContext("tabs.find(t => t.id === 't8').runnableUrl === false", r.sandbox),
+            vm.runInContext("JSON.stringify(tabs.map(t => ({ t: t.title, runnableUrl: t.runnableUrl })))", r.sandbox));
+        /// Sanity: the restored tab really is clean, run-backed and on the live connection — the
+        /// exact state whose structural rewrite would re-stamp `run=1` were the policy left in place.
+        check('legacy-popstate-clears-policy', 'the restored tab is clean, run-backed and on the live connection',
+            vm.runInContext("(() => { const t = tabs.find(x => x.id === 't8');" +
+                " return tabReflectsRun(t) && !liveDivergedFromRun(t.result); })()", r.sandbox),
+            vm.runInContext("JSON.stringify(tabs.map(t => ({ t: t.title, reflects: tabReflectsRun(t)," +
+                " diverged: liveDivergedFromRun(t.result) })))", r.sandbox));
+        /// The structural rewrite itself: with a stale `true` policy it would rewrite this plain
+        /// legacy entry as `?run=1&tab=Report#...`; with the policy cleared it stays plain.
+        vm.runInContext('refreshCurrentHistoryEntry(getActiveTab())', r.sandbox);
+        await sleep(50);
+        check('legacy-popstate-clears-policy', 'a structural rewrite of the legacy entry does not stamp run=1',
+            new URL(r.sandbox.location.href).searchParams.get('run') === null,
+            r.sandbox.location.href);
+        check('legacy-popstate-clears-policy', 'the rewritten entry does not carry the policy either',
+            !(r.sandbox.history.state && r.sandbox.history.state.runnableUrl),
+            r.sandbox.history.state);
+    }
+
+    /// Guard (the marker is not lost either): the per-tab policy must still let a genuine run
+    /// under a `?run=1` load write an auto-runnable URL — that is what makes a shared `run=1`
+    /// link reproducible. On `master` the session-global was cleared for the whole page by a
+    /// stale reload or a dirty startup, which silently disabled the feature for every later run.
+    {
+        const q = 'SELECT 5';
+        const r = await runScenario(js, {
+            href: base + '?run=1#' + Buffer.from(q, 'utf8').toString('base64'),
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+        });
+        vm.runInContext(
+            "(() => { const t = getActiveTab();" +
+            " saveHistory({ query: t.query, params: {}, database: selected_database," +
+            " url: url_elem.value, user: user_elem.value, ok: true, data: null, fullEditor: true }, undefined, t); })()",
+            r.sandbox);
+        await sleep(50);
+        check('run-marker-kept-for-own-run', 'a genuine run under a `run=1` load keeps `run=1` on its own URL',
+            new URL(r.sandbox.location.href).searchParams.get('run') === '1',
+            r.sandbox.location.href);
+    }
+
+    /// Guard (a plain load never produces an auto-runnable URL): the same genuine run under a
+    /// plain `/play` load must NOT stamp `run=1`, so an ordinary session never leaves behind a
+    /// URL that a later reload would execute.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't7', title: 'Report', query: 'SELECT 5', params: {}, result: null, lastSavedQuery: 'SELECT 5' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
+        });
+        vm.runInContext(
+            "(() => { const t = getActiveTab();" +
+            " saveHistory({ query: t.query, params: {}, database: selected_database," +
+            " url: url_elem.value, user: user_elem.value, ok: true, data: null, fullEditor: true }, undefined, t); })()",
+            r.sandbox);
+        await sleep(50);
+        check('run-marker-plain-load', 'a run under a plain load writes a plain URL',
+            new URL(r.sandbox.location.href).searchParams.get('run') === null,
+            r.sandbox.location.href);
+    }
+
+    /// Contract (a result shape reaches the URL and the history entry only through the run that
+    /// applies it): `commitResultShape` launches the re-run WITHOUT stamping the chosen shape, because
+    /// the launch is what decides whether the shape still belongs to the statement (and the context)
+    /// being run. Stamping it first would leave a `sort_columns` / `filters` / `page` in the entry and
+    /// the URL that a `Stop` or a reload before the run's own history write turns into a shape rebound
+    /// to an unrelated draft on the next load.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't7', title: 'Report', query: 'SELECT a FROM t', params: {}, result: null,
+                  lastSavedQuery: 'SELECT a FROM t' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
+        });
+        /// Stand in for the launch: the shape must be committed by a click in the result view exactly
+        /// as the header arrows do it, but nothing must actually run here - the point is what the page
+        /// looks like BETWEEN the click and the run.
+        vm.runInContext(
+            "(() => { globalThis.__launched = 0; postOne = async () => { ++globalThis.__launched; };" +
+            " const t = getActiveTab(); const c = activeCell(t); c.sortColumns.push({ name: 'a', desc: true });" +
+            " commitResultShape({ _ownerCell: c, _queryText: c.query }); })()",
+            r.sandbox);
+        await sleep(50);
+        check('shape-not-stamped-before-run', 'the shape change launched the re-run',
+            vm.runInContext('globalThis.__launched', r.sandbox) === 1,
+            vm.runInContext('globalThis.__launched', r.sandbox));
+        check('shape-not-stamped-before-run', 'the URL carries no shape until the run applies it',
+            new URL(r.sandbox.location.href).searchParams.get('sort_columns') === null,
+            r.sandbox.location.href);
+        check('shape-not-stamped-before-run', 'the history entry carries none either',
+            !(r.sandbox.history.state && r.sandbox.history.state.sort_columns
+                && r.sandbox.history.state.sort_columns.length),
+            r.sandbox.history.state);
+        /// And the launch DOES stamp it, once it has resolved the shape for the statement it runs -
+        /// this is the call `postSingle` makes right after `resolveShapeForRun`.
+        vm.runInContext('persistResultShape(activeCell(getActiveTab()))', r.sandbox);
+        await sleep(50);
+        check('shape-not-stamped-before-run', 'the run stamps the shape it resolved',
+            new URL(r.sandbox.location.href).searchParams.get('sort_columns')
+                === JSON.stringify([{ name: 'a', desc: true }]),
+            r.sandbox.location.href);
     }
 
     /// Contract (parameters follow the editor on every keystroke): the query parameters, unlike the
@@ -1408,6 +1639,157 @@ async function main() {
         check('close-folds-draft', 'Back recreates the closed tab with the draft',
             vm.runInContext("tabs.some(t => t.query === 'SELECT 2')", r.sandbox),
             vm.runInContext("JSON.stringify(tabs.map(t => t.query))", r.sandbox));
+    }
+
+    /// Guard (dirty-startup Format): clicking "Format" while the saved workspace is still loading
+    /// is a user action on the live editor. It must mark the bootstrap workspace dirty before its
+    /// server round-trip (`runScenario` asserts that `duringLoad` did), otherwise reconciliation can
+    /// activate the saved tab and the formatted text is discarded as stale when the response arrives.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            openDelayMs: 30,
+            duringLoad: (sandbox) => {
+                vm.runInContext(
+                    "query_area.value = 'select 999';" +
+                    "format_button.dispatchEvent({ type: 'click', isTrusted: true });",
+                    sandbox);
+            },
+            seedTabs: [
+                { id: 't8', title: 'Report', query: 'SELECT 1', params: {}, result: null, lastSavedQuery: 'SELECT 1' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+        check('dirty-startup-format', 'reconciliation keeps the live editor text the Format click was sent for',
+            vm.runInContext("query_area.value", r.sandbox) === 'select 999',
+            vm.runInContext("query_area.value", r.sandbox));
+    }
+
+    /// Guard (Format across a connection change): the result of a `formatQuery` request sent to the
+    /// previous server/user must not replace the editor text once the connection has changed, even
+    /// though the tab and the text are the same. The control run (no connection change) proves the
+    /// stubbed round-trip does apply the result.
+    /// The stubbed server "formats" each statement (`param_q<N>`) by upper-casing it and returns it
+    /// as `f<N>`, like `SELECT formatQuery({q0:String}) AS f0, ...` does.
+    const formatScenario = async (config) => {
+        const r = await runScenario(js, Object.assign({
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't8', title: 'Report', query: 'select 1', params: {}, result: null, lastSavedQuery: 'select 1' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+        }, config));
+        const query_area = r.sandbox.document.getElementById('query');
+        r.sandbox.document.execCommand = (command, show_ui, text) => {
+            query_area.value = text;
+            return true;
+        };
+        /// `requests` collects the statements of every request sent; `error` makes the stubbed
+        /// server answer with an exception, as for a syntax error in one of the statements.
+        const formatWith = async (text, during_request, { error = false, wait_ms = 50 } = {}) => {
+            let respond;
+            const responded = new Promise(resolve => { respond = resolve; });
+            const requests = [];
+            r.sandbox.fetch = async (url, init) => {
+                const statements = [];
+                for (let i = 0; init.body.has(`param_q${i}`); ++i) statements.push(init.body.get(`param_q${i}`));
+                requests.push(statements);
+                await responded;
+                const row = {};
+                statements.forEach((statement, i) => { row[`f${i}`] = statement.toUpperCase(); });
+                return {
+                    ok: !error,
+                    status: error ? 400 : 200,
+                    headers: { get: () => null },
+                    text: async () => 'Code: 62. DB::Exception: Syntax error',
+                    json: async () => ({ data: [row] }),
+                };
+            };
+            vm.runInContext("query_area.value = " + JSON.stringify(text) + ";" +
+                "format_button.dispatchEvent({ type: 'click', isTrusted: true });", r.sandbox);
+            during_request();
+            respond();
+            await sleep(wait_ms);
+            return { text: query_area.value, requests };
+        };
+        return { r, formatWith };
+    };
+
+    {
+        const { formatWith } = await formatScenario({});
+        const control = await formatWith('select 1', () => {});
+        check('format-connection-change', 'the Format result is applied when the connection is unchanged',
+            control.text === 'SELECT 1', control.text);
+    }
+    {
+        const { r, formatWith } = await formatScenario({});
+        const switched = await formatWith('select 1', () => {
+            vm.runInContext("user_elem.value = 'other_user';" +
+                "user_elem.dispatchEvent({ type: 'input', isTrusted: true });", r.sandbox);
+        });
+        check('format-connection-change', 'the Format result for the previous connection is discarded',
+            switched.text === 'select 1', switched.text);
+    }
+
+    /// Guard (Format of several statements): every statement is formatted separately and replaced
+    /// in place; the delimiters, whitespace and comments between the statements are kept as is.
+    {
+        const { formatWith } = await formatScenario({});
+        const multi = await formatWith('select 1;\n-- comment; not a delimiter\nselect 2 ;  ', () => {});
+        check('format-multi-statement', 'each statement is sent separately, without delimiters and comments',
+            JSON.stringify(multi.requests) === JSON.stringify([['select 1', 'select 2']]), multi.requests);
+        check('format-multi-statement', 'each statement is replaced in place',
+            multi.text === 'SELECT 1;\n-- comment; not a delimiter\nSELECT 2 ;  ', multi.text);
+
+        /// All or nothing: an error in any statement leaves the whole editor text unchanged.
+        const failed = await formatWith('select 1; selec 2', () => {}, { error: true });
+        check('format-multi-statement', 'an error in one statement leaves the editor unchanged',
+            failed.text === 'select 1; selec 2', failed.text);
+
+        /// The lexer stops at an unterminated string literal or comment: the remainder must still be
+        /// sent (for the server to report the error), not silently dropped while the valid prefix
+        /// is formatted.
+        const unterminated = await formatWith("select 1; select 2 'unterminated", () => {});
+        check('format-multi-statement', 'the text after a lexer error is sent with the last statement',
+            JSON.stringify(unterminated.requests) === JSON.stringify([['select 1', "select 2 'unterminated"]]),
+            unterminated.requests);
+        const only_comment = await formatWith('select 1; /* unterminated', () => {});
+        check('format-multi-statement', 'an unterminated comment after the last delimiter is sent as a statement',
+            JSON.stringify(only_comment.requests) === JSON.stringify([['select 1', '/* unterminated']]),
+            only_comment.requests);
+
+        /// A leading byte order mark is whitespace for the lexer, so it stays outside the statements,
+        /// but it is a part of the text: the statement offsets must account for it, or the
+        /// statements are cut short (`\uFEFFselect ` instead of `select 1`).
+        const bom = await formatWith('\uFEFFselect 1;', () => {});
+        check('format-multi-statement', 'a leading BOM does not shift the statement boundaries',
+            JSON.stringify(bom.requests) === JSON.stringify([['select 1']]), bom.requests);
+        check('format-multi-statement', 'a leading BOM is kept in the editor',
+            bom.text === '\uFEFFSELECT 1;', bom.text);
+        const bom_multi = await formatWith('\uFEFFselect 1; select 2;', () => {});
+        check('format-multi-statement', 'a leading BOM does not shift the boundaries of later statements',
+            JSON.stringify(bom_multi.requests) === JSON.stringify([['select 1', 'select 2']]),
+            bom_multi.requests);
+    }
+
+    /// Guard (Format across a connection change during the lexer load): the first click loads the
+    /// lexer before the request is built; a connection selected meanwhile must not receive the
+    /// text the click was made for.
+    {
+        const { r, formatWith } = await formatScenario({ wasmInstantiateDelayMs: 1000 });
+        check('format-connection-change-lexer-load', 'the lexer module is still loading when the scenario acts',
+            vm.runInContext('typeof lexer_module', r.sandbox) === 'undefined',
+            vm.runInContext('typeof lexer_module', r.sandbox));
+        const switched = await formatWith('select 1', () => {
+            vm.runInContext("user_elem.value = 'other_user';" +
+                "user_elem.dispatchEvent({ type: 'input', isTrusted: true });", r.sandbox);
+        }, { wait_ms: 1500 });
+        check('format-connection-change-lexer-load', 'no request is sent for the previous connection',
+            switched.requests.length === 0, switched.requests);
+        check('format-connection-change-lexer-load', 'the editor text is unchanged',
+            switched.text === 'select 1', switched.text);
     }
 
     if (failures) {

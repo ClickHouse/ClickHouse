@@ -3,12 +3,14 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Backups/BackupIO_AzureBlobStorage.h>
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupSourceAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
@@ -16,6 +18,8 @@
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 
 #include <Poco/URI.h>
+
+#include <filesystem>
 
 #endif
 
@@ -180,6 +184,28 @@ namespace
         return location;
     }
 
+    std::optional<BackupFactory::SourceAccessTarget>
+    getAzureSourceAccess(const BackupInfo & backup_info, ContextPtr context, IBackup::OpenMode open_mode)
+    {
+        BackupFactory::SourceAccessTarget target{
+            AccessTypeObjects::Source::AZURE, "", backupSourceAccessFlagsForReaderUnlock(open_mode)};
+
+        /// A collection can be re-pointed after this returns, so an empty URI keeps it whole-source.
+        /// Resolving it is still required: that is where `NAMED_COLLECTION` is enforced.
+        if (!backup_info.id_arg.empty())
+        {
+            backup_info.getNamedCollection(context);
+            return target;
+        }
+
+        /// The key that is accessed: an archive is opened under the split-off `blob_path`.
+        const auto location = resolveAzureBackupLocation(backup_info, context);
+        target.uri = location.archive_name.empty()
+            ? location.blob_path
+            : String(std::filesystem::path(location.blob_path) / location.archive_name);
+        return target;
+    }
+
     Strings getAzureDestinationIdentity(const BackupInfo & backup_info, ContextPtr context)
     {
         auto location = resolveAzureBackupLocation(backup_info, context);
@@ -279,12 +305,11 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.write_settings,
                 params.context);
 
-            auto snapshot_reader_creator = [&](const String & endpoint, const String & container_name)
+#if CLICKHOUSE_CLOUD
+            auto snapshot_reader_creator = [&](const String & endpoint, const String & blob_namespace)
             {
-                connection_params.endpoint.storage_account_url = endpoint;
-                connection_params.endpoint.container_name = container_name;
                 return std::make_shared<BackupReaderAzureBlobStorage>(
-                    connection_params,
+                    makeSnapshotSourceConnectionParams(connection_params, endpoint, blob_namespace),
                     "",
                     params.allow_azure_native_copy,
                     params.read_settings,
@@ -293,6 +318,9 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             };
 
             return std::make_unique<BackupImpl>(params, archive_params, reader, snapshot_reader_creator);
+#else
+            return std::make_unique<BackupImpl>(params, archive_params, reader);
+#endif
         }
 
         auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
@@ -320,7 +348,18 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn);
+    auto source_access_fn = []([[maybe_unused]] const BackupInfo & backup_info,
+                               [[maybe_unused]] ContextPtr context,
+                               [[maybe_unused]] IBackup::OpenMode open_mode) -> std::optional<BackupFactory::SourceAccessTarget>
+    {
+#if USE_AZURE_BLOB_STORAGE
+        return getAzureSourceAccess(backup_info, context, open_mode);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AzureBlobStorage support is disabled");
+#endif
+    };
+
+    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn, azureBackupSecretArguments());
 }
 
 }

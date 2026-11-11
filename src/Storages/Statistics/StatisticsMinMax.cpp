@@ -4,7 +4,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorWriteBinary.h>
 #include <Common/FieldVisitorToString.h>
 
 
@@ -33,17 +35,8 @@ void StatisticsMinMax::build(const ColumnPtr & column)
 
     column->getExtremes(min_field, max_field, 0, column->size());
 
-    if (!min_field.isNull())
-    {
-        if (min.isNull() || min_field < min)
-            min = min_field;
-    }
-
-    if (!max_field.isNull())
-    {
-        if (max.isNull() || max_field > max)
-            max = max_field;
-    }
+    StatisticsUtils::updateMin(min, min_field);
+    StatisticsUtils::updateMax(max, max_field);
 
     row_count += column->size();
 }
@@ -51,10 +44,8 @@ void StatisticsMinMax::build(const ColumnPtr & column)
 void StatisticsMinMax::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsMinMax * other = typeid_cast<const StatisticsMinMax *>(other_stats.get());
-    if (!other->min.isNull() && (min.isNull() || other->min < min))
-        min = other->min;
-    if (!other->max.isNull() && (max.isNull() || other->max > max))
-        max = other->max;
+    StatisticsUtils::updateMin(min, other->min);
+    StatisticsUtils::updateMax(max, other->max);
     row_count += other->row_count;
 }
 
@@ -64,6 +55,15 @@ void StatisticsMinMax::serialize(WriteBuffer & buf)
     writeStringBinary(data_type->getName(), buf);
     writeFieldBinary(min, buf);
     writeFieldBinary(max, buf);
+}
+
+std::optional<UInt64> StatisticsMinMax::getSerializedSize() const
+{
+    const String type_name = data_type->getName();
+    return sizeof(row_count)
+        + getLengthOfVarUInt(type_name.size()) + type_name.size()
+        + getFieldBinarySize(min)
+        + getFieldBinarySize(max);
 }
 
 void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
@@ -101,6 +101,11 @@ std::optional<Float64> StatisticsMinMax::estimateLess(const Field & val) const
     return StatisticsUtils::interpolateLessLinear(val, min, max, row_count, data_type);
 }
 
+size_t StatisticsMinMax::allocatedBytes() const
+{
+    return sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max);
+}
+
 String StatisticsMinMax::getNameForLogs() const
 {
     return fmt::format("MinMax: ({}, {})", applyVisitor(FieldVisitorToString(), min), applyVisitor(FieldVisitorToString(), max));
@@ -108,9 +113,7 @@ String StatisticsMinMax::getNameForLogs() const
 
 bool minMaxStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    auto inner_data_type = removeNullable(data_type);
-    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber();
+    return canStatisticsTrackMinMax(data_type);
 }
 
 StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

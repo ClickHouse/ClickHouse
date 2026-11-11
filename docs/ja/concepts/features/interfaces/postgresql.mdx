@@ -11,12 +11,12 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 <CloudNotSupportedBadge />
 
 <Tip>
-  [Managed Postgres](/ja/products/managed-postgres/overview) サービスもぜひご覧ください。コンピュートと物理的に同一場所に配置された NVMe storage を基盤としており、EBS のようなネットワーク接続型ストレージを使用する代替手段と比べて、ディスク I/O がボトルネックとなるワークロードで最大 10 倍高速なパフォーマンスを実現します。また、ClickPipes の Postgres CDC (変更データキャプチャ) コネクタを使用して、Postgres のデータを ClickHouse にレプリケートできます。
+  [ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) サービスもぜひご覧ください。コンピュートと物理的に同一場所に配置された NVMe storage を基盤としており、EBS のようなネットワーク接続型ストレージを使用する代替手段と比べて、ディスク I/O がボトルネックとなるワークロードで最大 10 倍高速なパフォーマンスを実現します。また、ClickPipes の Postgres CDC (変更データキャプチャ) コネクタを使用して、Postgres のデータを ClickHouse にレプリケートできます。
 </Tip>
 
 ClickHouse は PostgreSQL ワイヤプロトコル をサポートしているため、Postgres クライアントを使って ClickHouse に接続できます。言い換えると、ClickHouse は PostgreSQL インスタンスとして振る舞えるため、ClickHouse がまだ直接サポートしていない PostgreSQLクライアントアプリケーション (たとえば Amazon Redshift) からでも ClickHouse に接続できます。
 
-PostgreSQL ワイヤプロトコル を有効にするには、サーバーの設定ファイルに [postgresql&#95;port](/ja/reference/settings/server-settings/settings#postgresql_port) 設定を追加します。たとえば、`config.d` フォルダー内の新しい XML ファイルでポートを定義できます。
+PostgreSQL ワイヤプロトコル を有効にするには、サーバーの設定ファイルに [postgresql&#95;port](/ja/reference/settings/server-settings/settings/postgresql#postgresql_port) 設定を追加します。たとえば、`config.d` フォルダー内の新しい XML ファイルでポートを定義できます。
 
 ```xml
 <clickhouse>
