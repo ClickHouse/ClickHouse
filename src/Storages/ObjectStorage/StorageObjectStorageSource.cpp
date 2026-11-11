@@ -2085,7 +2085,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// Columns that only this object contains, e.g. `_change_type` of a CDC file of the Delta Lake change data feed.
         /// Read them only if the query needs them: the schema transform of the object takes them from the file, but it
         /// keeps only the needed columns (see below), and a column it does not consume would pass through it.
-        if (!schema_changed && object_info->data_lake_metadata)
+        if (!schema_changed && object_info->data_lake_metadata && object_info->data_lake_metadata->additional_file_columns)
         {
             auto is_needed = [&](const String & column_name)
             {
@@ -2096,7 +2096,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return stripped_prewhere_info && stripped_prewhere_info->prewhere_actions.getRequiredColumns().contains(column_name);
             };
             bool header_extended = false;
-            for (const auto & column : object_info->data_lake_metadata->additional_file_columns)
+            for (const auto & column : *object_info->data_lake_metadata->additional_file_columns)
             {
                 if (!initial_header.has(column.name) && is_needed(column.name))
                 {

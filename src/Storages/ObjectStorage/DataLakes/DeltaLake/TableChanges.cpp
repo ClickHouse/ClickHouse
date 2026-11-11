@@ -194,7 +194,8 @@ private:
             transform, is_cdc ? cdc_read_schema : read_schema, expression_schema, enable_expression_visitor_logging);
 
         if (is_cdc)
-            metadata.additional_file_columns.emplace_back(TableChanges::CHANGE_TYPE_COLUMN, std::make_shared<DB::DataTypeString>());
+            metadata.additional_file_columns = std::make_shared<const DB::NamesAndTypesList>(
+                DB::NamesAndTypesList{{TableChanges::CHANGE_TYPE_COLUMN, std::make_shared<DB::DataTypeString>()}});
 
         if (row_indexes_len > 0)
         {
