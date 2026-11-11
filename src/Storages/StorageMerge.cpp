@@ -1431,13 +1431,16 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 NameSet resolved_column_names_set;
                 resolved_column_names.reserve(column_names_to_read.size());
 
+                const bool child_supports_subcolumns = storage->supportsSubcolumns();
                 for (auto & column_name : column_names_to_read)
                 {
                     auto name_to_read = getChildColumnToRead(column_name, child_columns, merge_columns);
-                    /// A child that cannot read subcolumns reads the whole column; the subcolumn is extracted
-                    /// in `convertAndFilterSourceStream`. The access check still authorizes the subcolumn itself.
-                    if (name_to_read && !storage->supportsSubcolumns() && !child_columns.has(*name_to_read))
-                        name_to_read = getColumnToReadInsteadOfSubcolumn(*name_to_read, child_columns, merge_columns);
+                    /// A child that cannot read subcolumns reads the whole column; the subcolumn is extracted with the child's
+                    /// type in `convertAndFilterSourceStream`. The access check still authorizes the subcolumn itself.
+                    if (name_to_read && !child_supports_subcolumns && !child_columns.has(*name_to_read))
+                        if (auto child_column = child_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, *name_to_read);
+                            child_column && child_column->isSubcolumn())
+                            name_to_read = child_column->getNameInStorage();
                     if (!name_to_read)
                         continue;
 
@@ -2703,7 +2706,36 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             /// See `getColumnToReadInsteadOfSubcolumn`: the child either produces the name already,
             /// or it is a column of its own that the child does not have - and gets a default below.
-            if (child_header.has(required_column.name) || merge_columns.has(required_column.name))
+            if (child_header.has(required_column.name))
+                continue;
+
+            /// A child that cannot read subcolumns returned the whole column (see `createChildrenPlans`).
+            if (!snapshot->storage.supportsSubcolumns())
+            {
+                auto child_column = snapshot->tryGetColumn(
+                    GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All),
+                    required_column.name);
+                if (child_column && child_column->isSubcolumn() && child_header.has(child_column->getNameInStorage()))
+                {
+                    /// getSubcolumn(<parent as the child returned it>, '<subcolumn name>') - NO cast here; the converting
+                    /// actions below cast the extracted column to the `Merge` type, as for a subcolumn read by a capable child.
+                    const String parent_name = child_column->getNameInStorage();
+                    const String subcolumn_name = child_column->getSubcolumnName();
+                    auto subcolumn_name_type = std::make_shared<DataTypeString>();
+                    auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn_name);
+                    const auto & subcolumn_name_node = extract_subcolumns_dag.addColumn(
+                        std::move(subcolumn_name_column), std::move(subcolumn_name_type), "'" + subcolumn_name + "'");
+                    const auto & get_subcolumn_node = extract_subcolumns_dag.addFunction(
+                        FunctionFactory::instance().get("getSubcolumn", local_context),
+                        {&extract_subcolumns_dag.findInOutputs(parent_name), &subcolumn_name_node}, {});
+                    extracted_subcolumns.push_back(&extract_subcolumns_dag.addAlias(get_subcolumn_node, required_column.name));
+                    if (!header.has(parent_name))
+                        columns_to_drop.insert(parent_name);
+                    continue;
+                }
+            }
+
+            if (merge_columns.has(required_column.name))
                 continue;
 
             for (auto [name_in_storage_view, subcolumn_name_view] : Nested::getAllColumnAndSubcolumnPairs(required_column.name))
