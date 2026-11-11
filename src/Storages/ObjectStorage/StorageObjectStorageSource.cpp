@@ -1888,7 +1888,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         result->top_k_filter = format_filter_info->top_k_filter;
                     /// With a schema transform the reader sees the names of the file's schema, which the filters do not use.
                     if (keep_in_reader)
-                        result->join_runtime_filters = format_filter_info->join_runtime_filters;
+                        result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
                     return result;
                 }
             }
@@ -1921,7 +1921,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;
-                result->join_runtime_filters = format_filter_info->join_runtime_filters;
+                result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
                 return result;
             }
 
@@ -1972,7 +1972,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info_with_row_numbers->condition_hash = filter_info->condition_hash;
                 filter_info_with_row_numbers->rows_to_read = filter_info->rows_to_read;
                 filter_info_with_row_numbers->top_k_filter = filter_info->top_k_filter;
-                filter_info_with_row_numbers->join_runtime_filters = filter_info->join_runtime_filters;
+                filter_info_with_row_numbers->join_runtime_filter_predicate = filter_info->join_runtime_filter_predicate;
             }
             filter_info_with_row_numbers->need_row_numbers = true;
             filter_info = filter_info_with_row_numbers;

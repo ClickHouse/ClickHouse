@@ -53,7 +53,7 @@ public:
 
     size_t estimatedKeysCount() override;
 
-    void setJoinRuntimeFilters(const RuntimeFilterIndexAnalysisDescriptors & descriptors, RuntimeFilterLookupPtr lookup) override;
+    void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> predicate) override;
 
     ~IcebergIterator() override;
 

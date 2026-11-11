@@ -661,7 +661,7 @@ struct Reader
 
     std::optional<KeyCondition> bloom_filter_condition;
 
-    /// See FormatFilterInfo::join_runtime_filters.
+    /// See FormatFilterInfo::join_runtime_filter_predicate.
     std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition;
     size_t row_groups_pruned_by_join_runtime_filter = 0;
 

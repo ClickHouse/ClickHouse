@@ -298,49 +298,39 @@ std::optional<std::shared_ptr<const KeyCondition>> FormatFilterInfo::tryGetJoinR
     std::lock_guard lock(join_runtime_filter_mutex);
     if (join_runtime_filter_key_condition_built)
         return join_runtime_filter_key_condition;
-    if (!join_runtime_filters)
+    if (!join_runtime_filter_predicate)
+        return nullptr;
+
+    auto predicate = join_runtime_filter_predicate->tryGet();
+    if (!predicate)
+        return std::nullopt;
+
+    join_runtime_filter_key_condition_built = true;
+    auto ctx = context.lock();
+    if (!*predicate || !ctx)
         return nullptr;
 
     ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();
     for (const auto & column : additional_columns)
         columns.push_back(column);
 
-    RuntimeFilterIndexAnalysisDescriptors descriptors;
-    for (const auto & descriptor : join_runtime_filters->descriptors)
+    /// The predicate reads each key as the type of the read step's output; KeyCondition would compare the statistics of
+    /// a column of another type wrongly. Renamed, the column is unknown to the predicate, which then ignores that key.
+    for (const auto & descriptor : join_runtime_filter_predicate->getDescriptors())
     {
         auto it = std::ranges::find(columns, descriptor.key_column_name, &ColumnWithTypeAndName::name);
-        if (it != columns.end() && it->type->equals(*descriptor.key_column_type))
-            descriptors.push_back(descriptor);
+        if (it != columns.end() && !it->type->equals(*descriptor.key_column_type))
+            it->name = "__join_runtime_filter_key_of_another_type_" + it->name;
     }
-
-    const auto & lookup = *join_runtime_filters->lookup;
-    for (const auto & descriptor : descriptors)
-    {
-        auto filter = lookup.find(descriptor.filter_id);
-        if (!filter || !filter->isReady())
-            return std::nullopt;
-    }
-
-    join_runtime_filter_key_condition_built = true;
-    auto ctx = context.lock();
-    if (!ctx || descriptors.empty())
-        return nullptr;
-
-    auto dag = std::make_shared<ActionsDAG>();
-    const auto * predicate = buildRuntimeRangePredicate(lookup, descriptors, *dag, ctx);
-    if (!predicate)
-        return nullptr;
-    dag->getOutputs() = {predicate};
 
     Names names;
     names.reserve(columns.size());
     for (const auto & column : columns)
         names.push_back(column.name);
 
-    ActionsDAGWithInversionPushDown inverted_dag(predicate, ctx, /* boolean_context */ true);
+    ActionsDAGWithInversionPushDown inverted_dag((*predicate)->getOutputs().front(), ctx, /* boolean_context */ true);
     join_runtime_filter_key_condition = std::make_shared<const KeyCondition>(
         inverted_dag, ctx, names, std::make_shared<ExpressionActions>(ActionsDAG(columns)));
-    join_runtime_filter_dag = std::move(dag);
     return join_runtime_filter_key_condition;
 }
 

@@ -99,8 +99,6 @@ private:
     /// What the main read keeps besides `required_names` when columns are split off.
     NameSet getNamesToKeepInMainRead(const NameSet & required_names) const;
 
-    RuntimeFilterLookupPtr getJoinRuntimeFilterLookup() const;
-
     StorageID storage_id;
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
@@ -110,6 +108,8 @@ private:
     StorageMetadataPtr iterator_metadata;
 
     RuntimeFilterIndexAnalysisDescriptors join_runtime_filters_for_file_pruning;
+    /// Built from `join_runtime_filters_for_file_pruning` by `createIterator`, shared by the file iterator and the formats.
+    std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
 
     /// Memoized `getOrCreateDataLakeReadEstimate`, which walks the manifests; reset when the filter changes.
     /// A storage without an estimate returns nullptr without any work, so nullptr is not memoized.

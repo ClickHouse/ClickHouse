@@ -1260,7 +1260,7 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         }
     }
 
-    if (format_filter_info->join_runtime_filters && options.format.parquet.filter_push_down)
+    if (format_filter_info->join_runtime_filter_predicate && options.format.parquet.filter_push_down)
     {
         auto condition = format_filter_info->tryGetJoinRuntimeFilterKeyCondition(*sample_block);
         if (condition && *condition && !(*condition)->alwaysUnknownOrTrue())

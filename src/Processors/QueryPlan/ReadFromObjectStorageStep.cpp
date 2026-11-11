@@ -207,17 +207,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     }
 
     const auto & settings = context->getSettingsRef();
-    if (configuration->isIcebergConfiguration() && !join_runtime_filters_for_file_pruning.empty()
+    if (join_runtime_filter_predicate && configuration->isIcebergConfiguration()
         && settings[Setting::use_join_runtime_filters_for_iceberg_pruning] && settings[Setting::enable_join_runtime_filters_index_analysis])
     {
-        if (auto lookup = getJoinRuntimeFilterLookup())
-        {
-            format_filter_info->join_runtime_filters = std::make_shared<const JoinRuntimeFiltersForPruning>(
-                JoinRuntimeFiltersForPruning{join_runtime_filters_for_file_pruning, std::move(lookup)});
-            if (top_k_query_condition_cache_key && top_k_query_condition_cache_key->format_filter_info_tracking_best_values)
-                top_k_query_condition_cache_key->format_filter_info_tracking_best_values->join_runtime_filters
-                    = format_filter_info->join_runtime_filters;
-        }
+        format_filter_info->join_runtime_filter_predicate = join_runtime_filter_predicate;
+        if (top_k_query_condition_cache_key && top_k_query_condition_cache_key->format_filter_info_tracking_best_values)
+            top_k_query_condition_cache_key->format_filter_info_tracking_best_values->join_runtime_filter_predicate = join_runtime_filter_predicate;
     }
 
     auto file_iterator = iterator_wrapper;
@@ -294,17 +289,15 @@ void ReadFromObjectStorageStep::createIterator()
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 
-    if (!join_runtime_filters_for_file_pruning.empty())
-        if (auto lookup = getJoinRuntimeFilterLookup())
-            iterator_wrapper->setJoinRuntimeFilters(join_runtime_filters_for_file_pruning, std::move(lookup));
-}
-
-RuntimeFilterLookupPtr ReadFromObjectStorageStep::getJoinRuntimeFilterLookup() const
-{
     /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
-    if (auto query_context = CurrentThread::tryGetQueryContext())
-        return query_context->getRuntimeFilterLookup();
-    return nullptr;
+    if (!join_runtime_filters_for_file_pruning.empty())
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto lookup = query_context->getRuntimeFilterLookup())
+            {
+                join_runtime_filter_predicate
+                    = std::make_shared<const RuntimeFilterPruningPredicate>(join_runtime_filters_for_file_pruning, std::move(lookup), context);
+                iterator_wrapper->setJoinRuntimeFilters(join_runtime_filter_predicate);
+            }
 }
 
 std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
