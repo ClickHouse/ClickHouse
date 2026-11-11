@@ -140,14 +140,13 @@ private:
     LoggerPtr log = getLogger("ObjectIteratorWithPathAndFileFilter");
 };
 
-/// Replays an already-enumerated prefix, then continues delegating to the underlying iterator.
-/// Enumerating a prefix consumes it destructively; this restores what the consumer would
-/// otherwise never see.
-class ObjectIteratorReplayThenDelegate : public IObjectIterator
+/// Hands out objects already taken from `iterator` before continuing with it, so a caller can look ahead
+/// without losing what it took.
+class ObjectIteratorWithPeekedObjects : public IObjectIterator
 {
 public:
-    ObjectIteratorReplayThenDelegate(ObjectInfos replay_, ObjectIterator iterator_)
-        : replay(std::move(replay_)), iterator(std::move(iterator_))
+    ObjectIteratorWithPeekedObjects(ObjectInfos peeked_objects_, ObjectIterator iterator_)
+        : peeked_objects(std::move(peeked_objects_)), iterator(std::move(iterator_))
     {
     }
 
@@ -155,14 +154,14 @@ public:
     {
         {
             std::lock_guard lock(mutex);
-            if (replay_pos < replay.size())
-                return replay[replay_pos++];
+            if (next_peeked_object < peeked_objects.size())
+                return peeked_objects[next_peeked_object++];
         }
         return iterator->next(id);
     }
 
-    /// The un-replayed prefix counts too: a drained delegate can report 0, and a consumer seeing
-    /// <= 1 key collapses to a single stream.
+    /// The peeked objects not handed out yet count too: a drained `iterator` can report 0, and a consumer
+    /// seeing <= 1 key collapses to a single stream.
     size_t estimatedKeysCount() override
     {
         const size_t delegate_count = iterator->estimatedKeysCount();
@@ -170,7 +169,7 @@ public:
             return delegate_count;
 
         std::lock_guard lock(mutex);
-        return (replay.size() - replay_pos) + delegate_count;
+        return (peeked_objects.size() - next_peeked_object) + delegate_count;
     }
 
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
@@ -183,8 +182,8 @@ public:
 
 private:
     std::mutex mutex;
-    const ObjectInfos replay;
-    size_t replay_pos = 0;
+    const ObjectInfos peeked_objects;
+    size_t next_peeked_object = 0;
     const ObjectIterator iterator;
 };
 

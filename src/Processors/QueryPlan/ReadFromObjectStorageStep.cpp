@@ -755,8 +755,7 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
     return lazy_step;
 }
 
-/// Can this format deliver a single file as a sorted run? Only Parquet has a preserve_order
-/// setting, so every other format must be refused rather than assumed.
+/// Only Parquet can keep a file's row groups in order (`preserve_order`).
 static bool formatCanDeliverSortedRun(const String & format)
 {
     return boost::iequals(format, "Parquet");
@@ -764,48 +763,39 @@ static bool formatCanDeliverSortedRun(const String & format)
 
 bool ReadFromObjectStorageStep::requestReadingInOrder(int direction, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    /// Reachable more than once (read-, aggregation- and distinct-in-order), and the enumeration
-    /// below consumes the iterator, so decide only once.
+    /// Called by several optimizations, and listing the files consumes the iterator.
     if (read_in_order_attempted)
         return read_in_order && direction == 1;
     read_in_order_attempted = true;
 
-    /// The lazy-materialization split needs every source to carry the row-index registry, which
-    /// the in-order pipe does not, so the two rewrites must stay mutually exclusive (see the
-    /// mirror guard in canUseLazyMaterialization).
+    /// The in-order pipe has no row-index registry, see `canUseLazyMaterialization`.
     if (lazy_row_index_registry)
         return false;
 
     if (!configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext()))
         return false;
 
-    /// There is no reverse file walk and no ReverseTransform here.
+    /// Files are only read forwards.
     if (direction != 1)
         return false;
 
-    /// Bucket assignment happens after optimization, so a topology cached here would bypass it.
-    /// The cached file list is also outside the step's serialization contract.
+    /// Buckets are assigned after planning, and the file list is not serialized.
     if (optimization_settings.make_distributed_plan || distributed_processing)
         return false;
 
     auto context = getContext();
     const auto & settings = context->getSettingsRef();
 
-    /// The merge is over the storage sorting key, so its expression must be computable from the
-    /// header this step emits.
     if (!sortingKeyIsComputableFromSourceHeader())
         return false;
 
-    /// Enumerating evaluates the filter now, so it must not see a set that only the pipeline builds
-    /// (`GLOBAL IN`, see `applyFilters`): that would run its subquery during planning, or fail.
+    /// Listing evaluates the filter, and a `GLOBAL IN` set is only built with the pipeline.
     if (filter_actions_dag && QueryPlanOptimizations::dagContainsNonReadySet(*filter_actions_dag))
         return false;
 
     createIterator();
 
-    /// Enumerating consumes the iterator, so stop at cap+1 (enough to prove the cap is exceeded)
-    /// and hand the consumed prefix back through a replaying wrapper. Every path below, including
-    /// every rejection, must leave the step able to read all files.
+    /// Stop at cap + 1. Every path below, rejections included, must still read all files.
     const size_t max_files = effectiveTwoLevelMergeThreshold(settings) * std::max<size_t>(1, num_streams);
 
     ObjectInfos files;
@@ -820,12 +810,12 @@ bool ReadFromObjectStorageStep::requestReadingInOrder(int direction, const Query
         }
     }
 
-    iterator_wrapper = std::make_shared<ObjectIteratorReplayThenDelegate>(files, iterator_wrapper);
+    iterator_wrapper = std::make_shared<ObjectIteratorWithPeekedObjects>(files, iterator_wrapper);
 
     if (over_cap)
         return false;
 
-    /// The format is chosen per file, not per table, so check the files this query will read.
+    /// Data lake files carry their own format.
     for (const auto & object_info : files)
     {
         if (object_info->isArchive())
@@ -834,8 +824,7 @@ bool ReadFromObjectStorageStep::requestReadingInOrder(int direction, const Query
             return false;
     }
 
-    /// Without this the Parquet reader delivers row groups in completion order, so one file per
-    /// port is still not a sorted run.
+    /// Otherwise row groups arrive in completion order.
     if (!format_settings)
         format_settings.emplace(getFormatSettings(context));
     format_settings->parquet.preserve_order = true;
