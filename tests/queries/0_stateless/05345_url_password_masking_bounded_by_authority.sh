@@ -18,6 +18,9 @@ SHOW CREATE TABLE t_url_at SETTINGS format_display_secrets_in_show_and_select = 
 CREATE TABLE t_url_tok(x UInt8) ENGINE = URL('https://SEKRIT@PW@localhost:11111/x', 'CSV');
 SHOW CREATE TABLE t_url_tok SETTINGS format_display_secrets_in_show_and_select = 0;
 
+CREATE TABLE t_url_tok_nested(x UInt8) ENGINE = URL('https://TOKEN@localhost:11111/x?next=http://u:p@other/x', 'CSV');
+SHOW CREATE TABLE t_url_tok_nested SETTINGS format_display_secrets_in_show_and_select = 0;
+
 -- The same for the url of a dictionary source.
 CREATE DICTIONARY d_url_query (k UInt64, v String) PRIMARY KEY k
 SOURCE(HTTP(URL 'http://localhost:11111/x?email=a@b.com' FORMAT 'TSV')) LAYOUT(FLAT()) LIFETIME(0);
@@ -29,6 +32,10 @@ SHOW CREATE DICTIONARY d_url_at SETTINGS format_display_secrets_in_show_and_sele
 
 CREATE DICTIONARY d_url_tok (k UInt64, v String) PRIMARY KEY k
 SOURCE(HTTP(URL 'https://SEKRIT@PW@localhost:11111/x' FORMAT 'TSV')) LAYOUT(FLAT()) LIFETIME(0);
+SHOW CREATE DICTIONARY d_url_tok SETTINGS format_display_secrets_in_show_and_select = 0;
+
+CREATE DICTIONARY d_url_tok_nested (k UInt64, v String) PRIMARY KEY k
+SOURCE(HTTP(URL 'https://TOKEN@localhost:11111/x?next=http://u:p@other/x' FORMAT 'TSV')) LAYOUT(FLAT()) LIFETIME(0);
 SHOW CREATE DICTIONARY d_url_tok SETTINGS format_display_secrets_in_show_and_select = 0;
 SQL
 

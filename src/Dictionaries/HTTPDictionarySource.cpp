@@ -44,8 +44,7 @@ static const UInt64 max_block_size = 8192;
 static bool maskURLCredentials(String & url)
 {
     bool masked = maskURIPassword(&url, URI_AUTHORITY_TERMINATORS);
-    if (!masked)
-        masked = maskURIUserinfo(url); // A colon-free userinfo is itself the credential.
+    masked |= maskURIUserinfo(url); // A colon-free userinfo is itself the credential.
     String without_parameters = maskSensitiveQueryParametersInURI(url);
     masked |= without_parameters != url;
     url = std::move(without_parameters);
