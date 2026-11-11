@@ -504,7 +504,16 @@ BlockIO InterpreterGrantQuery::execute()
     /// Check if the current user has corresponding access rights granted with grant option.
     bool need_check_grantees_are_allowed = true;
     if (!query.current_grants)
+    {
         checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, elements_to_grant, elements_to_revoke);
+    }
+    else if (!elements_to_revoke.empty())
+    {
+        /// GRANT CURRENT GRANTS ... WITH REPLACE OPTION still revokes (implicit REVOKE ALL), which must be
+        /// authorized; the granted side is clamped to grantable rights and needs no grant-option check (#60304).
+        AccessRightsElements no_elements_to_grant;
+        checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, no_elements_to_grant, elements_to_revoke);
+    }
 
     /// Check if the current user has corresponding roles granted with admin option.
     checkAdminOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, roles_to_grant, roles_to_revoke, query.admin_option);
