@@ -18,6 +18,7 @@
 #include <IO/WithFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <IO/SeekableReadBuffer.h>
 
 
 namespace ProfileEvents
