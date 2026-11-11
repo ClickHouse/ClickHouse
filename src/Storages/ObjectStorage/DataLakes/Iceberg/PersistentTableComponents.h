@@ -24,20 +24,17 @@ struct PersistentTableComponents
     const CompressionMethod metadata_compression_method;
     const String table_path;
     const std::optional<String> table_uuid;
-    const String object_storage_hash;
+    const String table_directory_key;
     const IcebergPathResolver path_resolver;
     /// True when the resolver works against a table root deeper than `table_path`. Operations scoped
     /// to `table_path` then reach outside this table, so they must refuse to run.
     const bool table_root_was_derived;
 
-    /// Invalidate the cached latest metadata version of this table, selected with or without the `table_uuid` filter.
+    /// Invalidate the cached latest metadata version of this table, for every spelling of its directory.
     void invalidateMetadataCache() const
     {
-        if (!metadata_cache)
-            return;
-        metadata_cache->remove(IcebergMetadataFilesCache::getLatestMetadataVersionKey(object_storage_hash, table_path));
-        if (table_uuid.has_value())
-            metadata_cache->remove(IcebergMetadataFilesCache::getLatestMetadataVersionKey(object_storage_hash, table_path, table_uuid));
+        if (metadata_cache)
+            metadata_cache->removeLatestMetadataVersions(table_directory_key);
     }
 };
 

@@ -153,17 +153,26 @@ public:
 
     static String getKey(const String& table_uuid, const String & data_path) { return table_uuid + data_path; }
 
-    /// Not keyed by `table-uuid` alone: copies of a table share it.
+    /// `table_directory_key` is `Iceberg::getTableDirectoryKey` of the table. Not keyed by `table-uuid` alone: copies of a table share it.
     static String getLatestMetadataVersionKey(
-        const String & object_storage_hash, const String & table_path, const std::optional<String> & selection_table_uuid = {})
+        const String & table_directory_key, const String & table_path, const std::optional<String> & selection_table_uuid = {})
     {
-        String key = object_storage_hash + '\0' + table_path;
+        String key = table_directory_key + table_path;
         if (selection_table_uuid)
         {
             key += '\0';
             key += *selection_table_uuid;
         }
         return key;
+    }
+
+    /// Removes the latest metadata versions cached for every spelling of the table directory.
+    void removeLatestMetadataVersions(const String & table_directory_key)
+    {
+        Base::remove([&](const String & key, const MappedPtr & cell)
+        {
+            return key.starts_with(table_directory_key) && std::holds_alternative<LatestMetadataVersionPtr>(cell->cached_element);
+        });
     }
 
     /// If `validate_fn` is given, it checks the parsed metadata.json (and throws if it is invalid) until it succeeds once for the entry:
