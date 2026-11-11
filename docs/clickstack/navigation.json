@@ -1,6 +1,6 @@
 {
   "icon": "/images/icons/icon-clickstack.svg",
-  "item": "ClickStack",
+  "item": "ClickHouse Observability",
   "pages": [
     "clickstack/index",
     {
