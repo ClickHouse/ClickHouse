@@ -258,6 +258,8 @@ struct ManifestFilesGroup
     Int32 schema_id = 0;
     Iceberg::FileContentType content_type = Iceberg::FileContentType::DATA;
     std::vector<IcebergPathFromMetadata> file_paths;
+    /// Paths already added, so a single manifest does not list the same data file twice.
+    std::unordered_set<IcebergPathFromMetadata> seen_file_paths;
     /// Parallel to file_paths: the file's partition tuple.
     std::vector<Row> file_partition_values;
     /// Parallel to file_paths: {record_count, file_size_in_bytes}.
@@ -344,8 +346,7 @@ bool addExistingDataFile(
         groups, manifest_file.partition_spec_id, data_file.resolved_schema_id, data_file.normalized_partition_key_value, by_partition_value);
 
     const auto & parsed_entry = *data_file.parsed_entry;
-    // A single manifest file should not list the same data file twice
-    if (std::find(group.file_paths.begin(), group.file_paths.end(), parsed_entry.file_path_key) != group.file_paths.end())
+    if (!group.seen_file_paths.insert(parsed_entry.file_path_key).second)
         return false;
 
     group.file_paths.push_back(parsed_entry.file_path_key);
@@ -1574,7 +1575,7 @@ void compactIcebergTable(
                     if (rewritten.path.empty())
                         continue;
                     auto & group = getManifestFilesGroup(added_groups, manifest_file.partition_spec_id, current_schema_id, data_file->normalized_partition_key_value);
-                    if (std::find(group.file_paths.begin(), group.file_paths.end(), rewritten.path) != group.file_paths.end())
+                    if (!group.seen_file_paths.insert(rewritten.path).second)
                         continue;
                     group.file_paths.push_back(rewritten.path);
                     group.file_partition_values.push_back(data_file->normalized_partition_key_value);
