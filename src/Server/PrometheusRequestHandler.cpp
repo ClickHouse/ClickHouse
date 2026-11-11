@@ -9,6 +9,7 @@
 #include <Server/PrometheusMetricsWriter.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include "config.h"
@@ -146,6 +147,9 @@ protected:
     bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response)
     {
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
+
+        /// Propagate the client's tracing context to the query context, so that the query spans are linked to the client's trace.
+        session->getClientTraceContext() = parent().client_trace_context;
 
         if (!authenticateUser(request, response))
             return false;
@@ -516,11 +520,41 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     DB::setThreadName(ThreadName::PROMETHEUS_HANDLER);
     applyHTTPResponseHeaders(response, response_headers);
 
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
+    SCOPE_EXIT({
+        /// Make sure the response status is recorded.
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
+    });
+
     try
     {
         write_event = write_event_;
         http_method = request.getMethod();
         chassert(!write_buffer_from_response); /// Nothing is written to the response yet.
+
+        /// Parse the OpenTelemetry traceparent header.
+        if (request.has("traceparent"))
+        {
+            std::string opentelemetry_traceparent = request.get("traceparent");
+            std::string error;
+            if (!client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+                LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
+            client_trace_context.tracestate = request.get("tracestate", "");
+        }
+
+        /// Setup tracing context for this thread.
+        /// The user is not authenticated yet, so the global settings are used to decide whether to start a new trace.
+        auto global_context = server.context();
+        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("PrometheusRequestHandler",
+            client_trace_context,
+            global_context->getSettingsRef(),
+            global_context->getOpenTelemetrySpanLog());
+        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+        thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
+        thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
+        thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
+        thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         /// Make keep-alive works.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)

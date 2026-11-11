@@ -2,6 +2,7 @@
 
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
+#include <Common/OpenTelemetryTracingContext.h>
 
 
 namespace DB
@@ -50,6 +51,10 @@ private:
     std::unique_ptr<Impl> impl;
 
     String http_method;
+
+    /// The tracing context passed by the client in the `traceparent` and `tracestate` HTTP headers.
+    OpenTelemetry::TracingContext client_trace_context;
+
     std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
     ProfileEvents::Event write_event;
     bool send_stacktrace = false;
