@@ -111,7 +111,7 @@ INSERT INTO t_array_tuple_file VALUES
     (3, [(30, 'thirty')], []);
 
 CREATE TABLE t_array_tuple_merge AS t_array_tuple_file
-ENGINE = Merge(currentDatabase(), '^t_array_tuple_file);
+ENGINE = Merge(currentDatabase(), '^t_array_tuple_file$');
 
 SELECT '-- file Array(Tuple) values and types without rewriting';
 SELECT id, tupleElement(a, 'code'), tupleElement(a, 1), tupleElement(a, -1),
