@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: relies on the local user_files directory and on the Parquet format.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +19,7 @@ ARR="${CLICKHOUSE_USER_FILES_UNIQUE}/arr.csv"
 printf '"[1,2,3]"\n"[4,5]"\n' > "${ARR}"
 
 echo '--- supportsOptimizationToSubcolumns is forwarded: the File delegate disables it, so length() is not rewritten'
-${CLICKHOUSE_CLIENT} -q "EXPLAIN QUERY TREE SELECT length(c1) FROM ${DB}.\`${ARR}\` SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1" 2>&1 \
+${CLICKHOUSE_CLIENT} -q "EXPLAIN QUERY TREE SELECT length(c1) FROM ${DB}.\`${ARR}\` SETTINGS optimize_functions_to_subcolumns = 1" 2>&1 \
     | grep -qiE "c1\.size0" && echo "subcolumn-rewritten (BUG)" || echo "subcolumn-not-rewritten"
 
 # `PREWHERE` is only supported by the Parquet format, so the rest of the test uses Parquet files.

@@ -3,6 +3,7 @@
 #include <Core/SortDescription.h>
 #include <Analyzer/TableQualifiers.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
@@ -145,6 +146,18 @@ SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & des
     }
 
     return prefix;
+}
+
+bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header)
+{
+    for (const auto & column_description : description)
+    {
+        const auto * column = header.findByName(column_description.column_name);
+        if (!column || !column->column || !isColumnConst(*column->column))
+            return false;
+    }
+
+    return true;
 }
 
 #if USE_EMBEDDED_COMPILER

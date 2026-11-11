@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropNamedCollectionQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
@@ -40,6 +41,13 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
 
     if (current_context->getSettingsRef()[Setting::check_named_collection_dependencies])
     {
+        /// Dependencies are registered when a table is constructed, which happens in its load job
+        /// with the asynchronous loading of databases. Wait for all tables to be loaded, otherwise
+        /// a table that is still loading would not be found as a dependent. The startup of a database
+        /// ignores the failures of its tables, so a broken table does not prevent the drop.
+        for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{}))
+            database->waitDatabaseStarted();
+
         auto dependents = NamedCollectionFactory::instance().getDependents(query.collection_name);
         if (!dependents.empty())
         {

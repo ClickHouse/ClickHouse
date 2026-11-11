@@ -1,4 +1,3 @@
-set enable_analyzer = 1;
 -- { echoOn }
 Select sum(number + 1) from numbers(10);
 Select sum(1 + number) from numbers(10);
