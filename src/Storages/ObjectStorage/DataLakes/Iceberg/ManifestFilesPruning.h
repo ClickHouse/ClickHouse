@@ -68,8 +68,10 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
     Int32 target_schema_id,
     const DB::ActionsDAG * source_dag,
     std::vector<Int32> & used_columns_in_filter,
-    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter,
-    const DB::ContextPtr & context);
+    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter);
+
+DB::KeyDescription
+getKeyWithFilterColumnTypes(const DB::KeyDescription & key, const DB::ActionsDAG & filter_dag, bool nullable, DB::ContextPtr context);
 
 /// Prune specific data files based on manifest content
 class ManifestFilesPruner
@@ -78,7 +80,7 @@ private:
     const IcebergSchemaProcessor & schema_processor;
     Int32 current_schema_id;
     Int32 initial_schema_id;
-    const DB::KeyDescription * partition_key = nullptr;
+    std::optional<DB::KeyDescription> partition_key;
     std::optional<DB::KeyCondition> partition_key_condition;
     std::vector<Int32TruncateWraparound> int32_truncate_wraparounds;
     /// The same key over Nullable inputs, for a partition tuple that holds NULL.

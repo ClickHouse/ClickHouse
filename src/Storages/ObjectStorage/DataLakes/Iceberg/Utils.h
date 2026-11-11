@@ -181,7 +181,6 @@ std::string normalizeUuid(const std::string & uuid);
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
 
-DataTypePtr setTimezoneForTimestamptz(const DataTypePtr & type, const ContextPtr & context);
 NamesAndTypesList setTimezoneForTimestamptz(const NamesAndTypesList & columns, const ContextPtr & context);
 
 enum class FileCategory : uint8_t

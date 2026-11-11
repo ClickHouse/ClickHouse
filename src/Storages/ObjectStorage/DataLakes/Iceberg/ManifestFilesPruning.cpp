@@ -69,10 +69,10 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
     Int32 target_schema_id,
     const DB::ActionsDAG * source_dag,
     std::vector<Int32> & used_columns_in_filter,
-    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter,
-    const DB::ContextPtr & context)
+    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter)
 {
     const auto & inputs = source_dag->getInputs();
+    std::unordered_map<Int32, DB::DataTypePtr> filter_input_types;
 
     for (const auto & input : inputs)
     {
@@ -89,7 +89,10 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
 
             std::optional<Int32> input_id = schema_processor.tryGetColumnIDByName(current_schema_id, input_name);
             if (input_id)
+            {
                 used_columns_in_filter.push_back(*input_id);
+                filter_input_types.emplace(*input_id, input->result_type);
+            }
         }
     }
 
@@ -116,13 +119,33 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
             continue;
 
         auto numeric_column_name = DB::backQuote(DB::toString(column_id));
-        const auto * node = &dag_with_renames.addInput(numeric_column_name, setTimezoneForTimestamptz(column_from_manifest->type, context));
+        const auto & type = column_from_manifest->type->equals(*column->type) ? filter_input_types.at(column_id) : column_from_manifest->type;
+        const auto * node = &dag_with_renames.addInput(numeric_column_name, type);
         node = &dag_with_renames.addAlias(*node, column->name);
         dag_with_renames.getOutputs().push_back(node);
     }
     auto result = std::make_unique<DB::ActionsDAG>(DB::ActionsDAG::merge(std::move(dag_with_renames), source_dag->clone()));
     result->removeUnusedActions();
     return result;
+}
+
+static DataTypePtr getFilterColumnType(const ActionsDAG & filter_dag, const String & name, const DataTypePtr & type)
+{
+    for (const auto * input : filter_dag.getInputs())
+        if (input->result_name == name)
+            return type->isNullable() ? input->result_type : removeNullable(input->result_type);
+    return type;
+}
+
+KeyDescription getKeyWithFilterColumnTypes(const KeyDescription & key, const ActionsDAG & filter_dag, bool nullable, ContextPtr context)
+{
+    NamesAndTypesList columns;
+    for (const auto & [name, type] : key.expression->getRequiredColumnsWithTypes())
+    {
+        auto column_type = getFilterColumnType(filter_dag, name, type);
+        columns.emplace_back(name, nullable ? makeNullableSafe(column_type) : column_type);
+    }
+    return KeyDescription::getKeyFromAST(key.definition_ast, ColumnsDescription(columns), {}, context);
 }
 
 ManifestFilesPruner::ManifestFilesPruner(
@@ -146,12 +169,12 @@ ManifestFilesPruner::ManifestFilesPruner(
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
     transformed_dag = renameFilterDagColumnsToFieldIds(
-        schema_processor, current_schema_id, initial_schema_id, filter_dag, used_columns_in_filter, row_lineage_columns, context);
+        schema_processor, current_schema_id, initial_schema_id, filter_dag, used_columns_in_filter, row_lineage_columns);
     chassert(transformed_dag != nullptr);
 
     if (partition_key_)
     {
-        partition_key = partition_key_;
+        partition_key.emplace(getKeyWithFilterColumnTypes(*partition_key_, *transformed_dag, /* nullable */ false, context));
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         partition_key_condition.emplace(
             inverted_dag,
@@ -162,11 +185,7 @@ ManifestFilesPruner::ManifestFilesPruner(
             /* skip_analysis_ */ false,
             require_ready_sets);
 
-        NamesAndTypesList nullable_columns;
-        for (const auto & [name, type] : partition_key->expression->getRequiredColumnsWithTypes())
-            nullable_columns.emplace_back(name, makeNullableSafe(type));
-        nullable_partition_key.emplace(
-            KeyDescription::getKeyFromAST(partition_key->definition_ast, ColumnsDescription(nullable_columns), {}, context));
+        nullable_partition_key.emplace(getKeyWithFilterColumnTypes(*partition_key_, *transformed_dag, /* nullable */ true, context));
         nullable_partition_key_condition.emplace(
             inverted_dag,
             context,
@@ -192,10 +211,9 @@ ManifestFilesPruner::ManifestFilesPruner(
             if (!name_and_type.has_value())
                 continue;
 
-            name_and_type->type = setTimezoneForTimestamptz(name_and_type->type, context);
-
             min_max_column_types.emplace(used_column_id, name_and_type->type);
             name_and_type->name = DB::backQuote(DB::toString(used_column_id));
+            name_and_type->type = getFilterColumnType(*transformed_dag, name_and_type->name, name_and_type->type);
         }
 
         ExpressionActionsPtr expression
@@ -247,7 +265,6 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         std::optional<DB::NameAndTypePair> column_characteristics = schema_processor.tryGetFieldCharacteristics(schema_id, source_id);
         if (!column_characteristics.has_value())
             continue;
-        column_characteristics->type = setTimezoneForTimestamptz(column_characteristics->type, context);
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
         auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
         result.partition_specification.emplace_back(source_id, transform_name, partition_name, static_cast<Int32>(i));
