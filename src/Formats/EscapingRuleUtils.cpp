@@ -75,6 +75,11 @@ static NullOutput shared_null_output;
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
+    /// The most common case, separately: a tail call that needs no stack frame, so with pointer authentication
+    /// there's no return address to sign and authenticate for every skipped field.
+    if (escaping_rule == FormatSettings::EscapingRule::Escaped)
+        return readEscapedStringInto<NullOutput, false>(shared_null_output, buf);
+
     NullOutput & out = shared_null_output;
     constexpr const char * field_name = "<SKIPPED COLUMN>";
     constexpr size_t field_name_len = 16;
