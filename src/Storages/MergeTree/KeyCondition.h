@@ -549,8 +549,14 @@ public:
     /// Does the filter condition have any ORs?
     bool hasOnlyConjunctions() const;
 
-    /// Whether no RPN disjunction contains an atom owned by this condition.
-    bool everyDisjunctionIsOverUnownedLeaves() const;
+    /// Whether every atom owned by this condition (one that may evaluate to `false` on a granule) is reached
+    /// from the root of the RPN through `AND` only, i.e. lies below neither an `OR` nor a `NOT`.
+    bool everyOwnedLeafIsUnderConjunctionsOnly() const;
+
+    /// Report `false` for every atom owned by this condition into the partial-disjunction bitset. Used for a mark
+    /// that this condition rejected without evaluating the atoms one by one. Under the conditions of
+    /// `everyOwnedLeafIsUnderConjunctionsOnly`, this makes `mergePartialResultsForDisjunctions` exclude the mark.
+    void reportOwnedLeavesAsFalse(const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                 std::function<std::optional<VectorWithMemoryTracking<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);

@@ -72,9 +72,14 @@ public:
     /// Only when the RPN is lowered to `minmax_actions`, which requires `use_minmax_index_bulk_filtering`.
     bool supportsBulkFiltering() const override { return minmax_actions != nullptr; }
 
-    /// Bulk omits per-leaf partial-disjunction bits, so it is compatible only when
-    /// this index owns no leaf below an OR.
-    bool bulkFilteringPreservesPartialDisjunctions() const override { return condition.everyDisjunctionIsOverUnownedLeaves(); }
+    /// Bulk omits per-leaf partial-disjunction bits. A rejected granule is reported with all owned leaves `false`,
+    /// which excludes it in the final merge only when this index owns no leaf below an `OR` or a `NOT`.
+    bool bulkFilteringPreservesPartialDisjunctions() const override { return condition.everyOwnedLeafIsUnderConjunctionsOnly(); }
+
+    void reportBulkRejectedGranule(const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override
+    {
+        condition.reportOwnedLeavesAsFalse(update_partial_disjunction_result_fn);
+    }
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:

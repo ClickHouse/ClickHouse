@@ -197,8 +197,17 @@ public:
     virtual bool supportsBulkFiltering() const { return true; }
 
     /// Whether bulk filtering stays as precise as `mayBeTrueOnGranule` with `use_skip_indexes_for_disjunctions`.
-    /// `getPossibleGranules` does not report the partial results of the atoms below an `OR`.
+    /// `getPossibleGranules` does not report the partial results of the atoms, so a rejected granule is recorded
+    /// with `reportBulkRejectedGranule` instead.
     virtual bool bulkFilteringPreservesPartialDisjunctions() const { return false; }
+
+    /// Record into the partial-disjunction bitset that `getPossibleGranules` rejected a granule, so that
+    /// `mergePartialResultsForDisjunctions` excludes its marks even when a later index restores them.
+    /// Called only when `bulkFilteringPreservesPartialDisjunctions`.
+    virtual void reportBulkRejectedGranule(const UpdatePartialDisjunctionResultFn & /*update_partial_disjunction_result_fn*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support partial disjunction results in bulk filtering");
+    }
 
     /// Special method for vector similarity indexes:
     /// Returns the N nearest neighbors of a reference vector in the index granule.

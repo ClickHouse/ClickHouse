@@ -1997,16 +1997,35 @@ bool KeyCondition::hasOnlyConjunctions() const
     return std::ranges::none_of(rpn, [](const RPNElement & element) { return element.function == RPNElement::FUNCTION_OR; });
 }
 
-bool KeyCondition::everyDisjunctionIsOverUnownedLeaves() const
+namespace
 {
-    /// Walk the postfix RPN keeping, per pending subexpression, whether it contains a leaf
-    /// owned by this condition. An owned leaf is any leaf that the scalar evaluator may report
-    /// as `false` into the partial-disjunction bitset, which the bulk path would leave at its
-    /// all-true default. `FUNCTION_UNKNOWN` is reported as unknown and `ALWAYS_TRUE` reports
-    /// the default, so neither is owned. `ALWAYS_FALSE` is owned: an atom of the filter folded
-    /// to a constant for this index (e.g. `a = 0.5` with `a UInt8`) is still `FUNCTION_UNKNOWN`
-    /// in the template RPN, so its reported `false` is what lets the final merge prune the
-    /// disjunction.
+
+/// Whether the scalar evaluator may report `false` for this leaf into the partial-disjunction bitset.
+/// `FUNCTION_UNKNOWN` is reported as unknown and `ALWAYS_TRUE` reports the default, so neither is owned.
+/// `ALWAYS_FALSE` is owned: an atom of the filter folded to a constant for this index (e.g. `a = 0.5`
+/// with `a UInt8`) is still `FUNCTION_UNKNOWN` in the template RPN, so its reported `false` is what lets
+/// the final merge prune the disjunction.
+bool isOwnedLeaf(const KeyCondition::RPNElement & element)
+{
+    switch (element.function)
+    {
+        case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
+        case KeyCondition::RPNElement::ALWAYS_TRUE:
+        case KeyCondition::RPNElement::FUNCTION_NOT:
+        case KeyCondition::RPNElement::FUNCTION_AND:
+        case KeyCondition::RPNElement::FUNCTION_OR:
+            return false;
+        default:
+            /// An atom leaf (`FUNCTION_IN_RANGE`, `FUNCTION_IN_SET`, polygon, etc.) or `ALWAYS_FALSE`.
+            return true;
+    }
+}
+
+}
+
+bool KeyCondition::everyOwnedLeafIsUnderConjunctionsOnly() const
+{
+    /// Walk the postfix RPN keeping, per pending subexpression, whether it contains a leaf owned by this condition.
     std::vector<bool> owns_leaf;
     owns_leaf.reserve(rpn.size());
 
@@ -2014,14 +2033,10 @@ bool KeyCondition::everyDisjunctionIsOverUnownedLeaves() const
     {
         switch (element.function)
         {
-            case RPNElement::FUNCTION_UNKNOWN:
-            case RPNElement::ALWAYS_TRUE:
-                owns_leaf.push_back(false);
-                break;
-
             case RPNElement::FUNCTION_NOT:
-                /// Unary: ownership of the operand is unchanged.
-                if (owns_leaf.empty())
+                /// `mergePartialResultsForDisjunctions` evaluates every `NOT` to `true`, so a `false` reported
+                /// for a leaf below it could not exclude the mark.
+                if (owns_leaf.empty() || owns_leaf.back())
                     return false;
                 break;
 
@@ -2050,13 +2065,19 @@ bool KeyCondition::everyDisjunctionIsOverUnownedLeaves() const
             }
 
             default:
-                /// An owned atom leaf (`FUNCTION_IN_RANGE`, `FUNCTION_IN_SET`, polygon, etc.).
-                owns_leaf.push_back(true);
+                owns_leaf.push_back(isOwnedLeaf(element));
                 break;
         }
     }
 
     return owns_leaf.size() == 1;
+}
+
+void KeyCondition::reportOwnedLeavesAsFalse(const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
+{
+    for (const auto & element : rpn)
+        if (element.position_in_filter_rpn && isOwnedLeaf(element))
+            update_partial_disjunction_result_fn(*element.position_in_filter_rpn, false, false);
 }
 
 

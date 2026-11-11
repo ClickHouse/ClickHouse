@@ -3440,11 +3440,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// Process granules in chunks of `max_block_size` to avoid part-sized intermediate storage.
         const size_t chunk_size_index_granules = reader_settings.bulk_filtering_chunk_size;
 
-        /// Bulk evaluation does not write owned-leaf bits for partial-disjunction merging.
-        /// Do not bridge rejected gaps here: a later index would otherwise evaluate those marks
-        /// with this index's bits left at their `true` default and could retain a mark that scalar
-        /// evaluation rejects. Adjacent survivors still merge when the threshold is zero.
-        const size_t bulk_min_marks_for_seek = use_skip_indexes_for_disjunctions ? 0 : min_marks_for_seek;
+        /// Bulk evaluation does not write the per-atom bits for partial-disjunction merging. Report a rejected
+        /// granule instead: a later index may restore its marks by merging the ranges across a seek gap, and
+        /// the final merge must still exclude them.
+        const bool report_rejected_granules = use_skip_indexes_for_disjunctions && key_condition_rpn_template;
 
         /// `getPossibleGranules` returns index marks in ascending order.
         for (size_t i = 0; i < ranges_size; ++i)
@@ -3464,17 +3463,38 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 /// part (as opposed to silently falling back to the per-granule scalar path).
                 ProfileEvents::increment(ProfileEvents::IndexBulkFilteringEvaluatedGranules, chunk_end - chunk_begin);
 
-                for (size_t index_mark : condition->getPossibleGranules(chunk_granules))
+                auto data_range_of = [&](size_t index_mark)
                 {
-                    MarkRange data_range(
+                    return MarkRange(
                         std::max(ranges[i].begin, index_mark * skip_index_granularity),
                         std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
+                };
 
-                    if (res.empty() || data_range.begin - res.back().end > bulk_min_marks_for_seek)
+                auto report_rejected = [&](size_t index_mark_begin, size_t index_mark_end)
+                {
+                    if (!report_rejected_granules)
+                        return;
+                    for (size_t index_mark = index_mark_begin; index_mark < index_mark_end; ++index_mark)
+                    {
+                        const MarkRange data_range = data_range_of(index_mark);
+                        for (size_t mark = data_range.begin; mark < data_range.end; ++mark)
+                            condition->reportBulkRejectedGranule(create_update_partial_disjunction_result_fn(mark));
+                    }
+                };
+
+                size_t next_index_mark = chunk_begin;
+                for (size_t index_mark : condition->getPossibleGranules(chunk_granules))
+                {
+                    report_rejected(next_index_mark, index_mark);
+                    next_index_mark = index_mark + 1;
+
+                    const MarkRange data_range = data_range_of(index_mark);
+                    if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;
                 }
+                report_rejected(next_index_mark, chunk_end);
 
                 chunk_begin = chunk_end;
             }
