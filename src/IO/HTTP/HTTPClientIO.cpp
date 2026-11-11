@@ -1,4 +1,5 @@
 #include <IO/HTTP/HTTPClientIO.h>
+#include <IO/ScopedNonBlocking.h>
 #include <IO/SocketPeerClosed.h>
 
 #include <Common/Exception.h>
@@ -20,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
 namespace
@@ -215,15 +217,11 @@ void readHTTPResponseHeaderOrReset(Poco::Net::HTTPClientSession & session, Poco:
 
 
 HTTPRequestBodyWriteBuffer::HTTPRequestBodyWriteBuffer(
-    Poco::Net::HTTPClientSession & session_,
-    Poco::Net::HTTPClientSession::BodyInfo body_info_,
-    size_t buf_size,
-    Poco::Net::HTTPResponse * early_response_)
+    Poco::Net::HTTPClientSession & session_, Poco::Net::HTTPClientSession::BodyInfo body_info_, size_t buf_size)
     : WriteBuffer(nullptr, 0)
     , session(session_)
     , encoding(body_info_.encoding)
     , content_length(body_info_.content_length)
-    , early_response(early_response_)
     , memory(std::min(buf_size, max_transfer_at_once) + chunk_header_reserve + chunk_footer_size)
 {
     /// Every flush leaves as a single `writeAllRaw`, whose length `Poco` narrows down to `int`,
@@ -245,12 +243,6 @@ HTTPRequestBodyWriteBuffer::~HTTPRequestBodyWriteBuffer()
 
 void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
 {
-    if (!early_response)
-    {
-        session.writeAllRaw(data, static_cast<std::streamsize>(size));
-        return;
-    }
-
     /// The server has already answered: drop the rest of the body.
     if (early_response_received)
         return;
@@ -291,21 +283,25 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
 
             if (state == SocketState::DataPending)
             {
-                readHTTPResponseHeaderOrReset(session, *early_response);
-                if (early_response->getStatus() != Poco::Net::HTTPResponse::HTTP_CONTINUE)
-                {
-                    early_response_received = true;
-                    return;
-                }
+                auto response = std::make_unique<Poco::Net::HTTPResponse>();
+                readHTTPResponseHeaderOrReset(session, *response);
                 /// A late `100 Continue`: the server wants the body.
-                early_response->clear();
-                continue;
+                if (response->getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE)
+                    continue;
+                session.setEarlyResponse(std::move(response));
+                early_response_received = true;
+                return;
             }
         }
 
         if ((fd.revents & POLLOUT) || peer_closed)
         {
-            const int sent = session.writeRawNonBlocking(data, static_cast<std::streamsize>(size));
+            /// Only the send is non-blocking: a response header is read with the timeouts of the session.
+            int sent = 0;
+            {
+                ScopedNonBlocking non_blocking(*socket.impl());
+                sent = session.writeRawNonBlocking(data, static_cast<std::streamsize>(size));
+            }
             data += sent;
             size -= static_cast<size_t>(sent);
         }
@@ -653,8 +649,7 @@ std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
     Poco::Net::HTTPRequest & request,
     size_t buf_size,
     UInt64 * connect_time,
-    UInt64 * first_byte_time,
-    Poco::Net::HTTPResponse * early_response)
+    UInt64 * first_byte_time)
 {
     const auto body_info = session.sendRequestHeaders(request, connect_time, first_byte_time);
 
@@ -666,7 +661,7 @@ std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
     else if (body_info.encoding == Poco::Net::HTTPClientSession::BodyEncoding::ContentLength)
         buf_size = std::max<UInt64>(std::min<UInt64>(buf_size, body_info.content_length), 1);
 
-    return std::make_unique<HTTPRequestBodyWriteBuffer>(session, body_info, buf_size, early_response);
+    return std::make_unique<HTTPRequestBodyWriteBuffer>(session, body_info, buf_size);
 }
 
 static std::unique_ptr<HTTPResponseReadBuffer> makeHTTPResponseReadBuffer(
@@ -684,6 +679,25 @@ static std::unique_ptr<HTTPResponseReadBuffer> makeHTTPResponseReadBuffer(
 static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
     HTTPSessionPtr session_holder, Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response, size_t buf_size)
 {
+    if (auto early_response = session.takeEarlyResponse())
+    {
+        /// Fail closed: a success for a body that was not fully sent must not be taken for a success of the request.
+        if (early_response->getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
+            throw Exception(
+                ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "HTTP server answered {} {} before the whole request body was sent",
+                static_cast<int>(early_response->getStatus()),
+                early_response->getReason());
+
+        /// `Poco::Net::HTTPResponse` is not copyable: copy the status line and the headers into the caller's object.
+        response.clear();
+        response.setVersion(early_response->getVersion());
+        response.setStatusAndReason(early_response->getStatus(), early_response->getReason());
+        for (const auto & [name, value] : *early_response)
+            response.add(name, value);
+        return makeHTTPResponseReadBuffer(std::move(session_holder), session, response, buf_size);
+    }
+
     do
     {
         readHTTPResponseHeaderOrReset(session, response);
@@ -703,13 +717,6 @@ receiveHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, 
 {
     auto & session_ref = *session;
     return receiveHTTPResponseImpl(std::move(session), session_ref, response, buf_size);
-}
-
-std::unique_ptr<HTTPResponseReadBuffer>
-receiveEarlyHTTPResponseBody(HTTPSessionPtr session, const Poco::Net::HTTPResponse & response, size_t buf_size)
-{
-    auto & session_ref = *session;
-    return makeHTTPResponseReadBuffer(std::move(session), session_ref, response, buf_size);
 }
 
 }

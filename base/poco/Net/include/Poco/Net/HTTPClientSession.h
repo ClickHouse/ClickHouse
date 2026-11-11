@@ -19,7 +19,9 @@
 
 
 #include <istream>
+#include <memory>
 #include <ostream>
+#include "Poco/Net/HTTPResponse.h"
 #include "Poco/Net/HTTPSession.h"
 #include "Poco/Net/HTTPSessionFactory.h"
 #include "Poco/Net/Net.h"
@@ -298,6 +300,13 @@ namespace Net
         /// `sendRequestHeaders`: for the former the state is taken from the body stream itself.
 
         void setRequestBodyComplete(bool value) { _requestBodyComplete = value; }
+
+        void setEarlyResponse(std::unique_ptr<HTTPResponse> response) { _earlyResponse = std::move(response); }
+        /// Keeps a final response that arrived while the request body was being sent, for the caller
+        /// that receives the response next. Cleared by `sendRequestHeaders`.
+
+        std::unique_ptr<HTTPResponse> takeEarlyResponse() { return std::move(_earlyResponse); }
+        /// Moves out the response kept by `setEarlyResponse`, if any.
         /// Reports the completion of a request body written by the caller of `sendRequestHeaders`.
 
         bool isResponseBodyComplete();
@@ -442,6 +451,7 @@ namespace Net
         bool _expectResponseBody;
         bool _responseReceived;
         bool _requestBodyComplete = true;
+        std::unique_ptr<HTTPResponse> _earlyResponse;
         bool _responseBodyComplete = true;
         Poco::SharedPtr<std::ostream> _pRequestStream;
         Poco::SharedPtr<std::istream> _pResponseStream;

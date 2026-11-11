@@ -93,7 +93,6 @@ namespace DB::ErrorCodes
     extern const int DNS_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
-    extern const int S3_ERROR;
 }
 
 namespace DB::FailPoints
@@ -248,7 +247,6 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_fields(client_configuration.http_max_fields)
     , http_max_field_name_size(client_configuration.http_max_field_name_size)
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
-    , s3_monitor_response_while_sending(client_configuration.s3_monitor_response_while_sending)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
     , publish_connection_info(client_configuration.publish_connection_info)
@@ -653,43 +651,14 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             Stopwatch watch;
 
-            /// With `s3_monitor_response_while_sending`, a response that the server sends while the body is being
-            /// sent is read into `poco_response` (RFC 9112, 9.5), so it is reported also over TLS.
-            auto request_body = sendHTTPRequest(
-                *session,
-                poco_request,
-                DBMS_DEFAULT_BUFFER_SIZE,
-                &connect_time,
-                &first_byte_time,
-                s3_monitor_response_while_sending ? &poco_response : nullptr);
+            auto request_body = sendHTTPRequest(*session, poco_request, DBMS_DEFAULT_BUFFER_SIZE, &connect_time, &first_byte_time);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.
             observeLatency(request, S3LatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
             observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
             latency_recorded = true;
 
-            /// Set when the server answered before the whole request body was sent.
             std::unique_ptr<HTTPResponseReadBuffer> response_body;
-
-            /// A final response that arrived while the body was being sent.
-            const auto check_early_response = [&]
-            {
-                /// Fail closed: the SDK must never take an upload whose body was not fully sent for a success.
-                if (poco_response.getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
-                    throw Exception(
-                        ErrorCodes::S3_ERROR,
-                        "S3 server answered {} {} for {} before the whole request body was sent",
-                        static_cast<int>(poco_response.getStatus()),
-                        poco_response.getReason(),
-                        uri);
-
-                LOG_DEBUG(
-                    log,
-                    "Server answered {} {} for {} before the whole request body was sent",
-                    static_cast<int>(poco_response.getStatus()),
-                    poco_response.getReason(),
-                    uri);
-            };
 
             if (request.GetContentBody())
             {
@@ -703,18 +672,13 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request.GetContentBody()->seekg(0);
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+                /// Once the server has answered, the rest of the content is not read: `receiveHTTPResponse`
+                /// returns that answer (RFC 9112, 9.5).
                 auto size = copyFromIStreamToWriteBuffer(
                     *request.GetContentBody(), *request_body, [&] { return request_body->hasEarlyResponse(); });
-                if (!request_body->hasEarlyResponse())
-                    request_body->finalize();
+                request_body->finalize();
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Written {} bytes to request body", size);
-
-                if (request_body->hasEarlyResponse())
-                {
-                    response_body = receiveEarlyHTTPResponseBody(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
-                    check_early_response();
-                }
             }
 
             if (!response_body)

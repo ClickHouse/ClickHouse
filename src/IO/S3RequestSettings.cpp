@@ -74,7 +74,6 @@ namespace ErrorCodes
     DECLARE(UInt64, retry_initial_delay_ms, S3::DEFAULT_RETRY_INITIAL_DELAY_MS, "", AFFECTS_CLIENT) \
     DECLARE(UInt64, retry_max_delay_ms, S3::DEFAULT_RETRY_MAX_DELAY_MS, "", AFFECTS_CLIENT) \
     DECLARE(Bool, slow_all_threads_after_network_error, true, "", AFFECTS_CLIENT) \
-    DECLARE(Bool, monitor_response_while_sending, S3::DEFAULT_MONITOR_RESPONSE_WHILE_SENDING, "", AFFECTS_CLIENT) \
     DECLARE(Bool, enable_request_logging, false, "", AFFECTS_CLIENT)
 
 #define PART_UPLOAD_SETTINGS(DECLARE, ALIAS) \

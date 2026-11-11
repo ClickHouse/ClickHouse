@@ -230,9 +230,6 @@ int HTTPSession::writeRawNonBlocking(const char* buffer, std::streamsize length)
 {
 	_socket.impl()->throttleSendBlocking(static_cast<size_t>(length));
 
-	const bool wasBlocking = _socket.getBlocking();
-	if (wasBlocking)
-		_socket.setBlocking(false);
 	try
 	{
 		if (_sendDataHooks)
@@ -250,8 +247,6 @@ int HTTPSession::writeRawNonBlocking(const char* buffer, std::streamsize length)
 		{
 			_sendDataHooks->atFinish(result);
 		}
-		if (wasBlocking)
-			_socket.setBlocking(true);
 		return result;
 	}
 	catch (Poco::Exception& exc)
@@ -259,16 +254,6 @@ int HTTPSession::writeRawNonBlocking(const char* buffer, std::streamsize length)
 		if (_sendDataHooks)
 			_sendDataHooks->atFail();
 		setException(exc);
-		if (wasBlocking)
-		{
-			try
-			{
-				_socket.setBlocking(true);
-			}
-			catch (...)
-			{
-			}
-		}
 		throw;
 	}
 }

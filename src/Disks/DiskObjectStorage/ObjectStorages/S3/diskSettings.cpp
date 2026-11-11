@@ -39,7 +39,6 @@ namespace Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
-    extern const SettingsBool s3_monitor_response_while_sending;
 }
 
 namespace ServerSetting
@@ -86,7 +85,6 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 retry_attempts;
     extern const S3RequestSettingsUInt64 retry_initial_delay_ms;
     extern const S3RequestSettingsUInt64 retry_max_delay_ms;
-    extern const S3RequestSettingsBool monitor_response_while_sending;
     extern const S3RequestSettingsBool slow_all_threads_after_network_error;
     extern const S3RequestSettingsBool enable_request_logging;
 }
@@ -148,11 +146,6 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     if (!for_disk_s3 && local_settings.isChanged("enable_s3_requests_logging"))
         enable_s3_requests_logging = local_settings[Setting::enable_s3_requests_logging];
 
-    /// The request settings of a named collection come from the collection only.
-    bool s3_monitor_response_while_sending = request_settings[S3RequestSetting::monitor_response_while_sending];
-    if (!for_disk_s3 && local_settings.isChanged("s3_monitor_response_while_sending"))
-        s3_monitor_response_while_sending = local_settings[Setting::s3_monitor_response_while_sending];
-
     S3::PocoHTTPClientConfiguration::RetryStrategy retry_strategy;
     retry_strategy.max_retries = s3_retry_attempts;
     retry_strategy.initial_delay_ms = static_cast<unsigned int>(request_settings[S3RequestSetting::retry_initial_delay_ms]);
@@ -186,7 +179,6 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
-    client_configuration.s3_monitor_response_while_sending = s3_monitor_response_while_sending;
 
     if (request_settings.proxy_resolver)
     {

@@ -32,14 +32,11 @@ using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 class HTTPRequestBodyWriteBuffer : public WriteBuffer
 {
 public:
-    /// With `early_response_`, the body is sent while the connection is watched for a response
-    /// (RFC 9112, 9.5): a final response that the server sends before the end of the body is read
-    /// into it, and the rest of the body is dropped.
+    /// The body is sent while the connection is watched for a response (RFC 9112, 9.5): a final
+    /// response that the server sends before the end of the body is kept in the session for
+    /// `receiveHTTPResponse`, and the rest of the body is dropped.
     HTTPRequestBodyWriteBuffer(
-        Poco::Net::HTTPClientSession & session_,
-        Poco::Net::HTTPClientSession::BodyInfo body_info_,
-        size_t buf_size,
-        Poco::Net::HTTPResponse * early_response_ = nullptr);
+        Poco::Net::HTTPClientSession & session_, Poco::Net::HTTPClientSession::BodyInfo body_info_, size_t buf_size);
 
     ~HTTPRequestBodyWriteBuffer() override;
 
@@ -48,8 +45,8 @@ public:
     bool hasBody() const { return encoding != Poco::Net::HTTPClientSession::BodyEncoding::NoBody; }
 
     /// Whether the server sent a final response before the end of the body. The request then stays
-    /// incomplete, so the connection is not reused, and the response body is read with
-    /// `receiveEarlyHTTPResponseBody`.
+    /// incomplete, so the connection is not reused; `finalize` does nothing, and `receiveHTTPResponse`
+    /// returns that response.
     bool hasEarlyResponse() const { return early_response_received; }
 
 protected:
@@ -63,7 +60,6 @@ private:
     const Poco::Net::HTTPClientSession::BodyEncoding encoding;
     const UInt64 content_length;
     UInt64 bytes_written = 0;
-    Poco::Net::HTTPResponse * const early_response;
     bool early_response_received = false;
 
     Memory<> memory;
@@ -138,11 +134,13 @@ std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
     Poco::Net::HTTPRequest & request,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     UInt64 * connect_time = nullptr,
-    UInt64 * first_byte_time = nullptr,
-    Poco::Net::HTTPResponse * early_response = nullptr);
+    UInt64 * first_byte_time = nullptr);
 
 /// Reads and parses the response line and the headers into `response`, and returns a buffer for
 /// its body. `1xx` informational responses are skipped, as `Poco` does.
+///
+/// A final response that the server sent while the request body was being sent is returned instead
+/// of reading one; if its status is a success, it throws, because the body was not fully sent.
 ///
 /// This is the replacement of `Poco::Net::HTTPClientSession::receiveResponse`. Throws the same
 /// exceptions `Poco` throws: `Poco::Net::NoMessageException` when the peer sent nothing at all
@@ -155,10 +153,6 @@ std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
 std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
     HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-/// Returns the body reader for a final response that the server sent before the end of the request
-/// body (see `HTTPRequestBodyWriteBuffer::hasEarlyResponse`). The returned buffer keeps the session alive.
-std::unique_ptr<HTTPResponseReadBuffer> receiveEarlyHTTPResponseBody(
-    HTTPSessionPtr session, const Poco::Net::HTTPResponse & response, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
 
 }

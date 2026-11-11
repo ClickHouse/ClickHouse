@@ -388,6 +388,7 @@ HTTPClientSession::BodyInfo HTTPClientSession::sendRequestHeaders(HTTPRequest& r
 	_responseReceived = false;
 	_requestBodyComplete = false;
 	_responseBodyComplete = false;
+	_earlyResponse.reset();
 
 	_keepAliveCurrentRequest += 1;
 

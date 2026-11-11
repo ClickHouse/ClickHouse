@@ -190,9 +190,8 @@ namespace Net
         /// Throws `MessageException` if the socket stops accepting data.
 
         int writeRawNonBlocking(const char * buffer, std::streamsize length);
-        /// Sends up to `length` bytes without waiting for the socket to accept them: the socket is
-        /// non-blocking for the duration of the call. Returns the number of bytes sent, or 0 when
-        /// the socket would block. For a TLS socket the next call must then pass the same data,
+        /// Sends up to `length` bytes on a socket that the caller has set to non-blocking mode.
+        /// Returns the number of bytes sent, or 0 when the socket would block. For a TLS socket the next call must then pass the same data,
         /// because OpenSSL retries the pending record write. The send throttler waits before the
         /// call, as for a blocking send.
 

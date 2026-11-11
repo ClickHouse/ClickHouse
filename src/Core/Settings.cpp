@@ -663,13 +663,6 @@ The maximum number of retries in case of unexpected errors during Azure blob sto
     DECLARE(UInt64, s3_max_unexpected_write_error_retries, S3::DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES, R"(
 The maximum number of retries in case of unexpected errors during S3 write.
 )", 0) \
-    DECLARE(Bool, s3_monitor_response_while_sending, S3::DEFAULT_MONITOR_RESPONSE_WHILE_SENDING, R"(
-Watch the connection for a response while the body of an S3 request is being sent (RFC 9112, section 9.5). A server can
-answer before it has read the whole body, for example `NoSuchUpload` for an expired multipart upload, and then close the
-connection. With this setting ClickHouse stops sending, and reports that answer instead of a network error, also over
-TLS.
-)", 0, \
-        {"26.11", false, true, "New setting"}) \
     DECLARE(UInt64, azure_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
 Max number of azure redirects hops allowed.
 )", 0, \
