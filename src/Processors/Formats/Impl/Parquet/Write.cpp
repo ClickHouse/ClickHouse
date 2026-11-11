@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <zstd.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -689,7 +690,7 @@ struct ConverterJSON
     /// Created once: for `Object` it is not a cheap accessor, and `valueSize` is called per value.
     SerializationPtr serialization;
     PODArray<parquet::ByteArray> buf;
-    std::vector<String> stash;
+    VectorWithMemoryTracking<String> stash;
     const FormatSettings & format_settings;
 
     explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_, const FormatSettings & format_settings_)
@@ -778,19 +779,6 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 {
     /// We could use wrapWriteBufferWithCompressionMethod() for everything, but I worry about the
     /// overhead of creating a bunch of WriteBuffers on each page (thousands of values).
-#if USE_LIBDEFLATE
-    /// One-shot libdeflate for gzip: the page is already fully in memory, and libdeflate is faster
-    /// and compresses better than the streaming zlib path. Levels outside libdeflate's [1, 12]
-    /// range (e.g. level 0 = store) keep using the streaming path below.
-    if (method == CompressionMethod::Gzip && level >= 1 && level <= 12)
-    {
-        scratch.resize(Libdeflate::compressBound(method, level, source.size()));
-        size_t compressed_size = Libdeflate::compress(method, level, source.data(), source.size(), scratch.data(), scratch.size());
-        scratch.resize(compressed_size);
-        return scratch;
-    }
-#endif
-
     switch (method)
     {
         case CompressionMethod::None:
@@ -819,6 +807,19 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             scratch.resize(static_cast<size_t>(compressed_size));
             return scratch;
         }
+        /// One-shot path for zstd: the page is already fully in memory and of known size, and zstd is faster
+        /// and less memory better than the streaming zstd path especially at higher compression levels.
+        case CompressionMethod::Zstd:
+        {
+            const size_t max_dest_size = ZSTD_compressBound(source.size());
+            scratch.resize(max_dest_size);
+            const size_t compressed_size = ZSTD_compress(scratch.data(), max_dest_size, source.data(), source.size(), level);
+            if (ZSTD_isError(compressed_size))
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: {}", ZSTD_getErrorName(compressed_size));
+
+            scratch.resize(compressed_size);
+            return scratch;
+        }
 
 #if USE_SNAPPY
         case CompressionMethod::Snappy:
@@ -835,6 +836,22 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
             scratch.resize(compressed_size);
             return scratch;
+        }
+#endif
+
+#if USE_LIBDEFLATE
+        /// One-shot libdeflate for gzip: the page is already fully in memory, and libdeflate is faster
+        /// and compresses better than the streaming zlib path. Levels outside libdeflate's [1, 12]
+        /// range (e.g. level 0 = store) keep using the streaming path below.
+        case CompressionMethod::Gzip: {
+            if (level >= 1 && level <= 12)
+            {
+                scratch.resize(Libdeflate::compressBound(method, level, source.size()));
+                size_t compressed_size = Libdeflate::compress(method, level, source.data(), source.size(), scratch.data(), scratch.size());
+                scratch.resize(compressed_size);
+                return scratch;
+            }
+            [[fallthrough]];
         }
 #endif
 
@@ -1102,7 +1119,7 @@ void writeColumnImpl(
     }
 
     /// Encodings of the written data pages, for `ColumnMetaData.encodings`.
-    std::vector<parq::Encoding::type> data_page_encodings;
+    VectorWithMemoryTracking<parq::Encoding::type> data_page_encodings;
 
     /// For some readers filter pushdown implementations it's inconvenient if a row straddles pages,
     /// so let's be nice to them and avoid that. This matches arrow's logic.
@@ -1130,9 +1147,9 @@ void writeColumnImpl(
         if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
             s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
         if (s.max_rep > 0)
-            s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
+            s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1)); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift `parq::SizeStatistics` setters take std::vector
         if (s.max_def > 0)
-            s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
+            s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1)); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift `parq::SizeStatistics` setters take std::vector
     };
     reset_size_statistics();
 
@@ -1166,7 +1183,7 @@ void writeColumnImpl(
         PODArray<char> data;
         size_t first_row_index = 0;
     };
-    std::vector<PageData> dict_encoded_pages; // can't write them out until we have full dictionary
+    VectorWithMemoryTracking<PageData> dict_encoded_pages; // can't write them out until we have full dictionary
 
     /// Reused across pages to reduce number of allocations and improve locality.
     PODArray<char> encoded;
@@ -2081,7 +2098,7 @@ void writeFileFooter(FileWriteState & file,
     /// Documentation about geoparquet metadata: https://geoparquet.org/releases/v1.0.0-beta.1/
     if (options.write_geometadata)
     {
-        std::vector<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
+        VectorWithMemoryTracking<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
         for (const auto & [column_name, type] : header.getNamesAndTypesList())
         {
             if (type->getCustomName() &&
@@ -2098,11 +2115,9 @@ void writeFileFooter(FileWriteState & file,
                 Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
                 geom_types->add(type->getCustomName()->getName());
                 geom_meta->set("geometry_types", geom_types);
-                /// With the `GEOMETRY` logical type, the column has the default CRS of the logical
-                /// type (`OGC:CRS84`). Omit `crs` here, which means the same default in GeoParquet,
-                /// so that both kinds of metadata describe the same CRS.
-                if (!options.write_geometry_logical_type)
-                    geom_meta->set("crs", "EPSG:4326");
+                /// No `crs`: in GeoParquet that means `OGC:CRS84`, longitude then latitude, which is how the
+                /// coordinates are stored, and it is also the default CRS of the `GEOMETRY` logical type.
+                /// (`crs` must be a PROJJSON object if present, and readers like DuckDB reject a string.)
 
                 if (type->getCustomName()->getName() == WKBPolygonTransform::name ||
                     type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
