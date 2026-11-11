@@ -74,6 +74,7 @@ public:
 
     void removeFiles(const Strings & file_names) override;
     void removeEmptyDirectories() override;
+    void removeEmptyRootDirectory() override {}
 
     const ReadSettings & getReadSettings() const override { return read_settings; }
     const WriteSettings & getWriteSettings() const override { return write_settings; }

@@ -2008,7 +2008,7 @@ bool BackupImpl::tryRemoveLockFileIfNothingWritten() noexcept
         LOG_INFO(log, "Removing the lock file of backup {}, nothing else was written", backup_name_for_logging);
         if (!tryRemoveOwnLockFile())
             return false;
-        writer->removeEmptyDirectories();
+        writer->removeEmptyRootDirectory();
         return true;
     }
     catch (...)

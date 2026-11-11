@@ -83,3 +83,30 @@ def test_unwritten_backup_releases_destination():
         f"BACKUP TABLE t TO {backup_name(incremental)} "
         f"SETTINGS base_backup = {backup_name(base)}"
     )
+
+    # Nothing was written to a destination that already holds other entries: only the lock is removed.
+    prefilled = f"{prefix}_prefilled"
+    outside = f"/tmp/{prefix}_outside"
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p /backups/{prefilled}/dir {outside}/dir && ln -s {outside} /backups/{prefilled}/link",
+        ]
+    )
+    assert "BACKUP_NOT_FOUND" in node.query_and_get_error(
+        f"BACKUP TABLE t TO {backup_name(prefilled)} "
+        f"SETTINGS base_backup = {backup_name(prefix + '_missing')}"
+    )
+    assert not exists(f"{prefilled}/.lock")
+    assert exists(f"{prefilled}/dir")
+    assert (
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"test -L /backups/{prefilled}/link && test -d {outside}/dir && echo yes || echo no",
+            ]
+        ).strip()
+        == "yes"
+    )

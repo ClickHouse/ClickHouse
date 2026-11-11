@@ -53,6 +53,7 @@ public:
 
     void removeFile(const String & file_name) override;
     void removeEmptyDirectories() override;
+    void removeEmptyRootDirectory() override;
 
     void syncFileToDisk(const String & file_name) override;
     void syncDirectoriesToDisk() override;
