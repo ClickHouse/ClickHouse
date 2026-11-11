@@ -104,6 +104,11 @@ void NativeReader::resetParser()
     use_index = false;
 }
 
+void NativeReader::setSkippedUnknownColumnCallback(std::function<void(std::string_view)> callback)
+{
+    skipped_unknown_column_callback = std::move(callback);
+}
+
 void NativeReader::readData(
     const ISerialization & serialization,
     IColumn & column,
@@ -348,6 +353,8 @@ Block NativeReader::read()
             {
                 if (format_settings && !format_settings->skip_unknown_fields)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} found while reading data in Native format", column.name);
+                if (skipped_unknown_column_callback)
+                    skipped_unknown_column_callback(column.name);
                 use_in_result = false;
             }
         }

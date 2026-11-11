@@ -78,6 +78,7 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
         input_format->setRowsReadBefore(unit.offset);
         input_format->setErrorsLogger(errors_logger);
         input_format->setSerializationHints(serialization_hints);
+        input_format->setSkippedUnknownFieldCallback(skipped_unknown_field_callback);
 
         InternalParser parser(input_format);
 

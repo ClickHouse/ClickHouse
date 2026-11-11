@@ -12,6 +12,9 @@
 #include <Processors/ISource.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <functional>
+#include <string_view>
+
 
 namespace DB
 {
@@ -159,6 +162,17 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
+    /// Called for the fields of the input data that are skipped because the header has no column for them
+    /// (`input_format_skip_unknown_fields`): once per name, for at most `max_reported_skipped_unknown_fields + 1` names.
+    using SkippedUnknownFieldCallback = std::function<void(std::string_view field_name)>;
+    static constexpr size_t max_reported_skipped_unknown_fields = 10;
+
+    virtual void setSkippedUnknownFieldCallback(SkippedUnknownFieldCallback callback)
+    {
+        skipped_unknown_field_callback = std::move(callback);
+        reported_skipped_unknown_fields.clear();
+    }
+
     /// `FormatFilterInfo::column_mapper`, for a format whose creator does not receive the `FormatFilterInfo`.
     virtual void setColumnMapper(const ColumnMapperPtr & /*column_mapper*/) {}
 
@@ -200,12 +214,19 @@ protected:
 
     InputFormatErrorsLoggerPtr errors_logger;
 
+    bool needToReportSkippedUnknownField(std::string_view field_name) const;
+    void reportSkippedUnknownField(std::string_view field_name);
+    /// For every field of the header of the input data that `column_mapping` maps to no column.
+    void reportSkippedUnknownFieldsOfColumnMapping();
+    SkippedUnknownFieldCallback skipped_unknown_field_callback;   /// protected: ParallelParsingInputFormat passes it on
+
     bool need_only_count = false;
 
 private:
     void resetOwnedBuffers();
 
     VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>> owned_buffers;
+    VectorWithMemoryTracking<String> reported_skipped_unknown_fields;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

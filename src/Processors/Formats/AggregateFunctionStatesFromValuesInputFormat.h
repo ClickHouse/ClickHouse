@@ -41,6 +41,7 @@ public:
     const BlockMissingValues * getMissingValues() const override { return underlying->getMissingValues(); }
     void setRowsReadBefore(size_t rows) override { underlying->setRowsReadBefore(rows); }
     void setSerializationHints(const SerializationInfoByName & hints) override { underlying->setSerializationHints(hints); }
+    void setSkippedUnknownFieldCallback(SkippedUnknownFieldCallback callback) override { underlying->setSkippedUnknownFieldCallback(std::move(callback)); }
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
     void needOnlyCount() override { underlying->needOnlyCount(); }
     void setQueryParameters(const NameToNameMap & parameters) override { underlying->setQueryParameters(parameters); }

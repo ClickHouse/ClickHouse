@@ -798,6 +798,7 @@ void BSONEachRowRowInputFormat::skipUnknownField(BSONType type, const String & k
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing BSONEachRow format: {}", key_name);
 
+    reportSkippedUnknownField(key_name);
     skipBSONField(*in, type);
 }
 
