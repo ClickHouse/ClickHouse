@@ -207,6 +207,8 @@ private:
     // Handling replica activation.
     std::atomic<bool> is_active = false;
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
+    /// Shutdown, preparing for it and `DROP` can run `partialShutdown` concurrently.
+    std::mutex partial_shutdown_mutex;
     BackgroundSchedulePoolTaskHolder activating_task;
     String active_node_identifier;
     UInt64 consecutive_activate_failures = 0;

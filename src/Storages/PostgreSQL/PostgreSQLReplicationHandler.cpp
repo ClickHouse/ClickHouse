@@ -413,6 +413,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
 
 void PostgreSQLReplicationHandler::shutdown()
 {
+    std::lock_guard lock(shutdown_mutex);
     stop_synchronization.store(true);
 
     LOG_TRACE(log, "Deactivating startup task");

@@ -113,6 +113,8 @@ private:
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
     std::vector<INATSConsumerPtr> consumers; /// available NATS consumers
+    /// Stops the consumers, unlike `shutdown_called`, which also stops the producers.
+    std::atomic<bool> consumers_stopped{false};
 
     /// maximum number of messages in NATS queue (x-max-length). Also used
     /// to setup size of inner consumer for received messages
