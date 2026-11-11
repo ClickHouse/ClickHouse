@@ -29,15 +29,16 @@ for cap in 2 3 4; do
     "
 
     # Repeat parts of one row, ten thousand rows, one row and forty thousand rows, so that adjacent parts
-    # differ in size and no few of them add up to twice the largest.
-    for i in $(seq 1 60); do
-        case $(( i % 4 )) in
-            1|3) rows=1 ;;
-            2) rows=10000 ;;
-            0) rows=40000 ;;
-        esac
-        echo "INSERT INTO $table SELECT number, $i FROM numbers($rows);"
-    done | $CLICKHOUSE_CLIENT -n
+    # differ in size and no few of them add up to twice the largest. Create all of them with one query, as
+    # separate inserts are slow in sanitizer builds: every block of forty thousand numbers is filtered down
+    # to the size of its part, and squashing is disabled, so that each block becomes its own part.
+    $CLICKHOUSE_CLIENT -q "
+        INSERT INTO $table
+        SELECT number % 40000, intDiv(number, 40000) + 1 FROM numbers(60 * 40000)
+        WHERE multiIf(intDiv(number, 40000) % 2 = 0, number % 40000 = 0, intDiv(number, 40000) % 4 = 1, number % 40000 < 10000, true)
+        SETTINGS max_block_size = 40000, max_threads = 1, max_insert_threads = 1,
+            min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+    "
 
     $CLICKHOUSE_CLIENT -q "SELECT $cap, 'before', count() FROM system.parts WHERE database = currentDatabase() AND table = '$table' AND active"
 
