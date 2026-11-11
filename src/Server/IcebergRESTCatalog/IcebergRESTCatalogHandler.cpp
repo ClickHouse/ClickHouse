@@ -70,7 +70,6 @@ namespace
 {
 
 constexpr size_t MAX_REQUEST_BODY_SIZE = 1_MiB;
-constexpr size_t MAX_TABLE_NAME_LENGTH = 256;
 
 /// The Iceberg table property that names the codec of metadata files.
 constexpr auto METADATA_COMPRESSION_CODEC_PROPERTY = "write.metadata.compression-codec";
@@ -108,16 +107,37 @@ IcebergNamespaceName splitNamespace(const String & value)
     return result;
 }
 
-/// The handler maps `BAD_ARGUMENTS` to a 400 response.
-void validateTableName(const String & name)
-{
-    if (name.empty() || name.size() > MAX_TABLE_NAME_LENGTH)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table name must be non-empty and at most {} bytes", MAX_TABLE_NAME_LENGTH);
-}
-
 String joinNamespace(const IcebergNamespaceName & name)
 {
     return fmt::format("{}", fmt::join(name, "."));
+}
+
+IcebergNamespaceName parseNamespaceArray(const Poco::JSON::Object & json)
+{
+    const auto namespace_array = json.getArray("namespace");
+    if (!namespace_array)
+        throw Poco::Exception("'namespace' must be an array");
+
+    IcebergNamespaceName result;
+    for (const auto & level : *namespace_array)
+        result.push_back(level.extract<String>());
+    return result;
+}
+
+struct TableIdentifier
+{
+    IcebergNamespaceName ns;
+    String name;
+};
+
+/// Parses a `TableIdentifier`: `namespace` is an array of levels, `name` is a string.
+TableIdentifier parseTableIdentifier(const Poco::JSON::Object::Ptr & json)
+{
+    if (!json)
+        throw Poco::Exception("table identifier must be an object");
+    if (!json->has("name") || !json->get("name").isString())
+        throw Poco::Exception("'name' must be a string");
+    return {parseNamespaceArray(*json), json->getValue<String>("name")};
 }
 
 Poco::JSON::Array stringsToJSONArray(const Strings & strings)
@@ -380,6 +400,12 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             case IcebergRESTOperation::UpdateTable:
                 handleUpdateTable(*warehouse, *match, body, response, *context);
                 return;
+            case IcebergRESTOperation::RenameTable:
+                handleRenameTable(*warehouse, body, response, *context);
+                return;
+            case IcebergRESTOperation::ReportMetrics:
+                handleReportMetrics(*warehouse, *match, response);
+                return;
             default:
                 sendError(
                     response,
@@ -570,12 +596,7 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
         Poco::JSON::Parser parser;
         const auto json = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
 
-        const auto namespace_array = json->getArray("namespace");
-        if (!namespace_array)
-            throw Poco::Exception("'namespace' must be an array");
-
-        for (const auto & level : *namespace_array)
-            name.push_back(level.extract<String>());
+        name = parseNamespaceArray(*json);
 
         if (json->has("properties"))
         {
@@ -751,7 +772,6 @@ void IcebergRESTCatalogHandler::handleTableExists(
         return;
 
     const auto & table = match.path_params.at("table");
-    validateTableName(table);
     if (!warehouse.tableExists(*ns, table))
     {
         sendNoSuchTable(response, *ns, table);
@@ -769,7 +789,6 @@ void IcebergRESTCatalogHandler::handleLoadTable(
         return;
 
     const auto & table = match.path_params.at("table");
-    validateTableName(table);
     const auto pointer = warehouse.getTable(*ns, table);
     if (!pointer)
     {
@@ -813,6 +832,7 @@ void IcebergRESTCatalogHandler::handleCreateTable(
         if (!json->has("name") || !json->get("name").isString())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'name' must be a string");
         name = json->getValue<String>("name");
+        /// The store checks the name too, but only after the metadata file is written. Reject it before that.
         validateTableName(name);
 
         /// TODO: Stage-create means "write the metadata, do not register it". Needed for CTAS.
@@ -1076,6 +1096,80 @@ void IcebergRESTCatalogHandler::sendCommitRequestError(HTTPServerResponse & resp
             fmt::format("Malformed commit request: {}", message));
 }
 
+void IcebergRESTCatalogHandler::handleRenameTable(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const String & body,
+    HTTPServerResponse & response,
+    const Context & context) const
+{
+    checkDDLAllowed(context, "rename table");
+
+    TableIdentifier source;
+    TableIdentifier dest;
+    try
+    {
+        const auto json = Poco::JSON::Parser().parse(body).extract<Poco::JSON::Object::Ptr>();
+        source = parseTableIdentifier(json->getObject("source"));
+        dest = parseTableIdentifier(json->getObject("destination"));
+    }
+    catch (const Poco::Exception & e)
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Malformed rename table request: {}", e.displayText()));
+        return;
+    }
+
+    if (source.ns == dest.ns && source.name == dest.name)
+    {
+        sendError(response, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "BadRequestException", "Source and destination are the same table");
+        return;
+    }
+
+    switch (warehouse.renameTable(source.ns, source.name, dest.ns, dest.name))
+    {
+        case IcebergRESTCatalogWarehouse::RenameTableResult::Renamed:
+            LOG_INFO(log, "Renamed table {}.{} to {}.{}", joinNamespace(source.ns), source.name, joinNamespace(dest.ns), dest.name);
+            sendNoContent(response);
+            return;
+        case IcebergRESTCatalogWarehouse::RenameTableResult::TableMissing:
+            sendNoSuchTable(response, source.ns, source.name);
+            return;
+        case IcebergRESTCatalogWarehouse::RenameTableResult::NamespaceMissing:
+            sendNoSuchNamespace(response, dest.ns);
+            return;
+        case IcebergRESTCatalogWarehouse::RenameTableResult::TargetExists:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "AlreadyExistsException",
+                fmt::format("Table already exists: {}.{}", joinNamespace(dest.ns), dest.name));
+            return;
+    }
+}
+
+/// Clients send scan and commit reports after each operation. The server has nothing to do with them yet.
+void IcebergRESTCatalogHandler::handleReportMetrics(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergRESTRouteMatch & match,
+    HTTPServerResponse & response) const
+{
+    const auto ns = getNamespaceOrSendNotFound(warehouse, match, response);
+    if (!ns)
+        return;
+
+    const auto & table = match.path_params.at("table");
+    if (!warehouse.tableExists(*ns, table))
+    {
+        sendNoSuchTable(response, *ns, table);
+        return;
+    }
+
+    sendNoContent(response);
+}
+
 void IcebergRESTCatalogHandler::handleDropTable(
     const IcebergRESTCatalogWarehouse & warehouse,
     const IcebergRESTRouteMatch & match,
@@ -1090,7 +1184,6 @@ void IcebergRESTCatalogHandler::handleDropTable(
         return;
 
     const auto & table = match.path_params.at("table");
-    validateTableName(table);
 
     /// TODO: purge deletes every file the table owns: data files, manifests, manifest lists and metadata files.
     if (getBooleanQueryParameter(uri, "purgeRequested", /*default_value=*/ false))
