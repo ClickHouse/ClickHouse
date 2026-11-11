@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+import uuid
 
 import pytest
 
@@ -870,3 +871,182 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
         drop_table_stopping_any_merge(node, table)
         if optimize is not None:
             optimize.get_answer_and_error()
+
+
+# One retry step of the `broken_s3_slow_backoff` disk (`configs/storage_conf.xml`). A request that
+# does not observe cancellation in the shared backoff waits until the step ends.
+SLOW_BACKOFF_STEP_SECONDS = 30
+
+# A cancelled request ends its wait within one polling slice. Then it makes its single attempt,
+# which the mock holds for 1 s before it resets the connection.
+CANCELLED_WAIT_BUDGET_SECONDS = 10
+
+WRITE_ATTEMPTS_QUERY = (
+    "SELECT sumIf(value, event = 'DiskS3WriteRequestAttempts') FROM system.events"
+)
+
+# Counted only when the client retries in its own loop, which is where it moves the shared
+# deadline. Retries inside the SDK are not counted.
+WRITE_RETRIES_QUERY = (
+    "SELECT sumIf(value, event = 'DiskS3WriteRequestRetryableErrors') FROM system.events"
+)
+
+
+def wait_until_steady(node, query, window_seconds=1, attempts=30):
+    """The value of `query` once it stays the same for `window_seconds`, or None."""
+    previous = int(node.query(query))
+    for _ in range(attempts):
+        time.sleep(window_seconds)
+        current = int(node.query(query))
+        if current == previous:
+            return current
+        previous = current
+    return None
+
+
+def test_cancellation_ends_wait_in_shared_s3_backoff(cluster, broken_s3):
+    """A cancelled merge or query must stop waiting in the backoff that other threads keep open.
+
+    A network error that escapes the SDK moves a retry deadline that all requests of the client
+    share (`Client::updateNextTimeToRetryAfterRetryableError`). Every request waits for it before
+    each attempt, the first one included (`Client::slowDownAfterRetryableError`). That wait did not
+    observe cancellation: a merge stopped by `SYSTEM STOP MERGES` or a killed query slept until the
+    deadline passed, and during an outage the failures of other threads keep moving it.
+
+    An `INSERT` opens the deadline here, so the merge waits in it before it fails even once.
+    """
+    node = cluster.instances["node"]
+    merged = "t_backoff_merge"
+    inserted = "t_backoff_insert"
+    insert_query_id = f"backoff_insert_{uuid.uuid4().hex}"
+    optimize = None
+    insert = None
+
+    for table in (merged, inserted):
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+            CREATE TABLE {table} (id UInt64, s String) ENGINE = MergeTree ORDER BY id
+            SETTINGS storage_policy = 'broken_s3_slow_backoff', min_bytes_for_wide_part = 0
+            """
+        )
+    node.query(f"SYSTEM STOP MERGES {merged}")
+    node.query(
+        f"INSERT INTO {merged} SELECT number, repeat('x', 200) FROM numbers(10000)"
+    )
+    node.query(
+        f"INSERT INTO {merged} SELECT number + 10000, repeat('y', 200) FROM numbers(10000)"
+    )
+
+    in_merges = (
+        f"SELECT count() FROM system.merges "
+        f"WHERE database = currentDatabase() AND table = '{merged}'"
+    )
+    insert_running = (
+        f"SELECT count() FROM system.processes WHERE query_id = '{insert_query_id}'"
+    )
+
+    try:
+        # A partial body and then a reset. The SDK reads the body itself, so this error escapes it
+        # and reaches the retry loop of the client. An error before the body is retried inside the
+        # SDK, which does not move the shared deadline.
+        broken_s3.setup_at_object_upload(
+            count=1000000, action="connection_reset_by_peer", action_args=["1"]
+        )
+
+        retries_before = int(node.query(WRITE_RETRIES_QUERY))
+        # Without `async_insert = 0` a flush owns the upload, and `KILL QUERY` does not cancel the
+        # flush. The files of the part upload in parallel, so they all wait for the same deadline.
+        insert = node.get_query_request(
+            f"INSERT INTO {inserted} SELECT number, repeat('z', 200) FROM numbers(10000) "
+            f"SETTINGS async_insert = 0",
+            query_id=insert_query_id,
+        )
+        assert wait_for(
+            node, WRITE_RETRIES_QUERY, lambda v: int(v) > retries_before
+        ), "the INSERT never retried its upload, so it did not open the shared backoff"
+        backoff_opened = time.monotonic()
+
+        # The uploads of the `INSERT` fail together and then wait for the deadline, so the attempt
+        # counter stops. A later attempt is then not one of them.
+        attempts_before = wait_until_steady(node, WRITE_ATTEMPTS_QUERY)
+        assert (
+            attempts_before is not None
+        ), "the INSERT kept making attempts, so it does not wait in the shared backoff"
+        node.query(f"SYSTEM START MERGES {merged}")
+        # Not `node.query`: for a plain table OPTIMIZE runs the merge in this thread.
+        optimize = node.get_query_request(
+            f"OPTIMIZE TABLE {merged} FINAL SETTINGS alter_sync = 0, optimize_throw_if_noop = 0"
+        )
+        # The `INSERT` waits, so a new attempt is the first upload of the merge. That upload now
+        # waits for the deadline of the `INSERT`.
+        assert wait_for(
+            node, WRITE_ATTEMPTS_QUERY, lambda v: int(v) > attempts_before
+        ), "the merge never reached an upload, so it does not wait in the shared backoff"
+        assert (
+            int(node.query(in_merges)) >= 1
+        ), "the merge left system.merges before it was cancelled"
+        assert (
+            int(node.query(insert_running)) == 1
+        ), "the INSERT ended before it was killed"
+
+        cancelled = time.monotonic()
+        logging.info(
+            "Cancelling %.1f s after the INSERT opened the shared backoff",
+            cancelled - backoff_opened,
+        )
+        node.query(f"SYSTEM STOP MERGES {merged}")
+        node.query(f"KILL QUERY WHERE query_id = '{insert_query_id}' ASYNC")
+
+        merge_wait = None
+        insert_wait = None
+        while merge_wait is None or insert_wait is None:
+            elapsed = time.monotonic() - cancelled
+            if merge_wait is None and int(node.query(in_merges)) == 0:
+                merge_wait = elapsed
+            if insert_wait is None and int(node.query(insert_running)) == 0:
+                insert_wait = elapsed
+            if elapsed > 4 * SLOW_BACKOFF_STEP_SECONDS:
+                break
+            time.sleep(0.2)
+        logging.info(
+            "After the cancellation the merge waited %s s and the INSERT %s s",
+            merge_wait,
+            insert_wait,
+        )
+
+        assert merge_wait is not None and merge_wait < CANCELLED_WAIT_BUDGET_SECONDS, (
+            f"the merge stopped by SYSTEM STOP MERGES left system.merges only after "
+            f"{merge_wait} s: it waited out the shared S3 backoff"
+        )
+        assert insert_wait is not None and insert_wait < CANCELLED_WAIT_BUDGET_SECONDS, (
+            f"the killed INSERT ended only after {insert_wait} s: "
+            f"it waited out the shared S3 backoff"
+        )
+
+        broken_s3.reset()
+        optimize.get_answer_and_error()
+        optimize = None
+        insert.get_answer_and_error()
+        insert = None
+
+        # A cancelled merge keeps its source parts, so no data is lost.
+        assert (
+            int(
+                node.query(
+                    f"SELECT count() FROM system.parts "
+                    f"WHERE database = currentDatabase() AND table = '{merged}' AND active"
+                )
+            )
+            == 2
+        )
+        assert int(node.query(f"SELECT count() FROM {merged}")) == 20000
+    finally:
+        broken_s3.reset()
+        if optimize is not None:
+            optimize.get_answer_and_error()
+        if insert is not None:
+            insert.get_answer_and_error()
+        # The removal of the blobs waits for the deadline that the `INSERT` opened.
+        for table in (merged, inserted):
+            drop_table_stopping_any_merge(node, table)
