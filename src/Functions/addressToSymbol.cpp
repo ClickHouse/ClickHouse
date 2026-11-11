@@ -102,7 +102,7 @@ REGISTER_FUNCTION(AddressToSymbol)
     FunctionDocumentation::Description description = R"(
 Converts an address of an instruction inside the main ClickHouse executable to a symbol from ClickHouse's object files.
 
-The address must be an offset inside the main ClickHouse executable, the form in which addresses are stored in the `trace` columns of `system.trace_log`, `system.stack_trace`, `system.error_log` and `system.crash_log`.
+The address must be an offset inside the main ClickHouse executable, the form in which addresses are stored in the `trace` columns of `system.trace_log`, `system.stack_trace`, and `system.crash_log`, and the `last_error_trace` column of `system.error_log`.
 Runtime (virtual memory) addresses are not accepted, so that the function cannot be used to learn the memory layout of the server process.
 Frames outside the main executable are stored as `0`, and the function returns an empty result for them.
     )";
