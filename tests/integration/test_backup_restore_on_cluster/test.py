@@ -1410,6 +1410,22 @@ def test_backup_restore_mixed_address_default_database():
     )
 
 
+def test_except_data_from_qualified_table_on_cluster():
+    # The clause names the database that the unqualified element only gets from the current database.
+    node1.query("CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt8) ENGINE=MergeTree ORDER BY x")
+    node1.query("INSERT INTO tbl VALUES (1)")
+    node2.query("INSERT INTO tbl VALUES (2)")
+
+    settings = "SETTINGS backup_restore_failure_after_host_disconnected_for_seconds = 30"
+    backup_name = new_backup_name()
+    node1.query(
+        f"BACKUP TABLE tbl EXCEPT DATA FROM TABLE default.tbl ON CLUSTER 'cluster' TO {backup_name} {settings}"
+    )
+    node1.query(f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}")
+    assert node1.query("SELECT count() FROM tbl2") == "0\n"
+    assert node2.query("SELECT count() FROM tbl2") == "0\n"
+
+
 def test_system_named_collections_key_mismatch():
     node1.query("CREATE NAMED COLLECTION backup_nc_mismatch AS key1 = 'value1'")
 
