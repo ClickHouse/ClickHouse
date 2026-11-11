@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/SpillableAdapter.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
@@ -10,6 +11,7 @@
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
+#include <base/defines.h>
 
 #include <mutex>
 
@@ -31,7 +33,7 @@ class HashJoin;
  * The in-memory bucket is rebuilt immediately. A spilled bucket retains its old files and routes new rows to its children.
  * A spilled bucket has no hash table yet, so its size is estimated from its logical bytes, scaled by the ratio of
  * hash-table memory to logical bytes measured on the in-memory bucket.
- * There can be multiple threads calling `addBlockToJoin`, just like `ConcurrentHashJoin`.
+ * There can be multiple threads calling `addBlockToJoin`, just like `HashJoin`.
  *
  * 2) At the second stage we process left table blocks via `joinBlock`.
  * Again, each input block is split into multiple buckets by hash.
@@ -43,6 +45,7 @@ class HashJoin;
  * Right-side files inherited from ancestors are read before newer files, then the leaf is joined with its left-side blocks.
  *
  * After joining the left table blocks, we emit unmatched right-side rows for `RIGHT` and `FULL JOIN`.
+ * Note that non-joined rows are processed in multiple threads, unlike `MergeJoin`.
  */
 class GraceHashJoin final : public IJoin
 {
@@ -82,7 +85,8 @@ public:
         SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_,
-        size_t external_join_threshold_);
+        size_t external_join_threshold_,
+        size_t max_threads_);
 
     ~GraceHashJoin() override;
 
@@ -107,6 +111,7 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
+    size_t getMaxBuildThreads() const override { return max_threads; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
@@ -120,11 +125,13 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    bool canSpillToDisk() const override { return true; }
-    size_t getSpillableBytes() const override;
-    void requestSpill(JoinBuildContext /*context*/) override { force_spill = true; }
+    ISpillable * getSpillable() override { return &spillable; }
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
 
 private:
+    SpillableAdapter<GraceHashJoin> spillable{*this};
+
     void initBuckets();
     /// Create empty join for in-memory processing.
     InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
@@ -133,14 +140,13 @@ private:
     void addBlockToJoinImpl(Block block, JoinBuildContext context);
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
-    /// `forced_only`: only a spill request asks for the split, not the threshold or the size limits. Such a split is
-    /// skipped if no leaf is left or the stop latched, and the request stays pending.
+    /// `forced_only`: only a spill request of the memory scheduler (`spill`) asks for the split, not the threshold or the
+    /// size limits. Such a split is skipped if no leaf is left or the stop latched, so `spill` frees nothing.
     void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context, bool forced_only);
     bool canForceRepartition() const;
-    bool forcedSpillPending() const;
 
     /// Whether the in-memory bucket reached the spill threshold, or the size limits in legacy mode. Spill requests of
-    /// the scheduler are checked separately, see `forcedSpillPending`.
+    /// the memory scheduler come through `spill`.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
 
     /// Add bucket_count new buckets
@@ -181,6 +187,7 @@ private:
     const size_t initial_num_buckets;
     const size_t max_num_buckets;
     const size_t external_join_threshold;
+    const size_t max_threads;
 
     Names left_key_names;
     Names right_key_names;
@@ -205,7 +212,6 @@ private:
     /// `HashJoin::getTotalByteCount` of an empty unreserved join, measured once in the constructor.
     size_t empty_build_bytes = 0;
     mutable std::mutex hash_join_mutex;
-    std::atomic<bool> force_spill = false;
 
     /// `Block::bytes` of the right-side blocks inserted into `hash_join`. Guarded by `hash_join_mutex`.
     size_t resident_logical_bytes = 0;

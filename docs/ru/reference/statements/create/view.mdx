@@ -12,7 +12,7 @@ import { DeprecatedBadge } from "/snippets/ru/components/DeprecatedBadge/Depreca
 
 Создает новое представление. Представления бывают [обычными](#normal-view), [materialized](#materialized-view) и [refreshable materialized](#refreshable-materialized-view).
 
-## Обычное представление
+## Обычное представление {#normal-view}
 
 Синтаксис:
 
@@ -43,7 +43,7 @@ SELECT a, b, c FROM view
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-## Параметризованное представление
+## Параметризованное представление {#parameterized-view}
 
 Параметризованные представления похожи на обычные представления, но могут создаваться с параметрами, значения которых определяются не сразу.
 Эти представления можно использовать с табличными функциями: имя представления указывается как имя функции, а значения параметров — как её аргументы.
@@ -66,7 +66,7 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
-## Materialized View
+## Materialized View {#materialized-view}
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
@@ -86,7 +86,7 @@ AS SELECT ...
 
 `OR REPLACE` и `IF NOT EXISTS` являются взаимоисключающими: их совместное использование вызывает синтаксическую ошибку.
 
-### CREATE OR REPLACE MATERIALIZED VIEW
+### CREATE OR REPLACE MATERIALIZED VIEW {#create-or-replace-materialized-view}
 
 `CREATE OR REPLACE MATERIALIZED VIEW` атомарно заменяет существующее materialized view и его внутреннюю таблицу хранения (если она есть). Для выполнения этой операции требуется движок базы данных `Atomic` или `Replicated`.
 
@@ -184,45 +184,48 @@ Materialized view работает следующим образом: при в�
 
 Чтобы удалить представление, используйте [DROP VIEW](/ru/reference/statements/drop#drop-view). Хотя `DROP TABLE` тоже работает для VIEW.
 
-## Безопасность SQL
+## Безопасность SQL {#sql_security}
 
-`DEFINER` и `SQL SECURITY` позволяют указать, от имени какого пользователя ClickHouse выполнять запрос, лежащий в основе представления.
+`DEFINER` и `SQL SECURITY` позволяют указать, от имени какого пользователя ClickHouse выполнять запрос, лежащий в основе VIEW.
 `SQL SECURITY` имеет три допустимых значения: `DEFINER`, `INVOKER` или `NONE`. В секции `DEFINER` можно указать любого существующего пользователя или `CURRENT_USER`.
 
-В следующей таблице показано, какие права требуются и какому пользователю, чтобы выполнять `SELECT` из представления.
-Обратите внимание: независимо от выбранного режима безопасности SQL, в любом случае для чтения из представления по-прежнему требуется `GRANT SELECT ON <view>`.
+В следующей таблице показано, какие права требуются и какому пользователю, чтобы выполнять `SELECT` из VIEW.
+Обратите внимание: независимо от выбранного режима безопасности SQL, в любом случае для чтения из VIEW по-прежнему требуется `GRANT SELECT ON <view>`.
 
-| Параметр безопасности SQL | Представление                                                                | Materialized View                                                                                                         |
+| Параметр безопасности SQL | VIEW                                                                | Materialized VIEW                                                                                                         |
 | ------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `DEFINER alice`           | У `alice` должен быть grant `SELECT` на исходную таблицу представления.      | У `alice` должен быть grant `SELECT` на исходную таблицу представления и grant `INSERT` на целевую таблицу представления. |
-| `INVOKER`                 | У пользователя должен быть grant `SELECT` на исходную таблицу представления. | `SQL SECURITY INVOKER` нельзя указывать для materialized view.                                                            |
+| `DEFINER alice`           | У `alice` должен быть grant `SELECT` на исходную таблицу VIEW.      | У `alice` должен быть grant `SELECT` на исходную таблицу VIEW и grant `INSERT` на целевую таблицу VIEW. |
+| `INVOKER`                 | У пользователя должен быть grant `SELECT` на исходную таблицу VIEW. | `SQL SECURITY INVOKER` нельзя указывать для materialized VIEW.                                                            |
 | `NONE`                    | -                                                                            | -                                                                                                                         |
 
 <Note>
-  `SQL SECURITY NONE` — устаревший параметр. Любой пользователь, имеющий права на создание представлений с `SQL SECURITY NONE`, сможет выполнять любые произвольные запросы.
-  Поэтому для создания представления с этим параметром требуется `GRANT ALLOW SQL SECURITY NONE TO <user>`.
+  `SQL SECURITY NONE` — устаревший параметр. Любой пользователь, имеющий права на создание VIEW с `SQL SECURITY NONE`, сможет выполнять любые произвольные запросы.
+  Поэтому для создания VIEW с этим параметром требуется `GRANT ALLOW SQL SECURITY NONE TO <user>`.
 </Note>
 
 Если `DEFINER`/`SQL SECURITY` не указаны, результат зависит от настройки сервера [`ignore_empty_sql_security_in_create_view_query`](/ru/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query).
 
-При значении по умолчанию `true` запрос сохраняется в исходном виде, а представление получает пустой тип безопасности SQL. Обычное представление при этом выполняется с разрешениями вызывающего пользователя, а для materialized view с явно указанной целевой таблицей проверки доступа к этой целевой таблице пропускаются: вставка в исходную таблицу не требует привилегии `INSERT` на целевую таблицу, а чтение из представления не требует привилегии `SELECT` на неё.
+При значении по умолчанию `true` запрос сохраняется в исходном виде, а VIEW получает пустой тип безопасности SQL. Обычное VIEW при этом выполняется с разрешениями вызывающего пользователя, а для materialized VIEW с явно указанной целевой таблицей проверки доступа к этой целевой таблице пропускаются: вставка в исходную таблицу не требует привилегии `INSERT` на целевую таблицу, а чтение из VIEW не требует привилегии `SELECT` на неё.
 
-При значении `false` в определение представления при создании записываются следующие значения по умолчанию:
+При значении `false` в определение VIEW при создании записываются следующие значения по умолчанию:
 
-* `SQL SECURITY`: `INVOKER` для обычных представлений (настраивается через [`default_normal_view_sql_security`](/ru/reference/settings/session-settings/default#default_normal_view_sql_security)) и `DEFINER` для materialized view (настраивается через [`default_materialized_view_sql_security`](/ru/reference/settings/session-settings/default#default_materialized_view_sql_security))
+* `SQL SECURITY`: `INVOKER` для обычных VIEW (настраивается через [`default_normal_view_sql_security`](/ru/reference/settings/session-settings/default#default_normal_view_sql_security)) и `DEFINER` для materialized VIEW (настраивается через [`default_materialized_view_sql_security`](/ru/reference/settings/session-settings/default#default_materialized_view_sql_security))
 * `DEFINER`: `CURRENT_USER` (настраивается через [`default_view_definer`](/ru/reference/settings/session-settings/default#default_view_definer))
 
-Refreshable materialized view всегда получают эти значения по умолчанию независимо от настройки.
+Refreshable materialized VIEW всегда получают эти значения по умолчанию независимо от настройки.
 
-При присоединении или перезагрузке представления при запуске сервера оно сохраняет тип безопасности SQL из своего сохранённого определения, поэтому представление, сохранённое без `DEFINER`/`SQL SECURITY`, сохраняет пустой тип безопасности SQL.
+При присоединении или перезагрузке VIEW при запуске сервера оно сохраняет тип безопасности SQL из своего сохранённого определения, поэтому VIEW, сохранённое без `DEFINER`/`SQL SECURITY`, сохраняет пустой тип безопасности SQL.
 
-Чтобы изменить безопасность SQL для существующего представления, используйте
+Чтобы изменить безопасность SQL для существующего VIEW, используйте
 
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
-### Примеры
+Если в качестве `DEFINER` указан не текущий пользователь, требуется grant `SET DEFINER` на этого пользователя — как при создании VIEW, так и при использовании `MODIFY SQL SECURITY`.
+Чтобы изменить запрос VIEW с `SQL SECURITY DEFINER` или `SQL SECURITY NONE` с помощью [`ALTER TABLE ... MODIFY QUERY`](/ru/reference/statements/alter/view#required-privileges), необходимы те же grant&#39;ы, что и для объявления для него безопасности SQL.
+
+### Примеры {#examples}
 
 ```sql
 CREATE VIEW test_view
@@ -236,7 +239,7 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## Live View
+## Live View {#live-view}
 
 <DeprecatedBadge />
 
@@ -244,7 +247,7 @@ AS SELECT ...
 
 Для вашего удобства старая документация находится [здесь](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Refreshable Materialized View
+## Refreshable Materialized View {#refreshable-materialized-view}
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -283,7 +286,7 @@ number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
   Настройки в части запроса `REFRESH ... SETTINGS` — это настройки обновления (например, `refresh_retries`), а не обычные настройки (например, `max_threads`). Обычные настройки можно указать с помощью `SETTINGS` в конце запроса.
 </Note>
 
-### Расписание обновления
+### Расписание обновления {#refresh-schedule}
 
 Примеры расписаний обновления:
 
@@ -311,9 +314,11 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 Обычно первое обновление запускается сразу после создания materialized view: время с момента последнего обновления равно бесконечности, поэтому по любому расписанию обновление должно начаться прямо сейчас. Если указано `EMPTY`, это начальное обновление пропускается, а первое обновление произойдёт в следующий момент по расписанию; например, для `EVERY 1 HOUR` первое обновление произойдёт в конце текущего часа.
 
-### В базе данных Replicated
+### В Replicated database {#in-replicated-db}
 
-Если refreshable materialized view находится в [базе данных Replicated](/ru/reference/engines/database-engines/replicated), реплики координируют работу между собой так, что в каждый запланированный момент обновление выполняет только одна реплика. Для этого требуется движок таблицы [ReplicatedMergeTree](/ru/reference/engines/table-engines/mergetree-family/replication), чтобы все реплики видели данные, полученные в результате обновления.
+Если refreshable materialized view находится в [Replicated database](/ru/reference/engines/database-engines/replicated), реплики координируют работу между собой так, что в каждый запланированный момент обновление выполняет только одна реплика. Для этого требуется движок таблицы [ReplicatedMergeTree](/ru/reference/engines/table-engines/mergetree-family/replication), чтобы все реплики видели данные, полученные в результате обновления.
+
+`RANDOMIZE FOR` применяется на каждой реплике независимо, поэтому точное время следующего обновления у реплик различается: обновление выполняет та реплика, у которой оно наступит первой. Таким образом, каждый раз обновление выполняет случайная реплика, а `next_refresh_time` в [`system.view_refreshes`](/ru/reference/system-tables/view_refreshes) показывает время, когда его выполнила бы данная реплика, а не обязательно время фактического обновления. Чем больше реплик, тем раньше в среднем наступает первое из назначенных им случайных моментов времени. Поэтому обновления происходят немного раньше в пределах окна `RANDOMIZE FOR`.
 
 В режиме `APPEND` координацию можно отключить с помощью `SETTINGS all_replicas = 1`. В этом случае реплики выполняют обновления независимо друг от друга. Тогда ReplicatedMergeTree не требуется.
 
@@ -321,7 +326,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 Координация выполняется через Keeper. Путь znode определяется настройкой сервера [default&#95;replica&#95;path](/ru/reference/settings/server-settings/settings/default-replica#default_replica_path).
 
-### Зависимости при обновлении
+### Зависимости при обновлении {#refresh-dependencies}
 
 `DEPENDS ON` синхронизирует обновление разных таблиц:
 
@@ -347,7 +352,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
   `DEPENDS ON` работает только между refreshable materialized view. В частности, если представление-зависимость использует `TO <table>`, обязательно указывайте имя представления, а не таблицы. Если список `DEPENDS ON` содержит обычную таблицу, не-refreshable представление или опечатку, представление никогда не будет обновляться и в `system.view_refreshes` будет иметь состояние `MissingDependencies`. Зависимости можно изменить или удалить с помощью `ALTER`, см. [Изменение параметров обновления](#changing-refresh-parameters).
 </Note>
 
-#### Использование DEPENDS ON для согласованной задержки распространения
+#### Использование DEPENDS ON для согласованной задержки распространения {#using-depends-on-for-consistent-propagation-latency}
 
 Если оба представления используют `REFRESH EVERY` с одинаковым периодом, зависимость действует в каждом временном интервале.
 
@@ -371,7 +376,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
   Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
 ```
 
-#### Использование DEPENDS ON для батчевой потоковой обработки
+#### Использование DEPENDS ON для батчевой потоковой обработки {#using-depends-on-for-batched-stream-processing}
 
 Если `REFRESH EVERY` не используется, зависимое представление X обновляется, когда все его зависимости обновились хотя бы один раз с момента последнего обновления X. `REFRESH AFTER T` добавляет задержку: зависимое представление начнет обновляться через T после завершения обновления зависимости.
 
@@ -417,7 +422,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 
 Однако это работает хорошо только при включенной координации обновления, то есть когда представления находятся в базе данных Replicated или Shared. Без координации перезапуск сервера прерывает цикл, и после каждого перезапуска приходится вручную выполнять `SYSTEM REFRESH VIEW`, а не только один раз после создания представлений.
 
-### Настройки обновления
+### Настройки обновления {#refresh-settings}
 
 Доступные настройки обновления:
 
@@ -426,7 +431,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 * `refresh_retry_max_backoff_ms` - Ограничение на экспоненциальный рост задержки между попытками обновления. Значение по умолчанию: 60000 мс (1 минута).
 * `all_replicas` - В [Replicated database](/ru/reference/engines/database-engines/replicated) с `APPEND` определяет, будут ли все реплики обновляться независимо или в каждый запланированный момент обновление будет выполнять только одна реплика. Не может быть изменено после создания представления. Значение по умолчанию: `false`.
 
-### Изменение параметров обновления
+### Изменение параметров обновления {#changing-refresh-parameters}
 
 Параметры обновления существующей refreshable materialized view изменяются командой [`ALTER TABLE ... MODIFY REFRESH`](/ru/reference/statements/alter/view#alter-table--modify-refresh-statement):
 
@@ -469,7 +474,7 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 
-### Другие операции
+### Другие операции {#other-operations}
 
 Статус всех refreshable materialized view доступен в таблице [`system.view_refreshes`](/ru/reference/system-tables/view_refreshes). В частности, в ней содержатся прогресс обновления (если оно выполняется), время последнего и следующего обновления, а также сообщение об исключении, если обновление завершилось ошибкой.
 
@@ -481,12 +486,12 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
   Интересный факт: запросу обновления разрешено читать из обновляемого представления, при этом он видит версию данных до обновления. Это означает, что вы можете реализовать игру «Жизнь» Конвея: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 </Note>
 
-## Связанные материалы
+## Связанные материалы {#related-content}
 
 * Блог: [Работа с временными рядами в ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * Блог: [Создание решения для обсервабилити на ClickHouse — часть 2 — трейсы](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
 
-## Временные представления
+## Временные представления {#temporary-views}
 
 ClickHouse поддерживает **временные представления** со следующими характеристиками (где применимо — аналогично временным таблицам):
 
@@ -514,7 +519,7 @@ ClickHouse поддерживает **временные представлен�
 * **SHOW CREATE**
   Используйте `SHOW CREATE TEMPORARY VIEW view_name;`, чтобы вывести DDL временного представления.
 
-### Синтаксис
+### Синтаксис {#temporary-views-syntax}
 
 ```sql
 CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
@@ -522,7 +527,7 @@ CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
 
 `OR REPLACE` **не** поддерживается для временных представлений (по аналогии с временными таблицами). Если вам нужно «заменить» временное представление, удалите его и создайте заново.
 
-### Примеры
+### Примеры {#temporary-views-examples}
 
 Создайте временную исходную таблицу и временное представление на её основе:
 
@@ -550,7 +555,7 @@ SHOW CREATE TEMPORARY VIEW tview;
 DROP TEMPORARY VIEW IF EXISTS tview;  -- временные представления удаляются с использованием синтаксиса TEMPORARY TABLE
 ```
 
-### Недопустимые варианты / ограничения
+### Недопустимые варианты / ограничения {#temporary-views-limitations}
 
 * `CREATE OR REPLACE TEMPORARY VIEW ...` → **не допускается** (используйте `DROP` + `CREATE`).
 * `CREATE TEMPORARY MATERIALIZED VIEW ...` → **не допускается**.
@@ -558,11 +563,11 @@ DROP TEMPORARY VIEW IF EXISTS tview;  -- временные представле
 * `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **не допускается** (временные объекты локальны для сеанса).
 * `POPULATE`, `REFRESH`, `TO [db.table]`, внутренние движки и все специфичные для MV секции → **не применимы** к временным представлениям.
 
-### Примечания о распределённых запросах
+### Примечания о распределённых запросах {#temporary-views-distributed-notes}
 
 Временное **представление** — это лишь определение; передавать здесь нечего. Если ваше временное представление ссылается на временные **таблицы** (например, `Memory`), их данные могут передаваться на удалённые серверы при выполнении распределённого запроса — так же, как и в случае временных таблиц.
 
-#### Пример
+#### Пример {#temporary-views-distributed-example}
 
 ```sql
 -- A session-scoped, in-memory table

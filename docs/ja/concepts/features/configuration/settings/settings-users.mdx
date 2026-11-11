@@ -317,11 +317,13 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 
 ### show_named_collections_secrets
 
-この設定は、ユーザーに対する `SHOW NAMED COLLECTIONS SECRETS` 権限を有効または無効にします。この権限を持つユーザーは、[named collections](/ja/concepts/features/configuration/server-config/named-collections) に格納された値を、たとえば [`system.named_collections`](/ja/reference/system-tables/named_collections) テーブルで参照できます。
+この設定は、ユーザーに対する `SHOW NAMED COLLECTIONS SECRETS` 権限を有効または無効にします。この権限を持つユーザーは、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) に格納された値を、たとえば [`system.named_collections`](/ja/reference/system-tables/named_collections) テーブルで参照できます。
 
-デフォルトでは無効です。named collections を管理できることは、そこにすでに格納されている認証情報を読み取れることを意味しません。
+この権限は、名前付きコレクションを使用する際に、そのコレクションに格納されているキーをオーバーライドする場合にも必要です。たとえば、`s3(my_collection, url = '...')` における `url`、テーブルエンジンの `SETTINGS` 句で指定するキー、Dictionary ソース内のキーなどが該当します。コレクションに格納されていないキーを追加する場合は、この権限は必要ありません。
 
-この設定は `named_collection_control` と併用した場合にのみ効果があります。`named_collection_control` が無効の場合、`SHOW NAMED COLLECTIONS SECRETS` を含む named collection のすべての権限は、いずれにせよ取り消されるためです。
+デフォルトでは無効です。名前付きコレクション を管理できることは、そこにすでに格納されている認証情報を読み取れることを意味しません。
+
+この設定は `named_collection_control` と併用した場合にのみ効果があります。`named_collection_control` が無効の場合、`SHOW NAMED COLLECTIONS SECRETS` を含む 名前付きコレクション のすべての権限は、いずれにせよ取り消されるためです。
 
 設定可能な値:
 

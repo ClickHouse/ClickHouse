@@ -52,6 +52,7 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToISOWeek>(documentation);
+    factory.registerAlias("WEEK_OF_YEAR", "toISOWeek", FunctionFactory::Case::Insensitive);
 }
 
 }

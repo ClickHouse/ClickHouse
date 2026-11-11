@@ -1,8 +1,15 @@
 #pragma once
-#include <Interpreters/ActionsDAG.h>
+
+#include <base/types.h>
+
+#include <memory>
+#include <optional>
 
 namespace DB
 {
+
+class ActionsDAG;
+
 template <typename T, UInt8 small_set_size>
 class RoaringBitmapWithSmallSet;
 
@@ -15,6 +22,9 @@ struct DataLakeObjectMetadata
 
     /// Excluded rows indexes from selection vector
     ExcludedRowsPtr excluded_rows;
+
+    /// The number of rows of the object as the table metadata records it (before excluding `excluded_rows`), if known.
+    std::optional<UInt64> num_rows;
 };
 
 }

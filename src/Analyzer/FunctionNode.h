@@ -209,6 +209,9 @@ public:
             wrap_with_nullable = true;
     }
 
+    /// Whether `convertToNullable` was called, also when the result type cannot be `Nullable` and did not change.
+    bool isConvertedToNullable() const { return wrap_with_nullable; }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
