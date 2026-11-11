@@ -399,6 +399,7 @@ private:
     std::atomic_flag increasing_priority;
     /// A leaf lock for the fields below: only the rotation mutex of `FileCacheEfficiency` is taken under it.
     mutable ByteMutex efficiency_mutex;
+    /// Not `download_state`: that changes later and under the segment lock, which `markRead` does not take.
     bool removed_from_cache TSA_GUARDED_BY(efficiency_mutex) = false;
     /// Whether `reserved_size` is counted in `FileCacheSegmentSizes`.
     bool counted_in_segment_sizes TSA_GUARDED_BY(efficiency_mutex) = false;
