@@ -3356,7 +3356,7 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) {
     display: grid !important;
     grid-template-columns: repeat(3, max-content) !important;
-    grid-template-rows: repeat(5, 32px);
+    grid-template-rows: 32px 32px 48px 48px 32px;
     grid-auto-flow: row !important;
     align-content: start;
     justify-content: start;
@@ -3400,6 +3400,14 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
     grid-row: 5 !important;
 }
+/* Partner wordmarks have a separate line beneath their product names. Pull the
+   Open source items back into the compact rows that follow them. */
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(11) {
+    transform: translateY(-16px);
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
+    transform: translateY(-32px);
+}
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) {
     align-items: flex-start;
 }
@@ -3409,26 +3417,32 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) img,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) img {
     display: block !important;
-    order: 2;
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     margin-top: 0;
     object-fit: contain;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6),
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) {
+    display: grid !important;
+    grid-template-columns: 14px minmax(0, 1fr) 14px;
+    grid-template-rows: 20px 14px;
+    column-gap: 8px;
+    row-gap: 2px;
     align-items: center;
+    min-width: 200px;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div {
-    order: 1;
-    flex-grow: 0;
+    grid-column: 1 / 3;
+    grid-row: 1;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6)::before,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7)::before {
-    order: 3;
+    grid-column: 2;
+    grid-row: 2;
     color: inherit;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 600;
     line-height: 18px;
 }
@@ -3440,7 +3454,13 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > svg,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > svg {
-    order: 4;
+    grid-column: 3;
+    grid-row: 1;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > img,
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > img {
+    grid-column: 1;
+    grid-row: 2;
 }
 /* Horizontal separator in the Integrations top-nav dropdown, between the
    "Ecosystem" entry and the section entries (ClickPipes / Language clients /
