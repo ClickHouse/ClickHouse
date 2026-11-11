@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import random
+import re
 import uuid
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -19,6 +20,7 @@ from helpers.config_cluster import minio_access_key, minio_secret_key
 import decimal
 from pyiceberg.types import (
     DoubleType,
+    LongType,
     NestedField,
     StringType,
     StructType,
@@ -40,13 +42,19 @@ def run_s3_mocks(started_cluster, args=[]):
     start_mock_servers(
         started_cluster,
         script_dir,
-        [("mock_sts.py", "sts.us-east-1.amazonaws.com", "80", args)],
+        [
+            ("mock_sts.py", "sts.us-east-1.amazonaws.com", "80", args),
+            ("glue_fault_proxy.py", "sts.us-east-1.amazonaws.com", "8081"),
+        ],
     )
 
 
 CATALOG_NAME = "test"
 
 BASE_URL = "http://glue:3000"
+
+# `s3_mocks/glue_fault_proxy.py`, which forwards to `BASE_URL`.
+GLUE_FAULT_PROXY_URL = "http://sts.us-east-1.amazonaws.com:8081"
 
 
 def get_glue_local_url(cluster):
@@ -197,7 +205,7 @@ def generate_arrow_data(num_rows=5):
     return table
 
 def create_clickhouse_glue_database(
-    started_cluster, node, name, additional_settings={}, query_settings={}, with_credentials=True
+    started_cluster, node, name, additional_settings={}, query_settings={}, with_credentials=True, url=BASE_URL
 ):
     settings = {
         "catalog_type": "glue",
@@ -220,7 +228,7 @@ def create_clickhouse_glue_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}'{credential_args})
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{url}'{credential_args})
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """,
         settings={
@@ -812,6 +820,62 @@ def test_timestamps(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
 
+def test_timestamp_types_cache_does_not_keep_metadata(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ts_cache_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    database_name = f"db_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="timestamp", field_type=TimestampType(), required=False),
+        NestedField(field_id=2, name="timestamptz", field_type=TimestamptzType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, dir=test_ref)
+
+    create_clickhouse_glue_database(started_cluster, node, database_name)
+
+    def cache_metrics():
+        return [
+            int(value)
+            for value in node.query(
+                "SELECT value FROM system.metrics "
+                "WHERE metric IN ('GlueCatalogSchemaCacheBytes', 'GlueCatalogSchemaCacheEntries') ORDER BY metric"
+            ).split()
+        ]
+
+    bytes_before, entries_before = cache_metrics()
+
+    row = pa.Table.from_pylist(
+        [{"timestamp": datetime(2024, 1, 1, 12), "timestamptz": datetime(2024, 1, 1, 12, tzinfo=pytz.UTC)}]
+    )
+    versions = 30
+    for _ in range(versions):
+        table.append(row)
+        description = node.query(f"DESCRIBE TABLE {database_name}.`{root_namespace}.{table_name}`")
+        assert [line.split("\t")[1] for line in description.splitlines()] == [
+            "Nullable(DateTime64(6))",
+            "Nullable(DateTime64(6, \\'UTC\\'))",
+        ]
+
+    bytes_after, entries_after = cache_metrics()
+    assert entries_after - entries_before == versions
+
+    metadata_size = int(
+        node.query(
+            f"SELECT max(_size) FROM s3('http://minio1:9001/warehouse-glue/{test_ref}/metadata/*.metadata.json', "
+            f"'{minio_access_key}', '{minio_secret_key}', 'One')"
+        )
+    )
+    assert bytes_after - bytes_before < metadata_size
+
+    node.query(f"DROP DATABASE {database_name}")
+
+
 def test_insert(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1053,6 +1117,51 @@ def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     select_cols = ", ".join(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
     expected = "123\t1" + "\t\\N" * num_columns + "\n"
     assert node.query(f"SELECT {select_cols} FROM {table_ref} ORDER BY ALL", settings=write_settings) == expected
+
+
+def test_alternating_commits_with_pyiceberg(started_cluster):
+    # Iceberg Java and pyiceberg parse the table version only from `<N>-<uuid>.metadata.json`. When ClickHouse named
+    # its files `v<N>.metadata.json`, pyiceberg restarted the version at 0 and a later ClickHouse commit wanted a name
+    # it had already used, so every following write failed with `Write into iceberg was not successful`.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_alternating_commits_with_pyiceberg_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+    create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), SortOrder(), table_name)
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    metastore_name = re.compile(r"(\d{5})-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.metadata\.json")
+    versions = []
+
+    def check_pointer():
+        file_name = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location.rsplit("/", 1)[1]
+        match = metastore_name.fullmatch(file_name)
+        assert match, file_name
+        versions.append(int(match.group(1)))
+
+    expected = []
+    for i in range(3):
+        catalog.load_table(f"{root_namespace}.{table_name}").append(pa.table({"id": pa.array([10 * i], pa.int64())}))
+        check_pointer()
+        node.query(f"INSERT INTO {table_ref} VALUES ({10 * i + 1})", settings=write_settings)
+        check_pointer()
+        expected += [10 * i, 10 * i + 1]
+
+    catalog.load_table(f"{root_namespace}.{table_name}").append(pa.table({"id": pa.array([100], pa.int64())}))
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE id = 1", settings=write_settings)
+    check_pointer()
+    expected = sorted([x for x in expected if x != 1] + [100])
+
+    assert versions == sorted(set(versions)), versions
+    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "".join(f"{x}\n" for x in expected)
+    assert sorted(catalog.load_table(f"{root_namespace}.{table_name}").scan().to_arrow()["id"].to_pylist()) == expected
 
 
 def test_drop_table(started_cluster):
@@ -2010,6 +2119,49 @@ def test_exists_table_answers_only_from_not_found(started_cluster):
         assert (
             f"Exception calling GetTable for table {namespace}.{table_name}" in error
         ), error
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_retries_transient_server_error(started_cluster):
+    # Glue maps `InternalServiceException` (HTTP 500) to a non-retryable error, so a transient Glue failure
+    # must be retried by its HTTP status. The proxy fails the first two `GetTables` calls for a `transient_*`
+    # database and every call for a `denied_*` database.
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+
+    def injected(database):
+        return int(
+            started_cluster.exec_in_container(
+                proxy, ["curl", "-s", f"http://localhost:8081/injected/{database}"]
+            )
+        )
+
+    test_ref = uuid.uuid4().hex
+    transient_namespace = f"transient_{test_ref}"
+    denied_namespace = f"denied_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_fault_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(transient_namespace)
+    create_table(catalog, transient_namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    try:
+        # T1: the listing survives two transient failures. The count proves both were served.
+        assert f"{transient_namespace}.{table_name}" in node.query(f"SHOW TABLES FROM {db_name}")
+        assert injected(transient_namespace) == 2
+
+        # T2: a non-transient error is not retried and still fails the query.
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{db_name}' "
+            f"AND name = '{denied_namespace}.{table_name}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        assert "Injected access denied" in error, error
+        assert injected(denied_namespace) == 1
     finally:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 

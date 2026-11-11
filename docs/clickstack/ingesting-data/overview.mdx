@@ -7,28 +7,22 @@ doc_type: 'guide'
 keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
 ---
 
-All data is ingested into ClickStack Open Source or Managed ClickStack via an **OpenTelemetry (OTel) collector**. This acts as the primary entry point for logs, metrics, traces, and session data.
 
-The key difference between the architectures lies in where the components are hosted. In both cases, you run an OpenTelemetry Collector to receive telemetry data from your applications. With ClickStack Open Source, you also manage and host both ClickHouse and the ClickStack UI (HyperDX) yourself. With Managed ClickStack, ClickHouse and the HyperDX UI are hosted and managed in ClickHouse Cloud, with integrated authentication and operational management handled for you.
+All data is ingested into ClickStack Open Source via an **OpenTelemetry (OTel) collector**. This acts as the primary entry point for logs, metrics, traces, and session data.
 
-<Tabs>
-    <Tab title="Managed ClickStack">
-        <div className="ch-image-md">
+You run an OpenTelemetry Collector to receive telemetry data from your applications. With ClickStack Open Source, you also manage and host both ClickHouse and the ClickStack UI yourself.
 
-        ![Managed architecture with flow](/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp)
+<div className="ch-image-md">
 
-        </div>
-    </Tab>
-    <Tab title="Open Source ClickStack">
-        <div className="ch-image-md">
+<Frame>
 
-        ![Simple architecture with flow](/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp)
+![Simple architecture with flow](/images/use-cases/observability/clickstack-oss-ingestion.svg)
 
-        </div>
-    </Tab>
-</Tabs>
+</Frame>
 
-In both deployment models, the collector exposes two OTLP endpoints:
+</div>
+
+The collector exposes two OTLP endpoints:
 
 - **HTTP** - port `4318`
 - **gRPC** - port `4317`

@@ -2740,6 +2740,9 @@ ASTPtr LogsQLParser::parseMathExpr(int max_priority)
         }
         else
         {
+            /// LogsQL division stays floating point regardless of `sql_compatible_division_for_integers`.
+            if (String(it->second.function) == "divide")
+                left = makeASTFunction("toFloat64", left);
             left = makeASTFunction(it->second.function, left, right);
         }
     }
@@ -2827,7 +2830,9 @@ ASTPtr LogsQLParser::parseMathExprOperand()
                     if (arguments.size() == 1)
                         return makeASTFunction("round", arguments[0]);
                     if (arguments.size() == 2)
-                        return makeASTFunction("multiply", makeASTFunction("round", makeASTFunction("divide", arguments[0], arguments[1])), arguments[1]->clone());
+                        return makeASTFunction("multiply",
+                            makeASTFunction("round", makeASTFunction("divide", makeASTFunction("toFloat64", arguments[0]), arguments[1])),
+                            arguments[1]->clone());
                     throwSyntaxError("round() requires one or two arguments");
                 }
                 auto function = makeASTFunction(math_functions.at(name));

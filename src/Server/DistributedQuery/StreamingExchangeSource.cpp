@@ -25,6 +25,7 @@ namespace ProfileEvents
     extern const Event StreamingExchangePacketsReceived;
     extern const Event StreamingExchangeReceiveWaitMicroseconds;
     extern const Event StreamingExchangeEarlyCloses;
+    extern const Event RuntimeFilterReceivesAbandoned;
 }
 
 namespace DB
@@ -54,6 +55,7 @@ void StreamingExchangeSource::onStart()
     /// Register the socket so the waiting source wakes on incoming data or peer close.
     wait_events_epoll.add(socket->sockfd());
 #endif
+    handshake_completed = true;
 }
 
 bool StreamingExchangeSource::connect(const Stopwatch & handshake_watch)
@@ -68,7 +70,7 @@ bool StreamingExchangeSource::connect(const Stopwatch & handshake_watch)
         return false;
     if (int err = socket->impl()->socketError())
         Poco::Net::SocketImpl::error(err);
-    socket->setReceiveBufferSize(10 * 1024 * 1024);
+    StreamingExchangeProtocol::applySocketBufferSizes(*socket);
     return true;
 }
 
@@ -377,7 +379,18 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
     }
     catch (const Exception & e)
     {
-        if (!cancellation || e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+        if (e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+            throw;
+
+        if (advisory && handshake_completed)
+        {
+            LOG_DEBUG(log, "Exchange stream {} lost its peer, ending it early: {}", stream_name, e.message());
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterReceivesAbandoned);
+            finished_reading = true;
+            return std::nullopt;
+        }
+
+        if (!cancellation)
             throw;
 
         /// The producer went away, most likely because the query is failing elsewhere. The driving
@@ -478,7 +491,7 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
     }
     else
     {
-        auto packet = StreamingExchangeProtocol::readDataPacketBody(*packet_in, output.getHeader(), stream_name);
+        auto packet = StreamingExchangeProtocol::readDataPacketBody(*packet_in, output.getHeader(), stream_name, &type_cache);
         rows_read += packet.chunk.getNumRows();
         if (packet.end_of_stream)
             finished_reading = true;

@@ -120,7 +120,7 @@ Processed 8.87 million rows,
 
 ClickHouse client's result output indicates that ClickHouse executed a full table scan! Each single row of the 8.87 million rows of our table was streamed into ClickHouse. That doesn't scale.
 
-To make this (way) more efficient and (much) faster, we need to use a table with a appropriate primary key. This will allow ClickHouse to automatically (based on the primary key's columns) create a sparse primary index which can then be used to significantly speed up the execution of our example query.
+To make this (way) more efficient and (much) faster, we need to use a table with an appropriate primary key. This will allow ClickHouse to automatically (based on the primary key's columns) create a sparse primary index which can then be used to significantly speed up the execution of our example query.
 
 ## ClickHouse index design {#clickhouse-index-design}
 
@@ -889,7 +889,7 @@ If we want to significantly speed up both of our sample queries - the one that  
 - Creating a **materialized view** on our existing table.
 - Adding a **projection** to our existing table.
 
-All three options will effectively duplicate our sample data into a additional table in order to reorganize the table primary index and row sort order.
+All three options will effectively duplicate our sample data into an additional table in order to reorganize the table primary index and row sort order.
 
 However, the three options differ in how transparent that additional table is to the user with respect to the routing of queries and insert statements.
 
@@ -1137,7 +1137,7 @@ Ok.
 
 </div>
 
-ClickHouse is storing the [column data files](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), the [mark files](#mark-files-are-used-for-locating-granules) (*.mrk2) and the [primary index](#the-primary-index-has-one-entry-per-granule) (primary.idx) of the implicitly created table in a special folder withing the ClickHouse server's data directory:
+ClickHouse is storing the [column data files](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), the [mark files](#mark-files-are-used-for-locating-granules) (*.mrk2) and the [primary index](#the-primary-index-has-one-entry-per-granule) (primary.idx) of the implicitly created table in a special folder within the ClickHouse server's data directory:
 
 <div className="ch-image-md">
 

@@ -27,8 +27,8 @@ SELECT total_rows FROM system.tables WHERE database = currentDatabase() AND name
 SELECT 'the count is usable in a subquery with an outer filter';
 -- This is the query from the issue. It needs the analyzer: the old one does not push the trivial
 -- count through the subquery and still asks the storage to read.
-SELECT cnt FROM (SELECT count() AS cnt FROM t_set) WHERE cnt = 0 SETTINGS enable_analyzer = 1;
-SELECT cnt FROM (SELECT count() AS cnt FROM t_set) WHERE cnt = 3 SETTINGS enable_analyzer = 1;
+SELECT cnt FROM (SELECT count() AS cnt FROM t_set) WHERE cnt = 0;
+SELECT cnt FROM (SELECT count() AS cnt FROM t_set) WHERE cnt = 3;
 
 SELECT 'truncate empties it';
 TRUNCATE TABLE t_set;

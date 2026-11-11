@@ -11,6 +11,8 @@ BAD_ARGUMENTS
 -- reading through the chain reaches the target
 1
 2
+-- RENAME DATABASE refuses to make an attached Alias self-referential
+INFINITE_LOOP
 -- a stored self-referential definition loads
 -- and reading it is bounded
 TOO_DEEP_RECURSION

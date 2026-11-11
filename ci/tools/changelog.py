@@ -17,7 +17,7 @@ from rapidfuzz.distance import Levenshtein  # type: ignore
 
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
-from version_helper import (
+from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
     get_abs_path,
     get_version_from_repo,
