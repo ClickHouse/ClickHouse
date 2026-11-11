@@ -150,11 +150,14 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
             && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS)
         {
-            LOG_DEBUG(
-                getLogger("InterpreterSelectQueryAnalyzer"),
-                "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
-                " To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
-            result_context->setSetting("enable_parallel_replicas", Field(0));
+            if (!result_context->getClientInfo().collaborate_with_initiator)
+            {
+                LOG_DEBUG(
+                    getLogger("InterpreterSelectQueryAnalyzer"),
+                    "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
+                    " To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
+                result_context->setSetting("enable_parallel_replicas", Field(0));
+            }
         }
         else
         {
