@@ -1,8 +1,8 @@
--- two-part rule: only the dotted table of the current database exists
-3
+-- two-part rule: a plain current database is not consulted for the dotted table
 Code: 60
--- two-part rule: both exist
-Code: 207
+Code: 60
+-- two-part rule: both exist, the table of the specified database is read
+5
 -- two-part rule: only the table of the other database exists
 5
 5

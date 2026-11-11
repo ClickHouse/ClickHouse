@@ -17,6 +17,7 @@ import pytz
 from avro.datafile import DataFileReader, DataFileWriter
 from avro.io import DatumReader, DatumWriter
 from pyiceberg.catalog import load_catalog
+from pyiceberg.exceptions import NamespaceAlreadyExistsError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import SortField, SortOrder
@@ -2712,6 +2713,21 @@ def test_namespace_two_part_name_resolution(started_cluster):
 
     node.query(f"CREATE DATABASE `{X}`")
     try:
+        # `system.*` names are never read from the catalog's current-database reading
+        try:
+            catalog.create_namespace("system")
+        except NamespaceAlreadyExistsError:
+            pass
+        system_one = create_table(catalog, "system", "one")
+        create_table(catalog, "system", "columns")
+        system_one.append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+
+        result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM system.one", settings=on))
+        assert result == 1, f"system.one must be the ClickHouse table, got {result}"
+        for name in ("`system.one`", f"{CATALOG_NAME}.system.one"):
+            result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM {name}", settings=on))
+            assert result == 5, f"{name} must be the catalog table (5 rows), got {result}"
+
         # row 2: database X exists, X.T only in the catalog
         result = int(node.query(query, settings=on))
         assert result == 5, f"row 2, setting on: expected the catalog table (5 rows), got {result}"
@@ -2743,6 +2759,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
         result = int(node.query(query))
         assert result == 3, f"row 3, setting off: expected the database table (3 rows), got {result}"
 
+        node.query(f"USE {CATALOG_NAME}; SHOW COLUMNS FROM {CATALOG_NAME}.{X}.{T}", settings=on)
+
         node.query(f"DROP TABLE {CATALOG_NAME}.`{X}.{T}`")
 
         # row 4: X.T only in the database
@@ -2760,6 +2778,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
         assert "UNKNOWN_TABLE" in err, f"X.T nowhere, setting off: {err}"
     finally:
         node.query(f"DROP DATABASE IF EXISTS `{X}`")
+        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`system.one`")
+        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`system.columns`")
 
 
 def test_three_part_identifier(started_cluster):

@@ -16,16 +16,16 @@ code() { grep -oE 'Code: [0-9]+' | head -n1; }
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${dba}"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE ${dba}"
 
-echo '-- two-part rule: only the dotted table of the current database exists'
+echo '-- two-part rule: a plain current database is not consulted for the dotted table'
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.\`${dba}.b\` (x Int32) ENGINE = MergeTree ORDER BY x"
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.\`${dba}.b\` VALUES (1), (2), (3)"
-$ON -q "SELECT count() FROM ${dba}.b"
+$ON -q "SELECT count() FROM ${dba}.b" 2>&1 | code
 $OFF -q "SELECT count() FROM ${dba}.b" 2>&1 | code
 
-echo '-- two-part rule: both exist'
+echo '-- two-part rule: both exist, the table of the specified database is read'
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${dba}.b (x Int32) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${dba}.b VALUES (1), (2), (3), (4), (5)"
-$ON -q "SELECT count() FROM ${dba}.b" 2>&1 | code
+$ON -q "SELECT count() FROM ${dba}.b"
 
 echo '-- two-part rule: only the table of the other database exists'
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`${dba}.b\`"
