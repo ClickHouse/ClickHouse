@@ -1721,7 +1721,8 @@ ReturnType readDateTimeTextFallback(
         /// Probe for the YYYY-MM-DD layout only if the next character can plausibly delimit the parts
         /// of a date. Otherwise the value is a unix timestamp, and the next character belongs to the
         /// caller, so it must not be consumed (it can be a field delimiter of a row-based format).
-        const bool may_be_date = date_delimiter == '-' || date_delimiter == '/' || date_delimiter == '.'
+        /// ':' is accepted as in the optimistic path, to keep reading consistent with schema inference.
+        const bool may_be_date = date_delimiter == '-' || date_delimiter == '/' || date_delimiter == '.' || date_delimiter == ':'
             || (allowed_date_delimiters != nullptr && isSymbolIn(date_delimiter, allowed_date_delimiters));
 
         /// Check the date layout character by character. The characters consumed while probing can be
