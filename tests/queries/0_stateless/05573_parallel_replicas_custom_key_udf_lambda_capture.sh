@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # SQL UDFs are global, so the function name is made unique per test database.
 
 UDF="g_capture_${CLICKHOUSE_DATABASE}"
-SETTINGS="parallel_replicas_mode = 'custom_key_sampling', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_count = 2, parallel_replicas_custom_key = '${UDF}(y)'"
+SETTINGS="parallel_replicas_mode = 'custom_key_sampling', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_count = 2, parallel_replicas_custom_key = '${UDF}(y)', automatic_parallel_replicas_mode = 0, cluster_for_parallel_replicas = '', parallel_replicas_for_non_replicated_merge_tree = 0, serialize_query_plan = 0"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_05573;
@@ -20,9 +20,9 @@ $CLICKHOUSE_CLIENT -q "
 
     CREATE FUNCTION ${UDF} AS x -> arraySum(arrayMap(y -> x + y, [1]));
 
-    SELECT groupArray(${UDF}(y)) FROM t_05573;
-    SELECT groupArray(y) FROM (SELECT y FROM t_05573 ORDER BY y) SETTINGS ${SETTINGS}, parallel_replica_offset = 0;
-    SELECT groupArray(y) FROM (SELECT y FROM t_05573 ORDER BY y) SETTINGS ${SETTINGS}, parallel_replica_offset = 1;
+    SELECT arraySort(groupArray(${UDF}(y))) FROM t_05573;
+    SELECT arraySort(groupArray(y)) FROM t_05573 SETTINGS ${SETTINGS}, parallel_replica_offset = 0;
+    SELECT arraySort(groupArray(y)) FROM t_05573 SETTINGS ${SETTINGS}, parallel_replica_offset = 1;
 
     DROP TABLE t_05573;
     DROP FUNCTION ${UDF};

@@ -13,6 +13,9 @@ INSERT INTO ext_set_05572 VALUES (1), (2);
 CREATE TABLE q (x UInt64, q UInt64 ALIAS x * 3, a UInt8 ALIAS x IN ext_set_05572) ENGINE = MergeTree ORDER BY x;
 INSERT INTO q SELECT number FROM numbers(4);
 
+-- Only the custom key filter on this server acting as a replica, whatever settings are randomized.
+SET automatic_parallel_replicas_mode = 0, cluster_for_parallel_replicas = '', parallel_replicas_for_non_replicated_merge_tree = 0,
+    serialize_query_plan = 0;
 SET parallel_replicas_mode = 'custom_key_sampling', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1,
     parallel_replicas_count = 2, parallel_replica_offset = 0;
 
