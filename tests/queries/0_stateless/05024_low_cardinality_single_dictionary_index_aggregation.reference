@@ -9,3 +9,7 @@ two_parts_uint256	0	34816
 two_parts_fixed_string	0	34816
 two_parts_nullable_string	0	34816
 parallel_string	0	34816
+two_parts_fixed_string	1
+two_parts_nullable_string	1
+two_parts_string	1
+two_parts_uint256	1
