@@ -25,6 +25,7 @@ public:
     bool isCompatibleWith(const IStatistics & other) const override;
 
     String getNameForLogs() const override { return "UniqV2 : " + std::to_string(estimateCardinality()); }
+    size_t allocatedBytes() const override;
 
 private:
     std::unique_ptr<Arena> arena;

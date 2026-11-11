@@ -57,6 +57,10 @@ function wait_for_merge_in_part_log() {
 
 wait_for_merge_in_part_log t_part_log_has_merge_type_table
 
+# SYSTEM FLUSH LOGS covers only the rows queued when it starts, so a row logged while the
+# last flush in the loop was blocked needs one more.
+${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS part_log'
+
 ${CLICKHOUSE_CLIENT} -q '
   SELECT
       event_type,

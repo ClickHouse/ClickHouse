@@ -28,26 +28,25 @@ namespace
 NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
                                                      const PrometheusQueryEvaluationSettings & settings_)
     : promql_tree(promql_tree_)
-    , timestamp_data_type(settings_.timestamp_data_type)
-    , timestamp_scale(tryGetDecimalScale(*timestamp_data_type).value_or(0))
+    , time_scale(settings_.time_scale)
 {
-    if (promql_tree->getTimestampScale() != timestamp_scale)
+    if (promql_tree->getTimeScale() != time_scale)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got two different timestamp scales: {} and {}",
-                        promql_tree->getTimestampScale(), timestamp_scale);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL query was parsed with time scale {} but the evaluation settings use time scale {}",
+                        promql_tree->getTimeScale(), time_scale);
     }
 
     /// By default the lookback period is 5 minutes.
     if (settings_.instant_selector_window)
         instant_selector_window = *settings_.instant_selector_window;
     else
-        instant_selector_window = DEFAULT_INSTANT_SELECTOR_WINDOW_SECONDS * DecimalUtils::scaleMultiplier<DurationType>(timestamp_scale);
+        instant_selector_window = DEFAULT_INSTANT_SELECTOR_WINDOW_SECONDS * DecimalUtils::scaleMultiplier<DurationType>(time_scale);
 
     /// The default subquery step is 15 seconds.
     if (settings_.default_subquery_step)
         default_subquery_step = *settings_.default_subquery_step;
     else
-        default_subquery_step = DEFAULT_SUBQUERY_STEP_SECONDS * DecimalUtils::scaleMultiplier<DurationType>(timestamp_scale);
+        default_subquery_step = DEFAULT_SUBQUERY_STEP_SECONDS * DecimalUtils::scaleMultiplier<DurationType>(time_scale);
 
     const auto * root = promql_tree->getRoot();
     if (!root)
@@ -57,7 +56,7 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
 
     if (settings_.use_current_time)
     {
-        range.start_time = DecimalUtils::getCurrentDateTime64(timestamp_scale);
+        range.start_time = DecimalUtils::getCurrentDateTime64(time_scale);
         range.end_time = range.start_time;
         range.step = 0;
     }
@@ -77,6 +76,17 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "step is not specified");
             if (*settings_.step <= 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "step must be positive");
+
+            if (is_query_range && settings_.max_points_per_series)
+            {
+                UInt64 num_steps = (static_cast<UInt64>(settings_.end_time->value) - static_cast<UInt64>(settings_.start_time->value))
+                    / static_cast<UInt64>(settings_.step->value);
+                if (num_steps > settings_.max_points_per_series)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "exceeded maximum resolution of {} points per timeseries. "
+                                    "Try decreasing the query resolution (?step=XX) or increasing the setting promql_max_points_per_series",
+                                    settings_.max_points_per_series);
+            }
         }
         range.start_time = *settings_.start_time;
         range.end_time = *settings_.end_time;

@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- Allow path-style HTTP requests (`/database/table.format`, hive-style filters, etc.) to be
+         routed to the query handler. Since 26.10 this is the default, so the file is installed only
+         for the previous-release server of the upgrade check (see `install.sh`) — on the current
+         build the tests must exercise the default. -->
+    <http_allow_path_requests>1</http_allow_path_requests>
+</clickhouse>

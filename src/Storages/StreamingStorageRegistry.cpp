@@ -118,7 +118,7 @@ void StreamingStorageRegistry::unregisterTable(const StorageID & storage, bool i
     LOG_TRACE(log, "Unregistered table: {}", storage.getNameForLogs());
 }
 
-void StreamingStorageRegistry::renameTable(const StorageID & from, const StorageID & to)
+void StreamingStorageRegistry::renameTable(const StorageID & from, const StorageID & to, bool if_exists)
 {
     std::lock_guard lock(mutex);
     if (shutdown_called)
@@ -129,7 +129,15 @@ void StreamingStorageRegistry::renameTable(const StorageID & from, const Storage
     /// intermediate name collisions.
     auto from_it = storages.find(from);
     if (from_it == storages.end())
+    {
+        if (if_exists)
+        {
+            LOG_DEBUG(log, "Table {} is not registered, nothing to rename", from.getNameForLogs());
+            return;
+        }
+
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is not registered", from.getNameForLogs());
+    }
 
     storages.erase(from_it);
     storages.emplace(to);

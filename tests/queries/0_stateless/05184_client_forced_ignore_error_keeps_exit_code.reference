@@ -1,0 +1,6 @@
+--- asking for --ignore-error gets a success exit
+stdout=[ok] reported errors=1 exit=success
+--- a mode that turns ignore_error on itself keeps the error exit
+stdout=[ok] reported errors=1 exit=failure
+--- and it still carries on to the statement after the failure
+stdout=[carried on] reported errors=1 exit=success

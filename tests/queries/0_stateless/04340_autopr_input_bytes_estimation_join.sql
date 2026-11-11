@@ -10,7 +10,6 @@
 -- Self-contained (no stateful dataset) and light enough for the sanitizer matrix.
 
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
@@ -38,7 +37,15 @@ SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
 
 SET max_threads=0;
 SET use_uncompressed_cache=0;
+
+-- `apply_string_filters_during_scan` materializes the values that do not match a substring condition
+-- of PREWHERE as empty strings, so the in-memory size of the read block, which the estimation is based on,
+-- becomes much smaller than the amount of data actually read from disk.
+SET apply_string_filters_during_scan=0;
 SET use_query_condition_cache=0;
+-- The columns cache serves repeated reads from memory, which lowers `ReadCompressedBytes` below the
+-- estimate for every query after the first one.
+SET use_columns_cache=0;
 
 DROP TABLE IF EXISTS ij_big;
 DROP TABLE IF EXISTS ij_small;

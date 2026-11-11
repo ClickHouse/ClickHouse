@@ -653,40 +653,31 @@ public:
 template <typename T>
 bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, SQLType * tp)
 {
-    LowCardinality * lc = nullptr;
-
     if (dynamic_cast<const T *>(tp))
     {
         return true;
     }
     if (inside_nullable)
     {
-        Nullable * nl = nullptr;
-
-        if ((nl = dynamic_cast<Nullable *>(tp)))
+        if (auto * nl = dynamic_cast<Nullable *>(tp))
         {
             return hasType<T>(inside_array, inside_nullable, inside_nested, nl->subtype.get());
         }
     }
-    if ((lc = dynamic_cast<LowCardinality *>(tp)))
+    if (auto * lc = dynamic_cast<LowCardinality *>(tp))
     {
         return hasType<T>(inside_array, inside_nullable, inside_nested, lc->subtype.get());
     }
     if (inside_array)
     {
-        ArrayType * at = nullptr;
-
-        if ((at = dynamic_cast<ArrayType *>(tp)))
+        if (auto * at = dynamic_cast<ArrayType *>(tp))
         {
             return hasType<T>(inside_array, inside_nullable, inside_nested, at->subtype.get());
         }
     }
     if (inside_nested)
     {
-        TupleType * ttp = nullptr;
-        NestedType * ntp = nullptr;
-
-        if ((ttp = dynamic_cast<TupleType *>(tp)))
+        if (auto * ttp = dynamic_cast<TupleType *>(tp))
         {
             for (const auto & entry : ttp->subtypes)
             {
@@ -696,7 +687,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
                 }
             }
         }
-        else if ((ntp = dynamic_cast<NestedType *>(tp)))
+        else if (auto * ntp = dynamic_cast<NestedType *>(tp))
         {
             for (const auto & entry : ntp->subtypes)
             {

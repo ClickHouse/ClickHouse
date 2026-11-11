@@ -1,0 +1,20 @@
+18	72910
+235	968029
+0	0
+18	72910
+235	968029
+0	0
+18	72910
+235	968029
+0	0
+18	72910
+235	968029
+0	0
+131	800672
+3722	15247921
+pruned to partition 3
+          Prewhere filter column: and(equals(p, 3_UInt8), notEmpty(`j.b`), notEmpty(c)) (removed)
+all partitions
+      Filter column: and(less(p, 4_UInt8), notEmpty(`j.b`), notEmpty(c)) (removed)
+          Prewhere filter column: and(less(p, 4_UInt8), notEmpty(c)) (removed)
+1024000

@@ -15,9 +15,11 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 
 namespace fs = std::filesystem;
@@ -59,7 +61,7 @@ struct statvfs getStatVFS(String path)
             continue;
         }
 
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not get disk stat (statvfs)");
     }
     return fs;
 }
@@ -217,8 +219,22 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 #endif
 }
 
+/// A path with an embedded NUL is malformed, and, more importantly, it cannot be validated: the
+/// comparisons below see the whole value, while every syscall the path is later passed to (`open`,
+/// `mkdir`, `stat`) stops at the first NUL. A path shaped as `<target>\0/<traversal back into the
+/// prefix>` would therefore be reported as contained in the prefix while it addresses `<target>`,
+/// anywhere on the filesystem. Report such a path as not contained, so that every containment check
+/// fails closed.
+static bool containsEmbeddedNul(const std::filesystem::path & path)
+{
+    return path.native().contains('\0');
+}
+
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
+    if (containsEmbeddedNul(path) || containsEmbeddedNul(prefix_path))
+        return false;
+
     auto rel = fs::relative(path, prefix_path);
     if (rel.empty() || rel == "..")
         return false;
@@ -239,6 +255,9 @@ static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, cons
     /// Make `path` absolute if it was relative and put it into normalized form: remove
     /// `.` and `..` and extra `/`. Path is not canonized because otherwise path will
     /// not be a path of a symlink itself.
+
+    if (containsEmbeddedNul(path) || containsEmbeddedNul(prefix_path))
+        return false;
 
     auto rel = fs::absolute(path).lexically_normal().lexically_relative(fs::absolute(prefix_path).lexically_normal());
 
@@ -291,6 +310,34 @@ Int64 getINodeNumberFromPath(const String & path)
         DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot execute stat for file {}", path);
     }
     return file_stat.st_ino;
+}
+
+String computeFileCacheVersionToken(const struct stat & file_stat)
+{
+#if defined(OS_DARWIN)
+    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
+#else
+    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
+#endif
+    return fmt::format(
+        "{}.{:09}_{}_{}",
+        static_cast<Int64>(mtim_sec),
+        static_cast<Int64>(mtim_nsec),
+        static_cast<Int64>(file_stat.st_ino),
+        file_stat.st_size);
+}
+
+bool isFileCacheVersionTokenSettled(const struct stat & file_stat)
+{
+#if defined(OS_DARWIN)
+    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+#else
+    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+#endif
+    static constexpr Int64 file_version_settle_seconds = 3;
+    return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
 }
 
 std::optional<size_t> tryGetSizeFromFilePath(const String & path)
@@ -434,6 +481,15 @@ fs::path readSymlink(const fs::path & path)
     if (path.filename().empty())
         return fs::read_symlink(path.parent_path());        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
     return fs::read_symlink(path);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+}
+
+bool tryDelete(const fs::path & path, LoggerPtr log)
+{
+    std::error_code ec;
+    bool removed = fs::remove(path, ec);
+    if (ec)
+        LOG_WARNING(log, "Cannot remove {}: {}", path.string(), ec.message());
+    return removed;
 }
 
 }

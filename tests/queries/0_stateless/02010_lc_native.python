@@ -8,6 +8,7 @@ import uuid
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+SOCKET_TIMEOUT = float(os.environ.get("CLICKHOUSE_TEST_TIMEOUT", "600"))
 CLIENT_NAME = "simple native protocol"
 
 
@@ -145,7 +146,15 @@ def sendQuery(s, query):
     # client info
     serializeClientInfo(ba, query_id)
 
-    writeStringBinary("", ba)  # No settings
+    # The server symbolizes a text stack trace before it can answer, which costs seconds on an
+    # instrumented build, and readException below discards the trace field. This has to travel in
+    # the protocol settings field: TCPHandler snapshots calculate_text_stack_trace from the query
+    # context before executeQuery parses the query text, so an inline SETTINGS clause reaches the
+    # logging path but not the one that answers the client.
+    writeStringBinary("calculate_text_stack_trace", ba)
+    writeVarUInt(1, ba)  # is_important
+    writeStringBinary("0", ba)
+    writeStringBinary("", ba)  # End of settings
     writeStringBinary("", ba)  # No interserver secret
     writeVarUInt(2, ba)  # Stage - Complete
     ba.append(0)  # No compression
@@ -217,7 +226,7 @@ def readException(s):
 
 def insertValidLowCardinalityRow():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(30)
+        s.settimeout(SOCKET_TIMEOUT)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
@@ -260,7 +269,7 @@ def insertValidLowCardinalityRow():
 
 def insertLowCardinalityRowWithIndexOverflow():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(30)
+        s.settimeout(SOCKET_TIMEOUT)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
@@ -301,7 +310,7 @@ def insertLowCardinalityRowWithIndexOverflow():
 
 def insertLowCardinalityRowWithIncorrectDictType():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(30)
+        s.settimeout(SOCKET_TIMEOUT)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
@@ -342,7 +351,7 @@ def insertLowCardinalityRowWithIncorrectDictType():
 
 def insertLowCardinalityRowWithIncorrectAdditionalKeys():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(30)
+        s.settimeout(SOCKET_TIMEOUT)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)

@@ -1,0 +1,27 @@
+-- An enclosing INNER JOIN allows converting under join_use_nulls = 1.
+20	890
+Type: INNER
+Type: INNER
+-- A Nullable join key allows converting under join_use_nulls = 0.
+10	420
+Type: INNER
+Type: INNER
+-- A non-Nullable key under join_use_nulls = 0 does not allow converting.
+Type: INNER
+Type: LEFT
+-- IS NOT DISTINCT FROM does not allow converting.
+Type: INNER
+Type: LEFT
+-- An enclosing FULL join does not allow converting.
+Type: FULL
+Type: LEFT
+-- An inequality condition allows converting.
+40	1730
+Type: INNER
+-- A filter over three relations stays above both joins and allows converting.
+8	40
+Type: INNER
+Type: INNER
+-- Without the transitive pass the same filter does not allow converting.
+Type: INNER
+Type: LEFT

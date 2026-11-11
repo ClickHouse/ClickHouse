@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- The `EXPLAIN SYNTAX` below renders differently under the old analyzer, which expands `*` and pushes
 -- the predicate into the subquery, so this test runs only with the (default) analyzer. The numeric
 -- assertions are analyzer-independent (the construction settings are applied by wrapping in `executeQuery`).
@@ -23,7 +22,10 @@ SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 5);
 SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 5, offset = 3);
 
 SELECT '-- an arm-local setting on a non-last arm plus SETTINGS on the last arm is ambiguous and rejected';
-SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = 2)); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 1 UNION ALL SELECT number FROM numbers(100) SETTINGS limit = 2); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- parenthesized arms keep their own settings (1 + 2 = 3)';
+SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = 2));
 
 SELECT '-- nesting per-arm settings in subqueries applies them per arm unambiguously (1 + 2 = 3)';
 SELECT count() FROM (SELECT * FROM (SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL SELECT * FROM (SELECT number FROM numbers(100) SETTINGS limit = 2));

@@ -5,19 +5,25 @@ Output: A_Description, B_Data, C_Value, D_LookupCode
 Join (JOIN FillRightFirst)
 │  T3[1000] ⋈ T4[1] ⋈ (T2[1000] ⋈ T1[1])
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 1000
+│  Cost: estimated 1.20 thousand
+│  Selectivity: estimated (NDV) 0.1
+│  Output rows: estimated 1.00 thousand
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: R1_A_ID = A_ID
-│  Output:
-│    Left:  C_Value, D_LookupCode
-│    Right: A_Description, B_Data
+│  Input (left): R1_A_ID, C_Value, D_LookupCode
+│  Input (right): A_ID, A_Description, B_Data
 ├──Join (JOIN FillRightFirst)
 │  │  T3[1000] ⋈ T4[1]
 │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  │  Result rows: 100
+│  │  Cost: estimated 100.00
+│  │  Selectivity: estimated (NDV) 0.1
+│  │  Output rows: estimated 100.00
+│  │  Left: rows estimated 1.00 thousand
+│  │  Right: rows estimated 1.00
 │  │  Join conditions: R4_D_ID = D_ID
-│  │  Output:
-│  │    Left:  C_Value, R1_A_ID
-│  │    Right: D_LookupCode
+│  │  Input (left): R4_D_ID, C_Value, R1_A_ID
+│  │  Input (right): D_ID, D_LookupCode
 │  ├──ReadFromMergeTree (default.R3)
 │  │     Read type: Default
 │  │     Parts: 1 | Granules: 1
@@ -31,11 +37,14 @@ Join (JOIN FillRightFirst)
 └──Join (JOIN FillRightFirst)
    │  T2[1000] ⋈ T1[1]
    │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-   │  Result rows: 100
+   │  Cost: estimated 100.00
+   │  Selectivity: estimated (NDV) 0.1
+   │  Output rows: estimated 100.00
+   │  Left: rows estimated 1.00 thousand
+   │  Right: rows estimated 1.00
    │  Join conditions: R1_A_ID = A_ID
-   │  Output:
-   │    Left:  B_Data
-   │    Right: A_ID, A_Description
+   │  Input (left): R1_A_ID, B_Data
+   │  Input (right): A_ID, A_Description
    ├──ReadFromMergeTree (default.R2)
    │     Read type: Default
    │     Parts: 1 | Granules: 1
@@ -54,11 +63,14 @@ Output: A_Description, B_Data, C_Value, D_LookupCode
 Join (JOIN FillRightFirst)
 │  T2[1000] ⋈ (T3[1000] ⋈ T1[1] ⋈ T4[1])
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 1000
+│  Cost: estimated 1.11 thousand
+│  Selectivity: estimated (NDV) 0.1
+│  Output rows: estimated 1.00 thousand
+│  Left: rows estimated 1.00 thousand
+│  Right: rows estimated 10.00
 │  Join conditions: R1_A_ID = A_ID
-│  Output:
-│    Left:  B_Data
-│    Right: A_Description, C_Value, D_LookupCode
+│  Input (left): R1_A_ID, B_Data
+│  Input (right): A_ID, A_Description, C_Value, D_LookupCode
 ├──ReadFromMergeTree (default.R2)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -66,19 +78,25 @@ Join (JOIN FillRightFirst)
 └──Join (JOIN FillRightFirst)
    │  T3[1000] ⋈ T1[1] ⋈ T4[1]
    │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-   │  Result rows: 10
+   │  Cost: estimated 110.00
+   │  Selectivity: estimated (NDV) 0.1
+   │  Output rows: estimated 10.00
+   │  Left: rows estimated 100.00
+   │  Right: rows estimated 1.00
    │  Join conditions: R4_D_ID = D_ID
-   │  Output:
-   │    Left:  A_Description, A_ID, C_Value
-   │    Right: D_LookupCode
+   │  Input (left): R4_D_ID, A_Description, A_ID, C_Value
+   │  Input (right): D_ID, D_LookupCode
    ├──Join (JOIN FillRightFirst)
    │  │  T3[1000] ⋈ T1[1]
    │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-   │  │  Result rows: 100
+   │  │  Cost: estimated 100.00
+   │  │  Selectivity: estimated (NDV) 0.1
+   │  │  Output rows: estimated 100.00
+   │  │  Left: rows estimated 1.00 thousand
+   │  │  Right: rows estimated 1.00
    │  │  Join conditions: R1_A_ID = A_ID
-   │  │  Output:
-   │  │    Left:  C_Value, R4_D_ID
-   │  │    Right: A_ID, A_Description
+   │  │  Input (left): R1_A_ID, C_Value, R4_D_ID
+   │  │  Input (right): A_ID, A_Description
    │  ├──ReadFromMergeTree (default.R3)
    │  │     Read type: Default
    │  │     Parts: 1 | Granules: 1

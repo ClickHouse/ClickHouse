@@ -113,20 +113,17 @@ public:
     std::string getEngineName() const override { return url.storage_name; }
     std::string getNamespaceType() const override { return namespace_name; }
 
+    bool supportsFullyQualifiedPaths() const override { return isDataLakeConfiguration(); }
+
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
     Path getRawPath() const override { return url.key; }
     void setRawPath(const Path & path) override { url.key = path.path; }
     const String & getRawURI() const override { return url.uri_str; }
 
-    const Paths & getPaths() const override { return keys; }
-    void setPaths(const Paths & paths) override
-    {
-        keys = paths;
-    }
-
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;
+    String getDataSourceDescriptionForNamespace(const String & object_namespace) const override;
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     bool isArchive() const override { return url.archive_pattern.has_value(); }
@@ -150,7 +147,7 @@ public:
     S3::URI url;
 
 
-    Paths keys;
+    Paths keys TSA_GUARDED_BY(paths_mutex);
 
     std::unique_ptr<S3Settings> s3_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
@@ -165,6 +162,12 @@ public:
     String biglake_adc_refresh_token;
 
 protected:
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return keys; }
+    void setPathsImpl(const Paths & paths) override TSA_REQUIRES(paths_mutex)
+    {
+        keys = paths;
+    }
+
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:

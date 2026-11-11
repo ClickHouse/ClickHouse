@@ -145,7 +145,7 @@ SELECT numericIndexedVectorAllValueSum(numericIndexedVectorBuild(mapFromArrays([
   ## numericIndexedVectorBuild
 </div>
 
-추가된 버전: v25.7.0
+도입: v25.7.0
 
 맵에서 NumericIndexedVector를 생성합니다. 맵의 키는 벡터의 인덱스를, 맵의 값은 벡터의 값을 나타냅니다.
 
@@ -168,13 +168,16 @@ NumericIndexedVector 객체를 반환합니다. [`AggregateFunction`](/ko/refere
 **사용 예시**
 
 ```sql title=Query
-SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res, toTypeName(res);
+-- A NumericIndexedVector is a binary value, so it is shown with `hex`.
+SELECT
+    hex(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res,
+    toTypeName(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS type;
 ```
 
 ```response title=Response
-┌─res─┬─toTypeName(res)────────────────────────────────────────────┐
-│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
-└─────┴────────────────────────────────────────────────────────────┘
+┌─res────────────────────────────────────────────────────────────────┬─type───────────────────────────────────────────────────────┐
+│ 080000000000000001010000020103000002020300000201030000020203010101 │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
+└────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
 <div id="numericIndexedVectorCardinality">
@@ -209,7 +212,7 @@ SELECT numericIndexedVectorCardinality(numericIndexedVectorBuild(mapFromArrays([
 
 ```response title=Response
 ┌─res─┐
-│  3  │
+│   3 │
 └─────┘
 ```
 
@@ -329,9 +332,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─res1────────┬─res2────────────┐
-│ {2:2,3:1.5} │ {1:5,2:10,3:15} │
-└─────────────┴─────────────────┘
+┌─res1────────────────┬─res2────────────┐
+│ {1:0,2:2,3:1.5,4:0} │ {1:5,2:10,3:15} │
+└─────────────────────┴─────────────────┘
 ```
 
 <div id="numericIndexedVectorPointwiseEqual">
@@ -586,9 +589,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─res1──────────┬─res2─────────────┐
-│ {2:200,3:600} │ {1:20,2:40,3:60} │
-└───────────────┴──────────────────┘
+┌─res1──────────────────┬─res2─────────────┐
+│ {1:0,2:200,3:600,4:0} │ {1:20,2:40,3:60} │
+└───────────────────────┴──────────────────┘
 ```
 
 <div id="numericIndexedVectorPointwiseNotEqual">
@@ -704,13 +707,13 @@ numericIndexedVectorShortDebugString(v)
 **사용 예시**
 
 ```sql title=Query
-SELECT numericIndexedVectorShortDebugString(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res\G;
+SELECT numericIndexedVectorShortDebugString(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res FORMAT Vertical;
 ```
 
 ```response title=Response
 Row 1:
 ──────
-res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer_bit_num":8,"fraction_bit_num":0,"zero_indexes_info":{"cardinality":"0"},"non_zero_indexes_info":{"total_cardinality":"3","all_value_sum":60,"number_of_bitmaps":"8","bitmap_info":{"cardinality":{"0":"0","1":"2","2":"2","3":"2","4":"2","5":"0","6":"0","7":"0"}}}}
+res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer_bit_num":8,"fraction_bit_num":0,"zero_indexes_info":{"cardinality":0},"non_zero_indexes_info":{"total_cardinality":3,"all_value_sum":60,"number_of_bitmaps":8,"bitmap_info":{"cardinality":{"0":0,"1":2,"2":2,"3":2,"4":2,"5":0,"6":0,"7":0}}}}
 ```
 
 <div id="numericIndexedVectorToMap">

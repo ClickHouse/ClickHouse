@@ -1,0 +1,6 @@
+--- garbage without an opening bracket is rejected ---
+1
+--- JSONEachRow data fed to JSONCompactEachRow is rejected ---
+1
+--- many small objects still parse ---
+5000	5000000

@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: Not supported
-
 -- `count(expr)` counts non-NULL values of `expr`. The trivial-count-with-sparsity-filter
 -- rewrite seeds the aggregate state with a row count derived from `num_defaults`, which
 -- matches `count()` semantics only. The rewrite must not fire for `count(expr)`.

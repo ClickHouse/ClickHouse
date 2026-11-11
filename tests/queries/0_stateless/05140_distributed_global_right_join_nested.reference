@@ -1,0 +1,164 @@
+nested_right_then_inner_initiator
+k1	v1	k2	v2	k3	v3
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+nested_right_then_inner_global
+k1	v1	k2	v2	k3	v3
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+nested_right_then_right_initiator
+k1	v1	k2	v2	k3	v3
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+\N	\N	\N	\N	4	W
+\N	\N	\N	\N	4	W
+nested_right_then_right_global
+k1	v1	k2	v2	k3	v3
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+\N	\N	3	C	3	Z
+\N	\N	\N	\N	4	W
+\N	\N	\N	\N	4	W
+nested_inner_then_right_initiator
+k1	v1	k2	v2	k3	v3
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+\N	\N	3	C	\N	\N
+\N	\N	3	C	\N	\N
+nested_inner_then_right_global
+k1	v1	k2	v2	k3	v3
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+1	a	1	A	1	X
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+2	b	2	B	2	Y
+\N	\N	3	C	\N	\N
+\N	\N	3	C	\N	\N
+full_join_initiator
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+2	b	2	B
+2	b	2	B
+4	d	\N	\N
+4	d	\N	\N
+\N	\N	3	C
+\N	\N	3	C
+full_join_global
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+2	b	2	B
+2	b	2	B
+4	d	\N	\N
+4	d	\N	\N
+\N	\N	3	C
+\N	\N	3	C
+shard_num_is_untouched_without_right_join
+s
+1
+2
