@@ -104,6 +104,10 @@ public:
     /// `RENAME TABLE` neither moves the table to another znode nor is refused because of those macros.
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated, const TableZnodeInfo * ordinary_znode_info);
 
+    /// The name of the engine that `setMergeTreeEngine` sets for a table of the engine `engine_name`.
+    /// For `replicated = false`, `engine_name` must start with `Replicated`.
+    static String getConvertedMergeTreeEngineName(const String & engine_name, bool replicated);
+
     /// Rejects a conversion to a replicated engine whose Keeper path would not be a safe one.
     /// Contacts nothing and mutates nothing, so a caller can run it before its own side effects.
     /// Returns the resolved path, split into the Keeper cluster name and the raw path inside it.

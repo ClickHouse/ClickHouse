@@ -58,6 +58,8 @@
 
     <query>SELECT count() FROM test_{serialization}_{ratio} WHERE u64 > 0</query>
     <query>SELECT count() FROM test_{serialization}_{ratio} WHERE notEmpty(str)</query>
+    <query>SELECT max(length(str || 'x')) FROM test_{serialization}_{ratio}</query>
+    <query>SELECT substring(str, 1, 1) AS k, count() FROM test_{serialization}_{ratio} GROUP BY k FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS test_{serialization}_{ratio}</drop_query>
 </test>
