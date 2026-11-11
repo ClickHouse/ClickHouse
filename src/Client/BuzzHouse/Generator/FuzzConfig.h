@@ -73,7 +73,8 @@ const constexpr uint64_t allow_replacing_mergetree
     allow_backup = (UINT64_C(1) << 46), allow_paimon = (UINT64_C(1) << 47), allow_paimonS3 = (UINT64_C(1) << 48),
     allow_paimonAzure = (UINT64_C(1) << 49), allow_paimonLocal = (UINT64_C(1) << 50), allow_remote = (UINT64_C(1) << 51),
     allow_cluster_database = (UINT64_C(1) << 52), allow_remote_database = (UINT64_C(1) << 53),
-    allow_overlay_database = (UINT64_C(1) << 54);
+    allow_overlay_database = (UINT64_C(1) << 54), allow_time_series = (UINT64_C(1) << 55),
+    allow_filelog = (UINT64_C(1) << 56);
 
 extern const DB::Strings compressionMethods;
 extern const DB::Strings codecs;
@@ -281,6 +282,8 @@ String escapeSQLString(const String & s, char escape_char = '\'');
 /// Spaces are encoded as '+'; all other non-unreserved characters as %XX.
 String urlEncodeQueryParam(const String & s);
 
+class RandomGenerator;
+
 class FuzzConfig
 {
 private:
@@ -312,6 +315,7 @@ public:
     DB::Strings hot_settings;
     DB::Strings disallowed_settings;
     DB::Strings hot_table_settings;
+    DB::Strings hot_formats;
     DB::Strings tokenizers;
 
     std::vector<CHFunction> det_funcs;
@@ -360,6 +364,7 @@ public:
     bool enable_overflow_settings = false;
     bool random_limited_values = false;
     bool set_smt_disk = true;
+    bool has_distributed_cache = false;
     bool allow_query_oracles = true;
     bool allow_health_check = true;
     bool enable_compatibility_settings = false;
@@ -491,6 +496,11 @@ public:
     uint32_t tableCountConstraints(const String & database, const String & table);
 
     String tableGetRandomConstraint(uint64_t rand_val, const String & database, const String & table);
+
+    String getRandomDistributedCacheServer(uint64_t rand_val);
+
+    /// Half of the times one of the hot formats in `formats`, if any
+    String pickFormat(RandomGenerator & rg, const DB::Strings & formats) const;
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 
