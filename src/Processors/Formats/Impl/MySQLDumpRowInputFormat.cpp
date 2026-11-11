@@ -312,6 +312,31 @@ static void tryReadColumnNames(ReadBuffer & in, Names * column_names)
     assertChar(')', in);
 }
 
+/// Skips modifiers between `INSERT`/`REPLACE` and `INTO` (e.g. `INSERT IGNORE INTO` from `mysqldump --insert-ignore`), and `INTO` itself.
+static void skipInsertModifiersAndInto(ReadBuffer & in)
+{
+    while (true)
+    {
+        String word;
+        while (!in.eof() && (isAlphaASCII(*in.position()) || *in.position() == '_'))
+        {
+            word += *in.position();
+            ++in.position();
+        }
+
+        if (boost::iequals(word, "into"))
+            return;
+
+        if (!boost::iequals(word, "low_priority") && !boost::iequals(word, "delayed")
+            && !boost::iequals(word, "high_priority") && !boost::iequals(word, "ignore"))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Unexpected word '{}' in INSERT/REPLACE query in MySQL dump: expected INTO or one of the modifiers "
+                "LOW_PRIORITY, DELAYED, HIGH_PRIORITY, IGNORE", word);
+
+        skipWhitespaceIfAny(in);
+    }
+}
+
 static MySQLQueryType skipToInsertOrCreateQuery(String & table_name, ReadBuffer & in, bool skip_create_query = false)
 {
     String current_table_name;
@@ -330,7 +355,7 @@ static MySQLQueryType skipToInsertOrCreateQuery(String & table_name, ReadBuffer 
         skipWhitespaceIfAny(in);
         if (keyword != "create")
         {
-            assertStringCaseInsensitive("into", in);
+            skipInsertModifiersAndInto(in);
             type = MySQLQueryType::INSERT;
         }
         else
