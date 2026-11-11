@@ -378,6 +378,89 @@ private:
 template <typename KeyGetter>
 concept PreparedKeyGetter = std::derived_from<KeyGetter, PreparedJoinKeys<KeyGetter>>;
 
+/// The key of a row in the `hashed` and `two_level_hashed` maps: `ColumnsHashing::hash128` of its key columns. The build
+/// and the probe of one map can see different column types for one key, for example `Tuple(LowCardinality(String))` and
+/// `Tuple(String)`, so every way of building a key must give exactly `hash128`.
+class HashedJoinKey
+{
+public:
+    explicit HashedJoinKey(const ColumnRawPtrs & key_columns_);
+
+    UInt128 build(size_t row) const { return ColumnsHashing::hash128(row, key_columns.size(), key_columns); }
+
+    /// Sets `keys[i - begin]` to `build(i)` for the rows [begin, end). The keys of the rows `i` with `skip[i] != 0` may be
+    /// left unset.
+    void buildRange(size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip);
+
+private:
+    enum class Layout : uint8_t
+    {
+        /// One fixed-width column, hashed where it is.
+        Fixed,
+        /// Several fixed-width columns, copied into rows of `fixed_size` bytes.
+        FixedRows,
+        /// The bytes that `hash128` hashes for each row, copied into a buffer laid out like the chars of a `ColumnString`.
+        Rows,
+        /// `build` for each row.
+        PerRow,
+    };
+
+    /// A column whose `updateHashWithValue` hashes `size` bytes at `data + row * size`, or, when `offsets` is not
+    /// nullptr, a `String` column with these chars and offsets. With `null_map`, it is the nested column of a `Nullable`.
+    struct Part
+    {
+        const UInt8 * data = nullptr;
+        size_t size = 0;
+        const IColumn::Offset * offsets = nullptr;
+        const UInt8 * null_map = nullptr;
+    };
+
+    /// Appends the parts of `column`. Returns false if `buildRange` cannot copy the bytes that `hash128` hashes for it.
+    static bool addParts(const IColumn & column, std::vector<Part> & parts);
+    /// These set `keys[i]` to `build(row_at(i))` for `i` in [0, num_rows), for at most 256 rows.
+    template <typename RowAt>
+    void buildFixedRows(RowAt row_at, size_t num_rows, UInt128 * __restrict keys);
+    template <typename RowAt>
+    void buildRows(RowAt row_at, size_t num_rows, UInt128 * __restrict keys);
+
+    ColumnRawPtrs key_columns;
+    Layout layout = Layout::PerRow;
+    std::vector<Part> parts;
+    /// The total size of the fixed-width parts.
+    size_t fixed_size = 0;
+    /// The rows that `buildFixedRows` and `buildRows` copy. The kernel reads up to 8 bytes before a row shorter than 8
+    /// bytes and up to 7 bytes past a row, and the padding of a `PaddedPODArray` allows that.
+    PaddedPODArray<UInt8> buffer;
+};
+
+/// Key getter of `hashed` and `two_level_hashed`. It builds the `HashedJoinKey` of a row, or reads keys built ahead, see
+/// `PreparedJoinKeys`.
+template <typename Value, typename Mapped>
+struct HashMethodHashedJoinKey : public ColumnsHashing::columns_hashing_impl::HashMethodBase<
+                                     HashMethodHashedJoinKey<Value, Mapped>,
+                                     Value,
+                                     Mapped,
+                                     /*consecutive_keys_optimization=*/false,
+                                     use_offset>,
+                                 public PreparedJoinKeys<HashMethodHashedJoinKey<Value, Mapped>>
+{
+    /// Hashing a key is not cheap, but `true` lets the join loops prefetch: after `prepareRows`, they build each key
+    /// once.
+    static constexpr bool has_cheap_key_calculation = true;
+
+    HashedJoinKey key;
+
+    HashMethodHashedJoinKey(const ColumnRawPtrs & key_columns, const Sizes &, const ColumnsHashing::HashMethodContextPtr &)
+        : PreparedJoinKeys<HashMethodHashedJoinKey>(key_columns.at(0)->size())
+        , key(key_columns)
+    {
+    }
+
+    ALWAYS_INLINE UInt128 buildKey(size_t row) const { return key.build(row); }
+
+    void buildKeys(size_t begin, size_t end, UInt128 * keys, const UInt8 * skip) { key.buildRange(begin, end, keys, skip); }
+};
+
 /// The 16-byte key of a single `String` join key in the `key_packed_string` and `two_level_key_packed_string` maps.
 ///
 /// - Up to 15 bytes: the `UnhashedPackedStringRef` of the string. It is exact: byte 15 holds the length, and the bytes
@@ -512,7 +595,7 @@ template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin:
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::hashed, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodHashed<Value, Mapped, false, use_offset>;
+    using Type = HashMethodHashedJoinKey<Value, Mapped>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key_string, Value, Mapped>
 {
@@ -558,7 +641,7 @@ template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin:
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_hashed, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodHashed<Value, Mapped, false, use_offset>;
+    using Type = HashMethodHashedJoinKey<Value, Mapped>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key8, Value, Mapped>
 {
