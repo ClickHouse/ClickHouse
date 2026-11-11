@@ -7,12 +7,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 user="u_05620_${CLICKHOUSE_DATABASE}"
+user2="u2_05620_${CLICKHOUSE_DATABASE}"
 policy="p_05620_${CLICKHOUSE_DATABASE}"
 
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}, ${user2}"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05620 (x Int32) ENGINE = MergeTree ORDER BY x"
-${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH no_password"
-${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER ON *.* TO ${user}"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user}, ${user2} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER ON *.* TO ${user}, ${user2}"
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY ON ${CLICKHOUSE_DATABASE}.* TO ${user}"
 
 # A bare table name refers to the current database, as it does without ON CLUSTER.
@@ -34,5 +35,14 @@ show
 on_cluster "DROP ROW POLICY ${policy} ON t_05620 ON CLUSTER test_shard_localhost"
 show
 
-${CLICKHOUSE_CLIENT} --query "DROP USER ${user}"
+# The privileges are checked before the query is queued: on the current database, and globally for ON *.
+denied()
+{
+    if ${CLICKHOUSE_CLIENT} --user "$1" --query "$2" 2>&1 | grep -qF "necessary to have the grant $3"; then echo denied; else echo "not denied"; fi
+}
+denied "${user2}" "CREATE ROW POLICY ${policy} ON t_05620 ON CLUSTER test_cluster_two_shards_different_databases USING 1 TO ALL" "CREATE ROW POLICY ON ${CLICKHOUSE_DATABASE}.t_05620"
+denied "${user}" "CREATE ROW POLICY ${policy} ON * ON CLUSTER test_shard_localhost USING 1 TO ALL" "CREATE ROW POLICY ON *.*"
+show
+
+${CLICKHOUSE_CLIENT} --query "DROP USER ${user}, ${user2}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05620"
