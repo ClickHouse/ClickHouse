@@ -18,8 +18,9 @@ namespace DB
 
 /// Provider for a statically-configured worker cluster: either `<cluster>` (a single-shard
 /// `remote_servers` cluster whose replicas are the workers, with their `stateless_worker_port` and
-/// `streaming_exchange_port`) or `<host>` (one host with default ports). The workers are resolved once,
-/// when the provider is built; a config change rebuilds the provider rather than updating it.
+/// `streaming_exchange_port`) or `<host>` (one host with default ports). Replicas of `<cluster>` that are
+/// known to be inactive are not workers. The workers are resolved once, when the provider is built;
+/// a change of the configuration or of the active replicas rebuilds the provider rather than updating it.
 class StaticStatelessWorkersProvider final : public IStatelessWorkersProvider
 {
 public:
@@ -40,8 +41,9 @@ public:
     void start() override {}
     void shutdown() override {}
 
-    /// The worker addresses for the cluster at `config_prefix` in the current server configuration.
-    /// Also signs the configuration, so a `remote_servers` change under `<cluster>` rebuilds the provider.
+    /// The worker addresses for the cluster at `config_prefix` in the current server configuration,
+    /// without the replicas that are known to be inactive. Also signs the configuration, so a change of
+    /// `remote_servers` or of the active replicas under `<cluster>` rebuilds the provider.
     static std::vector<StatelessWorkerAddress> resolveWorkerAddresses(
         const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 

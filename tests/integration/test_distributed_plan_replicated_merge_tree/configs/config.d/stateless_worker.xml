@@ -7,6 +7,12 @@
     <stateless_worker_client>
         <enabled>1</enabled>
         <cluster>default</cluster>
+        <clusters>
+            <!-- The workers are the replicas of the `Replicated` database `workers_db`, which a test creates. -->
+            <replicated_database>
+                <cluster>workers_db</cluster>
+            </replicated_database>
+        </clusters>
     </stateless_worker_client>
 
     <distributed_query>

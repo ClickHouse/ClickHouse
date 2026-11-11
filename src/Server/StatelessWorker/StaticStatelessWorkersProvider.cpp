@@ -2,9 +2,12 @@
 #include <Server/StatelessWorker/StatelessWorkersProviderFactory.h>
 #include <Server/StatelessWorker/StatelessWorkerAllocation.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -41,9 +44,23 @@ std::vector<StatelessWorkerAddress> StaticStatelessWorkersProvider::resolveWorke
                 "Stateless worker cluster '{}' must have a single shard, got {}",
                 cluster_name, shard_addresses.size());
 
-        addresses.reserve(shard_addresses[0].size());
-        for (const auto & replica : shard_addresses[0])
+        const auto & replicas = shard_addresses[0];
+
+        /// Skip replicas that are known to be inactive (shut down, removed, or not synced yet):
+        /// a task sent to such a replica would fail the whole query. Liveness that does not match
+        /// the cluster, or that reports no active replica, is not usable: then all replicas are workers.
+        std::vector<bool> is_active = ClusterProxy::getReplicasLiveness(cluster_name, cluster);
+        if (is_active.size() != replicas.size() || std::ranges::find(is_active, true) == is_active.end())
+            is_active.assign(replicas.size(), true);
+
+        addresses.reserve(replicas.size());
+        for (size_t replica_index = 0; replica_index < replicas.size(); ++replica_index)
+        {
+            if (!is_active[replica_index])
+                continue;
+            const auto & replica = replicas[replica_index];
             addresses.push_back({replica.host_name, replica.stateless_worker_port, replica.streaming_exchange_port});
+        }
     }
     else
     {
