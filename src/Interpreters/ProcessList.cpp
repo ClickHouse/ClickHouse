@@ -780,7 +780,7 @@ void QueryStatus::throwIfKilled()
 
 bool QueryStatus::isStoredCancellationException(const std::exception_ptr & exception) const
 {
-    UInt64 stored_origin;
+    UInt64 stored_origin = 0;
     {
         std::lock_guard lock(cancel_mutex);
         if (!is_killed || !cancellation_exception || !exception)
