@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <base/unit.h>
@@ -118,11 +117,12 @@ Per-table counterpart of the query-level setting of the same name: allows backgr
 Unlike the query-level setting, this one is stored in the table definition, so it survives a server restart.
 When it is not set explicitly in the table definition, the query-level setting of the context that initializes the table metadata is used instead.
 )", 0) \
-    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+    ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
 Per-table counterpart of the query-level setting of the same name: allows removing old data files after they were merged by compaction,
 together with the snapshots that referenced them.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
+The previous name `allow_experimental_cleanup_old_data_files_compaction` is kept as an alias, so the table definitions that use it still load.
+)", 0, allow_experimental_cleanup_old_data_files_compaction) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
 Per-table counterpart of the query-level setting of the same name: minimum delay between two background compaction operations.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
@@ -216,6 +216,8 @@ struct DataLakeStorageSettings
     bool isChanged(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
+    /// Returns the canonical name of a setting given under one of its aliases.
+    static std::string_view resolveName(std::string_view name);
 
     void serialize(WriteBuffer & out) const;
     static DataLakeStorageSettings deserialize(ReadBuffer & in);
@@ -226,6 +228,7 @@ private:
 
 using DataLakeStorageSettingsPtr = std::shared_ptr<DataLakeStorageSettings>;
 
+/// Expanding this list requires <Core/FormatFactorySettings.h>, not included here to keep this widely used header light.
 #define LIST_OF_DATA_LAKE_STORAGE_SETTINGS(M, ALIAS) \
     DATA_LAKE_STORAGE_RELATED_SETTINGS(M, ALIAS) \
     OBSOLETE_SETTINGS(M, ALIAS) \

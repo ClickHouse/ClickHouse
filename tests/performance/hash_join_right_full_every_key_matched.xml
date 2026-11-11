@@ -2,15 +2,15 @@
     <settings>
         <query_plan_join_swap_table>0</query_plan_join_swap_table>
         <query_plan_convert_outer_join_to_inner_join>0</query_plan_convert_outer_join_to_inner_join>
-        <parallel_hash_join_threshold>0</parallel_hash_join_threshold>
+        <hash_join_layout>parallel</hash_join_layout>
     </settings>
 
     <substitutions>
         <substitution>
             <name>join_settings</name>
             <values>
-                <value>join_algorithm = 'hash', parallel_hash_join_threshold = 18446744073709551615</value>
-                <value>join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0</value>
+                <value>join_algorithm = 'hash', hash_join_layout = 'serial'</value>
+                <value>join_algorithm = 'parallel_hash', hash_join_layout = 'parallel'</value>
             </values>
         </substitution>
         <substitution>

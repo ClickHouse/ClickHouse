@@ -105,7 +105,7 @@ namespace DB
     \
     DECLARE(Bool, collect_hash_table_stats_during_joins, true, "Enable collecting hash table statistics to optimize memory allocation", 0) \
     DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, "For how many elements it is allowed to preallocate space in all hash tables in total before join", 0) \
-    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, "For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built: below it with a right-table estimate, as one part on one thread; at or above it, and also without an estimate unless it is the largest value, in parts that up to `max_threads` threads fill at the same time.", 0) \
+    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, "For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built: below it with a right-table estimate, as one part on one thread; at or above it, and also without an estimate, in parts that up to `max_threads` threads fill at the same time.", 0) \
     DECLARE(HashJoinLayout, hash_join_layout, HashJoinLayout::AUTO, "How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table: `auto` (by `parallel_hash_join_threshold`), `serial` (one part on one thread) or `parallel` (parts that up to `max_threads` threads fill at the same time).", 0) \
     DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.", 0) \
     DECLARE(Bool, allow_experimental_join_right_table_sorting, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.", 0) \
@@ -131,6 +131,7 @@ namespace DB
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
     DECLARE(Bool, enable_hash_join_row_store, true, "Enable transforming the payload of a hash join into a row-major layout.", 0) \
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 3.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
+    DECLARE(UInt64, min_string_column_bytes_for_hash_join_row_store, 8_MiB, "Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means `String` columns are not stored in the row store.", 0) \
 
 
 // clang-format on
@@ -149,13 +150,14 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
 
 QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 
-void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out) const
+void QueryPlanSerializationSettings::write(WriteBuffer & out) const
 {
-    impl->writeChangedBinary(out);
+    impl->write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
 }
-void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
+
+void QueryPlanSerializationSettings::read(ReadBuffer & in)
 {
-    impl->readBinary(in);
+    impl->read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
 }
 
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)

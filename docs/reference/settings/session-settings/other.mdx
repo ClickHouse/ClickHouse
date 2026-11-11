@@ -23,7 +23,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics."}]}]}/>
 
-Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads have repeat-dominated staged streams, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
+Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads thaw, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
 
 With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. Aggregations with descending top-K pruning already keep their tables frozen independently of this setting. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
 
@@ -261,7 +261,7 @@ The maximum number of connection attempts with each replica for the Distributed 
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-When set to `true`, a `SELECT` query will be converted to conjuctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
+When set to `true`, a `SELECT` query will be converted to conjunctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
 
 For example, notice how the following `SELECT` query is not modified (the default behavior):
 
@@ -417,9 +417,9 @@ Which dialect will be used to parse query.
 
 Supported values:
 - `clickhouse` (default) — standard ClickHouse SQL.
-- `kusto` — Kusto Query Language. Requires the beta setting `allow_experimental_kusto_dialect`.
-- `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
-- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
+- `kusto` — Kusto Query Language. Requires the beta setting `enable_kusto_dialect`.
+- `prql` — PRQL. Requires the experimental setting `enable_prql_dialect`.
+- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `enable_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 - `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `enable_logsql_dialect`.
@@ -613,6 +613,8 @@ Default partition strategy for file like engines. Applied only to `CREATE` queri
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
+
+It also applies to merges and mutations.
 
 ## filter {#filter}
 
@@ -873,6 +875,29 @@ Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 
 Timeout in milliseconds for receiving Hello packet from replicas during handshake.
 
+## hash_join_layout {#hash_join_layout}
+
+<SettingsInfoBlock type="HashJoinLayout" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "New setting to force the layout of a hash join. `auto` keeps choosing it with `parallel_hash_join_threshold`."}]}]}/>
+
+How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table.
+`auto`, the default, lets the planner choose the layout with `parallel_hash_join_threshold`; set `serial` or `parallel` to force one.
+
+Possible values:
+
+- `auto` — `parallel_hash_join_threshold` decides, from the estimated number of rows in the right table. See that setting for a join without an estimate.
+- `serial` — the hash table is one part, filled by one thread, whatever the estimate.
+- `parallel` — the hash table is split into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`), whatever the estimate.
+
+Some joins always build one part, whatever the value:
+
+- joins of other kinds, such as `CROSS`;
+- a join with a `Join` table or a key-value storage on the right;
+- each bucket of a grace hash join;
+- the hash join that `join_algorithm = 'auto'` starts with when the join cannot spill to disk (for example with `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` both `0`) and can switch to a partial merge join instead;
+- each per-shard join of `query_plan_join_shard_by_pk_ranges`.
+
 ## hedged_connection_timeout_ms {#hedged_connection_timeout_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="50" />
@@ -923,9 +948,9 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
+If enabled, injects `SHUFFLE` into SELECT queries without ORDER BY clause.
 Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
-If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
+If the top-level construct is UNION, `SHUFFLE` is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
 
 ## input_format {#input_format}
@@ -1869,6 +1894,10 @@ Read from the recent samples table of a [TimeSeries](/reference/engines/table-en
 Checks that execution speed is not too slow (no less than `min_execution_speed`),
 after the specified time in seconds has expired.
 
+If set to `0`, the execution speed limits are checked from the start of the query,
+but [`max_estimated_execution_time`](/reference/settings/session-settings/max#max_estimated_execution_time)
+is not checked at all.
+
 ## to_start_of_interval_preserves_argument_type {#to_start_of_interval_preserves_argument_type}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -2066,7 +2095,7 @@ Scheduling priority of the query within its workload, used by the `priority` wor
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
-Write full paths (including s3://) into iceberg metadata files.
+Write full paths (including s3://) into iceberg metadata files. Tables created in a `DataLakeCatalog` database always get full paths.
 
 ## zstd_window_log_max {#zstd_window_log_max}
 
