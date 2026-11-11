@@ -1474,7 +1474,8 @@ void MergeTreeReaderWide::readData(
 
         if (auto * stream = streams.find(*stream_name))
         {
-            /// An open stream gets the current read bound before it is positioned.
+            /// Must go before the seek: a remote buffer clamps a seek past its read bound.
+            /// A stream that is not open yet gets the bound when it is read (getStream).
             if (stream->isInitialized())
                 stream->adjustRightMark(last_mark_to_read);
             stream->seekToMark(from_mark);
