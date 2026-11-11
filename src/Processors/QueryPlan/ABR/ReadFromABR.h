@@ -17,16 +17,15 @@ namespace DB
 class ReadFromABR : public ISourceStep
 {
 public:
+    /// `tables_` are the tables to try in order, from the chosen one to the coarsest candidate.
+    /// The step keeps them alive until it is executed.
     /// initial_attempt_ holds the interpreter already built in StorageABR::read()
-    /// for the chosen table. It is reused on the first attempt so the analysis pass
+    /// for the first table. It is reused on the first attempt so the analysis pass
     /// that computed the result header is not repeated. Retries (after a fallback
     /// error) build a fresh interpreter for the next coarser table.
-    /// `tables_` are the source tables resolved for the query, which the step keeps alive until it is executed.
     ReadFromABR(
         const SelectQueryInfo & query_info_,
-        std::vector<StoragePtr> tables_,
-        std::vector<UInt64> sample_intervals_,
-        size_t initial_table_idx_,
+        std::vector<StorageABR::SourceTable> tables_,
         StorageABR::Attempt initial_attempt_,
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage_,
@@ -54,11 +53,8 @@ private:
     static void addTotalsAndExtremes(Pipe & pipe, const BufferedResult & buf_result);
 
     SelectQueryInfo query_info;
-    std::vector<StoragePtr> tables;
-    std::vector<UInt64> sample_intervals;
-    size_t initial_table_idx;
-    /// Pre-built interpreter for tables[initial_table_idx]; consumed by the
-    /// first attempt in initializePipeline().
+    std::vector<StorageABR::SourceTable> tables;
+    /// Pre-built interpreter for tables[0]; consumed by the first attempt in initializePipeline().
     std::shared_ptr<IInterpreter> initial_interpreter;
     ContextPtr context;
     QueryProcessingStage::Enum processed_stage;

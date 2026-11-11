@@ -2,7 +2,7 @@
 # Tags: no-replicated-database
 # Tag no-replicated-database: on a replicated database the DDL runs with no user, so the access check asserted here is skipped and the deny path silently allows, https://github.com/ClickHouse/ClickHouse/issues/111561
 
-# Creating an `ABR` table copies the columns and keys of its source tables, so it requires
+# Creating an `ABR` table copies the columns of its source tables, so it requires
 # `SHOW COLUMNS` on every one of them, checked before anything about them is revealed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -27,9 +27,6 @@ ${CLICKHOUSE_CLIENT} --query "
 
 echo "CREATE without privileges on the source tables"
 ${CLICKHOUSE_CLIENT} --user="${user}" --allow_experimental_abr=1 --query "CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
-
-echo "CREATE with an explicit column list without privileges on the source tables"
-${CLICKHOUSE_CLIENT} --user="${user}" --allow_experimental_abr=1 --query "CREATE TABLE abr_proxy (ts DateTime, account_id String, value UInt64) ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
 echo "CREATE over source tables that do not exist"
 ${CLICKHOUSE_CLIENT} --user="${user}" --allow_experimental_abr=1 --query "CREATE TABLE abr_proxy ENGINE = ABR('missing', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq

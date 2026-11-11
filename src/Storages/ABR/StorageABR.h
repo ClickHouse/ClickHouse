@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <span>
 
 #include <Common/AtomicLogger.h>
 #include <Core/Names.h>
@@ -43,15 +44,22 @@ public:
         SharedHeader header;
     };
 
-    /// Discovers source tables {prefix}_{interval}, validates schema consistency,
-    /// copies metadata from the first table, and builds retention pruning metadata.
+    /// A source table resolved for a query, see `resolveSourceTable`.
+    struct SourceTable
+    {
+        StoragePtr storage;
+        UInt64 interval;
+        /// Positions of the retention columns in the minmax index of the parts of the table.
+        size_t time_idx_in_minmax;
+        std::vector<size_t> retention_idx_in_minmax; /// In the order of `Retention::names`
+    };
+
+    /// Does not access the source tables, so that the table is always loadable. They are resolved on every use instead.
     StorageABR(
         const StorageID & table_id,
-        const String & table_prefix,
+        const String & table_prefix_,
         const std::vector<UInt64> & sample_intervals_,
-        const String & time_column_,
-        const Names & retention_expression,
-        ContextPtr context);
+        const Names & retention_expression_);
 
     /// Builds the query to run against `target`, retargeting the original query to it.
     /// With the analyzer the table expression of the query tree is replaced, otherwise the AST is rewritten.
@@ -75,12 +83,10 @@ public:
     /// Returns true for error codes that trigger a retry on the next coarser table.
     static bool isFallbackError(int error_code);
 
-    /// Name of the source table for the given sample interval: `{table_prefix}_{interval}`.
-    static String getSourceTableName(const String & table_prefix, UInt64 interval);
+    /// Formatted name for a source table: `{prefix}_{interval}`.
+    static String getSourceTableName(const String & prefix, UInt64 interval);
 
-    /// Names of the source tables referenced by the arguments of an `ABR` engine definition, for the
-    /// dependency graphs. The source tables live in `database`, the database of the `ABR` table.
-    /// Malformed arguments are skipped, as the engine reports them when the table is created.
+    /// Names of the source tables referenced by the arguments of an `ABR` engine definition, in a given `database`.
     static TableNamesSet getSourceTableNames(const ASTFunction & engine, const String & database);
 
     String getName() const override { return "ABR"; }
@@ -101,6 +107,10 @@ public:
 
     /// The query is executed on a source table, which is from the `MergeTree` family, which supports them.
     bool supportsColumnsWithDynamicStructure() const override { return true; }
+
+    /// `ABR` has no columns of its own: they are those of its finest source table that exists, or none if no source table exists.
+    /// A missing source table then fails the query in `read` with `UNKNOWN_TABLE` rather than with an unknown column.
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
     ColumnSizeByName getColumnSizes() const override;
     std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
@@ -128,13 +138,10 @@ public:
     ///                                            first element is the time column
     static std::shared_ptr<StorageABR> creatorFunction(const StorageFactory::Arguments & args);
 
-    /// The source tables are found in the database of the `ABR` table when it is loaded, so it cannot be moved to another database.
+    /// The source tables are found in the database of the `ABR` table on every use, so it cannot be moved to another database.
+    /// Renaming the database is allowed, as the source tables move with it.
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
-
-    /// Renaming the database is not supported for now: `source_table_ids` keep the old name of the database, by which the
-    /// source tables would no longer be found. Supporting it would mean taking the database from the ID of this table instead.
-    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr,
@@ -161,83 +168,80 @@ private:
         bool operator>=(const UnixTimePoint & rhs) const { return !(*this < rhs); }
     };
 
+    /// The retention columns with their types in the columns of the `ABR` table, resolved for a query.
+    struct Retention
+    {
+        DataTypePtr time_type;
+        /// Retention columns other than the time column.
+        Names names;
+        DataTypes types;
+        /// Identity expression over all retention columns, used as the key expression for `KeyCondition`.
+        ExpressionActionsPtr key_expr;
+    };
+
+    /// Throws `BAD_ARGUMENTS` if a retention column is missing from `columns`, or the time column is `Nullable`.
+    Retention getRetention(const ColumnsDescription & columns, const ContextPtr & local_context) const;
+
+    /// Checks every source table, see `resolveSourceTable`, and that they all have the same columns.
+    void checkSourceTables(const ContextPtr & local_context) const;
+
     /// Extracts a combined filter DAG from WHERE + PREWHERE clauses.
     std::optional<ActionsDAG> buildFilterActionsDAG(
         const SelectQueryInfo & query_info,
         ContextPtr local_context) const;
 
-    /// Returns the earliest time value across parts that survive retention pruning.
+    /// Returns the earliest time value across the parts of `table` that survive retention pruning.
     /// Parts without a minmax index are skipped; pruned parts are excluded.
     std::optional<UnixTimePoint> getMinMergeTreeDate(
-        const MergeTreeData::SnapshotData & snapshot,
-        const KeyCondition & retention_condition) const;
+        const SourceTable & table,
+        const Retention & retention,
+        const KeyCondition & retention_condition,
+        const ContextPtr & local_context) const;
 
     /// Extracts the tightest finite lower bound on the time column from a KeyCondition.
     /// Returns nullopt when no finite lower bound can be determined.
-    std::optional<UnixTimePoint> getQueryLowerBound(const KeyCondition & time_cond) const;
+    std::optional<UnixTimePoint> getQueryLowerBound(const KeyCondition & time_cond, const DataTypePtr & time_type) const;
 
     /// Converts the time column's native numeric representation to Unix time.
     /// Returns nullopt when the value is before the Unix epoch.
-    std::optional<UnixTimePoint> timeValueToUnixTimePoint(const Field & value) const;
+    std::optional<UnixTimePoint> timeValueToUnixTimePoint(const Field & value, const DataTypePtr & time_type) const;
 
-    /// Picks the finest-grained table whose data covers the query's time range.
+    /// Picks the finest-grained of `tables` whose data covers the query's time range, and returns its position in `tables`.
     /// Iterates finest→coarsest, prunes parts via the retention condition, and
     /// compares each table's surviving min date against the query lower bound.
     /// Falls back via pickFallbackTable() if none match.
     /// Records the skipped tables and the query lower bound in the `ABRQueryInfo` of the context.
-    /// `source_tables` are the source tables resolved for the query, see `getSourceTables`.
-    size_t chooseBestTable(SelectQueryInfo & query_info, ContextPtr local_context, const std::vector<StoragePtr> & source_tables) const;
+    size_t chooseBestTable(
+        SelectQueryInfo & query_info, ContextPtr local_context, const std::vector<SourceTable> & tables, const Retention & retention) const;
 
-    /// Index in `source_table_ids` of the table with the given sample interval. Throws if there is none.
-    size_t getTableIndexFromSuffix(UInt64 suffix) const;
+    /// Sample intervals of the tables a query may be executed on, from the one of `abr_first_table_suffix`
+    /// to the one of `abr_last_table_suffix`, or all of them if the settings are not set.
+    std::span<const UInt64> getCandidateIntervals(const ContextPtr & local_context) const;
 
-    /// Index in `source_table_ids` of the finest table a query may be executed on: the one of abr_first_table_suffix,
-    /// or the finest table if it is not set.
-    size_t getFirstCandidateTableIndex(const ContextPtr & local_context) const;
+    /// Finds the source table of `interval`. Throws `UNKNOWN_TABLE` if it does not exist.
+    StoragePtr getSourceTable(UInt64 interval, const ContextPtr & local_context) const;
 
-    /// Index in `source_table_ids` of the coarsest table a query may be executed on: the one of abr_last_table_suffix,
-    /// or the coarsest table if it is not set. Bounds both the choice of the table and the retries.
-    size_t getLastCandidateTableIndex(const ContextPtr & local_context) const;
+    /// Finds the source table of `interval` and checks that its partition key allows retention pruning.
+    SourceTable resolveSourceTable(UInt64 interval, const Retention & retention, const ContextPtr & local_context) const;
 
-    /// Resolves the source tables from the first one to the one at `up_to_index`, included, for a query.
-    /// Throws `UNKNOWN_TABLE` if one of them does not exist anymore.
-    std::vector<StoragePtr> getSourceTables(const ContextPtr & local_context, size_t up_to_index) const;
+    /// Resolves the source tables of `intervals`, see `resolveSourceTable`.
+    std::vector<SourceTable> getSourceTables(
+        std::span<const UInt64> intervals, const Retention & retention, const ContextPtr & local_context) const;
 
-    /// Resolves all the source tables with the global context, for the methods that have no query context.
-    /// Returns an empty vector if one of them does not exist anymore.
+    /// Finds all the source tables with the global context, for methods that have no query context.
+    /// Returns an empty vector if any of them does not exist.
     std::vector<StoragePtr> tryGetSourceTables() const;
 
     /// Resolves the fallback table when no source table covers the query lower bound
     /// Picks the smallest min_storage_date at day precision
     /// On ties prefers the finest sample interval (lowest index)
-    size_t pickFallbackTable(
-        const std::vector<std::optional<UnixTimePoint>> & min_storage_dates,
-        size_t start) const;
+    size_t pickFallbackTable(const std::vector<std::optional<UnixTimePoint>> & min_storage_dates) const;
 
-    /// Copies columns, primary key, partition key and sorting key from a source table.
-    void copyTableMetadata(const StoragePtr & storage);
-
+    String table_prefix;
     std::vector<UInt64> sample_intervals;
-
-    /// The IDs of the source tables found at creation, ordered as `sample_intervals`.
-    /// Resolved for each query rather than kept alive, so that the source tables can be dropped and detached.
-    std::vector<StorageID> source_table_ids;
-
+    /// Its first element is the time column.
+    Names retention_expression;
     String time_column;
-
-    /// Per-column metadata extracted from the partition key's minmax index.
-    struct ColumnInfo
-    {
-        DataTypePtr type;
-        size_t idx_in_minmax = 0;
-    };
-    std::map<String, ColumnInfo> column_info_minmax;
-    Names retention_expr_col_names;
-    DataTypes retention_expr_col_types;
-
-    /// Identity expression over retention columns, used as the key expression for KeyCondition.
-    ExpressionActionsPtr retention_key_expr;
-
     AtomicLogger logger;
 };
 }

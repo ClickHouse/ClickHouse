@@ -1,6 +1,5 @@
--- Tags: no-replicated-database, no-ordinary-database
+-- Tags: no-replicated-database
 -- Tag no-replicated-database: a `Replicated` database only allows `DETACH TABLE ... PERMANENTLY`.
--- Tag no-ordinary-database: tables of an `Ordinary` database have no UUID, so a source table created again under the same name is used right away.
 
 -- The `ABR` table resolves its source tables for each query instead of keeping them alive, so they can be
 -- detached and dropped with `SYNC`, which waits until nothing holds the table anymore.
@@ -31,12 +30,9 @@ SET check_table_dependencies = 0;
 DROP TABLE src_1 SYNC;
 SELECT max(value) FROM abr WHERE ts >= toDateTime('2026-01-12 00:00:00'); -- { serverError UNKNOWN_TABLE }
 
--- A source table created again under the same name is a different table, used once the `ABR` table is attached again.
+-- A source table created again under the same name is used from the next query on.
 CREATE TABLE src_1 (ts DateTime, value UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY ts;
 INSERT INTO src_1 SELECT toDateTime('2026-01-10 00:00:00') + INTERVAL number DAY, 2 FROM numbers(10);
-SELECT max(value) FROM abr WHERE ts >= toDateTime('2026-01-12 00:00:00'); -- { serverError UNKNOWN_TABLE }
-DETACH TABLE abr;
-ATTACH TABLE abr;
 SELECT max(value) FROM abr WHERE ts >= toDateTime('2026-01-12 00:00:00');
 
 DROP TABLE abr;

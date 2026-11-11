@@ -41,9 +41,7 @@ namespace ErrorCodes
 
 ReadFromABR::ReadFromABR(
     const SelectQueryInfo & query_info_,
-    std::vector<StoragePtr> tables_,
-    std::vector<UInt64> sample_intervals_,
-    size_t initial_table_idx_,
+    std::vector<StorageABR::SourceTable> tables_,
     StorageABR::Attempt initial_attempt_,
     ContextPtr context_,
     QueryProcessingStage::Enum processed_stage_,
@@ -51,8 +49,6 @@ ReadFromABR::ReadFromABR(
     : ISourceStep(std::move(initial_attempt_.header))
     , query_info(query_info_)
     , tables(std::move(tables_))
-    , sample_intervals(std::move(sample_intervals_))
-    , initial_table_idx(initial_table_idx_)
     , initial_interpreter(std::move(initial_attempt_.interpreter))
     , context(std::move(context_))
     , processed_stage(processed_stage_)
@@ -185,8 +181,6 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
         header = output_header,
         ls_query_info = query_info,
         ls_tables = tables,
-        ls_sample_intervals = sample_intervals,
-        ls_initial_table_idx = initial_table_idx,
         ls_initial_interpreter = initial_interpreter,
         ls_context = context,
         ls_processed_stage = processed_stage,
@@ -195,17 +189,15 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
         Stopwatch ladder_watch;
         auto abr_info = ls_context->getABRQueryInfoPtr();
 
-        for (size_t i = ls_initial_table_idx; i < ls_tables.size(); ++i)
+        for (size_t i = 0; i < ls_tables.size(); ++i)
         {
-            const auto & storage_id = ls_tables[i]->getStorageID();
-            LOG_DEBUG(log, "Attempt {}/{}: executing on {}",
-                i - ls_initial_table_idx + 1,
-                ls_tables.size() - ls_initial_table_idx,
-                storage_id.getNameForLogs());
+            const UInt64 interval = ls_tables[i].interval;
+            const auto & storage_id = ls_tables[i].storage->getStorageID();
+            LOG_DEBUG(log, "Attempt {}/{}: executing on {}", i + 1, ls_tables.size(), storage_id.getNameForLogs());
             try
             {
                 BlockIO block_io;
-                if (i == ls_initial_table_idx && ls_initial_interpreter)
+                if (i == 0 && ls_initial_interpreter)
                 {
                     /// Reuse the interpreter already built in StorageABR::read() so we
                     /// don't repeat that analysis pass on the first attempt.
@@ -216,10 +208,10 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
                 {
                     auto attempt = StorageABR::buildAttempt(
                         ls_query_info,
-                        ls_tables[i],
+                        ls_tables[i].storage,
                         ls_context,
                         /* tables_left */ ls_tables.size() - i,
-                        /* total_tables */ ls_tables.size() - ls_initial_table_idx,
+                        /* total_tables */ ls_tables.size(),
                         ls_processed_stage);
                     block_io = attempt.interpreter->execute();
                 }
@@ -237,7 +229,7 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
                 if (abr_info)
                 {
                     abr_info->duration_ms.fetch_add(ladder_watch.elapsedMilliseconds());
-                    abr_info->interval.store(ls_sample_intervals[i]);
+                    abr_info->interval.store(interval);
                 }
 
                 QueryPipelineBuilder builder;
@@ -251,7 +243,7 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
                     if (abr_info)
                     {
                         std::lock_guard lock(abr_info->mutex);
-                        abr_info->exception_codes[ls_sample_intervals[i]] = e.code();
+                        abr_info->exception_codes[interval] = e.code();
                     }
                     LOG_WARNING(log, "Fallback from {}: {}", storage_id.getNameForLogs(), e.message());
                     continue;
@@ -265,11 +257,11 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
                 if (abr_info)
                 {
                     abr_info->duration_ms.fetch_add(ladder_watch.elapsedMilliseconds());
-                    abr_info->interval.store(ls_sample_intervals[i]);
+                    abr_info->interval.store(interval);
                     if (StorageABR::isFallbackError(e.code()))
                     {
                         std::lock_guard lock(abr_info->mutex);
-                        abr_info->exception_codes[ls_sample_intervals[i]] = e.code();
+                        abr_info->exception_codes[interval] = e.code();
                     }
                 }
 
@@ -280,8 +272,7 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
                 throw;
             }
         }
-        /// This only happens if ls_initial_table_idx >= ls_tables.size(), which should never happen
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "initial table index is not a valid index");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No source tables to read from");
     };
 
     /// Take the same approach as ReadFromRemote of wrapping the attempts in a

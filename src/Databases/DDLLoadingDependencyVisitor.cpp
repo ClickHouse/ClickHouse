@@ -206,7 +206,8 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
     else if (storage.engine->name == "ABR")
     {
         /// ABR(table_prefix, sample_intervals, retention_expression)
-        /// The source tables `{table_prefix}_{interval}` are read when the ABR table is created, so they are loaded first.
+        /// The source tables `{table_prefix}_{interval}` are not needed to load the ABR table, but with `check_table_dependencies`
+        /// these dependencies prevent dropping or renaming them while the ABR table exists.
         data.dependencies.merge(StorageABR::getSourceTableNames(*storage.engine, data.table_name.database));
     }
 #if USE_LIBPQXX
