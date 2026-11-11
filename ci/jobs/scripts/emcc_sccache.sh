@@ -10,6 +10,10 @@ while [ $# -gt 0 ]; do
         shift 2
         continue
     fi
+    if [ "$1" = "-target" ] && [ $# -ge 2 ]; then
+        # sccache probes the compiler without these arguments, and emsdk's aarch64 clang has no default target
+        export CCC_OVERRIDE_OPTIONS="# ^--target=$2"
+    fi
     args+=("$1")
     shift
 done
