@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Telflo', 'OTEL', 'ClickHouse Observability', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
@@ -107,7 +106,15 @@ Keep **Batch** upstream of the exporter: ClickHouse performs best with batched i
 
 If you already run a [standalone OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured), use an **OTLP/HTTP** exporter instead. Set **Endpoint** to that collector's OTLP HTTP address (port `4318`) and add an `Authorization` header with `${env:OTLP_AUTH_TOKEN}` as its value. Supply the [authentication token configured on your collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) when installing the Telflo-managed collectors. Do not add a `Bearer` prefix to this token.
 
-<Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="A self-managed collector pipeline in the Telflo editor with the ClickHouse exporter configured" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![A self-managed collector pipeline in the Telflo editor with the ClickHouse exporter configured](/images/clickstack/telflo/telflo-configuration.webp)
+
+</Frame>
+
+</div>
 
 </Tab>
 </Tabs>
@@ -129,7 +136,15 @@ Click **Publish** in the toolbar. Published versions are read-only; to keep iter
 
 To roll out a change, publish a new version and assign it to the group; to roll back, assign a previously deployed version.
 
-<Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="A Telflo fleet with every collector in sync after a rollout" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![A Telflo fleet with every collector in sync after a rollout](/images/clickstack/telflo/telflo-fleet.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Verify telemetry" id="verify-telemetry">
 

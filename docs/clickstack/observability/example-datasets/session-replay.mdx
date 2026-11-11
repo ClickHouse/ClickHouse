@@ -9,7 +9,6 @@ sidebarTitle: 'Session replay demo'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 
 <Note>
 The instrumentation examples below use `@clickhouse/clickstack-browser`. The demo repository still bundles the legacy browser SDK; its [SDK migration](https://github.com/ClickHouse/clickstack-session-replay-demo/pull/2) is pending. The clone-and-run workflow uses that bundled SDK until the repository is updated.
@@ -67,7 +66,15 @@ You need an existing [fully managed service](/clickstack/observability/getting-s
 
 In your ClickHouse Observability service, open **Team Settings → Data → Managed Telemetry** and copy the **OTLP HTTP endpoint** and **API key**.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the masked OTLP HTTP endpoint and API key" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry showing the masked OTLP HTTP endpoint and API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 Set `CLICKSTACK_UI_URL` to your managed service’s UI URL. To open replays directly, copy the browser URL from **Client Sessions**. Replace the placeholders below with your connection details, then run these commands in your terminal:
 
@@ -116,7 +123,15 @@ docker compose --profile demo up --build --no-deps demo-app
 
 Open [http://localhost:3000](http://localhost:3000) in your browser and interact with the app — search for topics, filter by category, view code examples, and bookmark items.
 
-<Image img="/images/clickstack/session-replay/demo-app.webp" alt="Session replay demo app"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Session replay demo app](/images/clickstack/session-replay/demo-app.webp)
+
+</Frame>
+
+</div>
 
 The browser SDK captures the session and sends it to your configured telemetry endpoint.
 </Step>
@@ -124,11 +139,27 @@ The browser SDK captures the session and sends it to your configured telemetry e
 
 Select **Open Observability** in the demo, then open **Client Sessions** in your service and select a time range covering your test, such as **Last 15 minutes**. Find the anonymous session matching the time you used the demo. The SDK records it under the service name `clickhouse-session-replay-demo`.
 
-<Image img="/images/clickstack/session-replay/observability-client-sessions.png" alt="Client Sessions selected in the ClickHouse Observability sidebar with a recorded session listed" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Client Sessions selected in the ClickHouse Observability sidebar with a recorded session listed](/images/clickstack/session-replay/observability-client-sessions.png)
+
+</Frame>
+
+</div>
 
 Open your session and select **Play** to replay the recorded interactions.
 
-<Image img="/images/clickstack/session-replay/observability-session-replay.png" alt="Session replay of the Documentation Explorer in ClickHouse Observability"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Session replay of the Documentation Explorer in ClickHouse Observability](/images/clickstack/session-replay/observability-session-replay.png)
+
+</Frame>
+
+</div>
 
 Switch between **Highlighted** and **All Events** modes to adjust the level of detail on the timeline.
 </Step>

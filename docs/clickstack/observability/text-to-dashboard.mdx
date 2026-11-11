@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'text-to-dashboard', 'AI', 'dashboards', 'natural language']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 Text-to-Dashboard creates a dashboard from a plain-language description of what you want to monitor. The AI inspects your available data, builds relevant tiles, and saves a dashboard you can open and edit.
 
@@ -33,7 +32,15 @@ In **Generate dashboard with AI**, describe the questions you want the dashboard
 
 > Create a dashboard using the Logs source. Show total log count, log volume over time, and log counts grouped by severity. Use the dashboard time filter for every tile.
 
-<Image img="/images/clickstack/observability-text-to-dashboard-prompt.png" alt="Generate dashboard with AI dialog with a prompt describing log volume, errors by service, and frequent error messages" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Generate dashboard with AI dialog with a prompt describing log volume, errors by service, and frequent error messages](/images/clickstack/observability-text-to-dashboard-prompt.png)
+
+</Frame>
+
+</div>
 
 Select **Generate dashboard**.
 
@@ -47,7 +54,15 @@ An AI notebook opens with your request. The AI examines the available sources an
 
 Follow the dashboard link in the notebook's response. The generated dashboard is saved and is also available from **Dashboards**.
 
-<Image img="/images/clickstack/observability-text-to-dashboard-result.png" alt="AI-generated dashboard showing total logs, log volume over time, and log counts by severity in ClickHouse Observability" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AI-generated dashboard showing total logs, log volume over time, and log counts by severity in ClickHouse Observability](/images/clickstack/observability-text-to-dashboard-result.png)
+
+</Frame>
+
+</div>
 
 Check the selected sources, filters, aggregations, and time range. Confirm that the charts answer your original question and respond to changes in the dashboard time filter. You can edit the tiles and layout using the standard [dashboard controls](/clickstack/observability/features/dashboards/overview).
 

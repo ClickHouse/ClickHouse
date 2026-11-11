@@ -9,7 +9,6 @@ keywords: ['Redis', 'metrics', 'OTEL', 'ClickHouse Observability']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect Redis metrics with the OpenTelemetry Redis receiver and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without installing Redis.
@@ -30,7 +29,15 @@ Collect Redis metrics with the OpenTelemetry Redis receiver and send them to Cli
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
@@ -261,7 +268,15 @@ Import the dashboard in the [next section](#dashboards), filter for `ServiceName
 1. Open **Dashboards** in ClickHouse Observability.
 2. Click **Import** in the upper-right corner.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 3. Upload `redis-metrics-dashboard.json`, map the charts to your **Metrics** source, and click **Finish Import**.
 
@@ -270,7 +285,15 @@ Import the dashboard in the [next section](#dashboards), filter for `ServiceName
 
 Filter for `ServiceName:redis-demo` and select **Last 2 days** for the demo, or filter for `ServiceName:redis-service` and select a time range covering your own Redis metrics.
 
-<Image img="/images/clickstack/observability-redis-metrics-dashboard.png" alt="Redis Metrics dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Redis Metrics dashboard](/images/clickstack/observability-redis-metrics-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>

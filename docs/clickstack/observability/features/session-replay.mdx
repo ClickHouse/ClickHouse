@@ -9,7 +9,6 @@ keywords: ['ClickHouse Observability', 'session replay', 'browser sdk', 'fronten
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 
 Session replay in ClickHouse Observability captures and reconstructs user interactions in your web application, allowing you to visually replay exactly what a user saw and did during their session. Rather than video recording, the SDK records DOM changes, mouse movements, clicks, scrolls, keyboard inputs, console logs, network requests (XHR and Fetch), and JavaScript exceptions — then reconstructs the experience in the browser.
 
@@ -26,7 +25,15 @@ ClickHouse Observability is fully compatible with OpenTelemetry, so you can send
 
 The examples below use the Browser SDK. In your ClickHouse Observability service, open **Team Settings → Data → Managed Telemetry** and copy the **OTLP HTTP endpoint** and **API key**. Replace `YOUR_OTEL_ENDPOINT` and `YOUR_API_KEY` in the examples with these connection details.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the masked OTLP HTTP endpoint and API key" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry showing the masked OTLP HTTP endpoint and API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 Use the full HTTPS endpoint as shown in Managed Telemetry, without signal paths such as `/v1/traces`. Pass the API key through `apiKey` with a `Bearer ` prefix, as shown below. Then install and initialize the SDK in your application.
 
@@ -197,11 +204,27 @@ For the full table schema information, see [Tables and schemas](/clickstack/self
 ## Viewing session replays {#viewing-replays}
 Navigate to **Client Sessions** from the left sidebar in the UI. This view lists all captured browser sessions with their duration and event count.
 
-<Image img="/images/clickstack/session-replay/observability-client-sessions.png" alt="Session replay search view" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Session replay search view](/images/clickstack/session-replay/observability-client-sessions.png)
+
+</Frame>
+
+</div>
 
 Open a session, then select **Play** to replay the recorded interactions. The replay view shows the reconstructed user experience on the right, with a timeline of browser events — network requests, console logs, and errors — on the left.
 
-<Image img="/images/clickstack/session-replay/observability-session-replay.png" alt="Session replay playback" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Session replay playback](/images/clickstack/session-replay/observability-session-replay.png)
+
+</Frame>
+
+</div>
 
 Switch between **Highlighted** and **All Events** modes to adjust the level of detail shown on the timeline. Errors are annotated in red, and clicking on any event navigates the replay to that point in the session.
 
@@ -210,7 +233,15 @@ When you select a network request or error in the session timeline, you can clic
 
 This works because the `traceOrigins` configuration links browser spans to server spans via the `traceparent` header, creating a connected distributed trace from the user's click all the way to the database. For a detailed walkthrough of this in practice, including instrumenting both frontend and backend, see [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
 
-<Image img="/images/clickstack/session-replay/observability-session-to-trace.gif" alt="Opening a session replay and following an event into its trace" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Opening a session replay and following an event into its trace](/images/clickstack/session-replay/observability-session-to-trace.gif)
+
+</Frame>
+
+</div>
 
 ### From trace to session {#trace-to-session}
 The correlation works in the other direction too. When viewing a trace in the **Search** view, click on it to open the trace detail, then select the **Session replay** tab to see exactly what the user was experiencing at the time of that trace. This is especially useful when investigating errors or slow requests — you can start from the backend issue and immediately see the user's perspective.

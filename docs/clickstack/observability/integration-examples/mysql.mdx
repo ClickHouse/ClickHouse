@@ -9,7 +9,6 @@ keywords: ['MySQL', 'logs', 'OTEL', 'ClickHouse Observability', 'database monito
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect MySQL error and slow query logs with an OpenTelemetry collector and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without installing MySQL.
@@ -30,7 +29,15 @@ Collect MySQL error and slow query logs with an OpenTelemetry collector and send
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
@@ -378,7 +385,15 @@ Leave the terminal open while verifying ingestion. Stop the collector with **Ctr
 
 Open **Search**, select **Logs**, filter for `ServiceName:mysql-demo`, and select **Last 2 days**. You should see 40 records: 30 with `LogAttributes.source:mysql-demo-error` and 10 with `LogAttributes.source:mysql-demo-slow`.
 
-<Image img="/images/clickstack/observability-mysql-demo-logs.png" alt="MySQL demo logs in ClickHouse Observability Search showing 40 results"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![MySQL demo logs in ClickHouse Observability Search showing 40 results](/images/clickstack/observability-mysql-demo-logs.png)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>
@@ -393,7 +408,15 @@ Open **Search**, select **Logs**, filter for `ServiceName:mysql-demo`, and selec
 2. Upload `mysql-logs-dashboard.json`.
 3. Map the charts to your **Logs** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Dashboards page with the Import button highlighted"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboards page with the Import button highlighted](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="view-dashboard">
@@ -402,7 +425,15 @@ Select **Last 2 days** for the sample. Optionally filter for `ServiceName:mysql-
 
 For your own logs, change the **Errors** and **Slow queries** chart filters from `mysql-demo-error` and `mysql-demo-slow` to `mysql-error` and `mysql-slow` respectively, then select a time range covering your records.
 
-<Image img="/images/clickstack/observability-mysql-logs-dashboard.png" alt="MySQL logs dashboard showing log volume, log levels, connection problems, slow queries, and errors"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![MySQL logs dashboard showing log volume, log levels, connection problems, slow queries, and errors](/images/clickstack/observability-mysql-logs-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>

@@ -8,7 +8,6 @@ doc_type: 'guide'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect JSON access logs from Nginx with an OpenTelemetry collector and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without an existing Nginx installation.
@@ -30,7 +29,15 @@ To try the integration without setting up Nginx or collecting your own logs, use
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
@@ -173,7 +180,15 @@ The collector runs in the foreground and must have permission to read the mounte
 
 The following example shows the same view using the demo dataset, with `ServiceName:nginx-demo`:
 
-<Image img="/images/clickstack/observability-nginx-demo-logs.png" alt="Nginx demo logs filtered by service name, with an expanded entry showing parsed log attributes"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Nginx demo logs filtered by service name, with an expanded entry showing parsed log attributes](/images/clickstack/observability-nginx-demo-logs.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -279,7 +294,15 @@ Once the collector is running:
 
 Expand a log entry and select **Column Values** to inspect the parsed fields under `LogAttributes`.
 
-<Image img="/images/clickstack/observability-nginx-demo-logs.png" alt="Nginx demo logs filtered by service name, with an expanded entry showing parsed log attributes"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Nginx demo logs filtered by service name, with an expanded entry showing parsed log attributes](/images/clickstack/observability-nginx-demo-logs.png)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>
@@ -298,11 +321,27 @@ Import a dashboard for request counts, errors, status codes, and average upstrea
 1. Open ClickHouse Observability and navigate to **Dashboards**.
 2. Click **Import** in the upper-right corner.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Dashboards page with the Import button highlighted"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboards page with the Import button highlighted](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 3. Upload `nginx-logs-dashboard.json`. Confirm that all five charts map to the **Logs** data source, then click **Finish Import**.
 
-<Image img="/images/clickstack/observability-finish-nginx-logs-import.png" alt="Nginx dashboard import with all five charts mapped to the Logs data source"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Nginx dashboard import with all five charts mapped to the Logs data source](/images/clickstack/observability-finish-nginx-logs-import.png)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
@@ -310,7 +349,15 @@ Filter the dashboard to `ServiceName:nginx-demo` for the demo dataset, or `Servi
 
 The following dashboard shows the demo dataset:
 
-<Image img="/images/clickstack/observability-nginx-logs-dashboard.png" alt="Nginx logs dashboard in ClickHouse Observability showing requests, errors, status codes, and average upstream response time"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Nginx logs dashboard in ClickHouse Observability showing requests, errors, status codes, and average upstream response time](/images/clickstack/observability-nginx-logs-dashboard.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

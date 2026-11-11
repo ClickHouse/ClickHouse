@@ -10,7 +10,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from '/snippets/components/Image.jsx';
 
 <Info>
 **TL;DR**
@@ -47,11 +46,27 @@ You do not need one to get started. Applications can export OpenTelemetry straig
 <Step title="Copy your exporter configuration" id="copy-exporter-configuration">
 Open your ClickHouse Observability service. Until data arrives it shows the **Start sending telemetry** page.
 
-<Image img="/images/clickstack/getting-started/observability-start-sending-telemetry.png" alt="Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+
+</Frame>
+
+</div>
 
 Under **Use an existing OpenTelemetry setup**, select **View connection details**, then open the **Collector config** tab. It shows a ready-made exporter block for your service. Select **Reveal key** to show the full API key, then use the copy button.
 
-<Image img="/images/clickstack/getting-started/observability-collector-config.png" alt="Set up OpenTelemetry dialog with the Collector config tab selected, showing an otlphttp exporter with the masked endpoint and a Bearer authorization header" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Set up OpenTelemetry dialog with the Collector config tab selected, showing an otlphttp exporter with the masked endpoint and a Bearer authorization header](/images/clickstack/getting-started/observability-collector-config.png)
+
+</Frame>
+
+</div>
 
 The snippet has this shape:
 
@@ -130,7 +145,15 @@ Everything the collector was already gathering now flows to your service as well
 
 Return to the **Start sending telemetry** page in your service and select **Check for data**. Once your telemetry has arrived, the service status changes to **Data received** and **Start exploring** becomes available.
 
-<Image img="/images/clickstack/getting-started/observability-data-received.png" alt="Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled](/images/clickstack/getting-started/observability-data-received.png)
+
+</Frame>
+
+</div>
 
 Select **Start exploring** to open **Search**. Select the **Logs** source, set the time range to **Last 15 minutes**, and filter on a `ServiceName` your collector reports. Switch the source to **Metrics** in **Chart Explorer** to confirm any metrics receivers are flowing too.
 
@@ -165,7 +188,15 @@ If your collector is connected but its sources are quiet, or you want richer dat
 
 Open **View connection details** on the **Start sending telemetry** page, or **Team Settings → Managed Telemetry**, and select the **Env vars** tab. Select **Reveal key**, copy the tab, and paste it into your shell between `set -a` and `set +a`, so every line is exported:
 
-<Image img="/images/clickstack/getting-started/observability-env-vars.png" alt="Set up OpenTelemetry dialog with the Env vars tab selected, showing OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_HEADERS with a masked Bearer key, and OTEL_EXPORTER_OTLP_PROTOCOL" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Set up OpenTelemetry dialog with the Env vars tab selected, showing OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_HEADERS with a masked Bearer key, and OTEL_EXPORTER_OTLP_PROTOCOL](/images/clickstack/getting-started/observability-env-vars.png)
+
+</Frame>
+
+</div>
 
 ```shell
 set -a

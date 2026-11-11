@@ -10,7 +10,6 @@ sidebarTitle: 'Local logs & metrics'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 
 Collect local logs and system metrics and send them to **ClickHouse Observability** for visualization and analysis.
 
@@ -323,7 +322,15 @@ Open [Search](/clickstack/observability/features/search) and select the **Logs**
 
 Expand an event to inspect its attributes. The screenshot shows example data; your log messages and host attributes will differ.
 
-<Image img="/images/clickstack/observability-local-logs.png" alt="Local sample log in ClickHouse Observability, showing the log file name and host attributes" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Local sample log in ClickHouse Observability, showing the log file name and host attributes](/images/clickstack/observability-local-logs.png)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Explore system metrics" id="explore-system-metrics">
 
@@ -333,15 +340,39 @@ In the **Where** field, use `Attributes.state:"used"` to show used memory. If yo
 
 Select a time range that includes when the collector was running, then select **Run**. The screenshot shows example data filtered to a single host. The metric is a ratio from 0 to 1: a value of `0.62` represents 62% utilization.
 
-<Image img="/images/clickstack/observability-local-memory-utilization.png" alt="Memory utilization filtered to used memory on an example host in ClickHouse Observability" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Memory utilization filtered to used memory on an example host in ClickHouse Observability](/images/clickstack/observability-local-memory-utilization.png)
+
+</Frame>
+
+</div>
 
 To display utilization as a percentage, open **Display Settings** and choose **Percentage** from **Output format**.
 
-<Image img="/images/clickstack/observability-local-memory-display-settings.png" alt="Chart Explorer Display Settings with Percentage selected as the output format" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Chart Explorer Display Settings with Percentage selected as the output format](/images/clickstack/observability-local-memory-display-settings.png)
+
+</Frame>
+
+</div>
 
 Select **Apply** to update the chart.
 
-<Image img="/images/clickstack/observability-local-memory-percentage.png" alt="Memory utilization displayed as a percentage for an example host" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Memory utilization displayed as a percentage for an example host](/images/clickstack/observability-local-memory-percentage.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

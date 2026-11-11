@@ -9,7 +9,6 @@ keywords: ['ClickHouse Observability', 'Nginx', 'traces', 'otel']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Capture distributed traces from Nginx with the OpenTelemetry Nginx module and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without installing Nginx.
@@ -29,7 +28,15 @@ Capture distributed traces from Nginx with the OpenTelemetry Nginx module and se
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your endpoint and API key using **Copy connection details**, or select **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 The Nginx module exports over **OTLP/gRPC**, normally on port **4317**. The JSON demo uses **OTLP/HTTP**, normally on port **4318**. Use the endpoint for the matching protocol, including `https://` when TLS is required:
 
@@ -137,7 +144,15 @@ Each request creates a span with the method, path, status code, and duration. Fo
 
 Open **Search**, select **Traces**, and filter for `ServiceName:nginx-proxy`. Select a time range covering your requests and allow a few seconds for export. Open a trace to inspect its spans and HTTP attributes.
 
-<Image img="/images/clickstack/observability-nginx-demo-traces.png" alt="Nginx traces in the search view"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Nginx traces in the search view](/images/clickstack/observability-nginx-demo-traces.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -244,7 +259,15 @@ An empty success response such as `{}` or `{"partialSuccess":{}}` indicates the 
 
 Open **Search**, select **Traces**, filter for `ServiceName:nginx-proxy`, and select **Last 2 days** to include the full shifted dataset. Open a trace to inspect the HTTP attributes.
 
-<Image img="/images/clickstack/observability-nginx-demo-traces.png" alt="Example Nginx traces in the search view"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Example Nginx traces in the search view](/images/clickstack/observability-nginx-demo-traces.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -262,14 +285,30 @@ Open **Search**, select **Traces**, filter for `ServiceName:nginx-proxy`, and se
 2. Upload `nginx-traces-dashboard.json`.
 3. Map the charts to your **Traces** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Dashboards page with the Import button highlighted"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboards page with the Import button highlighted](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
 Filter for `ServiceName:nginx-proxy` and select a time range covering your traces. For the demo, select **Last 2 days**.
 
-<Image img="/images/clickstack/observability-nginx-traces-dashboard.png" alt="Example Nginx traces dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Example Nginx traces dashboard](/images/clickstack/observability-nginx-traces-dashboard.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
