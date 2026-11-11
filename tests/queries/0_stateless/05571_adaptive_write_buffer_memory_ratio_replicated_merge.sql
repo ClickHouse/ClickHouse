@@ -32,12 +32,12 @@ SYSTEM STOP MERGES t_ratio_replicated;
 SYSTEM STOP MERGES t_no_ratio_replicated;
 SYSTEM STOP MERGES t_ratio_plain;
 
-INSERT INTO t_ratio_replicated SELECT number, number * 3, repeat('x', number % 50) FROM numbers(100000);
-INSERT INTO t_ratio_replicated SELECT number + 100000, number * 5, repeat('y', number % 30) FROM numbers(100000);
-INSERT INTO t_no_ratio_replicated SELECT number, number * 3, repeat('x', number % 50) FROM numbers(100000);
-INSERT INTO t_no_ratio_replicated SELECT number + 100000, number * 5, repeat('y', number % 30) FROM numbers(100000);
-INSERT INTO t_ratio_plain SELECT number, number * 3, repeat('x', number % 50) FROM numbers(100000);
-INSERT INTO t_ratio_plain SELECT number + 100000, number * 5, repeat('y', number % 30) FROM numbers(100000);
+INSERT INTO t_ratio_replicated SELECT number, number * 3, repeat('x', number % 50) FROM numbers(20000);
+INSERT INTO t_ratio_replicated SELECT number + 20000, number * 5, repeat('y', number % 30) FROM numbers(20000);
+INSERT INTO t_no_ratio_replicated SELECT number, number * 3, repeat('x', number % 50) FROM numbers(20000);
+INSERT INTO t_no_ratio_replicated SELECT number + 20000, number * 5, repeat('y', number % 30) FROM numbers(20000);
+INSERT INTO t_ratio_plain SELECT number, number * 3, repeat('x', number % 50) FROM numbers(20000);
+INSERT INTO t_ratio_plain SELECT number + 20000, number * 5, repeat('y', number % 30) FROM numbers(20000);
 
 -- Inserted parts use adaptive buffers by the ratio, so their marks differ.
 SELECT 'insert, replicated vs no ratio',

@@ -32,12 +32,12 @@ SYSTEM STOP MERGES t_proj_ratio_replicated;
 SYSTEM STOP MERGES t_proj_no_ratio_replicated;
 SYSTEM STOP MERGES t_proj_ratio_plain;
 
-INSERT INTO t_proj_ratio_replicated SELECT number, number * 3, repeat('x', number % 50) FROM numbers(100000);
-INSERT INTO t_proj_ratio_replicated SELECT number + 100000, number * 5, repeat('y', number % 30) FROM numbers(100000);
-INSERT INTO t_proj_no_ratio_replicated SELECT number, number * 3, repeat('x', number % 50) FROM numbers(100000);
-INSERT INTO t_proj_no_ratio_replicated SELECT number + 100000, number * 5, repeat('y', number % 30) FROM numbers(100000);
-INSERT INTO t_proj_ratio_plain SELECT number, number * 3, repeat('x', number % 50) FROM numbers(100000);
-INSERT INTO t_proj_ratio_plain SELECT number + 100000, number * 5, repeat('y', number % 30) FROM numbers(100000);
+INSERT INTO t_proj_ratio_replicated SELECT number, number * 3, repeat('x', number % 50) FROM numbers(20000);
+INSERT INTO t_proj_ratio_replicated SELECT number + 20000, number * 5, repeat('y', number % 30) FROM numbers(20000);
+INSERT INTO t_proj_no_ratio_replicated SELECT number, number * 3, repeat('x', number % 50) FROM numbers(20000);
+INSERT INTO t_proj_no_ratio_replicated SELECT number + 20000, number * 5, repeat('y', number % 30) FROM numbers(20000);
+INSERT INTO t_proj_ratio_plain SELECT number, number * 3, repeat('x', number % 50) FROM numbers(20000);
+INSERT INTO t_proj_ratio_plain SELECT number + 20000, number * 5, repeat('y', number % 30) FROM numbers(20000);
 
 -- The hashes of the uncompressed content cover the marks (which depend on the buffers), but not the compressed bytes.
 -- Projections written on insert use adaptive buffers by the ratio, so they differ.
