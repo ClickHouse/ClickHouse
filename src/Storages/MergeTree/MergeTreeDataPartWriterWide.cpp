@@ -212,7 +212,7 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
 
         String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
 
-        if (auto it = stream_name_to_full_name.find(stream_name);
+        if (const auto it = stream_name_to_full_name.find(stream_name);
             it != stream_name_to_full_name.end() && it->second != full_stream_name)
         {
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
@@ -605,7 +605,8 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
 
 void MergeTreeDataPartWriterWide::completeGranuleWithoutRows()
 {
-    const WrittenOffsetSubstreams & offset_substreams = written_offset_substreams ? *written_offset_substreams : WrittenOffsetSubstreams{};
+    const WrittenOffsetSubstreams dummy_substreams;
+    const WrittenOffsetSubstreams & offset_substreams = written_offset_substreams ? *written_offset_substreams : dummy_substreams;
     /// The completed granule is the one before the current mark, which adjustLastMarkIfNeedAndFlushToDisk moved on.
     Granule granule{.start_row = 0, .rows_to_write = 0, .mark_number = getCurrentMark() ? getCurrentMark() - 1 : 0, .mark_on_start = false, .is_complete = true};
 

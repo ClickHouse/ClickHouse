@@ -23,6 +23,9 @@
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 128
     </create_query>
 
+    <!-- Each run adds a part; merges of the earlier parts would run through the same writer while the next run is timed. -->
+    <fill_query>SYSTEM STOP MERGES t_wide_writer_substreams</fill_query>
+
     <query>
         INSERT INTO t_wide_writer_substreams
         SELECT
