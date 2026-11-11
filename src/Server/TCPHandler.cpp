@@ -207,6 +207,10 @@ namespace DB::ErrorCodes
 
 namespace
 {
+/// Kinds accepted in every block a peer sends (`INSERT`/`input` data, external tables, scalars): senders materialize
+/// before sending, and the consumers of these blocks `assert_cast` columns to the declared type.
+constexpr ISerialization::KindSet received_data_allowed_kinds{ISerialization::Kind::DEFAULT};
+
 // This function corrects the wrong client_name from the old client.
 // Old clients 28.7 and some intermediate versions of 28.7 were sending different ClientInfo.client_name
 // "ClickHouse client" was sent with the hello message.
@@ -3165,7 +3169,8 @@ bool TCPHandler::skipDataPacket(QueryState & state)
     else
         maybe_compressed_in = in;
 
-    NativeReader skip_block_in(*maybe_compressed_in, client_tcp_protocol_version, getNativeWireFormatSettings(state.query_context));
+    NativeReader skip_block_in(
+        *maybe_compressed_in, client_tcp_protocol_version, getNativeWireFormatSettings(state.query_context), received_data_allowed_kinds);
     bool has_rows = !skip_block_in.read().empty();
 
     state.at_packet_boundary = true;
@@ -3191,11 +3196,15 @@ void TCPHandler::initBlockInput(QueryState & state)
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
+        /// No peer is exempt: `query_kind` is declared by the client, and an initiator forwards client data to shards.
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version,
-            getNativeWireFormatSettings(state.query_context));
+            getNativeWireFormatSettings(state.query_context),
+            /*block_missing_values_=*/ nullptr,
+            /*type_cache_=*/ nullptr,
+            received_data_allowed_kinds);
     }
 }
 
