@@ -7,8 +7,8 @@ substring	no index	[]	[1]
 lower	[1]
 lower	no index	[1]
 lower pruned	1
-soundex	[1]	[1]	[1]	[2]
-soundex	no index	[1]	[1]	[1]	[2]
+soundex	[1]	[1]	[1]	[2]	[1]
+soundex	no index	[1]	[1]	[1]	[2]	[1]
 soundex pruned	1
 throw	[1]
 throw	no index	[1]

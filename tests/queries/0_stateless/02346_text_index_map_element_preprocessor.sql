@@ -88,12 +88,14 @@ SELECT 'soundex',
     (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasAnyTokens(m['k'], '123') ORDER BY id)),
     (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasToken(m['k'], '123') ORDER BY id)),
     (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasPhrase(m['k'], '123') ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasAnyTokens(m['k'], 'hello') ORDER BY id));
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasAnyTokens(m['k'], 'hello') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasToken(m['k'], '') ORDER BY id));
 SELECT 'soundex', 'no index',
     (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasAnyTokens(m['k'], '123') ORDER BY id)),
     (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasToken(m['k'], '123') ORDER BY id)),
     (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasPhrase(m['k'], '123') ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasAnyTokens(m['k'], 'hello') ORDER BY id))
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasAnyTokens(m['k'], 'hello') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_soundex WHERE hasToken(m['k'], '') ORDER BY id))
 SETTINGS use_skip_indexes = 0;
 SELECT 'soundex pruned', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT id FROM tab_soundex WHERE hasAnyTokens(m['k'], 'hello')) WHERE explain LIKE '%Granules: 1/2%';

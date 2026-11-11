@@ -2453,7 +2453,9 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
     /// A default needle can match a row without the key; absentMapValueMatches keeps such rows.
     const auto function_name = function_node.getFunctionName();
     const bool is_rewritten_token_search = function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase";
-    if (!is_rewritten_token_search && isMapValueDefault(const_value.safeGet<String>(), header))
+    /// The plan preprocesses the `hasToken` needle too, so with a preprocessor a default needle is searched like any other.
+    const bool admits_default_needle = is_rewritten_token_search || (function_name == "hasToken" && has_preprocessor);
+    if (!admits_default_needle && isMapValueDefault(const_value.safeGet<String>(), header))
         return false;
 
     if (!hasIndexForMapElementValue(index_column_node))
