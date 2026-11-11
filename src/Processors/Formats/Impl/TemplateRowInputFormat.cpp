@@ -613,8 +613,7 @@ void registerInputFormatTemplate(FormatFactory & factory)
                 fillResultSetFormat(settings),
                 fillRowFormat(settings, idx_getter, true),
                 settings.template_settings.row_between_delimiter);
-        });
-        factory.markInputFormatSupportsResetParser(ignore_spaces ? "TemplateIgnoreSpaces" : "Template");
+        }, /*supports_reset_parser=*/ true);
     }
 
     factory.setDocumentation("Template", Documentation{

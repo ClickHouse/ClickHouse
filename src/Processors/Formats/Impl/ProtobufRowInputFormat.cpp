@@ -173,8 +173,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
                     settings.protobuf.input_flatten_google_wrappers,
                     settings.protobuf.oneof_presence,
                     settings.protobuf.google_protos_path);
-            });
-        factory.markInputFormatSupportsResetParser(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
+            }, /*supports_reset_parser=*/ true);
         factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
     }
 

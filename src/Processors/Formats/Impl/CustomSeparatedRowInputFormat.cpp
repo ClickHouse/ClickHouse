@@ -464,8 +464,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
                 const FormatSettings & settings)
             {
                 return std::make_shared<CustomSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, params, with_names, with_types, ignore_spaces, settings);
-            });
-            factory.markInputFormatSupportsResetParser(format_name);
+            }, /*supports_reset_parser=*/ true);
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);

@@ -134,8 +134,8 @@ public:
 
     virtual void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
     /// Prepares the format to read the next input. Called only for formats registered with
-    /// `FormatFactory::markInputFormatSupportsResetParser`, which must reset every per-input field;
-    /// other formats are created anew for each input.
+    /// `supports_reset_parser` (see `FormatFactory::registerInputFormat`), which must reset every
+    /// per-input field; other formats are created anew for each input.
     virtual void resetParser();
     bool supportsResetParser() const { return supports_reset_parser; }
     void setSupportsResetParser(bool value) { supports_reset_parser = value; }

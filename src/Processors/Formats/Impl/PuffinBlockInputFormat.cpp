@@ -1010,8 +1010,8 @@ void registerInputFormatPuffin(FormatFactory & factory)
     factory.registerInputFormat(
         "PuffinMetadata",
         [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
-        { return std::make_shared<PuffinMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
-    factory.markInputFormatSupportsResetParser("PuffinMetadata");
+        { return std::make_shared<PuffinMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); },
+        /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("PuffinMetadata");
 
     factory.setDocumentation("PuffinMetadata", Documentation{
@@ -1055,8 +1055,8 @@ Pair with the `Puffin` format to read `deletion-vector-v1` blob payloads.
     factory.registerInputFormat(
         "Puffin",
         [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
-        { return std::make_shared<PuffinInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
-    factory.markInputFormatSupportsResetParser("Puffin");
+        { return std::make_shared<PuffinInputFormat>(buf, std::make_shared<const Block>(sample), settings); },
+        /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("Puffin");
 
     factory.setDocumentation("Puffin", Documentation{

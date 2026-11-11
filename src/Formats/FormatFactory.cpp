@@ -958,13 +958,14 @@ ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     return external_schema_reader_creator(format_settings);
 }
 
-void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
+void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator, bool supports_reset_parser)
 {
     chassert(input_creator);
     auto & creators = getOrCreateCreators(name);
     if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.input_creator = std::move(input_creator);
+    creators.supports_reset_parser = supports_reset_parser;
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
@@ -990,13 +991,14 @@ bool FormatFactory::checkIfFormatHasSplitter(const String & format) const
     return it != dict.end() && it->second.bucket_splitter_creator;
 }
 
-void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)
+void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator, bool supports_reset_parser)
 {
     chassert(input_creator);
     auto & creators = getOrCreateCreators(name);
     if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.random_access_input_creator = std::move(input_creator);
+    creators.supports_reset_parser = supports_reset_parser;
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
@@ -1252,14 +1254,6 @@ void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
     auto & target = getOrCreateCreators(name).prefers_large_blocks;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as preferring large blocks", name);
-    target = true;
-}
-
-void FormatFactory::markInputFormatSupportsResetParser(const String & name)
-{
-    auto & target = getOrCreateCreators(name).supports_reset_parser;
-    if (target)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting resetParser", name);
     target = true;
 }
 

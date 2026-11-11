@@ -1711,8 +1711,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<AvroRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    });
-    factory.markInputFormatSupportsResetParser("Avro");
+    }, /*supports_reset_parser=*/ true);
 
     factory.markFormatSupportsSubsetOfColumns("Avro");
 
@@ -1723,8 +1722,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<AvroConfluentRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    });
-    factory.markInputFormatSupportsResetParser("AvroConfluent");
+    }, /*supports_reset_parser=*/ true);
 
     factory.markFormatSupportsSubsetOfColumns("AvroConfluent");
 

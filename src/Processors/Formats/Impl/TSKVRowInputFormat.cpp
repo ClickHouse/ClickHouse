@@ -311,8 +311,7 @@ void registerInputFormatTSKV(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<TSKVRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
-    });
-    factory.markInputFormatSupportsResetParser("TSKV");
+    }, /*supports_reset_parser=*/ true);
 
     factory.markFormatSupportsSubsetOfColumns("TSKV");
 

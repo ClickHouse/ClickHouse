@@ -352,8 +352,10 @@ public:
     bool checkIfFormatSupportAppend(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     /// Register format by its name.
-    void registerInputFormat(const String & name, InputCreator input_creator);
-    void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator);
+    /// `supports_reset_parser`: `IInputFormat::resetParser` resets every per-input field, so the format
+    /// can be reused for the next input. Otherwise `StreamingFormatExecutor` creates a new one for each input.
+    void registerInputFormat(const String & name, InputCreator input_creator, bool supports_reset_parser = false);
+    void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator, bool supports_reset_parser = false);
     void registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator_with_metadata);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
@@ -390,9 +392,6 @@ public:
     void markOutputFormatNotTTYFriendly(const String & name);
     void markOutputFormatMayProduceRawBytes(const String & name);
     void registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker);
-
-    /// The input format resets all its per-input state in `IInputFormat::resetParser`.
-    void markInputFormatSupportsResetParser(const String & name);
 
     void setContentType(const String & name, const String & content_type);
     void setContentType(const String & name, ContentTypeGetter content_type);

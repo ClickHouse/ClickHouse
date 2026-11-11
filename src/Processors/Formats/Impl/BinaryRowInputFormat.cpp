@@ -213,8 +213,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
             const FormatSettings & settings)
         {
             return std::make_shared<BinaryRowInputFormat<false>>(buf, std::make_shared<const Block>(sample), params, with_names, with_types, settings);
-        });
-        factory.markInputFormatSupportsResetParser(format_name);
+        }, /*supports_reset_parser=*/ true);
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);
@@ -227,8 +226,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
          const FormatSettings & settings)
     {
         return std::make_shared<BinaryRowInputFormat<true>>(buf, std::make_shared<const Block>(sample), params, false, false, settings);
-    });
-    factory.markInputFormatSupportsResetParser("RowBinaryWithDefaults");
+    }, /*supports_reset_parser=*/ true);
 
     factory.registerInputFormat("RowBinaryWithNamesAndTypesAndDefaults", [](
          ReadBuffer & buf,
@@ -237,8 +235,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
          const FormatSettings & settings)
     {
         return std::make_shared<BinaryRowInputFormat<true>>(buf, std::make_shared<const Block>(sample), params, /*with_names=*/true, /*with_types=*/true, settings);
-    });
-    factory.markInputFormatSupportsResetParser("RowBinaryWithNamesAndTypesAndDefaults");
+    }, /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("RowBinary", Documentation{
         .description = R"DOCS_MD(
