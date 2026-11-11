@@ -22,6 +22,16 @@
 
 #include <Poco/URI.h>
 
+#include "config.h"
+
+#if USE_AWS_S3
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
+#endif
+
 #include <algorithm>
 #include <memory>
 #include <set>
@@ -61,10 +71,43 @@ static void checkCustomDiskRemoteHosts(DiskPtr disk, const ContextPtr & context)
             continue;
         }
 
+        /// The same hosts as the factory checks when it builds each object storage.
         for (const auto & [_, storage] : object_disk->getObjectStorages())
         {
-            if (storage->getType() == ObjectStorageType::HDFS)
-                filter.checkURL(Poco::URI(storage->getDescription()));
+            switch (storage->getType())
+            {
+                case ObjectStorageType::HDFS:
+                    filter.checkURL(Poco::URI(storage->getDescription()));
+                    break;
+#if USE_AWS_S3
+                case ObjectStorageType::S3:
+                    /// Not `assert_cast`: a `CachedObjectStorage` reports the type of the storage it wraps.
+                    if (const auto * s3_storage = dynamic_cast<const S3ObjectStorage *>(storage.get()))
+                        s3_storage->getURI().checkRemoteHostFilter(filter);
+                    break;
+#endif
+#if USE_AZURE_BLOB_STORAGE
+                case ObjectStorageType::Azure:
+                {
+                    const auto params = storage->getAzureBlobStorageConnectionParams();
+                    const auto check_host = [&](const String & url)
+                    {
+                        Poco::URI uri(url);
+                        /// The query can carry a SAS token, which the error must not quote.
+                        uri.setPathEtc("");
+                        filter.checkURL(uri);
+                    };
+                    check_host(params->getConnectionURL());
+                    /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
+                    if (isAdlsGen2Endpoint(params->endpoint))
+                        check_host(getAdlsGen2Url(params->endpoint, params->auth_method));
+                    break;
+                }
+#endif
+                default:
+                    /// `web` checks every request, `local` has no host.
+                    break;
+            }
         }
         return;
     }
