@@ -9,16 +9,24 @@
     {
       "menu": [
         {
-          "$ref": "./get-started/navigation.json"
+          "href": "#",
+          "icon": "/images/icons/icon-clickhouse.svg",
+          "item": "ClickHouse"
         },
         {
-          "$ref": "./concepts/navigation.json"
+          "$ref": "./get-started/navigation.json"
         },
         {
           "$ref": "./guides/navigation.json"
         },
         {
+          "$ref": "./concepts/navigation.json"
+        },
+        {
           "$ref": "./reference/navigation.json"
+        },
+        {
+          "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
       "tab": "데이터베이스"
@@ -28,18 +36,34 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "ClickHouse Cloud"
+          "item": "배포"
         },
         {
           "$ref": "./products/cloud/navigation.json"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json"
+          "item": "BYOC",
+          "pages": [
+            "ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+          ]
+        },
+        {
+          "href": "#",
+          "icon": "/images/icons/section-header.svg",
+          "item": "애플리케이션"
+        },
+        {
+          "$ref": "./clickstack/navigation.json"
         },
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Langfuse"
+          "item": "AI 엔지니어링"
+        },
+        {
+          "href": "https://docs.runreveal.com/",
+          "icon": "/images/integrations/logos/runreveal.webp",
+          "item": "보안"
         },
         {
           "href": "#",
@@ -47,16 +71,23 @@
           "item": "오픈 소스"
         },
         {
-          "$ref": "./clickstack/navigation.json"
+          "item": "ClickStack",
+          "pages": [
+            "ko/clickstack/index"
+          ]
         },
         {
           "$ref": "./chdb/navigation.json"
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
+        },
+        {
+          "href": "https://www.librechat.ai/docs",
+          "item": "LibreChat"
         }
       ],
-      "tab": "솔루션"
+      "tab": "제품"
     },
     {
       "menu": [
