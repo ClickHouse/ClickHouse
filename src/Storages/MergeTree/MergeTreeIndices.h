@@ -2,7 +2,6 @@
 #include "config.h"
 
 #include <Common/Documentation.h>
-#include <DataTypes/DataTypeMapHelpers.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
@@ -371,12 +370,6 @@ struct IMergeTreeIndex
 
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
-
-    /// Tells whether a name shaped like a Map key subcolumn `<map>.key_<k>` belongs to a column or a
-    /// subcolumn of the table instead. It looks the name up in the metadata snapshot on demand rather
-    /// than collecting such names: an index condition is built per query (and per partition), and
-    /// the table may have thousands of columns.
-    IsShadowingColumn getMapSubcolumnShadowingCheck() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;

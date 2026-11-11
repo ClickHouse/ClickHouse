@@ -78,7 +78,7 @@ public:
         ContextPtr context_,
         const Block & header_,
         size_t hash_functions_,
-        IsShadowingColumn is_column_shadowing_map_subcolumn_,
+        StorageMetadataPtr metadata_snapshot_,
         JSONIndexArgumentTypes json_argument_types_);
 
     bool alwaysUnknownOrTrue() const override;
@@ -96,7 +96,7 @@ public:
 private:
     const Block & header;
     const size_t hash_functions;
-    const IsShadowingColumn is_column_shadowing_map_subcolumn;
+    const StorageMetadataPtr metadata_snapshot;
     /// Argument types of the JSON index functions of this index, by position in `header`.
     const JSONIndexArgumentTypes json_argument_types;
     const bool validate_enum_literals_in_operators;

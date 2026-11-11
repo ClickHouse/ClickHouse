@@ -310,9 +310,9 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(
 /// against the bloom filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
 std::optional<MapIndexInfo> tryParseMapSubcolumn(
-    const String & column_name, const Block & header, const IsShadowingColumn & is_shadowing_column)
+    const String & column_name, const Block & header, const ColumnsDescription & columns)
 {
-    auto parsed = tryParseMapSubcolumnName(column_name, is_shadowing_column);
+    auto parsed = tryParseMapSubcolumnName(column_name, columns);
     if (!parsed)
         return std::nullopt;
 
@@ -341,7 +341,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
 /// function call or a `map.key_<serialized_key>` subcolumn reference.
 std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
-    const RPNBuilderTreeNode & key_node, const Block & header, const IsShadowingColumn & is_shadowing_column)
+    const RPNBuilderTreeNode & key_node, const Block & header, const ColumnsDescription & columns)
 {
     if (key_node.isFunction())
     {
@@ -367,7 +367,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, is_shadowing_column);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, columns);
 }
 
 }
@@ -377,12 +377,12 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     ContextPtr context_,
     const Block & header_,
     size_t hash_functions_,
-    IsShadowingColumn is_column_shadowing_map_subcolumn_,
+    StorageMetadataPtr metadata_snapshot_,
     JSONIndexArgumentTypes json_argument_types_)
     : WithContext(context_)
     , header(header_)
     , hash_functions(hash_functions_)
-    , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
+    , metadata_snapshot(std::move(metadata_snapshot_))
     , json_argument_types(std::move(json_argument_types_))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
@@ -781,7 +781,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, is_column_shadowing_map_subcolumn))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, metadata_snapshot->getColumns()))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -1361,7 +1361,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, is_column_shadowing_map_subcolumn))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, metadata_snapshot->getColumns()))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1499,7 +1499,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, hash_functions, metadata_snapshot, collectJSONIndexArgumentTypes(*index.expression));
 }
 
 static void assertIndexColumnsType(const Block & header)

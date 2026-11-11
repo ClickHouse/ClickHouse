@@ -90,20 +90,6 @@ const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCa
     return index.expression->getRequiredColumnsWithTypes();
 }
 
-IsShadowingColumn IMergeTreeIndex::getMapSubcolumnShadowingCheck() const
-{
-    /// Subcolumn names are flat, so a Tuple element or a typed JSON path can claim `<map>.key_<k>`
-    /// just as a top-level column can, and a predicate on that name reads the claimant. A genuine Map
-    /// key subcolumn is generated per key on demand, so it is not a regular subcolumn and stays parseable.
-    /// A subcolumn of an EPHEMERAL column is not readable, so it does not claim the name.
-    return [metadata = metadata_snapshot](const String & column_name)
-    {
-        const auto & columns = metadata->getColumns();
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withRegularSubcolumns();
-        return columns.has(column_name) || columns.tryGetColumn(options, column_name).has_value();
-    };
-}
-
 /// Is a granule written with @from decoded identically when read back as @to?
 ///
 /// This deliberately duplicates part of AlterCommands' isMetadataOnlyConversion() instead of calling
