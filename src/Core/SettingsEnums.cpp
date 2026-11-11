@@ -55,7 +55,7 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"hash",                 JoinAlgorithm::HASH},
      {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
      {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
-     {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH},
+     {"parallel_hash",        JoinAlgorithm::HASH},
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
@@ -74,6 +74,12 @@ IMPLEMENT_SETTING_ENUM(JoinOrderConflictDetector, ErrorCodes::BAD_ARGUMENTS,
     {{"",  JoinOrderConflictDetector::NONE},
      {"a", JoinOrderConflictDetector::CD_A},
      {"c", JoinOrderConflictDetector::CD_C}})
+
+
+IMPLEMENT_SETTING_ENUM(HashJoinLayout, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto",     HashJoinLayout::AUTO},
+     {"serial",   HashJoinLayout::SERIAL},
+     {"parallel", HashJoinLayout::PARALLEL}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -420,6 +426,13 @@ IMPLEMENT_SETTING_ENUM(
      {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON},
      {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
+
+IMPLEMENT_SETTING_ENUM(
+    DatabaseDataLakeSnapshotLoadingMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", DatabaseDataLakeSnapshotLoadingMode::AUTO},
+     {"all", DatabaseDataLakeSnapshotLoadingMode::ALL},
+     {"refs", DatabaseDataLakeSnapshotLoadingMode::REFS}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,

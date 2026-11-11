@@ -214,6 +214,14 @@ void Connection::connect(const char* db,
             throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
     }
 
+    /// Without an explicit socket, use TCP to the given port: otherwise `localhost` goes to the library's default socket.
+    if (!ifNotEmpty(socket))
+    {
+        unsigned protocol = MYSQL_PROTOCOL_TCP;
+        if (mysql_options(driver.get(), MYSQL_OPT_PROTOCOL, &protocol))
+            throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    }
+
     {
         ScopedCancellationAwareIoWait io_wait_guard(driver.get());
 

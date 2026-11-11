@@ -6,5 +6,5 @@ ENGINE = MergeTree ORDER BY ();
 ALTER TABLE t ADD COLUMN dt Date MATERIALIZED makeDate(d.year, d.month, d.day);
 INSERT INTO t (id, d) SELECT number, (2000 + number, 1 + number % 10, 1 + number % 30) FROM numbers(10);
 
-SELECT *, dt FROM t;
+SELECT *, dt FROM t ORDER BY id;
 DROP TABLE t;

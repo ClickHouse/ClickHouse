@@ -96,13 +96,9 @@ private:
 class DiskCacheProvider : public ICacheProvider
 {
 public:
-    /// `query_id` enforces `filesystem_cache_max_download_size`. The provider keeps a
-    /// `QueryContextHolder` alive so `tryReserve` (inside `CacheWriter::write`) finds the per-query
-    /// budget. An empty `query_id` means no per-query limit.
     DiskCacheProvider(
         FileCachePtr cache_,
         const FilesystemCacheSettings & cache_settings_,
-        const String & query_id_ = {},
         ThrottlerPtr local_throttler_ = nullptr,
         std::optional<FileCacheKey> custom_cache_key_ = std::nullopt,
         std::optional<FileCacheOriginInfo> custom_origin_ = std::nullopt);
@@ -122,8 +118,6 @@ private:
     ThrottlerPtr local_throttler;
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;
-    /// Keeps the per-query budget context alive; see the constructor.
-    FileCache::QueryContextHolderPtr query_context_holder;
     /// Keep-alive anchors for recently-used cache-segment readers; see
     /// `ReaderAnchorCache`.
     ReaderAnchorCache reader_anchors;
