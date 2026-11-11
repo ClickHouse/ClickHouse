@@ -2054,8 +2054,9 @@ void LocalServer::processConfig()
 
         /// The persisted expressions of tables can refer to user-defined types by name
         /// (e.g. `ORDER BY CAST(x, 'MyType')`), so the types must be known before the tables are loaded.
-        if (fs::exists(fs::path(path) / "user_defined"))
-            global_context->getUserDefinedTypesStorage().loadObjects();
+        /// The storage is the configured one (`user_defined_path` or `user_defined_zookeeper_path` can point outside
+        /// the default `<path>/user_defined` directory), and it does nothing when there is nothing to load.
+        global_context->getUserDefinedTypesStorage().loadObjects();
 
         if (fs::exists(fs::path(path) / "metadata"))
         {
