@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <string_view>
 #include <atomic>
 #include <thread>
@@ -63,6 +64,21 @@ constexpr size_t min_rows_for_graph = 10000;
 /// What CAGRA marks a missing neighbour with, when fewer than `limit` were found.
 constexpr UInt32 invalid_neighbour = std::numeric_limits<UInt32>::max();
 
+/// The `pq_len` of a quantization of the `cagra` method: 0 for `f32`.
+size_t parseQuantization(const String & quantization)
+{
+    if (quantization == "f32")
+        return 0;
+    if (quantization == "pq2")
+        return 2;
+    if (quantization == "pq4")
+        return 4;
+    if (quantization == "pq8")
+        return 8;
+    throw Exception(ErrorCodes::INCORRECT_DATA,
+        "Fourth argument (quantization) of vector similarity index with method 'cagra' is not supported. Supported quantizations are: f32, pq2, pq4, pq8");
+}
+
 GPU::CagraDistance toCagraDistance(CagraMetric metric)
 {
     return metric == CagraMetric::L2 ? GPU::CagraDistance::L2 : GPU::CagraDistance::InnerProduct;
@@ -78,12 +94,6 @@ void normalizeImpl(float * vector, size_t dimensions)
     const float inverse = static_cast<float>(1.0 / std::sqrt(sum));
     for (size_t i = 0; i < dimensions; ++i)
         vector[i] *= inverse;
-}
-
-/// The distance CAGRA returns, as the `hnsw` method returns it: the squared L2 distance, or one minus the inner product.
-float toDistance(CagraMetric metric, float cuvs_distance)
-{
-    return metric == CagraMetric::L2 ? cuvs_distance : 1.0f - cuvs_distance;
 }
 
 void checkFinite(const float * vector, size_t dimensions, int error_code, std::string_view context)
@@ -137,23 +147,53 @@ MergeTreeIndexGranuleCagra::MergeTreeIndexGranuleCagra(const String & index_name
 }
 
 MergeTreeIndexGranuleCagra::MergeTreeIndexGranuleCagra(
-    const String & index_name_, CagraMetric metric_, size_t dimensions_,
-    std::vector<float> && dataset_, std::vector<UInt32> && graph_, size_t graph_degree_)
+    const String & index_name_, CagraMetric metric_, size_t dimensions_, size_t rows_,
+    std::vector<float> && dataset_, std::optional<CagraCompressedVectors> && compressed_,
+    std::vector<UInt32> && graph_, size_t graph_degree_)
     : index_name(index_name_)
     , metric(metric_)
     , dimensions(dimensions_)
-    , rows(dataset_.size() / dimensions_)
+    , rows(rows_)
     , graph_degree(graph_degree_)
     , dataset(std::move(dataset_))
+    , compressed(std::move(compressed_))
     , graph(std::move(graph_))
 {
+}
+
+void CagraCompressedVectors::decompress(size_t row, size_t dimensions, float * vector) const
+{
+    const uint8_t * encoded = codes.data() + row * row_bytes;
+    UInt32 center = 0;
+    memcpy(&center, encoded, sizeof(center));
+    const float * vq = vq_codebook.data() + static_cast<size_t>(center) * dimensions;
+    const uint8_t * pq_codes = encoded + sizeof(center);
+    for (size_t piece = 0; piece < dimensions / pq_len; ++piece)
+    {
+        const float * pq = pq_codebook.data() + static_cast<size_t>(pq_codes[piece]) * pq_len;
+        for (size_t i = 0; i < pq_len; ++i)
+            vector[piece * pq_len + i] = vq[piece * pq_len + i] + pq[i];
+    }
+}
+
+size_t CagraCompressedVectors::memoryUsageBytes() const
+{
+    return (vq_codebook.size() + pq_codebook.size()) * sizeof(float) + codes.size();
+}
+
+float MergeTreeIndexGranuleCagra::toDistance(float cuvs_distance) const
+{
+    /// The squared L2 distance of normalized vectors is twice their cosine distance.
+    if (compressed)
+        return metric == CagraMetric::Cosine ? cuvs_distance / 2 : cuvs_distance;
+    return metric == CagraMetric::L2 ? cuvs_distance : 1.0f - cuvs_distance;
 }
 
 MergeTreeIndexGranuleCagra::~MergeTreeIndexGranuleCagra() = default;
 
 size_t MergeTreeIndexGranuleCagra::memoryUsageBytes() const
 {
-    return dataset.size() * sizeof(float) + graph.size() * sizeof(UInt32);
+    return dataset.size() * sizeof(float) + (compressed ? compressed->memoryUsageBytes() : 0) + graph.size() * sizeof(UInt32);
 }
 
 void MergeTreeIndexGranuleCagra::serializeBinary(WriteBuffer & ostr) const
@@ -166,7 +206,17 @@ void MergeTreeIndexGranuleCagra::serializeBinary(WriteBuffer & ostr) const
     writeIntBinary(static_cast<UInt8>(metric), ostr);
     writeIntBinary(static_cast<UInt64>(rows), ostr);
     writeIntBinary(static_cast<UInt64>(graph_degree), ostr);
-    ostr.write(reinterpret_cast<const char *>(dataset.data()), dataset.size() * sizeof(float));
+    writeIntBinary(static_cast<UInt64>(compressed ? compressed->pq_len : 0), ostr);
+    if (compressed)
+    {
+        writeIntBinary(static_cast<UInt64>(compressed->vq_centers), ostr);
+        writeIntBinary(static_cast<UInt64>(compressed->row_bytes), ostr);
+        ostr.write(reinterpret_cast<const char *>(compressed->vq_codebook.data()), compressed->vq_codebook.size() * sizeof(float));
+        ostr.write(reinterpret_cast<const char *>(compressed->pq_codebook.data()), compressed->pq_codebook.size() * sizeof(float));
+        ostr.write(reinterpret_cast<const char *>(compressed->codes.data()), compressed->codes.size());
+    }
+    else
+        ostr.write(reinterpret_cast<const char *>(dataset.data()), dataset.size() * sizeof(float));
     ostr.write(reinterpret_cast<const char *>(graph.data()), graph.size() * sizeof(UInt32));
 }
 
@@ -183,10 +233,12 @@ void MergeTreeIndexGranuleCagra::deserializeBinary(ReadBuffer & istr, MergeTreeI
     UInt8 persisted_metric = 0;
     UInt64 persisted_rows = 0;
     UInt64 persisted_degree = 0;
+    UInt64 persisted_pq_len = 0;
     readIntBinary(persisted_dimensions, istr);
     readIntBinary(persisted_metric, istr);
     readIntBinary(persisted_rows, istr);
     readIntBinary(persisted_degree, istr);
+    readIntBinary(persisted_pq_len, istr);
 
     if (persisted_dimensions != dimensions || persisted_metric != static_cast<UInt8>(metric))
         throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -195,9 +247,47 @@ void MergeTreeIndexGranuleCagra::deserializeBinary(ReadBuffer & istr, MergeTreeI
 
     rows = persisted_rows;
     graph_degree = persisted_degree;
-    dataset.resize(rows * dimensions);
+    compressed.reset();
+    dataset.clear();
+    if (persisted_pq_len != 0)
+    {
+        auto & vectors = compressed.emplace();
+        vectors.pq_len = persisted_pq_len;
+        UInt64 persisted_vq_centers = 0;
+        UInt64 persisted_row_bytes = 0;
+        readIntBinary(persisted_vq_centers, istr);
+        readIntBinary(persisted_row_bytes, istr);
+        const bool supported_pq_len = vectors.pq_len == 2 || vectors.pq_len == 4 || vectors.pq_len == 8;
+        if (!supported_pq_len || graph_degree == 0 || dimensions % vectors.pq_len != 0 || persisted_vq_centers == 0
+            || persisted_row_bytes < sizeof(UInt32) + dimensions / vectors.pq_len)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Vector similarity index {} has compressed vectors of an invalid shape: {} components to a byte, {} VQ centers, "
+                "rows of {} bytes, graph degree {}", backQuote(index_name), vectors.pq_len, persisted_vq_centers, persisted_row_bytes, graph_degree);
+        vectors.vq_centers = persisted_vq_centers;
+        vectors.row_bytes = persisted_row_bytes;
+        vectors.vq_codebook.resize(vectors.vq_centers * dimensions);
+        vectors.pq_codebook.resize(GPU::cagra_pq_codebook_rows * vectors.pq_len);
+        vectors.codes.resize(rows * vectors.row_bytes);
+        istr.readStrict(reinterpret_cast<char *>(vectors.vq_codebook.data()), vectors.vq_codebook.size() * sizeof(float));
+        istr.readStrict(reinterpret_cast<char *>(vectors.pq_codebook.data()), vectors.pq_codebook.size() * sizeof(float));
+        istr.readStrict(reinterpret_cast<char *>(vectors.codes.data()), vectors.codes.size());
+
+        /// `decompress` and the device index rely on the VQ centers of the rows being in the codebook.
+        for (size_t row = 0; row < rows; ++row)
+        {
+            UInt32 center = 0;
+            memcpy(&center, vectors.codes.data() + row * vectors.row_bytes, sizeof(center));
+            if (center >= vectors.vq_centers)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Vector similarity index {} has a row {} of the VQ center {} out of {}",
+                    backQuote(index_name), row, center, vectors.vq_centers);
+        }
+    }
+    else
+    {
+        dataset.resize(rows * dimensions);
+        istr.readStrict(reinterpret_cast<char *>(dataset.data()), dataset.size() * sizeof(float));
+    }
     graph.resize(rows * graph_degree);
-    istr.readStrict(reinterpret_cast<char *>(dataset.data()), dataset.size() * sizeof(float));
     istr.readStrict(reinterpret_cast<char *>(graph.data()), graph.size() * sizeof(UInt32));
 }
 
@@ -208,7 +298,12 @@ std::shared_ptr<CagraDeviceIndex> MergeTreeIndexGranuleCagra::getDeviceIndex() c
     {
         Stopwatch watch;
         checkCanUseDevice();
-        device_index = std::make_shared<CagraDeviceIndex>(dataset.data(), graph.data(), rows, dimensions, graph_degree, toCagraDistance(metric));
+        if (compressed)
+            device_index = std::make_shared<CagraDeviceIndex>(
+                compressed->vq_codebook.data(), compressed->vq_centers, compressed->pq_codebook.data(), compressed->pq_len,
+                compressed->codes.data(), compressed->row_bytes, graph.data(), rows, dimensions, graph_degree);
+        else
+            device_index = std::make_shared<CagraDeviceIndex>(dataset.data(), graph.data(), rows, dimensions, graph_degree, toCagraDistance(metric));
         LOG_TRACE(logger, "Uploaded CAGRA index {} of {} rows ({}) to the device in {} ms",
             backQuote(index_name), rows, ReadableSize(memoryUsageBytes()), watch.elapsedMilliseconds());
     }
@@ -278,7 +373,7 @@ NearestNeighbours MergeTreeIndexGranuleCagra::search(const std::vector<float> & 
             continue;
         result.rows.push_back(neighbours[i]);
         if (return_distances)
-            result.distances->push_back(toDistance(metric, distances[i]));
+            result.distances->push_back(toDistance(distances[i]));
     }
     return result;
 }
@@ -325,7 +420,7 @@ void MergeTreeIndexGranuleCagra::searchBatch(const std::vector<float> & queries,
             if (row == invalid_neighbour)
                 continue;
             neighbours[q * limit + i] = row;
-            distances[q * limit + i] = toDistance(metric, found_distances[q * k + i]);
+            distances[q * limit + i] = toDistance(found_distances[q * k + i]);
         }
     }
 }
@@ -342,9 +437,11 @@ class CpuBeamSearch
 public:
     explicit CpuBeamSearch(const MergeTreeIndexGranuleCagra & granule_)
         : granule(granule_)
+        /// Compressed vectors are searched by the squared L2 distance, as CAGRA-Q does.
         , metric(granule.dimensions,
-            granule.metric == CagraMetric::L2 ? unum::usearch::metric_kind_t::l2sq_k : unum::usearch::metric_kind_t::ip_k,
+            granule.metric == CagraMetric::L2 || granule.compressed ? unum::usearch::metric_kind_t::l2sq_k : unum::usearch::metric_kind_t::ip_k,
             unum::usearch::scalar_kind_t::f32_k)
+        , decompressed(granule.compressed ? granule.dimensions : 0)
     {
     }
 
@@ -359,9 +456,14 @@ public:
         /// The `hnsw` method returns `1 - dot` for the inner product and the squared L2 distance, and so does this metric.
         auto distance = [&](UInt32 row)
         {
+            const float * vector = granule.dataset.data() + static_cast<size_t>(row) * granule.dimensions;
+            if (granule.compressed)
+            {
+                granule.compressed->decompress(row, granule.dimensions, decompressed.data());
+                vector = decompressed.data();
+            }
             return static_cast<float>(metric(
-                reinterpret_cast<const unum::usearch::byte_t *>(query),
-                reinterpret_cast<const unum::usearch::byte_t *>(granule.dataset.data() + row * granule.dimensions)));
+                reinterpret_cast<const unum::usearch::byte_t *>(query), reinterpret_cast<const unum::usearch::byte_t *>(vector)));
         };
 
         auto insert = [&](UInt32 row)
@@ -400,7 +502,7 @@ public:
         for (size_t i = 0; i < found; ++i)
         {
             rows_out[i] = list[i].row;
-            distances_out[i] = list[i].distance;
+            distances_out[i] = granule.compressed ? granule.toDistance(list[i].distance) : list[i].distance;
         }
         return found;
     }
@@ -418,6 +520,8 @@ private:
     unum::usearch::metric_punned_t metric;
     std::vector<Entry> list;
     HashSet<UInt32> visited;
+    /// The vector of the row being measured, for compressed vectors.
+    std::vector<float> decompressed;
 };
 
 }
@@ -483,6 +587,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorCagra::getGranuleAndReset()
     const size_t rows = dataset.size() / dimensions;
     std::vector<UInt32> graph;
     size_t graph_degree = 0;
+    std::optional<CagraCompressedVectors> compressed;
 
     if (rows >= min_rows_for_graph)
     {
@@ -491,9 +596,27 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorCagra::getGranuleAndReset()
         graph_degree = params.graph_degree;
         LOG_DEBUG(logger, "Built CAGRA index {} of {} rows with {} dimensions on the device in {:.3f} s",
             backQuote(index_name), rows, dimensions, watch.elapsedSeconds());
+
+        if (params.pq_len != 0)
+        {
+            watch.restart();
+            GPU::CagraCompressedDataset compressed_dataset(dataset.data(), rows, dimensions, params.pq_len);
+            auto & vectors = compressed.emplace();
+            vectors.pq_len = params.pq_len;
+            vectors.vq_centers = compressed_dataset.vqCenters();
+            vectors.row_bytes = compressed_dataset.rowBytes();
+            vectors.vq_codebook.resize(vectors.vq_centers * dimensions);
+            vectors.pq_codebook.resize(GPU::cagra_pq_codebook_rows * vectors.pq_len);
+            vectors.codes.resize(rows * vectors.row_bytes);
+            compressed_dataset.copyToHost(vectors.vq_codebook.data(), vectors.pq_codebook.data(), vectors.codes.data());
+            dataset = {};
+            LOG_DEBUG(logger, "Compressed {} vectors of CAGRA index {} to {} bytes each ({} VQ centers) on the device in {:.3f} s",
+                rows, backQuote(index_name), vectors.row_bytes, vectors.vq_centers, watch.elapsedSeconds());
+        }
     }
 
-    auto granule = std::make_shared<MergeTreeIndexGranuleCagra>(index_name, metric, dimensions, std::move(dataset), std::move(graph), graph_degree);
+    auto granule = std::make_shared<MergeTreeIndexGranuleCagra>(
+        index_name, metric, dimensions, rows, std::move(dataset), std::move(compressed), std::move(graph), graph_degree);
     dataset = {};
     return granule;
 }
@@ -677,31 +800,53 @@ CagraMetric parseMetric(const String & distance_function)
 MergeTreeIndexPtr cagraIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const FieldVector & args)
 {
     CagraParams params;
-    if (args.size() == 5)
-        params = {.graph_degree = args[3].safeGet<UInt64>(), .intermediate_graph_degree = args[4].safeGet<UInt64>()};
+    if (args.size() >= 4)
+        params.pq_len = parseQuantization(args[3].safeGet<String>());
+    if (args.size() == 6)
+    {
+        params.graph_degree = args[4].safeGet<UInt64>();
+        params.intermediate_graph_degree = args[5].safeGet<UInt64>();
+    }
     return std::make_shared<MergeTreeIndexCagra>(
         std::move(metadata_snapshot), index, args[2].safeGet<UInt64>(), parseMetric(args[1].safeGet<String>()), params);
 }
 
 void cagraIndexValidator(const IndexDescription & index, const FieldVector & args)
 {
-    if (args.size() != 3 && args.size() != 5)
+    if (args.size() != 3 && args.size() != 4 && args.size() != 6)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Vector similarity index with method 'cagra' must have three or five arguments: method, distance function, dimensions[, graph_degree, intermediate_graph_degree]");
+            "Vector similarity index with method 'cagra' must have three, four or six arguments: "
+            "method, distance function, dimensions[, quantization[, graph_degree, intermediate_graph_degree]]");
     if (args[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (metric) must be of type String");
     if (args[2].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Third argument of vector similarity index (dimensions) must be of type UInt64");
-    parseMetric(args[1].safeGet<String>());
-    if (args[2].safeGet<UInt64>() == 0)
+    const CagraMetric metric = parseMetric(args[1].safeGet<String>());
+    const UInt64 dimensions = args[2].safeGet<UInt64>();
+    if (dimensions == 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Third argument (dimensions) of vector similarity index must be > 0");
 
-    if (args.size() == 5)
+    if (args.size() >= 4)
     {
-        if (args[3].getType() != Field::Types::UInt64 || args[4].getType() != Field::Types::UInt64)
+        if (args[3].getType() != Field::Types::String)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Fourth argument of vector similarity index (quantization) must be of type String");
+        const size_t pq_len = parseQuantization(args[3].safeGet<String>());
+        if (pq_len != 0 && metric == CagraMetric::Dot)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Quantization {} of vector similarity index with method 'cagra' supports only the distance functions L2Distance and cosineDistance",
+                args[3].safeGet<String>());
+        if (pq_len != 0 && dimensions % pq_len != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Quantization {} of vector similarity index with method 'cagra' needs the dimensions to be a multiple of {}, but they are {}",
+                args[3].safeGet<String>(), pq_len, dimensions);
+    }
+
+    if (args.size() == 6)
+    {
+        if (args[4].getType() != Field::Types::UInt64 || args[5].getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Arguments graph_degree and intermediate_graph_degree of vector similarity index must be of type UInt64");
-        const UInt64 graph_degree = args[3].safeGet<UInt64>();
-        const UInt64 intermediate_graph_degree = args[4].safeGet<UInt64>();
+        const UInt64 graph_degree = args[4].safeGet<UInt64>();
+        const UInt64 intermediate_graph_degree = args[5].safeGet<UInt64>();
         if (graph_degree == 0 || graph_degree > 1024 || intermediate_graph_degree < graph_degree || intermediate_graph_degree > 1024)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Vector similarity index with method 'cagra' needs 0 < graph_degree <= intermediate_graph_degree <= 1024");

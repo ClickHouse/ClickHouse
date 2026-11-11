@@ -3,7 +3,8 @@
 # Checks the `cagra` method of the `vector_similarity` index (a CAGRA graph of cuVS, built and searched on the GPU) and
 # the table function `vectorSearch`: the nearest neighbours the index finds against an exact search, for each distance
 # function, on the GPU and with `vector_search_cagra_on_cpu`, after the index is read back from disk and after a merge
-# builds it anew, and for granules too small for a graph, which are searched exactly.
+# builds it anew, for granules too small for a graph, which are searched exactly, and for vectors compressed by VPQ
+# (CAGRA-Q), whose index is smaller.
 #
 # Where the build has no GPU support, or the server cannot use the device, the same checks run with the `hnsw` method
 # (without quantization, so that its distances are exact as well) instead and hold as well. That is what makes this test runnable everywhere: it checks CAGRA exactly on the machines
@@ -36,6 +37,8 @@ USE_GPU=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHE
 # The arguments of `vector_similarity` before and after the distance function.
 METHOD="'hnsw'"
 METHOD_PARAMETERS="$DIMENSIONS, 'f32', 32, 128"
+# The same for vectors compressed by VPQ, two components to a byte.
+PQ_METHOD_PARAMETERS="$METHOD_PARAMETERS"
 if [ "$USE_GPU" == "1" ]; then
     # A graph is built only for granules of at least 10000 rows, and searched on the device: both are what needs a device.
     # A machine without one, or a server not started for it, is told apart from a failure, which is reported.
@@ -48,6 +51,7 @@ if [ "$USE_GPU" == "1" ]; then
     if [ -z "$PROBE_ERROR" ]; then
         METHOD="'cagra'"
         METHOD_PARAMETERS="$DIMENSIONS"
+        PQ_METHOD_PARAMETERS="$DIMENSIONS, 'pq2'"
     elif [[ "$PROBE_ERROR" != *"There is no GPU"* && "$PROBE_ERROR" != *"GLIBC_TUNABLES"* ]]; then
         echo "$PROBE_ERROR"
     fi
@@ -55,7 +59,9 @@ if [ "$USE_GPU" == "1" ]; then
 fi
 
 # The share of the exact `K` nearest rows that a search through the index finds, over `QUERIES` query vectors, checked to
-# be at least 0.9. The plan is checked to use the index, or the check would hold trivially.
+# be at least 0.9. The plan is checked to use the index, or the check would hold trivially. The settings are of the query,
+# not of the subquery that searches through the index: the plan is optimized for vector search (e.g. for
+# `vector_search_with_rescoring`) by the settings of the query.
 check_recall()
 {
     local table=$1 distance=$2 settings=$3 hits=0 direction=ASC
@@ -65,9 +71,10 @@ check_recall()
         local vector
         vector=$(query_vector $q)
         hits=$((hits + $($CLICKHOUSE_CLIENT --query "
-            SELECT length(arrayIntersect(
-                (SELECT groupArray(id) FROM (SELECT id FROM $table ORDER BY $distance(vec, $vector) $direction LIMIT $K SETTINGS $settings)),
-                (SELECT groupArray(id) FROM (SELECT id FROM $table ORDER BY $distance(vec, $vector) $direction LIMIT $K SETTINGS use_skip_indexes = 0))))")))
+            SELECT length(arrayIntersect(groupArray(id),
+                (SELECT groupArray(id) FROM (SELECT id FROM $table ORDER BY $distance(vec, $vector) $direction LIMIT $K SETTINGS use_skip_indexes = 0))))
+            FROM (SELECT id FROM $table ORDER BY $distance(vec, $vector) $direction LIMIT $K)
+            SETTINGS $settings")))
     done
     local uses_index
     uses_index=$($CLICKHOUSE_CLIENT --query "
@@ -109,13 +116,38 @@ $CLICKHOUSE_CLIENT --query "
     SELECT (SELECT groupArray(id) FROM (SELECT id FROM t_small ORDER BY L2Distance(vec, $VECTOR) LIMIT $K))
          = (SELECT groupArray(id) FROM (SELECT id FROM t_small ORDER BY L2Distance(vec, $VECTOR) LIMIT $K SETTINGS use_skip_indexes = 0))"
 
+echo "-- Vectors compressed by VPQ: the distances are approximate, the rescoring makes them exact"
+RESCORING="vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 4"
+for distance in L2Distance cosineDistance; do
+    table="t_pq_${distance}"
+    $CLICKHOUSE_CLIENT --query "
+        CREATE TABLE $table (id UInt64, vec Array(Float32), INDEX idx vec TYPE vector_similarity($METHOD, '$distance', $PQ_METHOD_PARAMETERS))
+        ENGINE = MergeTree ORDER BY id;
+        INSERT INTO $table $(vectors 0 $ROWS);"
+    check_recall "$table" "$distance" "vector_search_cagra_on_cpu = 0, $RESCORING"
+    check_recall "$table" "$distance" "vector_search_cagra_on_cpu = 1, $RESCORING"
+done
+$CLICKHOUSE_CLIENT --query "DETACH TABLE t_pq_L2Distance; ATTACH TABLE t_pq_L2Distance;"
+check_recall t_pq_L2Distance L2Distance "vector_search_cagra_on_cpu = 0, $RESCORING"
+if [ "$METHOD" == "'cagra'" ]; then
+    $CLICKHOUSE_CLIENT --query "
+        SELECT 'smaller index',
+            (SELECT sum(secondary_indices_uncompressed_bytes) FROM system.parts WHERE database = currentDatabase() AND table = 't_pq_L2Distance' AND active)
+          < (SELECT sum(secondary_indices_uncompressed_bytes) FROM system.parts WHERE database = currentDatabase() AND table = 't_L2Distance' AND active)"
+else
+    echo -e "smaller index\t1"
+fi
+
 echo "-- vectorSearch: all the queries at once, against an exact search of each"
 if [ "$USE_GPU" == "1" ]; then
     $CLICKHOUSE_CLIENT --query "
         CREATE TABLE queries (q UInt32, vec Array(Float32)) ENGINE = MergeTree ORDER BY q;
         INSERT INTO queries SELECT number, arrayMap(i -> toFloat32((cityHash64(1000000 + number, i) % 2000) / 1000 - 1), range($DIMENSIONS))
             FROM numbers($QUERIES);"
-    for table in t_L2Distance t_merged; do
+    # `vectorSearch` returns what the index found, without rescoring: by the approximate distances for compressed vectors.
+    for table_and_recall in t_L2Distance:9 t_merged:9 t_pq_L2Distance:7; do
+        table=${table_and_recall%:*}
+        recall=${table_and_recall#*:}
         $CLICKHOUSE_CLIENT --query "
             WITH
                 found AS (
@@ -127,10 +159,10 @@ if [ "$USE_GPU" == "1" ]; then
                         SELECT queries.q AS q, t.id AS id, L2Distance(t.vec, queries.vec) AS d
                         FROM queries CROSS JOIN $table AS t ORDER BY q, d LIMIT $K BY q))
             SELECT '$table', (SELECT count() FROM found) = $QUERIES * $K,
-                   (SELECT count() FROM found INNER JOIN exact USING (q, id)) * 10 >= $QUERIES * $K * 9"
+                   (SELECT count() FROM found INNER JOIN exact USING (q, id)) * 10 >= $QUERIES * $K * $recall"
     done
 else
-    for table in t_L2Distance t_merged; do
+    for table in t_L2Distance t_merged t_pq_L2Distance; do
         echo -e "$table\t1\t1"
     done
 fi
@@ -146,7 +178,11 @@ check_error()
     fi
 }
 check_error "'cagra', 'L2Distance', 32, 64" INCORRECT_QUERY
-check_error "'cagra', 'L2Distance', 32, 0, 64" INCORRECT_DATA
-check_error "'cagra', 'L2Distance', 32, 64, 32" INCORRECT_DATA
+check_error "'cagra', 'L2Distance', 32, 'f32', 64" INCORRECT_QUERY
+check_error "'cagra', 'L2Distance', 32, 'f32', 0, 64" INCORRECT_DATA
+check_error "'cagra', 'L2Distance', 32, 'f32', 64, 32" INCORRECT_DATA
 check_error "'cagra', 'hammingDistance', 32" INCORRECT_DATA
 check_error "'cagra', 'L2Distance', 0" INCORRECT_DATA
+check_error "'cagra', 'L2Distance', 32, 'pq3'" INCORRECT_DATA
+check_error "'cagra', 'dotProduct', 32, 'pq2'" INCORRECT_DATA
+check_error "'cagra', 'L2Distance', 30, 'pq4'" INCORRECT_DATA
