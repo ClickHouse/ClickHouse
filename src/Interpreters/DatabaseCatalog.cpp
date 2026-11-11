@@ -454,12 +454,10 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             }
         };
 
-        /// Tables that write into others in the background stop first, so nothing writes into the tables drained below.
-        stop_background_writes(user_tables);
         drain_buffers(user_tables);
 
         /// After the drain, which can wait for a destination that is still starting, nothing may load,
-        /// start or replicate tables anymore.
+        /// start or replicate tables anymore. Replicated DDL must not drop or detach a table prepared below.
         for (const auto & database : databases_to_shutdown)
         {
             try
@@ -474,8 +472,8 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             }
         }
 
-        /// Prepare every user table before any of them shuts down. List again to include the tables that finished
-        /// loading meanwhile, stop their background writes and drain what they wrote while destinations still accept it.
+        /// List again to include the tables that finished loading meanwhile. Tables that write into others in the background
+        /// stop first, what they wrote is drained while destinations still accept it, and only then are all tables prepared.
         user_tables = list_user_tables();
         stop_background_writes(user_tables);
         drain_buffers(user_tables);
