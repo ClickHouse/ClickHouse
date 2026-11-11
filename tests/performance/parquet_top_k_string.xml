@@ -3,6 +3,7 @@
     not in file order, so the top-K threshold can skip row groups by the statistics of `s`. Every tenth `e` is '',
     so all row groups share the minimum of `e` and none can be skipped for `e` ascending. `d` is like `e` with 1000
     distinct values per row group, so its chunks are dictionary-encoded and `d != ''` can skip row groups by the dictionary.
+    `SELECT e ... WHERE e != ''` gets a PREWHERE, under which the values of `e` beyond the threshold are not copied.
 -->
 <test>
     <fill_query>
@@ -19,4 +20,5 @@
     <query>SELECT e, p FROM file('test_parquet_top_k_string.parquet') WHERE e != '' ORDER BY e LIMIT 10 SETTINGS max_threads = 8, max_parsing_threads = 8 FORMAT Null</query>
     <query>SELECT e, p FROM file('test_parquet_top_k_string.parquet') ORDER BY e DESC LIMIT 10 SETTINGS max_threads = 8, max_parsing_threads = 8 FORMAT Null</query>
     <query>SELECT d, p FROM file('test_parquet_top_k_string.parquet') WHERE d != '' ORDER BY d LIMIT 10 SETTINGS max_threads = 8, max_parsing_threads = 8 FORMAT Null</query>
+    <query>SELECT e FROM file('test_parquet_top_k_string.parquet') WHERE e != '' ORDER BY e LIMIT 10 SETTINGS max_threads = 8, max_parsing_threads = 8 FORMAT Null</query>
 </test>

@@ -10,11 +10,19 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/FloatUtils.h>
 #include <Common/StringValueFilter.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Processors/TopKThresholdTracker.h>
 
 #include <arrow/util/bit_stream_utils_internal.h>
 #include <arrow/util/byte_stream_split_internal.h>
+
+namespace ProfileEvents
+{
+    extern const Event ParquetTopKStringValuesReplaced;
+    extern const Event ParquetTopKStringBytesSkipped;
+}
 
 namespace DB::ErrorCodes
 {
@@ -122,6 +130,23 @@ static UnpackBitPackedFn<T> getUnpackBitPacked(size_t bit_width)
     }(std::make_index_sequence<std::min<size_t>(32, 8 * sizeof(T))>{});
     chassert(bit_width >= 1 && bit_width <= table.size());
     return table[bit_width - 1];
+}
+
+bool TopKStringBound::refresh(Snapshot & snapshot) const
+{
+    UInt64 version = tracker->getVersion();
+    if (version == snapshot.version)
+        return version != 0;
+    if (!tracker->isSet())
+        return snapshot.version != 0;
+    /// The threshold of a `Nullable` column may be NULL (NULLS FIRST); then nothing is compared.
+    Field value = tracker->getValue();
+    if (value.getType() != Field::Types::String)
+        return snapshot.version != 0;
+    /// `getValue` is at least as new as `version`; a newer value is picked up by the next refresh.
+    snapshot.value = std::move(value.safeGet<String>());
+    snapshot.version = version;
+    return true;
 }
 
 /// Used for dictionary indices and repetition/definition levels.
@@ -757,6 +782,112 @@ struct PlainStringDecoder : public PageDecoder
     }
 };
 
+/// Which values of a `String` page are beyond the threshold of a `TopKStringBound`. After a `WINDOW` of values with none
+/// beyond it (e.g. values in the order of the sort), the checks pause until the next refresh.
+struct TopKStringBoundChecker
+{
+    static constexpr size_t REFRESH_INTERVAL = 4096;
+    static constexpr size_t WINDOW = 256;
+
+    const TopKStringBound * bound;
+    TopKStringBound::Snapshot snapshot;
+    bool use_bound = false;
+    size_t values_since_refresh = 0;
+    size_t window_checked = 0;
+    size_t window_replaced = 0;
+    size_t replaced = 0;
+    size_t bytes_skipped = 0;
+
+    explicit TopKStringBoundChecker(const TopKStringBound * bound_) : bound(bound_) {}
+
+    void start()
+    {
+        use_bound = bound->refresh(snapshot);
+        values_since_refresh = 0;
+        window_checked = 0;
+        window_replaced = 0;
+    }
+
+    /// For every value that is appended.
+    ALWAYS_INLINE bool replace(const char * data, size_t len)
+    {
+        if (++values_since_refresh == REFRESH_INTERVAL) [[unlikely]]
+            start();
+        if (!use_bound || len == 0)
+            return false;
+        bool res = bound->isBeyond(snapshot, data, len);
+        window_replaced += res;
+        if (++window_checked == WINDOW)
+        {
+            use_bound = window_replaced != 0;
+            window_checked = 0;
+            window_replaced = 0;
+        }
+        if (res)
+        {
+            ++replaced;
+            bytes_skipped += len;
+        }
+        return res;
+    }
+
+    void flush()
+    {
+        if (!replaced)
+            return;
+        ProfileEvents::increment(ProfileEvents::ParquetTopKStringValuesReplaced, replaced);
+        ProfileEvents::increment(ProfileEvents::ParquetTopKStringBytesSkipped, bytes_skipped);
+        replaced = 0;
+        bytes_skipped = 0;
+    }
+};
+
+struct PlainStringDecoderWithTopKBound : public PlainStringDecoder
+{
+    TopKStringBoundChecker top_k_checker;
+
+    PlainStringDecoderWithTopKBound(
+        std::span<const char> data_, std::shared_ptr<StringConverter> converter_, const TopKStringBound * top_k_bound_)
+        : PlainStringDecoder(data_, std::move(converter_), nullptr), top_k_checker(top_k_bound_) {}
+
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
+    {
+        if (!converter->isTrivial())
+        {
+            PlainStringDecoder::decode(num_values, col, filter, filter_offset);
+            return;
+        }
+
+        auto & col_str = assert_cast<ColumnString &>(col);
+        size_t to_reserve = num_values;
+        if (filter)
+        {
+            to_reserve = 0;
+            for (size_t i = 0; i < num_values; ++i)
+                to_reserve += filter[filter_offset + i];
+        }
+        col_str.reserve(col_str.size() + to_reserve);
+
+        top_k_checker.start();
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            UInt32 x = 0;
+            memcpy(&x, data, 4); /// omitting range check because input is padded
+            size_t len = 4 + size_t(x);
+            requireRemainingBytes(len);
+            if (!filter || filter[filter_offset + i])
+            {
+                if (top_k_checker.replace(data + 4, size_t(x)))
+                    col_str.insertDefault();
+                else
+                    col_str.insertData(data + 4, size_t(x));
+            }
+            data += len;
+        }
+        top_k_checker.flush();
+    }
+};
+
 template <typename T>
 static T identity(T x) { return x; }
 
@@ -1155,6 +1286,44 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
     }
 };
 
+struct DeltaLengthByteArrayDecoderWithTopKBound : public DeltaLengthByteArrayDecoder
+{
+    TopKStringBoundChecker top_k_checker;
+
+    DeltaLengthByteArrayDecoderWithTopKBound(
+        std::span<const char> data_, std::shared_ptr<StringConverter> converter_, const TopKStringBound * top_k_bound_)
+        : DeltaLengthByteArrayDecoder(data_, std::move(converter_), nullptr), top_k_checker(top_k_bound_) {}
+
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
+    {
+        if (!converter->isTrivial())
+        {
+            DeltaLengthByteArrayDecoder::decode(num_values, col, filter, filter_offset);
+            return;
+        }
+        if (num_values > offsets.size() - idx)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Too few values in page");
+        auto & col_str = assert_cast<ColumnString &>(col);
+        const UInt64 * off = offsets.data() + idx;
+        size_t prev = idx ? off[-1] : 0;
+        top_k_checker.start();
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            size_t len = off[i] - prev;
+            if (!filter || filter[filter_offset + i])
+            {
+                if (top_k_checker.replace(data + prev, len))
+                    col_str.insertDefault();
+                else
+                    col_str.insertData(data + prev, len);
+            }
+            prev = off[i];
+        }
+        top_k_checker.flush();
+        idx += num_values;
+    }
+};
+
 struct DeltaByteArrayDecoder : public PageDecoder
 {
     /// This encoding is applicable for both BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY.
@@ -1297,14 +1466,15 @@ struct DeltaByteArrayDecoder : public PageDecoder
         }
     }
 
-    template <bool skip, bool is_fixed_size>
+    template <bool skip, bool is_fixed_size, bool with_top_k = false>
     void decodeImpl(
         size_t num_values,
         ColumnString * out_str,
         char * out_fixed_size,
         const UInt8 * filter,
         size_t filter_offset,
-        const StringValueFilter * active_value_filter)
+        const StringValueFilter * active_value_filter,
+        TopKStringBoundChecker * top_k_checker = nullptr)
     {
         if (num_values > prefixes.size() - idx)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Too few values in page");
@@ -1338,7 +1508,14 @@ struct DeltaByteArrayDecoder : public PageDecoder
             }
             else if (do_append)
             {
-                if (active_value_filter)
+                if constexpr (with_top_k)
+                {
+                    if (top_k_checker->replace(current_value.data(), current_value.size()))
+                        out_str->insertDefault();
+                    else
+                        out_str->insertData(current_value.data(), current_value.size());
+                }
+                else if (active_value_filter)
                 {
                     /// Values that do not match the string filter from PREWHERE are decoded
                     /// as empty strings (an empty string never matches the filter).
@@ -1372,6 +1549,41 @@ struct DeltaByteArrayDecoder : public PageDecoder
 
         if (active_value_filter)
             active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
+    }
+};
+
+struct DeltaByteArrayDecoderWithTopKBound : public DeltaByteArrayDecoder
+{
+    TopKStringBoundChecker top_k_checker;
+
+    DeltaByteArrayDecoderWithTopKBound(
+        std::span<const char> data_, std::shared_ptr<StringConverter> string_converter_, const TopKStringBound * top_k_bound_)
+        : DeltaByteArrayDecoder(data_, std::move(string_converter_), nullptr, nullptr), top_k_checker(top_k_bound_) {}
+
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
+    {
+        if (!string_converter->isTrivial())
+        {
+            DeltaByteArrayDecoder::decode(num_values, col, filter, filter_offset);
+            return;
+        }
+        size_t pass_count = num_values;
+        if (filter)
+        {
+            pass_count = 0;
+            for (size_t i = 0; i < num_values; ++i)
+                pass_count += filter[filter_offset + i];
+            if (pass_count == 0)
+            {
+                decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
+                return;
+            }
+        }
+        auto & col_str = assert_cast<ColumnString &>(col);
+        col_str.reserve(col_str.size() + pass_count);
+        top_k_checker.start();
+        decodeImpl<false, false, true>(num_values, &col_str, nullptr, filter, filter_offset, nullptr, &top_k_checker);
+        top_k_checker.flush();
     }
 };
 
@@ -1523,7 +1735,8 @@ bool PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const
 }
 
 std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
-    parq::Encoding::type encoding, std::span<const char> data, const StringValueFilter * string_value_filter) const
+    parq::Encoding::type encoding, std::span<const char> data, const StringValueFilter * string_value_filter,
+    const TopKStringBound * top_k_bound) const
 {
     switch (encoding)
     {
@@ -1538,6 +1751,8 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
                 case parq::Type::FIXED_LEN_BYTE_ARRAY:
                     return std::make_unique<PlainFixedSizeDecoder>(data, fixed_size_converter);
                 case parq::Type::BYTE_ARRAY:
+                    if (top_k_bound)
+                        return std::make_unique<PlainStringDecoderWithTopKBound>(data, string_converter, top_k_bound);
                     return std::make_unique<PlainStringDecoder>(data, string_converter, string_value_filter);
                 case parq::Type::BOOLEAN:
                     return std::make_unique<PlainBooleanDecoder>(data, fixed_size_converter);
@@ -1566,6 +1781,8 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             switch (physical_type)
             {
                 case parq::Type::BYTE_ARRAY:
+                    if (top_k_bound)
+                        return std::make_unique<DeltaLengthByteArrayDecoderWithTopKBound>(data, string_converter, top_k_bound);
                     return std::make_unique<DeltaLengthByteArrayDecoder>(data, string_converter, string_value_filter);
                 default: break;
             }
@@ -1575,6 +1792,8 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             {
                 case parq::Type::BYTE_ARRAY:
                 case parq::Type::FIXED_LEN_BYTE_ARRAY:
+                    if (top_k_bound && physical_type == parq::Type::BYTE_ARRAY)
+                        return std::make_unique<DeltaByteArrayDecoderWithTopKBound>(data, string_converter, top_k_bound);
                     return std::make_unique<DeltaByteArrayDecoder>(
                         data, string_converter, fixed_size_converter, physical_type == parq::Type::BYTE_ARRAY ? string_value_filter : nullptr);
                 default: break;
@@ -1644,6 +1863,8 @@ void Dictionary::reset()
     string_value_filter_mask.clear();
     string_value_filter_mask.shrink_to_fit();
     string_value_filter = nullptr;
+    top_k.reset();
+    entry_mask = EntryMask::None;
 }
 
 bool Dictionary::isInitialized() const
@@ -1667,6 +1888,7 @@ double Dictionary::getAverageValueSize() const
 size_t Dictionary::allocatedBytes() const
 {
     return decompressed_buf.allocated_bytes() + offsets.allocated_bytes() + string_value_filter_mask.allocated_bytes()
+        + (top_k ? top_k->mask.allocated_bytes() : 0)
         + (col ? col->allocatedBytes() : 0);
 }
 
@@ -1744,12 +1966,54 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect dictionary page size: {} != {} * {}", data.size(), count, value_size);
 }
 
+void Dictionary::initTopKMask(const TopKStringBound & bound)
+{
+    if (mode != Mode::StringPlain)
+        return;
+    chassert(entry_mask == EntryMask::None);
+    top_k = std::make_unique<TopKMask>();
+    top_k->bound = &bound;
+    top_k->mask.resize_fill(count, 1);
+    entry_mask = EntryMask::TopK;
+}
+
+void Dictionary::refreshTopKMask(const TopKStringBound & bound, size_t num_values)
+{
+    chassert(entry_mask == EntryMask::TopK);
+    TopKMask & state = *top_k;
+    chassert(mode == Mode::StringPlain && state.mask.size() == count);
+    if (state.version != 0 && state.values_with_mask >= count && state.replaced_with_mask == 0)
+    {
+        entry_mask = EntryMask::None;
+        return;
+    }
+    /// Meanwhile the older mask stays valid: the threshold only gets tighter.
+    state.values_since_build += num_values;
+    if (state.values_since_build < count)
+        return;
+    TopKStringBound::Snapshot snapshot;
+    snapshot.version = state.version;
+    if (!bound.refresh(snapshot) || snapshot.version == state.version)
+        return;
+    state.version = snapshot.version;
+    state.values_since_build = 0;
+    state.values_with_mask = 0;
+    state.replaced_with_mask = 0;
+    for (size_t i = 0; i < count; ++i)
+    {
+        size_t start = (i == 0 ? 0 : size_t(offsets[i - 1])) + 4;
+        size_t end = offsets[i];
+        state.mask[i] = end <= start || !bound.isBeyond(snapshot, data.data() + start, end - start);
+    }
+}
+
 void Dictionary::buildStringValueFilterMask(const StringValueFilter & filter, size_t num_rows)
 {
     /// Other modes are not used together with the filter: it is attached only when
     /// the string converter is trivial, see Reader::preparePrewhere.
     if (mode != Mode::StringPlain || count == 0)
         return;
+    chassert(entry_mask == EntryMask::None);
 
     /// Every entry is expected to be referenced by this many rows, and the mask skips the data of
     /// a non-matching entry in all of them.
@@ -1786,11 +2050,12 @@ void Dictionary::buildStringValueFilterMask(const StringValueFilter & filter, si
             }
         }
     }
+    entry_mask = EntryMask::StringValueFilter;
 }
 
 size_t Dictionary::decodedFootprintUpperBound(
     parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
-    size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type, bool has_string_value_filter)
+    size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type, bool builds_entry_mask)
 {
     /// Mirror the mode selection in decode(). The decompressed page payload (`decompressed_buf`) is
     /// held for a compressed column chunk; on top of it the trivial fast paths add either nothing
@@ -1835,9 +2100,9 @@ size_t Dictionary::decodedFootprintUpperBound(
     {
         /// Mode::StringPlain: a UInt32 offset per value.
         logical = sat_add(logical, sat_mul(num_values, sizeof(UInt32)));
-        /// The string filter from PREWHERE adds a UInt8 mask per entry (`buildStringValueFilterMask`,
-        /// called only in this mode) while the pruning stage still holds the buffers above.
-        if (has_string_value_filter)
+        /// The string filter from PREWHERE or the top-K bound adds a UInt8 mask per entry (`buildStringValueFilterMask`
+        /// or `initTopKMask`, called only in this mode) while the pruning stage still holds the buffers above.
+        if (builds_entry_mask)
             logical = sat_add(logical, num_values);
     }
     else
@@ -1928,32 +2193,72 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
         {
             auto & c = assert_cast<ColumnString &>(out);
             c.reserve(c.size() + n);
-            if (use_string_value_filter && !string_value_filter_mask.empty() && string_value_filter->isEnabled())
+            if (use_string_value_filter && entry_mask != EntryMask::None) [[unlikely]]
             {
-                /// Rows referencing dictionary entries that do not match the string filter from
-                /// PREWHERE are materialized as empty strings without copying the data.
-                size_t values_replaced = 0;
-                size_t bytes_skipped = 0;
-                for (size_t i = 0; i < n; ++i)
+                if (entry_mask == EntryMask::StringValueFilter)
                 {
-                    UInt32 idx = indexes[i];
-                    size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
-                    size_t len = offsets[idx] - start;
-                    if (string_value_filter_mask[idx])
+                    if (string_value_filter->isEnabled())
                     {
-                        c.insertData(data.data() + start, len);
-                    }
-                    else
-                    {
-                        c.insertDefault();
-                        ++values_replaced;
-                        bytes_skipped += len;
+                        /// Rows referencing dictionary entries that do not match the string filter from
+                        /// PREWHERE are materialized as empty strings without copying the data.
+                        size_t values_replaced = 0;
+                        size_t bytes_skipped = 0;
+                        for (size_t i = 0; i < n; ++i)
+                        {
+                            UInt32 idx = indexes[i];
+                            size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
+                            size_t len = offsets[idx] - start;
+                            if (string_value_filter_mask[idx])
+                            {
+                                c.insertData(data.data() + start, len);
+                            }
+                            else
+                            {
+                                c.insertDefault();
+                                ++values_replaced;
+                                bytes_skipped += len;
+                            }
+                        }
+                        /// Report the observed selectivity to the shared filter, so that a non-selective
+                        /// filter disables itself for all readers, same as in the non-dictionary paths.
+                        string_value_filter->updateStatsWithoutPerValueChecks(n, values_replaced, bytes_skipped);
+                        break;
                     }
                 }
-                /// Report the observed selectivity to the shared filter, so that a non-selective
-                /// filter disables itself for all readers, same as in the non-dictionary paths.
-                string_value_filter->updateStatsWithoutPerValueChecks(n, values_replaced, bytes_skipped);
-                break;
+                else
+                {
+                    refreshTopKMask(*top_k->bound, n);
+                    if (entry_mask == EntryMask::TopK && top_k->version != 0)
+                    {
+                        const auto & top_k_mask = top_k->mask;
+                        size_t top_k_replaced = 0;
+                        size_t top_k_bytes_skipped = 0;
+                        for (size_t i = 0; i < n; ++i)
+                        {
+                            UInt32 idx = indexes[i];
+                            size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
+                            size_t len = offsets[idx] - start;
+                            if (top_k_mask[idx])
+                            {
+                                c.insertData(data.data() + start, len);
+                            }
+                            else
+                            {
+                                c.insertDefault();
+                                ++top_k_replaced;
+                                top_k_bytes_skipped += len;
+                            }
+                        }
+                        top_k->values_with_mask += n;
+                        top_k->replaced_with_mask += top_k_replaced;
+                        if (top_k_replaced)
+                        {
+                            ProfileEvents::increment(ProfileEvents::ParquetTopKStringValuesReplaced, top_k_replaced);
+                            ProfileEvents::increment(ProfileEvents::ParquetTopKStringBytesSkipped, top_k_bytes_skipped);
+                        }
+                        break;
+                    }
+                }
             }
             for (size_t i = 0; i < n; ++i)
             {
@@ -2008,18 +2313,40 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
             auto & c = assert_cast<ColumnString &>(out);
             size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
             size_t len = offsets[idx] - start;
-            if (!string_value_filter_mask.empty() && string_value_filter->isEnabled())
+            if (entry_mask != EntryMask::None) [[unlikely]]
             {
-                /// The whole run references one dictionary entry, so the filter decision is the same
-                /// for all its rows. Report the run to the shared filter, so that repeated runs -
-                /// the hot path of low-cardinality files - drive the adaptive disable as well.
-                if (!string_value_filter_mask[idx])
+                if (entry_mask == EntryMask::StringValueFilter)
                 {
-                    c.insertManyDefaults(n);
-                    string_value_filter->updateStatsWithoutPerValueChecks(n, n, len * n);
-                    break;
+                    if (string_value_filter->isEnabled())
+                    {
+                        /// The whole run references one dictionary entry, so the filter decision is the same
+                        /// for all its rows. Report the run to the shared filter, so that repeated runs -
+                        /// the hot path of low-cardinality files - drive the adaptive disable as well.
+                        if (!string_value_filter_mask[idx])
+                        {
+                            c.insertManyDefaults(n);
+                            string_value_filter->updateStatsWithoutPerValueChecks(n, n, len * n);
+                            break;
+                        }
+                        string_value_filter->updateStatsWithoutPerValueChecks(n, 0, 0);
+                    }
                 }
-                string_value_filter->updateStatsWithoutPerValueChecks(n, 0, 0);
+                else
+                {
+                    refreshTopKMask(*top_k->bound, n);
+                    if (entry_mask == EntryMask::TopK && top_k->version != 0)
+                    {
+                        top_k->values_with_mask += n;
+                        if (!top_k->mask[idx])
+                        {
+                            top_k->replaced_with_mask += n;
+                            c.insertManyDefaults(n);
+                            ProfileEvents::increment(ProfileEvents::ParquetTopKStringValuesReplaced, n);
+                            ProfileEvents::increment(ProfileEvents::ParquetTopKStringBytesSkipped, len * n);
+                            break;
+                        }
+                    }
+                }
             }
             c.reserve(c.size() + n);
             for (size_t i = 0; i < n; ++i)

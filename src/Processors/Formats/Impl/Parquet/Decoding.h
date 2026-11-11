@@ -14,12 +14,41 @@ namespace DB
 {
 class IDataType;
 class StringValueFilter;
+class ITopKThresholdTracker;
 }
 
 namespace DB::Parquet
 {
 
 struct PageDecoderInfo;
+
+/// TopN dynamic filtering of a `String` sort column whose empty value the filter rejects: a value beyond the threshold
+/// of the top-K heap never reaches the result (the threshold only moves towards it), so it is decoded as an empty string
+/// without copying its data, and the filter drops the row. Shared by all readers of the column within one query.
+struct TopKStringBound
+{
+    std::shared_ptr<const ITopKThresholdTracker> tracker;
+    bool ascending = true;
+
+    /// The threshold as seen by one reader; refreshed when the tracker publishes a new one.
+    struct Snapshot
+    {
+        /// `ITopKThresholdTracker::getVersion` at which `value` was taken; 0 if no threshold was taken yet.
+        UInt64 version = 0;
+        String value;
+    };
+
+    /// Updates `snapshot` if the tracker has a newer threshold. Returns whether `snapshot` holds a threshold.
+    bool refresh(Snapshot & snapshot) const;
+
+    /// Whether the value is beyond the threshold of `snapshot`. A value equal to the threshold is not:
+    /// it may still enter the heap on the other sort columns. Bytewise, like `ColumnString::compareAt`.
+    bool isBeyond(const Snapshot & snapshot, const char * data, size_t size) const
+    {
+        int cmp = std::string_view(data, size).compare(snapshot.value);
+        return ascending ? cmp > 0 : cmp < 0;
+    }
+};
 
 struct Dictionary
 {
@@ -57,6 +86,38 @@ struct Dictionary
 
     PaddedPODArray<char> decompressed_buf;
     ColumnPtr col;
+
+    /// `TopKStringBound` per entry, only in `StringPlain` mode: `index` materializes the excluded entries as empty strings.
+    struct TopKMask
+    {
+        /// Owned by the reader's column info, which outlives the dictionary.
+        const TopKStringBound * bound = nullptr;
+        /// `count` entries; `mask[i]` is 0 if the i-th entry is beyond the threshold of `version`.
+        PaddedPODArray<UInt8> mask;
+        /// `ITopKThresholdTracker::getVersion` of the threshold the mask was built from; 0 if not built yet.
+        UInt64 version = 0;
+        /// Values decoded through the dictionary since `mask` was last built.
+        size_t values_since_build = 0;
+        /// Values gathered through the current `mask`, and how many of them it replaced.
+        size_t values_with_mask = 0;
+        size_t replaced_with_mask = 0;
+    };
+    std::unique_ptr<TopKMask> top_k;
+
+    /// The per-entry mask `index` applies: `string_value_filter_mask` or `top_k`, never both.
+    enum class EntryMask : UInt8
+    {
+        None,
+        StringValueFilter,
+        TopK,
+    };
+    EntryMask entry_mask = EntryMask::None;
+
+    /// Allocates the mask (nothing excluded), see `decodedFootprintUpperBound`. Only in `StringPlain` mode.
+    void initTopKMask(const TopKStringBound & bound);
+    /// Called before `num_values` values are gathered through the top-K mask. Rebuilds it for a newer threshold once `count`
+    /// values were decoded since the last build. Once it replaced none of `count` values, the rest of the chunk goes without it.
+    void refreshTopKMask(const TopKStringBound & bound, size_t num_values);
 
     void reset();
     bool isInitialized() const;
@@ -97,12 +158,12 @@ struct Dictionary
     /// in the prefetch buffer and are accounted separately by the caller, so charging them here would
     /// double-count them. `codec` is the column chunk's compression codec, which decides whether the
     /// payload is materialized in `decompressed_buf` at all (see `Reader::decodeDictionaryPageImpl`).
-    /// `has_string_value_filter` says whether `buildStringValueFilterMask` will be called after
-    /// `decode()`, allocating a per-entry mask on top (only in `StringPlain` mode).
-    /// Must be kept in sync with `decode()` and `buildStringValueFilterMask()`.
+    /// `builds_entry_mask` says whether `buildStringValueFilterMask` or `initTopKMask` will be called after
+    /// `decode()`, allocating a per-entry mask on top (only in `StringPlain` mode; never both).
+    /// Must be kept in sync with `decode()`, `buildStringValueFilterMask()` and `initTopKMask()`.
     static size_t decodedFootprintUpperBound(
         parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
-        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type, bool has_string_value_filter);
+        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type, bool builds_entry_mask);
 };
 
 struct PageDecoder
@@ -234,8 +295,10 @@ struct PageDecoderInfo
     /// before `data` and after `end`.
     /// If `string_value_filter` is not nullptr, string values that do not match it may be decoded
     /// as empty strings (used for substring search conditions pushed down from PREWHERE).
+    /// If `top_k_bound` is not nullptr, string values beyond its threshold may be decoded as empty strings.
     std::unique_ptr<PageDecoder> makeDecoder(
-        parq::Encoding::type, std::span<const char> data, const StringValueFilter * string_value_filter = nullptr) const;
+        parq::Encoding::type, std::span<const char> data, const StringValueFilter * string_value_filter = nullptr,
+        const TopKStringBound * top_k_bound = nullptr) const;
 
     /// Decode a min/max value from Statistics.
     /// If not supported, allow_stats is false, or the value doesn't survive the conversion to

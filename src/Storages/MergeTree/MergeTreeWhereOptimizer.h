@@ -55,12 +55,14 @@ public:
     /// are applied (the existing PREWHERE and the row policy): no string value filter can be applied
     /// during the scan to them (see `extractStringValueFilters`).
     /// `top_k_filter_column` is the column of the `__topKFilter` that will be prepended to PREWHERE, empty if none.
+    /// `top_k_string_sort_column`: the `String` sort column of an `ORDER BY ... LIMIT` a format source filters by statistics only.
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final,
         const NameSet & columns_read_before_filter = {},
-        const String & top_k_filter_column = {});
+        const String & top_k_filter_column = {},
+        const String & top_k_string_sort_column = {});
 
 private:
     struct Condition
@@ -154,6 +156,7 @@ private:
         bool apply_string_filters_during_scan = false;
         const NameSet * columns_read_before_filter = nullptr;
         String top_k_filter_column;
+        String top_k_string_sort_column;
     };
 
     struct OptimizeResult
@@ -183,6 +186,13 @@ private:
     /// (see `extractStringValueFilters`). Such a condition is worth moving to PREWHERE even when
     /// it involves all queried columns: the reader then skips copying the non-matching values.
     bool isConditionSuitableForStringValueFilter(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
+
+    /// Whether the condition rejects the empty string on `top_k_string_sort_column` (`s != ''`, `notEmpty(s)`, `s > ''`, `'' < s`):
+    /// worth moving to PREWHERE even when it involves all queried columns, see `TopKStringBound`.
+    bool isConditionRejectingEmptyTopKString(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
+
+    bool isStringColumnNotReadBeforeFilter(
+        const RPNBuilderTreeNode & argument, const WhereOptimizerContext & where_optimizer_context, bool allow_low_cardinality) const;
 
     bool isSortingKey(const String & column_name) const;
 

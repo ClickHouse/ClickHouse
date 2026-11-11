@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
@@ -25,9 +26,11 @@ namespace Setting
 {
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool enable_multiple_prewhere_read_steps;
+    extern const SettingsBool enable_writes_to_columns_cache;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_prewhere_after_pushdown;
+    extern const SettingsBool use_columns_cache;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool vector_search_with_rescoring;
 }
@@ -355,12 +358,20 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
             top_k_filter_column = column;
     }
 
+    /// Set by `tryOptimizeTopK` in the first pass. Not with columns cache writes: the reader keeps the values of a column it writes.
+    String top_k_string_sort_column;
+    const Settings & source_settings = source_step_with_filter->getContext()->getSettingsRef();
+    if (const auto * top_k_filter = source_step_with_filter->getTopKFilter(); top_k_filter && !top_k_filter->filter_rows
+        && !(source_settings[Setting::use_columns_cache] && source_settings[Setting::enable_writes_to_columns_cache]))
+        top_k_string_sort_column = top_k_filter->column_name;
+
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
         is_final,
         columns_read_before_filter,
-        top_k_filter_column);
+        top_k_filter_column,
+        top_k_string_sort_column);
 
     if (optimize_result.prewhere_nodes.empty())
         return;

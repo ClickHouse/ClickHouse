@@ -183,7 +183,8 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     const ContextPtr & context,
     bool is_final,
     const NameSet & columns_read_before_filter,
-    const String & top_k_filter_column)
+    const String & top_k_filter_column,
+    const String & top_k_string_sort_column)
 {
     const auto & settings = context->getSettingsRef();
     WhereOptimizerContext where_optimizer_context;
@@ -213,6 +214,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     }
     where_optimizer_context.columns_read_before_filter = &storage_columns_read_before_filter;
     where_optimizer_context.top_k_filter_column = top_k_filter_column;
+    where_optimizer_context.top_k_string_sort_column = top_k_string_sort_column;
 
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), context);
 
@@ -460,7 +462,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// or `__topKFilter` reads its only column in PREWHERE anyway, where the query condition cache records each emptied granule.
             && (info.columns.size() < queried_columns.size()
                 || isReadByTopKFilterOnly(conjunct, info.columns, where_optimizer_context.top_k_filter_column)
-                || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
+                || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context))
+                || isConditionRejectingEmptyTopKString(conjunct, where_optimizer_context));
 
         info.expensive = isExpensiveExpression(conjunct);
 
@@ -630,7 +633,8 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 && columnsSupportPrewhere(columns)
                 && (columns.size() < queried_columns.size()
                     || isReadByTopKFilterOnly(conjunct, columns, where_optimizer_context.top_k_filter_column)
-                    || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
+                    || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context))
+                    || isConditionRejectingEmptyTopKString(conjunct, where_optimizer_context));
             res.emplace_back(std::move(cond));
         }
         return res;
@@ -808,6 +812,74 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
     return true;
 }
 
+static std::optional<String> tryGetConstantString(const RPNBuilderTreeNode & argument)
+{
+    Field value;
+    DataTypePtr type;
+    if (!argument.tryGetConstant(value, type) || value.getType() != Field::Types::String)
+        return {};
+    /// Only a `String` constant, the same restriction as in `extractStringValueFilters`:
+    /// a `FixedString` one carries its zero padding in the `Field`, so no filter is extracted for it.
+    if (!isString(removeLowCardinality(removeNullable(type))))
+        return {};
+    return value.safeGet<String>();
+}
+
+/// A full String or Nullable(String) column (the scan filter does not support subcolumns),
+/// which is not read by the existing PREWHERE or the row policy (then the scan filter is not applied).
+bool MergeTreeWhereOptimizer::isStringColumnNotReadBeforeFilter(
+    const RPNBuilderTreeNode & argument, const WhereOptimizerContext & where_optimizer_context, bool allow_low_cardinality) const
+{
+    if (argument.isFunction() || argument.isConstant() || argument.isSubqueryOrSet())
+        return false;
+
+    auto column = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, argument.getColumnName());
+    if (!column || column->isSubcolumn())
+        return false;
+    const auto type = allow_low_cardinality ? removeLowCardinality(column->type) : column->type;
+    if (!isString(removeNullable(type)))
+        return false;
+
+    return !where_optimizer_context.columns_read_before_filter
+        || !where_optimizer_context.columns_read_before_filter->contains(column->getNameInStorage());
+}
+
+bool MergeTreeWhereOptimizer::isConditionRejectingEmptyTopKString(
+    const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
+{
+    if (where_optimizer_context.top_k_string_sort_column.empty() || !node.isFunction())
+        return false;
+
+    auto function_node = node.toFunctionNode();
+    auto function_name = function_node.getFunctionName();
+
+    auto is_sort_column = [&](const RPNBuilderTreeNode & argument)
+    {
+        return !argument.isFunction() && !argument.isConstant() && !argument.isSubqueryOrSet()
+            && argument.getColumnName() == where_optimizer_context.top_k_string_sort_column
+            && isStringColumnNotReadBeforeFilter(argument, where_optimizer_context, /*allow_low_cardinality=*/ true);
+    };
+    auto is_empty_string = [](const RPNBuilderTreeNode & argument)
+    {
+        auto value = tryGetConstantString(argument);
+        return value && value->empty();
+    };
+
+    if (function_name == "notEmpty")
+        return function_node.getArgumentsSize() == 1 && is_sort_column(function_node.getArgumentAt(0));
+    if (function_node.getArgumentsSize() != 2)
+        return false;
+    auto lhs = function_node.getArgumentAt(0);
+    auto rhs = function_node.getArgumentAt(1);
+    if (function_name == "notEquals")
+        return (is_sort_column(lhs) && is_empty_string(rhs)) || (is_empty_string(lhs) && is_sort_column(rhs));
+    if (function_name == "greater")
+        return is_sort_column(lhs) && is_empty_string(rhs);
+    if (function_name == "less")
+        return is_empty_string(lhs) && is_sort_column(rhs);
+    return false;
+}
+
 bool MergeTreeWhereOptimizer::isConditionSuitableForStringValueFilter(
     const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
 {
@@ -820,32 +892,9 @@ bool MergeTreeWhereOptimizer::isConditionSuitableForStringValueFilter(
     if (function_node.getArgumentsSize() != 2)
         return false;
 
-    /// A full String or Nullable(String) column (the scan filter does not support subcolumns),
-    /// which is not read by the existing PREWHERE or the row policy (then the scan filter is not applied).
     auto is_string_column = [&](const RPNBuilderTreeNode & argument)
     {
-        if (argument.isFunction() || argument.isConstant() || argument.isSubqueryOrSet())
-            return false;
-
-        auto column = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, argument.getColumnName());
-        if (!column || column->isSubcolumn() || !isString(removeNullable(column->type)))
-            return false;
-
-        return !where_optimizer_context.columns_read_before_filter
-            || !where_optimizer_context.columns_read_before_filter->contains(column->getNameInStorage());
-    };
-
-    auto get_constant_string = [](const RPNBuilderTreeNode & argument) -> std::optional<String>
-    {
-        Field value;
-        DataTypePtr type;
-        if (!argument.tryGetConstant(value, type) || value.getType() != Field::Types::String)
-            return {};
-        /// Only a `String` constant, the same restriction as in `extractStringValueFilters`:
-        /// a `FixedString` one carries its zero padding in the `Field`, so no filter is extracted for it.
-        if (!isString(removeLowCardinality(removeNullable(type))))
-            return {};
-        return value.safeGet<String>();
+        return isStringColumnNotReadBeforeFilter(argument, where_optimizer_context, /*allow_low_cardinality=*/ false);
     };
 
     /// `position(column, 'needle')` with a non-empty needle.
@@ -858,19 +907,19 @@ bool MergeTreeWhereOptimizer::isConditionSuitableForStringValueFilter(
         if (position_node.getFunctionName() != "position" || position_node.getArgumentsSize() != 2)
             return false;
 
-        auto needle = get_constant_string(position_node.getArgumentAt(1));
+        auto needle = tryGetConstantString(position_node.getArgumentAt(1));
         return needle && !needle->empty() && is_string_column(position_node.getArgumentAt(0));
     };
 
     if (function_name == "like")
     {
-        auto pattern = get_constant_string(function_node.getArgumentAt(1));
+        auto pattern = tryGetConstantString(function_node.getArgumentAt(1));
         return pattern && likePatternHasStringValueFilterConditions(*pattern) && is_string_column(function_node.getArgumentAt(0));
     }
 
     if (function_name == "startsWith" || function_name == "endsWith")
     {
-        auto needle = get_constant_string(function_node.getArgumentAt(1));
+        auto needle = tryGetConstantString(function_node.getArgumentAt(1));
         return needle && !needle->empty() && is_string_column(function_node.getArgumentAt(0));
     }
 
