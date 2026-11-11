@@ -1701,6 +1701,7 @@ ContextData::ContextData(const ContextData &o) :
     is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
+    totals_without_storage_access(o.totals_without_storage_access),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
