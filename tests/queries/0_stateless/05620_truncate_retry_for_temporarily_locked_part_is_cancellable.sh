@@ -32,6 +32,8 @@ $CLICKHOUSE_CLIENT -q "SELECT name, active FROM system.parts WHERE database = cu
 
 # The empty part made by TRUNCATE is all_1_1_1 too, so TRUNCATE retries until the outdated part is removed.
 $CLICKHOUSE_CLIENT --max_execution_time 1 -q "TRUNCATE TABLE t" 2>&1 | grep -o -m1 "$ERRORS"
+# DROP PARTITION uses the same retry, and it stops with timeout_overflow_mode = 'break' too: there is no partial result.
+$CLICKHOUSE_CLIENT --max_execution_time 1 --timeout_overflow_mode break -q "ALTER TABLE t DROP PARTITION ID 'all'" 2>&1 | grep -o -m1 "$ERRORS"
 
 query_id="05620_${CLICKHOUSE_DATABASE}_$RANDOM"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "TRUNCATE TABLE t" 2>&1 | grep -o -m1 "$ERRORS" &
