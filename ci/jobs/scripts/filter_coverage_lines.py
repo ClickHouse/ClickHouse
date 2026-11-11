@@ -1,23 +1,35 @@
 #!/usr/bin/env python3
 """
-Drop the lines of exception-throwing statements from an LCOV tracefile.
+Drop lines that carry no logic from an LCOV tracefile.
 
-A `throw` statement is the error exit of a check whose condition is on the line
-before it, and the condition line stays in the report. Counting the `throw`
-itself measures how many error messages the tests trigger, not how much logic
-they reach. lcov's own `lcov_excl_line` option cannot express this because it
-matches one line only, while ClickHouse formats a throw as
+Two kinds of lines are removed, both decided from the source text alone, so
+that the same source always yields the same set of lines whatever the tests
+executed. `lcov --filter brace` is not used for that reason: it keeps or drops
+a brace depending on the hit counts, and newly_covered_lines.py compares the
+line sets of a baseline and the current run exactly.
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Message {}", argument);
+1. Closing-brace lines: a line holding only `}` (with `;`, `,`, `)` or a
+   comment). `llvm-cov export` reports a line for every closing brace, and a
+   brace after a `return` or `throw` is never executed.
 
-so here the whole statement is removed, up to the `;` that closes it.
+2. Throwing statements: `throw Exception`, `throw ErrnoException`,
+   `throwFromErrno`, `throw std::`, `UNREACHABLE`, `std::terminate`, up to the
+   `;` that ends the statement. Counting them measures how many error messages
+   the tests trigger rather than how much logic they reach. The check before
+   the throw stays: a line with other code in front of the throw, such as
+   `if (x) throw Exception(...);`, is kept with its branches, and only the
+   following lines of the statement are removed. lcov's own `lcov_excl_line`
+   cannot express this because it matches one line only, while ClickHouse
+   formats a throw as
+
+       throw Exception(ErrorCodes::BAD_ARGUMENTS,
+           "Message {}", argument);
 
 Removed: `DA:` and `BRDA:` records of those lines, both covered and uncovered.
 `LF:`/`LH:`/`BRF:`/`BRH:` are recomputed. Function records are kept as is.
 
 Usage:
-    python3 exclude_throw_lines.py input.info [output.info]
+    python3 filter_coverage_lines.py input.info [output.info]
 
 If output.info is omitted, modifies input.info in place (via a temp file).
 """
@@ -38,10 +50,23 @@ THROW_START = re.compile(
 )
 STRING_LITERAL = re.compile(r'"(\\.|[^"\\])*"' + r"|'(\\.|[^'\\])*'")
 LINE_COMMENT = re.compile(r"//.*$")
+CLOSING_BRACE_LINE = re.compile(r"^\s*\}[\s;,)]*$")
+# What may precede a throw on its first line for the line to be removed: block
+# punctuation, `else`, and `case`/`default` labels. Anything else is a check.
+NO_CODE_BEFORE_THROW = re.compile(r"^[\s{}]*(else\b[\s{]*)?((case\b[^:]*|default)\s*:[\s{]*)?$")
 # A statement longer than this is not a throw formatted over several lines but
 # a parsing mistake (an unbalanced parenthesis in a raw string, a macro). Stop
 # there rather than swallowing unrelated code.
 MAX_STATEMENT_LINES = 40
+
+
+def closing_brace_lines(source: list[str]) -> set[int]:
+    """1-based numbers of the lines that hold only a closing brace."""
+    return {
+        i + 1
+        for i, line in enumerate(source)
+        if CLOSING_BRACE_LINE.match(LINE_COMMENT.sub("", line))
+    }
 
 
 def throw_lines(source: list[str]) -> set[int]:
@@ -66,7 +91,8 @@ def throw_lines(source: list[str]) -> set[int]:
         pos = match.start()
         ended = False
         while j < len(source) and j - i < MAX_STATEMENT_LINES:
-            result.add(j + 1)
+            if j > i or NO_CODE_BEFORE_THROW.match(code[:pos]):
+                result.add(j + 1)
             for ch in code[pos:]:
                 if ch == "(":
                     depth += 1
@@ -94,7 +120,8 @@ def process_section(lines: list[str], missing_sources: list[str]) -> list[str]:
         return lines
 
     with open(source_path, encoding="utf-8", errors="replace") as f:
-        excluded = throw_lines(f.read().split("\n"))
+        source = f.read().split("\n")
+    excluded = closing_brace_lines(source) | throw_lines(source)
     if not excluded:
         return lines
 
@@ -155,7 +182,7 @@ def main() -> None:
     if in_place:
         os.replace(out_path, in_path)
 
-    print(f"Excluded {lines_before - lines_after} of {lines_before} lines in throwing statements")
+    print(f"Excluded {lines_before - lines_after} of {lines_before} lines: closing braces and throwing statements")
     if missing_sources:
         # Such a file keeps its throw lines, so its coverage can only be understated.
         print(f"Source not found for {len(missing_sources)} file(s), left unfiltered:")
