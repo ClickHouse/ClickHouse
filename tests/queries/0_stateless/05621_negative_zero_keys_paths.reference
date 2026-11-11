@@ -1,0 +1,36 @@
+-- Bloom runtime filter
+3
+3
+3
+3
+-- bloom_filter skip index
+1
+1
+1
+1
+1
+1
+1
+-- Aggregation in order of a prefix of the keys
+3
+3
+-- Optimizations of the keys
+0000000000000000
+0000000000000080
+0000000000000000
+0000000000000080
+0000000000000000
+0000000000000080
+0000000000000000
+0000000000000080
+2
+2
+2
+2
+1
+-- Spilled DISTINCT of a generic key
+1
+1
+-- Replicated columns
+1
+1
