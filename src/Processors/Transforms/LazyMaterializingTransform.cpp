@@ -156,9 +156,46 @@ LazyMaterializingRows::LazyMaterializingRows(RangesInDataParts ranges_in_data_pa
 {
 }
 
+void LazyMaterializingRows::addPartsOfMainRead(
+    const RangesInDataParts & parts, bool reads_parent_part_offsets, const StorageSnapshotPtr & storage_snapshot)
+{
+    /// Only what addresses the rows: the hints of how the main read reads them, such as the filter of a vector search, would
+    /// drop rows the main read returned.
+    for (const auto & part : parts)
+    {
+        if (part.data_part->isProjectionPart() && reads_parent_part_offsets)
+        {
+            if (!part.parent_part)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The projection part {} is read without its parent part", part.data_part->name);
+
+            const MarkRanges whole_part{{0, part.parent_part->index_granularity->getMarksCountWithoutFinal()}};
+            ranges_in_data_parts.emplace_back(
+                part.parent_part, nullptr, part.part_index_in_query, part.part_starting_offset_in_query, whole_part,
+                RangesInDataPartReadHints{});
+        }
+        else
+        {
+            if (part.data_part->isProjectionPart())
+                snapshots_of_projection_parts[part.part_index_in_query] = storage_snapshot;
+
+            ranges_in_data_parts.emplace_back(
+                part.data_part, part.parent_part, part.part_index_in_query, part.part_starting_offset_in_query, part.ranges,
+                RangesInDataPartReadHints{});
+        }
+    }
+}
+
 void LazyMaterializingRows::filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes)
 {
     rows_in_parts.clear();
+
+    /// The reads of the main branch added their parts one after another. Each part is read by one of them.
+    std::ranges::stable_sort(ranges_in_data_parts, {}, &RangesInDataPart::part_starting_offset_in_query);
+    const auto same_part = std::ranges::adjacent_find(
+        ranges_in_data_parts, [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query == rhs.part_index_in_query; });
+    if (same_part != ranges_in_data_parts.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "LazyMaterializingTransform: The part {} is read by several reads of the main branch", same_part->data_part->name);
 
     /// Here we have a list of part/ranges and the list of sorted indexes.
     /// We need to remove unused granules from ranges, possibly splitting them to smaller ones.

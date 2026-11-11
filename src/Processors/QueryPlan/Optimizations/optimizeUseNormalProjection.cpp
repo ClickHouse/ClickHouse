@@ -512,6 +512,18 @@ UseProjectionsResult optimizeUseNormalProjections(
         return true;
     };
 
+    /// A lazy read reads more columns of the rows of the read by their part offsets. Read from a projection instead, the
+    /// rows of a part are addressed by the offsets in the parent part where the projection has them, and else by the
+    /// offsets in the projection part, which the lazy read then reads its columns from. See `LazyMaterializingRows`.
+    auto can_serve_lazy_read = [&](const ProjectionDescription * projection)
+    {
+        if (!reading->hasLazilyReadColumns() || (need_parent_part_offset && projection->with_parent_part_offset))
+            return true;
+
+        return std::ranges::all_of(
+            reading->getColumnsReadLazily(), [&](const auto & column) { return projection->sample_block.findColumnOrSubcolumnByName(column).has_value(); });
+    };
+
     auto projection_sort_order_useful = [&](const ProjectionDescription * projection)
     {
         if (!outer_sorting_step)
@@ -595,9 +607,13 @@ UseProjectionsResult optimizeUseNormalProjections(
             }
         }
 
-        if (!has_all_required_columns(projection))
+        const bool has_columns = has_all_required_columns(projection);
+        if (!has_columns || !can_serve_lazy_read(projection))
         {
-            result.projection_reject_reasons.try_emplace(projection->name, "the projection does not contain all columns required by the query");
+            result.projection_reject_reasons.try_emplace(projection->name,
+                has_columns ? "some columns of the read are read lazily by their part offsets, and the projection has neither those "
+                              "columns nor the offsets of the parent part"
+                            : "the projection does not contain all columns required by the query");
 
             /// Check if projection can be used to filter parts or building projection index filters
             if (query.filter_node && optimize_use_projection_filtering)
@@ -990,6 +1006,8 @@ UseProjectionsResult optimizeUseNormalProjections(
         {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
             projection_reading_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading);
+            /// The projection parts keep the numbering of their parent parts, so the lazy read of the read reads their rows.
+            projection_reading_step->shareLazyReadOf(*reading);
         }
     }
 

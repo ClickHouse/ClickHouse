@@ -5,9 +5,14 @@
 #include <Processors/Port.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
+#include <unordered_map>
+
 
 namespace DB
 {
+
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
@@ -34,9 +39,24 @@ struct LazyMaterializingRows : public ILazyMaterializingRows
     using RowsInParts = MapWithMemoryTracking<size_t, PartOffsetInDataPart>;
 
     RowsInParts rows_in_parts;
+
+    /// The parts the rows are read from. A projection part has the index and the starting offset of its parent part, so the
+    /// parts of the parent and of the projections a read was served from share one numbering of the rows.
     RangesInDataParts ranges_in_data_parts;
 
+    /// part_index_in_query -> the snapshot the main read read the projection part with, for each projection part read itself.
+    /// The other parts are read with the snapshot of the lazy read.
+    std::unordered_map<size_t, StorageSnapshotPtr> snapshots_of_projection_parts;
+
+    LazyMaterializingRows() = default;
     explicit LazyMaterializingRows(RangesInDataParts ranges_in_data_parts_);
+
+    /// Adds the parts a read of the main branch reads, when it builds its pipeline: the parts the rows are read from are
+    /// the ones it finally reads, whatever the optimizations after the plan was split did to it, such as serving some of
+    /// its parts from a projection. A projection part is read itself, by its own offsets, unless the read takes the
+    /// offsets of the parent part from it (`_parent_part_offset`): then the whole parent part is. A projection part is read
+    /// with `storage_snapshot`, the snapshot of the main read, which has the metadata of the projection.
+    void addPartsOfMainRead(const RangesInDataParts & parts, bool reads_parent_part_offsets, const StorageSnapshotPtr & storage_snapshot);
 
     void filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes) override;
 };
