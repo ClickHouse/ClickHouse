@@ -124,6 +124,11 @@ public:
 protected:
     void runInteractive();
     void runNonInteractive();
+    /// Called only when both query files and --query are present, after all files succeed.
+    /// Subclasses may prepare state for the command-line queries.
+    virtual void beforeExecutingCommandLineQueries() {}
+    /// Includes (\\i) may load SQL from stdin even when the outer query file is different.
+    bool query_file_reads_stdin = false;
 
     char * argv0 = nullptr;
     String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")

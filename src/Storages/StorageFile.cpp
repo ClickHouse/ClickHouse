@@ -163,6 +163,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
@@ -181,6 +182,28 @@ namespace FailPoints
 }
 
 using String = std::string;
+
+namespace
+{
+/// Restrict special stdin inference bookkeeping to the synthetic local table.
+/// Normal File tables and standalone --query must keep their reader behavior.
+thread_local bool local_file_descriptor_inference = false;
+thread_local bool preserve_inherited_file_descriptor_offset = false;
+}
+
+ScopedLocalFileDescriptorInference::ScopedLocalFileDescriptorInference(bool enabled, bool preserve_inherited_offset)
+    : previous_enabled(local_file_descriptor_inference)
+    , previous_preserve_offset(preserve_inherited_file_descriptor_offset)
+{
+    local_file_descriptor_inference = enabled;
+    preserve_inherited_file_descriptor_offset = enabled && preserve_inherited_offset;
+}
+
+ScopedLocalFileDescriptorInference::~ScopedLocalFileDescriptorInference()
+{
+    local_file_descriptor_inference = previous_enabled;
+    preserve_inherited_file_descriptor_offset = previous_preserve_offset;
+}
 
 namespace
 {
@@ -566,7 +589,8 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     bool use_table_fd,
     int table_fd,
     const struct stat & file_stat,
-    ContextPtr context)
+    ContextPtr context,
+    std::optional<off_t> descriptor_start_offset)
 {
     auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
 
@@ -615,7 +639,14 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, read_buffer_size);
+        {
+            auto reader = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, read_buffer_size);
+            /// A positional reader must use the schema inference boundary, not a
+            /// mutable descriptor offset advanced by an earlier query-file statement.
+            if (descriptor_start_offset)
+                reader->seek(*descriptor_start_offset, SEEK_SET);
+            res = std::move(reader);
+        }
         else
             res = std::make_unique<ReadBufferFromFilePRead>(current_path, read_buffer_size);
 
@@ -703,7 +734,8 @@ void writeQueryConditionCacheEntry(
             table_uuid, cache_file_key, condition_hash, condition, unmatched_ranges, total_row_groups, /*has_final_mark=*/false);
 }
 
-std::unique_ptr<ReadBuffer> wrapReadBufferWithCompression(std::unique_ptr<ReadBuffer> nested_buffer, CompressionMethod method, const ContextPtr & context)
+std::unique_ptr<ReadBuffer>
+wrapReadBufferWithCompression(std::unique_ptr<ReadBuffer> nested_buffer, CompressionMethod method, const ContextPtr & context)
 {
     const auto & file_settings = context->getSettingsRef();
     int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
@@ -716,7 +748,8 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     bool use_table_fd,
     int table_fd,
     const String & compression_method,
-    ContextPtr context)
+    ContextPtr context,
+    std::optional<off_t> descriptor_start_offset = std::nullopt)
 {
     CompressionMethod method = {};
     if (use_table_fd)
@@ -724,7 +757,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     else
         method = chooseCompressionMethod(current_path, compression_method);
 
-    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
+    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context, descriptor_start_offset);
     return wrapReadBufferWithCompression(std::move(nested_buffer), method, context);
 }
 
@@ -746,7 +779,8 @@ void decompressArchiveEntryReadBuffer(
 }
 
 /// Returns the archive reader's own buffer for `read_buf` made by `decompressArchiveEntryReadBuffer`.
-std::unique_ptr<ReadBuffer> takeArchiveEntryReadBuffer(std::unique_ptr<ReadBuffer> read_buf, std::unique_ptr<ReadBuffer> & archive_entry_buf)
+std::unique_ptr<ReadBuffer>
+takeArchiveEntryReadBuffer(std::unique_ptr<ReadBuffer> read_buf, std::unique_ptr<ReadBuffer> & archive_entry_buf)
 {
     if (!archive_entry_buf)
         return read_buf;
@@ -764,7 +798,6 @@ std::string getArchiveEntryCacheKey(const std::string & path, std::optional<size
         return getArchiveEntryKey(path, position);
     return getArchiveEntryKey(fmt::format("{}#compression_method={}", path, toContentEncodingName(method)), position);
 }
-
 }
 
 namespace
@@ -1171,7 +1204,10 @@ namespace
                 auto archive_reader = createArchiveReader(archive);
                 std::unique_ptr<ReadBuffer> read_buf = archive_reader->readFile(archive_info.path_in_archive, false);
                 decompressArchiveEntryReadBuffer(
-                    read_buf, archive_entry_read_buffer, chooseCompressionMethod(archive_info.path_in_archive, compression_method), getContext());
+                    read_buf,
+                    archive_entry_read_buffer,
+                    chooseCompressionMethod(archive_info.path_in_archive, compression_method),
+                    getContext());
                 return read_buf;
             }
 
@@ -1316,6 +1352,18 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
     return res;
 }
 
+void StorageFile::discardInferredFileDescriptorReadBuffer()
+{
+    if (!inferred_fd_reader_is_positional)
+        return;
+
+    /// Query files may rewrite stdin after schema inference. Drop the cached
+    /// positional reader so the first -q query sees the updated bytes too.
+    has_peekable_read_buffer_from_fd = false;
+    peekable_read_buffer_from_fd.reset();
+    read_buffer_from_fd.reset();
+}
+
 std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFromFileDescriptor(std::optional<String> format, const ContextPtr & context)
 {
     /// If we want to read schema from file descriptor we should create
@@ -1326,9 +1374,24 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     /// start reading data from the beginning after reading some data for
     /// schema inference.
     auto file_stat = getFileStat("", true, table_fd, getName());
+    const auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
+    /// Only mixed-mode inferred stdin tables track how their reader was opened.
+    /// When inference temporarily uses pread, save the inherited offset so
+    /// subsequent positional reads start from the same boundary.
+    inferred_fd_reader_is_positional = local_file_descriptor_inference
+        && S_ISREG(file_stat.st_mode)
+        && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap);
+    inferred_fd_reader_uses_mmap = inferred_fd_reader_is_positional && read_method == LocalFSReadMethod::mmap;
+    if (inferred_fd_reader_is_positional && preserve_inherited_file_descriptor_offset)
+    {
+        const off_t offset = ::lseek(table_fd, 0, SEEK_CUR);
+        if (offset < 0)
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot get current position of file descriptor {}", table_fd);
+        inferred_fd_start_offset = offset;
+    }
     /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
     /// where we can store the original read buffer.
-    read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
+    read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context, inferred_fd_start_offset);
     auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
     read_buf->setCheckpoint();
     auto read_buffer_iterator = SingleReadBufferIterator(std::move(read_buf));
@@ -1680,7 +1743,11 @@ StorageFileSource::FilesIterator::FilesIterator(
             VirtualColumnUtils::filterSourcesByIndexes(
                 filter_sources,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
-                    filter_paths, actions, virtual_columns_, hive_columns_, context_,
+                    filter_paths,
+                    actions,
+                    virtual_columns_,
+                    hive_columns_,
+                    context_,
                     /*format_settings=*/std::nullopt,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
         }
@@ -1724,7 +1791,11 @@ String StorageFileSource::FilesIterator::next()
             VirtualColumnUtils::filterSourcesByIndexes(
                 filtered_files,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
-                    filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
+                    filter_paths,
+                    deferred_filter_actions,
+                    virtual_columns,
+                    hive_columns,
+                    getContext(),
                     /*format_settings=*/std::nullopt,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_files.empty())
@@ -1892,7 +1963,7 @@ bool StorageFileSource::canSkipFileByCachedStatistics()
         const auto * bucket = typeid_cast<const ParquetFileBucketInfo *>(split_file->buckets.at(split_file_bucket).get());
         if (!bucket)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "A bucket of the split Parquet file {} is not a Parquet bucket", current_path);
-        ParquetCachedStatisticsFilter::countSkippedFile(bucket->row_group_ids.size(), /*count_file=*/ split_file_bucket == 0);
+        ParquetCachedStatisticsFilter::countSkippedFile(bucket->row_group_ids.size(), /*count_file=*/split_file_bucket == 0);
     }
     else
     {
@@ -2019,7 +2090,10 @@ Chunk StorageFileSource::generate()
                                 progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
 
                             decompressArchiveEntryReadBuffer(
-                                read_buf, archive_entry_read_buf, chooseCompressionMethod(*filename_override, storage->compression_method), getContext());
+                                read_buf,
+                                archive_entry_read_buf,
+                                chooseCompressionMethod(*filename_override, storage->compression_method),
+                                getContext());
                         }
                     }
                     else
@@ -2093,7 +2167,10 @@ Chunk StorageFileSource::generate()
                                 progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
 
                             decompressArchiveEntryReadBuffer(
-                                read_buf, archive_entry_read_buf, chooseCompressionMethod(*filename_override, storage->compression_method), getContext());
+                                read_buf,
+                                archive_entry_read_buf,
+                                chooseCompressionMethod(*filename_override, storage->compression_method),
+                                getContext());
                         }
                     }
                 }
@@ -2109,8 +2186,10 @@ Chunk StorageFileSource::generate()
                         /// The file existed when it was split, and the other buckets may be read already:
                         /// skipping only this one would return a part of the file.
                         if (split_file)
-                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
-                                "File {} was removed while being read. Rerun the query", current_path);
+                            throw Exception(
+                                ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "File {} was removed while being read. Rerun the query",
+                                current_path);
 
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                         {
@@ -2160,8 +2239,8 @@ Chunk StorageFileSource::generate()
 
                 /// The buckets of a split file describe the version of the file that was split.
                 if (split_file && *current_file_cache_version != split_file->file_cache_version)
-                    throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
-                        "File {} was modified while being read. Rerun the query", current_path);
+                    throw Exception(
+                        ErrorCodes::FILE_CHANGED_DURING_READ, "File {} was modified while being read. Rerun the query", current_path);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                 {
@@ -2187,7 +2266,15 @@ Chunk StorageFileSource::generate()
                 }
                 else
                 {
-                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                    /// Later positional reads must start at the same inherited stdin offset as schema inference.
+                    read_buf = createReadBuffer(
+                        current_path,
+                        file_stat,
+                        storage->use_table_fd,
+                        storage->table_fd,
+                        storage->compression_method,
+                        getContext(),
+                        storage->inferred_fd_start_offset);
 
                     /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
                     /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
@@ -2200,8 +2287,10 @@ Chunk StorageFileSource::generate()
                         && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
                     {
                         if (split_file)
-                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
-                                "File {} was modified while being read. Rerun the query", current_path);
+                            throw Exception(
+                                ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "File {} was modified while being read. Rerun the query",
+                                current_path);
                         current_file_version_settled = false;
                     }
                 }
@@ -2540,8 +2629,7 @@ Chunk StorageFileSource::generate()
 
         /// A source reading a bucket of a split file has seen only some of its rows.
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied()
-            && !split_file)
+            && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied() && !split_file)
             addNumRowsToCache(current_archive_entry_cache_key.value_or(current_path), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -2586,7 +2674,8 @@ Chunk StorageFileSource::generate()
                     input_format->cacheFilterColumnStatistics();
             }
         }
-        else if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
+        else if (
+            input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
             && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
             try
@@ -2851,8 +2940,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
     /// Only the Parquet and Vortex readers support both.
-    if (!boost::iequals(storage->format_name, "Parquet")
-        && !boost::iequals(storage->format_name, "Vortex"))
+    if (!boost::iequals(storage->format_name, "Parquet") && !boost::iequals(storage->format_name, "Vortex"))
         return false;
 
     /// A file descriptor (e.g. stdin) is consumed by the main read and cannot be reopened.
@@ -3102,11 +3190,9 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
     /// `parallelize_output_from_storages = 0` asks to read a file by a single stream. A TopN read and
     /// lazy materialization keep per-file state, that would have to be shared between the buckets.
     /// Counting rows and taking min / max from statistics read only the metadata.
-    if (max_num_streams < 2 || need_only_count || format_filter_info->min_max_from_statistics
-        || top_k_filter || lazy_row_index_registry
-        || !context->getSettingsRef()[Setting::parallelize_output_from_storages]
-        || storage->use_table_fd || storage->archive_info || storage->distributed_processing
-        || !FormatFactory::instance().checkIfFormatHasSplitter(storage->format_name)
+    if (max_num_streams < 2 || need_only_count || format_filter_info->min_max_from_statistics || top_k_filter || lazy_row_index_registry
+        || !context->getSettingsRef()[Setting::parallelize_output_from_storages] || storage->use_table_fd || storage->archive_info
+        || storage->distributed_processing || !FormatFactory::instance().checkIfFormatHasSplitter(storage->format_name)
         || !storage->parallelizeOutputAfterReading(context))
         return nullptr;
 
@@ -3133,7 +3219,7 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
     split_file->path = path;
     split_file->file_cache_version = computeFileCacheVersionToken(file_stat);
 
-    auto read_buf = createReadBuffer(path, file_stat, /*use_table_fd=*/ false, /*table_fd=*/ -1, storage->compression_method, context);
+    auto read_buf = createReadBuffer(path, file_stat, /*use_table_fd=*/false, /*table_fd=*/-1, storage->compression_method, context);
     /// The file may have been rewritten between `stat` and opening it, then the version token does not
     /// describe what we read. Every source checks the token again when it opens the file.
     if (!fileCacheVersionTokenStillHolds(path, split_file->file_cache_version))
@@ -3146,18 +3232,21 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
     object_metadata.etag = split_file->file_cache_version;
     std::optional<RelativePathWithMetadata> object_with_metadata(std::in_place, path, std::move(object_metadata));
 
-    split_file->buckets = FormatFactory::instance().getSplitter(storage->format_name)->splitForParallelReading(
-        max_num_streams,
-        *read_buf,
-        storage->format_settings ? *storage->format_settings : getFormatSettings(context),
-        object_with_metadata,
-        context);
+    split_file->buckets = FormatFactory::instance()
+                              .getSplitter(storage->format_name)
+                              ->splitForParallelReading(
+                                  max_num_streams,
+                                  *read_buf,
+                                  storage->format_settings ? *storage->format_settings : getFormatSettings(context),
+                                  object_with_metadata,
+                                  context);
     if (split_file->buckets.size() < 2)
         return nullptr;
 
     /// Consult the query condition cache once for the whole file, rather than in every source, and drop
     /// the row groups it knows to have no matching rows. See the comments in `StorageFileSource::generate`.
-    if (format_filter_info->condition_hash && isFileCacheVersionTokenSettled(file_stat) && query_condition_cache_table_id != UUIDHelpers::Nil)
+    if (format_filter_info->condition_hash && isFileCacheVersionTokenSettled(file_stat)
+        && query_condition_cache_table_id != UUIDHelpers::Nil)
     {
         if (auto query_condition_cache = context->getQueryConditionCache())
         {
@@ -3165,7 +3254,7 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
                 query_condition_cache_table_id,
                 QueryConditionCache::makeFilePartName(path, split_file->file_cache_version),
                 *format_filter_info->condition_hash,
-                /*increment_profile_events=*/ false);
+                /*increment_profile_events=*/false);
 
             RowGroupIndices matching_row_groups;
             VectorWithMemoryTracking<FileBucketInfoPtr> buckets;
@@ -3291,7 +3380,22 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         /// to prevent data race in case of parallel reads.
         std::unique_ptr<ReadBuffer> read_buffer;
         if (storage->has_peekable_read_buffer_from_fd.exchange(false))
-            read_buffer = std::move(storage->peekable_read_buffer_from_fd);
+        {
+            /// A positional inference buffer must not replace a consuming descriptor
+            /// reader (read, io_uring, or pread_threadpool) or a different positional
+            /// read method selected by the query files.
+            const auto read_method = ctx->getSettingsRef()[Setting::storage_file_read_method];
+            const bool consumes_fd = read_method != LocalFSReadMethod::pread && read_method != LocalFSReadMethod::mmap;
+            const bool switched_positional_method =
+                storage->inferred_fd_reader_uses_mmap != (read_method == LocalFSReadMethod::mmap);
+            if (storage->inferred_fd_reader_is_positional && (consumes_fd || switched_positional_method))
+            {
+                storage->peekable_read_buffer_from_fd.reset();
+                storage->read_buffer_from_fd.reset();
+            }
+            else
+                read_buffer = std::move(storage->peekable_read_buffer_from_fd);
+        }
 
         /// Every source reading a bucket of the split file opens the file itself.
         auto source_files_iterator = files_iterator;
@@ -3299,8 +3403,9 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             source_files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
                 Strings{split_file->path},
                 std::nullopt,
-                /*predicate=*/ nullptr,
-                storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+                /*predicate=*/nullptr,
+                storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
+                    .getNamesAndTypesList(),
                 info.hive_partition_columns_to_read_from_file_path,
                 ctx);
 
