@@ -3407,6 +3407,15 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
     transform: translateY(-32px);
+    display: grid !important;
+    grid-template-columns: max-content 14px;
+    column-gap: 6px;
+    align-items: center;
+    justify-self: start;
+    width: fit-content !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) > svg {
+    grid-column: 2;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) {
     align-items: flex-start;
@@ -3455,7 +3464,7 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > svg,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > svg {
     grid-column: 3;
-    grid-row: 2;
+    grid-row: 1;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > img,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > img {
