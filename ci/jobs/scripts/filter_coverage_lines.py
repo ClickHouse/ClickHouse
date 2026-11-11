@@ -8,9 +8,10 @@ executed. `lcov --filter brace` is not used for that reason: it keeps or drops
 a brace depending on the hit counts, and newly_covered_lines.py compares the
 line sets of a baseline and the current run exactly.
 
-1. Closing-brace lines: a line holding only `}` (with `;`, `,`, `)` or a
-   comment). `llvm-cov export` reports a line for every closing brace, and a
-   brace after a `return` or `throw` is never executed.
+1. Brace-only lines: a line holding only `{`, or only `}` (with `;`, `,`, `)`).
+   ClickHouse puts every brace on its own line. A closing brace after a
+   `return` or `throw` is never executed, and an opening brace only repeats
+   the count of the line that opens its block.
 
 2. Throwing statements: `throw Exception`, `throw ErrnoException`,
    `throwFromErrno`, `throw std::`, `UNREACHABLE`, `std::terminate`, up to the
@@ -48,9 +49,7 @@ THROW_START = re.compile(
     r"|\bUNREACHABLE\s*\("
     r"|\bstd::terminate\s*\("
 )
-STRING_LITERAL = re.compile(r'"(\\.|[^"\\])*"' + r"|'(\\.|[^'\\])*'")
-LINE_COMMENT = re.compile(r"//.*$")
-CLOSING_BRACE_LINE = re.compile(r"^\s*\}[\s;,)]*$")
+BRACE_ONLY_LINE = re.compile(r"^\s*(\{|\}[\s;,)]*)\s*$")
 # What may precede a throw on its first line for the line to be removed: block
 # punctuation, `else`, and `case`/`default` labels. Anything else is a check.
 NO_CODE_BEFORE_THROW = re.compile(r"^[\s{}]*(else\b[\s{]*)?((case\b[^:]*|default)\s*:[\s{]*)?$")
@@ -60,17 +59,63 @@ NO_CODE_BEFORE_THROW = re.compile(r"^[\s{}]*(else\b[\s{]*)?((case\b[^:]*|default
 MAX_STATEMENT_LINES = 40
 
 
-def closing_brace_lines(source: list[str]) -> set[int]:
-    """1-based numbers of the lines that hold only a closing brace."""
-    return {
-        i + 1
-        for i, line in enumerate(source)
-        if CLOSING_BRACE_LINE.match(LINE_COMMENT.sub("", line))
-    }
+def mask_comments_and_strings(source: list[str]) -> list[str]:
+    """The source with comments and the contents of string and character
+    literals replaced by spaces, line by line, so line numbers and columns are
+    kept. A comment or a message that mentions `throw Exception` or holds a
+    brace must not be taken for code. `/* */` comments may span lines."""
+    masked: list[str] = []
+    in_block_comment = False
+    for line in source:
+        out = []
+        i = 0
+        quote = None
+        while i < len(line):
+            ch = line[i]
+            nxt = line[i + 1] if i + 1 < len(line) else ""
+            if in_block_comment:
+                if ch == "*" and nxt == "/":
+                    in_block_comment = False
+                    out.append("  ")
+                    i += 2
+                    continue
+                out.append(" ")
+            elif quote:
+                if ch == "\\":
+                    out.append("  ")
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = None
+                    out.append(ch)
+                else:
+                    out.append(" ")
+            elif ch == "/" and nxt == "/":
+                break
+            elif ch == "/" and nxt == "*":
+                in_block_comment = True
+                out.append("  ")
+                i += 2
+                continue
+            elif ch in "\"'":
+                quote = ch
+                out.append(ch)
+            else:
+                out.append(ch)
+            i += 1
+        masked.append("".join(out))
+    return masked
 
 
-def throw_lines(source: list[str]) -> set[int]:
+def brace_lines(code: list[str]) -> set[int]:
+    """1-based numbers of the lines that hold only an opening or a closing
+    brace. `code` is the output of `mask_comments_and_strings`."""
+    return {i + 1 for i, line in enumerate(code) if BRACE_ONLY_LINE.match(line)}
+
+
+def throw_lines(code: list[str]) -> set[int]:
     """1-based numbers of the lines that belong to a throwing statement.
+    `code` is the output of `mask_comments_and_strings`.
 
     A statement runs from the match to the first `;` outside parentheses, so
     `{ throw Exception(...); }` on one line and a throw inside a macro body end
@@ -78,11 +123,8 @@ def throw_lines(source: list[str]) -> set[int]:
     """
     result: set[int] = set()
     i = 0
-    while i < len(source):
-        # Match code only: a comment or a string that mentions `throw Exception`
-        # must not start a statement and swallow the code that follows it.
-        code = LINE_COMMENT.sub("", STRING_LITERAL.sub('""', source[i]))
-        match = THROW_START.search(code)
+    while i < len(code):
+        match = THROW_START.search(code[i])
         if not match:
             i += 1
             continue
@@ -90,10 +132,10 @@ def throw_lines(source: list[str]) -> set[int]:
         j = i
         pos = match.start()
         ended = False
-        while j < len(source) and j - i < MAX_STATEMENT_LINES:
-            if j > i or NO_CODE_BEFORE_THROW.match(code[:pos]):
+        while j < len(code) and j - i < MAX_STATEMENT_LINES:
+            if j > i or NO_CODE_BEFORE_THROW.match(code[i][:pos]):
                 result.add(j + 1)
-            for ch in code[pos:]:
+            for ch in code[j][pos:]:
                 if ch == "(":
                     depth += 1
                 elif ch == ")":
@@ -104,9 +146,7 @@ def throw_lines(source: list[str]) -> set[int]:
             if ended:
                 break
             j += 1
-            if j < len(source):
-                code = LINE_COMMENT.sub("", STRING_LITERAL.sub('""', source[j]))
-                pos = 0
+            pos = 0
         i = j + 1
     return result
 
@@ -120,8 +160,8 @@ def process_section(lines: list[str], missing_sources: list[str]) -> list[str]:
         return lines
 
     with open(source_path, encoding="utf-8", errors="replace") as f:
-        source = f.read().split("\n")
-    excluded = closing_brace_lines(source) | throw_lines(source)
+        code = mask_comments_and_strings(f.read().split("\n"))
+    excluded = brace_lines(code) | throw_lines(code)
     if not excluded:
         return lines
 
@@ -133,13 +173,14 @@ def process_section(lines: list[str], missing_sources: list[str]) -> list[str]:
             if int(line_no) in excluded:
                 continue
             lf += 1
-            lh += int(count) > 0
+            # lcov may write a large summed count in scientific notation.
+            lh += float(count) > 0
         elif line.startswith("BRDA:"):
             fields = line[5:].split(",")
             if int(fields[0]) in excluded:
                 continue
             brf += 1
-            brh += fields[3] not in ("-", "0")
+            brh += fields[3] != "-" and float(fields[3]) > 0
         elif line.startswith(("LF:", "LH:", "BRF:", "BRH:")):
             continue
         elif line == "end_of_record":
@@ -182,7 +223,7 @@ def main() -> None:
     if in_place:
         os.replace(out_path, in_path)
 
-    print(f"Excluded {lines_before - lines_after} of {lines_before} lines: closing braces and throwing statements")
+    print(f"Excluded {lines_before - lines_after} of {lines_before} lines: brace-only lines and throwing statements")
     if missing_sources:
         # Such a file keeps its throw lines, so its coverage can only be understated.
         print(f"Source not found for {len(missing_sources)} file(s), left unfiltered:")
