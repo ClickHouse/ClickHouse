@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 SETTINGS="
-    enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3,
+    enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
     automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_remember_boundary = 1,

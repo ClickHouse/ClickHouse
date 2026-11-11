@@ -31,8 +31,6 @@ INSERT INTO shard_1.t_04489 (dt, x) SELECT '2024-01-01 00:00:00', number FROM nu
 CREATE TABLE dist_04489 (dt DateTime, x UInt64, a1 String ALIAS toString(x), a2 String ALIAS toString(x))
 ENGINE = Distributed('test_cluster_two_shards_different_databases', '', 't_04489');
 
-SET enable_analyzer = 1;
-
 -- Order-independent summary: 1000 distinct groups total, the 10 overlapping ones (0..9) merged to count 2, the rest
 -- count 1, so sum(count()) = 1010. Pre-fix this was 1010 rows / 0 merged / 1010 total (every group split per shard).
 SELECT count() AS groups, countIf(c = 2) AS merged_groups, sum(c) AS total_rows

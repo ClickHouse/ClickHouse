@@ -1,7 +1,6 @@
 -- Tags: no-old-analyzer
--- no-old-analyzer: `WITH RECURSIVE` needs the analyzer, and a background mutation selects its
--- analyzer from the background context, so a session `enable_analyzer` cannot reach the
--- `ALTER ... UPDATE` arms.
+-- no-old-analyzer: `WITH RECURSIVE` needs the analyzer, including in the background mutations of
+-- the `ALTER ... UPDATE` arms.
 
 -- `RECURSIVE` is a property of the whole `WITH` list, but only the elements whose body is a
 -- `UNION` are recursive; a single-`SELECT` element of a `WITH RECURSIVE` list is an ordinary CTE,
