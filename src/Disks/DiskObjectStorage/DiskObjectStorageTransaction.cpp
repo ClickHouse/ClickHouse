@@ -24,6 +24,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStatus.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <base/defines.h>
 
@@ -750,6 +751,9 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo() noexcept
 {
+    /// Keep the retries of this cleanup when the query or merge is cancelled: nothing removes orphaned blobs later.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     for (const auto & [location, blobs] : written_blobs)
     {
         try
