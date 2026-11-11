@@ -1,6 +1,7 @@
-#include <Common/ListWithMemoryTracking.h>
+#include <numeric>
 #include <optional>
 #include <unordered_map>
+#include <Common/ListWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>
@@ -921,6 +922,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
     cache_settings.simple_count = is_simple_count;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
+
+    if (params.enable_adaptive_aggregator)
+        adaptive_packed_key_bytes = std::accumulate(key_sizes.begin(), key_sizes.end(), size_t{0});
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
