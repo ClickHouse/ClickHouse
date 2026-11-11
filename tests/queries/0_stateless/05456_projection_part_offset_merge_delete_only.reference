@@ -22,3 +22,7 @@ OPTIMIZE DEDUPLICATE BY columns not covered by the projection
 3000
 3000
 1	0
+projection WHERE on _part_offset
+[1,3,5]
+[1,3,5]
+0	1

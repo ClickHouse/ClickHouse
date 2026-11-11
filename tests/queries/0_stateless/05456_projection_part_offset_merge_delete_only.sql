@@ -139,3 +139,33 @@ WHERE database = currentDatabase() AND table = 't_proj_dedup' AND event_type = '
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE t_proj_dedup;
+
+SELECT 'projection WHERE on _part_offset';
+
+DROP TABLE IF EXISTS t_proj_where;
+
+CREATE TABLE t_proj_where
+(
+    id UInt64,
+    v UInt64,
+    PROJECTION p (SELECT id, v, _part_offset WHERE _part_offset % 2 = 0 ORDER BY v)
+)
+ENGINE = ReplacingMergeTree ORDER BY id
+SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1, merge_text_indexes_and_projections_on_delete_only_merges = 1, deduplicate_merge_projection_mode = 'rebuild';
+
+INSERT INTO t_proj_where VALUES (1, 10), (3, 30), (5, 50);
+INSERT INTO t_proj_where VALUES (2, 20), (3, 31), (4, 40);
+
+OPTIMIZE TABLE t_proj_where FINAL;
+
+-- The merge changes `_part_offset`, so the projection must hold the rows selected by the new offsets.
+SELECT groupArray(id) FROM (SELECT id FROM t_proj_where WHERE _part_offset % 2 = 0 ORDER BY id SETTINGS optimize_use_projections = 0);
+SELECT groupArray(id) FROM (SELECT id FROM mergeTreeProjection(currentDatabase(), t_proj_where, p) ORDER BY id);
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT ProfileEvents['MergedProjections'], ProfileEvents['RebuiltProjections'] FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_where' AND event_type = 'MergeParts' AND error = 0 AND part_name NOT LIKE '%.proj'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+DROP TABLE t_proj_where;

@@ -1722,6 +1722,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             && projection.with_parent_part_offset
             && !projection.with_block_number
             && !projection.with_block_offset
+            /// A projection `WHERE` may depend on `_part_offset`, which the merge changes.
+            && !projection.where_clause_ast
             && !some_source_column_expired
             && global_ctx->metadata_snapshot->hasSortingKey();
 
