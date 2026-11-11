@@ -21,8 +21,7 @@ public:
         ContextPtr context,
         const String & format,
         const String & compression_method,
-        FormatFilterInfoPtr format_filter_info = nullptr,
-        bool fail_if_exists = false);
+        FormatFilterInfoPtr format_filter_info = nullptr);
 
     ~StorageObjectStorageSink() override;
 

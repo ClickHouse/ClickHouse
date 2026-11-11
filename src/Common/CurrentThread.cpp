@@ -98,24 +98,6 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
     current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
 }
 
-CurrentThread::HideLogsFromClientScope::HideLogsFromClientScope()
-{
-    if (unlikely(!current_thread))
-        return;
-    logs_queue_to_restore = current_thread->getInternalTextLogsQueue();
-    if (!logs_queue_to_restore)
-        return;
-    client_logs_level_to_restore = current_thread->getClientLogsLevel();
-    current_thread->attachInternalTextLogsQueue(nullptr, LogsLevel::none);
-    restore = true;
-}
-
-CurrentThread::HideLogsFromClientScope::~HideLogsFromClientScope()
-{
-    if (restore)
-        CurrentThread::attachInternalTextLogsQueue(logs_queue_to_restore, client_logs_level_to_restore);
-}
-
 
 ThreadGroupPtr CurrentThread::getGroup()
 {
@@ -123,14 +105,6 @@ ThreadGroupPtr CurrentThread::getGroup()
         return nullptr;
 
     return current_thread->getThreadGroup();
-}
-
-bool CurrentThread::hasGroup()
-{
-    if (unlikely(!current_thread))
-        return false;
-
-    return current_thread->hasThreadGroup();
 }
 
 ContextPtr CurrentThread::tryGetQueryContext()

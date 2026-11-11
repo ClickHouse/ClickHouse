@@ -10,7 +10,6 @@ SELECT number, multiIf(number = 0, '{"a" : 42}', number = 1, '{"b" : 42}', numbe
 FROM numbers(4)
 SETTINGS max_block_size = 1, max_dynamic_subcolumns_in_json_type_parsing = 2;
 
--- The paths show the storage layout, which can change when the rows are sent from other replicas.
-SELECT json, JSONDynamicPaths(json), JSONSharedDataPaths(json) FROM t_json_parsing_cap_squashing ORDER BY id SETTINGS enable_parallel_replicas = 0;
+SELECT json, JSONDynamicPaths(json), JSONSharedDataPaths(json) FROM t_json_parsing_cap_squashing ORDER BY id;
 
 DROP TABLE t_json_parsing_cap_squashing;

@@ -33,11 +33,6 @@ using PairedLeafCallback = std::function<DataTypePtr(const DataTypePtr & left, c
 /// so such a level resolves to `right` when the pair is `equals`-equal and every child cleared, and is
 /// refused otherwise. A `Nullable` or `LowCardinality` present on `right` alone is stepped over, since
 /// neither wrapper hides a leaf.
-/// With left_is_common_type, `left` is a common type of `right` and other types, so the walk pairs them the way
-/// the common type was built: a named and an unnamed Tuple by position, through a custom name on `right` alone
-/// (`Nested`), and the typed paths of two JSON types by path. A `Nothing` on `right` (the element of an empty
-/// array) contributes nothing to the common type, so that part of `left` is kept as is.
-DataTypePtr replaceNestedTypesInPair(
-    const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf, bool left_is_common_type = false);
+DataTypePtr replaceNestedTypesInPair(const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf);
 
 }

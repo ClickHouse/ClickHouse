@@ -83,10 +83,8 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
             std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeString>())), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
-        /// The kernel JSON-encodes this struct into `add.stats`, so its field names are the
-        /// committed JSON keys and must be the protocol's own.
         {std::make_shared<DB::DataTypeTuple>(
-                DB::DataTypes{std::make_shared<DB::DataTypeInt64>()}, DB::Names{"numRecords"}), "stats"}
+                DB::DataTypes{std::make_shared<DB::DataTypeString>()}, DB::Names{"stats_json"}), "stats"}
     };
 
     DB::MutableColumns columns;
@@ -107,7 +105,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         columns[1]->insert(partition_values);
         columns[2]->insert(size_bytes);
         columns[3]->insert(getCurrentTimeMs());
-        columns[4]->insert(DB::Tuple{DB::Field(static_cast<Int64>(size_rows))});
+        std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
+        DB::Tuple stats{stats_json};
+        columns[4]->insert(stats);
     }
 
     DB::FormatSettings format_settings;
@@ -123,7 +123,7 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
             format_settings.arrow.use_64_bit_indexes_for_dictionary
         });
 
-    DB::Chunks meta_chunks;
+    std::vector<DB::Chunk> meta_chunks;
     meta_chunks.emplace_back(std::move(columns), files.size());
 
     std::shared_ptr<arrow::Table> arrow_table;

@@ -1,6 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -13,18 +12,11 @@ namespace DB
 bool isTopNSort(const IQueryPlanStep & step)
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(&step);
-    /// A partitioned bounded sort keeps one stream per hash partition instead of merging to
-    /// a global top-N, so the top-N rules (which promise one sorted stream) must not take it.
-    return sorting_step != nullptr && sorting_step->getType() == SortingStep::Type::Full
-        && sorting_step->getLimit() > 0 && !sorting_step->hasPartitions();
+    return sorting_step != nullptr && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() > 0;
 }
 
 bool isDistributionPassthroughStep(const IQueryPlanStep & step)
 {
-    /// A preliminary `DISTINCT` deduplicates each stream on its own, so it is correct on any split of its
-    /// input and keeps the order within a stream.
-    if (const auto * distinct = typeid_cast<const DistinctStep *>(&step))
-        return distinct->isPreliminary();
     return typeid_cast<const ExpressionStep *>(&step) != nullptr
         || typeid_cast<const FilterStep *>(&step) != nullptr
         || typeid_cast<const BuildRuntimeFilterStep *>(&step) != nullptr;

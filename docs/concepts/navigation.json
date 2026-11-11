@@ -1,4 +1,5 @@
 {
+  "icon": "/images/icons/icon-concepts.svg",
   "item": "Concepts",
   "pages": [
     "concepts/index",
@@ -98,16 +99,7 @@
             {
               "group": "Select",
               "pages": [
-                {
-                  "group": "JOINs",
-                  "pages": [
-                    "concepts/features/operations/select/joining-tables",
-                    "concepts/features/operations/select/join-execution",
-                    "concepts/features/operations/select/join-algorithms",
-                    "concepts/features/operations/select/join-memory-management",
-                    "concepts/features/operations/select/join-settings"
-                  ]
-                }
+                "concepts/features/operations/select/joining-tables"
               ]
             },
             {
@@ -209,7 +201,6 @@
           "pages": [
             "concepts/features/backup-restore/overview",
             "concepts/features/backup-restore/restore-settings",
-            "concepts/features/backup-restore/named-collections",
             "concepts/features/backup-restore/local-disk",
             "concepts/features/backup-restore/s3-endpoint",
             "concepts/features/backup-restore/azure-blob-storage",

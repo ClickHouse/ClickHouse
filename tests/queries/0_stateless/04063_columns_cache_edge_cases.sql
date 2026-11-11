@@ -5,7 +5,6 @@ SET max_threads = 1; -- Ensure deterministic read order for cache testing
 SET use_columns_cache = 1;
 SET enable_reads_from_columns_cache = 1;
 SET enable_writes_to_columns_cache = 1;
-SET use_statistics_for_sum_avg_aggregation = 0;
 SYSTEM DROP COLUMNS CACHE;
 
 -- ============================================================================
@@ -493,14 +492,14 @@ SELECT sum(id), count() FROM t_cache_mixed_parts SETTINGS use_columns_cache = 1;
 -- Repeat
 SELECT sum(id), count() FROM t_cache_mixed_parts SETTINGS use_columns_cache = 1;
 
--- Both parts participate in the columns cache.
+-- Only the wide part participates in the columns cache.
 SELECT
     countIf(part IN
     (
         SELECT name
         FROM system.parts
         WHERE database = currentDatabase() AND table = 't_cache_mixed_parts' AND active AND part_type = 'Compact'
-    )) > 0,
+    )) = 0,
     countIf(part IN
     (
         SELECT name

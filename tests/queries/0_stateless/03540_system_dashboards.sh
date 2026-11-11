@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-flaky-check, no-msan
+# Tags: no-parallel, no-flaky-check
 # - no-parallel - can be quite intense
 # - no-flaky-check - too slow under ASan
 # Random settings limits: max_bytes_before_external_group_by=(0, 0)
@@ -14,9 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # - replace default with test_shard_localhost (CI does not have default cluster)
 # - replace log_ with log$ to avoid reading all tables matching $log_ pattern, since this also includes distributed tables from ci-logs
-# - the filesystem cache dashboards are covered by 05617_filesystem_cache_system_dashboards and the distributed cache ones
-#   by their own test in builds that have them: together with them this test does not fit the timeout under TSan
-mapfile queries <<<"$($CLICKHOUSE_CURL -sSk "${CLICKHOUSE_URL}&default_format=LineAsString" -d "SELECT encodeURLComponent(formatQuerySingleLine(replace(replace(query, '(default', '(test_shard_localhost'), '_log', '_log$'))) FROM system.dashboards WHERE dashboard NOT LIKE 'Filesystem cache%' AND dashboard NOT LIKE 'Distributed cache%'")"
+mapfile queries <<<"$($CLICKHOUSE_CURL -sSk "${CLICKHOUSE_URL}&default_format=LineAsString" -d "SELECT encodeURLComponent(formatQuerySingleLine(replace(replace(query, '(default', '(test_shard_localhost'), '_log', '_log$'))) FROM system.dashboards")"
 $CLICKHOUSE_CURL -sSk "${CLICKHOUSE_URL}" -d "SYSTEM FLUSH LOGS /* all tables */"
 for q in "${queries[@]}"; do
   # Test each query with seconds

@@ -1,7 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 
 #include <Common/Exception.h>
-#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 
 #include <exception>
@@ -22,8 +21,6 @@ extern const int FS_METADATA_ERROR;
 
 std::optional<String> MetadataOperationsHolder::rollback(size_t until_pos) noexcept
 {
-    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
-
     ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacks);
 
     for (int64_t i = until_pos; i >= 0; --i)

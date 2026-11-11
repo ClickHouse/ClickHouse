@@ -18,7 +18,6 @@
 #define JSON_Array_INCLUDED
 
 
-#include <atomic>
 #include <sstream>
 #include <vector>
 #include "Poco/Dynamic/Var.h"

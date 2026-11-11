@@ -18,7 +18,6 @@
 #include <Interpreters/Context.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 
 #include <fmt/ranges.h>
 #include <filesystem>

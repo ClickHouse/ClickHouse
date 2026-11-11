@@ -1,4 +1,5 @@
 {
+  "icon": "/images/icons/icon-concepts.svg",
   "item": "Conceptos",
   "pages": [
     "es/concepts/index",

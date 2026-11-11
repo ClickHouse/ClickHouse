@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Formats/FormatSettings.h>
 
 #include <Columns/IColumn.h>
 #include <Columns/getLeastSuperColumn.h>

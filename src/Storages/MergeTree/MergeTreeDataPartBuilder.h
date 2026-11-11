@@ -63,13 +63,6 @@ public:
         const String & part_dir_,
         const ReadSettings & read_settings);
 
-    /// The storage of an existing part directory for its removal. Loads only the manifests of a blob-list part and its projections.
-    static MutableDataPartStoragePtr getPartStorageForRemoval(
-        const VolumePtr & volume_,
-        const String & root_path_,
-        const String & part_dir_,
-        const ReadSettings & read_settings);
-
 private:
     Self & withPartFormatFromVolume();
     Self & withPartFormatFromStorage();
