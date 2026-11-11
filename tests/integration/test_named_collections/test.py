@@ -10,6 +10,7 @@ import uuid
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NAMED_COLLECTIONS_CONFIG = os.path.join(
@@ -1185,3 +1186,46 @@ def test_concurrent_create_drop_race_condition(cluster):
                         node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
             except Exception:
                 pass
+
+
+def test_keeper_storage_lagging_replica(cluster):
+    # A replica loads the collections written through another replica when its Keeper watch is
+    # processed; until then they are in the shared storage but not in its memory.
+    node1 = cluster.instances["node_with_keeper"]
+    node2 = cluster.instances["node_with_keeper_2"]
+
+    node2.query("SYSTEM ENABLE FAILPOINT named_collections_replicated_update_pause")
+    try:
+        node1.query("CREATE NAMED COLLECTION lagging AS key1=1")
+        node1.query("CREATE NAMED COLLECTION lagging_dropped AS key1=1")
+        assert (
+            node2.query(
+                "SELECT count() FROM system.named_collections WHERE name LIKE 'lagging%'"
+            )
+            == "0\n"
+        )
+
+        # The queries of the lagging replica see the stored collections all the same.
+        assert "already exists" in node2.query_and_get_error(
+            "CREATE NAMED COLLECTION lagging AS key1=2"
+        )
+        node2.query("CREATE NAMED COLLECTION IF NOT EXISTS lagging AS key1=2")
+        node2.query("CREATE OR REPLACE NAMED COLLECTION lagging AS key1=3")
+        node2.query("DROP NAMED COLLECTION lagging_dropped")
+        assert (
+            node2.query(
+                "SELECT name, collection['key1'] FROM system.named_collections "
+                "WHERE name LIKE 'lagging%' ORDER BY name"
+            )
+            == "lagging\t3\n"
+        )
+    finally:
+        node2.query("SYSTEM DISABLE FAILPOINT named_collections_replicated_update_pause")
+
+    assert_eq_with_retry(
+        node1,
+        "SELECT name, collection['key1'] FROM system.named_collections "
+        "WHERE name LIKE 'lagging%' ORDER BY name",
+        "lagging\t3",
+    )
+    node1.query("DROP NAMED COLLECTION lagging")

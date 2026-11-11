@@ -283,6 +283,7 @@ def test_local_storage_missing_key(cluster):
     set_local_storage_keys(node, f"<key_hex>{KEY_A}</key_hex>")
     node.restart_clickhouse()
     node.query("CREATE NAMED COLLECTION locked AS key1=1")
+    node.query("CREATE NAMED COLLECTION locked2 AS key1=1")
 
     # Key A is removed from the configuration before `locked` is rewritten with another key. The
     # server still starts, and the collections it can decrypt are available; `locked` is skipped
@@ -291,11 +292,12 @@ def test_local_storage_missing_key(cluster):
     node.restart_clickhouse()
     assert (
         node.query(
-            "SELECT name FROM system.named_collections WHERE name IN ('collection1', 'locked') ORDER BY name"
+            "SELECT name FROM system.named_collections WHERE name IN ('collection1', 'locked', 'locked2') ORDER BY name"
         )
         == "collection1\n"
     )
     assert node.contains_in_log("Cannot read named collection 'locked', skipping it")
+    assert node.contains_in_log("Cannot read named collection 'locked2', skipping it")
     node.query("CREATE NAMED COLLECTION fresh AS key1=3")
 
     # The retained entry is still a named collection: it is not created again, not replaced, and
@@ -315,6 +317,10 @@ def test_local_storage_missing_key(cluster):
         == "0\n"
     )
 
+    # Dropping a retained entry is the way to get rid of it: the name is free again.
+    node.query("DROP NAMED COLLECTION locked2")
+    node.query("CREATE NAMED COLLECTION locked2 AS key1=5")
+
     # Once key A is configured again, `locked` is back with its original value.
     set_local_storage_keys(
         node,
@@ -325,13 +331,14 @@ def test_local_storage_missing_key(cluster):
     assert (
         node.query(
             "SELECT name, collection['key1'] FROM system.named_collections "
-            "WHERE name IN ('locked', 'fresh') ORDER BY name"
+            "WHERE name IN ('locked', 'locked2', 'fresh') ORDER BY name"
         )
-        == "fresh\t3\nlocked\t1\n"
+        == "fresh\t3\nlocked\t1\nlocked2\t5\n"
     )
 
     # Back to the module's configuration for the other tests.
     node.query("DROP NAMED COLLECTION locked")
+    node.query("DROP NAMED COLLECTION locked2")
     node.query("DROP NAMED COLLECTION fresh")
     set_local_storage_keys(node, f"<key_hex>{KEY_A}</key_hex>")
     node.restart_clickhouse()
