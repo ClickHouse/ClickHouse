@@ -11,4 +11,8 @@
     <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10 SETTINGS max_threads = 4</query>
     <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10 SETTINGS max_threads = 4</query>
     <query>SELECT * FROM hits_100m_single WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 SETTINGS max_threads = 4</query>
+    <!-- Granules read before the threshold tightened are recorded against the final threshold (ClickBench Q17 shape). -->
+    <query>SELECT UserID, SearchPhrase, count() FROM hits_100m_single GROUP BY UserID, SearchPhrase LIMIT 10 SETTINGS use_query_condition_cache = 1</query>
+    <query>SELECT ClientIP, count() FROM hits_100m_single GROUP BY ClientIP LIMIT 10 SETTINGS use_query_condition_cache = 1</query>
+    <query>SELECT WatchID, EventTime, URL FROM hits_100m_single ORDER BY EventTime DESC LIMIT 10 SETTINGS use_query_condition_cache = 1</query>
 </test>

@@ -573,13 +573,23 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         block = sample_block.cloneWithColumns(read_result.columns);
     }
 
+    const auto & reader_settings = readers.main->getMergeTreeReaderSettings();
+    const auto & top_k_final_threshold = reader_settings.query_condition_cache_top_k_final_threshold;
+    const auto & rows_equal_to_threshold_dropped = reader_settings.top_k_filter_rows_equal_to_threshold_dropped;
+    const bool record_top_k_best_values = reader_settings.use_query_condition_cache && top_k_final_threshold
+        && !top_k_final_threshold->stopped.load(std::memory_order_relaxed)
+        && (!rows_equal_to_threshold_dropped || !rows_equal_to_threshold_dropped->load(std::memory_order_relaxed));
+
     BlockAndProgress res = {
         .block = std::move(block),
         .read_mark_ranges = read_result.read_mark_ranges,
-        .unmatched_mark_ranges = readers.main->getMergeTreeReaderSettings().use_query_condition_cache
+        .unmatched_mark_ranges = reader_settings.use_query_condition_cache
             ? read_result.computeUnmatchedMarkRanges()
             : MarkRanges{},
         .query_condition_cache_attributable_marks = std::move(read_result.query_condition_cache_attributable_marks),
+        .result_rows_per_mark = record_top_k_best_values
+            ? read_result.computeResultRowsPerMark()
+            : std::vector<std::pair<size_t, size_t>>{},
         .row_count = read_result.num_rows,
         .num_read_rows = num_read_rows,
         .num_read_bytes = num_read_bytes };

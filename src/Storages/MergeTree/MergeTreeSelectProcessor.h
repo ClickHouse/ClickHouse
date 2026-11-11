@@ -29,6 +29,8 @@ struct ChunkAndProgress
     bool is_finished = false;
     /// Mark ranges that were read in this call (used for per-block virtual row generation).
     MarkRanges read_mark_ranges;
+    /// See `MergeTreeReadTask::BlockAndProgress::result_rows_per_mark`.
+    std::vector<std::pair<size_t, size_t>> result_rows_per_mark;
 };
 
 class ParallelReadingExtension
@@ -146,6 +148,8 @@ public:
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
         LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
 
+    ~MergeTreeSelectProcessor();
+
     String getName() const;
     std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
 
@@ -243,6 +247,30 @@ private:
     std::optional<ChunkAndProgress> pending_virtual_row;
 
     ChunkAndProgress buildVirtualRowFromIndex(const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const;
+
+    /// For a TopK read, the best value of the sort column (the one that sorts first) among the rows of each granule
+    /// read, checked against the final threshold when the processor is destroyed, see `TopKFinalThresholdWrites`.
+    struct PendingTopKGranules
+    {
+        UUID table_uuid;
+        String part_name;
+        size_t marks_count = 0;
+        bool has_final_mark = false;
+        /// Non-decreasing: reading a part out of mark order starts a new entry.
+        std::vector<size_t> marks;
+        MutableColumnPtr best_values;
+    };
+    std::vector<PendingTopKGranules> pending_top_k_granules;
+    /// Position of the sort column in `result_header`.
+    std::optional<size_t> top_k_column_position;
+    size_t reserved_top_k_bytes = 0;
+    bool top_k_gave_up = false;
+    /// Set once `read` found no more tasks, unlike a cancelled or failed read.
+    bool all_tasks_read = false;
+
+    void recordTopKBestValues(const MergeTreeReadTask & current_task, const ChunkAndProgress & result);
+    void giveUpTopKBestValues();
+    void writeTopKQueryConditionCacheEntries() noexcept;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};
