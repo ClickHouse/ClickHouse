@@ -5213,7 +5213,6 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
     lazy_read_rows = std::make_shared<LazyMaterializingRows>();
     new_reading->setLazyMaterializingRows(lazy_read_rows);
     columns_read_lazily = columns_to_remove;
-    lazy_read_by_parent_part_offsets = false;
 
     return new_reading;
 }
@@ -5520,7 +5519,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     /// The parts this read finally reads are the ones the lazy read of the columns it leaves out reads its rows from.
     if (lazy_read_rows)
-        lazy_read_rows->addPartsOfMainRead(result.parts_with_ranges, lazy_read_by_parent_part_offsets, storage_snapshot);
+        lazy_read_rows->addPartsOfMainRead(result.parts_with_ranges, storage_snapshot);
 
     /// Before any pool or processor copies the settings: both build the PREWHERE steps and must agree on them.
     reader_settings.read_ahead_prewhere_columns = canReadPrewhereColumnsAhead(result.parts_with_ranges);
@@ -7447,17 +7446,14 @@ ReadFromMergeTree::removeUnusedColumnsAndCreateLazyReadStep(
     lazy_read_rows = std::make_shared<LazyMaterializingRows>();
     lazy_reading->setLazyMaterializingRows(lazy_read_rows);
     columns_read_lazily = std::move(columns_to_read_lazily);
-    lazy_read_by_parent_part_offsets = false;
 
     return {std::move(result), std::move(lazy_reading)};
 }
 
-void ReadFromMergeTree::shareLazyReadOf(const ReadFromMergeTree & other, bool by_parent_part_offsets)
+void ReadFromMergeTree::shareLazyReadOf(const ReadFromMergeTree & other)
 {
     lazy_read_rows = other.lazy_read_rows;
     columns_read_lazily = other.columns_read_lazily;
-    /// Without a lazy read of `other` there is no row index yet: a lazy read this read makes later takes it from its own parts.
-    lazy_read_by_parent_part_offsets = other.lazy_read_rows && (other.lazy_read_by_parent_part_offsets || by_parent_part_offsets);
 }
 
 void ReadFromMergeTree::setDistributedRead(size_t bucket_count)

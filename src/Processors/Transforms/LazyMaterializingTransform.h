@@ -43,6 +43,11 @@ struct LazyMaterializingRows : public ILazyMaterializingRows
     /// parts of the parent and of the projections a read was served from share one numbering of the rows.
     RangesInDataParts ranges_in_data_parts;
 
+    /// Whether the row index has the offsets of the parent parts for the rows of a projection part: a projection that stores
+    /// them, `_parent_part_offset`, gives them under the name `_part_offset` when it replaces a read with this lazy read.
+    /// Otherwise a projection part is read by its own offsets.
+    bool projection_parts_by_parent_part_offsets = false;
+
     /// part_index_in_query -> the snapshot the main read read the projection part with, for each projection part read itself.
     /// The other parts are read with the snapshot of the lazy read.
     UnorderedMapWithMemoryTracking<size_t, StorageSnapshotPtr> snapshots_of_projection_parts;
@@ -52,10 +57,10 @@ struct LazyMaterializingRows : public ILazyMaterializingRows
 
     /// Adds the parts a read of the main branch reads, when it builds its pipeline: the parts the rows are read from are
     /// the ones it finally reads, whatever the optimizations after the plan was split did to it, such as serving some of
-    /// its parts from a projection. A projection part is read itself, by its own offsets, unless the read takes the
-    /// offsets of the parent part from it for the row index (`_parent_part_offset`): then the whole parent part is. A projection part is read
-    /// with `storage_snapshot`, the snapshot of the main read, which has the metadata of the projection.
-    void addPartsOfMainRead(const RangesInDataParts & parts, bool reads_parent_part_offsets, const StorageSnapshotPtr & storage_snapshot);
+    /// its parts from a projection. A projection part is read itself, by its own offsets, with `storage_snapshot`, the
+    /// snapshot of the main read, which has the metadata of the projection; or, see `projection_parts_by_parent_part_offsets`,
+    /// the whole parent part is.
+    void addPartsOfMainRead(const RangesInDataParts & parts, const StorageSnapshotPtr & storage_snapshot);
 
     void filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes) override;
 };

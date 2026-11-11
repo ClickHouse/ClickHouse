@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
@@ -1006,9 +1007,13 @@ UseProjectionsResult optimizeUseNormalProjections(
         {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
             projection_reading_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading);
-            /// The projection parts keep the numbering of their parent parts, so the lazy read of the read reads their rows:
-            /// by the offsets of the parent part where the projection reads them for `_part_offset`, see above.
-            projection_reading_step->shareLazyReadOf(*reading, need_parent_part_offset && best_candidate->projection->with_parent_part_offset);
+            /// The projection parts keep the numbering of their parent parts, so the lazy read of the read reads their rows.
+            /// The lazy read made before addresses them by `_part_offset`, which the projection gives as the offsets of the
+            /// parent part where it stores them, see above. A lazy read made after this has the offsets of the projection.
+            projection_reading_step->shareLazyReadOf(*reading);
+            if (const auto & lazy_read_rows = reading->getLazyReadRows();
+                lazy_read_rows && need_parent_part_offset && best_candidate->projection->with_parent_part_offset)
+                lazy_read_rows->projection_parts_by_parent_part_offsets = true;
         }
     }
 

@@ -156,14 +156,13 @@ LazyMaterializingRows::LazyMaterializingRows(RangesInDataParts ranges_in_data_pa
 {
 }
 
-void LazyMaterializingRows::addPartsOfMainRead(
-    const RangesInDataParts & parts, bool reads_parent_part_offsets, const StorageSnapshotPtr & storage_snapshot)
+void LazyMaterializingRows::addPartsOfMainRead(const RangesInDataParts & parts, const StorageSnapshotPtr & storage_snapshot)
 {
     /// Only what addresses the rows: the hints of how the main read reads them, such as the filter of a vector search, would
     /// drop rows the main read returned.
     for (const auto & part : parts)
     {
-        if (part.data_part->isProjectionPart() && reads_parent_part_offsets)
+        if (part.data_part->isProjectionPart() && projection_parts_by_parent_part_offsets)
         {
             if (!part.parent_part)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "The projection part {} is read without its parent part", part.data_part->name);
