@@ -2190,11 +2190,11 @@ You can also spell out every part with dots:
   table expression is resolved as table `b` of database `a`, and also as table
   `a.b` of the current database if that database supports table namespaces
   (a data lake catalog) and `a` is not `system`. A catalog namespace named
-  `system` is referenced as `` `system.t` `` or `catalog_name.system.t`. Database `a` must
-  exist; when only one of the two tables exists it is used, and when both exist
-  the query fails with `AMBIGUOUS_IDENTIFIER`. Other statements (`EXISTS`,
-  `DESCRIBE`, `INSERT`, `SHOW CREATE TABLE`, DDL) always read `a.b` as
-  database `a`, table `b`.
+  `system` is referenced as `` `system.t` `` or `catalog_name.system.t`.
+  Database `a` must exist; when only one of the two tables exists it is used,
+  and when both exist the query fails with `AMBIGUOUS_IDENTIFIER`. Other
+  statements (`EXISTS`, `DESCRIBE`, `INSERT`, `SHOW CREATE TABLE`, DDL)
+  always read `a.b` as database `a`, table `b`.
 
 ```sql
 -- Equivalent to catalog_name.`namespace.table`

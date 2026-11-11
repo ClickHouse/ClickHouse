@@ -9945,8 +9945,8 @@ the quoted name ``db.`ns.table` ``; this does not depend on the setting. When th
 analyzer additionally:
 - resolves a two-part name `a.b` in a table expression as table `b` of database `a`, and also as table `a.b`
   of the current database if that database supports table namespaces (a data lake catalog) and `a` is not
-  `system`. It fails with `AMBIGUOUS_IDENTIFIER` when both exist. Database `a` must exist in
-  both cases; when it does not, the query fails with `UNKNOWN_DATABASE` even if the table `a.b` exists;
+  `system`. It fails with `AMBIGUOUS_IDENTIFIER` when both exist. Database `a` must exist;
+  when it does not, the query fails with `UNKNOWN_DATABASE` even if the table `a.b` exists;
 - lets a column qualifier span the parts of such a table name, so `ns.table.column` and
   `db.ns.table.column` refer to a column of table `ns.table`.
 )", EXPERIMENTAL, \

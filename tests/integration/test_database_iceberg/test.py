@@ -2681,9 +2681,10 @@ def test_iceberg_file_progress_callback(started_cluster):
 
 def test_namespace_two_part_name_resolution(started_cluster):
     """
-    A two-part name `X.T` in a table expression is tried both as table `T` of database `X`
-    and as table `X.T` of the current database; database `X` must exist, and both existing
-    is an error.
+    A two-part name `X.T` in a table expression is read as table `T` of database `X`; the
+    current-database reading (table `X.T`) is tried too only when the current database
+    supports table namespaces and `X` is not `system`. Database `X` must exist, and both
+    existing is an error.
     """
     node = started_cluster.instances["node1"]
     on = {"allow_experimental_table_namespaces": 1}
@@ -2759,7 +2760,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
         result = int(node.query(query))
         assert result == 3, f"row 3, setting off: expected the database table (3 rows), got {result}"
 
-        node.query(f"USE {CATALOG_NAME}; SHOW COLUMNS FROM {CATALOG_NAME}.{X}.{T}", settings=on)
+        columns = node.query(f"USE {CATALOG_NAME}; SHOW COLUMNS FROM {CATALOG_NAME}.{X}.{T}", settings=on)
+        assert "symbol" in columns, f"SHOW COLUMNS must list the table columns: {columns}"
 
         node.query(f"DROP TABLE {CATALOG_NAME}.`{X}.{T}`")
 
