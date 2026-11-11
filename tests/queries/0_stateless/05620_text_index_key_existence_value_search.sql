@@ -1,5 +1,6 @@
 -- A text index on `mapKeys(m)` or `JSONAllPaths(d)` only skips granules: it does not change how a token search reads a value.
 -- With a `mapValues(m)` or `JSONAllValues(d)` index next to it, the search uses that index, as without the key index.
+-- Random settings limits: query_plan_direct_read_from_text_index=(1, None); query_plan_text_index_add_hint=(1, None); optimize_functions_to_subcolumns=(1, None)
 
 SET use_query_condition_cache = 0;
 
