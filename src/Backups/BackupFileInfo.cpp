@@ -226,14 +226,29 @@ BackupFileInfo buildFileInfoForBackupEntry(
     return info;
 }
 
-BackupFileInfos buildFileInfosForBackupEntries(BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
+BackupFileInfosAndEntries buildFileInfosForBackupEntries(BackupEntries && backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
     LoggerPtr log = getLogger("FileInfosFromBackupEntries");
     LOG_TRACE(log, "Building file infos for backup entries");
     auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::BackupPreparingFileInfosMicroseconds);
 
-    BackupFileInfos infos;
-    infos.resize(backup_entries.size());
+    const size_t num_entries = backup_entries.size();
+
+    /// Take the names and the entries apart and release the pairs. The names are consumed here, one
+    /// into each file info, so they must not outlive this function; the entries go on to the writing
+    /// phase, which holds a pointer per entry instead of a 40-byte pair slot it can no longer read.
+    Strings names;
+    names.reserve(num_entries);
+    BackupFileInfosAndEntries res;
+    res.entries.reserve(num_entries);
+    for (auto & [name, entry] : backup_entries)
+    {
+        names.push_back(std::move(name));
+        res.entries.push_back(std::move(entry));
+    }
+    BackupEntries{}.swap(backup_entries);
+
+    res.file_infos.resize(num_entries);
 
     /// A task per entry, so that a slow one holds up nothing, bounded so that millions of them do not keep a task
     /// each: `TaskTracker::add` admits one while fewer than this are in flight, and rethrows the first failure.
@@ -251,9 +266,9 @@ BackupFileInfos buildFileInfosForBackupEntries(BackupEntries & backup_entries, c
 
     try
     {
-        for (size_t i = 0; i != backup_entries.size(); ++i)
+        for (size_t i = 0; i != num_entries; ++i)
         {
-            task_tracker.add([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, &failed, i, log,
+            task_tracker.add([&names, &res, &read_settings, &base_backup, &process_list_element, &failed, i, log,
                               current_component = Coordination::getCurrentComponent()]
             {
                 if (failed)
@@ -261,16 +276,15 @@ BackupFileInfos buildFileInfosForBackupEntries(BackupEntries & backup_entries, c
 
                 auto component_guard = Coordination::setCurrentComponent(current_component);
 
-                const auto & entry = backup_entries[i].second;
+                const auto & entry = res.entries[i];
 
                 try
                 {
                     if (process_list_element)
                         process_list_element->checkTimeLimit();
 
-                    /// The name is moved out: from here on it lives in `infos[i]`, which is indexed the same way,
-                    /// and nothing reads it from `backup_entries` again.
-                    infos[i] = buildFileInfoForBackupEntry(std::move(backup_entries[i].first), entry, base_backup, read_settings, log);
+                    /// The name is moved out: from here on it lives in `res.file_infos[i]`, indexed the same way.
+                    res.file_infos[i] = buildFileInfoForBackupEntry(std::move(names[i]), entry, base_backup, read_settings, log);
                 }
                 catch (...)
                 {
@@ -291,7 +305,7 @@ BackupFileInfos buildFileInfosForBackupEntries(BackupEntries & backup_entries, c
         throw;
     }
 
-    return infos;
+    return res;
 }
 
 }

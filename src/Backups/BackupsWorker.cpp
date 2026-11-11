@@ -846,25 +846,35 @@ void BackupsWorker::doBackup(
 
         auto read_settings = getReadSettingsForBackup(context, backup_settings);
 
-        /// Prepare backup entries.
-        BackupEntries backup_entries;
-        {
-            BackupEntriesCollector backup_entries_collector(
-                backup_query->elements,
-                backup_settings,
-                backup_id,
-                backup_coordination,
-                read_settings,
-                context,
-                getThreadPool(backup_thread_pool_id));
-            backup_entries = backup_entries_collector.run();
-        }
-
-        /// Write the backup entries to the backup.
         chassert(backup);
         chassert(backup_coordination);
         chassert(context);
-        buildFileInfosForBackupEntries(backup, backup_entries, read_settings, backup_coordination, backup_thread_pool_id, context->getProcessListElement());
+
+        /// The entries without their names: building the file infos moves each name into the info it
+        /// belongs to. Scoped so that the pairs are gone before the backup is written, and so that a
+        /// reader of a name added between the two phases does not compile.
+        std::vector<BackupEntryPtr> backup_entries;
+        {
+            /// Prepare backup entries.
+            BackupEntries entries_with_names;
+            {
+                BackupEntriesCollector backup_entries_collector(
+                    backup_query->elements,
+                    backup_settings,
+                    backup_id,
+                    backup_coordination,
+                    read_settings,
+                    context,
+                    getThreadPool(backup_thread_pool_id));
+                entries_with_names = backup_entries_collector.run();
+            }
+
+            backup_entries = buildFileInfosForBackupEntries(
+                backup, std::move(entries_with_names), read_settings, backup_coordination, backup_thread_pool_id,
+                context->getProcessListElement());
+        }
+
+        /// Write the backup entries to the backup.
         writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, is_internal_backup, backup_thread_pool_id, context->getProcessListElement());
 
         /// We have written our backup entries (there is no need to sync it with other hosts because it's the last stage).
@@ -903,16 +913,19 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
+std::vector<BackupEntryPtr> BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, BackupEntries && backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
 {
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "", /* sync = */ true);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element));
+    auto built = ::DB::buildFileInfosForBackupEntries(
+        std::move(backup_entries), backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element);
+    backup_coordination->addFileInfos(std::move(built.file_infos));
+    return std::move(built.entries);
 }
 
 
 void BackupsWorker::writeBackupEntries(
     BackupMutablePtr backup,
-    BackupEntries && backup_entries,
+    std::vector<BackupEntryPtr> && backup_entries,
     const OperationID & backup_id,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     bool is_internal_backup,
@@ -955,7 +968,7 @@ void BackupsWorker::writeBackupEntries(
 
         size_t index = !writing_order.empty() ? writing_order[i] : i;
 
-        auto & entry = backup_entries[index].second;
+        auto & entry = backup_entries[index];
 
         if (entry->isFromRemoteFile())
         {
