@@ -10,3 +10,8 @@ renamed shadowing columns
 renamed shadowing columns: text indexes rebuilt
 t_renamed_index	0	1
 t_renamed_offset	0	1
+pending drop and re-add
+['fresh']
+['fresh','fresh']
+['fresh','fresh']
+0	1	0	1

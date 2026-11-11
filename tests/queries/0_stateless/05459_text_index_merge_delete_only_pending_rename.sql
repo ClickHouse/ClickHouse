@@ -64,3 +64,47 @@ ORDER BY table;
 
 DROP TABLE t_renamed_offset;
 DROP TABLE t_renamed_index;
+
+-- Under a pending mutation a dropped and re-added column reads its default, so the merge rebuilds the text index
+-- and the projection from the merged values instead of merging the ones built from the stored values.
+DROP TABLE IF EXISTS t_pending_readd;
+
+CREATE TABLE t_pending_readd
+(
+    id UInt64,
+    text String,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1,
+    PROJECTION p (SELECT id, text, _part_offset ORDER BY text)
+)
+ENGINE = ReplacingMergeTree ORDER BY id
+SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, deduplicate_merge_projection_mode = 'rebuild',
+    merge_text_indexes_and_projections_on_delete_only_merges = 1;
+
+INSERT INTO t_pending_readd VALUES (1, 'old');
+INSERT INTO t_pending_readd VALUES (2, 'old');
+INSERT INTO t_pending_readd VALUES (2, 'old');
+
+SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
+
+ALTER TABLE t_pending_readd DROP INDEX idx_text;
+ALTER TABLE t_pending_readd DROP PROJECTION p;
+ALTER TABLE t_pending_readd DROP COLUMN text;
+ALTER TABLE t_pending_readd ADD COLUMN text String DEFAULT 'fresh';
+ALTER TABLE t_pending_readd ADD INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1;
+ALTER TABLE t_pending_readd ADD PROJECTION p (SELECT id, text, _part_offset ORDER BY text);
+
+OPTIMIZE TABLE t_pending_readd FINAL;
+
+SELECT 'pending drop and re-add';
+SELECT groupArray(token) FROM mergeTreeTextIndex(currentDatabase(), t_pending_readd, idx_text);
+SELECT groupArray(text) FROM mergeTreeProjection(currentDatabase(), t_pending_readd, p);
+
+SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
+
+SELECT groupArray(text) FROM (SELECT text FROM t_pending_readd ORDER BY id);
+SYSTEM FLUSH LOGS part_log;
+SELECT ProfileEvents['MergedTextIndexes'], ProfileEvents['RebuiltTextIndexes'], ProfileEvents['MergedProjections'], ProfileEvents['RebuiltProjections']
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_pending_readd' AND event_type = 'MergeParts' AND error = 0;
+
+DROP TABLE t_pending_readd;
