@@ -34,6 +34,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/ReadHelpers.h>
 #include <base/sleep.h>
 
 #if CLICKHOUSE_CLOUD
