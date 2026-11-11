@@ -546,6 +546,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
         const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
         Array converted_elements;
         converted_elements.reserve(elements.size());
+        std::vector<std::pair<Field, DataTypePtr>> truthy_members;
         for (size_t i = 0; i < elements.size(); ++i)
         {
             DataTypePtr element_type;
@@ -566,7 +567,15 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
             const auto * element_hint = conversionHint(element_type, column_type);
             auto converted = tryConvertFieldToType(elements[i], *column_type, element_hint, {}, /*strict=*/ true);
-            if (converted.isNull())
+            /// A member such as `2` or `2.0` has no `Bool` value, so the set of `IN` drops it. A BSON number 2 is still
+            /// read into a `Bool` column as it is, and the set tests such a value by its truth, so it matches the list
+            /// exactly if a member is `true`. The member's own encoding is written then only: otherwise `$in` would return
+            /// a document that the `WHERE` drops, while the limit is pushed too, and `$nin` would exclude a matching one.
+            const bool outside_bool_domain
+                = isBool(removeNullable(column_type)) && (converted.isNull() || isOutsideBoolDomain(converted, column_type));
+            if (outside_bool_domain && isBoolNumberComparison(element_type, column_type) && isKeptByBoolReader(elements[i], element_type))
+                truthy_members.emplace_back(elements[i], element_type);
+            if (converted.isNull() || outside_bool_domain)
             {
                 auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
                 LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
@@ -578,15 +587,15 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
                 LOG_DEBUG(log, "Constant value {} is not stored as a value of column type {}", value_string, column_type->getName());
                 return {};
             }
-            /// A member such as `2.0` converts here to the `UInt8` 2, but the set of `IN` drops it, so it matches no row,
-            /// not even a BSON number 2 that the reader keeps as it is in a `Bool` column. No encoding of it is written:
-            /// `$nin` must not exclude such a document, and `$in` must not return it, since the limit is pushed too.
-            if (isOutsideBoolDomain(converted, column_type))
-                continue;
             if (isBoolNumberComparison(element_type, column_type))
                 other_encodings.emplace_back(elements[i], element_type);
             converted_elements.push_back(std::move(converted));
         }
+
+        const bool has_true_member = !truthy_members.empty() && std::ranges::any_of(converted_elements, [](const Field & member)
+            { return isInt64OrUInt64orBoolFieldType(member.getType()) && member.safeGet<UInt64>() == 1; });
+        if (has_true_member)
+            other_encodings.insert(other_encodings.end(), truthy_members.begin(), truthy_members.end());
 
         const_value = std::move(converted_elements);
         column_type = std::make_shared<DataTypeArray>(column_type);

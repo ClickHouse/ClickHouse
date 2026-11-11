@@ -1100,7 +1100,7 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                     == count
                 )
 
-        # A `Bool` column keeps a BSON number outside `{0, 1}` as it is. `=` matches it, but no member of `IN` does.
+        # A `Bool` column keeps a BSON number outside `{0, 1}` as it is. `=` matches it, and `IN` matches it by its truth.
         collection.insert_one({"flag": 2, "n": 2})
         for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
             expected = {
@@ -1108,6 +1108,9 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                 "flag != 2.0": "4\n",
                 "flag IN (2.0)": "0\n",
                 "flag IN (0, 2.0)": "2\n",
+                "flag IN (1, 2.0)": "3\n",
+                "flag IN (1, 2)": "3\n",
+                "flag NOT IN (1, 2.0)": "2\n",
                 "flag NOT IN (2.0)": "5\n",
                 "flag NOT IN (toFloat32(2))": "5\n",
                 "flag NOT IN (0, toFloat32(2))": "3\n",
