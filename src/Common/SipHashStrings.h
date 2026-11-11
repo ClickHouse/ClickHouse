@@ -10,3 +10,10 @@ void sipHash128PaddedStrings(const char * chars, const UInt64 * offsets, size_t 
 
 /// The same for `num_rows` strings of `n` bytes each, string `i` at `chars + i * n`, as in a `ColumnFixedString`.
 void sipHash128PaddedFixedStrings(const char * chars, size_t n, size_t num_rows, UInt128 * hashes);
+
+/// Like `sipHash128PaddedStrings`, but hashes only the strings `rows[0]`, ..., `rows[num_rows - 1]`: sets `hashes[rows[i]]`
+/// for `i` in [0, num_rows) and leaves the other entries of `hashes` as they are.
+void sipHash128PaddedStringRows(const char * chars, const UInt64 * offsets, const UInt32 * rows, size_t num_rows, UInt128 * hashes);
+
+/// Like `sipHash128PaddedFixedStrings`, but hashes only the strings listed in `rows`, as `sipHash128PaddedStringRows` does.
+void sipHash128PaddedFixedStringRows(const char * chars, size_t n, const UInt32 * rows, size_t num_rows, UInt128 * hashes);

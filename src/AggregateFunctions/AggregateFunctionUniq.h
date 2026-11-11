@@ -594,6 +594,7 @@ private:
     static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
     static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<DataSet>::value;
     static constexpr bool is_uniq_exact_set = detail::IsUniqExactSet<DataSet>::value;
+    static constexpr size_t chunk_size = 256;
 
     /// `uniqExact` with GROUP BY: a row whose place and value equal those of the previous row is not inserted,
     /// because inserting a key that a set already contains never changes it.
@@ -605,7 +606,6 @@ private:
         using Key = typename DataSet::value_type;
         static constexpr auto hint = is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel;
         static constexpr bool value_is_key = std::is_same_v<std::decay_t<decltype(Traits::hashExact(T{}))>, T>;
-        static constexpr size_t chunk_size = 256;
 
         const char8_t * flags = nullptr;
         if (if_argument_pos >= 0)
@@ -660,16 +660,17 @@ private:
             for (size_t i = 0; i < count; ++i)
                 sets[i]->template insert<const Key &, hint>(keys[i]);
 
-            /// Repeats are rare: for the rest of the batch, hash a chunk of values at once, or add one row at a time.
+            /// Repeats are rare: for the rest of the batch, hash a chunk of values at once if most rows have a place, or add one
+            /// row at a time.
             considered += chunk_considered;
             repeats += chunk_considered - count;
             if (repeats * 2 <= considered)
             {
-                if constexpr (Traits::has_batched_hash_exact && !check_places)
+                if constexpr (Traits::has_batched_hash_exact)
                 {
-                    if (!flags)
+                    if (!flags && considered * 2 >= row - row_begin)
                     {
-                        addBatchHashed(row, row_end, places, place_offset, column);
+                        addBatchHashed<check_places>(row, row_end, places, place_offset, column);
                         return;
                     }
                 }
@@ -683,20 +684,29 @@ private:
         }
     }
 
-    /// GROUP BY without `-If`: hashes the values of a chunk of rows at once, then inserts them in row order.
+    /// GROUP BY without `-If`: hashes the values of a chunk of rows at once, then inserts them in row order. With `check_places`,
+    /// rows without a place are hashed too, and skipped.
+    template <bool check_places>
     void addBatchHashed(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn & column) const
     {
         using Traits = detail::AggregateFunctionUniqTraits<T, ColumnType>;
         using Key = typename DataSet::value_type;
         static constexpr auto hint = is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel;
 
-        std::array<Key, 256> hashes; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `num_rows` entries are read
-        for (size_t begin = row_begin; begin < row_end; begin += hashes.size())
+        std::array<Key, chunk_size> hashes; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `num_rows` entries are read
+        for (size_t begin = row_begin; begin < row_end; begin += chunk_size)
         {
-            const size_t num_rows = std::min(hashes.size(), row_end - begin);
+            const size_t num_rows = std::min(chunk_size, row_end - begin);
             Traits::hashExactRange(column, begin, num_rows, hashes.data());
             for (size_t i = 0; i < num_rows; ++i)
+            {
+                if constexpr (check_places)
+                {
+                    if (!places[begin + i])
+                        continue;
+                }
                 this->data(places[begin + i] + place_offset).set.template insert<const Key &, hint>(hashes[i]);
+            }
         }
     }
 
