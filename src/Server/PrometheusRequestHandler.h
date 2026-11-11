@@ -22,7 +22,6 @@ public:
         const PrometheusRequestHandlerConfig & config_,
         const AsynchronousMetrics & async_metrics_,
         std::shared_ptr<PrometheusMetricsWriter> metrics_writer_,
-        bool for_keeper_,
         std::unordered_map<String, String> response_headers_ = {});
     ~PrometheusRequestHandler() override;
 
@@ -39,17 +38,12 @@ private:
     void tryCallOnException();
 
     /// Parses the client's trace context from the request and starts the server span of the current thread.
-    /// Returns nullptr if tracing is not available for this handler.
     OpenTelemetry::TracingContextHolderPtr startTracing(const HTTPServerRequest & request);
 
     IServer & server;
     const PrometheusRequestHandlerConfig config;
     const AsynchronousMetrics & async_metrics;
     const std::shared_ptr<PrometheusMetricsWriter> metrics_writer;
-
-    /// Standalone Keeper has no global context: `IServer::context` throws there, so tracing is not set up.
-    const bool for_keeper;
-
     const LoggerPtr log;
 
     class Impl;

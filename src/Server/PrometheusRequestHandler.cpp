@@ -802,13 +802,11 @@ PrometheusRequestHandler::PrometheusRequestHandler(
     const PrometheusRequestHandlerConfig & config_,
     const AsynchronousMetrics & async_metrics_,
     std::shared_ptr<PrometheusMetricsWriter> metrics_writer_,
-    bool for_keeper_,
     std::unordered_map<String, String> response_headers_)
     : server(server_)
     , config(config_)
     , async_metrics(async_metrics_)
     , metrics_writer(metrics_writer_)
-    , for_keeper(for_keeper_)
     , log(getLogger("PrometheusRequestHandler"))
 {
     response_headers = response_headers_;
@@ -912,9 +910,6 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
 OpenTelemetry::TracingContextHolderPtr PrometheusRequestHandler::startTracing(const HTTPServerRequest & request)
 {
-    if (for_keeper)
-        return nullptr;
-
     if (request.has("traceparent"))
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
@@ -925,7 +920,9 @@ OpenTelemetry::TracingContextHolderPtr PrometheusRequestHandler::startTracing(co
     }
 
     /// The user is not authenticated yet, so the global settings are used to decide whether to start a new trace.
-    auto global_context = server.context();
+    /// The global context is taken from `Context` rather than from `IServer::context`, which throws in standalone Keeper.
+    /// Standalone Keeper has no span log, so the spans are not recorded there.
+    auto global_context = Context::getGlobalContextInstance();
     auto thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("PrometheusRequestHandler",
         client_trace_context,
         global_context->getSettingsRef(),
