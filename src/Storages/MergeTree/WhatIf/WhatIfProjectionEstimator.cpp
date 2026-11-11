@@ -83,7 +83,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
-    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
 
@@ -104,7 +103,10 @@ struct ProjectionPartData
     /// uncompressed bytes without the key columns, used for the part format
     size_t format_bytes = 0;
     /// for a merged normal part: the bytes that the parts it merges store, a merge chooses the format and a constant granule from them
+    /// a part does not record the formats and the serialization versions of those parts, so also the fewest and the most of these bytes
     size_t stored_bytes = 0;
+    size_t stored_bytes_least = 0;
+    size_t stored_bytes_most = 0;
     /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
     /// for a level-zero aggregate part: the part that `MATERIALIZE PROJECTION` writes, if it can differ from the part of an insert
@@ -187,40 +189,59 @@ void appendRowSizes(ProjectionPartData & out, const Block & block, bool merged)
         row_bytes[offset + i] += fixed;
 }
 
-/// the bytes that a part stores for a column
-size_t storedBytes(const ISerialization & serialization, const IColumn & column)
+/// writes the column as a part stores it, into the streams of the getter
+void serializeStored(const ISerialization & serialization, const IColumn & column, ISerialization::OutputStreamGetter getter)
 {
-    NullWriteBuffer stored;
     ISerialization::SerializeBinaryBulkSettings settings;
-    settings.getter = [&](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &stored; };
+    settings.getter = std::move(getter);
     ISerialization::SerializeBinaryBulkStatePtr state;
     serialization.serializeBinaryBulkStatePrefix(column, settings, state);
     serialization.serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, state);
     serialization.serializeBinaryBulkStateSuffix(settings, state);
+}
+
+/// the bytes that a part stores for a column
+size_t storedBytes(const ISerialization & serialization, const IColumn & column)
+{
+    NullWriteBuffer stored;
+    serializeStored(serialization, column, [&](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &stored; });
     return stored.count();
 }
 
-/// the settings of the serializations that the parts which a merge reads store a column with
-/// a level-zero part takes the `Map` version of its own setting
-std::vector<SerializationInfoSettings> mergedPartSerializations(const MergeTreeSettings & mt_settings)
+/// the settings of the serializations that the parts which a merge reads store a column with: the current ones, the oldest versions
+/// and the newest versions, a part does not record the versions of the parts it merged
+/// the oldest versions store the fewest bytes and the newest the most
+std::array<SerializationInfoSettings, 3> mergedPartSerializations(const MergeTreeSettings & mt_settings)
 {
-    auto with_map_version = [&](MergeTreeMapSerializationVersion map_version)
-    {
-        return SerializationInfoSettings(
-            static_cast<double>(mt_settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+    const auto ratio = static_cast<double>(mt_settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]);
+    return {
+        SerializationInfoSettings(
+            ratio,
             false,
             false,
             mt_settings[MergeTreeSetting::serialization_info_version],
             mt_settings[MergeTreeSetting::string_serialization_version],
             mt_settings[MergeTreeSetting::nullable_serialization_version],
-            map_version,
-            mt_settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types]);
-    };
-    std::vector<SerializationInfoSettings> result{with_map_version(mt_settings[MergeTreeSetting::map_serialization_version])};
-    auto zero_level = with_map_version(mt_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]);
-    if (zero_level != result.front())
-        result.push_back(std::move(zero_level));
-    return result;
+            mt_settings[MergeTreeSetting::map_serialization_version],
+            mt_settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types]),
+        SerializationInfoSettings(
+            ratio,
+            false,
+            false,
+            MergeTreeSerializationInfoVersion::BASIC,
+            MergeTreeStringSerializationVersion::SINGLE_STREAM,
+            MergeTreeNullableSerializationVersion::BASIC,
+            MergeTreeMapSerializationVersion::BASIC,
+            false),
+        SerializationInfoSettings(
+            ratio,
+            false,
+            false,
+            MergeTreeSerializationInfoVersion::WITH_TYPES,
+            MergeTreeStringSerializationVersion::WITH_SIZE_STREAM,
+            MergeTreeNullableSerializationVersion::ALLOW_SPARSE,
+            MergeTreeMapSerializationVersion::WITH_BUCKETS,
+            true)};
 }
 
 /// a type that stores data for each part, as the dictionary of `LowCardinality`, stores more for a row in more parts
@@ -233,30 +254,76 @@ bool storesDataPerPart(const ISerialization & serialization, const IColumn & col
     return 2 * storedBytes(serialization, *row) > storedBytes(serialization, *row_twice);
 }
 
-/// adds the bytes that the parts which a merge reads store for the columns of the block
-/// returns false if these bytes depend on how the rows split into those parts: data for each part, a sparse column, or the `Map`
-/// version of a level-zero part
-bool addMergedPartsBytes(
-    size_t & stored_bytes, const Block & block, const NamesAndTypesList & columns, const std::vector<SerializationInfoSettings> & settings)
+/// the bytes that a part stores for the columns of the block, and of them the bytes of the offsets that a wide part stores only once for
+/// the columns of a nested table
+std::pair<size_t, size_t> storedBlockBytes(
+    const Block & block,
+    const NamesAndTypesList & columns,
+    const SerializationInfoSettings & settings,
+    const ISerialization::StreamFileNameSettings & stream_names)
 {
-    bool known = true;
+    size_t bytes = 0;
+    size_t repeated_bytes = 0;
+    std::unordered_set<String> written_offsets;
+    for (const auto & column : columns)
+    {
+        const auto * elem = block.findByName(column.name);
+        if (!elem)
+            continue;
+        NullWriteBuffer stored;
+        NullWriteBuffer repeated;
+        std::vector<String> offsets;
+        serializeStored(
+            *column.type->getSerialization(settings),
+            *elem->column->convertToFullColumnIfConst(),
+            [&](const ISerialization::SubstreamPath & path) -> WriteBuffer *
+            {
+                if (path.empty() || path.back().type != ISerialization::Substream::ArraySizes)
+                    return &stored;
+                auto name = ISerialization::getFileNameForStream(column, path, stream_names);
+                if (written_offsets.contains(name))
+                    return &repeated;
+                offsets.push_back(std::move(name));
+                return &stored;
+            });
+        written_offsets.insert(offsets.begin(), offsets.end());
+        bytes += stored.count() + repeated.count();
+        repeated_bytes += repeated.count();
+    }
+    return {bytes, repeated_bytes};
+}
+
+/// adds the bytes that the parts which a merge reads store for the columns of the block
+/// `wide_parts`: each of these parts is wide, so the current versions give the offsets of a nested table once
+/// returns false if these bytes depend on how the rows split into those parts: data for each part or a sparse column
+bool addMergedPartsBytes(
+    ProjectionPartData & out,
+    const Block & block,
+    const NamesAndTypesList & columns,
+    const std::array<SerializationInfoSettings, 3> & settings,
+    const ISerialization::StreamFileNameSettings & stream_names,
+    bool wide_parts)
+{
     if (block.rows() == 0)
-        return known;
-    const auto & merged = settings.front();
+        return true;
+    const auto [current, current_repeated] = storedBlockBytes(block, columns, settings[0], stream_names);
+    const auto [oldest, oldest_repeated] = storedBlockBytes(block, columns, settings[1], stream_names);
+    out.stored_bytes += wide_parts ? current - current_repeated : current;
+    out.stored_bytes_least += oldest - oldest_repeated;
+    out.stored_bytes_most += storedBlockBytes(block, columns, settings[2], stream_names).first;
+
+    bool known = true;
     for (const auto & column : columns)
     {
         const auto * elem = block.findByName(column.name);
         if (!elem)
             continue;
         const auto values = elem->column->convertToFullColumnIfConst();
-        const auto serialization = column.type->getSerialization(merged);
-        const size_t bytes = storedBytes(*serialization, *values);
-        stored_bytes += bytes;
-        known &= !storesDataPerPart(*serialization, *values);
-        known &= !(merged.ratio_of_defaults_for_sparse < 1 && merged.canUseSparseSerialization(*column.type)
+        for (const auto & versions : settings)
+            known &= !storesDataPerPart(*column.type->getSerialization(versions), *values);
+        /// the newest versions allow the most sparse columns
+        known &= !(settings[2].ratio_of_defaults_for_sparse < 1 && settings[2].canUseSparseSerialization(*column.type)
                    && (isTuple(column.type) || values->getNumberOfDefaultRows() != 0));
-        for (const auto & other : settings | std::views::drop(1))
-            known &= storedBytes(*column.type->getSerialization(other), *values) == bytes;
     }
     return known;
 }
@@ -499,17 +566,21 @@ String buildProjectionPart(
     size_t batch_rows = 0;
     MutableColumns key_columns;
     /// a merge of normal projection parts chooses the format and a constant granule from the bytes that these parts store
-    const auto stored_settings
-        = !aggregate && part->info.level > 0 ? mergedPartSerializations(mt_settings) : std::vector<SerializationInfoSettings>{};
+    const bool merged_rows = !aggregate && part->info.level > 0;
+    const auto stored_settings = mergedPartSerializations(mt_settings);
     const auto stored_columns = projection.metadata->getColumns().getAllPhysical();
+    const ISerialization::StreamFileNameSettings stream_names(mt_settings);
+    /// a part of no rows is wide only if each part is wide
+    const auto & merge_tree = read_step->getMergeTreeData();
+    const bool wide_parts = merge_tree.choosePartFormat(0, 0, 0, &projection).part_type == MergeTreeDataPartType::Wide;
     bool stored_bytes_known = true;
     /// the stored columns, as the writer gets them
     auto add = [&](ProjectionPartData & target, MutableColumns & keys, Block projected, bool merged_states)
     {
         /// the writer chooses the part format before the key expression and sizes the granules after it
         target.format_bytes += projected.bytes();
-        if (!stored_settings.empty())
-            stored_bytes_known &= addMergedPartsBytes(target.stored_bytes, projected, stored_columns, stored_settings);
+        if (merged_rows)
+            stored_bytes_known &= addMergedPartsBytes(target, projected, stored_columns, stored_settings, stream_names, wide_parts);
         /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
         for (const auto & required : proj_key.expression->getRequiredColumns())
             if (!projected.has(required))
@@ -646,7 +717,6 @@ String buildProjectionPart(
             finish(*out.materialized, materialized_keys);
             out.materialized->format_bytes = mutation_projected.bytes();
             /// the part does not record the settings of its insert, so the format of each block of the insert is possible
-            const auto & merge_tree = read_step->getMergeTreeData();
             const auto [shared_bytes, owned_bytes] = calculatedBlockBytes(merged);
             out.both_formats = merge_tree.choosePartFormat(shared_bytes, merged.rows(), part->info.level, &projection).part_type
                 != merge_tree.choosePartFormat(owned_bytes, merged.rows(), part->info.level, &projection).part_type;
@@ -708,8 +778,8 @@ struct PartFromSample
     }
 
     UInt64 bytes() const { return bytes_before_sample_row.back(); }
-    UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
-    UInt64 storedBytes() const { return static_cast<UInt64>(UInt128(sample.stored_bytes) * rows / sample.rows); }
+    /// bytes of the sample scaled to the part
+    UInt64 scaled(size_t sample_bytes) const { return static_cast<UInt64>(UInt128(sample_bytes) * rows / sample.rows); }
 };
 
 /// end of the block a writer gets at `row`: at most `rows_limit` rows and `bytes_limit` bytes, but at least one row
@@ -863,24 +933,33 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
             if (layouts[1].front() > layouts[0].front() + 1)
                 data.marks_between_layouts = layouts[0].size();
         }
-        /// a merge of normal projection parts sizes the granule from the bytes that they store
+        /// a merge of normal projection parts sizes the granule from the bytes that they store, the most bytes give the smallest granule
         else if (!granularity_per_block && merged_rows)
         {
-            layouts.push_back(constant(static_cast<double>(computeIndexGranularity(
-                whole_part.rows, whole_part.storedBytes(), granule_bytes, mt_settings[MergeTreeSetting::index_granularity],
-                /* blocks_are_granules */ false, adaptive_marks))));
+            auto stored = [&](size_t sample_bytes)
+            {
+                return constant(static_cast<double>(computeIndexGranularity(
+                    whole_part.rows, whole_part.scaled(sample_bytes), granule_bytes, mt_settings[MergeTreeSetting::index_granularity],
+                    /* blocks_are_granules */ false, adaptive_marks)));
+            };
+            auto most = stored(data.stored_bytes_most);
+            auto least = stored(data.stored_bytes_least);
+            if (least.front() > most.front() + 1)
+                data.marks_between_layouts = most.size();
+            layouts.push_back(std::move(most));
+            layouts.push_back(std::move(least));
+            layouts.push_back(stored(data.stored_bytes));
             primary = layouts.size() - 1;
         }
         return std::pair{std::move(layouts), primary};
     };
 
     /// a merge chooses the format from the bytes that its parts store, `MATERIALIZE PROJECTION` and an insert from the block
-    const auto block_type
-        = merge_tree.choosePartFormat(whole_part.formatBytes(), whole_part.rows, parent_part->info.level, &projection).part_type;
-    const auto part_type = merged_rows
-        ? merge_tree.choosePartFormat(whole_part.storedBytes(), whole_part.rows, parent_part->info.level, &projection).part_type
-        : block_type;
-    data.both_formats |= part_type != block_type;
+    auto type_of = [&](size_t sample_bytes)
+    { return merge_tree.choosePartFormat(whole_part.scaled(sample_bytes), whole_part.rows, parent_part->info.level, &projection).part_type; };
+    const auto block_type = type_of(data.format_bytes);
+    const auto part_type = merged_rows ? type_of(data.stored_bytes) : block_type;
+    data.both_formats |= part_type != block_type || (merged_rows && type_of(data.stored_bytes_least) != type_of(data.stored_bytes_most));
     auto [layouts, primary] = layouts_of(part_type);
     data.wide = part_type == MergeTreeDataPartType::Wide;
     if (data.both_formats)
