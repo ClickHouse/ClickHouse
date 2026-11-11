@@ -189,6 +189,13 @@ namespace Net
         /// Same as `writeRaw`, but loops until all `length` bytes are written.
         /// Throws `MessageException` if the socket stops accepting data.
 
+        int writeRawNonBlocking(const char * buffer, std::streamsize length);
+        /// Sends up to `length` bytes without waiting for the socket to accept them: the socket is
+        /// non-blocking for the duration of the call. Returns the number of bytes sent, or 0 when
+        /// the socket would block. For a TLS socket the next call must then pass the same data,
+        /// because OpenSSL retries the pending record write. The send throttler waits before the
+        /// call, as for a blocking send.
+
         int buffered() const;
         /// Returns the number of bytes in the buffer.
 

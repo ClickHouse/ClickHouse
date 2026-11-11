@@ -1,4 +1,5 @@
 #include <IO/HTTP/HTTPClientIO.h>
+#include <IO/SocketPeerClosed.h>
 
 #include <Common/Exception.h>
 #include <Common/Hex.h>
@@ -8,7 +9,9 @@
 #include <Poco/NumberParser.h>
 #include <Poco/String.h>
 
+#include <cerrno>
 #include <cstring>
+#include <poll.h>
 
 
 namespace DB
@@ -188,15 +191,39 @@ void readHTTPResponseHeader(Poco::Net::HTTPClientSession & session, Poco::Net::H
     }
 }
 
+void readHTTPResponseHeaderOrReset(Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response)
+{
+    try
+    {
+        response.clear();
+        readHTTPResponseHeader(session, response);
+    }
+    catch (const Poco::Exception &)
+    {
+        /// Same cleanup as the `Poco::Net::HTTPClientSession::receiveResponse` this replaces: a
+        /// half-parsed response header leaves the socket at an unknown offset, so the session must
+        /// not be kept alive for a retry. Callers that reuse one session, such as `HTTPAuthClient`,
+        /// would otherwise write the next request on top of the leftover bytes.
+        session.reset();
+        if (const auto * network_exception = session.networkException())
+            network_exception->rethrow();
+        throw;
+    }
+}
+
 }
 
 
 HTTPRequestBodyWriteBuffer::HTTPRequestBodyWriteBuffer(
-    Poco::Net::HTTPClientSession & session_, Poco::Net::HTTPClientSession::BodyInfo body_info_, size_t buf_size)
+    Poco::Net::HTTPClientSession & session_,
+    Poco::Net::HTTPClientSession::BodyInfo body_info_,
+    size_t buf_size,
+    Poco::Net::HTTPResponse * early_response_)
     : WriteBuffer(nullptr, 0)
     , session(session_)
     , encoding(body_info_.encoding)
     , content_length(body_info_.content_length)
+    , early_response(early_response_)
     , memory(std::min(buf_size, max_transfer_at_once) + chunk_header_reserve + chunk_footer_size)
 {
     /// Every flush leaves as a single `writeAllRaw`, whose length `Poco` narrows down to `int`,
@@ -214,6 +241,75 @@ HTTPRequestBodyWriteBuffer::~HTTPRequestBodyWriteBuffer()
     /// `requestBodyComplete` false, and the pool drops the connection instead of handing it to
     /// the next request.
     cancel();
+}
+
+void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
+{
+    if (!early_response)
+    {
+        session.writeAllRaw(data, static_cast<std::streamsize>(size));
+        return;
+    }
+
+    /// The server has already answered: drop the rest of the body.
+    if (early_response_received)
+        return;
+
+    auto & socket = session.socket();
+    const auto send_timeout_ms = session.getSendTimeout().totalMilliseconds();
+
+    /// Set when the server closed the connection without a response.
+    bool peer_closed = false;
+
+    while (size > 0)
+    {
+        /// Wait for the socket to accept data and watch for a response at the same time, so that
+        /// a response arrives before any write can fail. A failed write would lose it over TLS:
+        /// OpenSSL allows no read after a failed `SSL_write`.
+        const short events = peer_closed ? POLLOUT : (POLLIN | POLLOUT);
+        pollfd fd{.fd = socket.impl()->sockfd(), .events = events, .revents = 0};
+        int res = 0;
+        do
+            res = ::poll(&fd, 1, send_timeout_ms > 0 ? static_cast<int>(send_timeout_ms) : -1);
+        while (res < 0 && errno == EINTR);
+
+        if (res < 0)
+            throw Poco::Net::NetException("Failed to poll the socket while sending the HTTP request body", errno);
+        if (res == 0)
+            throw Poco::TimeoutException("Timeout while sending the HTTP request body");
+
+        if (!peer_closed && (fd.revents & (POLLIN | POLLHUP | POLLERR)))
+        {
+            /// For TLS this is a non-blocking `SSL_peek`: a session ticket or `KeyUpdate` gives `Idle`.
+            const auto state = getSocketState(socket);
+
+            /// No response came: the next write reports how the connection ended (`EPIPE`,
+            /// `ECONNRESET`), as without the monitoring. From now on only writability is awaited,
+            /// so that a half-closed connection does not wake the loop up again and again.
+            if (state == SocketState::Closed)
+                peer_closed = true;
+
+            if (state == SocketState::DataPending)
+            {
+                readHTTPResponseHeaderOrReset(session, *early_response);
+                if (early_response->getStatus() != Poco::Net::HTTPResponse::HTTP_CONTINUE)
+                {
+                    early_response_received = true;
+                    return;
+                }
+                /// A late `100 Continue`: the server wants the body.
+                early_response->clear();
+                continue;
+            }
+        }
+
+        if ((fd.revents & POLLOUT) || peer_closed)
+        {
+            const int sent = session.writeRawNonBlocking(data, static_cast<std::streamsize>(size));
+            data += sent;
+            size -= static_cast<size_t>(sent);
+        }
+    }
 }
 
 void HTTPRequestBodyWriteBuffer::nextImpl()
@@ -235,11 +331,11 @@ void HTTPRequestBodyWriteBuffer::nextImpl()
                     "HTTP request body is larger than its Content-Length: {} bytes to write of {}",
                     bytes_written + size,
                     content_length);
-            session.writeAllRaw(working_buffer.begin(), static_cast<std::streamsize>(size));
+            writeBody(working_buffer.begin(), size);
             break;
 
         case Poco::Net::HTTPClientSession::BodyEncoding::UntilEOF:
-            session.writeAllRaw(working_buffer.begin(), static_cast<std::streamsize>(size));
+            writeBody(working_buffer.begin(), size);
             break;
 
         case Poco::Net::HTTPClientSession::BodyEncoding::Chunked:
@@ -256,7 +352,7 @@ void HTTPRequestBodyWriteBuffer::nextImpl()
 
             memcpy(data + size, "\r\n", chunk_footer_size);
 
-            session.writeAllRaw(header, static_cast<std::streamsize>(data + size + chunk_footer_size - header));
+            writeBody(header, static_cast<size_t>(data + size + chunk_footer_size - header));
             break;
         }
     }
@@ -268,8 +364,12 @@ void HTTPRequestBodyWriteBuffer::finalizeImpl()
 {
     next();
 
+    /// The server has answered, and the rest of the body was dropped: the request stays incomplete.
+    if (early_response_received)
+        return;
+
     if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::Chunked)
-        session.writeAllRaw("0\r\n\r\n", 5);
+        writeBody("0\r\n\r\n", 5);
 
     if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::ContentLength && bytes_written != content_length)
         throw Exception(
@@ -553,7 +653,8 @@ std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
     Poco::Net::HTTPRequest & request,
     size_t buf_size,
     UInt64 * connect_time,
-    UInt64 * first_byte_time)
+    UInt64 * first_byte_time,
+    Poco::Net::HTTPResponse * early_response)
 {
     const auto body_info = session.sendRequestHeaders(request, connect_time, first_byte_time);
 
@@ -565,7 +666,7 @@ std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
     else if (body_info.encoding == Poco::Net::HTTPClientSession::BodyEncoding::ContentLength)
         buf_size = std::max<UInt64>(std::min<UInt64>(buf_size, body_info.content_length), 1);
 
-    return std::make_unique<HTTPRequestBodyWriteBuffer>(session, body_info, buf_size);
+    return std::make_unique<HTTPRequestBodyWriteBuffer>(session, body_info, buf_size, early_response);
 }
 
 static std::unique_ptr<HTTPResponseReadBuffer> makeHTTPResponseReadBuffer(
@@ -583,25 +684,10 @@ static std::unique_ptr<HTTPResponseReadBuffer> makeHTTPResponseReadBuffer(
 static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
     HTTPSessionPtr session_holder, Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response, size_t buf_size)
 {
-    try
+    do
     {
-        do
-        {
-            response.clear();
-            readHTTPResponseHeader(session, response);
-        } while (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE);
-    }
-    catch (const Poco::Exception &)
-    {
-        /// Same cleanup as the `Poco::Net::HTTPClientSession::receiveResponse` this replaces: a
-        /// half-parsed response header leaves the socket at an unknown offset, so the session must
-        /// not be kept alive for a retry. Callers that reuse one session, such as `HTTPAuthClient`,
-        /// would otherwise write the next request on top of the leftover bytes.
-        session.reset();
-        if (const auto * network_exception = session.networkException())
-            network_exception->rethrow();
-        throw;
-    }
+        readHTTPResponseHeaderOrReset(session, response);
+    } while (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE);
 
     return makeHTTPResponseReadBuffer(std::move(session_holder), session, response, buf_size);
 }
@@ -620,10 +706,8 @@ receiveHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, 
 }
 
 std::unique_ptr<HTTPResponseReadBuffer>
-receiveEarlyHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size)
+receiveEarlyHTTPResponseBody(HTTPSessionPtr session, const Poco::Net::HTTPResponse & response, size_t buf_size)
 {
-    if (!session->receiveEarlyResponse(response))
-        return nullptr;
     auto & session_ref = *session;
     return makeHTTPResponseReadBuffer(std::move(session), session_ref, response, buf_size);
 }

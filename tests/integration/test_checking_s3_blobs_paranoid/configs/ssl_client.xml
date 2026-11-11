@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- The S3 mock serves TLS with a self-signed certificate. -->
+    <openSSL>
+        <client>
+            <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>

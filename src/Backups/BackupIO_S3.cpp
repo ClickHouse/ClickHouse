@@ -79,6 +79,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsBool allow_native_copy;
     extern const S3RequestSettingsString storage_class_name;
     extern const S3RequestSettingsUInt64 http_max_fields;
+    extern const S3RequestSettingsBool monitor_response_while_sending;
     extern const S3RequestSettingsUInt64 http_max_field_name_size;
     extern const S3RequestSettingsUInt64 http_max_field_value_size;
 }
@@ -234,6 +235,7 @@ private:
         client_configuration.http_max_fields = request_settings[S3RequestSetting::http_max_fields];
         client_configuration.http_max_field_name_size = request_settings[S3RequestSetting::http_max_field_name_size];
         client_configuration.http_max_field_value_size = request_settings[S3RequestSetting::http_max_field_value_size];
+        client_configuration.s3_monitor_response_while_sending = request_settings[S3RequestSetting::monitor_response_while_sending];
 
         client_configuration.http_client = settings.auth_settings[S3AuthSetting::http_client];
         client_configuration.service_account = settings.auth_settings[S3AuthSetting::service_account];

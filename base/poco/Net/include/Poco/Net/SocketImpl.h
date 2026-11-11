@@ -265,6 +265,11 @@ namespace Net
         /// Sets the throttler that will be used to limit the speed of data sent through the socket.
 
         virtual Poco::Net::ThrottlerPtr getSendThrottler();
+
+        void throttleSendBlocking(size_t length) { throttleSend(length, true); }
+        /// Waits until the send throttler grants `length` bytes, as a blocking send does. A send on a
+        /// non-blocking socket only books the budget without waiting, so a caller that sends without
+        /// blocking waits here first.
         /// Returns the throttler that is used to limit the speed of data sent through the socket.
 
         virtual void setReceiveThrottler(const Poco::Net::ThrottlerPtr & throttler);

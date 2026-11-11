@@ -226,6 +226,54 @@ int HTTPSession::write(const char* buffer, std::streamsize length)
 }
 
 
+int HTTPSession::writeRawNonBlocking(const char* buffer, std::streamsize length)
+{
+	_socket.impl()->throttleSendBlocking(static_cast<size_t>(length));
+
+	const bool wasBlocking = _socket.getBlocking();
+	if (wasBlocking)
+		_socket.setBlocking(false);
+	try
+	{
+		if (_sendDataHooks)
+			_sendDataHooks->atStart((int) length);
+		/// A negative result means that the socket would block: `EAGAIN`, or `ERR_SSL_WANT_WRITE`
+		/// and `ERR_SSL_WANT_READ` for a TLS socket.
+		int result = _socket.sendBytes(buffer, (int) length);
+		if (result < 0)
+		{
+			if (_sendDataHooks)
+				_sendDataHooks->atFail();
+			result = 0;
+		}
+		else if (_sendDataHooks)
+		{
+			_sendDataHooks->atFinish(result);
+		}
+		if (wasBlocking)
+			_socket.setBlocking(true);
+		return result;
+	}
+	catch (Poco::Exception& exc)
+	{
+		if (_sendDataHooks)
+			_sendDataHooks->atFail();
+		setException(exc);
+		if (wasBlocking)
+		{
+			try
+			{
+				_socket.setBlocking(true);
+			}
+			catch (...)
+			{
+			}
+		}
+		throw;
+	}
+}
+
+
 int HTTPSession::receive(char* buffer, int length)
 {
 	try
