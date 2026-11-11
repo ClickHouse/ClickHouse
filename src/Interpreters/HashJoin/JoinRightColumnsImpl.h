@@ -529,21 +529,32 @@ private:
 /// adds the matches of the whole block, and keeps at most one row ref per row at the front of `match_words`. The key search
 /// of the next search batch writes its match words further on, from `match_words + begin`, so it does not overwrite the row
 /// refs.
-template <typename Rules, bool need_filter>
+/// `prefetch_flags` is for a block that the ring takes, in a join with a used flag per key.
+template <typename Rules, bool need_filter, bool prefetch_flags>
 NO_INLINE size_t findKeysInBatchesAndAddMatches(JoinRightColumns & join)
 {
     constexpr bool sets_flags = Rules::used_flag_action != UsedFlagAction::None;
+    static_assert(sets_flags || !prefetch_flags);
     MatchAdder<Rules, need_filter, /*branch_free=*/true> adder(join);
     const MatchWord * words = join.match_words;
     const size_t * key_offsets = join.key_offsets.data();
+    [[maybe_unused]] const UInt8 * flags = prefetch_flags ? join.used_flags.offsetFlags() : nullptr;
     const size_t rows = join.batch_rows;
     const size_t search_batch_rows = join.search_batch_rows;
+    chassert(!prefetch_flags || join.key_offsets.size() >= search_batch_rows + amac_flag_prefetch_rows);
     for (size_t begin = 0; begin < rows; begin += search_batch_rows)
     {
         const size_t size = std::min(search_batch_rows, rows - begin);
         join.findKeysOfSearchBatch(begin, size);
         for (size_t j = 0; j < size; ++j)
+        {
+            /// A flag is indexed by the cell of its key, so in a table larger than the cache, reading the flag misses the
+            /// cache. The prefetch is for reading, because the adder reads a flag first and writes it only if the flag is 0.
+            /// The key offsets past the search batch are 0 or those of the search batch before, so they also index a flag.
+            if constexpr (prefetch_flags)
+                __builtin_prefetch(flags + key_offsets[j + amac_flag_prefetch_rows], /*read*/ 0, /*locality*/ 3);
             adder.add(begin + j, words[begin + j], sets_flags ? key_offsets[j] : 0);
+        }
     }
     return adder.finish();
 }
@@ -1027,13 +1038,14 @@ JoinRightColumns::Functions selectFunctions(HashJoin::Type key_type, size_t num_
     }
 
     functions.words_in_row_refs = true;
-    functions.records_key_offsets = Rules::used_flag_action != UsedFlagAction::None;
-    const FindKeysMode mode = functions.records_key_offsets ? FindKeysMode::WordsAndKeyOffsets : FindKeysMode::Words;
+    constexpr bool sets_flags = Rules::used_flag_action != UsedFlagAction::None;
+    functions.records_key_offsets = sets_flags;
+    const FindKeysMode mode = sets_flags ? FindKeysMode::WordsAndKeyOffsets : FindKeysMode::Words;
     /// A block that the ring takes runs in two steps, also for a fused join: the ring retires rows out of order.
     select_find_keys_ring(false, mode);
     if constexpr (!Features::need_filter)
-        functions.ring_batches[0] = &findKeysInBatchesAndAddMatches<Rules, false>;
-    functions.ring_batches[1] = &findKeysInBatchesAndAddMatches<Rules, true>;
+        functions.ring_batches[0] = &findKeysInBatchesAndAddMatches<Rules, false, /*prefetch_flags=*/sets_flags>;
+    functions.ring_batches[1] = &findKeysInBatchesAndAddMatches<Rules, true, /*prefetch_flags=*/sets_flags>;
 
     if constexpr (!Features::is_asof_join)
     {
@@ -1052,8 +1064,8 @@ JoinRightColumns::Functions selectFunctions(HashJoin::Type key_type, size_t num_
     }
 
     if constexpr (!Features::need_filter)
-        functions.add_matches[0] = &findKeysInBatchesAndAddMatches<Rules, false>;
-    functions.add_matches[1] = &findKeysInBatchesAndAddMatches<Rules, true>;
+        functions.add_matches[0] = &findKeysInBatchesAndAddMatches<Rules, false, /*prefetch_flags=*/false>;
+    functions.add_matches[1] = &findKeysInBatchesAndAddMatches<Rules, true, /*prefetch_flags=*/false>;
     select_find_keys_in_row_order(false, mode);
     return functions;
 }
