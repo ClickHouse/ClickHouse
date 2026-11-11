@@ -10,23 +10,23 @@ doc_type: 'guide'
 
 ClickHouse Keeper `ListWithOptions` can resume a direct-child listing from a lexicographic cursor.
 
-Set `start_after` on `ListOptions`, including to an empty string for the first page. The client then sends `OpNum::ListWithOptionsV2` (509). The response contains names strictly greater than the cursor, in lexicographic order, truncated to `max_results` when that limit is set. `truncated` is computed after the cursor and the filter.
+Set `start_after` on `ListOptions`, including to an empty string for the first page. The response contains names strictly greater than the cursor, in lexicographic order, truncated to `max_results` when that limit is set. `truncated` is computed after the cursor and the filter.
 
-An unset `start_after` keeps `OpNum::ListWithOptions` (508): `max_results` is still an unordered prefix of matching children.
+Leave `start_after` unset to keep the previous unordered `max_results` prefix.
 
 ## Constraints {#constraints}
 
 - `shuffle` or `recursive` together with `start_after` is rejected.
-- On a V2 page, `with_data` and `with_stat` are filled only for the names on that page.
+- On a paginated listing, `with_data` and `with_stat` are filled only for the names on that page.
 - The listing is not a snapshot: creates at or below the cursor, and deletes between pages, can be missed.
-- Pagination requires the `LIST_WITH_OPTIONS_V2` Keeper feature flag, which gates opcode 509. Clients require that flag before sending `ListWithOptionsV2`. Servers that only advertise `LIST_WITH_OPTIONS` reject the cursor on the client. An unsupported opcode on TCP closes the connection rather than returning `ZUNIMPLEMENTED`. During a rolling upgrade, do not send listings with `start_after` until every replica can parse opcode 509. A V2 request that is applied locally with the flag off still returns `ZUNIMPLEMENTED`.
+- Cursor pagination requires every Keeper replica to support it. Upgrade the whole Keeper cluster first, then enable `list_with_options_v2`. Until then, leave `start_after` unset. The ClickHouse client rejects the cursor if the cluster does not advertise the feature.
 
 ## Example {#example}
 
 ```cpp
 Coordination::ListOptions options;
 options.max_results = 1000;
-options.start_after = ""; // first lexicographic page (`ListWithOptionsV2`)
+options.start_after = ""; // first lexicographic page
 
 while (true)
 {
