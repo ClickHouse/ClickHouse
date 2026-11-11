@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "はじめる",
+      "group": "はじめに",
       "pages": [
         "ja/products/managed-postgres/overview",
         "ja/products/managed-postgres/quickstart"
@@ -29,37 +29,9 @@
             "ja/products/managed-postgres/extensions/pg_clickhouse/tutorial"
           ]
         },
-        {
-          "group": "pg_chdb",
-          "pages": [
-            "ja/products/managed-postgres/extensions/chdb/introduction",
-            "ja/products/managed-postgres/extensions/chdb/chdb",
-            "ja/products/managed-postgres/extensions/chdb/chdb_hook"
-          ]
-        },
         "ja/products/managed-postgres/upgrades",
         "ja/products/managed-postgres/openapi",
         "ja/products/managed-postgres/terraform"
-      ]
-    },
-    {
-      "group": "ガイド",
-      "pages": [
-        "ja/products/managed-postgres/guides/bun",
-        "ja/products/managed-postgres/guides/cloudflare-workers",
-        "ja/products/managed-postgres/guides/django",
-        "ja/products/managed-postgres/guides/dotnet",
-        "ja/products/managed-postgres/guides/drizzle",
-        "ja/products/managed-postgres/guides/fastapi",
-        "ja/products/managed-postgres/guides/go",
-        "ja/products/managed-postgres/guides/kysely",
-        "ja/products/managed-postgres/guides/laravel",
-        "ja/products/managed-postgres/guides/nodejs",
-        "ja/products/managed-postgres/guides/phoenix",
-        "ja/products/managed-postgres/guides/prisma",
-        "ja/products/managed-postgres/guides/ruby-on-rails",
-        "ja/products/managed-postgres/guides/rust",
-        "ja/products/managed-postgres/guides/spring-boot"
       ]
     },
     {
@@ -69,22 +41,20 @@
       ]
     },
     {
-      "group": "ClickHouse 連携",
+      "group": "ClickHouse Integration",
       "pages": [
-        "ja/products/managed-postgres/sync-to-clickhouse/clickpipes",
-        "ja/products/managed-postgres/sync-to-clickhouse/walshadow"
+        "ja/products/managed-postgres/clickhouse-integration"
       ]
     },
     {
       "group": "移行",
       "pages": [
         "ja/products/managed-postgres/migrations/overview",
+        "ja/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "ja/products/managed-postgres/migrations/logical-replication",
+        "ja/products/managed-postgres/migrations/peerdb",
         "ja/products/managed-postgres/migrations/clickpipes",
         "ja/products/managed-postgres/migrations/data-validation",
-        "ja/products/managed-postgres/migrations/logical-replication",
-        "ja/products/managed-postgres/migrations/neon",
-        "ja/products/managed-postgres/migrations/pg_dump-pg_restore",
-        "ja/products/managed-postgres/migrations/peerdb",
         "ja/products/managed-postgres/migrations/faq"
       ]
     },

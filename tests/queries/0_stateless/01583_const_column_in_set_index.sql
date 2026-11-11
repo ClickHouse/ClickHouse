@@ -1,3 +1,4 @@
+SET query_plan_optimize_prewhere = 1;
 
 drop table if exists insub;
 

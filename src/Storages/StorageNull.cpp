@@ -32,7 +32,6 @@ void registerStorageNull(StorageFactory & factory)
 
         return std::make_shared<StorageNull>(args.table_id, args.columns, args.constraints, args.comment);
     },
-    SecretArgumentsSpec{},
     {
         .supports_parallel_insert = true,
     },
@@ -78,7 +77,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
 }
 
 
-void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &, DDLGuardPtr &)
+void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
 

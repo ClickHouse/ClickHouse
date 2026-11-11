@@ -1,4 +1,3 @@
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -10,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -97,22 +97,26 @@ public:
     /// Read per executing node, so two nodes can disagree.
     bool isServerConstant() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
     {
-        return "(Any) -> UInt16";
+        size_t number_of_arguments = data_types.size();
+        if (number_of_arguments != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1",
+                getName(),
+                number_of_arguments);
+        return std::make_shared<DataTypeNumber<UInt16>>();
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
-        /// otherwise `getServerPort(toLowCardinality('tcp_port'))` is rejected.
-        if (!isStringOrFixedString(recursiveRemoveLowCardinality(arguments[0].type)))
+        if (!isString(arguments[0].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "The argument of function {} should be a constant string with the name of a setting",
                 getName());
-        const auto full_column = arguments[0].column ? recursiveRemoveLowCardinality(arguments[0].column) : nullptr;
-        const auto * column = full_column.get();
+        const auto * column = arguments[0].column.get();
         if (!column || !checkAndGetColumnConstStringOrFixedString(column))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
