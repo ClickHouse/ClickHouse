@@ -92,12 +92,12 @@ protected:
         MutableColumnPtr col_user_id = ColumnString::create();
         MutableColumnPtr col_file_size = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
         MutableColumnPtr col_file_origin = ColumnString::create();
-        MutableColumnPtr col_active_bytes = ColumnUInt64::create();
-        MutableColumnPtr col_passive_bytes = ColumnUInt64::create();
-        MutableColumnPtr col_idle_bytes = ColumnUInt64::create();
+        MutableColumnPtr col_active_bytes = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
+        MutableColumnPtr col_passive_bytes = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
+        MutableColumnPtr col_idle_bytes = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
         MutableColumnPtr col_last_hit_windows_ago = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
-        MutableColumnPtr col_last_hit_active_bytes = ColumnUInt64::create();
-        MutableColumnPtr col_last_hit_passive_bytes = ColumnUInt64::create();
+        MutableColumnPtr col_last_hit_active_bytes = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
+        MutableColumnPtr col_last_hit_passive_bytes = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
         MutableColumnPtr col_queue_entry_type = ColumnString::create();
 
         auto get_total_size = [&] -> size_t
@@ -165,15 +165,28 @@ protected:
                 else
                     col_file_size->insertDefault();
 
-                col_active_bytes->insert(file_segment.efficiency.active_bytes);
-                col_passive_bytes->insert(file_segment.efficiency.passive_bytes);
-                col_idle_bytes->insert(file_segment.efficiency.idle_bytes);
-                if (file_segment.efficiency.last_hit_windows_ago)
-                    col_last_hit_windows_ago->insert(*file_segment.efficiency.last_hit_windows_ago);
+                if (const auto & efficiency = file_segment.efficiency)
+                {
+                    col_active_bytes->insert(efficiency->active_bytes);
+                    col_passive_bytes->insert(efficiency->passive_bytes);
+                    col_idle_bytes->insert(efficiency->idle_bytes);
+                    if (efficiency->last_hit_windows_ago)
+                        col_last_hit_windows_ago->insert(*efficiency->last_hit_windows_ago);
+                    else
+                        col_last_hit_windows_ago->insertDefault();
+                    col_last_hit_active_bytes->insert(efficiency->last_hit_active_bytes);
+                    col_last_hit_passive_bytes->insert(efficiency->last_hit_passive_bytes);
+                }
                 else
+                {
+                    /// The cache does not track efficiency.
+                    col_active_bytes->insertDefault();
+                    col_passive_bytes->insertDefault();
+                    col_idle_bytes->insertDefault();
                     col_last_hit_windows_ago->insertDefault();
-                col_last_hit_active_bytes->insert(file_segment.efficiency.last_hit_active_bytes);
-                col_last_hit_passive_bytes->insert(file_segment.efficiency.last_hit_passive_bytes);
+                    col_last_hit_active_bytes->insertDefault();
+                    col_last_hit_passive_bytes->insertDefault();
+                }
                 col_queue_entry_type->insert(String(magic_enum::enum_name(file_segment.queue_entry_type)));
 
                 ++num_rows;
@@ -309,12 +322,12 @@ StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & tab
         {"user_id", std::make_shared<DataTypeString>(), "User id of the user which created the file segment"},
         {"segment_type", std::make_shared<DataTypeString>(), "Type of the segment. Used to separate data files(`.json`, `.txt` and etc) from data file(`.bin`, mark files)."},
         {"file_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "File size of the file to which current file segment belongs"},
-        {"active_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of the file segment served from the cache in the live efficiency window, rounded up to 64 KiB granules. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (one buffer, `prefetch_buffer_size` by default, cut at the end of the read), not the bytes that the query decompresses."},
-        {"passive_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of the file segment not served in the live efficiency window, if it had a cache hit in it"},
-        {"idle_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of the file segment, if it had no cache hit in the live efficiency window. `active_bytes`, `passive_bytes` and `idle_bytes` add up to `downloaded_size`"},
+        {"active_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Bytes of the file segment served from the cache in the live efficiency window, rounded up to 64 KiB granules. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (one buffer, `prefetch_buffer_size` by default, cut at the end of the read), not the bytes that the query decompresses. NULL if the cache does not track efficiency (`efficiency_window_sec` is 0)"},
+        {"passive_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "For a file segment with a cache hit in the live efficiency window: its bytes that were not served from the cache in that window. 0 for a file segment without a hit. NULL if the cache does not track efficiency"},
+        {"idle_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "For a file segment without a cache hit in the live efficiency window: all its bytes. 0 for a file segment with a hit. `active_bytes`, `passive_bytes` and `idle_bytes` add up to `downloaded_size`. NULL if the cache does not track efficiency"},
         {"last_hit_windows_ago", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Efficiency windows since the latest earlier window with a cache hit (1 is the last full window). NULL if there is none"},
-        {"last_hit_active_bytes", std::make_shared<DataTypeUInt64>(), "Bytes served from the cache in that earlier window"},
-        {"last_hit_passive_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of the file segment, at its current downloaded size, not served from the cache in that earlier window"},
+        {"last_hit_active_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Bytes served from the cache in that earlier window"},
+        {"last_hit_passive_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Bytes of the file segment, at its current downloaded size, not served from the cache in that earlier window"},
         {"queue_entry_type", std::make_shared<DataTypeString>(), "Queue of the file segment in the cache policy, for example `SLRU_Protected` or `SLRU_Probationary`"},
     }));
     storage_metadata.setVirtuals(createVirtuals());

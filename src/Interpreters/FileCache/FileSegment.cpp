@@ -1539,16 +1539,22 @@ void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
-FileSegmentEfficiencyInfo FileSegment::getEfficiencyInfo(const FileSegmentGuard::Lock &) const
+std::optional<FileSegmentEfficiencyInfo> FileSegment::getEfficiencyInfo(const FileSegmentGuard::Lock &) const
 {
+    /// Only a detached placeholder has no cache, and it is never in the cache metadata.
+    chassert(cache);
+    const auto & cache_efficiency = cache->getEfficiency();
+    if (!cache_efficiency.isEnabled())
+        return std::nullopt;
     const size_t downloaded = downloaded_size;
+    const auto current_window = cache_efficiency.windowNow();
+    std::lock_guard lock(efficiency_mutex);
+    if (efficiency)
+        return efficiency->getInfo(current_window, range().size(), downloaded);
+    /// The tracker is created at the first cache hit, so a file segment without it was never served: idle.
     FileSegmentEfficiencyInfo info;
     info.idle_bytes = downloaded;
-    if (!cache)
-        return info;
-    const auto current_window = cache->getEfficiency().windowNow();
-    std::lock_guard lock(efficiency_mutex);
-    return efficiency ? efficiency->getInfo(current_window, range().size(), downloaded) : info;
+    return info;
 }
 
 FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
@@ -1691,7 +1697,8 @@ void FileSegment::addReservedSize(Int64 delta)
         return;
     }
 
-    /// Under the lock, so the first window start of `markRead` sees either none or all of `delta`.
+    /// Under the lock with `markRead`, so that a window start counts `delta` exactly once: either in the reserved
+    /// bytes that `markRead` reads, or in the `addReservedBytes` call below.
     std::lock_guard lock(efficiency_mutex);
     reserved_size += static_cast<size_t>(delta);
     if (removed_from_cache)
@@ -1700,11 +1707,17 @@ void FileSegment::addReservedSize(Int64 delta)
     auto & sizes = cache->getSegmentSizes();
     const Int64 new_segments = counted_in_segment_sizes ? 0 : 1;
     if (delta >= 0)
+    {
         sizes.add(size_class, new_segments, delta);
-    if (efficiency)
-        efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
-    if (delta < 0)
+        if (efficiency)
+            efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
+    }
+    else
+    {
+        if (efficiency)
+            efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
         sizes.add(size_class, new_segments, delta);
+    }
     counted_in_segment_sizes = true;
 }
 

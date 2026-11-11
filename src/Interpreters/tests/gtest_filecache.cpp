@@ -4621,14 +4621,14 @@ TEST_F(FileCacheTest, EfficiencyWindow)
     auto holder_b = cache.getOrSet(key, S, S, 8 * S, {}, 0, user);
     auto b = get(holder_b, 0);
     download(b);
-    EXPECT_FALSE(FileSegment::getInfo(b).efficiency.last_hit_windows_ago.has_value());
+    EXPECT_FALSE(FileSegment::getInfo(b).efficiency->last_hit_windows_ago.has_value());
 
     /// Window 0: A is read in full; B is not read and stays idle.
     a->markRead(0, S);
-    EXPECT_EQ(FileSegment::getInfo(a).efficiency.active_bytes, S);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency->active_bytes, S);
     expect(next_window(), /*active=*/S, /*passive=*/0);
-    EXPECT_EQ(FileSegment::getInfo(a).efficiency.idle_bytes, S);
-    EXPECT_EQ(FileSegment::getInfo(a).efficiency.last_hit_windows_ago, 1);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency->idle_bytes, S);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency->last_hit_windows_ago, 1);
 
     /// Window 1: a 16-byte read of A counts its whole granule.
     a->markRead(G + 10, 16);
@@ -4686,7 +4686,7 @@ TEST_F(FileCacheTest, EfficiencyWindow)
     ASSERT_EQ(d->range().size(), G + 100);
     download(d);
     d->markRead(G + 90, 110);
-    EXPECT_EQ(FileSegment::getInfo(d).efficiency.active_bytes, 100);
+    EXPECT_EQ(FileSegment::getInfo(d).efficiency->active_bytes, 100);
     expect(next_window(), 100, G);
 
     /// Window 7: eviction (of C, then D) removes the share of a read file segment.
@@ -4767,9 +4767,7 @@ TEST_F(FileCacheTest, EfficiencyDisabled)
     download(segment);
     segment->markRead(0, S);
 
-    EXPECT_FALSE(FileSegment::getInfo(segment).efficiency.last_hit_windows_ago.has_value());
-    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.idle_bytes, S);
-    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 0);
+    EXPECT_FALSE(FileSegment::getInfo(segment).efficiency.has_value());
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, 0);
 }
@@ -4805,7 +4803,7 @@ TEST_F(FileCacheTest, EfficiencyLastGranuleCut)
     ASSERT_EQ(shrunk->range().size(), 10);
     ASSERT_EQ(shrunk->state(), State::DOWNLOADED);
     shrunk->markRead(0, 10);
-    EXPECT_EQ(FileSegment::getInfo(shrunk).efficiency.active_bytes, 10);
+    EXPECT_EQ(FileSegment::getInfo(shrunk).efficiency->active_bytes, 10);
 
     /// The last granule of a file segment of `2 * G + 1001` bytes is cut at its end.
     auto odd_key = FileCacheKey::fromPath("efficiency_granule_odd");
@@ -4814,7 +4812,7 @@ TEST_F(FileCacheTest, EfficiencyLastGranuleCut)
     ASSERT_EQ(odd->range().size(), 2 * G + 1001);
     download(odd);
     odd->markRead(0, 2 * G + 1001);
-    EXPECT_EQ(FileSegment::getInfo(odd).efficiency.active_bytes, 2 * G + 1001);
+    EXPECT_EQ(FileSegment::getInfo(odd).efficiency->active_bytes, 2 * G + 1001);
 }
 
 TEST_F(FileCacheTest, EfficiencyStaleClockCountsInCurrentWindow)
@@ -4842,7 +4840,7 @@ TEST_F(FileCacheTest, EfficiencyStaleClockCountsInCurrentWindow)
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W / 2));
     segment->markRead(2 * G, G);
-    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 3 * G);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency->active_bytes, 3 * G);
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     const auto snapshot = cache.getEfficiency().getSnapshot();
@@ -4937,7 +4935,7 @@ TEST_F(FileCacheTest, EfficiencySegmentWindows)
     auto expect = [&](UInt64 active, UInt64 passive, UInt64 idle, std::optional<UInt64> last_hit_windows_ago, UInt64 last_hit_active,
         UInt64 last_hit_passive)
     {
-        const auto info = FileSegment::getInfo(segment).efficiency;
+        const auto info = FileSegment::getInfo(segment).efficiency.value();
         EXPECT_EQ(info.active_bytes, active);
         EXPECT_EQ(info.passive_bytes, passive);
         EXPECT_EQ(info.idle_bytes, idle);
@@ -4989,7 +4987,7 @@ TEST_F(FileCacheTest, EfficiencyCacheWriterCountsOnlyAnotherFill)
         ASSERT_TRUE(role);
         ASSERT_EQ(writer.write(chain(offset, size), role), size);
     };
-    auto active = [&] { return FileSegment::getInfo(segment).efficiency.active_bytes; };
+    auto active = [&] { return FileSegment::getInfo(segment).efficiency->active_bytes; };
 
     const DB::FilesystemCacheSettings settings;
     DiskCacheWriter a(cache, /*object_file_offset=*/0, settings, shared_holder, ByteRange{0, S});
@@ -5051,7 +5049,7 @@ TEST_F(FileCacheTest, EfficiencyShrinkWithinWindow)
     ASSERT_EQ(segment.get(), before_shrink);
     ASSERT_EQ(segment->range().size(), 2 * G + 100);
     segment->markRead(2 * G, 100);
-    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, G + 100);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency->active_bytes, G + 100);
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     const auto snapshot = cache.getEfficiency().getSnapshot();

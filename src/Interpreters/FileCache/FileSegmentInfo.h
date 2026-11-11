@@ -91,6 +91,7 @@ namespace DB
         bool is_unbound;
         IFileCachePriority::QueueEntryType queue_entry_type;
         FileCacheOriginInfo origin;
-        FileSegmentEfficiencyInfo efficiency;
+        /// Not set if the cache does not track efficiency (`efficiency_window_sec` is 0).
+        std::optional<FileSegmentEfficiencyInfo> efficiency;
     };
 }
