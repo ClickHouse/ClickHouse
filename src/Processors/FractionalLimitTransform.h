@@ -67,9 +67,6 @@ private:
     std::vector<PortsData> ports_data;
     UInt64 num_finished_input_ports = 0;
 
-    /// Inputs are not requested before an output asks for data.
-    bool was_output_needed = false;
-
     /// Total number of input rows.
     UInt64 total_input_rows = 0;
     /// Number of rows pushed early (before all input is read).

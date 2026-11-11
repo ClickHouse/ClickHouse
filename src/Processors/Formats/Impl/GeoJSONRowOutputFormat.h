@@ -1,8 +1,8 @@
 #pragma once
 
 #include <array>
-#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
+#include <vector>
 
 #include <Columns/ColumnVariant.h>
 #include <Core/Names.h>
@@ -101,7 +101,7 @@ private:
 
     /// Columns forming `properties`. When `emit_properties_column_directly` is set there is exactly one such column,
     /// emitted directly as the properties object.
-    VectorWithMemoryTracking<size_t> property_col_indices;
+    std::vector<size_t> property_col_indices;
     Names property_json_names;
     bool emit_properties_column_directly = false;
 };

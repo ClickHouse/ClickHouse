@@ -1,6 +1,5 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
-#include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -49,11 +48,6 @@ bool DataLakeStorageSettings::isChanged(std::string_view name) const
 bool DataLakeStorageSettings::hasBuiltin(std::string_view name)
 {
     return DataLakeStorageSettingsImpl::hasBuiltin(name);
-}
-
-std::string_view DataLakeStorageSettings::resolveName(std::string_view name)
-{
-    return DataLakeStorageSettingsTraits::resolveName(name);
 }
 
 void DataLakeStorageSettings::loadFromSettingsChanges(const SettingsChanges & changes)

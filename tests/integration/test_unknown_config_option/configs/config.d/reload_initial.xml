@@ -1,0 +1,8 @@
+<clickhouse>
+    <!--
+        Minimal placeholder config for the reload cluster. Intentionally empty so
+        that the test can later inject `<http_handlers>` and `config://`-referenced
+        keys via `config.d/` files without triggering XML merge collisions with a
+        pre-existing `<http_handlers>` section in the same cluster.
+    -->
+</clickhouse>
