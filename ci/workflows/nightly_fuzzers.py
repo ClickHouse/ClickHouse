@@ -30,7 +30,7 @@ workflow = Workflow.Config(
         # being built a second time.
         *[
             j
-            for j in JobConfigs.release_build_jobs_with_examples
+            for j in JobConfigs.release_build_jobs
             if "arm_release" in j.name
         ],
         JobConfigs.libfuzzer_job,
@@ -44,7 +44,6 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
-        ArtifactConfigs.clickhouse_examples,
     ],
     # Mangle appends the docker job names to every job's run_after, and run_after
     # is part of the job digest, so a workflow whose docker graph differs from

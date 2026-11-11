@@ -41,8 +41,8 @@ workflow = Workflow.Config(
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *JobConfigs.tidy_build_arm_jobs,
-        *JobConfigs.build_jobs,
-        *JobConfigs.release_build_jobs_with_examples,
+        *JobConfigs.build_jobs_with_examples,
+        *JobConfigs.release_build_jobs,
         *JobConfigs.performance_reference_build_jobs,
         *[
             job.set_run_after(

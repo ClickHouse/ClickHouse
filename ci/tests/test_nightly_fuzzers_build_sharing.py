@@ -7,12 +7,11 @@ things have to line up for that, and all three were wrong:
 
   - The job digest covers `command` and the `provides` artifact configs
     (ci/praktika/digest.py drops only requires/enable_commit_status/
-    allow_failure/force_success/digest_config). MasterCI takes
-    release_build_jobs_with_examples, which appends --build-examples and
-    CLICKHOUSE_EXAMPLES to the ARM release job, so a workflow taking the plain
-    release_build_jobs variant hashes differently for that job. The shared build
-    is the AMD one, where the two lists still agree, so the arms below pin that
-    agreement rather than assume it.
+    allow_failure/force_success/digest_config). Both workflows take the plain
+    release_build_jobs: `clickhouse-examples` is built by `arm_binary`
+    (build_jobs_with_examples), without ThinLTO, so no release build appends
+    --build-examples and CLICKHOUSE_EXAMPLES. The arms below pin that agreement
+    rather than assume it.
 
   - The long-retention tags are part of those artifact configs, so an untagged
     upload misses the cache. It cannot damage MasterCI's own upload: the S3 prefix
@@ -176,17 +175,18 @@ class TestBuildIsSharedWithMasterCI:
         )
         assert _config_digest(job, untagged) != _config_digest(job, nightly_workflow)
 
-    def test_the_examples_wiring_reaches_both_sides_or_neither(self):
-        # The suffix is appended to the ARM release job only, and that is the job
-        # the two workflows share, so both must take it from the same list. A
-        # workflow switched back to the plain list would keep the name and lose
-        # the cache entry.
-        with_examples = [
-            j.name
-            for j in JobConfigs.release_build_jobs_with_examples
-            if "--build-examples" in j.command
+    def test_the_examples_are_built_without_thinlto(self):
+        # `clickhouse-examples` costs a second ThinLTO backend run over the same
+        # modules when linked by a ThinLTO build, so only `arm_binary` builds it,
+        # and the release build the two workflows share does not.
+        assert not [
+            j.name for j in JobConfigs.release_build_jobs if "--build-examples" in j.command
         ]
-        assert with_examples, "no job takes the examples: this arm is vacuous"
+        assert [
+            j.name
+            for j in JobConfigs.build_jobs_with_examples
+            if "--build-examples" in j.command
+        ] == ["Build (arm_binary)"]
         nightly, master = _mangled("NightlyFuzzers"), _mangled("MasterCI")
         assert (
             _job(nightly, _SHARED_BUILD).command == _job(master, _SHARED_BUILD).command

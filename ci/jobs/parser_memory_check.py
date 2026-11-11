@@ -79,7 +79,7 @@ def get_merge_base_profiler_url() -> str:
         prefix = _Environment.get_s3_prefix_static(
             pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
         )
-        url = f"{MASTER_PROFILER_BASE_URL}/{prefix}/build_arm_release/clickhouse-examples"
+        url = f"{MASTER_PROFILER_BASE_URL}/{prefix}/build_arm_binary/clickhouse-examples"
         if Shell.check(f"curl -sfI '{url}' > /dev/null"):
             print(f"Using master binary from commit {sha[:12]}")
             return url

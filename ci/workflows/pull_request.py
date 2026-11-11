@@ -93,14 +93,17 @@ workflow = Workflow.Config(
         JobConfigs.fast_test,
         *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
-        *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
+        *[
+            job.set_run_after(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.build_jobs_with_examples
+        ],
         *[
             job.set_run_after(STYLE_AND_FAST_TESTS)
             for job in JobConfigs.extra_validation_build_jobs
         ],
         *[
             job.set_run_after(REGULAR_BUILD_NAMES)
-            for job in JobConfigs.release_build_jobs_with_examples
+            for job in JobConfigs.release_build_jobs
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
