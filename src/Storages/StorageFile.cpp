@@ -3083,7 +3083,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     /// `max_num_streams` is a read-parallelism request, not a thread budget.
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
     if (parallelize_output && storage->parallelizeOutputAfterReading(ctx))
-        resizeOutputAfterReading(pipe, resize_to, /* keep_streams = */ false, build_settings.min_outstreams_per_resize_after_split);
+        resizeOutputAfterReading(pipe, resize_to, /* keep_streams = */ need_only_count, build_settings.min_outstreams_per_resize_after_split);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));

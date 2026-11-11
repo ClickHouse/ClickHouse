@@ -250,7 +250,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         resizeOutputAfterReading(
             pipe,
             resize_to,
-            /* keep_streams = */ storage_snapshot->metadata->hasSortingKey(),
+            /* keep_streams = */ need_only_count || storage_snapshot->metadata->hasSortingKey(),
             build_settings.min_outstreams_per_resize_after_split);
 
     for (const auto & processor : pipe.getProcessors())

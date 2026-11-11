@@ -28,6 +28,10 @@ SELECT countIf(trimLeft(explain) LIKE 'Overflow%'), countIf(trimLeft(explain) = 
 -- With many streams the streams are split into groups of `min_outstreams_per_resize_after_split`.
 SELECT position(arrayStringConcat(groupArray(trimLeft(explain)), '|'), 'Concat × 4 2 → 1|Resize × 2 2 → 2|Overflow × 4 1 → 2') > 0 FROM (EXPLAIN PIPELINE SELECT k % 7 AS g, count() FROM file(currentDatabase() || '_05361_*.parquet') GROUP BY g) SETTINGS max_threads = 4, min_outstreams_per_resize_after_split = 2;
 SELECT position(arrayStringConcat(groupArray(trimLeft(explain)), '|'), 'Concat × 4 2 → 1|Resize 4 → 4|Overflow × 4 1 → 2') > 0 FROM (EXPLAIN PIPELINE SELECT k % 7 AS g, count() FROM file(currentDatabase() || '_05361_*.parquet') GROUP BY g) SETTINGS max_threads = 4, min_outstreams_per_resize_after_split = 0;
+-- A read that only counts rows keeps its streams.
+SELECT countIf(trimLeft(explain) LIKE 'Overflow%') FROM (EXPLAIN PIPELINE SELECT count() FROM file(currentDatabase() || '_05361_*.parquet')) SETTINGS optimize_count_from_files = 1, optimize_trivial_count_query = 1;
+SELECT countIf(trimLeft(explain) LIKE 'Overflow%') FROM (EXPLAIN PIPELINE SELECT count() FROM s3(s3_conn, filename = currentDatabase() || '_05361/data_*.parquet')) SETTINGS optimize_count_from_files = 1, optimize_trivial_count_query = 1;
+SELECT countIf(trimLeft(explain) LIKE 'Overflow%') FROM (EXPLAIN PIPELINE SELECT count() FROM url('http://localhost:11111/test/' || currentDatabase() || '_05361/data_{0..3}.parquet', Parquet, 'k UInt64')) SETTINGS optimize_count_from_files = 1, optimize_trivial_count_query = 1;
 -- Reading in order and `parallelize_output_from_storages = 0` keep the streams as they are.
 SET input_format_parquet_preserve_order = 1;
 SELECT countIf(trimLeft(explain) LIKE 'Overflow%') FROM (EXPLAIN PIPELINE SELECT k % 7 AS g, count() FROM file(currentDatabase() || '_05361_*.parquet') GROUP BY g);
