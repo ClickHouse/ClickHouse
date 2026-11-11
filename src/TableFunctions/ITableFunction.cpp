@@ -1,5 +1,6 @@
 #include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
@@ -13,13 +14,14 @@ namespace ProfileEvents
     extern const Event TableFunctionExecute;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;;
-}
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int ACCESS_DENIED;
+}
 
 const char * ITableFunction::getNonClusteredStorageEngineName() const
 {
@@ -45,11 +47,25 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
     }
 }
 
+void ITableFunction::checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const
+{
+    context->checkAccess(access_type, table_id);
+}
+
 void ITableFunction::checkCreateTemporaryTableAccess(ContextPtr context, bool is_insert_query) const
 {
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
+}
+
+void ITableFunction::checkSourceStorageAccess(
+    const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const
+{
+    if (const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
+        alias && !alias->isTargetTableGranted(context, access_type, {}))
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to", table_id.getNameForLogs());
 }
 
 void ITableFunction::checkEngineAccess(ContextPtr context) const
@@ -67,6 +83,7 @@ ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr 
     /// Resolving table structure is always a read operation.
     checkSourceAccess(context, /*is_insert_query*/ false);
     checkEngineAccess(context);
+    checkSourceObjectAccess(context, /*for_structure=*/ true);
     /// Resolving the structure may access the source (e.g. schema inference fetches a URL), so it must be
     /// gated in the same way as `execute`: otherwise `DESCRIBE TABLE url(...)` would let a user who cannot
     /// run the table function (e.g. under `readonly = 1`) make the server request an endpoint.
@@ -82,8 +99,9 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     if (check_source_access)
         checkSourceAccess(context, is_insert_query);
 
-    /// Deliberately not under `check_source_access`: no caller takes over the engine check.
+    /// Deliberately not under `check_source_access`: no caller takes over these checks.
     checkEngineAccess(context);
+    checkSourceObjectAccess(context, /*for_structure=*/ false);
 
     if (check_create_temporary_table)
         checkCreateTemporaryTableAccess(context, is_insert_query);
