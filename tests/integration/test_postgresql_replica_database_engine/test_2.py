@@ -1,4 +1,5 @@
 import random
+import threading
 
 import pytest
 
@@ -716,6 +717,62 @@ def test_failed_attach_with_failed_cleanup_keeps_table_attached(started_cluster)
         f"INSERT INTO postgres_database.{attached_table_name} SELECT number, number FROM numbers(50, 50)"
     )
     check_tables_are_synchronized(instance, attached_table_name)
+
+    pg_manager.drop_materialized_db()
+
+
+def test_attach_table_keeps_changes_made_while_loading_snapshot(started_cluster):
+    # ATTACH TABLE reloads the table from a snapshot and replicates its changes after that snapshot. PostgreSQL
+    # decides whether a change is published by the publication membership at the moment of that change, so the
+    # table must be published before the snapshot is exported: a row deleted while the snapshot is being
+    # loaded would otherwise never reach the consumer and would stay in ClickHouse for good.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach"
+    pg_manager.create_and_fill_postgres_table(attached_table_name)
+
+    failpoint = "materialized_postgresql_pause_in_load_from_snapshot"
+    errors = []
+
+    def attach():
+        try:
+            instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+        except Exception as e:
+            errors.append(e)
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    attach_thread = threading.Thread(target=attach)
+    try:
+        attach_thread.start()
+        assert instance.wait_for_log_line(
+            f"Pausing while loading table `{attached_table_name}` from a snapshot"
+        )
+        # The snapshot has been exported already, so it still contains these rows.
+        pg_manager.execute(f'DELETE FROM "{attached_table_name}" WHERE key < 10')
+        pg_manager.execute(
+            f'UPDATE "{attached_table_name}" SET value = value + 1000 WHERE key >= 40'
+        )
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        attach_thread.join()
+    assert not errors, errors
+
+    check_tables_are_synchronized(instance, attached_table_name)
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM test_database.{attached_table_name} WHERE key < 10"
+            )
+        )
+        == 0
+    )
 
     pg_manager.drop_materialized_db()
 

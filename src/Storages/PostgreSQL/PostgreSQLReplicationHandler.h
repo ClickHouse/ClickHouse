@@ -197,6 +197,8 @@ private:
     /// Methods to manage Publication.
 
     bool isPublicationExist(pqxx::nontransaction & tx);
+    /// The object identifier of the publication, or nothing if it does not exist.
+    std::optional<String> fetchPublicationOid(pqxx::nontransaction & tx);
 
     void createPublicationIfNeeded(pqxx::nontransaction & tx);
 

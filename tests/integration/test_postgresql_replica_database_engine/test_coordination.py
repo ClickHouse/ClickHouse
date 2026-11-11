@@ -1657,6 +1657,134 @@ def test_leaked_publication_cleanup_is_serialized_with_concurrent_create(started
     pg_query('DROP TABLE IF EXISTS "old_table"')
 
 
+def test_leaked_publication_cleanup_is_fenced_against_leadership_loss(started_cluster):
+    # Holding `/leader` when the cleanup of a leaked publication starts is not enough: the Keeper session can
+    # expire while the drop is still on its way. Another replica can then clean up the leak itself, register,
+    # win the election and create its live publication under the same name. The late drop must not remove
+    # that publication under the running consumer: it is fenced inside PostgreSQL on the identity of the
+    # publication that was found leaked, and on the temporary leadership that is still held.
+    pg_manager.create_postgres_table("test_table")
+    pg_manager.create_postgres_table("old_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    # Learn the engine's generated publication name from a real setup, then drop the setup cleanly.
+    create_coordinated_db("old_table")
+    check_tables_are_synchronized(instance, "old_table")
+    publication_name = pg_query("SELECT pubname FROM pg_publication")[0][0]
+    pg_manager2.drop_materialized_db()
+    pg_manager.drop_materialized_db()
+    assert not publication_exists()
+
+    # Simulate the leak of the old setup's publication.
+    pg_query(f'CREATE PUBLICATION "{publication_name}" FOR TABLE ONLY "old_table"')
+
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    failpoint = "materialized_postgresql_pause_before_leaked_publication_drop"
+    pause_line = "Pausing before dropping a leaked publication"
+    refusal_line = "after it was found left behind, so it may be live"
+    pause_baseline = count_in_all_logs(instance, pause_line)
+    refusal_baseline = count_in_all_logs(instance, refusal_line)
+    pm = PartitionManager()
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        # The first replica holds `/leader` and is paused right before the drop.
+        wait_for_new_log_occurrence(instance, pause_line, pause_baseline)
+
+        # Its Keeper session expires. The second replica cleans up the leak itself, becomes the active worker
+        # and replicates through its new publication.
+        pm.drop_instance_zk_connections(instance)
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        wait_for_leader(instance2, expected="coord_instance2", timeout=180)
+        check_tables_are_synchronized(instance2, "test_table")
+    finally:
+        pm.heal_all()
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    # The resumed drop of the first replica refuses to remove the new publication.
+    wait_for_new_log_occurrence(instance, refusal_line, refusal_baseline, timeout=120)
+    publication_tables = {
+        row[0]
+        for row in pg_query(
+            f"SELECT tablename FROM pg_publication_tables WHERE pubname = '{publication_name}'"
+        )
+    }
+    assert publication_tables == {"test_table"}
+
+    # Replication keeps going through the new publication, and the first replica joins it.
+    instance2.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance2, "test_table")
+    check_tables_are_synchronized(instance, "test_table")
+
+    pg_query('DROP TABLE IF EXISTS "old_table"')
+
+
+def test_unconfirmed_temporary_leader_release_is_retried(started_cluster):
+    # The cleanup of a leaked publication holds `/leader` temporarily. If its removal cannot be confirmed, it
+    # must be retried in the background: the replica can be stopped before its first election, which would
+    # otherwise recognize and remove its own leftover node, and the node would then keep every peer on
+    # standby for as long as the server's shared Keeper session lives.
+    pg_manager.create_postgres_table("test_table")
+    pg_manager.create_postgres_table("old_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("old_table")
+    check_tables_are_synchronized(instance, "old_table")
+    publication_name = pg_query("SELECT pubname FROM pg_publication")[0][0]
+    pg_manager2.drop_materialized_db()
+    pg_manager.drop_materialized_db()
+    assert not publication_exists()
+
+    pg_query(f'CREATE PUBLICATION "{publication_name}" FOR TABLE ONLY "old_table"')
+
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    release_failpoint = "materialized_postgresql_fail_temporary_leader_release"
+    # Keeps the first replica from reaching its first election after the cleanup.
+    register_failpoint = "materialized_postgresql_pause_before_register_replica"
+    register_line = "Pausing before registering the replica"
+    released_line = "Released the replication leader node"
+    register_baseline = count_in_all_logs(instance, register_line)
+    released_baseline = count_in_all_logs(instance, released_line)
+    instance.query(f"SYSTEM ENABLE FAILPOINT {release_failpoint}")
+    instance.query(f"SYSTEM ENABLE FAILPOINT {register_failpoint}")
+    try:
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        wait_for_new_log_occurrence(instance, register_line, register_baseline)
+        instance.query(f"SYSTEM DISABLE FAILPOINT {release_failpoint}")
+
+        # The background release frees `/leader`, and the second replica becomes the active worker while
+        # the first one is still held before its first election.
+        wait_for_new_log_occurrence(instance, released_line, released_baseline)
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        wait_for_leader(instance2, expected="coord_instance2")
+        check_tables_are_synchronized(instance2, "test_table")
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {release_failpoint}")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {register_failpoint}")
+
+    check_tables_are_synchronized(instance, "test_table")
+
+    pg_query('DROP TABLE IF EXISTS "old_table"')
+
+
 def test_refused_drop_in_restart_window_does_not_disable_startup(started_cluster):
     # A fail-close refused DROP DATABASE deactivates the background startup task up front. In the
     # attach/restart window - where the replication handler has not been rebuilt yet - the refusal must

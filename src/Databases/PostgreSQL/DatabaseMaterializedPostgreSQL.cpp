@@ -1126,7 +1126,8 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
                 /// Keep the wrapper published. The nested table still exists, and removing its wrapper
                 /// would strand it: a subsequent `DETACH TABLE ... PERMANENTLY` could no longer find it,
                 /// while `ATTACH TABLE` would collide with its physical metadata. Restore the persisted
-                /// tables-list even though the publication currently lacks the table: after a restart,
+                /// tables-list even though the publication may currently lack the table (the re-add puts it
+                /// back into the publication first, but it may have failed before that): after a restart,
                 /// `fetchRequiredTables` detects the mismatch, removes the stale publication, and
                 /// `startSynchronization` recreates it from the persisted list before it republishes the
                 /// wrapper. `removeTableFromReplication` is idempotent when the table is already absent

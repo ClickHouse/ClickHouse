@@ -286,6 +286,8 @@ namespace FailPoints
     extern const char materialized_postgresql_fail_after_publication_removal[];
     extern const char materialized_postgresql_pause_before_register_replica[];
     extern const char materialized_postgresql_pause_before_leaked_publication_drop[];
+    extern const char materialized_postgresql_pause_in_load_from_snapshot[];
+    extern const char materialized_postgresql_fail_temporary_leader_release[];
     extern const char materialized_postgresql_pause_in_non_last_teardown[];
     extern const char materialized_postgresql_pause_before_marking_snapshot_completed[];
     extern const char materialized_postgresql_pause_before_redo_snapshot_truncate[];
@@ -1760,6 +1762,13 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     {
         throw Exception(ErrorCodes::FAULT_INJECTED,
             "Injected failure while loading table `{}` from the initial snapshot", table_name);
+    });
+
+    fiu_do_on(FailPoints::materialized_postgresql_pause_in_load_from_snapshot,
+    {
+        LOG_INFO(log, "Pausing while loading table `{}` from a snapshot until failpoint "
+                 "materialized_postgresql_pause_in_load_from_snapshot is disabled", table_name);
+        FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_in_load_from_snapshot);
     });
 
     auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
@@ -3671,6 +3680,16 @@ void PostgreSQLReplicationHandler::markInitialSnapshotCompleted(const String & l
 }
 
 
+std::optional<String> PostgreSQLReplicationHandler::fetchPublicationOid(pqxx::nontransaction & tx)
+{
+    std::string query_str = fmt::format("SELECT oid::text FROM pg_publication WHERE pubname = {}", quoteStringPostgreSQL(publication_name));
+    pqxx::result result{tx.exec(query_str)};
+    if (result.empty())
+        return std::nullopt;
+    return result[0][0].as<std::string>();
+}
+
+
 bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = {})", quoteStringPostgreSQL(publication_name));
@@ -4420,6 +4439,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
     postgres::Connection connection(connection_info);
     std::set<String> result_tables;
     bool publication_exists_before_startup = false;
+    /// The object identifier of the publication as it was seen before the coordination state was checked below.
+    std::optional<String> publication_oid_before_startup;
 
     {
         pqxx::nontransaction tx(connection.getRef());
@@ -4428,7 +4449,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
         /// publication name would (wrongly) look absent and the tables list would be refetched from the
         /// schema instead of the existing publication.
         adoptLegacyReplicationIdentityIfNeeded(tx);
-        publication_exists_before_startup = isPublicationExist(tx);
+        publication_oid_before_startup = fetchPublicationOid(tx);
+        publication_exists_before_startup = publication_oid_before_startup.has_value();
     }
 
     LOG_DEBUG(log, "Publication exists: {}, is attach: {}", publication_exists_before_startup, is_attach);
@@ -4459,11 +4481,20 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
         const String leader_path = coordination_keeper_path + "/leader";
         zookeeper->createAncestors(leader_path);
         zkutil::EphemeralNodeHolderPtr cleanup_leader_node;
+        Int64 cleanup_leader_czxid = 0;
         {
             auto election_lock = LeakedLeaderNodeReleaser::instance().lockElections();
             cleanup_leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
             if (!cleanup_leader_node && removeLeakedOwnLeaderNode(zookeeper, leader_path))
                 cleanup_leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
+
+            if (cleanup_leader_node)
+            {
+                /// Identifies this election term, like `leader_node_czxid` (see `LeakedLeaderNodeReleaser`).
+                Coordination::Stat leader_stat;
+                zookeeper->get(leader_path, &leader_stat);
+                cleanup_leader_czxid = leader_stat.czxid;
+            }
         }
 
         if (!cleanup_leader_node)
@@ -4473,19 +4504,37 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                 doubleQuoteString(publication_name), leader_path);
 
         /// Releases the temporary leadership through the session that holds it, like `releaseLeadershipAfterFailedStartup`.
-        /// An unconfirmed removal is not retried blindly: the node is this replica's own under the current session,
-        /// so a later election recognizes and removes it (see `removeLeakedOwnLeaderNode`).
+        /// An unconfirmed removal is handed over to `LeakedLeaderNodeReleaser`, like at `shutdown`: the next election
+        /// of this replica would recognize and remove its own leftover node too (see `removeLeakedOwnLeaderNode`),
+        /// but this replica can be stopped before it gets there, and the node would then keep every peer on standby
+        /// for as long as the server's shared Keeper session lives.
         SCOPE_EXIT({
+            cleanup_leader_node->setAlreadyRemoved();
             try
             {
+                fiu_do_on(FailPoints::materialized_postgresql_fail_temporary_leader_release,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED,
+                                    "Injected failure of the temporary replication leader-node removal");
+                });
+
                 auto election_lock = LeakedLeaderNodeReleaser::instance().lockElections();
                 zookeeper->remove(leader_path);
             }
             catch (...)
             {
-                tryLogCurrentException(log, "Could not confirm the removal of the temporary replication leader node");
+                tryLogCurrentException(log, "Could not confirm the removal of the temporary replication leader node, "
+                                            "retrying it in the background until it is resolved");
+                try
+                {
+                    LeakedLeaderNodeReleaser::instance().add(
+                        getContext(), leader_path, coordination_replica_name, zookeeper->getClientID(), cleanup_leader_czxid);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Could not schedule the release of the temporary replication leader node");
+                }
             }
-            cleanup_leader_node->setAlreadyRemoved();
         });
 
         if (!hasSurvivingCoordinationState(/* include_refused_drop_metadata */ true))
@@ -4496,17 +4545,25 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                         "table set is stale. Dropping it; it will be recreated",
                         doubleQuoteString(publication_name), coordination_keeper_path);
 
+            /// Holding `/leader` when the drop starts is not enough: the session can expire while the drop is still on
+            /// its way (for example, while this thread is descheduled), and another replica can then clean up the leak
+            /// itself, register, win the election and create its live publication under the same name, which a late
+            /// drop here would remove under its running consumer. So the drop is fenced inside PostgreSQL, in one
+            /// transaction:
+            /// - the publication is locked against a concurrent `DROP` (`COMMENT ON` takes a lock that conflicts
+            ///   with it, held until the end of the transaction), and its object identifier must still be the one
+            ///   seen before the coordination state was checked. A publication recreated by another replica in the
+            ///   meantime has a different identifier and is never dropped. The identifier was read before
+            ///   the check, so it belongs to a publication that existed while there was no coordination state;
+            /// - while the lock is held, the temporary leadership must still be held through a live session (a fresh
+            ///   request, not only the client-side `expired` flag), and there must still be no coordination state.
+            ///   No other replica can win the election until Keeper expires this session, which needs a whole
+            ///   session timeout without heartbeats after this request, while the drop follows right after it.
             /// The absence of other coordination state does not prove that the publication belongs to this setup:
             /// an interrupted first startup may have recorded the source cluster only. Check it through the session
             /// of every drop attempt (`execWithRetry` may reconnect to another backend).
             execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_)
             {
-                /// The temporary leadership is what makes the drop safe, so it must still be held.
-                if (zookeeper->expired())
-                    throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
-                        "The Keeper session holding the temporary replication leadership expired, not dropping "
-                        "publication {}", doubleQuoteString(publication_name));
-
                 fiu_do_on(FailPoints::materialized_postgresql_pause_before_leaked_publication_drop,
                 {
                     LOG_INFO(log, "Pausing before dropping a leaked publication until failpoint "
@@ -4514,8 +4571,55 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                     FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_leaked_publication_drop);
                 });
 
-                checkLeakedPublicationTargetIsRecordedSourceCluster(tx_);
-                dropPublication(tx_);
+                tx_.exec("BEGIN");
+                try
+                {
+                    /// A failed `COMMENT ON` (the publication was dropped concurrently) fails this attempt, and the
+                    /// retry of the background startup task sees the current state.
+                    tx_.exec(fmt::format("COMMENT ON PUBLICATION {} IS NULL", doubleQuoteStringPostgreSQL(publication_name)));
+
+                    const auto locked_publication_oid = fetchPublicationOid(tx_);
+                    if (locked_publication_oid != publication_oid_before_startup)
+                        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                            "Publication {} was recreated (its object identifier changed from {} to {}) after it was "
+                            "found left behind, so it may be live. Not dropping it, retrying",
+                            doubleQuoteString(publication_name), publication_oid_before_startup.value_or("none"),
+                            locked_publication_oid.value_or("none"));
+
+                    /// The temporary leadership is what makes the drop safe, so it must still be held.
+                    Coordination::Stat leader_stat;
+                    String leader_name;
+                    if (zookeeper->expired()
+                        || !zookeeper->tryGet(leader_path, leader_name, &leader_stat)
+                        || leader_name != coordination_replica_name
+                        || leader_stat.ephemeralOwner != zookeeper->getClientID()
+                        || leader_stat.czxid != cleanup_leader_czxid)
+                        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                            "The temporary replication leadership at {} is no longer held, not dropping publication {}",
+                            leader_path, doubleQuoteString(publication_name));
+
+                    if (hasSurvivingCoordinationState(/* include_refused_drop_metadata */ true))
+                        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                            "Coordination state appeared under {} while publication {} was being dropped as left behind. "
+                            "Not dropping it, retrying", coordination_keeper_path, doubleQuoteString(publication_name));
+
+                    checkLeakedPublicationTargetIsRecordedSourceCluster(tx_);
+                    dropPublication(tx_);
+                    tx_.exec("COMMIT");
+                }
+                catch (...)
+                {
+                    /// The connection is reused by the retries and by the rest of this function.
+                    try
+                    {
+                        tx_.exec("ROLLBACK");
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Could not roll back the transaction that drops a leaked publication");
+                    }
+                    throw;
+                }
             });
             publication_exists_before_startup = false;
         }
@@ -5005,6 +5109,18 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         String start_lsn;
         StorageInfo nested_storage_info{ nullptr, {} };
 
+        /// The table must be in the publication before the snapshot is exported. PostgreSQL decides whether a change
+        /// is published by the publication membership at the moment of that change (decoding looks it up through
+        /// a historic catalog snapshot), so a change made between the export and a later `ALTER PUBLICATION` would
+        /// never be sent, although the snapshot does not contain it either. For example, a row deleted while the
+        /// snapshot is being loaded would stay in the nested table for good. The consumer is stopped above, and it
+        /// skips the changes of this table before `start_lsn` (see `addNested` below). If the reload fails, the
+        /// table stays published but not materialized, which is a supported state (see `addTableToPublication`).
+        {
+            pqxx::nontransaction tx(replication_connection.getRef());
+            addTableToPublication(tx, postgres_table_name);
+        }
+
         {
             auto tx = std::make_shared<pqxx::nontransaction>(replication_connection.getRef());
 
@@ -5039,11 +5155,6 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
             postgres::Connection tmp_connection(connection_info);
             nested_storage_info = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
             materialized_storage->set(nested_storage_info.storage);
-        }
-
-        {
-            pqxx::nontransaction tx(replication_connection.getRef());
-            addTableToPublication(tx, postgres_table_name);
         }
 
         /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
