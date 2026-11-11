@@ -11,16 +11,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `output_format_pretty_max_rows` is raised so that every block is written, and the query keeps
 # writing into the broken pipe. `output_format_pretty_squash_consecutive_ms` is pinned because the
 # background writer is only used when it is non-zero. `timeout` exits with 124 if the query hangs.
-# The query has to fail with the original write error, `CANNOT_WRITE_TO_FILE_DESCRIPTOR` (exit code 75),
-# not with `QUERY_WAS_CANCELLED` or anything else.
-timeout 60 $CLICKHOUSE_LOCAL --max_threads=1 --output_format_pretty_squash_consecutive_ms=50 --output_format_pretty_max_rows=1000000000000 \
+# The write error stops the query, and then the client exits quietly with exit code 0, as it does whenever
+# the reader of its output goes away (see `05401_epipe_stdout_head`).
+# The reading is throttled to keep each squashed table small. Otherwise the first table holds everything read
+# before the background thread writes, which on a fast machine exceeds the memory limit or the timeout.
+timeout 60 $CLICKHOUSE_LOCAL --max_threads=1 --max_execution_speed=1000000 --timeout_before_checking_execution_speed=0 \
+    --output_format_pretty_squash_consecutive_ms=50 --output_format_pretty_max_rows=1000000000000 \
     --query "SELECT number FROM numbers(1e18) FORMAT PrettyCompact" 2>/dev/null | head -n 1 > /dev/null
 
 code=${PIPESTATUS[0]}
 if [ "$code" -eq 124 ]
 then
     echo "The query did not stop after its output pipe was broken"
-elif [ "$code" -ne 75 ]
+elif [ "$code" -ne 0 ]
 then
     echo "Unexpected exit code $code"
 else
@@ -38,7 +41,7 @@ code=${PIPESTATUS[0]}
 if [ "$code" -eq 124 ]
 then
     echo "The query did not stop after its output pipe was broken, with no more output to write"
-elif [ "$code" -ne 75 ]
+elif [ "$code" -ne 0 ]
 then
     echo "Unexpected exit code $code"
 else
@@ -60,7 +63,7 @@ code=${PIPESTATUS[0]}
 if [ "$code" -eq 124 ]
 then
     echo "The remote client did not stop after its output pipe was broken, with no more output to write"
-elif [ "$code" -ne 75 ]
+elif [ "$code" -ne 0 ]
 then
     echo "Unexpected exit code $code"
 else

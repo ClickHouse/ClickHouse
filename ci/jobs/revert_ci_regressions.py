@@ -2062,7 +2062,7 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
                 f"CODEX_HOME={shlex.quote(codex_home)} "
                 f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
                 f"{shlex.quote(codex)} exec "
-                f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
+                f"-m gpt-6.1-sol -c 'model_reasoning_effort=xhigh' "
                 f"-s workspace-write "
                 f"-c sandbox_workspace_write.network_access=true "
                 f"-c approval_policy=never "
