@@ -694,11 +694,11 @@ std::string_view locationWithoutSchemeAndTrailingSlash(std::string_view location
 
 /// Whether a table without `metadata_location` is still the table the commit was built on. `getTableMetadata` resolves
 /// the base of such a table from the latest metadata file under its location, so it must be an Iceberg table at the same location.
-bool isSamePointerlessTable(const Aws::Glue::Model::Table & table, const String & base_metadata_path)
+bool isSamePointerlessTable(const Aws::Glue::Model::Table & table, const String & base_catalog_metadata_location)
 {
     return isReadableGlueTable(table)
         && locationWithoutSchemeAndTrailingSlash(table.GetStorageDescriptor().GetLocation())
-            == locationWithoutSchemeAndTrailingSlash(tableLocationFromMetadataPath(base_metadata_path));
+            == locationWithoutSchemeAndTrailingSlash(tableLocationFromMetadataPath(base_catalog_metadata_location));
 }
 
 }
@@ -823,7 +823,7 @@ bool GlueCatalog::commitTableUpdate(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    const String & base_metadata_path,
+    const String & base_catalog_metadata_location,
     const Poco::JSON::Object::Ptr & new_schema,
     const Poco::JSON::Object::Ptr & new_metadata) const
 {
@@ -854,14 +854,14 @@ bool GlueCatalog::commitTableUpdate(
         /// same version. Then nothing references our file and `false` lets the caller rebuild on top of the winner.
         /// A missing pointer is a conflict too, unless the base was resolved from the location of the same pointerless table.
         const bool same_base = current_metadata_path.empty()
-            ? isSamePointerlessTable(existing, base_metadata_path)
-            : current_metadata_path == base_metadata_path;
+            ? isSamePointerlessTable(existing, base_catalog_metadata_location)
+            : current_metadata_path == base_catalog_metadata_location;
         if (!same_base)
         {
             if (!update_sent)
             {
                 LOG_DEBUG(log, "Glue table {}.{} points to {} instead of {}, commit of {} conflicts",
-                    namespace_name, table_name, current_metadata_path, base_metadata_path, new_metadata_path);
+                    namespace_name, table_name, current_metadata_path, base_catalog_metadata_location, new_metadata_path);
                 return false;
             }
 
@@ -907,22 +907,22 @@ bool GlueCatalog::updateMetadata(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    const String & base_metadata_path,
+    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr /*new_snapshot*/,
     Poco::JSON::Object::Ptr new_metadata) const
 {
-    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_metadata_path, nullptr, new_metadata);
+    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, nullptr, new_metadata);
 }
 
 bool GlueCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    const String & base_metadata_path,
+    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr new_schema,
     Int32 /*previous_schema_id*/) const
 {
-    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_metadata_path, new_schema, nullptr);
+    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_schema, nullptr);
 }
 
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const

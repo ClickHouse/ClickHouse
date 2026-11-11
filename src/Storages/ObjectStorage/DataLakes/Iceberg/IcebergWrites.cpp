@@ -1265,7 +1265,7 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method,
         /* ignore_metadata_pointer_overrides */ true);
-    base_metadata_path = std::move(catalog_metadata_location);
+    base_catalog_metadata_location = std::move(catalog_metadata_location);
 
     metadata = deepCopy(getMetadataJSONObject(
         metadata_path,
@@ -1599,7 +1599,7 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.table_uuid,
                 persistent_table_components.metadata_compression_method,
                 /* ignore_metadata_pointer_overrides */ true);
-            base_metadata_path = std::move(catalog_metadata_location);
+            base_catalog_metadata_location = std::move(catalog_metadata_location);
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
@@ -1805,7 +1805,7 @@ bool IcebergStorageSink::initializeMetadata()
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_metadata_path, new_snapshot, metadata))
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
                 {
                     if (!catalog_writes_metadata_file)
                         removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);

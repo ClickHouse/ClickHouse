@@ -79,13 +79,13 @@ public:
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
-    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, const String & base_metadata_path, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
+    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, const String & base_catalog_metadata_location, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        const String & base_metadata_path,
+        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
@@ -114,12 +114,12 @@ private:
         const Poco::JSON::Object::Ptr & new_metadata);
 
     /// Moves `metadata_location` to `new_metadata_path` with `UpdateTable` guarded by `VersionId`.
-    /// Returns `false` if the pointer no longer names `base_metadata_path`.
+    /// Returns `false` if the pointer no longer names `base_catalog_metadata_location`.
     bool commitTableUpdate(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        const String & base_metadata_path,
+        const String & base_catalog_metadata_location,
         const Poco::JSON::Object::Ptr & new_schema,
         const Poco::JSON::Object::Ptr & new_metadata) const;
 

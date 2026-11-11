@@ -655,7 +655,7 @@ ExpireSnapshotsResult expireSnapshots(
     {
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergExpireSnapshots");
-        auto [last_version, metadata_path, compression_method, base_metadata_path] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             table_name,
@@ -793,7 +793,7 @@ ExpireSnapshotsResult expireSnapshots(
                 auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
                 const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
                 /// Nothing is deleted yet, so a conflict is retried like the metadata file conflict above.
-                if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, base_metadata_path, nullptr, metadata))
+                if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, base_catalog_metadata_location, nullptr, metadata))
                 {
                     if (!catalog->isTransactional())
                         removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);

@@ -289,13 +289,13 @@ public:
     virtual bool writesInitialMetadata() const { return false; }
 
     /// Updates metadata in catalog.
-    /// `base_metadata_path` is the metadata pointer the commit was built on, exactly as the catalog returned it.
+    /// `base_catalog_metadata_location` is the metadata pointer the commit was built on, exactly as the catalog returned it.
     /// Catalogs that only store a pointer (e.g. Glue) reject the commit unless the pointer still names it.
     virtual bool updateMetadata(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        const String & base_metadata_path,
+        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_snapshot,
         Poco::JSON::Object::Ptr new_metadata) const;
 
@@ -310,7 +310,7 @@ public:
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        const String & base_metadata_path,
+        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const;
 

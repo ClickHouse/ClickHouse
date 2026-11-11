@@ -384,7 +384,7 @@ static bool writeMetadataFiles(
     std::shared_ptr<DataLake::ICatalog> catalog,
     StorageID table_id,
     Poco::JSON::Object::Ptr metadata,
-    const String & base_metadata_path,
+    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
@@ -586,7 +586,7 @@ static bool writeMetadataFiles(
         {
             auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_metadata_path, new_snapshot, metadata))
+            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
             {
                 if (!catalog_writes_metadata_file)
                     removeRejectedMetadataFile(path_resolver, metadata_info, object_storage);
@@ -710,7 +710,7 @@ void mutate(
     {
         auto log = getLogger("IcebergMutations");
 
-        auto [last_version, metadata_path, compression_method, base_metadata_path] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             storage_id.getTableName(),
@@ -808,7 +808,7 @@ void mutate(
                     catalog,
                     storage_id,
                     metadata,
-                    base_metadata_path,
+                    base_catalog_metadata_location,
                     partititon_spec,
                     static_cast<Int32>(partition_spec_id),
                     chunk_partitioner,
@@ -840,7 +840,7 @@ void alter(
     while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
-        auto [last_version, metadata_path, compression_method, base_metadata_path] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             storage_id.getTableName(),
@@ -927,7 +927,7 @@ void alter(
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, base_metadata_path, new_schema, previous_schema_id))
+            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_schema, previous_schema_id))
             {
                 if (!catalog_writes_metadata_file)
                     removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);

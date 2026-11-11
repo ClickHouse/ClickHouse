@@ -236,7 +236,7 @@ private:
     StorageID table_id;
     CompressionMethod metadata_compression_method;
     /// The catalog pointer `metadata` was read from, which the catalog commit must still find.
-    String base_metadata_path;
+    String base_catalog_metadata_location;
     Iceberg::PersistentTableComponents persistent_table_components;
     const DataLakeStorageSettingsPtr data_lake_settings;
     const String write_format;
