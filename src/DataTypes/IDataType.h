@@ -618,9 +618,14 @@ inline bool isColumnedAsDecimalT(const DataType & data_type)
     return (which.isDecimal() || which.isDateTime64() || which.isTime64()) && which.idx == TypeToTypeIndex<T>;
 }
 
+inline bool isBool(const IDataType & data_type)
+{
+    return data_type.getName() == "Bool";
+}
+
 inline bool isBool(const DataTypePtr & data_type)
 {
-    return data_type->getName() == "Bool";
+    return isBool(*data_type);
 }
 
 inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
