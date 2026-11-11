@@ -1289,6 +1289,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after insert");
         });
 
+        /// A batch can claim nothing while the iterator is not finished, e.g. when the remaining keys of an ordered
+        /// queue belong to buckets held by another task of `parallel_inserts`. Looping again would only run empty
+        /// inserts until that task drains them, so end this poll and let the polling backoff apply.
+        const bool claimed_files = std::ranges::any_of(sources, [](const auto & source) { return source->hasClaimedFiles(); });
+
         commit(/*insert_succeeded=*/ true, rows, sources, *metadata, transaction_start_time);
         file_iterator->releaseFinishedBuckets(processor_ids);
         file_iterator->refreshExpiringBucketLocks();
@@ -1305,6 +1310,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
         if (stream_control.isBlocked())
             break;
+
+        if (!claimed_files)
+        {
+            LOG_TEST(log, "The batch claimed no files, ending this poll");
+            break;
+        }
     }
 
     LOG_TEST(log, "Processed rows: {}, elapsed: {} ms", total_rows, watch.elapsedMilliseconds());

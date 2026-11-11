@@ -254,6 +254,9 @@ public:
     /// Exclusive mode only: releases the files of a batch whose post-processing found a changed generation.
     void releaseAfterChangedGeneration(const std::string & exception_message);
 
+    /// Whether this source claimed at least one file, including files that failed or were reset.
+    bool hasClaimedFiles() const { return !processed_files.empty(); }
+
     /// `after_processing` as it was when the batch started, used for every file of the batch.
     ObjectStorageQueueAction getAfterProcessing() const { return after_processing; }
     /// The settings the action of this batch was captured with.
