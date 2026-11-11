@@ -203,8 +203,8 @@ private:
 
     size_t clampReach(size_t predicted_end, size_t phys_pos) const;
     /// Physical end of the request-map run that holds the position; the file end without a map.
-    size_t demandEnd(size_t block_bytes) const;
-    /// How far a held GET may reach: `demandEnd` with a map, else the predicted run end.
+    size_t requestRunEnd(size_t block_bytes) const;
+    /// How far a held GET may reach: `requestRunEnd` with a map, else the predicted run end.
     size_t longConnectionReach(size_t block_bytes) const;
     /// `window_bytes` is the window this read serves, so the admission rule ("the run outlives the
     /// current window") holds at every pressure level, not only where the window equals `window_size`.
@@ -219,10 +219,10 @@ private:
     void countBytesFromSource(size_t file_offset, size_t size);
     /// Serve one block at `pos` through the held `ReadPlan` (the plan reports memory hold / hit /
     /// committed writer / fetch). Without caches, the plan only holds the fetched bytes in memory.
-    ChainedBuffers readThroughCaches(size_t pos, size_t max_serve, size_t max_fetch, size_t demand_end, BlockAndWindowSizes sizes);
-    /// Grow `read_plan` to cover `[pos, min(pos + look_ahead, demand_end))` (clamped to the file end) and drop
+    ChainedBuffers readThroughCaches(size_t pos, size_t max_serve, size_t max_fetch, size_t request_run_end, BlockAndWindowSizes sizes);
+    /// Grow `read_plan` to cover `[pos, min(pos + look_ahead, request_run_end))` (clamped to the file end) and drop
     /// whatever lies past it; rebuilds from `pos` on a seek or gap. `look_ahead` is the sampled `plan_bytes`.
-    void ensureResolved(size_t pos, size_t look_ahead, size_t demand_end);
+    void ensureResolved(size_t pos, size_t look_ahead, size_t request_run_end);
     /// Extends `fetch` up to `limit` to the last demanded byte of the miss segment where it ends: the segment
     /// fills only from its committed front, so the bytes before that byte are read in any case.
     ByteRange extendFetchThroughMissSegment(ByteRange fetch, size_t limit) const;
@@ -259,7 +259,7 @@ private:
     std::optional<size_t> read_until;
     /// `nullopt` = no map was announced, the caller may read the whole file.
     std::optional<ByteRangeSet> request_map;
-    /// `request_map` with holes up to `min_bytes_for_seek` filled, so `demandEnd` finds a run end by one binary search.
+    /// `request_map` with holes up to `min_bytes_for_seek` filled, so `requestRunEnd` finds a run end by one binary search.
     std::optional<ByteRangeSet> request_runs;
 
     std::optional<LongConnection> long_conn;

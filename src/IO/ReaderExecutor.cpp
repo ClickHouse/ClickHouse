@@ -268,7 +268,7 @@ size_t ReaderExecutor::clampReach(size_t predicted_end, size_t phys_pos) const
     return end;
 }
 
-size_t ReaderExecutor::demandEnd(size_t block_bytes) const
+size_t ReaderExecutor::requestRunEnd(size_t block_bytes) const
 {
     const size_t file_end = offset_map.hasUnknownSize() ? std::numeric_limits<size_t>::max() : offset_map.totalSize();
     if (!request_runs)
@@ -282,7 +282,7 @@ size_t ReaderExecutor::demandEnd(size_t block_bytes) const
 size_t ReaderExecutor::longConnectionReach(size_t block_bytes) const
 {
     if (request_map)
-        return demandEnd(block_bytes);
+        return requestRunEnd(block_bytes);
     return clampReach(fetch_tracker.predictedEnd(), toPhysical(position));
 }
 
@@ -457,7 +457,7 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, Block
     return chain;
 }
 
-void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead, size_t demand_end)
+void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead, size_t request_run_end)
 {
     /// Re-anchor on a discontinuity (first read, seek, backward jump, or past the resolved end),
     /// else drop the consumed prefix. A forward seek inside the range keeps the resolved cells.
@@ -466,7 +466,7 @@ void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead, size_t demand
     else
         read_plan.dropBefore(pos);
 
-    const size_t reach = std::min(pos + look_ahead, demand_end);
+    const size_t reach = std::min(pos + look_ahead, request_run_end);
 
     /// Give the pins back now - the window shrinks too, so draining a `Normal` range takes many reads.
     read_plan.dropAfter(reach);
@@ -497,13 +497,14 @@ void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead, size_t demand
     }
 }
 
-ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, size_t max_fetch, size_t demand_end, BlockAndWindowSizes sizes)
+ChainedBuffers ReaderExecutor::readThroughCaches(
+    size_t pos, size_t max_serve, size_t max_fetch, size_t request_run_end, BlockAndWindowSizes sizes)
 {
     /// Serve one block from `pos`, capped by the window and by the run's contiguous extent.
     auto serve_len = [&](size_t end) { return std::min({sizes.block_bytes, max_serve, end - pos}); };
 
     /// Catch the plan up to `pos` and grow the look-ahead; then it decides the run.
-    ensureResolved(pos, sizes.plan_bytes, demand_end);
+    ensureResolved(pos, sizes.plan_bytes, request_run_end);
 
     const ReadPlan::PlanRun run = read_plan.runAt(pos, max_fetch);
     ChainedBuffers out;
@@ -784,8 +785,8 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     const BlockAndWindowSizes sizes = sampleWindowSizes();
 
     /// The window and the demand bound the fetch; `read_until` bounds only the serve, at most one block.
-    const size_t demand_end = demandEnd(sizes.block_bytes);
-    const size_t max_fetch = std::min(sizes.window_bytes, demand_end - position_physical);
+    const size_t request_run_end = requestRunEnd(sizes.block_bytes);
+    const size_t max_fetch = std::min(sizes.window_bytes, request_run_end - position_physical);
     size_t max_serve = max_fetch;
     chassert(!read_until || *read_until >= position);
     if (read_until && *read_until - position < max_serve)
@@ -796,7 +797,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         return {};
     }
 
-    ChainedBuffers chain = readThroughCaches(position_physical, max_serve, max_fetch, demand_end, sizes);
+    ChainedBuffers chain = readThroughCaches(position_physical, max_serve, max_fetch, request_run_end, sizes);
 
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)
