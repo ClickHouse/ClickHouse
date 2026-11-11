@@ -30,9 +30,14 @@ std::string decimalToString(Int128 value, Int32 scale)
     return Literal::Decimal{value, scale}.toString();
 }
 
-/// Increments the last character of a valid UTF-8 string, which keeps it valid. Returns false if the last
-/// character is not a valid UTF-8 sequence or is the largest code point.
-bool incrementLastUTF8Character(std::string & s)
+struct UTF8Character
+{
+    size_t start;
+    UInt32 code_point;
+};
+
+/// The last character of the string, if it is a valid UTF-8 sequence.
+std::optional<UTF8Character> lastUTF8Character(const std::string & s)
 {
     const auto * begin = reinterpret_cast<const UInt8 *>(s.data());
     const UInt8 * last = begin + s.size() - 1;
@@ -40,21 +45,12 @@ bool incrementLastUTF8Character(std::string & s)
     const size_t start = last - begin;
     const size_t length = s.size() - start;
     if (UTF8::seqLength(*last) != length)
-        return false;
-
+        return std::nullopt;
     /// Rejects the overlong encodings, which do not keep the order of the code points.
     auto code_point = UTF8::convertUTF8ToCodePoint(s.data() + start, length);
-    if (!code_point || *code_point >= 0x10FFFF)
-        return false;
-
-    UInt32 next = *code_point + 1;
-    if (UTF8::isSurrogateCodePoint(next))
-        next = 0xE000;
-    char encoded[4];
-    const size_t encoded_size = UTF8::convertCodePointToUTF8(static_cast<int>(next), encoded, sizeof(encoded));
-    s.resize(start);
-    s.append(encoded, encoded_size);
-    return true;
+    if (!code_point)
+        return std::nullopt;
+    return UTF8Character{start, *code_point};
 }
 
 }
@@ -76,8 +72,21 @@ std::optional<std::string> truncateStringUpperBound(std::string_view value)
     /// Any string greater than the prefix and not starting with it is greater than all strings that start with it.
     while (!result.empty())
     {
-        if (incrementLastUTF8Character(result))
+        if (auto last = lastUTF8Character(result))
+        {
+            /// Increment the last character, which keeps valid UTF-8 valid for the readers that decode the bounds.
+            result.resize(last->start);
+            /// The largest code point cannot be incremented: increment the previous character instead.
+            if (last->code_point >= 0x10FFFF)
+                continue;
+            UInt32 next = last->code_point + 1;
+            if (UTF8::isSurrogateCodePoint(next))
+                next = 0xE000;
+            char encoded[4];
+            const size_t encoded_size = UTF8::convertCodePointToUTF8(static_cast<int>(next), encoded, sizeof(encoded));
+            result.append(encoded, encoded_size);
             return result;
+        }
         /// Not valid UTF-8: increment the last byte.
         if (static_cast<UInt8>(result.back()) != 0xFF)
         {

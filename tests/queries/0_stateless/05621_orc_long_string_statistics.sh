@@ -16,6 +16,13 @@ ${CLICKHOUSE_LOCAL} -q "SELECT repeat('x', 1000000) AS s INTO OUTFILE '$WORK_DIR
 size=$(stat -c %s "$WORK_DIR/one.orc")
 if [ "$size" -lt 1100000 ]; then echo "OK"; else echo "file size $size"; fi
 
+echo "-- the upper bound stays valid UTF-8 when the last character is the largest code point"
+${CLICKHOUSE_LOCAL} -q "SELECT concat(repeat('b', 1020), unhex('F48FBFBF'), 'tail') AS s INTO OUTFILE '$WORK_DIR/max_code_point.orc' TRUNCATE FORMAT ORC SETTINGS output_format_orc_compression_method = 'none'"
+${CLICKHOUSE_LOCAL} -q "
+    SELECT countSubstrings(raw, concat(repeat('b', 1020), unhex('F48FBFC0'))) AS invalid_bounds,
+        countSubstrings(raw, concat(repeat('b', 1019), 'c')) AS carried_bounds
+    FROM file('$WORK_DIR/max_code_point.orc', RawBLOB, 'raw String')"
+
 # Each value is a row group of its own, so the pushdown can skip each of them.
 ${CLICKHOUSE_LOCAL} -q "
     SELECT n, s FROM values('n UInt32, s String',

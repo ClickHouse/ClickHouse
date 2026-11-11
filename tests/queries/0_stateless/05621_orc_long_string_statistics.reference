@@ -1,5 +1,7 @@
 -- the writer keeps at most 1024 bytes of a string value in the statistics
 OK
+-- the upper bound stays valid UTF-8 when the last character is the largest code point
+0	3
 -- the pushdown uses the bounds written instead of long minimums and maximums
 s = repeat('b', 2000): [2], read 2 rows
 s = repeat('b', 1024): [1], read 3 rows
