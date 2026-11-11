@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-fasttest
+# Tags: no-parallel, no-replicated-database
 # Tag no-parallel: uses fail points which affect the whole server.
 # Tag no-replicated-database: the durable rollback path tested here is the
 # non-replicated one (durable metadata is rolled back to the old settings),

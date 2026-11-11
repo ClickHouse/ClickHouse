@@ -28,7 +28,7 @@ struct Base58EncodeTraits
     static size_t getBufferSize(Col const & src_column)
     {
         auto const src_length = src_column.getChars().size();
-        /// Base58 has efficiency of 73% (8/11) [https://web.archive.org/web/20230902093512/https://monerodocs.org/cryptography/base58/],
+        /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],
         /// and we take double scale to avoid any reallocation.
         constexpr auto oversize = 2;
         return static_cast<size_t>(ceil(oversize * src_length + 1));
