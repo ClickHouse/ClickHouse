@@ -1512,6 +1512,28 @@ bool MergeTask::needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx)
     if (!global_ctx.merge_only_drops_rows)
         return true;
 
+    /// Merging opens every substream of the current definition, which an index written by an older definition may lack (`.pos`).
+    for (const auto & index : global_ctx.text_indexes_to_merge)
+    {
+        auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx.metadata_snapshot, index, *global_ctx.data_settings);
+        const auto required_substreams = index_ptr->getSubstreams();
+
+        for (const auto & part : global_ctx.future_part->parts)
+        {
+            if (part->rows_count == 0)
+                continue;
+
+            auto format = index_ptr->getDeserializedFormat(*part, index_ptr->getFileName());
+            auto has_substream = [&](const MergeTreeIndexSubstream & required)
+            {
+                return std::ranges::any_of(format.substreams, [&](const auto & present) { return present.type == required.type; });
+            };
+
+            if (format && !std::ranges::all_of(required_substreams, has_substream))
+                return true;
+        }
+    }
+
     /// A part that lacks a materialized text index gets it built from the part's stream during
     /// the merge, with doc ids equal to positions in the stream. If lightweight deletes are
     /// applied at the source (any case except the vertical optimization, which filters rows
