@@ -100,11 +100,13 @@ public:
 
     StorageS3Configuration() = default;
 
-    void setInitializationAsBigLake(const String & client_id_, const String & client_secret_, const String & refresh_token_)
+    void setInitializationAsBigLake(
+        const String & client_id_, const String & client_secret_, const String & refresh_token_, const String & service_account_key_)
     {
         biglake_adc_client_id = client_id_;
         biglake_adc_client_secret = client_secret_;
         biglake_adc_refresh_token = refresh_token_;
+        biglake_service_account_key = service_account_key_;
     }
 
     ObjectStorageType getType() const override { return type; }
@@ -160,6 +162,7 @@ public:
     String biglake_adc_client_id;
     String biglake_adc_client_secret;
     String biglake_adc_refresh_token;
+    String biglake_service_account_key;
 
 protected:
     const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return keys; }
