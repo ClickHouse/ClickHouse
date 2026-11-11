@@ -29,7 +29,7 @@ namespace
 {
 
 /// The temporary-cache mode is a variant of the bypass in which misses are still cached.
-bool bypassesMisses(const FilesystemCacheSettings & settings)
+bool skipCacheOnMiss(const FilesystemCacheSettings & settings)
 {
     return settings.read_if_exists_otherwise_bypass && !settings.cache_temporarily;
 }
@@ -233,7 +233,7 @@ DiskCacheWriter::DiskCacheWriter(
 
 size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
 {
-    if (bypassesMisses(cache_settings))
+    if (skipCacheOnMiss(cache_settings))
         return 0;
 
     /// `FileSegment::range()` is object-local; shift `data` so `ChainedBuffers::copyTo`
@@ -557,7 +557,7 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
     /// the ask. The bypass side never fills, so a miss carries no fill geometry - it only tells
     /// the executor which bytes to read from source. Nothing created/reserved/evicted, so a bypass
     /// read (a merge) never perturbs the cache.
-    if (bypassesMisses(cache_settings))
+    if (skipCacheOnMiss(cache_settings))
     {
         auto got_holder = cache->get(
             resolved_key, ask_lo_obj, ask_hi_obj - ask_lo_obj,
