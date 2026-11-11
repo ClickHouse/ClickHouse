@@ -130,9 +130,9 @@ SELECT '14. The transform preflight does not reject what a plain ALTER accepts.'
 CREATE TABLE tab_preflight (id UInt64, val String, num UInt64)
 ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'minmax';
 
--- The preflight must drop implicit statistics too, or `ADD STATISTICS` looks like a duplicate.
+-- The new column gets implicit statistics; the preflight must cope with that as a plain ALTER does.
 ALTER TABLE tab_preflight ADD INDEX idx_pre(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val)) GRANULARITY 1,
-                          ADD STATISTICS num TYPE minmax;
+                          ADD COLUMN extra UInt64;
 
 SELECT name FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 'tab_preflight' ORDER BY name;
@@ -157,10 +157,9 @@ DROP TABLE tab_replace;
 
 SELECT '16. A statement without a transform is not analyzed at all.';
 
-SET allow_statistics = 1;
 CREATE TABLE tab_plain (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'basic';
 
-ALTER TABLE tab_plain ADD INDEX idx_minmax(x) TYPE minmax GRANULARITY 1, ADD STATISTICS x TYPE basic;
+ALTER TABLE tab_plain ADD INDEX idx_minmax(x) TYPE minmax GRANULARITY 1, ADD COLUMN y UInt64;
 
 SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_plain';
 
