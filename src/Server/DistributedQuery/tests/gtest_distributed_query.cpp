@@ -314,7 +314,7 @@ static QueryPlan createHashJoinQueryPlan(const String & data_a, const String & d
 
         join_step->setStepDescription("Join");
 
-        VectorWithMemoryTracking<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
 

@@ -559,7 +559,7 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
     makeInternalDecorrelationJoinUnbounded(*domain_join);
 
     QueryPlan result_plan;
-    VectorWithMemoryTracking<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
     result_plan.unitePlans(std::move(domain_join), {std::move(plans)});
@@ -795,7 +795,7 @@ QueryPlan decorrelateQueryPlan(
         /// Add CROSS JOIN to combine data streams from left and right plans.
         QueryPlan result_plan;
 
-        VectorWithMemoryTracking<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
@@ -1005,7 +1005,7 @@ QueryPlan decorrelateQueryPlan(
 
         /// A UnionStep can have any number of inputs; every arm must be decorrelated.
         SharedHeaders query_plans_headers;
-        VectorWithMemoryTracking<QueryPlanPtr> child_plans;
+        QueryPlanPtrs child_plans;
         query_plans_headers.reserve(node->children.size());
         child_plans.reserve(node->children.size());
         for (auto * child : node->children)
@@ -1594,7 +1594,7 @@ QueryPlan buildLogicalJoinForLateral(
 
     QueryPlan result_plan;
 
-    VectorWithMemoryTracking<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
@@ -1726,7 +1726,7 @@ QueryPlan buildLogicalJoin(
 
     QueryPlan result_plan;
 
-    VectorWithMemoryTracking<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 

@@ -151,7 +151,7 @@ TEST(QueryPlanExecutionLimits, UnitePlansMergesLimitsFromChildren)
         with->setMaxThreads(4);
         with->setConcurrencyControl(true);
 
-        VectorWithMemoryTracking<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         if (asking_child_first)
         {
             plans.emplace_back(std::move(with));
@@ -180,7 +180,7 @@ TEST(QueryPlanExecutionLimits, UnitePlansKeepsDefaultsWhenNoChildAsks)
     auto right = std::make_unique<QueryPlan>(makeSourcePlan());
 
     SharedHeaders input_headers{makeHeader(), makeHeader()};
-    VectorWithMemoryTracking<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     plans.emplace_back(std::move(left));
     plans.emplace_back(std::move(right));
 

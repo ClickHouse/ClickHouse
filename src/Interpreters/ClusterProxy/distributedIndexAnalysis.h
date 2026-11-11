@@ -22,7 +22,10 @@ using IndexAnalysisPartsRanges = std::unordered_map<std::string, MarkRanges>;
 /// <replica index, <replica address, parts ranges>>
 using DistributedIndexAnalysisPartsRanges = std::vector<std::pair<std::string, IndexAnalysisPartsRanges>>;
 
-using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const VectorWithMemoryTracking<std::string_view> & parts)>;
+/// Names of data parts, not owned.
+using PartNameViews = VectorWithMemoryTracking<std::string_view>;
+
+using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const PartNameViews & parts)>;
 
 /// Header of an index analysis result: one row (`part_name`, `ranges`) per part.
 SharedHeader indexAnalysisSampleBlock();

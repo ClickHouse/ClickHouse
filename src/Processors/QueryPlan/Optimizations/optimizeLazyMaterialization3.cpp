@@ -704,7 +704,7 @@ public:
                 main_plan.getCurrentHeader(), lazy_plan.getCurrentHeader(), lazy_materializing_rows, makeRowIndexName(source));
 
             QueryPlan joined;
-            VectorWithMemoryTracking<QueryPlanPtr> plans;
+            QueryPlanPtrs plans;
             plans.emplace_back(std::make_unique<QueryPlan>(std::move(main_plan)));
             plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
             joined.unitePlans(std::move(join_lazy_columns), std::move(plans));
@@ -1078,7 +1078,7 @@ private:
         }
         else
         {
-            VectorWithMemoryTracking<QueryPlanPtr> plans;
+            QueryPlanPtrs plans;
             for (auto & child : children)
                 plans.emplace_back(std::make_unique<QueryPlan>(std::move(child.plan)));
             result.plan.unitePlans(std::move(node->step), std::move(plans));

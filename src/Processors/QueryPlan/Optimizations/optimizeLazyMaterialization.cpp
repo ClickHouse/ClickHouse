@@ -875,7 +875,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     QueryPlan result_plan;
 
-    VectorWithMemoryTracking<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(main_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
 

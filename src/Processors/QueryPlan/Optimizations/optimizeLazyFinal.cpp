@@ -808,7 +808,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             true_plan.getCurrentHeader(), lazy_plan.getCurrentHeader(), lazy_materializing_rows);
         join_lazy_columns->setPassThrough(true);
 
-        VectorWithMemoryTracking<QueryPlanPtr> join_plans;
+        QueryPlanPtrs join_plans;
         join_plans.emplace_back(std::make_unique<QueryPlan>(std::move(true_plan)));
         join_plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
         true_plan = {};
@@ -859,7 +859,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         set_plan.getCurrentHeader(), false_plan.getCurrentHeader());
 
     QueryPlan result_plan;
-    VectorWithMemoryTracking<QueryPlanPtr> selector_plans;
+    QueryPlanPtrs selector_plans;
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(set_plan)));
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(true_plan)));
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(false_plan)));
@@ -873,7 +873,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             SharedHeaders{result_plan.getCurrentHeader(), split_result.non_intersecting_plan->getCurrentHeader()});
 
         QueryPlan combined;
-        VectorWithMemoryTracking<QueryPlanPtr> union_plans;
+        QueryPlanPtrs union_plans;
         union_plans.emplace_back(std::make_unique<QueryPlan>(std::move(result_plan)));
         union_plans.emplace_back(std::move(split_result.non_intersecting_plan));
         combined.unitePlans(std::move(union_step), std::move(union_plans));

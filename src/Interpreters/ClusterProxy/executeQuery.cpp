@@ -589,7 +589,7 @@ void executeQuery(
 
     const ClusterPtr & not_optimized_cluster = query_info.cluster;
 
-    VectorWithMemoryTracking<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
@@ -1257,7 +1257,7 @@ void executeQueryWithParallelReplicas(
         input_headers.emplace_back(stub_local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
-        VectorWithMemoryTracking<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         plans.emplace_back(std::move(stub_local_plan));
         plans.emplace_back(std::move(remote_plan));
 
@@ -1332,7 +1332,7 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
         input_headers.emplace_back(local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
-        VectorWithMemoryTracking<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
 

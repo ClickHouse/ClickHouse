@@ -467,7 +467,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         GroupId group_id;
         GroupExpressionPtr expression;
         size_t next_child = 0;
-        VectorWithMemoryTracking<QueryPlanPtr> child_plans;
+        QueryPlanPtrs child_plans;
         bool on_active_path = false;  /// whether this frame's expression was added to `active_path`
     };
 

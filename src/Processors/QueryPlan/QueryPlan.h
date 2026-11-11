@@ -45,6 +45,7 @@ class WriteBuffer;
 
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
+using QueryPlanPtrs = VectorWithMemoryTracking<QueryPlanPtr>;
 
 class Pipe;
 
@@ -137,7 +138,7 @@ public:
     /// throw. The move constructor stays noexcept because it steals the holder instead of appending.
     QueryPlan & operator=(QueryPlan &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
-    void unitePlans(QueryPlanStepPtr step, VectorWithMemoryTracking<QueryPlanPtr> plans);
+    void unitePlans(QueryPlanStepPtr step, QueryPlanPtrs plans);
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty

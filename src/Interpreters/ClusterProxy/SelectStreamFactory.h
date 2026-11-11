@@ -24,6 +24,7 @@ using Pipes = std::vector<Pipe>;
 
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
+using QueryPlanPtrs = VectorWithMemoryTracking<QueryPlanPtr>;
 
 struct StorageID;
 
@@ -79,7 +80,7 @@ public:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        VectorWithMemoryTracking<QueryPlanPtr> & local_plans,
+        QueryPlanPtrs & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
@@ -92,7 +93,7 @@ public:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        VectorWithMemoryTracking<QueryPlanPtr> & local_plans,
+        QueryPlanPtrs & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
@@ -111,7 +112,7 @@ private:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        VectorWithMemoryTracking<QueryPlanPtr> & local_plans,
+        QueryPlanPtrs & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
