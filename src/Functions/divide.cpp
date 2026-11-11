@@ -16,6 +16,9 @@ struct DivideFloatingImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
+
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
@@ -50,7 +53,9 @@ using FunctionDivideLegacy = BinaryArithmeticOverloadResolver<DivideFloatingImpl
 class FunctionDivideExactBase final : public IFunctionBase
 {
 public:
-    explicit FunctionDivideExactBase(FunctionBasePtr implementation_) : implementation(std::move(implementation_))
+    FunctionDivideExactBase(FunctionBasePtr implementation_, bool allow_constant_folding_)
+        : implementation(std::move(implementation_))
+        , allow_constant_folding(allow_constant_folding_)
     {
     }
 
@@ -83,7 +88,7 @@ public:
 
     bool isSuitableForConstantFolding() const override
     {
-        return implementation->isSuitableForConstantFolding();
+        return allow_constant_folding && implementation->isSuitableForConstantFolding();
     }
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
@@ -123,6 +128,7 @@ public:
 
 private:
     FunctionBasePtr implementation;
+    bool allow_constant_folding;
 };
 
 class FunctionDivideExact final : public IFunctionOverloadResolver
@@ -158,7 +164,12 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
-        return std::make_shared<FunctionDivideExactBase>(delegate(arguments)->build(arguments));
+        /// Keep a potentially throwing integer division as an expression until execution.
+        /// Folding it while resolving an unselected `if`, `multiIf`, or `CASE` branch defeats
+        /// short-circuit evaluation. Valid constant pairs remain foldable, while a selected or
+        /// top-level invalid pair still throws at execution.
+        return std::make_shared<FunctionDivideExactBase>(
+            delegate(arguments)->build(arguments), !constantExactIntegerDivisionCanThrow(arguments));
     }
 
 private:
@@ -204,7 +215,7 @@ REGISTER_FUNCTION(Divide)
     FunctionDocumentation::Description description = R"(
 Calculates the quotient of two values `a` and `b`. The `/` operator is equivalent to this function.
 For integer and floating-point arguments, the result type is [Float64](/reference/data-types/float) by default.
-With `exact_division_for_integers = 1`, two integer arguments instead produce an integer quotient truncated toward zero.
+With `sql_compatible_division_for_integers = 1`, two integer arguments instead produce an integer quotient truncated toward zero.
 The result has the width of the first argument and is signed if either argument is signed.
 Division by zero or a quotient outside the result type's range throws an exception in this mode.
 
@@ -236,9 +247,9 @@ Calculates the quotient of `x` and `y`. When both arguments are integers, the qu
 The result has the width of `x` and is signed if either argument is signed. Integer types through 256 bits are supported, including mixed signed and unsigned arguments.
 Division by zero or a quotient outside the result type's range throws `ILLEGAL_DIVISION`. Nullable arguments propagate `NULL`.
 
-For floating-point or `Decimal` arguments, the function follows the same rules as `divide` with `exact_division_for_integers = 0`.
+For floating-point or `Decimal` arguments, the function follows the same rules as `divide` with `sql_compatible_division_for_integers = 0`.
 
-The function's behavior does not depend on `exact_division_for_integers`.
+The function's behavior does not depend on `sql_compatible_division_for_integers`.
 When that setting is enabled, newly submitted `/` and `divide` expressions are rewritten to `divideExact`.
 This explicit name is preserved in stored expressions, such as table metadata and views, so changing the setting later does not change their division semantics.
 Existing stored `/` and `divide` expressions retain their historical behavior.
@@ -264,8 +275,8 @@ using FunctionDivideOrNull = BinaryArithmeticOverloadResolver<DivideFloatingOrNu
 REGISTER_FUNCTION(DivideOrNull)
 {
     FunctionDocumentation::Description description = R"(
-Same as `divide` with `exact_division_for_integers = 0`, but returns `NULL` when dividing by zero.
-The `exact_division_for_integers` setting does not affect this function.
+Same as `divide` with `sql_compatible_division_for_integers = 0`, but returns `NULL` when dividing by zero.
+The `sql_compatible_division_for_integers` setting does not affect this function.
     )";
     FunctionDocumentation::Syntax syntax = "divideOrNull(x, y)";
     FunctionDocumentation::Argument argument1 = {"x", "Dividend"};

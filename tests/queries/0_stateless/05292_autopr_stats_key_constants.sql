@@ -1,5 +1,5 @@
 -- The runtime-dataflow-statistics key of automatic parallel replicas hashes the actions DAGs of the plan
--- without the values of their variable-size constants, but with the fixed-size ones. Checks it on the
+-- without the values of their large constants, but with the short ones. Checks it on the
 -- carriers it touches: a filter moved to PREWHERE (hashed by the read step) and a join.
 --
 -- The check, as in 04655: a query whose statistics are already cached does not collect them again
@@ -9,7 +9,6 @@
 -- key, so index analysis reads the same rows for both variants and the row-count drift check cannot
 -- hide a shared key by forcing a recollection.
 
-SET enable_analyzer=1;
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 SET parallel_replicas_prefer_local_join=1;

@@ -42,6 +42,7 @@ SELECT toLastDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 
     /// MySQL compatibility alias.
     factory.registerAlias("LAST_DAY", "toLastDayOfMonth", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("LAST_DAY_OF_MONTH", "toLastDayOfMonth", FunctionFactory::Case::Insensitive);
 }
 
 }

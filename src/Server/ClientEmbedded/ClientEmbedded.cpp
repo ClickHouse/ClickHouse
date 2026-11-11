@@ -36,7 +36,11 @@ ClientEmbedded::ClientEmbedded(
     std::ostream & error_stream_)
     : ClientBase(in_fd_, out_fd_, err_fd_, input_stream_, output_stream_, error_stream_), session(std::move(session_))
 {
-    global_context = session->makeSessionContext();
+    /// The caller may have already created the session context, e.g. to check the session limits
+    /// and to read the user's settings before starting the client.
+    global_context = session->sessionContext();
+    if (!global_context)
+        global_context = session->makeSessionContext();
     configuration = ConfigHelper::createEmpty();
     layered_configuration = new Poco::Util::LayeredConfiguration();
     layered_configuration->addWriteable(configuration, 0);
