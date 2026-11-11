@@ -10,6 +10,8 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/StorageSnapshot.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 
@@ -246,9 +248,9 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         RangesInDataParts parts;
         std::shared_ptr<MergeTreeReadPoolInOrder> pool;
     };
-    std::vector<Group> groups;
-    std::unordered_map<const StorageSnapshot *, size_t> group_of_snapshot;
-    std::vector<std::pair<size_t, size_t>> group_and_index_of_part;
+    VectorWithMemoryTracking<Group> groups;
+    UnorderedMapWithMemoryTracking<const StorageSnapshot *, size_t> group_of_snapshot;
+    VectorWithMemoryTracking<std::pair<size_t, size_t>> group_and_index_of_part;
     for (auto & part : ranges_in_data_parts)
     {
         StorageSnapshotPtr part_snapshot = storage_snapshot;

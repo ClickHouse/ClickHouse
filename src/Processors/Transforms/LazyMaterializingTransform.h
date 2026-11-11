@@ -2,10 +2,10 @@
 
 #include <Processors/IProcessor.h>
 #include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/Port.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
-#include <unordered_map>
 
 
 namespace DB
@@ -46,7 +46,7 @@ struct LazyMaterializingRows : public ILazyMaterializingRows
 
     /// part_index_in_query -> the snapshot the main read read the projection part with, for each projection part read itself.
     /// The other parts are read with the snapshot of the lazy read.
-    std::unordered_map<size_t, StorageSnapshotPtr> snapshots_of_projection_parts;
+    UnorderedMapWithMemoryTracking<size_t, StorageSnapshotPtr> snapshots_of_projection_parts;
 
     LazyMaterializingRows() = default;
     explicit LazyMaterializingRows(RangesInDataParts ranges_in_data_parts_);
