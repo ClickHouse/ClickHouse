@@ -33,7 +33,7 @@ add_library(ch_rust::vortex ALIAS _ch_rust_vortex)
 # `prql` and `polyglot` are stripped for the same reason.
 if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN
     AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
-    find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+    ch_find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     if (_LLD_FOR_STRIP)
         # Read the entry points out of the FFI header so that adding one cannot be
         # forgotten in this file. The header stays the only place that defines the

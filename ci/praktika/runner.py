@@ -338,7 +338,7 @@ class Runner:
     def _pre_run(self, workflow, job, local_job_run=False):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
-        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        dirty = Shell.get_output("git status --short --ignore-submodules=dirty", verbose=False) or ""
         if dirty:
             print(f"NOTE: Dirty repo state before job start:\n{dirty}")
         else:
@@ -1335,7 +1335,7 @@ class Runner:
                     traceback.print_exc()
                     print(f"ERROR: failed to notify Slack users: {e}")
 
-        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        dirty = Shell.get_output("git status --short --ignore-submodules=dirty", verbose=False) or ""
         if dirty:
             print(f"NOTE: Dirty repo state after job:\n{dirty}")
         else:
