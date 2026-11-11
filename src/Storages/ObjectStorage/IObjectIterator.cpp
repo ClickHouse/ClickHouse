@@ -4,6 +4,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -89,10 +90,12 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
             const auto file_name = object->getFileNameForVirtualColumns();
             const std::vector<std::string> file_names{file_name.value_or("")};
 
-            VirtualColumnUtils::filterByPathOrFile(
-                keys, std::vector<std::string>{path}, filter_actions,
-                virtual_columns, hive_partition_columns, getContext(),
-                /*format_settings=*/ std::nullopt, file_name ? &file_names : nullptr);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                keys,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    std::vector<std::string>{path}, filter_actions,
+                    virtual_columns, hive_partition_columns, getContext(),
+                    /*format_settings=*/ std::nullopt, file_name ? &file_names : nullptr));
 
             if (keys.empty())
             {
