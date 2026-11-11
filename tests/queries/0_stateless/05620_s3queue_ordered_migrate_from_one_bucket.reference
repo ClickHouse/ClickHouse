@@ -1,0 +1,12 @@
+one / processed	0
+one / bucket 0	1	one.csv
+one / bucket 1	1	one.csv
+zero / processed	1	zero.csv
+zero / buckets	0
+zero / processed after	0
+zero / bucket 0 after	1	zero.csv
+zero / bucket 1 after	1	zero.csv
+empty / buckets	2
+reset / processed	0
+reset / bucket 0	1	two.csv
+reset / bucket 1	1	two.csv

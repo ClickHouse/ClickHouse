@@ -10,6 +10,7 @@
 #include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
+#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
@@ -990,26 +991,41 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
 
     chassert(prev_value == 0 || prev_value == 1);
 
+    if (!DB::useBucketsForProcessing(value))
+    {
+        LOG_TRACE(log, "New number of buckets is {}, keeping the metadata structure without buckets", value);
+        return;
+    }
+
     for (size_t try_num = 0; try_num <= retries; ++try_num)
     {
         requests.clear();
 
-        const auto old_processed_path = prev_value == 0
-            ? getProcessedPathWithoutBucket(zk_path)
-            : getProcessedPathWithBucket(zk_path, 0);
+        for (size_t i = 0; i < value; ++i)
+            zk_client->createAncestors(getProcessedPathWithBucket(zk_path, /* bucket */i));
 
+        /// A queue with one bucket reads `<zk_path>/processed`, but older versions migrated `buckets = 1` into bucket 0.
+        std::vector<std::string> old_processed_paths;
+        if (prev_value == 1)
+            old_processed_paths.push_back(getProcessedPathWithBucket(zk_path, 0));
+        old_processed_paths.push_back(getProcessedPathWithoutBucket(zk_path));
+
+        std::string old_processed_path;
         NodeMetadata processed_node;
         Coordination::Stat processed_node_stat;
-        bool has_processed_node = ObjectStorageQueueOrderedFileMetadata::getMaxProcessedNode(
-            processed_node,
-            &processed_node_stat,
-            old_processed_path,
-            log,
-            zookeeper_name_);
-
-        if (!has_processed_node)
+        for (const auto & path : old_processed_paths)
         {
-            LOG_TRACE(log, "Processed node does not exist at path {}", old_processed_path);
+            if (ObjectStorageQueueOrderedFileMetadata::getMaxProcessedNode(
+                    processed_node, &processed_node_stat, path, log, zookeeper_name_))
+            {
+                old_processed_path = path;
+                break;
+            }
+        }
+
+        if (old_processed_path.empty())
+        {
+            LOG_TRACE(log, "Processed node does not exist at paths {}", fmt::join(old_processed_paths, ", "));
             return;
         }
 
@@ -1018,7 +1034,6 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         for (size_t i = 0; i < value; ++i)
         {
             const auto new_processed_path = getProcessedPathWithBucket(zk_path, /* bucket */i);
-            zk_client->createAncestors(new_processed_path);
 
             requests.push_back(zkutil::makeCreateRequest(
                                 new_processed_path,
@@ -1064,7 +1079,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         }
 
         const auto failed_idx = zkutil::getFailedOpIndex(code, responses);
-        if (prev_value != 0
+        if (old_processed_path == getProcessedPathWithBucket(zk_path, 0)
             /// idx=0 - for delete node request
             /// idx=1 - for create bucket 0 request
             /// idx=2 - for create bucket 1 request
