@@ -30,6 +30,7 @@
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/assert_cast.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 
 #include <Parsers/ParserSelectWithUnionQuery.h>
@@ -162,12 +163,14 @@ enum class SubqueryFunctionType : uint8_t
     ALL
 };
 
-static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
+/// `subquery_text` is the text of the subquery as written in the query, used to name the rewritten right-hand
+/// side of `ALL`, see below.
+static bool modifyAST(ASTPtr ast, SubqueryFunctionType type, std::string_view subquery_text)
 {
     /* Rewrite in AST:
      *  = ANY --> IN
      * != ALL --> NOT IN
-     *  = ALL --> ifNull(tupleElement(SQ AS _a, 1), 1) OR (x = tupleElement(_a, 2) AND isNotNull(tupleElement(_a, 2)))
+     *  = ALL --> ifNull(tupleElement(SQ AS _a, 1), 1) OR if(isNull(x), x IN tupleElement(_a, 2), ifNull(x = tupleElement(_a, 2), 0))
      *             where SQ = (SELECT (count(*) = 0, singleValueOrNull(*)) FROM subquery)
      * != ANY --> NOT IN (SELECT singleValueOrNull(*) FROM subquery)
      * <, <=, >, >= ANY --> comparison with (SELECT min(*) / max(*) FROM subquery)
@@ -267,19 +270,19 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
 
     /// x op ALL subquery --> ifNull(tupleElement(SQ AS _a, 1), 1) OR x op tupleElement(_a, 2)
     ///     where SQ = (SELECT (count(*) = 0, aggregate(*)) FROM subquery), for `<`, `<=`, `>`, `>=`
-    /// x = ALL subquery --> ifNull(tupleElement(SQ AS _a, 1), 1) OR (x = tupleElement(_a, 2) AND isNotNull(tupleElement(_a, 2)))
+    /// x = ALL subquery --> ifNull(tupleElement(SQ AS _a, 1), 1) OR if(isNull(x), x IN tupleElement(_a, 2), ifNull(x = tupleElement(_a, 2), 0))
     ///     where SQ = (SELECT (count(*) = 0, singleValueOrNull(*)) FROM subquery)
     ///
     /// The scalar subquery SQ occurs in the result only once, under a unique alias `_a`, and the other places refer
     /// to it by that alias. So:
     /// - The right-hand side is evaluated once, so even if it is non-deterministic, the emptiness flag and the
     ///   compared value observe the same evaluation.
-    /// - The rewritten expression does not copy any of its operands, so the parsed query is linear in the size of
-    ///   the original one, and `max_ast_elements` is not exceeded by nested `ALL` quantifiers
-    ///   (`x = ALL (SELECT y = ALL (...))`). Note that the analyzer still expands every reference to an alias
-    ///   with a copy of the aliased expression, so deeply nested quantifiers are analyzed with a cost that grows
-    ///   with the nesting depth (bounded by `max_expanded_ast_elements`); the scalar subqueries themselves are
-    ///   evaluated once, as the copies have the same hash.
+    /// - The rewritten expression does not copy the right-hand side, so the parsed query is linear in the nesting
+    ///   depth of quantifiers in the right-hand side (`x = ALL (SELECT y = ALL (...))`), and `max_ast_elements` is
+    ///   not exceeded. Note that the analyzer still expands every reference to an alias with a copy of the aliased
+    ///   expression, so deeply nested quantifiers are analyzed with a cost that grows with the nesting depth
+    ///   (bounded by `max_expanded_ast_elements`); the scalar subqueries themselves are evaluated once, as the
+    ///   copies have the same hash.
     /// - SQ is evaluated to a constant, and so are its elements. The comparison of `x` with a constant keeps the
     ///   type conversions of a comparison with a constant (e.g. of a `String` with a number, or of a `Date` with
     ///   a `String`), and it stays visible to the primary key analysis, while the constant emptiness flag folds
@@ -289,17 +292,31 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /// or a correlated subquery for a missing group). Then the scalar subquery is NULL, and that also means that
     /// the right-hand side is empty, hence `ifNull(..., 1)`.
     ///
-    /// For `= ALL`, `singleValueOrNull` gives NULL when the subquery returns several distinct values or a NULL, and
-    /// then the result is FALSE, as for the former `x IN (SELECT singleValueOrNull(*) FROM subquery)`, not NULL:
-    /// this is what `isNotNull` is for.
+    /// For a non-empty right-hand side, `= ALL` gives the same results as the former
+    /// `x IN (SELECT singleValueOrNull(*) FROM subquery)`, including the result type:
+    /// - `singleValueOrNull` gives NULL when the subquery returns several distinct values or a NULL, and then the
+    ///   result for a non-NULL `x` is FALSE, not NULL: this is what the inner `ifNull` is for. It also keeps the
+    ///   result non-nullable for a non-nullable `x`, as it was for `IN`.
+    /// - For a NULL `x`, the result is decided by `in`, so it follows `transform_null_in` as before: NULL by default,
+    ///   and with `transform_null_in = 1` TRUE when the compared value is NULL and FALSE otherwise.
+    /// - For a non-nullable `x`, `isNull(x)` is a constant, and the analyzer replaces the `if` with the `equals`
+    ///   branch, so the comparison with a constant is what the primary key analysis sees.
+    /// `x` is copied into the three places. The planner computes identical expressions once, so a non-deterministic
+    /// `x` or an `arrayJoin` in it is still evaluated once.
     ///
-    /// The alias is derived from the hash of SQ, so different subqueries get different aliases, and identical
-    /// subqueries, which may share an alias, also share the value.
+    /// The alias is derived from the hash of the aggregate function and the text of the subquery, so different
+    /// right-hand sides get different aliases, and identical ones, which may share an alias, also share the
+    /// value. The text is hashed
+    /// rather than the AST, because `IAST::getTreeHash` would keep every implementation of `updateTreeHashImpl`
+    /// in the WebAssembly build of the parser (see `utils/wasm-parser`), where nothing else uses them.
     auto & arguments = ast->children[0]->children;
     auto lhs = arguments[0];
 
-    const auto hash = new_subquery->getTreeHash(/*ignore_aliases=*/ false);
-    const String alias = fmt::format("_all_subquery_{}_{}", hash.low64, hash.high64);
+    SipHash hash_state;
+    hash_state.update(aggregate_function_name);
+    hash_state.update(subquery_text);
+    const auto hash = hash_state.get128();
+    const String alias = fmt::format("_all_subquery_{}_{}", hash.items[UInt128::_impl::little(0)], hash.items[UInt128::_impl::little(1)]);
     new_subquery->setAlias(alias);
 
     auto rhs_element = [&](UInt64 index) -> ASTPtr
@@ -313,9 +330,12 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
 
     ASTPtr comparison;
     if (function_equals)
-        comparison = makeASTFunction("and",
-            makeASTFunction("equals", std::move(lhs), rhs_element(2)),
-            makeASTFunction("isNotNull", rhs_element(2)));
+        comparison = makeASTFunction("if",
+            makeASTFunction("isNull", lhs->clone()),
+            makeASTFunction("in", lhs->clone(), rhs_element(2)),
+            makeASTFunction("ifNull",
+                makeASTFunction("equals", std::move(lhs), rhs_element(2)),
+                make_intrusive<ASTLiteral>(UInt64{0})));
     else
         comparison = makeASTFunction(operator_name, std::move(lhs), rhs_element(2));
 
@@ -3914,6 +3934,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
         bool is_subquery = true;
+        std::string_view subquery_text;
 
         /// `ANY`/`SOME`/`ALL` with a subquery right-hand side is the existing
         /// quantifier syntax, rewritten to `IN`/`NOT IN` via `modifyAST`. This form is
@@ -3937,9 +3958,11 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         {
             subquery_function_type = all_kw ? SubqueryFunctionType::ALL : SubqueryFunctionType::ANY;
 
+            auto subquery_begin = pos;
             if (prev_is_comparison && subquery_parser.parse(pos, tmp, expected))
             {
                 /// Existing subquery path: leave `is_subquery = true`.
+                subquery_text = textBetween(subquery_begin, pos);
             }
             else if ((some_kw || all_kw) && pos->type == TokenType::OpeningRoundBracket)
             {
@@ -3980,7 +4003,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             {
                 function = makeASTFunction(prev_op, argument, tmp);
 
-                if (!modifyAST(function, subquery_function_type))
+                if (!modifyAST(function, subquery_function_type, subquery_text))
                     return Action::NONE;
             }
             else
