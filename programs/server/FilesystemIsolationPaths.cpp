@@ -154,29 +154,32 @@ private:
             add(path, access, source);
             return;
         }
-        /// A device or a standard stream, such as `/dev/null` or `/dev/stderr` for a log, on its own: the isolated
-        /// filesystem has its own `/dev` with only a few devices, and the one of the host must stay invisible. A file
-        /// that does not exist is not created there, and it cannot be created inside either.
-        if (isSameOrInside(path, "/dev"))
-        {
-            if (fs::exists(path, error))
-                add(path, access, source);
-            return;
-        }
-        add(path.parent_path(), access, source);
-
         /// The same limit on the number of links as in the kernel, against a loop.
         constexpr size_t max_links = 40;
         fs::path current = path;
-        for (size_t i = 0; i < max_links && FS::isSymlinkNoThrow(current); ++i)
+        for (size_t i = 0;; ++i)
         {
+            /// A device or a standard stream, such as `/dev/null` or `/dev/stderr` for a log, on its own, also when it
+            /// is the target of a link, as for a log file that is a link to `/dev/null`: the isolated filesystem has
+            /// its own `/dev` with only a few devices, and the one of the host must stay invisible. A file that does
+            /// not exist is not created there, and it cannot be created inside either. The links a device can be
+            /// itself, such as `/dev/stdout`, are resolved when it is mounted.
+            if (isSameOrInside(current, "/dev"))
+            {
+                if (fs::exists(current, error))
+                    add(current, access, source);
+                return;
+            }
+            add(current.parent_path(), access, source);
+
+            if (i == max_links || !FS::isSymlinkNoThrow(current))
+                return;
             fs::path target = FS::readSymlink(current);
             /// The `..` in a relative target is relative to where the link really is: its directory can be a link
             /// itself, or be inside one, as in `certs -> /etc/letsencrypt/live/<domain>`, so it is resolved first.
             if (target.is_relative())
                 target = fs::canonical(current.parent_path()) / target;
             current = target.lexically_normal();
-            add(current.parent_path(), access, source);
         }
     }
 
@@ -233,10 +236,12 @@ private:
         return result;
     }
 
+    /// An empty value means that the path is not used, as for `access_control_path`, rather than the base directory.
     void addKey(const std::string & key, Access access, const fs::path & base)
     {
         if (config.has(key))
-            add(absolute(config.getString(key), base), access, fmt::format("`{}`", key));
+            if (const auto value = config.getString(key); !value.empty())
+                add(absolute(value, base), access, fmt::format("`{}`", key));
     }
 
     void addKeyLocation(const std::string & key, Access access, const fs::path & base)
@@ -322,7 +327,21 @@ private:
         for (const auto & name : definitions)
             for (const auto & key : getMultipleKeys("", name))
                 if (const auto pattern = config.getString(key); !pattern.empty())
-                    addIndependentConfigPattern(absolute(pattern, config_directory), fmt::format("`{}`", key));
+                    addDefinitionConfigPattern(pattern, fmt::format("`{}`", key));
+    }
+
+    /// The same lookup as in `ExternalLoaderXMLConfigRepository::getAllLoadablesDefinitionNames`: a relative pattern
+    /// is looked up next to the configuration file and, only if nothing matches there, in the working directory.
+    void addDefinitionConfigPattern(const std::string & pattern, const std::string & source)
+    {
+        const fs::path next_to_config = absolute(pattern, config_directory);
+        addIndependentConfigPattern(next_to_config, source);
+        if (fs::path(pattern).is_absolute())
+            return;
+        std::set<std::string> files;
+        Poco::Glob::glob(next_to_config.string(), files, 0);
+        if (files.empty())
+            addIndependentConfigPattern(absolute(pattern, working_directory), source);
     }
 
     void addDataPaths()
@@ -357,7 +376,7 @@ private:
         addKeyLocation("nats.credential_file", Access::ReadOnly, working_directory);
 
         for (const auto & key : getMultipleKeys("backups", "allowed_path"))
-            add(absolute(config.getString(key), data_path), Access::ReadWrite, fmt::format("`{}`", key));
+            addKey(key, Access::ReadWrite, data_path);
 
         /// The same default as in `NamedCollectionsMetadataStorage::create`; both `local` and `local_encrypted` keep the
         /// collections in this directory.
@@ -366,16 +385,24 @@ private:
 
         Poco::Util::AbstractConfiguration::Keys caches;
         config.keys("filesystem_caches", caches);
-        const fs::path caches_base = config.has("filesystem_caches_path") ? absolute(config.getString("filesystem_caches_path"), data_path) : data_path / "caches";
+        const fs::path caches_base = getCachesBase();
         for (const auto & cache : caches)
             addKey(fmt::format("filesystem_caches.{}.path", cache), Access::ReadWrite, caches_base);
+    }
+
+    /// The directory of the filesystem caches with relative paths, as in `getCache` in `RegisterDiskCache.cpp`. An
+    /// empty `filesystem_caches_path` is the same as none.
+    fs::path getCachesBase() const
+    {
+        const std::string value = config.getString("filesystem_caches_path", "");
+        return value.empty() ? data_path / "caches" : absolute(value, data_path);
     }
 
     void addDisks()
     {
         Poco::Util::AbstractConfiguration::Keys disks;
         config.keys("storage_configuration.disks", disks);
-        const fs::path caches_base = config.has("filesystem_caches_path") ? absolute(config.getString("filesystem_caches_path"), data_path) : data_path / "caches";
+        const fs::path caches_base = getCachesBase();
         for (const auto & disk : disks)
         {
             const std::string prefix = fmt::format("storage_configuration.disks.{}", disk);
@@ -384,6 +411,11 @@ private:
             if (type == "encrypted")
                 continue;
             addKey(prefix + ".path", Access::ReadWrite, type == "cache" ? caches_base : working_directory);
+            /// A cache disk can take its settings, with the path, from a named collection, as in `getCache` in
+            /// `RegisterDiskCache.cpp`. The collections of the configuration are in `named_collections`; the ones
+            /// created with a query are not known before the server starts.
+            if (type == "cache" && config.has(prefix + ".cache_name"))
+                addKey(fmt::format("named_collections.{}.path", config.getString(prefix + ".cache_name")), Access::ReadWrite, caches_base);
             addKey(prefix + ".metadata_path", Access::ReadWrite, working_directory);
 
             /// An object storage disk with several locations, each of them a separate object storage, as in
@@ -480,9 +512,9 @@ private:
     void addExtraPaths()
     {
         for (const auto & key : getMultipleKeys("filesystem_isolation_paths", "read_only"))
-            add(absolute(config.getString(key), working_directory), Access::ReadOnly, fmt::format("`{}`", key));
+            addKey(key, Access::ReadOnly, working_directory);
         for (const auto & key : getMultipleKeys("filesystem_isolation_paths", "read_write"))
-            add(absolute(config.getString(key), working_directory), Access::ReadWrite, fmt::format("`{}`", key));
+            addKey(key, Access::ReadWrite, working_directory);
     }
 };
 
