@@ -73,6 +73,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
@@ -15601,8 +15602,14 @@ MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata
 
 /// With parallel replicas, `PlannerJoinTree` can replace a direct read of the table with a read through the servers of
 /// `cluster_for_parallel_replicas`, which read their own parts (or only a remote replica reads, e.g. with
-/// `parallel_replicas_prefer_local_replica = 0`). The modification hash covers only the local parts, so it cannot tell
-/// whether such a read has changed unless every replica of the cluster is this server.
+/// `parallel_replicas_prefer_local_replica = 0`). The modification hash covers only the local parts and is computed
+/// under the caller's context, so it cannot tell whether such a read has changed unless every replica of the cluster
+/// is this server and reads as the caller. A replica read over TCP runs under the user configured for the cluster even
+/// when its address is this server, and a profile edit of that user (e.g. `additional_table_filters` or `final`)
+/// changes the rows without changing the parts. So a local replica is accepted only when it is read in-process (the
+/// local plan of a single-replica cluster), or when it reads as the caller: the cluster passes the initial user with
+/// an inter-server secret, or the configured user is the caller itself. Then the replica's context is the caller's
+/// profile with the caller's settings shipped on top of it.
 static bool mayReadThroughRemoteParallelReplicas(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -15625,9 +15632,25 @@ static bool mayReadThroughRemoteParallelReplicas(const ContextPtr & context)
     if (!cluster)
         return true;
 
-    for (const auto & shard_addresses : cluster->getShardsAddresses())
+    const auto & shards_addresses = cluster->getShardsAddresses();
+    for (const auto & shard_addresses : shards_addresses)
         for (const auto & address : shard_addresses)
             if (!address.is_local)
+                return true;
+
+    /// The whole read is the in-process local plan.
+    if (shards_addresses.size() == 1 && shards_addresses.front().size() == 1
+        && ClusterProxy::canUseLocalPlanForParallelReplicas(context) && !ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
+        return false;
+
+    /// Some local replica is read over TCP.
+    if (!cluster->getSecret().empty())
+        return false;
+
+    const String caller = context->getUserName();
+    for (const auto & shard_addresses : shards_addresses)
+        for (const auto & address : shard_addresses)
+            if (address.user != caller)
                 return true;
 
     return false;
