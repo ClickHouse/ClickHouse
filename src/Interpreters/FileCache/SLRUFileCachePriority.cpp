@@ -15,6 +15,7 @@
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheDowngradedFileSegments;
+    extern const Event FilesystemCachePromotedFileSegments;
 }
 namespace DB
 {
@@ -217,13 +218,14 @@ void SLRUFileCachePriority::resetEvictionPos(EvictionCursor cursor)
     probationary_queue.resetEvictionPos(cursor);
 }
 
-EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
+EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo( /// NOLINT
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator * reservee,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
-    const CacheStateGuard::Lock & lock)
+    const CacheStateGuard::Lock & lock,
+    QueueEntryType reservee_queue_type)
 {
     if (!size && !elements)
     {
@@ -279,6 +281,8 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
                  ? slru_iterator->lru_iterator.cache_priority == &protected_queue
                  : slru_iterator->lru_iterator.cache_priority == &probationary_queue);
     }
+    else
+        evict_in_protected = reservee_queue_type == QueueEntryType::SLRU_Protected;
 
     if (evict_in_protected)
     {
@@ -295,7 +299,7 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
         size, elements, reservee, is_total_space_cleanup, origin_info, lock);
 }
 
-bool SLRUFileCachePriority::collectCandidatesForEviction(
+bool SLRUFileCachePriority::collectCandidatesForEviction( /// NOLINT
     EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
@@ -304,7 +308,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
-    CacheStateGuard & state_guard)
+    CacheStateGuard & state_guard,
+    QueueEntryType reservee_queue_type)
 {
     if (!eviction_info.requiresEviction())
         return true;
@@ -350,9 +355,10 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
         return success_probationary && success_protected;
     }
 
-    /// If `reservee` is nullptr, then it is the first space reservation attempt
-    /// for a corresponding file segment, so it will be directly put into probationary queue.
-    if (!reservee)
+    /// If `reservee` is nullptr, then either it is the first space reservation attempt for a
+    /// corresponding file segment (so it will be directly put into probationary queue), or the
+    /// caller could not hand over the reservee and named its sub-queue instead.
+    if (!reservee && reservee_queue_type != QueueEntryType::SLRU_Protected)
     {
         return probationary_queue.collectCandidatesForEviction(
             eviction_info,
@@ -366,15 +372,23 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             state_guard);
     }
 
-    auto * slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
+    bool evict_in_protected = !reservee;
+    if (reservee)
+    {
+        auto * slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
+        evict_in_protected = slru_iterator->is_protected;
+        chassert(evict_in_protected
+                 ? slru_iterator->lru_iterator.cache_priority == &protected_queue
+                 : slru_iterator->lru_iterator.cache_priority == &probationary_queue);
+    }
+
     bool success = false;
 
     /// If `reservee` is not nullptr (e.g. is already in some queue),
     /// we need to check in which queue (protected/probationary) it currently is
     /// (in order to know where we need to free space).
-    if (slru_iterator->is_protected)
+    if (evict_in_protected)
     {
-        chassert(slru_iterator->lru_iterator.cache_priority == &protected_queue);
         /// Entry is in protected queue.
         /// Check if we have enough space in protected queue to fit a new size of entry.
         success = collectCandidatesForEvictionInProtected(
@@ -390,7 +404,6 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     }
     else
     {
-        chassert(slru_iterator->lru_iterator.cache_priority == &probationary_queue);
         success = probationary_queue.collectCandidatesForEviction(
             eviction_info,
             stat,
@@ -634,11 +647,10 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     }
     else if (!is_space_reservation_complete)
     {
-        /// `is_space_reservation_complete` means that file segment is fully downloaded.
-        /// This is a limitation of current implementation
-        /// that we opt to upgrade only those entries which have already completed space reservation.
-        /// Because otherwise it becomes too complex to handle concurrent
-        /// space reservation and priority increase (because of the granular locking).
+        /// The move must not run concurrently with a space reservation for this entry: the reservation
+        /// holds space and collects eviction candidates in the queue where the entry was when it started.
+        /// So a file segment which can be downloaded concurrently only gets a higher priority in
+        /// probationary (see `FileSegment::increasePriority`).
         return probationary_queue.tryIncreasePriority(
             iterator.lru_iterator, is_space_reservation_complete, state_guard);
     }
@@ -753,6 +765,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         check(lock);
     }
 
+    ProfileEvents::increment(ProfileEvents::FilesystemCachePromotedFileSegments);
     return true;
 }
 
