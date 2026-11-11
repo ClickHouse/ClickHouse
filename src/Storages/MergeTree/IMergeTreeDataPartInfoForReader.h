@@ -50,9 +50,10 @@ using IndexPtr = std::shared_ptr<const Index>;
 /// `part_columns` of a part, keeping the identity that the table gives the name. A name that the table declares
 /// as a column in its own right is answered only by a column that the part stores under that name, and a subcolumn
 /// of a table column only by the same subcolumn of the same column of the part - never by a same-named subcolumn
-/// or dynamic path of another column. A column `a.size0` added by `ALTER TABLE ... ADD COLUMN` next to an `Array`
-/// column `a`, or a column `a.x` added next to a `JSON` column `a`, is missing from the parts written before, and
-/// it and its subcolumns are read from its default there rather than from the sizes of `a` or the path `x` of `a`.
+/// or dynamic path of another column. A column `a.size0` next to an `Array` column `a`, or a column `a.x` next to a
+/// `JSON` column `a`, may be missing from a part (written with `skip_empty_columns_on_insert`, or before an older
+/// version added the column), and it and its subcolumns are read from its default there rather than from the sizes
+/// of `a` or the path `x` of `a`.
 std::optional<NameAndTypePair> tryGetColumnOfPartForTable(
     const ColumnsDescription & part_columns, const String & column_name, const ColumnsDescription & table_columns);
 

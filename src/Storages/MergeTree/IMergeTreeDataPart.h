@@ -240,9 +240,8 @@ public:
 
     /// Like `tryGetColumn`, but for a name that `table_columns` declares as a column in its own right:
     /// such a name is answered only by a column that the part stores under that name, never by a
-    /// same-named subcolumn of another column. A column `a.size0` added by `ALTER TABLE ... ADD COLUMN`
-    /// next to an `Array` column `a` is missing from the parts written before, and is read from its
-    /// default there rather than from the sizes of `a`.
+    /// same-named subcolumn of another column. A column `a.size0` next to an `Array` column `a` that a
+    /// part does not hold is read from its default there rather than from the sizes of `a`.
     std::optional<NameAndTypePair> tryGetColumnForTable(const String & column_name, const ColumnsDescription & table_columns) const;
 
     /// Get sample column from part. For ordinary columns it just creates column using it's type.

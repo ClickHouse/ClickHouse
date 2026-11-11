@@ -9913,8 +9913,8 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
         parts.assign(committed_parts_range.begin(), committed_parts_range.end());
     }
 
-    /// A column of the table that shadows a subcolumn of another column (e.g. `a.size0` added next to
-    /// an `Array` column `a`) is not taken for that subcolumn in the parts that do not hold it.
+    /// A column of the table that shadows a subcolumn of another column (e.g. `a.size0` next to an
+    /// `Array` column `a`) is not taken for that subcolumn in the parts that do not hold it.
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & table_columns = metadata_snapshot->getColumns();
 

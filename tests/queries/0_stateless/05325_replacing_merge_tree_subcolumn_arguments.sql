@@ -85,8 +85,8 @@ SELECT * FROM t_json ORDER BY key;
 ALTER TABLE t_json MODIFY COLUMN j JSON; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 -- A column with the name of the subcolumn would replace it.
 ALTER TABLE t_json ADD COLUMN `j.ver` UInt32; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-ALTER TABLE t_json ADD COLUMN `j.x` UInt32;
-ALTER TABLE t_json RENAME COLUMN `j.x` TO `j.ver`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_json ADD COLUMN `j.x` UInt32; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_json ADD COLUMN x UInt32, RENAME COLUMN x TO `j.ver`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 SELECT '-- Other subcolumns';
 -- The longest array wins, and a row with NULL is deleted.
