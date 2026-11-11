@@ -110,9 +110,9 @@ public:
     /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
     void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
 
-    std::optional<std::vector<bool>> getMatchedRowBlocks() const override;
+    std::optional<VectorWithMemoryTracking<bool>> getMatchedRowBlocks() const override;
 
-    void setRowBlocksToRead(std::shared_ptr<const std::vector<bool>> row_blocks) override;
+    void setRowBlocksToRead(std::shared_ptr<const VectorWithMemoryTracking<bool>> row_blocks) override;
 
 private:
     Chunk read() override;
@@ -151,7 +151,7 @@ private:
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
     Parquet::RowGroupSelection rowGroupSelection() const;
-    std::shared_ptr<const std::vector<bool>> row_blocks_to_read;
+    std::shared_ptr<const VectorWithMemoryTracking<bool>> row_blocks_to_read;
 
     /// nullopt if the metadata cache is not used.
     std::optional<ParquetMetadataCacheKey> getMetadataCacheKey() const;

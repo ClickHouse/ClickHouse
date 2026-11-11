@@ -2266,7 +2266,7 @@ Chunk StorageFileSource::generate()
             /// A row group may be skipped iff either verdict excludes it.
             /// A statistics-only TopN read (`filter_rows = false`) is a plain read for the cache.
             FileBucketInfoPtr buckets_to_read;
-            std::shared_ptr<const std::vector<bool>> row_blocks_to_read;
+            std::shared_ptr<const VectorWithMemoryTracking<bool>> row_blocks_to_read;
             std::optional<UInt64> plain_condition_hash;
             if (format_filter_info && format_filter_info->condition_hash
                 && (!format_filter_info->top_k_filter || !format_filter_info->top_k_filter->filter_rows
@@ -2297,7 +2297,7 @@ Chunk StorageFileSource::generate()
                         for (size_t i = 0; i < marks->size(); ++i)
                             (*matching_marks)[i] = (*matching_marks)[i] && (*marks)[i];
                 };
-                std::optional<QueryConditionCache::MatchingMarks> matching_row_blocks;
+                std::optional<VectorWithMemoryTracking<bool>> matching_row_blocks;
                 if (plain_condition_hash)
                 {
                     auto file_marks = query_condition_cache->readFile(
@@ -2392,7 +2392,7 @@ Chunk StorageFileSource::generate()
                         continue;
                     }
                     if (num_matching < num_blocks)
-                        row_blocks_to_read = std::make_shared<const std::vector<bool>>(std::move(*matching_row_blocks));
+                        row_blocks_to_read = std::make_shared<const VectorWithMemoryTracking<bool>>(std::move(*matching_row_blocks));
                 }
             }
 
@@ -2702,7 +2702,7 @@ void StorageFileSource::finishReadingSplitFileBucket()
     bool can_write = !isCancelled() && format_filter_info && format_filter_info->condition_hash && current_file_version_settled
         && query_condition_cache_table_id != UUIDHelpers::Nil;
     std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> buckets_opt;
-    std::optional<std::vector<bool>> row_blocks;
+    std::optional<VectorWithMemoryTracking<bool>> row_blocks;
     if (can_write)
     {
         /// Re-stat, to not write an entry derived from bytes the version token no longer describes.
@@ -2717,7 +2717,7 @@ void StorageFileSource::finishReadingSplitFileBucket()
     size_t total_row_groups = 0;
     std::unordered_set<size_t> matched_row_groups;
     bool write_row_blocks = false;
-    std::vector<bool> matched_row_blocks;
+    VectorWithMemoryTracking<bool> matched_row_blocks;
     {
         std::lock_guard lock(split_file->mutex);
         if (can_write && split_file->can_write_query_condition_cache)
@@ -3304,7 +3304,7 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
                     path);
 
                 if (num_matching_row_blocks < matching_row_blocks->size())
-                    split_file->row_blocks_to_read = std::make_shared<const std::vector<bool>>(std::move(*matching_row_blocks));
+                    split_file->row_blocks_to_read = std::make_shared<const VectorWithMemoryTracking<bool>>(std::move(*matching_row_blocks));
             }
         }
     }

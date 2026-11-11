@@ -5,6 +5,7 @@
 #include <Common/Logger.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/SharedMutex.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -143,14 +144,14 @@ public:
     struct FileMatchingMarks
     {
         std::optional<MatchingMarks> buckets;
-        std::optional<MatchingMarks> row_blocks;
+        std::optional<VectorWithMemoryTracking<bool>> row_blocks;
     };
     FileMatchingMarks readFile(const UUID & table_id, const String & file_part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
     /// Store the row blocks of a file without a matching row (`matched_row_blocks[i]` is false).
     void writeRowBlocks(
         const UUID & table_id, const String & file_part_name, UInt64 condition_hash, const String & condition,
-        const std::vector<bool> & matched_row_blocks);
+        const VectorWithMemoryTracking<bool> & matched_row_blocks);
 
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;

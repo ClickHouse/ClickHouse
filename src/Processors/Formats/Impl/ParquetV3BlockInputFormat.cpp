@@ -558,14 +558,14 @@ Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
     return UnorderedSetWithMemoryTracking<UInt64>(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
 }
 
-std::optional<std::vector<bool>> ParquetV3BlockInputFormat::getMatchedRowBlocks() const
+std::optional<VectorWithMemoryTracking<bool>> ParquetV3BlockInputFormat::getMatchedRowBlocks() const
 {
     if (!reader || !reader->reader.track_matched_row_blocks)
         return std::nullopt;
     return reader->reader.getMatchedRowBlocks();
 }
 
-void ParquetV3BlockInputFormat::setRowBlocksToRead(std::shared_ptr<const std::vector<bool>> row_blocks)
+void ParquetV3BlockInputFormat::setRowBlocksToRead(std::shared_ptr<const VectorWithMemoryTracking<bool>> row_blocks)
 {
     if (reader)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader already initialized");

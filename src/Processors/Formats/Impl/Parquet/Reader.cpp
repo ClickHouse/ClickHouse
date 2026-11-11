@@ -5301,12 +5301,12 @@ void Reader::recordMatchedRowBlocks(RowSubgroup & row_subgroup, const RowGroup &
     row_subgroup.matched_row_blocks_recorded = true;
 }
 
-std::vector<bool> Reader::getMatchedRowBlocks() const
+VectorWithMemoryTracking<bool> Reader::getMatchedRowBlocks() const
 {
     size_t total_rows = 0;
     for (const auto & meta : file_metadata().row_groups)
         total_rows += size_t(std::max<Int64>(meta.num_rows, 0));
-    std::vector<bool> matched((total_rows + rows_per_row_block - 1) / rows_per_row_block, false);
+    VectorWithMemoryTracking<bool> matched((total_rows + rows_per_row_block - 1) / rows_per_row_block, false);
 
     /// Row groups pruned by statistics, bloom filter or dictionary, and rows excluded by the column
     /// index, have no subgroup (or a subgroup with rows_pass == 0): no row there matches.

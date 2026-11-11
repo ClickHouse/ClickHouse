@@ -442,7 +442,8 @@ QueryConditionCache::FileMatchingMarks QueryConditionCache::readFile(
         return result;
 
     result.buckets = read(table_id, file_part_name, condition_hash, /*increment_profile_events=*/ false);
-    result.row_blocks = read(table_id, makeRowBlocksPartName(file_part_name), condition_hash, /*increment_profile_events=*/ false);
+    if (auto row_blocks = read(table_id, makeRowBlocksPartName(file_part_name), condition_hash, /*increment_profile_events=*/ false))
+        result.row_blocks.emplace(row_blocks->begin(), row_blocks->end());
 
     if (increment_profile_events)
         ProfileEvents::increment(
@@ -452,7 +453,7 @@ QueryConditionCache::FileMatchingMarks QueryConditionCache::readFile(
 
 void QueryConditionCache::writeRowBlocks(
     const UUID & table_id, const String & file_part_name, UInt64 condition_hash, const String & condition,
-    const std::vector<bool> & matched_row_blocks)
+    const VectorWithMemoryTracking<bool> & matched_row_blocks)
 {
     MarkRanges unmatched_ranges;
     for (size_t i = 0; i < matched_row_blocks.size(); ++i)

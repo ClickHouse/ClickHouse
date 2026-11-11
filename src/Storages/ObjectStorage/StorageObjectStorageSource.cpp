@@ -1505,7 +1505,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     std::shared_ptr<NamesAndTypesList> initial_schema;
     bool reads_file_under_own_names = false;
-    std::shared_ptr<const std::vector<bool>> row_blocks_to_read;
+    std::shared_ptr<const VectorWithMemoryTracking<bool>> row_blocks_to_read;
 
     while (true)
     {
@@ -1580,7 +1580,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// however many keys are probed.
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
             /// The row blocks of the file without a match for the plain predicate (see `QueryConditionCache::writeRowBlocks`).
-            std::optional<QueryConditionCache::MatchingMarks> matching_row_blocks;
+            std::optional<VectorWithMemoryTracking<bool>> matching_row_blocks;
             auto merge_matching_marks = [&](std::optional<QueryConditionCache::MatchingMarks> marks)
             {
                 if (!marks)
@@ -1671,7 +1671,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (num_matching == 0)
                     continue;
                 if (num_matching < num_blocks)
-                    row_blocks_to_read = std::make_shared<const std::vector<bool>>(std::move(*matching_row_blocks));
+                    row_blocks_to_read = std::make_shared<const VectorWithMemoryTracking<bool>>(std::move(*matching_row_blocks));
             }
         }
         break;
