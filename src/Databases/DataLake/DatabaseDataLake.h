@@ -27,7 +27,10 @@ public:
         UUID uuid,
         bool allow_server_credentials_in_user_queries_,
         bool is_loading_from_existing_metadata_,
-        bool lazy_init);
+        /// The definition is replayed (`ATTACH DATABASE`, including server startup, or `RESTORE DATABASE`) rather than
+        /// written by this query: the catalog is built lazily, and a combination of settings that a new definition
+        /// refuses is accepted with a warning so that an existing database keeps loading.
+        bool is_existing_definition);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
@@ -89,6 +92,10 @@ public:
 
     String getDefaultTableEngineName(const String & name) const override;
 
+    /// Creates an Iceberg table in the catalog if there are no engine arguments and the catalog writes the first metadata file.
+    /// Otherwise returns nullptr. In such cases the storage factory creates the table.
+    StoragePtr maybeCreateTableInExternalCatalog(ContextPtr context_, const ASTCreateQuery & create, const ColumnsDescription & columns) const override;
+
     ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
 
     void applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const;
@@ -126,7 +133,7 @@ private:
     /// load; `getCatalog` then throws this so every query against the database reports a clear error.
     mutable String catalog_unavailable_reason TSA_GUARDED_BY(catalog_mutex);
 
-    void validateSettings();
+    void validateSettings(bool is_existing_definition);
 
     /// Builds `catalog_impl` based on the configured catalog type. Constructing a catalog can
     /// validate credentials and perform network I/O (e.g. RestCatalog reads the catalog config),
@@ -171,6 +178,12 @@ private:
         const String & name) const;
 
     Exception cannotTellNewTableLocation(const String & name) const;
+
+    /// Throws when the catalog places the table on a different storage than the table engine writes to.
+    void checkStorageTypeMatchesEngine(const String & name, DatabaseDataLakeStorageType engine_type, DatabaseDataLakeStorageType catalog_type) const;
+
+    /// Loads the table that the catalog has just created. Drops it from the catalog if the load fails.
+    StoragePtr loadCreatedTable(const DataLake::ICatalog & catalog, const String & name, ContextPtr context_) const;
 
     /// Shared implementation of getTablesIterator / getTablesIteratorWithHint.
     /// keep_unresolved_tables controls what happens when a single table's metadata cannot
