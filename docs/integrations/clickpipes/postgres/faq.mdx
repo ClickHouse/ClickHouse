@@ -47,7 +47,7 @@ Please refer to the [Postgres Generated Columns: Gotchas and Best Practices](/in
 For a table to be replicated using ClickPipes for Postgres, it must have either a primary key or a [REPLICA IDENTITY](https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-REPLICA-IDENTITY) defined.
 
 - **Primary Key**: The most straightforward approach is to define a primary key on the table. This provides a unique identifier for each row, which is crucial for tracking updates and deletions. You can have REPLICA IDENTITY set to `DEFAULT` (the default behavior) in this case.
-- **Replica Identity**: If a table doesn't have a primary key, you can set a replica identity. The replica identity can be set to `FULL`, which means that the entire row will be used to identify changes. Alternatively, you can set it to use a unique index if one exists on the table, and then set REPLICA IDENTITY to `USING INDEX index_name`.
+- **Replica Identity**: If a table doesn't have a primary key, you can set a replica identity. The replica identity can be set to `FULL`, which means that the entire row will be used to identify changes. Alternatively, you can set it to use a unique index if one exists on the table, and then set REPLICA IDENTITY to `USING INDEX index_name`. If you use `FULL` on a table without a primary key, set a [custom ordering key](/integrations/clickpipes/postgres/ordering_keys) on columns that are unique and never change.
 To set the replica identity to FULL, you can use the following SQL command:
 ```sql
 ALTER TABLE your_table_name REPLICA IDENTITY FULL;
@@ -57,21 +57,11 @@ REPLICA IDENTITY FULL also enables replication of unchanged TOAST columns. More 
 Note that using `REPLICA IDENTITY FULL` can have performance implications and also faster WAL growth, especially for tables without a primary key and with frequent updates or deletes, as it requires more data to be logged for each change. If you have any doubts or need assistance with setting up primary keys or replica identities for your tables, please reach out to our support team for guidance.
 
 <Warning>
-For a table with no primary key and `REPLICA IDENTITY FULL`, ClickPipes uses every column as the `ORDER BY` of the ClickHouse table. Because `ReplacingMergeTree` keeps one row per `ORDER BY` value, this causes data differences between Postgres and ClickHouse, even when querying with `FINAL`:
+Without a custom ordering key, ClickPipes uses all columns of a keyless `REPLICA IDENTITY FULL` table as the `ORDER BY`. Even with `FINAL`, this means:
 
-- **Updates leave the old row visible**: an update changes the key, so the old and new versions both remain. See [Can I update primary key columns in PostgreSQL?](#can-i-update-primary-key-columns-in-postgresql).
-- **Exact duplicate rows collapse into one.**
-- **Deleting one of two identical rows removes both.**
-- **NULL values can collide with defaults**: with **Preserve NULL values from source** off (the default), NULL is stored as `0` or `''`, so a row with NULL and a row with `0` become identical.
+- an update leaves the old row visible;
+- identical rows collapse into one, and deleting one deletes all of them.
 </Warning>
-
-To avoid these issues, in order of preference:
-
-1. Add a primary key, or add a unique index and set `REPLICA IDENTITY USING INDEX index_name`.
-2. Otherwise, set a [custom ordering key](/integrations/clickpipes/postgres/ordering_keys) on columns that are both unique and immutable. A non-unique ordering key merges distinct rows that share the same key.
-3. Turn on **Preserve NULL values from source**.
-
-Both settings only apply when the ClickHouse table is created, and a pipe [resync](/integrations/clickpipes/postgres/resync) keeps the existing settings. To change the ordering key of a table in an existing pipe, [resync that table](/integrations/clickpipes/postgres/table_resync): remove it from the pipe, drop or rename its ClickHouse table, then add it back with the new ordering key. **Preserve NULL values from source** can't be changed after the pipe is created, so turning it on requires a new pipe.
 
 It's important to note that if neither a primary key nor a replica identity is defined, ClickPipes won't be able to replicate changes for that table, and you may encounter errors during the replication process. Therefore, it's recommended to review your table schemas and ensure that they meet these requirements before setting up your ClickPipe.
 
@@ -163,6 +153,12 @@ For an excellent deep dive into this topic, check out our blog post: [Overcoming
 ### How are Postgres data types mapped to ClickHouse? {#how-are-postgres-data-types-mapped-to-clickhouse}
 
 ClickPipes for Postgres aims to map Postgres data types as natively as possible on the ClickHouse side. This document provides a comprehensive list of each data type and its mapping: [Data Type Matrix](https://docs.peerdb.io/datatypes/datatype-matrix).
+
+### Why are NULL values from Postgres stored as `0` or empty strings in ClickHouse? {#null-values-stored-as-defaults}
+
+By default, ClickPipes creates non-`Nullable` columns in ClickHouse and stores a Postgres `NULL` as the column type's default value, such as `0` or `''`. As a result, a `NULL` and a real `0` look the same in ClickHouse.
+
+To keep `NULL` values, turn on **Preserve NULL values from source** when creating the ClickPipe. Changing the destination column to `Nullable` yourself isn't enough, because ClickPipes keeps writing default values.
 
 ### Can I define my own data type mapping while replicating data from Postgres to ClickHouse? {#can-i-define-my-own-data-type-mapping-while-replicating-data-from-postgres-to-clickhouse}
 
