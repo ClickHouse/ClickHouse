@@ -214,5 +214,8 @@ private:
     UInt64 total_rows = 0;
 };
 
+/// The sorting key columns a condition may filter by before `FINAL` without changing its result
+NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot);
+
 
 }

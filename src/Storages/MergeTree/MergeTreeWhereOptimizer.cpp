@@ -116,6 +116,8 @@ bool typeContainsFloat(const DataTypePtr & type)
     return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
 }
 
+}
+
 /// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
 /// over a float sorting key column can tell apart rows of one dedup group and drop its winner
 NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot)
@@ -139,6 +141,9 @@ NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_sna
             names.insert(sorting_key.column_names[i]);
     return names;
 }
+
+namespace
+{
 
 bool isReadByTopKFilterOnly(const RPNBuilderTreeNode & conjunct, const NameSet & columns, const String & top_k_filter_column)
 {
