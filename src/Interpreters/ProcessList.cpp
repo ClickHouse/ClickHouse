@@ -554,7 +554,8 @@ QueryStatus::QueryStatus(
     , query_slot(std::move(query_slot_))
     , memory_reservation(std::move(memory_reservation_))
     , thread_group(std::move(thread_group_))
-    , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
+    , total_watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
+    , execution_watch(CLOCK_MONOTONIC)
     , priority_handle(std::move(priority_handle_))
     , global_overcommit_tracker(context_->getGlobalOvercommitTracker())
     , query_kind(query_kind_)
@@ -721,7 +722,7 @@ bool QueryStatus::checkTimeLimit()
 
 bool QueryStatus::checkTimeLimit(OverflowMode mode)
 {
-    auto elapsed_ns = watch.elapsed();
+    auto elapsed_ns = execution_watch.elapsed();
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), elapsed_ns);
 
     return limits.checkTimeLimit(elapsed_ns, mode);
@@ -754,7 +755,7 @@ bool QueryStatus::checkTimeLimitSoft()
     if (is_killed.load())
         return false;
 
-    return limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::BREAK);
+    return limits.checkTimeLimit(execution_watch.elapsedNanoseconds(), OverflowMode::BREAK);
 }
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
@@ -1084,7 +1085,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.normalized_query_hash = normalized_query_hash;
     res.query_kind        = query_kind;
     res.client_info       = client_info;
-    res.elapsed_microseconds = watch.elapsedMicroseconds();
+    res.elapsed_microseconds = total_watch.elapsedMicroseconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
     res.is_all_data_sent  = is_all_data_sent.load(std::memory_order_relaxed);
     res.is_internal       = is_internal;
