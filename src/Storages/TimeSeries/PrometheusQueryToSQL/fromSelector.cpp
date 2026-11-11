@@ -31,7 +31,8 @@ namespace
                                     bool filter_stale_markers,
                                     ConverterContext & context,
                                     std::optional<std::pair<TimestampType, TimestampType>> time_bounds = {},
-                                    ASTPtr series_filter = nullptr)
+                                    ASTPtr series_filter = nullptr,
+                                    ASTPtr selector_argument = nullptr)
     {
         auto node_range = context.node_range_getter.get(node);
         if (node_range.empty())
@@ -105,7 +106,7 @@ namespace
             "timeSeriesSelector",
             make_intrusive<ASTLiteral>(context.time_series_storage_id.getDatabaseName()),
             make_intrusive<ASTLiteral>(context.time_series_storage_id.getTableName()),
-            make_intrusive<ASTLiteral>(String{instant_selector_text}),
+            selector_argument ? std::move(selector_argument) : make_intrusive<ASTLiteral>(String{instant_selector_text}),
             timeSeriesTimestampToAST(min_time, context.result_timestamp_type),
             timeSeriesTimestampToAST(max_time, context.result_timestamp_type),
             make_intrusive<ASTLiteral>(String{table_has_bucketed_samples ? "samples" : "timestamp_and_value"}));
@@ -205,7 +206,7 @@ SQLQueryPiece fromSelector(const PrometheusQueryTree::InstantSelector * instant_
 SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSelector * instant_selector_node, ConverterContext & context)
 {
     return fromSelectorSampleTimestamps(
-        instant_selector_node, instant_selector_node->toString(*context.promql_tree), {}, nullptr, /* exact_ticks = */ false, context);
+        instant_selector_node, instant_selector_node->toString(*context.promql_tree), {}, nullptr, nullptr, SampleTimestampKind::SECONDS, context);
 }
 
 
@@ -214,29 +215,31 @@ SQLQueryPiece fromSelectorSampleTimestamps(
     const String & instant_selector_text,
     std::optional<std::pair<TimestampType, TimestampType>> time_bounds,
     ASTPtr series_filter,
-    bool exact_ticks,
+    ASTPtr selector_argument,
+    SampleTimestampKind timestamp_kind,
     ConverterContext & context)
 {
     auto range_selector = fromRangeSelector(
-        instant_selector_text, node, /* filter_stale_markers = */ false, context, time_bounds, std::move(series_filter));
+        instant_selector_text, node, /* filter_stale_markers = */ false, context, time_bounds, std::move(series_filter),
+        std::move(selector_argument));
 
-    /// With `exact_ticks` the value of a sample is the number of ticks (of the timestamp scale of the table) since the start of the range
-    /// read. Float64 seconds can't tell apart the timestamps of a DateTime64(9) table, while the ticks are exact if the range read
-    /// is shorter than 2^53 ticks.
     const auto node_range = context.node_range_getter.get(node);
     auto sample_timestamp_value = [&](ASTPtr timestamp) -> ASTPtr
     {
-        if (!exact_ticks)
+        if (timestamp_kind == SampleTimestampKind::SECONDS)
             return makeASTFunction("CAST", std::move(timestamp), make_intrusive<ASTLiteral>("Float64"));
         auto range_start = timeSeriesTimestampToAST(node_range.start_time - node_range.window + 1, context.result_timestamp_type);
         auto range_start_in_table_scale = makeASTFunction("CAST", std::move(range_start), makeASTFunction("toTypeName", timestamp->clone()));
-        return makeASTFunction(
-            "CAST",
-            makeASTFunction(
-                "minus",
-                makeASTFunction("reinterpretAsInt64", std::move(timestamp)),
-                makeASTFunction("reinterpretAsInt64", std::move(range_start_in_table_scale))),
-            make_intrusive<ASTLiteral>("Float64"));
+        ASTPtr ticks = makeASTFunction(
+            "minus",
+            makeASTFunction("reinterpretAsInt64", std::move(timestamp)),
+            makeASTFunction("reinterpretAsInt64", std::move(range_start_in_table_scale)));
+        constexpr UInt64 low_part_size = 1ULL << 26;
+        if (timestamp_kind == SampleTimestampKind::TICKS_HIGH)
+            ticks = makeASTFunction("intDiv", std::move(ticks), make_intrusive<ASTLiteral>(low_part_size));
+        else if (timestamp_kind == SampleTimestampKind::TICKS_LOW)
+            ticks = makeASTFunction("modulo", std::move(ticks), make_intrusive<ASTLiteral>(low_part_size));
+        return makeASTFunction("CAST", std::move(ticks), make_intrusive<ASTLiteral>("Float64"));
     };
 
     /// Replaces the value of every sample with its timestamp. Stale markers are kept so that last_over_time() can still

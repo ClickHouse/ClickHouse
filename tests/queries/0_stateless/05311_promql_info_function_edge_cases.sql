@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, long
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag long: the flaky check runs a changed test in many parallel copies, which makes the many `info` queries exceed 180 seconds.
 
 -- PromQL info(): edge cases with the results of Prometheus v3.5.0 on the same samples (a part of 05308_promql_info_function).
 
@@ -49,4 +50,15 @@ SELECT 'info(job_only) from 0 to 600 step 300';
 SELECT tags, arrayMap(x -> (toUnixTimestamp64Milli(x.1), x.2), samples) FROM prometheusQueryRange(ts_g, 'info(job_only)', 0, 600, 300) ORDER BY tags;
 SELECT 'info({__name__=~"metric|job_only"}) from 0 to 600 step 300';
 SELECT tags, arrayMap(x -> (toUnixTimestamp64Milli(x.1), x.2), samples) FROM prometheusQueryRange(ts_g, 'info({__name__=~"metric|job_only"})', 0, 600, 300) ORDER BY tags;
+SELECT 'info() of nested aggregations without a selector';
+SELECT count() FROM prometheusQuery(ts_g, concat('info(', repeat('sum(', 40), 'vector(1)', repeat(')', 40), ')'), 0);
 DROP TABLE ts_g;
+SELECT 'label values with special characters are matched literally';
+CREATE TABLE ts_s ENGINE = TimeSeries;
+INSERT INTO ts_s (metric_name, tags, samples) VALUES
+    ('metric', map('instance', 'a.b', 'job', 'j"1'), [(toDateTime64(0, 3), 1)]),
+    ('target_info', map('data', 'x', 'instance', 'a.b', 'job', 'j"1'), [(toDateTime64(0, 3), 1)]),
+    ('target_info', map('data', 'wrong', 'instance', 'aXb', 'job', 'j"1'), [(toDateTime64(0, 3), 1)]);
+SELECT tags FROM prometheusQuery(ts_s, 'info(metric)', 0);
+DROP TABLE ts_s;
+

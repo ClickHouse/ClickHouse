@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, long
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag long: the flaky check runs a changed test in many parallel copies, which makes the many `info` queries exceed 180 seconds.
 
 -- PromQL info(): the results match Prometheus 3.5 with --enable-feature=promql-experimental-functions.
 

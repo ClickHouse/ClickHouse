@@ -7,10 +7,12 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 
+#include <cmath>
 #include <unordered_set>
 
 
@@ -112,6 +114,39 @@ namespace
         UNREACHABLE();
     }
 
+    /// Whether the ticks of the sample timestamps read over `range` may not fit in a Float64 exactly (2^53 ticks), for the finest scale 9.
+    bool needsWideTicks(const NodeEvaluationRange & range, const ConverterContext & context)
+    {
+        const long double span = static_cast<long double>(range.end_time.value - range.start_time.value + range.window.value);
+        return span * std::pow(10.0L, 9.0L - static_cast<long double>(context.result_timestamp_scale)) >= 9007199254740992.0L;
+    }
+
+    /// The values of the label in the base series as the alternatives of a PromQL regexp matcher, ".*" if they can't be listed.
+    ASTPtr labelValuesAlternatives(const String & label_name)
+    {
+        ASTPtr label_value = makeASTFunction("ifNull", makeASTFunction("timeSeriesExtractTag", col("join_group"), lit(label_name)), lit(""));
+        ASTPtr values = makeASTFunction("groupUniqArray", std::move(label_value));
+
+        /// An empty value means the label is absent, a control character can't be put into the selector.
+        ASTPtr unlistable = makeASTFunction(
+            "or",
+            makeASTFunction("empty", values->clone()),
+            makeASTFunction(
+                "arrayExists",
+                lambda("v", makeASTFunction("or", makeASTFunction("empty", col("v")), makeASTFunction("match", col("v"), lit("[\\x00-\\x1f\\x7f]")))),
+                values->clone()));
+
+        /// Escapes the regexp metacharacters, then the backslashes and the quotes of the PromQL string.
+        ASTPtr escaped = makeASTFunction("replaceRegexpAll", col("v"), lit("([!-/:-@\\[-^`{-~])"), lit("\\\\\\1"));
+        escaped = makeASTFunction("replaceAll", std::move(escaped), lit("\\"), lit("\\\\"));
+        escaped = makeASTFunction("replaceAll", std::move(escaped), lit("\""), lit("\\\""));
+        return makeASTFunction(
+            "if",
+            std::move(unlistable),
+            lit(".*"),
+            makeASTFunction("arrayStringConcat", makeASTFunction("arrayMap", lambda("v", std::move(escaped)), makeASTFunction("arraySort", std::move(values))), lit("|")));
+    }
+
     /// Whether Prometheus evaluates `node` only once, at the first step, see preprocessExprHelper() in Prometheus.
     bool isStepInvariant(const Node * node)
     {
@@ -150,13 +185,16 @@ namespace
         if (node->node_type == NodeType::InstantSelector)
             return node;
         /// Prometheus visits an aggregation's expression before its parameter.
-        if (node->node_type == NodeType::AggregationOperator)
+        const Node * expression = node->node_type == NodeType::AggregationOperator ? node->children.back() : nullptr;
+        if (expression)
         {
-            if (const auto * selector = findFirstSelector(node->children.back()))
+            if (const auto * selector = findFirstSelector(expression))
                 return selector;
         }
         for (const auto * child : node->children)
         {
+            if (child == expression)
+                continue;
             if (const auto * selector = findFirstSelector(child))
                 return selector;
         }
@@ -264,6 +302,9 @@ SQLQueryPiece applyFunctionInfo(
     /// timeSeriesSelector() needs a matcher not matching "", and every series has a name.
     if (std::ranges::all_of(info_selector.matchers, matchesEmptyString))
         info_selector.matchers.push_back(Matcher{kMetricName, ".+", MatcherType::RE});
+    /// The placeholders are replaced with the values of the identifying labels of `v`, so that the other info series aren't read.
+    for (const char * label : {"instance", "job"})
+        info_selector.matchers.push_back(Matcher{label, String("@@") + label + "@@", MatcherType::RE});
 
     auto base = toVectorGrid(std::move(arguments[0]), context);
     if (base.store_method == StoreMethod::EMPTY || context.node_range_getter.get(function_node).empty())
@@ -333,13 +374,58 @@ SQLQueryPiece applyFunctionInfo(
         base_groups = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
     }
 
-    auto info = fromSelectorSampleTimestamps(
-        function_node,
-        info_selector.toString(*context.promql_tree),
-        getInfoTimeBounds(function_node, context),
-        makeASTFunction("in", makeASTFunction("timeSeriesRemoveAllTagsExcept", col(ColumnNames::Group), identifyingLabels()), col(base_groups)),
-        /* exact_ticks = */ true,
-        context);
+    /// The selector of the info series, with the values of the identifying labels of `v` put in the placeholders.
+    ASTPtr selector_argument = lit(info_selector.toString(*context.promql_tree));
+    for (const char * label : {"instance", "job"})
+    {
+        String alternatives = addSubquery(
+            [&]
+            {
+                SelectQueryBuilder builder;
+                builder.select_list.push_back(labelValuesAlternatives(label));
+                builder.from_table = base_groups;
+                return builder.getSelectQuery();
+            }(),
+            SQLSubqueryType::SCALAR,
+            context);
+        selector_argument = makeASTFunction("replaceOne", std::move(selector_argument), lit(String("@@") + label + "@@"), col(alternatives));
+    }
+
+    const bool wide_ticks = needsWideTicks(context.node_range_getter.get(function_node), context);
+    const bool first_step_only = std::ranges::all_of(function_node->getArguments(), isStepInvariant);
+    auto read_info = [&](SampleTimestampKind timestamp_kind)
+    {
+        return fromSelectorSampleTimestamps(
+            function_node,
+            info_selector.toString(*context.promql_tree),
+            getInfoTimeBounds(function_node, context),
+            makeASTFunction("in", makeASTFunction("timeSeriesRemoveAllTagsExcept", col(ColumnNames::Group), identifyingLabels()), col(base_groups)),
+            selector_argument->clone(),
+            timestamp_kind,
+            context);
+    };
+
+    /// Returns the table with the grid of `info`, which has one row for each series and a value for the first step only if `v` is
+    /// evaluated once (the value is repeated for every step as Prometheus does).
+    auto addInfoGrid = [&](SQLQueryPiece & info)
+    {
+        String table = addSubquery(std::move(info.select_query), SQLSubqueryType::TABLE, context);
+        if (!first_step_only)
+            return table;
+        /// SELECT group, arrayResize([], <count_of_time_steps>, values[1]) AS values FROM <info>
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(col(ColumnNames::Group));
+        builder.select_list.push_back(makeASTFunction(
+            "arrayResize",
+            lit(Array{}),
+            lit(stepsInTimeSeriesRange(info.start_time, info.end_time, info.step)),
+            makeASTFunction("arrayElement", col(ColumnNames::Values), lit(1u))));
+        builder.select_list.back()->setAlias(ColumnNames::Values);
+        builder.from_table = table;
+        return addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
+    };
+
+    auto info = read_info(wide_ticks ? SampleTimestampKind::TICKS_HIGH : SampleTimestampKind::TICKS);
     if (info.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
@@ -356,24 +442,28 @@ SQLQueryPiece applyFunctionInfo(
         builder.select_list.back()->setAlias("info_name");
         builder.select_list.push_back(stepsWithValues());
         builder.select_list.back()->setAlias("info_idx");
-        builder.select_list.push_back(makeASTFunction("assumeNotNull", valueAtStep(col("info_idx"))));
-        builder.select_list.back()->setAlias("info_timestamp");
-        builder.from_table = addSubquery(std::move(info.select_query), SQLSubqueryType::TABLE, context);
 
-        /// SELECT group, arrayResize([], <count_of_time_steps>, values[1]) AS values FROM <info>
-        if (std::ranges::all_of(function_node->getArguments(), isStepInvariant))
+        ASTPtr timestamp = makeASTFunction("assumeNotNull", valueAtStep(col("info_idx")));
+        builder.from_table = addInfoGrid(info);
+        if (wide_ticks)
         {
-            SelectQueryBuilder first_step_builder;
-            first_step_builder.select_list.push_back(col(ColumnNames::Group));
-            first_step_builder.select_list.push_back(makeASTFunction(
-                "arrayResize",
-                lit(Array{}),
-                lit(stepsInTimeSeriesRange(info.start_time, info.end_time, info.step)),
-                makeASTFunction("arrayElement", col(ColumnNames::Values), lit(1u))));
-            first_step_builder.select_list.back()->setAlias(ColumnNames::Values);
-            first_step_builder.from_table = builder.from_table;
-            builder.from_table = addSubquery(first_step_builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
+            /// The timestamp is a tuple (the high part, the low part), the low parts are in another grid of the same series.
+            auto low_info = read_info(SampleTimestampKind::TICKS_LOW);
+            SelectQueryBuilder low_builder;
+            low_builder.select_list.push_back(col(ColumnNames::Group));
+            low_builder.select_list.back()->setAlias("low_group");
+            low_builder.select_list.push_back(col(ColumnNames::Values));
+            low_builder.select_list.back()->setAlias("low_values");
+            low_builder.from_table = addInfoGrid(low_info);
+            builder.join_table = addSubquery(low_builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
+            builder.join_on = makeASTFunction("equals", col(ColumnNames::Group), col("low_group"));
+            timestamp = makeASTFunction(
+                "tuple",
+                std::move(timestamp),
+                makeASTFunction("assumeNotNull", makeASTFunction("arrayElement", col("low_values"), makeASTFunction("plus", col("info_idx"), lit(1u)))));
         }
+        builder.select_list.push_back(std::move(timestamp));
+        builder.select_list.back()->setAlias("info_timestamp");
 
         info_samples = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
     }
