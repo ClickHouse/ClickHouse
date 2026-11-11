@@ -52,6 +52,10 @@ SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE hasAnyTokens(m['k
 SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE hasAnyTokens(m['k'], 'hello') ORDER BY id SETTINGS use_skip_indexes = 0);
 SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE hasToken(m['k'], 'hello') ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE hasToken(m['k'], 'hello') ORDER BY id SETTINGS use_skip_indexes = 0);
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE if(hasAnyTokens(m['k'], 'hello'), toUInt8(2), toUInt8(0)) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE if(hasAnyTokens(m['k'], 'hello'), toUInt8(2), toUInt8(0)) ORDER BY id SETTINGS use_skip_indexes = 0);
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE toString(hasAnyTokens(m['k'], 'hello')) = '1' ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE toString(hasAnyTokens(m['k'], 'hello')) = '1' ORDER BY id SETTINGS use_skip_indexes = 0);
 
 SELECT '-- JSONAllPaths';
 CREATE TABLE tab_json_paths (id UInt32, d JSON, INDEX ip JSONAllPaths(d) TYPE text(tokenizer = array))

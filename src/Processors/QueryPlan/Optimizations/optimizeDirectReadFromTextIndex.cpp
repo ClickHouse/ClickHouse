@@ -14,6 +14,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
@@ -523,7 +524,9 @@ public:
         const auto * filter_node = filter_column_name.empty() ? nullptr : &actions_dag.findInOutputs(filter_column_name);
 
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
-        auto nodes_ptrs = actions_dag.getNodesPointers();
+        /// Children come first, so that the predicate a hint keeps can include the rewrites of its arguments.
+        ActionsDAG::NodeRawConstPtrs nodes_ptrs;
+        visitNodesPostOrder(actions_dag.getNodesPointers(), [&](const ActionsDAG::Node * node) { nodes_ptrs.push_back(node); });
 
         for (const auto * node : nodes_ptrs)
         {
@@ -599,6 +602,8 @@ private:
     std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
     IndexReadTasks index_read_tasks;
+    /// Text-search functions rewritten by `processTextIndexFunction`, by the original node.
+    NodesReplacementMap rewritten_functions;
 
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
     static bool needApplyTokenizer(const String & function_name)
@@ -712,7 +717,11 @@ private:
         const ActionsDAG::Node * node = &function_node;
 
         if (need_transform_function)
+        {
             node = processTextIndexFunction(*node, selected_conditions, context);
+            if (node != &function_node)
+                rewritten_functions[&function_node] = node;
+        }
 
         if (direct_read_from_text_index)
             node = replaceFunctionsToVirtualColumns(*node, std::move(selected_conditions), context);
@@ -1058,8 +1067,9 @@ private:
             for (auto & condition : selected_conditions)
                 children.push_back(add_condition_to_input(condition));
 
+            /// The predicate keeps the rewrites of the text-search functions in its arguments.
             if (!has_exact_search)
-                children.push_back(&function_node);
+                children.push_back(replaceNodes(actions_dag, &function_node, rewritten_functions));
 
             result_node = &actions_dag.addFunction(function_builder, children, "");
         }
