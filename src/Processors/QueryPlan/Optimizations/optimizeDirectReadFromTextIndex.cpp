@@ -663,8 +663,9 @@ private:
 
             /// The search query is built from the canonicalized subtree, but the rewrites below apply to
             /// the original node, so check that node as well. A key-existence query does not use the tokenizer argument.
-            if (search_query->getFunctionName() == function_node.function_base->getName()
-                && !text_index_condition.canAnswerFunctionNode(function_node))
+            const auto function_name = function_node.function_base->getName();
+            const bool ignores_tokenizer_argument = needApplyTokenizer(function_name) && search_query->getFunctionName() != function_name;
+            if (!ignores_tokenizer_argument && !text_index_condition.canAnswerFunctionNode(function_node))
                 continue;
 
             SelectedCondition condition

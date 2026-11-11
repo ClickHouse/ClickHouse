@@ -28,12 +28,14 @@ SELECT groupArray(hasAnyTokens(m['k'], 'Hello')) FROM (SELECT m FROM tab_keys OR
 SELECT groupArray(id) FROM (SELECT id FROM tab_keys WHERE hasAllTokens(m['k'], 'there Hello') ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_keys WHERE hasPhrase(m['k'], 'there') ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_keys WHERE m['k'] != '' AND if(id > 0, hasAnyTokens(m['k'], 'Hello'), 0) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_keys WHERE m['k'] != '' AND if(hasAnyTokens(m['k'], 'Hello'), toUInt8(2), toUInt8(0)) = id ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_keys WHERE m['k'] != '' AND if(hasAnyTokens(m['k'], 'Hello'), toUInt8(2), toUInt8(0)) = id ORDER BY id SETTINGS use_skip_indexes = 0);
 
 SELECT '-- mapKeys and mapValues';
 SELECT groupArray(id) FROM (SELECT id FROM tab_both WHERE hasAnyTokens(m['k'], 'Hello') ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_both WHERE hasAnyTokens(m['k'], 'Hello') ORDER BY id SETTINGS use_skip_indexes = 0);
 SELECT groupArray(id) FROM (SELECT id FROM tab_both WHERE hasAnyTokens(m['k'], 'Hello') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0);
-SELECT groupArray(hasAnyTokens(m['k'], 'Hello')) FROM (SELECT m FROM tab_both ORDER BY id);
+SELECT groupArray(hasAnyTokens(m['k'], 'Hello')) FROM (SELECT m FROM tab_both ORDER BY id) SETTINGS enable_parallel_replicas = 0;
 SELECT groupArray(id) FROM (SELECT id FROM tab_both WHERE hasAllTokens(m['k'], 'there Hello') ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_both WHERE hasAllTokens(m['k'], 'there Hello') ORDER BY id SETTINGS use_skip_indexes = 0);
 SELECT groupArray(id) FROM (SELECT id FROM tab_both WHERE hasPhrase(m['k'], 'there') ORDER BY id);
