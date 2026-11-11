@@ -1598,8 +1598,7 @@ namespace
     void Call::finishQuery()
     {
         finalize = true;
-        /// A cancelled call is finished as a success too, so its pipeline must be cancelled: an executor that has not started
-        /// does not cancel it, and e.g. the query result cache would store the result of a query which was not executed.
+        /// A cancelled call is finished as a success, and an executor that never started has not cancelled the pipeline.
         if (cancelled)
             io.pipeline.cancel();
         io.onFinish();
