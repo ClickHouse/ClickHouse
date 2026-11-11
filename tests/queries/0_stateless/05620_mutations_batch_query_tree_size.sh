@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# The predicates must reach the server limit of 500000 nodes, which takes longer than Fast test allows for a new test.
+# Tags: no-fasttest, no-flaky-check
+# The predicates must reach the server limit of 500000 nodes: this takes longer than Fast test allows for a new test,
+# and the parallel runs of the flaky check do not finish in time with sanitizers.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
