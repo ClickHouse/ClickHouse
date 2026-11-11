@@ -5,15 +5,15 @@
 -- A `const` constraint on make_distributed_plan must veto the value derived from
 -- distributed_plan_workers_num, not just explicit changes.
 
-DROP SETTINGS PROFILE IF EXISTS profile_04871;
-CREATE SETTINGS PROFILE profile_04871 SETTINGS make_distributed_plan CONST;
+DROP SETTINGS PROFILE IF EXISTS profile_05622;
+CREATE SETTINGS PROFILE profile_05622 SETTINGS make_distributed_plan CONST;
 
 SELECT 'derived while not pinned const';
 SET distributed_plan_workers_num = 3;
 SELECT getSetting('make_distributed_plan') = (SELECT readonly = 0 FROM system.settings WHERE name = 'make_distributed_plan');
 
 SELECT 'dropped when the const profile arrives';
-SET profile = 'profile_04871';
+SET profile = 'profile_05622';
 SELECT getSetting('make_distributed_plan');
 
 SELECT 'not derived under the constraint';
@@ -22,4 +22,4 @@ SELECT getSetting('make_distributed_plan');
 
 SET make_distributed_plan = 1; -- { serverError SETTING_CONSTRAINT_VIOLATION }
 
-DROP SETTINGS PROFILE profile_04871;
+DROP SETTINGS PROFILE profile_05622;
