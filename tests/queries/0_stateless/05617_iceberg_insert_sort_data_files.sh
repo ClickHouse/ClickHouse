@@ -59,9 +59,9 @@ run_case two_columns "a Int32, b Int32" "ORDER BY (a, b)" \
 run_case desc "x Int64" "ORDER BY x DESC" "SELECT ${RANDOM_X} FROM numbers(10000)" "x" "arrayReverseSort"
 # A small byte limit ends files before the row limit; they are still sorted and tagged.
 run_case byte_limit "x Int64" "ORDER BY x" "SELECT ${RANDOM_X} FROM numbers(10000)" "x" "arraySort" "--iceberg_insert_max_bytes_in_data_file=12000"
-# `CREATE TABLE` writes `nulls-first` into the sort order, for both directions.
+# `CREATE TABLE` writes `nulls-last` into the sort order for `ASC` and `nulls-first` for `DESC`.
 run_case nullable "x Nullable(Int64)" "ORDER BY x" \
-    "SELECT if(number % 7 = 0, NULL, ${RANDOM_X}) FROM numbers(10000)" "(isNotNull(x), ifNull(x, 0))" "arraySort"
+    "SELECT if(number % 7 = 0, NULL, ${RANDOM_X}) FROM numbers(10000)" "(isNull(x), ifNull(x, 0))" "arraySort"
 run_case nullable_desc "x Nullable(Int64)" "ORDER BY x DESC" \
     "SELECT if(number % 7 = 0, NULL, ${RANDOM_X}) FROM numbers(10000)" "(isNull(x), ifNull(x, 0))" "arrayReverseSort"
 # A floating-point key is sorted but not tagged: Iceberg orders NaN and signed zeros differently from ClickHouse.
