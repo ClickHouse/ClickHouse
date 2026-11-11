@@ -6,6 +6,8 @@
 #include <Core/AccurateComparison.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
@@ -59,15 +61,6 @@ enum class Coercion : uint8_t
     ToCommonType, /// All arguments are brought to one common type (comparisons).
 };
 
-/// The Substrait output type. MatchClickHouse is the rule, the rest are known exact mismatches.
-enum class ResultRule : uint8_t
-{
-    MatchClickHouse,
-    Boolean, /// `boolean` for ClickHouse UInt8. Same values and bytes.
-    BooleanNotNull,
-    UInt64AsInt64, /// Some Substrait functions declare `i64` where ClickHouse returns UInt64. Counts and lengths, too small to overflow `i64`.
-};
-
 /// One overload of a Substrait function ("add:i64_i64" takes {"i64", "i64"} and returns "i64").
 struct FunctionOverload
 {
@@ -82,11 +75,10 @@ struct MappedFunction
 {
     std::string_view substrait_name;
     Coercion coercion = Coercion::None;
-    ResultRule result = ResultRule::MatchClickHouse;
     bool variadic = false;
     bool same_type_args = false;
-    /// For negated ClickHouse functions with no negated Substrait form, as in notLike -> not(like(...)).
-    bool negate_result = false;
+    bool never_null = false;
+    bool negate_result = false; /// For negated ClickHouse functions with no negated Substrait form, as in notLike -> not(like(...)).
     std::vector<FunctionOverload> overloads;
 };
 
@@ -119,21 +111,19 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
                                   std::string_view substrait_name,
                                   std::vector<FunctionOverload> overloads,
                                   Coercion coercion = Coercion::None,
-                                  ResultRule result = ResultRule::MatchClickHouse,
                                   bool variadic = false) -> MappedFunction &
     {
         auto & entry = table[ch_name];
-        entry
-            = {.substrait_name = substrait_name,
-               .coercion = coercion,
-               .result = result,
-               .variadic = variadic,
-               .overloads = std::move(overloads)};
+        entry = {.substrait_name = substrait_name, .coercion = coercion, .variadic = variadic, .overloads = std::move(overloads)};
         return entry;
     };
 
-    const auto add_comparison = [&](std::string_view ch_name, std::string_view substrait_name, Coercion coercion, ResultRule result)
-    { add_function(ch_name, substrait_name, {}, coercion, result).same_type_args = true; };
+    const auto add_comparison = [&](std::string_view ch_name, std::string_view substrait_name, Coercion coercion) -> MappedFunction &
+    {
+        auto & entry = add_function(ch_name, substrait_name, {}, coercion);
+        entry.same_type_args = true;
+        return entry;
+    };
 
     add_function("plus", "add", sameTypeArithmeticOverloads(), Coercion::ToResultType);
     add_function("minus", "subtract", sameTypeArithmeticOverloads(), Coercion::ToResultType);
@@ -162,55 +152,39 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
     /// abs maps only for floats. ClickHouse types abs(IntN) as UIntN, which doesn't match the same-type Substrait overloads.
     add_function("abs", "abs", {{{"fp32"}, "fp32", arithmetic}, {{"fp64"}, "fp64", arithmetic}});
 
-    add_comparison("equals", "equal", Coercion::ToCommonType, ResultRule::Boolean);
-    add_comparison("notEquals", "not_equal", Coercion::ToCommonType, ResultRule::Boolean);
-    add_comparison("less", "lt", Coercion::ToCommonType, ResultRule::Boolean);
-    add_comparison("greater", "gt", Coercion::ToCommonType, ResultRule::Boolean);
-    add_comparison("lessOrEquals", "lte", Coercion::ToCommonType, ResultRule::Boolean);
-    add_comparison("greaterOrEquals", "gte", Coercion::ToCommonType, ResultRule::Boolean);
-    add_comparison("isNull", "is_null", Coercion::None, ResultRule::BooleanNotNull);
-    add_comparison("isNotNull", "is_not_null", Coercion::None, ResultRule::BooleanNotNull);
+    add_comparison("equals", "equal", Coercion::ToCommonType);
+    add_comparison("notEquals", "not_equal", Coercion::ToCommonType);
+    add_comparison("less", "lt", Coercion::ToCommonType);
+    add_comparison("greater", "gt", Coercion::ToCommonType);
+    add_comparison("lessOrEquals", "lte", Coercion::ToCommonType);
+    add_comparison("greaterOrEquals", "gte", Coercion::ToCommonType);
+    add_comparison("isNull", "is_null", Coercion::None).never_null = true;
+    add_comparison("isNotNull", "is_not_null", Coercion::None).never_null = true;
 
     const std::vector<FunctionOverload> boolean_overload = {{{"bool"}, "bool", boolean}};
-    add_function("and", "and", boolean_overload, Coercion::None, ResultRule::Boolean, /*variadic=*/true);
-    add_function("or", "or", boolean_overload, Coercion::None, ResultRule::Boolean, /*variadic=*/true);
-    add_function("not", "not", boolean_overload, Coercion::None, ResultRule::Boolean);
-    add_function("xor", "xor", {{{"bool", "bool"}, "bool", boolean}}, Coercion::None, ResultRule::Boolean);
+    add_function("and", "and", boolean_overload, Coercion::None, /*variadic=*/true);
+    add_function("or", "or", boolean_overload, Coercion::None, /*variadic=*/true);
+    add_function("not", "not", boolean_overload);
+    add_function("xor", "xor", {{{"bool", "bool"}, "bool", boolean}});
 
     const std::vector<FunctionOverload> like_sensitive = {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_SENSITIVE"}}}};
     const std::vector<FunctionOverload> like_insensitive = {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_INSENSITIVE"}}}};
-    add_function("like", "like", like_sensitive, Coercion::None, ResultRule::Boolean);
-    add_function("ilike", "like", like_insensitive, Coercion::None, ResultRule::Boolean);
-    add_function("notLike", "like", like_sensitive, Coercion::None, ResultRule::Boolean).negate_result = true;
-    add_function("notILike", "like", like_insensitive, Coercion::None, ResultRule::Boolean).negate_result = true;
+    add_function("like", "like", like_sensitive);
+    add_function("ilike", "like", like_insensitive);
+    add_function("notLike", "like", like_sensitive).negate_result = true;
+    add_function("notILike", "like", like_insensitive).negate_result = true;
 
-    add_function(
-        "concat",
-        "concat",
-        {{{"str"}, "str", string, {{"null_handling", "ACCEPT_NULLS"}}}},
-        Coercion::None,
-        ResultRule::MatchClickHouse,
-        true);
+    add_function("concat", "concat", {{{"str"}, "str", string, {{"null_handling", "ACCEPT_NULLS"}}}}, Coercion::None, /*variadic=*/true);
 
     add_function("lower", "lower", {{{"str"}, "str", string, {{"char_set", "ASCII_ONLY"}}}});
     add_function("upper", "upper", {{{"str"}, "str", string, {{"char_set", "ASCII_ONLY"}}}});
     add_function("lowerUTF8", "lower", {{{"str"}, "str", string, {{"char_set", "UTF8"}}}});
     add_function("upperUTF8", "upper", {{{"str"}, "str", string, {{"char_set", "UTF8"}}}});
 
-    add_function("length", "octet_length", {{{"str"}, "i64", string}}, Coercion::None, ResultRule::UInt64AsInt64);
-    add_function("lengthUTF8", "char_length", {{{"str"}, "i64", string}}, Coercion::None, ResultRule::UInt64AsInt64);
-    add_function(
-        "startsWith",
-        "starts_with",
-        {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_SENSITIVE"}}}},
-        Coercion::None,
-        ResultRule::Boolean);
-    add_function(
-        "endsWith",
-        "ends_with",
-        {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_SENSITIVE"}}}},
-        Coercion::None,
-        ResultRule::Boolean);
+    add_function("length", "octet_length", {{{"str"}, "i64", string}});
+    add_function("lengthUTF8", "char_length", {{{"str"}, "i64", string}});
+    add_function("startsWith", "starts_with", {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_SENSITIVE"}}}});
+    add_function("endsWith", "ends_with", {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_SENSITIVE"}}}});
 
     add_function(
         "substring",
@@ -230,13 +204,9 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
     for (std::string_view trig : {"sin", "cos", "tan"})
         add_function(trig, trig, {{{"fp32"}, "fp32", arithmetic, fpArithOptions()}, {{"fp64"}, "fp64", arithmetic, fpArithOptions()}});
 
+    /// Overload matching reads only args.front(), so a variadic overload declares its one repeated argument type once.
     for ([[maybe_unused]] const auto & [ch_name, mapped] : table)
-    {
-        /// A same_type_args function selects no overload, so its result must come from a Boolean rule.
-        chassert(!mapped.same_type_args || mapped.result == ResultRule::Boolean || mapped.result == ResultRule::BooleanNotNull);
-        /// Overload matching reads only args.front(), so a variadic overload declares its one repeated argument type once.
         chassert(!mapped.variadic || std::ranges::all_of(mapped.overloads, [](const auto & o) { return o.args.size() == 1; }));
-    }
 
     return table;
 }
@@ -758,12 +728,13 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     static const FunctionOptions no_options;
     std::string_view urn;
     const FunctionOptions * options = &no_options;
-    std::string_view overload_return_type;
+    std::string_view declared_return;
     String signature;
 
     if (mapping.same_type_args)
     {
         urn = SubstraitExtensionURN::comparison;
+        declared_return = "bool";
         signature = fmt::format("{}:any", mapping.substrait_name);
         for (size_t i = 1; i < args.size(); ++i)
             signature += "_any";
@@ -787,38 +758,37 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
 
         urn = overload_it->urn;
         options = &overload_it->options;
-        overload_return_type = overload_it->return_type;
+        declared_return = overload_it->return_type;
 
         signature = fmt::format("{}:{}", mapping.substrait_name, fmt::join(overload_it->args, "_"));
     }
 
-    /// Derive the output type according to the overload's contract.
-    const bool any_arg_nullable = std::ranges::any_of(args, [](const auto & a) { return isSubstraitTypeNullable(a.type); });
     bool needs_result_cast = false;
     ConvertedExpression out;
     out.node = &node;
-    switch (mapping.result)
+
+    /// The known exact mismatches. Substrait declares `boolean` where ClickHouse returns UInt8, with the same values and bytes.
+    /// It declares `i64` where ClickHouse returns UInt64 for counts and lengths, too small to overflow `i64`.
+    const DataTypePtr ch_result = removeNullable(removeLowCardinality(node.result_type));
+    if ((declared_return == "bool" && isUInt8(ch_result)) || (declared_return == "i64" && isUInt64(ch_result)))
     {
-        case ResultRule::MatchClickHouse: {
-            if (auto converted_short = result_short(); !converted_short)
-                return std::unexpected(std::move(converted_short.error()));
-            out.type = std::move(*ch_result_type);
-            if (ch_result_short != overload_return_type)
-            {
-                if (mapping.coercion == Coercion::ToResultType && overload_return_type == to_result_target)
-                    needs_result_cast = true;
-                else
-                    return blocked(
-                        fmt::format(
-                            "function {} returns {} in ClickHouse but {} in Substrait", name, ch_result_short, overload_return_type));
-            }
-            break;
+        const bool any_arg_nullable = std::ranges::any_of(args, [](const auto & a) { return isSubstraitTypeNullable(a.type); });
+        out.type = makeSimpleSubstraitType(declared_return, any_arg_nullable && !mapping.never_null);
+    }
+    else
+    {
+        /// Otherwise the declared return type must be the ClickHouse result type.
+        if (auto converted_short = result_short(); !converted_short)
+            return std::unexpected(std::move(converted_short.error()));
+        out.type = std::move(*ch_result_type);
+        if (ch_result_short != declared_return)
+        {
+            if (mapping.coercion == Coercion::ToResultType && declared_return == to_result_target)
+                needs_result_cast = true;
+            else
+                return blocked(
+                    fmt::format("function {} returns {} in ClickHouse but {} in Substrait", name, ch_result_short, declared_return));
         }
-        case ResultRule::Boolean:
-        case ResultRule::BooleanNotNull:
-            out.type.mutable_bool_()->set_nullability(substraitNullabilityOf(mapping.result == ResultRule::Boolean && any_arg_nullable));
-            break;
-        case ResultRule::UInt64AsInt64: out.type.mutable_i64()->set_nullability(substraitNullabilityOf(any_arg_nullable)); break;
     }
 
     substrait::Expression function_expression;
