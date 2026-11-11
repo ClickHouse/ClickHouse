@@ -153,8 +153,7 @@ public:
 
     static String getKey(const String& table_uuid, const String & data_path) { return table_uuid + data_path; }
 
-    /// The latest metadata version is the result of listing `table_path` in one storage (filtered by the uuid only with
-    /// `iceberg_metadata_table_uuid`), so its key names all of them: a `table-uuid` alone is shared by copies of a table.
+    /// Not keyed by `table-uuid` alone: copies of a table share it.
     static String getLatestMetadataVersionKey(
         const String & object_storage_hash, const String & table_path, const std::optional<String> & selection_table_uuid = {})
     {
