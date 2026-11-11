@@ -426,8 +426,8 @@ public:
     /// How many streams are worth starting when the caller wants up to `requested` of them. Every
     /// stream asks for an address as soon as it starts, so starting more of them than there are
     /// servable addresses forces another batch at once - and generating one past the limit throws,
-    /// failing a query whose surviving addresses were all within it. When a filter pruned some of the
-    /// generated addresses, batches are prefetched until `requested` survivors are buffered, the
+    /// failing a query whose surviving addresses were all within it. Unless the whole pattern is known
+    /// to fit into the limit, batches are prefetched until `requested` survivors are buffered, the
     /// pattern is exhausted, or the limit is reached - so a pattern whose first survivors appear
     /// after the first batch still gets its parallelism. Rejected addresses count as generated:
     /// prefetching stops at the limit rather than walking an unbounded pattern, and it never asks
@@ -438,27 +438,29 @@ public:
         if (exact_size)
             return *exact_size;
 
-        if (!has_filter)
+        /// When the whole pattern fits into the limit, a stream that finds nothing left simply finishes,
+        /// so the streams are sized from the pattern. The limit is on the addresses of both stages, but
+        /// `totalCount` only counts the URLs, so it tells that the whole pattern fits only when no URL
+        /// has failover options (`|`): with `first,b{1|2},c` and a limit of three the URLs are three,
+        /// but the addresses are four.
+        /// Not exhausted, so there is a generator: a single URI is exhausted at once.
+        const auto total = generator->totalCount();
+        const bool whole_pattern_fits = !limit_exceeded && !description.contains('|') && total && *total <= max_addresses_upper_bound;
+
+        /// Otherwise, with no filter, the streams are sized below from the buffered URLs, all of which fit
+        /// into the limit: a stream started for a URL beyond them would ask the generator past the limit
+        /// while another stream already reads the URLs that fit - this happens with a predicate on a
+        /// physical column, which keeps the query from being reduced to one stream by its `LIMIT`.
+        if (!has_filter && whole_pattern_fits)
             return upperBound();
 
         /// The buffered addresses are not pruned yet, and how many of them survive is unknown until the
-        /// pipeline runs. When the whole pattern fits into the limit, a stream that finds nothing left
-        /// simply finishes, so the streams are sized from the pattern as if there were no filter.
-        /// Otherwise every stream asks for an address as soon as it starts, and a stream started for an
-        /// address the filter then rejects would ask the generator past the limit while another stream
-        /// already reads the one survivor. One stream reads exactly what a ready filter would have
-        /// selected; it prunes the batch on its first `next`.
-        /// The limit is on the addresses of both stages, but `totalCount` only counts the URLs, so it
-        /// tells that the whole pattern fits only when no URL has failover options (`|`): with
-        /// `first,b{1|2},c` and a limit of three the URLs are three, but the addresses are four.
+        /// pipeline runs. Unless the whole pattern fits into the limit, every stream asks for an address
+        /// as soon as it starts, and a stream started for an address the filter then rejects would ask
+        /// the generator past the limit while another stream already reads the one survivor. One stream
+        /// reads exactly what a ready filter would have selected; it prunes the batch on its first `next`.
         if (filter_deferred)
-        {
-            /// Not exhausted, so there is a generator: a single URI is exhausted at once.
-            const auto total = generator->totalCount();
-            if (!limit_exceeded && !description.contains('|') && total && *total <= max_addresses_upper_bound)
-                return upperBound();
-            return 1;
-        }
+            return whole_pattern_fits ? upperBound() : 1;
 
         while (batch.size() - batch_index < requested && !exhausted && !limit_exceeded && generated < max_addresses_upper_bound)
             fillBatch();
