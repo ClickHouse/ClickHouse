@@ -3934,9 +3934,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::canCheckpointVerticalMerge() const
 {
     /// Every attempt must build the same part from the source parts alone. Partially built indexes and projections
-    /// cannot be resumed, patch parts need the offsets mapping of the horizontal stage, and a merge of a single part
-    /// may skip writing `rows_sources`.
+    /// cannot be resumed, patch parts need the offsets mapping of the horizontal stage, a merge of a single part
+    /// may skip writing `rows_sources`, and non-adaptive marks round the row count up until the part is finalized.
     return global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Packed
+        && global_ctx->new_data_part->index_granularity_info.mark_type.adaptive
         && global_ctx->future_part->patch_parts.empty()
         && !global_ctx->parent_part && !global_ctx->txn && global_ctx->suffix.empty()
         && global_ctx->future_part->merge_type == MergeType::Regular

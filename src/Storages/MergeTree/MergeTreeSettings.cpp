@@ -2125,7 +2125,7 @@ The first checkpoint is saved once the key columns are merged, the next ones aft
 at most once per `merge_checkpoints_min_interval_seconds`.
 A checkpoint is removed when a current part covers its result part,
 or when no merge saves it for `temporary_directories_lifetime`.
-Merges with TTL, projections, secondary indexes, or patch parts are not checkpointed.
+Merges with TTL, projections, secondary indexes, patch parts, or non-adaptive marks (`index_granularity_bytes = 0`) are not checkpointed.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting for durable merge checkpoints"}) \
     DECLARE(UInt64, merge_checkpoints_min_bytes, 10_GiB, R"(
