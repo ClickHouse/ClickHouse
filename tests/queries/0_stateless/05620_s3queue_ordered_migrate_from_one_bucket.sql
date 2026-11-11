@@ -132,7 +132,28 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_dual_bucket/buckets/0' A
 SELECT 'dual bucket / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_dual_bucket/buckets/1' AND name = 'processed';
 
--- 7. Once bucket 1 exists, bucket 0's pointer belongs to bucket 0 only.
+-- 7. Bucket 0's pointer is the queue's until the table metadata in Keeper has more buckets:
+-- `buckets/1` left by an interrupted migration does not change it, a migration by another server does.
+CREATE TABLE q_interrupted (x UInt64)
+ENGINE = S3Queue('http://localhost:11111/test/05620_interrupted/', 'username', 'password', CSV)
+SETTINGS mode = 'ordered', buckets = 1,
+         keeper_path = '/clickhouse/{database}/q_interrupted';
+
+INSERT INTO system.zookeeper (path, name, value)
+SELECT '/clickhouse/' || currentDatabase() || '/q_interrupted/buckets', '1', '';
+INSERT INTO system.zookeeper (path, name, value)
+SELECT '/clickhouse/' || currentDatabase() || '/q_interrupted/buckets/0', 'processed',
+       '{"file_path":"legacy.csv","last_processed_timestamp":0,"last_exception":"","retries":0,"processor_id":""}';
+
+ALTER TABLE q_interrupted MODIFY SETTING buckets = 2;
+
+SELECT 'interrupted / processed', count() FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_interrupted' AND name = 'processed';
+SELECT 'interrupted / bucket 0', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_interrupted/buckets/0' AND name = 'processed';
+SELECT 'interrupted / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_interrupted/buckets/1' AND name = 'processed';
+
 CREATE TABLE q_peer (x UInt64)
 ENGINE = S3Queue('http://localhost:11111/test/05620_peer/', 'username', 'password', CSV)
 SETTINGS mode = 'ordered', buckets = 1,
@@ -143,6 +164,9 @@ SELECT '/clickhouse/' || currentDatabase() || '/q_peer/buckets', '1', '';
 INSERT INTO system.zookeeper (path, name, value)
 SELECT '/clickhouse/' || currentDatabase() || '/q_peer/buckets/0', 'processed',
        '{"file_path":"live.csv","last_processed_timestamp":0,"last_exception":"","retries":0,"processor_id":""}';
+INSERT INTO system.zookeeper (path, name, value)
+SELECT path, name, replaceOne(value, '"buckets":1', '"buckets":2') FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_peer' AND name = 'metadata';
 
 ALTER TABLE q_peer MODIFY SETTING buckets = 2;
 
@@ -153,7 +177,7 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_peer/buckets/0' AND name
 SELECT 'peer / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_peer/buckets/1' AND name = 'processed';
 
--- 8. A refused migration creates no bucket nodes, so the next attempt still reads bucket 0.
+-- 8. A refused migration creates no bucket nodes.
 CREATE TABLE q_part (x UInt64)
 ENGINE = S3Queue('http://localhost:11111/test/05620_part/', 'username', 'password', CSV)
 SETTINGS mode = 'ordered', buckets = 1, last_processed_path = 'd.csv',
@@ -182,6 +206,7 @@ DROP TABLE q_reset;
 DROP TABLE q_legacy;
 DROP TABLE q_dual_root;
 DROP TABLE q_dual_bucket;
+DROP TABLE q_interrupted;
 DROP TABLE q_peer;
 DROP TABLE q_part_holder SYNC;
 DROP TABLE q_part;

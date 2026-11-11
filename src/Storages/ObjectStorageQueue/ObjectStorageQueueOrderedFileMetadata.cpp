@@ -998,27 +998,27 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
     }
 
     const auto buckets_path = std::filesystem::path(zk_path) / "buckets";
+    const auto table_metadata_path = std::filesystem::path(zk_path) / "metadata";
 
     for (size_t try_num = 0; try_num <= retries; ++try_num)
     {
         requests.clear();
 
-        /// The bucket nodes are created together with the migrated pointer, so `buckets/1` exists only after a migration.
-        /// Before it, bucket 0 may hold the pointer of the whole queue, put there by older versions for `buckets = 1`.
+        /// The table metadata gets the new number of buckets only after a migration. Before it, bucket 0 may hold
+        /// the pointer of the whole queue, put there by older versions for `buckets = 1`.
+        Coordination::Stat table_metadata_stat;
+        const auto table_metadata = ObjectStorageQueueTableMetadata::parse(zk_client->get(table_metadata_path, &table_metadata_stat));
+        const bool use_legacy_bucket_0 = prev_value == 1 && !DB::useBucketsForProcessing(table_metadata.getBucketsNum());
+
         std::vector<std::string> missing_bucket_paths;
         if (!zk_client->exists(buckets_path))
             missing_bucket_paths.push_back(buckets_path);
-        bool bucket_1_missing = false;
         for (size_t i = 0; i < value; ++i)
         {
             const std::string bucket_path = buckets_path / toString(i);
             if (!zk_client->exists(bucket_path))
-            {
                 missing_bucket_paths.push_back(bucket_path);
-                bucket_1_missing |= i == 1;
-            }
         }
-        const bool use_legacy_bucket_0 = prev_value == 1 && bucket_1_missing;
 
         std::vector<std::string> candidate_paths{getProcessedPathWithoutBucket(zk_path)};
         if (use_legacy_bucket_0)
@@ -1058,6 +1058,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
                                 processed_node.toString(),
                                 zkutil::CreateMode::Persistent));
         }
+        requests.push_back(zkutil::makeCheckRequest(table_metadata_path, table_metadata_stat.version));
 
         responses.clear();
         code = zk_client->tryMulti(requests, responses);
@@ -1102,6 +1103,12 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         {
             LOG_TRACE(log, "Bucket node {} was created concurrently by another replica, will recheck",
                       requests[failed_idx]->getPath());
+            continue;
+        }
+
+        if (failed_idx == requests.size() - 1)
+        {
+            LOG_TRACE(log, "Table metadata was changed concurrently, will recheck");
             continue;
         }
 

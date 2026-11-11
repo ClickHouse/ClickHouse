@@ -19,6 +19,9 @@ dual root / bucket 1	1	d.csv
 dual bucket / processed	0
 dual bucket / bucket 0	1	b.csv
 dual bucket / bucket 1	1	b.csv
+interrupted / processed	0
+interrupted / bucket 0	1	legacy.csv
+interrupted / bucket 1	1	legacy.csv
 peer / processed	0
 peer / bucket 0	1	live.csv
 peer / bucket 1	0	
