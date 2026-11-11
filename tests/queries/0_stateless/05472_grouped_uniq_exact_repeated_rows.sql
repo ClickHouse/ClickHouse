@@ -58,8 +58,8 @@ SETTINGS max_threads = 1, max_block_size = 1024, max_rows_to_group_by = 1, group
 -- No repeats: the rest of each batch hashes a chunk of values at once, also with the null places of key 7, which arrives
 -- after the GROUP BY limit. The four counts are equal.
 SELECT k, uniqExact(s), uniqExact(fs), uniqExact(ip), uniqExact(v)
-FROM (SELECT toUInt32(if(number < 2000, number % 7, number % 8)) AS k, number % 5000 AS v, toString(v) AS s,
-    toFixedString(s, 4) AS fs, CAST(toUInt128(v) AS IPv6) AS ip FROM numbers(30000))
+FROM (SELECT toUInt32(if(number < 2000, number % 7, number % 8)) AS k, number AS v, toString(v) AS s,
+    toFixedString(s, 5) AS fs, CAST(toUInt128(v) AS IPv6) AS ip FROM numbers(30000))
 GROUP BY k ORDER BY k
 SETTINGS max_threads = 1, max_block_size = 1024, max_rows_to_group_by = 6, group_by_overflow_mode = 'any',
     optimize_injective_functions_inside_uniq = 0;
