@@ -214,7 +214,7 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
                     aggregator.parallelMergeThreshold(session.get()),
                     cancelled,
                     /*updater=*/nullptr,
-                    /*full_group_count=*/nullptr);
+                    /*merged_group_count=*/nullptr);
             };
             if (throws)
                 EXPECT_THROW(merge(), std::runtime_error);
@@ -286,7 +286,7 @@ TEST(AggregatorAdaptiveStaging, ConstantSerializedKey)
     {
         const auto chunks = aggregator.mergeAndConvertAdaptiveBucket(
             prepared, *session, task, /*final=*/true, static_cast<Int32>(bucket), aggregator.parallelMergeThreshold(session.get()),
-            cancelled, /*updater=*/nullptr, /*full_group_count=*/nullptr);
+            cancelled, /*updater=*/nullptr, /*merged_group_count=*/nullptr);
         for (const auto & converted : chunks)
         {
             const auto & columns = converted.chunk.getColumns();

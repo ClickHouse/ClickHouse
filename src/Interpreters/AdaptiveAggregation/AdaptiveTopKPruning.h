@@ -50,6 +50,26 @@ public:
     /// Allocates the zeroed bins.
     void allocate() { bins = std::make_unique<UInt16[]>(adaptive_count_bins); }
 
+    /// The rows in the bins that hold fewer than `bound` rows each. A saturated bin holds an unknown number
+    /// of rows, so it is never among them.
+    UInt64 rowsInBinsBelow(UInt64 bound) const
+    {
+        UInt64 rows = 0;
+        for (size_t bin = 0; bin < adaptive_count_bins; ++bin)
+            if (bins[bin] < bound && bins[bin] != std::numeric_limits<UInt16>::max())
+                rows += bins[bin];
+        return rows;
+    }
+
+    /// Appends the row count of every bin that holds rows to `counts`: for a saturated bin the largest
+    /// counter value, which is the least it can hold.
+    void appendNonEmpty(std::vector<UInt64> & counts) const
+    {
+        for (size_t bin = 0; bin < adaptive_count_bins; ++bin)
+            if (bins[bin])
+                counts.push_back(bins[bin]);
+    }
+
     /// Adds the rows of a contribution to the bin of its group's hash.
     ALWAYS_INLINE void add(UInt64 hash, UInt64 contribution)
     {

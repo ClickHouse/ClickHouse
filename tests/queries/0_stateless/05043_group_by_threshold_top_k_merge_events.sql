@@ -25,7 +25,6 @@ SET max_bytes_ratio_before_external_group_by = 0;
 -- The adaptive aggregator stands down for a single-stream scan anyway; pin it off so the shape
 -- does not change if that rejection is ever lifted.
 SET enable_adaptive_aggregator = 0;
-SET max_rows_to_group_by = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET serialize_query_plan = 0;
