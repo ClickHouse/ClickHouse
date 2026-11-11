@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-random-merge-tree-settings
-# add_minmax_index_for_numeric_columns=0: keep `b` unindexed so that PREWHERE, not index pruning, drops the granules.
+# add_minmax_index_for_numeric_columns=0: keep `b`/`c` unindexed so that PREWHERE, not index pruning, drops the granules.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,9 +21,15 @@ ${CLICKHOUSE_CLIENT} -q "
    WHERE active AND database = currentDatabase() AND table = 't' FORMAT Null;
 "
 
-# The granule counters must be exact regardless of how reads are split into blocks. max_block_size 65409
-# (the default) is not a multiple of 8192, so a granule is split across read blocks; 8192 keeps every block
-# granule-aligned. Both must report the same, granule-accurate numbers.
+# The granule counters must be exact regardless of how the read is split into blocks or across threads.
+# max_block_size 65409 (the default) is not a multiple of 8192, so a granule is split across read blocks;
+# 8192 keeps every block granule-aligned. Both must report the same, granule-accurate numbers: a granule
+# split across blocks whose rows are all filtered has to be counted as dropped exactly once.
+#
+# max_threads 16 divides the part into several reading ranges so that a fully dropped granule falls on a
+# range/block boundary. That is the layout that used to miscount it (the split granule's unfiltered
+# leading piece was mistaken for a survivor); pinning max_threads also makes the result independent of
+# the test machine's core count.
 #
 # use_query_condition_cache=0: a warm query condition cache skips fully-filtered granules *before* PREWHERE
 # reads them, so PREWHERE would then legitimately read and drop fewer granules. Disable it so the counters
@@ -32,14 +38,14 @@ run_query() {
   local query_id=$1
   local block_size=$2
   local predicate=$3
-  ${CLICKHOUSE_CLIENT} --use_query_condition_cache 0 --max_block_size "$block_size" --query_id "$query_id" -q "
+  ${CLICKHOUSE_CLIENT} --use_query_condition_cache 0 --max_threads 16 --max_block_size "$block_size" --query_id "$query_id" -q "
     SELECT count() FROM t PREWHERE $predicate FORMAT Null
   "
 }
 
-# b is not the primary key and has no minmax index, so these granules are dropped by PREWHERE itself.
+# b/c are not the primary key and have no minmax index, so these granules are dropped by PREWHERE itself.
 
-# b < 5000000 drops every granule whose rows are all >= 5000000: granules 611..1220 (610 of 1221), i.e. 5000000 rows.
+# b < 5000000 drops every granule whose rows are all >= 5000000: granules 611..1220 (610 of 1221), 5000000 rows.
 qid_drop_frag="${CLICKHOUSE_DATABASE}_drop_frag_$RANDOM$RANDOM"
 qid_drop_align="${CLICKHOUSE_DATABASE}_drop_align_$RANDOM$RANDOM"
 run_query "$qid_drop_frag" 65409 "b < 5000000"
@@ -50,6 +56,15 @@ qid_keep_frag="${CLICKHOUSE_DATABASE}_keep_frag_$RANDOM$RANDOM"
 qid_keep_align="${CLICKHOUSE_DATABASE}_keep_align_$RANDOM$RANDOM"
 run_query "$qid_keep_frag" 65409 "(b % 8192) = 42"
 run_query "$qid_keep_align" 8192 "(b % 8192) = 42"
+
+# A multi-condition PREWHERE over two columns is evaluated in several read steps; the granule counters are
+# taken from the survivor set after all steps, so they must still be exact. b < 5000000 AND c even drops the
+# same 610 granules (no row of granules 611..1220 has b < 5000000) and keeps 2500000 rows, so 7500000 rows
+# are dropped.
+qid_multi_frag="${CLICKHOUSE_DATABASE}_multi_frag_$RANDOM$RANDOM"
+qid_multi_align="${CLICKHOUSE_DATABASE}_multi_align_$RANDOM$RANDOM"
+run_query "$qid_multi_frag" 65409 "b < 5000000 AND (c % 2) = 0"
+run_query "$qid_multi_align" 8192 "b < 5000000 AND (c % 2) = 0"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
@@ -68,11 +83,14 @@ dump_events() {
 }
 
 # Expected (identical for both block sizes):
-#   drop: 1221, 610, 5000000
-#   keep: 1221, 0, 9998779
+#   drop:  1221, 610, 5000000
+#   keep:  1221,   0, 9998779
+#   multi: 1221, 610, 7500000
 dump_events "$qid_drop_frag"
 dump_events "$qid_drop_align"
 dump_events "$qid_keep_frag"
 dump_events "$qid_keep_align"
+dump_events "$qid_multi_frag"
+dump_events "$qid_multi_align"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"

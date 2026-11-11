@@ -546,6 +546,52 @@ MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
     return result;
 }
 
+MergeTreeRangeReader::ReadResult::NumRows MergeTreeRangeReader::ReadResult::survivingRowsPerGranule() const
+{
+    /// Without a pending filter, `rows_per_granule` already holds the survivor count of each granule:
+    /// a const-true filter keeps the raw rows (all survive), a const-false one is materialized by
+    /// `clear`, which zeroes every entry. With a pending filter, `rows_per_granule` may still hold the
+    /// raw rows read (filtering of an incomplete trailing granule, or of a not-yet-shrunk block, is
+    /// deferred), so the survivor count has to be read from `final_filter`, whose size equals
+    /// `total_rows_per_granule` and whose set bits are laid out granule by granule in `rows_per_granule`
+    /// order (see `checkInternalConsistency`).
+    if (!final_filter.present())
+        return rows_per_granule;
+
+    NumRows result(rows_per_granule.size());
+    size_t offset = 0;
+
+    if (final_filter.isSparse())
+    {
+        /// Sparse filter: the set positions are sorted and absolute within [0, total_rows_per_granule).
+        const auto & indices = final_filter.getSparseIndices()->getData();
+        size_t idx_pos = 0;
+        for (size_t i = 0; i < rows_per_granule.size(); ++i)
+        {
+            const size_t end = offset + rows_per_granule[i];
+            size_t survived = 0;
+            while (idx_pos < indices.size() && indices[idx_pos] < end)
+            {
+                ++idx_pos;
+                ++survived;
+            }
+            result[i] = survived;
+            offset = end;
+        }
+    }
+    else
+    {
+        const UInt8 * filter_data = final_filter.getData().data();
+        for (size_t i = 0; i < rows_per_granule.size(); ++i)
+        {
+            result[i] = countBytesInFilter(filter_data, offset, offset + rows_per_granule[i]);
+            offset += rows_per_granule[i];
+        }
+    }
+
+    return result;
+}
+
 std::string MergeTreeRangeReader::ReadResult::dumpInfo() const
 {
     WriteBufferFromOwnString out;

@@ -430,7 +430,8 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     /// a granule split across blocks is reassembled by `feedPrewhereGranuleMark`.
     if (prewhere_granule_stats_enabled)
     {
-        read_result.forEachGranuleMark([this](size_t mark, size_t surviving_rows)
+        const auto surviving_rows_per_granule = read_result.survivingRowsPerGranule();
+        read_result.forEachGranuleMark(surviving_rows_per_granule, [this](size_t mark, size_t surviving_rows)
         {
             feedPrewhereGranuleMark(mark, surviving_rows > 0);
         });

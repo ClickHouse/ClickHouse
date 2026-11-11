@@ -373,13 +373,20 @@ public:
         /// Applies the filter to the columns and updates num_rows.
         void applyFilter(const FilterWithCachedCount & filter);
 
-        /// Calls `callback(mark, surviving_rows)` once for every granule in this result, where `mark` is
-        /// the granule's mark number in the part and `surviving_rows` is `rows_per_granule` for it (the
-        /// number of rows that survived all filtering steps applied so far). Uses the same mark mapping as
+        /// The number of rows that survived all filtering steps applied so far, per granule, parallel to
+        /// `rows_per_granule`. Unlike `rows_per_granule`, which holds the raw rows read for a granule whose
+        /// filtering is still deferred (an incomplete trailing granule, or a block not yet shrunk), this is
+        /// always the post-filter survivor count, taken from `final_filter`. A granule is fully dropped by
+        /// PREWHERE iff its entry here is 0.
+        NumRows survivingRowsPerGranule() const;
+
+        /// Calls `callback(mark, surviving_rows)` once for every granule in this result, where `mark` is the
+        /// granule's mark number in the part and `surviving_rows` is `surviving_rows_per_granule[i]` for it.
+        /// The caller passes `survivingRowsPerGranule()`. Uses the same mark mapping as
         /// `computeUnmatchedMarkRanges`. A granule split across read blocks appears in each block it spans,
         /// so the caller must combine the pieces (see `MergeTreeReadersChain` PREWHERE granule stats).
         template <typename Callback>
-        void forEachGranuleMark(Callback && callback) const
+        void forEachGranuleMark(const NumRows & surviving_rows_per_granule, Callback && callback) const
         {
             if (rows_per_granule.empty())
                 return;
@@ -390,7 +397,7 @@ public:
 
             if (in_progress_start_mark.has_value())
                 for (size_t i = 0; i < i_start; ++i)
-                    callback(*in_progress_start_mark + i, rows_per_granule[i]);
+                    callback(*in_progress_start_mark + i, surviving_rows_per_granule[i]);
 
             size_t range_idx = 0;
             for (size_t i = i_start; i < rows_per_granule.size(); ++i)
@@ -399,7 +406,7 @@ public:
                     ++range_idx;
 
                 const size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;
-                callback(started_ranges[range_idx].range.begin + offset, rows_per_granule[i]);
+                callback(started_ranges[range_idx].range.begin + offset, surviving_rows_per_granule[i]);
             }
         }
 
