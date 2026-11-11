@@ -44,9 +44,9 @@ private:
         Block extremes;
     };
 
-    /// Runs the pipeline to completion, buffering all output via CascadeWriteBuffer.
-    /// Static so it can be called from the deferred DelayedSource creator without
-    /// depending on the (already-destroyed) step instance.
+    /// Runs the pipeline of an attempt to completion, buffering all output via CascadeWriteBuffer.
+    /// `context` is the context of the attempt, whose `max_execution_time` is enforced for the whole execution.
+    /// Static so it can be called from the deferred DelayedSource creator without depending on the (already-destroyed) step instance.
     static BufferedResult executeAndBuffer(QueryPipeline & pipeline, const ContextPtr & context, QueryProcessingStage::Enum processed_stage);
 
     /// Attaches totals/extremes from a buffered result to the output pipe.
@@ -54,8 +54,8 @@ private:
 
     SelectQueryInfo query_info;
     std::vector<StorageABR::SourceTable> tables;
-    /// Pre-built interpreter for tables[0]; consumed by the first attempt in initializePipeline().
-    std::shared_ptr<IInterpreter> initial_interpreter;
+    /// Pre-built attempt for the first table, consumed by the first attempt in `initializePipeline`.
+    StorageABR::Attempt initial_attempt;
     ContextPtr context;
     QueryProcessingStage::Enum processed_stage;
     AtomicLogger logger;

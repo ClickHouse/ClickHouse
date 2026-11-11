@@ -1,8 +1,12 @@
 #include <Processors/QueryPlan/ABR/ReadFromABR.h>
 
+#include <atomic>
+
 #include <Analyzer/QueryNode.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Settings.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
@@ -32,11 +36,13 @@ namespace Setting
 {
     extern const SettingsUInt64 abr_memory_buffer_size;
     extern const SettingsBool extremes;
+    extern const SettingsSeconds max_execution_time;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 ReadFromABR::ReadFromABR(
@@ -46,19 +52,21 @@ ReadFromABR::ReadFromABR(
     ContextPtr context_,
     QueryProcessingStage::Enum processed_stage_,
     LoggerPtr logger_)
-    : ISourceStep(std::move(initial_attempt_.header))
+    : ISourceStep(initial_attempt_.header)
     , query_info(query_info_)
     , tables(std::move(tables_))
-    , initial_interpreter(std::move(initial_attempt_.interpreter))
+    , initial_attempt(std::move(initial_attempt_))
     , context(std::move(context_))
     , processed_stage(processed_stage_)
     , logger(std::move(logger_))
 {
 }
 
-ReadFromABR::BufferedResult ReadFromABR::executeAndBuffer(QueryPipeline & pipeline, const ContextPtr & context, QueryProcessingStage::Enum processed_stage)
+ReadFromABR::BufferedResult ReadFromABR::executeAndBuffer(
+    QueryPipeline & pipeline, const ContextPtr & context, QueryProcessingStage::Enum processed_stage)
 {
-    const size_t mem_buffer_size = context->getSettingsRef()[Setting::abr_memory_buffer_size];
+    const auto & settings = context->getSettingsRef();
+    const size_t mem_buffer_size = settings[Setting::abr_memory_buffer_size];
     const SharedHeader header = pipeline.getSharedHeader();
 
     CascadeWriteBuffer::WriteBufferPtrs prepared;
@@ -85,15 +93,43 @@ ReadFromABR::BufferedResult ReadFromABR::executeAndBuffer(QueryPipeline & pipeli
     /// must not be counted against the read limits of the next attempt.
     pipeline.checkReadLimitsOnOwnProgress();
 
+    /// The executor enforces `max_execution_time` of this inner query: the attempt is cancelled when the time is up (`TIMEOUT_EXCEEDED`).
+    CompletedPipelineExecutor executor(pipeline);
+    std::atomic<bool> timed_out = false;
+    const Int64 time_limit_us = settings[Setting::max_execution_time].totalMicroseconds();
+    BackgroundSchedulePoolTaskHolder deadline_task;
+
+    std::exception_ptr exception;
     try
     {
-        CompletedPipelineExecutor executor(pipeline);
+        executor.initialize();
+        if (time_limit_us > 0)
+        {
+            deadline_task = context->getSchedulePool()->createTask(StorageID::createEmpty(), "ABRAttemptDeadline", [&]
+            {
+                timed_out = true;
+                executor.cancel();
+            });
+            deadline_task->scheduleAfter(static_cast<size_t>((time_limit_us + 999) / 1000));
+        }
         executor.execute();
     }
     catch (...)
     {
+        exception = std::current_exception();
+    }
+
+    if (deadline_task)
+        deadline_task->deactivate();
+
+    if (timed_out || exception)
+    {
         cascade_buf->cancel();
-        throw;
+        if (timed_out)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout exceeded: the attempt took longer than its share of max_execution_time ({:.3f} s)",
+                static_cast<double>(time_limit_us) / 1'000'000);
+        std::rethrow_exception(exception);
     }
 
     /// Flushes the data of the last buffer.
@@ -181,7 +217,7 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
         header = output_header,
         ls_query_info = query_info,
         ls_tables = tables,
-        ls_initial_interpreter = initial_interpreter,
+        ls_initial_attempt = initial_attempt,
         ls_context = context,
         ls_processed_stage = processed_stage,
         log = logger.load()]() mutable -> QueryPipelineBuilder
@@ -196,29 +232,28 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             LOG_DEBUG(log, "Attempt {}/{}: executing on {}", i + 1, ls_tables.size(), storage_id.getNameForLogs());
             try
             {
-                BlockIO block_io;
-                if (i == 0 && ls_initial_interpreter)
+                StorageABR::Attempt attempt;
+                if (i == 0 && ls_initial_attempt.interpreter)
                 {
                     /// Reuse the interpreter already built in StorageABR::read() so we
                     /// don't repeat that analysis pass on the first attempt.
-                    block_io = ls_initial_interpreter->execute();
-                    ls_initial_interpreter.reset();
+                    attempt = std::move(ls_initial_attempt);
                 }
                 else
                 {
-                    auto attempt = StorageABR::buildAttempt(
+                    attempt = StorageABR::buildAttempt(
                         ls_query_info,
                         ls_tables[i].storage,
                         ls_context,
                         /* tables_left */ ls_tables.size() - i,
                         /* total_tables */ ls_tables.size(),
                         ls_processed_stage);
-                    block_io = attempt.interpreter->execute();
                 }
+                BlockIO block_io = attempt.interpreter->execute();
 
                 /// The inner pipeline must run to completion to confirm no fallback error is thrown,
                 /// so results are always buffered and replayed, even on the non-retry path.
-                BufferedResult result = executeAndBuffer(block_io.pipeline, ls_context, ls_processed_stage);
+                BufferedResult result = executeAndBuffer(block_io.pipeline, attempt.context, ls_processed_stage);
 
                 Pipe pipe(std::move(result.replay_source));
                 addConvertingActions(pipe, *header, ls_context);

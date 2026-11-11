@@ -37,11 +37,12 @@ class StorageABR final : public IStorage
 {
 public:
     /// A query attempt against one of the source tables: an interpreter that is ready to
-    /// execute and the header of the result it produces.
+    /// execute, the header of the result it produces, and its context, with its share of the limits.
     struct Attempt
     {
         std::shared_ptr<IInterpreter> interpreter;
         SharedHeader header;
+        ContextPtr context;
     };
 
     /// A source table resolved for a query, see `resolveSourceTable`.

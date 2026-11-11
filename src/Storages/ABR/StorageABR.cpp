@@ -367,12 +367,12 @@ StorageABR::Attempt StorageABR::buildAttempt(
     {
         auto interpreter = std::make_shared<InterpreterSelectQueryAnalyzer>(ast, attempt_context, options);
         auto header = interpreter->getSampleBlock();
-        return {.interpreter = std::move(interpreter), .header = std::move(header)};
+        return {.interpreter = std::move(interpreter), .header = std::move(header), .context = attempt_context};
     }
 
     auto interpreter = std::make_shared<InterpreterSelectQuery>(ast, attempt_context, options);
     auto header = interpreter->getSampleBlock();
-    return {.interpreter = std::move(interpreter), .header = std::move(header)};
+    return {.interpreter = std::move(interpreter), .header = std::move(header), .context = attempt_context};
 }
 
 bool StorageABR::isFallbackError(int error)
