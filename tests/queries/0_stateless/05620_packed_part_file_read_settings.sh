@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # - no-fasttest: uses a filesystem cache disk
+# - no-replicated-database: the replicas would share the disk's metadata_path
 
 # A file inside a packed part's `data.packed` archive must be read with buffers sized for that file, as
 # the same file of a full-storage part is, not for the whole archive.
@@ -17,7 +18,8 @@ declare -A hash
 function make_disk()
 {
     local name="${CLICKHOUSE_TEST_UNIQUE_NAME}_$1"
-    local blob="disk(type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/${name}/')"
+    local blob="disk(type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/${name}/',
+        metadata_path = '${CLICKHOUSE_DISKS_FILES}/${name}_metadata/')"
     blob="disk(type = cache, name = '${name}', path = '${name}/', max_size = '1Gi', disk = ${blob})"
     echo "disk(type = 'encrypted', key = '1234567812345678', disk = ${blob})"
 }
