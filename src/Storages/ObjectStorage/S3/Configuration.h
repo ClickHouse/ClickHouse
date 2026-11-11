@@ -78,6 +78,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
 
     S3::URI url;
     std::unique_ptr<S3Settings> s3_settings;
+    std::map<String, String> explicit_request_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
     HTTPHeaderEntries headers_from_ast;
     String path_suffix;
@@ -119,6 +120,8 @@ public:
 
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
+    std::map<String, String> getExplicitRequestSettings() const override { return explicit_request_settings; }
+
     Path getRawPath() const override { return url.key; }
     void setRawPath(const Path & path) override { url.key = path.path; }
     const String & getRawURI() const override { return url.uri_str; }
@@ -152,6 +155,7 @@ public:
     Paths keys TSA_GUARDED_BY(paths_mutex);
 
     std::unique_ptr<S3Settings> s3_settings;
+    std::map<String, String> explicit_request_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
 
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.

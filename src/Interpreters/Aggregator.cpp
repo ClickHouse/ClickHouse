@@ -1,6 +1,7 @@
-#include <Common/ListWithMemoryTracking.h>
+#include <numeric>
 #include <optional>
 #include <unordered_map>
+#include <Common/ListWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>
@@ -14,9 +15,11 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <Common/memcpySmall.h>
 #include <bit>
 #include <unordered_set>
@@ -921,6 +924,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
     cache_settings.simple_count = is_simple_count;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
+
+    if (params.enable_adaptive_aggregator)
+        adaptive_packed_key_bytes = std::accumulate(key_sizes.begin(), key_sizes.end(), size_t{0});
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
@@ -2216,6 +2222,9 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     }
 #endif
 
+    /// Functions of the same `LowCardinality` argument share its used values.
+    std::vector<std::pair<const IColumn *, ColumnPtr>> low_cardinality_values;
+
     /// Adding values
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
     {
@@ -2224,7 +2233,23 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         if (use_compiled_functions && is_aggregate_function_compiled[i])
             continue;
 #endif
-        addBatchSinglePlace(row_begin, row_end, inst, res + inst->state_offset, arena);
+        if (inst->has_low_cardinality_argument)
+        {
+            const IColumn * argument = inst->batch_arguments[0];
+            auto it = std::find_if(
+                low_cardinality_values.begin(), low_cardinality_values.end(), [&](const auto & entry) { return entry.first == argument; });
+            if (it == low_cardinality_values.end())
+                it = low_cardinality_values.emplace(
+                    low_cardinality_values.end(),
+                    argument,
+                    assert_cast<const ColumnLowCardinality &>(*argument).getMinimalDictionary(row_begin, row_end - row_begin));
+
+            /// The used values in the order of their first occurrence: the state is the same as after adding every row.
+            const IColumn * values = it->second.get();
+            inst->batch_that->addBatchSinglePlace(0, values->size(), res + inst->state_offset, &values, arena);
+        }
+        else
+            addBatchSinglePlace(row_begin, row_end, inst, res + inst->state_offset, arena);
     }
 }
 
@@ -2352,6 +2377,9 @@ void Aggregator::prepareAggregateInstructions(
     {
         bool allow_sparse_arguments = aggregate_columns[i].size() == 1;
         bool has_sparse_arguments = false;
+        const bool allow_low_cardinality_argument
+            = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
+        bool has_low_cardinality_argument = false;
 
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
@@ -2380,7 +2408,16 @@ void Aggregator::prepareAggregateInstructions(
                 ? aggregate_columns[i][j]->getPtr()
                 : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
 
-            full_column = recursiveRemoveLowCardinality(full_column);
+            /// Mapping the indexes pays off only for strings and for blocks that repeat their values.
+            const auto * low_cardinality
+                = allow_low_cardinality_argument ? typeid_cast<const ColumnLowCardinality *>(full_column.get()) : nullptr;
+            const IColumn * dictionary_values = low_cardinality ? low_cardinality->getDictionary().getNestedNotNullableColumn().get() : nullptr;
+            if (dictionary_values && (typeid_cast<const ColumnString *>(dictionary_values) || typeid_cast<const ColumnFixedString *>(dictionary_values))
+                && low_cardinality->getDictionary().size() * 2 <= low_cardinality->size())
+                has_low_cardinality_argument = true;
+            else
+                full_column = recursiveRemoveLowCardinality(full_column);
+
             if (full_column.get() != aggregate_columns[i][j])
             {
                 materialized_columns.emplace_back(std::move(full_column));
@@ -2392,6 +2429,7 @@ void Aggregator::prepareAggregateInstructions(
         }
 
         buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
+        aggregate_functions_instructions[i].has_low_cardinality_argument = has_low_cardinality_argument;
     }
 }
 
