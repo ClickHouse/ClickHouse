@@ -7,6 +7,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -119,16 +120,31 @@ public:
 
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
+        /// Follows alias nodes to the expression they name.
+        const Node * getWithoutAlias() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
+        /// `build_independent` leaves out what differs between two builds of the same query: the composed
+        /// names of derived nodes and prepared-set values, and the index of the analyzer-generated table
+        /// qualifier in an INPUT name. See the comment on the definition.
+        /// `input_header`, when given, is the header the DAG reads: an INPUT is then identified by where
+        /// it sits in it as well as by its normalized name, which tells `__table1.id` and `__table2.id`
+        /// apart after the qualifier index is erased. See `writeCacheKeyColumnName`.
         /// See `ActionsDAG::updateHash` for `with_variable_size_constant_values`.
-        void updateHash(SipHash & hash_state, bool with_variable_size_constant_values = true) const;
+        void updateHash(
+            SipHash & hash_state,
+            bool build_independent = false,
+            const Block * input_header = nullptr,
+            bool with_variable_size_constant_values = true) const;
+        /// What `updateHash` mixes in for this node itself, without its children.
+        void updateOwnHash(
+            SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const;
     };
 
-    /// NOTE: std::list is an implementation detail.
+    /// NOTE: the list is an implementation detail.
     /// It allows to add and remove new nodes inplace without reallocation.
     /// Raw pointers to nodes remain valid.
-    using Nodes = std::list<Node>;
+    using Nodes = ListWithMemoryTracking<Node>;
 
 private:
     Nodes nodes;
@@ -150,6 +166,17 @@ public:
     static Nodes detachNodes(ActionsDAG && dag);
     const NodeRawConstPtrs & getInputs() const { return inputs; }
     const NodeRawConstPtrs & getOutputs() const { return outputs; }
+
+    /// Build-independent identity of the output named `name` - what that output computes, with the
+    /// names this plan build composed left out (see `Node::updateHash`). A step that refers to one of
+    /// its DAG's outputs by name (a filter column, say) writes this instead of the name when
+    /// serializing for a cache key: the name reads `greater(__table1.x, 5_UInt8)` in a shipped fragment
+    /// and `greater(__table2.x, 5_UInt8)` in the plan enclosing it, while this is equal in both. Output
+    /// position is not usable here - the same expression can sit at a different index in the two builds.
+    UInt64 getOutputIdentity(const std::string & name, const Block * input_header = nullptr) const;
+    /// Build-independent hash of what the outputs compute, in order: `ALIAS` nodes are looked through, and an `INPUT` is
+    /// identified as `writeCacheKeyColumnName` identifies a column of `input_header`.
+    UInt64 getComputedOutputsHash(const Block & input_header) const;
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
     NodeRawConstPtrs & getOutputs() { return outputs; }
 
@@ -165,11 +192,17 @@ public:
     std::vector<const Node *> getIdToNode() const;
     std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
-    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
+    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry, const Block * input_header = nullptr) const;
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
+    /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
+    static ActionsDAG deserialize(
+        ReadBuffer & in,
+        DeserializedSetsRegistry & registry,
+        const ContextPtr & context,
+        size_t max_type_complexity = 0,
+        size_t nesting_depth = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 
@@ -288,6 +321,9 @@ public:
     /// constant, and a kept predicate is an ordinary output that removing unused columns can drop.
     void foldFilterPredicateThroughMaterialize(std::string & filter_column_name, bool & remove_filter_column, const Block & input_header);
 
+    /// The constant that `foldFilterPredicateThroughMaterialize` would fold the predicate `node` to, or nullptr.
+    static ColumnConstPtr tryFoldPredicateThroughMaterialize(const Node * node);
+
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
     void deduplicateSubtrees();
@@ -329,11 +365,17 @@ public:
     /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
     /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
     static bool hasUnsafeHiddenLambdaBody(const Node & node, const std::function<bool(const IFunctionBase &)> & is_unsafe);
+    /// Inputs below `root` (or `roots`, in one walk) read by a `!isDeterministic()` function, also through a lambda body: the result
+    /// may depend on their representation (e.g. constness). `outermost_readers`, if set, receives each node where such a read starts.
+    static std::unordered_set<const Node *> getInputsReadByRepresentation(const Node & root, NodeRawConstPtrs * outermost_readers = nullptr);
+    static std::unordered_set<const Node *> getInputsReadByRepresentation(const NodeRawConstPtrs & roots, NodeRawConstPtrs * outermost_readers = nullptr);
     /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
     bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    /// The functions `compileExpressions` compiled into `function`, or nullptr if it is not a compiled expression.
+    static const std::vector<FunctionBasePtr> * getCompiledFunctions(const IFunctionBase & function);
 #endif
 
     using NodeMapping = std::unordered_map<const Node *, const Node *>;
@@ -494,6 +536,17 @@ public:
     bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header) const;
 
     struct ActionsForFilterPushDown;
+
+    enum class PushDownIndexHints : uint8_t
+    {
+        All,
+        /// For key steps like GROUP BY: a hint prunes whole granules, which can leave a key with part of its rows.
+        /// An implied hint (`FunctionIndexHint::isImplied`) still passes: the rows it prunes fail the filter anyway.
+        Implied,
+        /// For totals: the totals row is not filtered, so it must not lose the rows a hint prunes.
+        None,
+    };
+
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
     /// Otherwise, return actions which inputs are from available_inputs.
@@ -512,14 +565,22 @@ public:
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
     ///
-    /// @param allow_index_hints - false for key steps like window: a hint prunes whole granules, which can leave a key with part of its rows
+    /// @param index_hints - which `indexHint` conjuncts may be pushed.
     std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool removes_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs,
         bool allow_non_deterministic_functions,
-        bool allow_index_hints = true);
+        PushDownIndexHints index_hints = PushDownIndexHints::All);
+
+    /// The same, for conjuncts the caller has chosen rather than those computable from some inputs. Each of
+    /// `conjunctions_to_push` is one of the atoms `extractConjunctionAtoms` finds in the filter column.
+    std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
+        const std::string & filter_name,
+        bool removes_filter,
+        const NodeRawConstPtrs & conjunctions_to_push,
+        const ColumnsWithTypeAndName & all_inputs);
 
     struct ActionsForJOINFilterPushDown;
 
@@ -580,15 +641,23 @@ public:
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
     UInt64 getHash() const;
-    /// With `with_variable_size_constant_values = false` a constant whose value has no fixed size
-    /// (`IColumn::valuesHaveFixedSize` is false: a string, an array, an aggregate function state) is
-    /// hashed by its name and type but not by its value, which can be arbitrarily large - a folded
-    /// scalar subquery can carry a `groupBitmap` state of millions of elements. Fixed-size values are
-    /// always hashed. Two such constants that share a name then collide even when their values differ,
-    /// e.g. a string passed through a subquery column (named `__table1.s`, not by its value) or a
-    /// heavy scalar subquery over changed data (named `__getScalar('<hash of the subquery>')`). Meant
-    /// for keys where a wrong match only costs a worse estimate, such as the hash-table-stats key.
-    void updateHash(SipHash & hash_state, bool with_variable_size_constant_values = true) const;
+    /// `build_independent` leaves out anything that differs between two builds of the same query -
+    /// column names and prepared-set values - so the result identifies what the DAG computes rather
+    /// than how this particular plan named it. See `Node::updateHash`.
+    ///
+    /// With `with_variable_size_constant_values = false` a constant value that can be large is not
+    /// hashed: an aggregate function state (a folded scalar subquery can carry a `groupBitmap` state of
+    /// millions of elements), or another value without a fixed size, such as a string or an array,
+    /// over 1 KiB. Other values are hashed. Two constants whose values are not hashed and that share a
+    /// name then collide even when their values differ, and so do any two with `build_independent`,
+    /// which hashes no names of constants: e.g. a heavy scalar subquery over changed data (named
+    /// `__getScalar('<hash of the subquery>')`). Meant for keys where a wrong match only costs a worse
+    /// estimate, such as the hash-table-stats key.
+    void updateHash(
+        SipHash & hash_state,
+        bool build_independent = false,
+        const Block * input_header = nullptr,
+        bool with_variable_size_constant_values = true) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 

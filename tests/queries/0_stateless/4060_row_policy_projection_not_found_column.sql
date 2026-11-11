@@ -26,12 +26,10 @@ INSERT INTO test_row_policy_proj (tenant, sensor_id, reading) VALUES
 CREATE ROW POLICY test_rp_proj ON test_row_policy_proj USING (tenant = 'test') TO all;
 
 -- GROUP BY without aggregate functions (DistinctStep path)
-SELECT sensor_id FROM test_row_policy_proj GROUP BY sensor_id ORDER BY sensor_id
-    SETTINGS enable_analyzer = 1;
+SELECT sensor_id FROM test_row_policy_proj GROUP BY sensor_id ORDER BY sensor_id;
 
 -- GROUP BY with aggregate function (AggregatingStep path)
-SELECT sensor_id, count() FROM test_row_policy_proj GROUP BY sensor_id ORDER BY sensor_id
-    SETTINGS enable_analyzer = 1;
+SELECT sensor_id, count() FROM test_row_policy_proj GROUP BY sensor_id ORDER BY sensor_id;
 
 DROP ROW POLICY test_rp_proj ON test_row_policy_proj;
 DROP TABLE test_row_policy_proj;

@@ -107,6 +107,7 @@ namespace
                 auto quota_type_i = static_cast<size_t>(quota_type);
                 quota_limits.max[quota_type_i] = query_limits.max[quota_type_i];
             }
+            quota_limits.profile_events_max = query_limits.profile_events_max;
         }
 
         if (override_to_roles)
@@ -142,7 +143,11 @@ BlockIO InterpreterCreateQuotaQuery::execute()
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
+    {
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
+        if (access_control.doesForbidSQLAccessEntitiesTargetingUsersConfig())
+            roles_from_query->throwIfTargetingUsersFromUsersConfig(access_control);
+    }
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;

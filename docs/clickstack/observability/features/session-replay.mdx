@@ -1,0 +1,227 @@
+---
+slug: /clickstack/observability/features/session-replay
+title: 'Session replay'
+sidebarTitle: 'Session replay'
+description: 'Capture and replay user sessions in ClickHouse Observability to debug frontend issues, understand user behavior, and correlate browser activity with backend logs and traces.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'session replay', 'browser sdk', 'frontend observability', 'user sessions', 'debugging']
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/components/Image.jsx";
+
+Session replay in ClickHouse Observability captures and reconstructs user interactions in your web application, allowing you to visually replay exactly what a user saw and did during their session. Rather than video recording, the SDK records DOM changes, mouse movements, clicks, scrolls, keyboard inputs, console logs, network requests (XHR and Fetch), and JavaScript exceptions — then reconstructs the experience in the browser.
+
+Because session replays are stored in ClickHouse alongside your logs, traces, and metrics, you can go from watching a user's experience to inspecting the backend traces and database queries that powered it — all in a few clicks. This makes session replay useful for debugging production issues, understanding user behavior, identifying UX friction points, and visually confirming issues reported to support.
+
+## Instrumenting your application {#instrumentation}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+ClickHouse Observability is fully compatible with OpenTelemetry, so you can send browser telemetry (traces, exceptions) using the standard OpenTelemetry JavaScript SDK or any of the [language SDKs](/clickstack/observability/ingesting-data/sdks). However, **session replay requires the Browser SDK** (`@clickhouse/clickstack-browser`), which extends the OpenTelemetry SDK with session recording, console capture, and network request capture. If you only need traces without session replay, any OTel-compatible browser SDK will work with the service.
+
+The examples below use the Browser SDK. In your ClickHouse Observability service, open **Team Settings → Data → Managed Telemetry** and copy the **OTLP HTTP endpoint** and **API key**. Replace `YOUR_OTEL_ENDPOINT` and `YOUR_API_KEY` in the examples with these connection details.
+
+<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the masked OTLP HTTP endpoint and API key" size="lg" />
+
+Use the full HTTPS endpoint as shown in Managed Telemetry, without signal paths such as `/v1/traces`. Pass the API key through `apiKey` with a `Bearer ` prefix, as shown below. Then install and initialize the SDK in your application.
+
+<Tip>
+Initialize the SDK once at the top level of your client entry module, such as `src/main.ts` in Vite or `instrumentation-client.ts` in Next.js. Initialization is asynchronous, so requests made immediately after `init` in the same tick may not be captured.
+</Tip>
+
+<Tabs>
+<Tab title="NPM">
+
+```shell
+npm install @clickhouse/clickstack-browser
+```
+
+```javascript
+import { init } from '@clickhouse/clickstack-browser';
+
+init({
+  endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+  apiKey: 'Bearer YOUR_API_KEY',
+  serviceName: 'my-frontend-app',
+  traceOrigins: ['https://api.myapp.domain'],
+  console: 'debug',
+});
+```
+
+</Tab>
+<Tab title="Yarn">
+
+```shell
+yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+```
+
+```javascript
+import { init } from '@clickhouse/clickstack-browser';
+
+init({
+  endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+  apiKey: 'Bearer YOUR_API_KEY',
+  serviceName: 'my-frontend-app',
+  traceOrigins: ['https://api.myapp.domain'],
+  console: 'debug',
+});
+```
+
+</Tab>
+<Tab title="Script Tag">
+
+For applications not using a bundler, include the SDK directly via a script tag. This exposes the `ClickStack` global variable, which can be used in the same way as the NPM package.
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js"></script>
+<script>
+  window.ClickStack.init({
+    endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+    apiKey: 'Bearer YOUR_API_KEY',
+    serviceName: 'my-frontend-app',
+    traceOrigins: ['https://api.myapp.domain'],
+    console: 'debug',
+  });
+</script>
+```
+
+</Tab>
+</Tabs>
+
+<Note>
+The `traceOrigins` option is key to connecting session replays with backend traces — set it to your API domain to enable full frontend-to-backend distributed tracing. For shared SDK options, including privacy controls and error reporting, see the [Browser SDK reference](/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy). Use the managed connection details above when initializing the SDK.
+</Note>
+
+The Browser SDK masks inputs and text by default. See [privacy controls](/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) for privacy-sensitive applications, and [attaching user information](/clickstack/observability/ingesting-data/sdks/browser#users-and-errors) so you can search and filter sessions by user in the UI.
+
+</Tab>
+<Tab title="Self-managed" id="self-managed">
+
+Self-managed ClickHouse Observability is fully compatible with OpenTelemetry, so you can send browser telemetry (traces, exceptions) using the standard OpenTelemetry JavaScript SDK or any of the [language SDKs](/clickstack/observability/ingesting-data/sdks). However, **session replay requires the Browser SDK** (`@clickhouse/clickstack-browser`), which extends the OpenTelemetry SDK with session recording, console capture, and network request capture. If you only need traces without session replay, any OTel-compatible browser SDK will work with the service.
+
+Before instrumenting your application, you need a running ClickStack OpenTelemetry collector connected to your ClickHouse Cloud service. Follow the [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) guide to configure the connection, or the [deployment guide](/clickstack/self-configured/deployment/managed#start-a-collector-existing) to start a collector.
+
+Use the collector's browser-accessible OTLP HTTP endpoint in place of `http://your-otel-collector:4318` in the examples below. Set `apiKey` to your collector’s ingestion key without a `Bearer` prefix, or omit it if the receiver does not require authentication. Allow your application’s origin in the collector’s CORS configuration. Then install and initialize the Browser SDK.
+
+<Tip>
+Initialize the SDK once at the top level of your client entry module, such as `src/main.ts` in Vite or `instrumentation-client.ts` in Next.js. Initialization is asynchronous, so requests made immediately after `init` in the same tick may not be captured.
+</Tip>
+
+<Tabs>
+<Tab title="NPM">
+
+```shell
+npm install @clickhouse/clickstack-browser
+```
+
+```javascript
+import { init } from '@clickhouse/clickstack-browser';
+
+init({
+  endpoint: 'http://your-otel-collector:4318',
+  apiKey: 'YOUR_INGESTION_API_KEY',
+  serviceName: 'my-frontend-app',
+  traceOrigins: ['https://api.myapp.domain'],
+  console: 'debug',
+});
+```
+
+</Tab>
+<Tab title="Yarn">
+
+```shell
+yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+```
+
+```javascript
+import { init } from '@clickhouse/clickstack-browser';
+
+init({
+  endpoint: 'http://your-otel-collector:4318',
+  apiKey: 'YOUR_INGESTION_API_KEY',
+  serviceName: 'my-frontend-app',
+  traceOrigins: ['https://api.myapp.domain'],
+  console: 'debug',
+});
+```
+
+</Tab>
+<Tab title="Script Tag">
+
+For applications not using a bundler, include the SDK directly via a script tag. This exposes the `ClickStack` global variable, which can be used in the same way as the NPM package.
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js"></script>
+<script>
+  window.ClickStack.init({
+    endpoint: 'http://your-otel-collector:4318',
+    apiKey: 'YOUR_INGESTION_API_KEY',
+    serviceName: 'my-frontend-app',
+    traceOrigins: ['https://api.myapp.domain'],
+    console: 'debug',
+  });
+</script>
+```
+
+</Tab>
+</Tabs>
+
+<Note>
+The `traceOrigins` option is key to connecting session replays with backend traces — set it to your API domain to enable full frontend-to-backend distributed tracing. For a complete list of SDK options including privacy controls and error reporting, see the [Browser SDK reference](/clickstack/observability/ingesting-data/sdks/browser).
+</Note>
+
+The Browser SDK masks inputs and text by default. See [privacy controls](/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) for privacy-sensitive applications, and [attaching user information](/clickstack/observability/ingesting-data/sdks/browser#users-and-errors) so you can search and filter sessions by user in the UI.
+
+
+<Note>
+The ClickStack Browser SDK uses the standard `session.id` attribute. Use a ClickStack version that supports this attribute in the Sessions page; see the [SDK compatibility requirements](https://github.com/ClickHouse/clickstack-browser#clickstack-versions).
+</Note>
+
+### How session data is stored {#data-storage}
+
+<Note>
+These storage details apply only to self-managed ClickHouse Observability. Fully managed services handle session replay storage and schemas for you.
+</Note>
+
+Session replay data is stored in a dedicated [`hyperdx_sessions`](/clickstack/self-configured/ingesting-data/schemas#sessions) table in ClickHouse, separate from logs and traces. Each session event is a row with a `Body` field containing the event payload and a `LogAttributes` map storing the event metadata. The `Body` and `LogAttributes` columns together hold the details of the actual session events that are used to reconstruct the replay.
+
+For the full table schema information, see [Tables and schemas](/clickstack/self-configured/ingesting-data/schemas).
+</Tab>
+</Tabs>
+
+## Viewing session replays {#viewing-replays}
+Navigate to **Client Sessions** from the left sidebar in the UI. This view lists all captured browser sessions with their duration and event count.
+
+<Image img="/images/clickstack/session-replay/observability-client-sessions.png" alt="Session replay search view" size="lg"/>
+
+Open a session, then select **Play** to replay the recorded interactions. The replay view shows the reconstructed user experience on the right, with a timeline of browser events — network requests, console logs, and errors — on the left.
+
+<Image img="/images/clickstack/session-replay/observability-session-replay.png" alt="Session replay playback" size="lg"/>
+
+Switch between **Highlighted** and **All Events** modes to adjust the level of detail shown on the timeline. Errors are annotated in red, and clicking on any event navigates the replay to that point in the session.
+
+### From session to trace {#session-to-trace}
+When you select a network request or error in the session timeline, you can click through to the **Trace** tab to follow the request through your backend services — seeing the associated logs, spans, and database queries that were triggered by that user interaction.
+
+This works because the `traceOrigins` configuration links browser spans to server spans via the `traceparent` header, creating a connected distributed trace from the user's click all the way to the database. For a detailed walkthrough of this in practice, including instrumenting both frontend and backend, see [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
+
+<Image img="/images/clickstack/session-replay/observability-session-to-trace.gif" alt="Opening a session replay and following an event into its trace" size="lg" />
+
+### From trace to session {#trace-to-session}
+The correlation works in the other direction too. When viewing a trace in the **Search** view, click on it to open the trace detail, then select the **Session replay** tab to see exactly what the user was experiencing at the time of that trace. This is especially useful when investigating errors or slow requests — you can start from the backend issue and immediately see the user's perspective.
+
+## Try it out {#try-it-out}
+Follow the [session replay demo](/clickstack/observability/example-datasets/session-replay) to instrument an interactive application, send session data to your ClickHouse Observability service, and replay your interactions.
+
+## Learn more {#learn-more}
+- [Session replay demo](/clickstack/observability/example-datasets/session-replay) — instrument an interactive application using your managed connection details
+- [Browser SDK reference](/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) — shared SDK options and advanced configuration
+- [Search](/clickstack/observability/features/search) — search syntax for filtering sessions and events
+- [Dashboards](/clickstack/observability/features/dashboards/overview) — build visualizations and dashboards from session and trace data
+- [Alerts](/clickstack/observability/features/alerts) — set up alerts on errors, latency, and other signals
+- [Architecture](/clickstack/observability/architecture) — how the service components fit together
