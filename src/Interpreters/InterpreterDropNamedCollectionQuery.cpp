@@ -61,6 +61,12 @@ StoragePtr tryGetLiveTableByUUID(const StorageID & dependency)
 /// loader holds, independently of whether it has ever been loaded. This covers both the dictionaries
 /// defined in the configuration files and the ones created with DDL: the loader holds the definition of
 /// the latter, built from the `CREATE DICTIONARY` query, for as long as the dictionary is attached.
+bool dictionaryConfigReferencesCollection(const ExternalLoader::ObjectConfig & object_config, const String & collection_name)
+{
+    const auto referenced_collections = getNamedCollectionsReferencedByDictionaryConfig(*object_config.config, object_config.key_in_config);
+    return std::find(referenced_collections.begin(), referenced_collections.end(), collection_name) != referenced_collections.end();
+}
+
 std::vector<String> getDictionariesReferencingCollection(const ContextPtr & context, const String & collection_name)
 {
     std::vector<String> dictionary_names;
@@ -69,10 +75,10 @@ std::vector<String> getDictionariesReferencingCollection(const ContextPtr & cont
         if (!load_result.config)
             continue;
 
-        const auto & config = *load_result.config->config;
-        const auto referenced_collections = getNamedCollectionsReferencedByDictionaryConfig(config, load_result.config->key_in_config);
-        if (std::find(referenced_collections.begin(), referenced_collections.end(), collection_name) == referenced_collections.end())
+        if (!dictionaryConfigReferencesCollection(*load_result.config, collection_name))
             continue;
+
+        const auto & config = *load_result.config->config;
 
         /// The loader keys a dictionary created with DDL by its UUID, if any, so name it by the
         /// identifier from the definition instead.
@@ -186,10 +192,29 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                 /// the definition is gone.
                 const auto dictionary_name
                     = dep.database_name.empty() ? dep.table_name : dep.database_name + "." + dep.table_name;
-                if (current_context->getExternalDictionariesLoader().has(dictionary_name))
+                const auto & dictionaries_loader = current_context->getExternalDictionariesLoader();
+                if (dictionaries_loader.has(dictionary_name))
                 {
-                    dependent_names.push_back(fmt::format("dictionary `{}`", dictionary_name));
-                    continue;
+                    /// The definition may have changed since the dependency was registered: a reload
+                    /// of the configuration replaces the definition under the same name, and the load
+                    /// with the new source registers its own collection without retiring the old one.
+                    /// The entry protects the collection only while the current definition still
+                    /// references it - any later (re)load resolves the collections of that definition.
+                    const auto load_result = dictionaries_loader.getLoadResult(dictionary_name);
+                    if (!load_result.config || dictionaryConfigReferencesCollection(*load_result.config, query.collection_name))
+                    {
+                        dependent_names.push_back(fmt::format("dictionary `{}`", dictionary_name));
+                        continue;
+                    }
+
+                    if (dep.database_name.empty())
+                    {
+                        NamedCollectionFactory::instance().removeDependency(query.collection_name, dep);
+                        continue;
+                    }
+
+                    /// An entry with a database name can also belong to a table of the same name:
+                    /// resolve it through the catalog below.
                 }
 
                 if (dep.database_name.empty())

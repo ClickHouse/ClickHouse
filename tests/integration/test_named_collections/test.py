@@ -1701,6 +1701,61 @@ def test_drop_while_used_by_config_defined_dictionary(cluster):
     )
 
 
+def test_drop_collection_replaced_in_config_dictionary_source(cluster):
+    """When the source of a dictionary defined in the configuration files is changed to another
+    collection, the reload registers the new dependency, but the entry of the old collection stays.
+    `DROP NAMED COLLECTION` must check the entry against the current definition: the old collection
+    can be dropped, while the new one stays protected."""
+    node = cluster.instances["node"]
+    dictionary_config = "/etc/clickhouse-server/dictionaries/config_dict_using_collection.xml"
+    uri = "uri = 'mongodb://mongo-is-not-running:27017/db?serverSelectionTimeoutMS=1000&connectTimeoutMS=1000', collection = 'c'"
+
+    node.query("DROP NAMED COLLECTION IF EXISTS config_dict_collection")
+    node.query("DROP NAMED COLLECTION IF EXISTS config_dict_collection_new")
+    node.query(f"CREATE NAMED COLLECTION config_dict_collection AS {uri}")
+    node.query(f"CREATE NAMED COLLECTION config_dict_collection_new AS {uri}")
+
+    # The load registers the dependency and then fails to connect, which does not matter here.
+    node.query_and_get_error("SYSTEM RELOAD DICTIONARY config_dict_using_collection")
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION config_dict_collection"
+    )
+
+    def replace_in_dictionary_config(old, new):
+        # The loader re-reads a definition only when the modification time of its file changes, which
+        # has a resolution of a second: two edits within the same second would go unnoticed. Set the
+        # modification time explicitly to one that differs from the one the loader has seen.
+        previous_mtime = int(
+            node.exec_in_container(["stat", "-c", "%Y", dictionary_config]).strip()
+        )
+        node.replace_in_config(dictionary_config, old, new)
+        node.exec_in_container(
+            ["touch", "-d", f"@{previous_mtime + 1}", dictionary_config]
+        )
+
+    try:
+        replace_in_dictionary_config(
+            "<name>config_dict_collection</name>",
+            "<name>config_dict_collection_new</name>",
+        )
+        # The reload reads the changed definition and registers the dependency on the new collection.
+        node.query_and_get_error("SYSTEM RELOAD DICTIONARY config_dict_using_collection")
+
+        node.query("DROP NAMED COLLECTION config_dict_collection")
+        assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+            "DROP NAMED COLLECTION config_dict_collection_new"
+        )
+    finally:
+        replace_in_dictionary_config(
+            "<name>config_dict_collection_new</name>",
+            "<name>config_dict_collection</name>",
+        )
+        node.query_and_get_error("SYSTEM RELOAD DICTIONARY config_dict_using_collection")
+
+    # The definition references the old collection again, so the new one is no longer used.
+    node.query("DROP NAMED COLLECTION config_dict_collection_new")
+
+
 def test_drop_while_used_by_never_loaded_config_dictionary(cluster):
     """A dictionary defined in the configuration files registers its dependency only when it is
     loaded. The dictionary `config_dict_lazy_using_collection` (defined in
