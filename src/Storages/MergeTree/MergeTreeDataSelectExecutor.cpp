@@ -64,6 +64,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
@@ -1151,6 +1152,9 @@ namespace
 /// Pruning by dictionaries evaluates the filter on all values of a part, including the values of the rows that the query
 /// skips by other indexes or does not read at all, so a function that can throw on some values (e.g. a conversion, or
 /// `CAST` of `NULL` to a non-Nullable type) would make a query fail that succeeds without the pruning.
+/// Also, the filter must not contain functions whose result depends on the block or the row rather than on the values
+/// of the arguments (e.g. `blockSize`, `rowNumberInBlock`, `rand`), even if they do not depend on the column, because
+/// they are evaluated on the block of dictionary values, which differs from the blocks of the rows.
 class SafeFunctionsChecker
 {
 public:
@@ -1168,25 +1172,58 @@ private:
     const String & column_name;
     std::unordered_map<const ActionsDAG::Node *, Result> visited;
 
+    static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node & node)
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "indexHint")
+            return node.children;
+
+        /// The arguments of `indexHint` are stored inside of `FunctionIndexHint`, and the `set` index evaluates them.
+        const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
+        const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
+        return index_hint.getActions().getOutputs();
+    }
+
     Result check(const ActionsDAG::Node & node)
     {
         if (auto it = visited.find(&node); it != visited.end())
             return it->second;
 
         Result result;
-        for (const auto * child : node.children)
+        const auto & arguments = getArguments(node);
+        std::vector<Result> argument_results;
+        argument_results.reserve(arguments.size());
+        for (const auto * argument : arguments)
         {
-            auto child_result = check(*child);
-            result.depends = result.depends || child_result.depends;
-            result.safe = result.safe && child_result.safe;
+            auto argument_result = check(*argument);
+            result.depends = result.depends || argument_result.depends;
+            result.safe = result.safe && argument_result.safe;
+            argument_results.push_back(argument_result);
         }
 
         if (node.type == ActionsDAG::ActionType::INPUT)
+        {
             result.depends = node.result_name == column_name;
+        }
         else if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+        {
             result.safe = result.safe && !result.depends;
-        else if (node.type == ActionsDAG::ActionType::FUNCTION && result.depends)
-            result.safe = result.safe && node.function_base && safe_functions.contains(node.function_base->getName());
+        }
+        else if (node.type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (!node.function_base || node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery())
+            {
+                result.safe = false;
+            }
+            else if (result.depends)
+            {
+                const auto & name = node.function_base->getName();
+                /// The pattern is compiled and can be invalid, so it must not depend on the column.
+                if (functions_with_pattern.contains(name))
+                    result.safe = result.safe && argument_results.size() >= 2 && !argument_results[1].depends;
+                else
+                    result.safe = result.safe && safe_functions.contains(name);
+            }
+        }
 
         visited[&node] = result;
         return result;
@@ -1195,13 +1232,17 @@ private:
     static inline const std::unordered_set<std::string_view> safe_functions = {
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
         "in", "notIn", "globalIn", "globalNotIn", "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn",
-        "like", "notLike", "ilike", "notILike", "match",
         "startsWith", "endsWith", "startsWithUTF8", "endsWithUTF8",
         "position", "positionCaseInsensitive", "positionUTF8", "positionCaseInsensitiveUTF8",
         "empty", "notEmpty", "length", "lengthUTF8",
         "lower", "upper", "lowerUTF8", "upperUTF8",
         "isNull", "isNotNull", "coalesce", "ifNull", "assumeNotNull", "toLowCardinality", "materialize", "identity",
         "and", "or", "not", "xor", "indexHint",
+    };
+
+    /// Safe if only the first argument depends on the column.
+    static inline const std::unordered_set<std::string_view> functions_with_pattern = {
+        "like", "notLike", "ilike", "notILike", "match",
     };
 };
 
@@ -1317,7 +1358,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictio
                 continue;
 
             auto file = part->getDataPartStorage().readFile(file_name, context->getReadSettings().adjustBufferSize(file_size), file_size);
-            CompressedReadBufferFromFile keys_stream(std::move(file));
+            CompressedReadBufferFromFile keys_stream(std::move(file), /* allow_different_codecs */ true);
             auto values = condition.serialization->deserializeCompleteDictionaries(keys_stream);
             if (!values)
             {
