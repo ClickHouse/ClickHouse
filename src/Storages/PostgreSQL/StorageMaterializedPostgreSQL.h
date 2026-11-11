@@ -91,6 +91,8 @@ public:
 
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
+    bool hasBucketedMapSerialization() const override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
