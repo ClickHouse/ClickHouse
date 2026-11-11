@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they do not support FINAL. -->
     <create_query>CREATE TABLE final_row_policy_query_constant (c1 String, c2 String, c4 String, c5 DateTime, c6 String, c7 UInt8) ENGINE = ReplacingMergeTree(c5, c7) PARTITION BY c4 ORDER BY (c1, c2, c4)</create_query>
     <create_query>CREATE ROW POLICY OR REPLACE final_row_policy_query_constant_policy ON final_row_policy_query_constant USING c2 = concat('def', substring(currentUser(), 1, 0)) TO ALL</create_query>
 
