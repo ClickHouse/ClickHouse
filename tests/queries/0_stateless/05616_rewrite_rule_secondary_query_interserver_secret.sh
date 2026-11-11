@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: rewrite rules are global server state
+# no-fasttest: interserver mode requires SSL
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
