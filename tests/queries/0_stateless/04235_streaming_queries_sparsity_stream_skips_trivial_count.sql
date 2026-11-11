@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-old-analyzer
+-- no-old-analyzer: Not supported
 
 -- `STREAM` reshapes the row set under the count (cursor / window semantics),
 -- so the trivial-count-with-sparsity-filter rewrite must not answer it from

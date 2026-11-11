@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Common/assert_cast.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -145,7 +144,7 @@ static void skipQuery(ReadBuffer & in)
 }
 
 
-static bool skipUntilRowStartedWithOneOfKeywords(const UnorderedSetWithMemoryTracking<String> & keywords, ReadBuffer & in, String * keyword_out = nullptr)
+static bool skipUntilRowStartedWithOneOfKeywords(const std::unordered_set<String> & keywords, ReadBuffer & in, String * keyword_out = nullptr)
 {
     while (true)
     {
@@ -215,13 +214,8 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     data_type_node->name = type_name_upper + " UNSIGNED";
             }
 
-            /// A dump writes `SET` values as strings of comma-separated members, e.g. 'a,b'. `SET` is also a ClickHouse
-            /// alias of `UInt64`, so name the type explicitly, as the `mysql` table engine reads it.
             if (type_name_upper == "SET")
-            {
-                data_type_node->name = "String";
                 data_type_node->resetArguments();
-            }
 
             /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
@@ -277,7 +271,7 @@ static void readUnquotedColumnName(String & name, ReadBuffer & in)
 
 /// Try to read column names from a list in INSERT query.
 /// Like '(x, `column name`, z)'
-static void tryReadColumnNames(ReadBuffer & in, Names * column_names)
+static void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_names)
 {
     skipWhitespaceIfAny(in);
     /// Check that we have the list of columns.
@@ -318,7 +312,7 @@ static MySQLQueryType skipToInsertOrCreateQuery(String & table_name, ReadBuffer 
     String keyword;
     MySQLQueryType type = MySQLQueryType::NONE;
     /// In MySQL dumps INSERT queries might be replaced with REPLACE queries.
-    UnorderedSetWithMemoryTracking<String> keywords = {"insert", "replace"};
+    std::unordered_set<String> keywords = {"insert", "replace"};
     if (!skip_create_query)
         keywords.insert("create");
 
@@ -355,7 +349,7 @@ static bool skipToInsertQuery(String & table_name, ReadBuffer & in)
     return skipToInsertOrCreateQuery(table_name, in, true) != MySQLQueryType::NONE;
 }
 
-static void skipToDataInInsertQuery(ReadBuffer & in, Names * column_names = nullptr)
+static void skipToDataInInsertQuery(ReadBuffer & in, std::vector<String> * column_names = nullptr)
 {
     tryReadColumnNames(in, column_names);
     skipWhitespaceIfAny(in);
@@ -598,9 +592,9 @@ ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/e
 It reads all the data from `INSERT` queries belonging to a single table in the dump. 
 If there is more than one table, by default it reads data from the first one.
 
-<Note>
+:::note
 This format supports schema inference: if the dump contains a `CREATE` query for the specified table, the structure is inferred from it, otherwise the schema is inferred from the data of `INSERT` queries.
-</Note>
+:::
 
 ## Example usage {#example-usage}
 

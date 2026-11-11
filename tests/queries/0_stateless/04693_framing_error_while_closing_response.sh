@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # Tag no-parallel: enables the `http_output_finalize_throw` fail point, which affects the whole
 # server. It fires on the next HTTP response finalization anywhere on the server, so a concurrent
 # HTTP query from another test could consume the injected fault - making this test miss its own
