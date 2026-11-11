@@ -40,6 +40,22 @@ bool keyArgumentTypesAreAllowed(const ColumnsWithTypeAndName & columns, bool all
     return true;
 }
 
+bool containsFloat(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested); });
+}
+
+/// Hash tables treat `-0.` and `0.` as the same key (see `replaceNegativeZeros`), but a function of a floating point
+/// value can tell them apart, e.g. `hex(-0.)` is not `hex(0.)`. So a key with a floating point argument can only
+/// be replaced by its arguments if its own values are floating point as well, and then the zeros are merged anyway.
+bool injectiveFunctionPreservesKeyEquality(const ColumnsWithTypeAndName & arguments, const IDataType & result_type)
+{
+    if (containsFloat(result_type))
+        return true;
+
+    return std::ranges::none_of(arguments, [](const auto & argument) { return containsFloat(*argument.type); });
+}
+
 }
 
 bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys)
@@ -72,6 +88,11 @@ bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNo
         /// A key reached through a non-deterministic function is not determined by the keys, so the
         /// expression is not a function of them (for example rand64(g) takes the key g but is random).
         if (found && !parents_are_only_deterministic)
+            return false;
+
+        /// The key does not tell `-0.` from `0.`, while a function of it can (e.g. `toString`),
+        /// so an expression of a floating point key is not determined by that key.
+        if (found && containsFloat(*candidate->getResultType()))
             return false;
 
         found_at_least_one_usage |= found;
@@ -159,7 +180,8 @@ QueryTreeNodes unwrapInjectiveFunctionsInKeys(
             if (function)
             {
                 const auto arguments = function_node->getArgumentColumns();
-                can_be_eliminated = function->isInjective(arguments) && keyArgumentTypesAreAllowed(arguments, allow_suspicious_types);
+                can_be_eliminated = function->isInjective(arguments) && keyArgumentTypesAreAllowed(arguments, allow_suspicious_types)
+                    && injectiveFunctionPreservesKeyEquality(arguments, *function_node->getResultType());
             }
 
             if (can_be_eliminated)
