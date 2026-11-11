@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/ObjectFilterStep.h>
 
@@ -65,11 +64,6 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
             {
                 if (auto rows_to_read = limit_step->getLimitWithOffset())
                     source_step_with_filter->setLimit(*rows_to_read);
-
-                /// `LIMIT 0` takes no row unless it reads till end, for totals or `exact_rows_before_limit`.
-                if (limit_step->getLimitWithOffset() == 0 && !limit_step->alwaysReadTillEnd())
-                    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(source_step_with_filter))
-                        read_from_merge_tree->setNoRowsNeeded();
             }
             break;
         }

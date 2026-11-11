@@ -122,7 +122,7 @@ echo "--- and the server did not try to write into the canceled socket buffer"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
 ${CLICKHOUSE_CLIENT} -q "
     SELECT count() FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND toUnixTimestamp64Micro(event_time_microseconds) > ${RUN_START}
+    WHERE toUnixTimestamp64Micro(event_time_microseconds) > ${RUN_START}
         AND logger_name = 'PostgreSQLHandler' AND message LIKE '%Cannot write to canceled buffer%'
     SETTINGS max_rows_to_read = 0"
 

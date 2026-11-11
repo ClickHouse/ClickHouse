@@ -86,7 +86,7 @@ WITH (
 ) AS probe
 SELECT probe != '' AND count() > 0 AS merge_spilled
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (SELECT query_id FROM system.query_log
+WHERE query_id IN (SELECT query_id FROM system.query_log
                    WHERE event_date >= yesterday() AND initial_query_id = probe)
   AND logger_name = 'Aggregator' AND message LIKE 'Writing part of aggregation data%'
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;

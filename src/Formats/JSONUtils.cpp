@@ -591,7 +591,7 @@ namespace JSONUtils
         writeJSONString(exception_message, out, settings);
     }
 
-    Strings makeNamesValidJSONStrings(std::span<const String> names, const FormatSettings & settings, bool validate_utf8)
+    Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8)
     {
         Strings result;
         result.reserve(names.size());

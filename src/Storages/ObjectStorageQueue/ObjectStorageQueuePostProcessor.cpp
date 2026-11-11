@@ -53,7 +53,6 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
-    extern const S3AuthSettingsString google_service_account_key;
     extern const S3AuthSettingsS3UriStyle uri_style;
 }
 
@@ -66,7 +65,6 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
@@ -254,23 +252,6 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
 #endif
 
-void ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
-    [[maybe_unused]] const String & move_connection_string, [[maybe_unused]] const String & move_container)
-{
-#if USE_AZURE_BLOB_STORAGE
-    AzureBlobStorage::ConnectionParams params;
-    AzureBlobStorage::processURL(move_connection_string, move_container, params.endpoint, params.auth_method);
-    params.forbid_implicit_credentials = true;
-    params.anonymous_fallback_for_server_credentials = true;
-    if (params.checkOrDropServerManagedCredentials())
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "Moving processed blobs to another Azure container requires explicit credentials in "
-            "`after_processing_move_connection_string`: a connection string or a SAS token. "
-            "It may not use the server's own identity.");
-#endif
-}
-
 void ObjectStorageQueuePostProcessor::moveWithinBucket(
     const StoredObjects & objects,
     const String & move_prefix,
@@ -400,7 +381,6 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
-            s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = "";
             /// The move uses its own explicit keys, so also drop the request-auth material (headers/access
             /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
             /// headers or encryption keys would be sent to the user-supplied move destination.
@@ -518,13 +498,10 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
             auto contextPtr = getContext();
             std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client = azure_storage->getAzureBlobStorageClient();
             const String src_container = azure_storage->getAzureBlobStorageConnectionParams()->getContainer();
-            checkAzureMoveDestination(move_connection_string, move_container);
             auto connection_params = getAzureConnectionParams(
                 move_connection_string,
                 move_container,
                 contextPtr);
-            connection_params.forbid_implicit_credentials = true;
-            connection_params.anonymous_fallback_for_server_credentials = false;
             const bool is_readonly = true;
             std::shared_ptr<AzureBlobStorage::ContainerClient> dst_client = AzureBlobStorage::getContainerClient(
                 connection_params,

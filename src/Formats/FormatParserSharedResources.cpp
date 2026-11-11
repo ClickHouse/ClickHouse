@@ -20,9 +20,9 @@ FormatParserSharedResources::FormatParserSharedResources(const Settings & settin
 {
 }
 
-FormatParserSharedResourcesPtr FormatParserSharedResources::singleThreaded(const Settings & settings, size_t num_streams_)
+FormatParserSharedResourcesPtr FormatParserSharedResources::singleThreaded(const Settings & settings)
 {
-    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams_);
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, 1);
     const_cast<size_t &>(parser_shared_resources->max_parsing_threads) = 1;
     return parser_shared_resources;
 }
@@ -49,22 +49,12 @@ size_t FormatParserSharedResources::getIOThreadsPerReader() const
 
 void FormatParserSharedResources::initOnce(std::function<void()> f)
 {
-    callOnce(init_flag, init_exception, f);
-}
-
-void FormatParserSharedResources::initOpaqueOnce(std::function<void()> f)
-{
-    callOnce(opaque_init_flag, opaque_init_exception, f);
-}
-
-void FormatParserSharedResources::callOnce(std::once_flag & flag, std::exception_ptr & exception, const std::function<void()> & f)
-{
     std::call_once(
-        flag,
+        init_flag,
         [&]
         {
-            if (exception)
-                std::rethrow_exception(copyMutableException(exception));
+            if (init_exception)
+                std::rethrow_exception(copyMutableException(init_exception));
 
             try
             {
@@ -75,8 +65,8 @@ void FormatParserSharedResources::callOnce(std::once_flag & flag, std::exception
                 /// See `FormatFilterInfo::initKeyConditionOnce`: keep the stored exception
                 /// an immutable template and hand each caller (including this one) a
                 /// private copy, so concurrent `addMessage` up the stack cannot race.
-                exception = std::current_exception();
-                std::rethrow_exception(copyMutableException(exception));
+                init_exception = std::current_exception();
+                std::rethrow_exception(copyMutableException(init_exception));
             }
         });
 }

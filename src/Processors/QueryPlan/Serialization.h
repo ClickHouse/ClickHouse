@@ -12,7 +12,7 @@ struct DeserializedSetsRegistry;
 
 /// Serialization context passed to `IQueryPlanStep::serialize`.
 /// Settings are handled separately via `serializeSettings` method.
-struct QueryPlanStepSerialization
+struct IQueryPlanStep::Serialization
 {
     WriteBuffer & out;
     SerializedSetsRegistry & registry;
@@ -51,7 +51,7 @@ struct QueryPlanStepSerialization
 struct SerializedSetsRegistry;
 
 /// Deserialization context passed to `IQueryPlanStep::deserialize`.
-struct QueryPlanStepDeserialization
+struct IQueryPlanStep::Deserialization
 {
     ReadBuffer & in;
     DeserializedSetsRegistry & registry;

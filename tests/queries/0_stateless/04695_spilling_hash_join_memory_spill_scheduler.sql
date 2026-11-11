@@ -15,14 +15,9 @@ set enable_parallel_replicas=0; -- parallel replicas distribute data across node
 set grace_hash_join_initial_buckets=1; -- more initial buckets split the right side, reducing per-bucket memory and preventing the expected OOM
 set collect_hash_table_stats_during_joins=0;
 set max_bytes_in_join=0;
--- The expected OOM is the peak when the one-bucket map of the serial layout doubles. A two-level map grows
--- bucket by bucket and may stay below the limit.
-set hash_join_layout='serial';
 -- Put the join's own spill threshold out of reach so that only the scheduler can make it spill.
 set max_bytes_before_external_join='100Gi';
 set max_bytes_ratio_before_external_join=0;
--- Packed `String` keys would make the hash tables small enough for the first query to fit. 05459 runs these queries with packed keys.
-set enable_packed_string_keys_in_hash_join = 0;
 
 set enable_adaptive_memory_spill_scheduler=false;
 select t1.k, t2.x, t3.x from spill_scheduler_04695_1 as t1 left join spill_scheduler_04695_2 as t2 on t1.k = t2.k left join spill_scheduler_04695_3 as t3 on t1.k = t3.k Format Null; --{serverError MEMORY_LIMIT_EXCEEDED}

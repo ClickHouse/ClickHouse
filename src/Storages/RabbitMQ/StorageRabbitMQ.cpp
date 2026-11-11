@@ -45,7 +45,6 @@
 #include <utility>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -1117,7 +1116,7 @@ void StorageRabbitMQ::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 

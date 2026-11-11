@@ -70,7 +70,7 @@ $CLICKHOUSE_CLIENT -q "
         countIf(query_id = '$query_id') AS on_initiator,
         countIf(query_id != '$query_id') AS on_replicas
     FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND message LIKE '%Pushed down partial filter%'
+    WHERE message LIKE '%Pushed down partial filter%'
       AND query_id IN (
           SELECT query_id FROM system.query_log
           WHERE initial_query_id = '$query_id'

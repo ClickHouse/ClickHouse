@@ -3,7 +3,6 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <Poco/URI.h>
 
 #include <list>
 #include <mutex>

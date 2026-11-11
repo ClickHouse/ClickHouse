@@ -7,7 +7,6 @@
 #include <IO/Progress.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB
@@ -20,10 +19,6 @@ extern const int LOGICAL_ERROR;
 
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
-struct RuntimeFilterIndexAnalysisDescriptor;
-using RuntimeFilterIndexAnalysisDescriptors = std::vector<RuntimeFilterIndexAnalysisDescriptor>;
-struct IRuntimeFilterLookup;
-using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 
 struct ObjectInfo
 {
@@ -45,8 +40,6 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
-    virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
-
     virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
     virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
     virtual bool isArchive() const { return false; }
@@ -55,35 +48,16 @@ struct ObjectInfo
     virtual std::string getPathOrPathToArchiveIfArchive() const;
     virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
-    /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
-
-    virtual VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const { return {}; }
-
-    /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
-    /// It is only an estimate used to report the progress of a query, not to compute any result.
-    virtual std::optional<size_t> getNumRowsHint() const
-    {
-        if (data_lake_metadata)
-            return data_lake_metadata->num_rows;
-        return std::nullopt;
-    }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
     FileBucketInfoPtr file_bucket_info;
-    /// Whether `file_bucket_info` only leaves out row groups the query condition cache proved to have no
-    /// match, rather than splitting the file between readers: only then does reading the buckets tell
-    /// which row groups of the whole file match.
-    bool file_bucket_info_from_query_condition_cache = false;
 
     /// Lazy materialization: if set, read only these rows of the file.
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
-
-    /// Set for an archive entry whose name an earlier entry of the archive has, see `ArchiveEntryPositions`.
-    std::optional<size_t> archive_entry_index;
 
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
@@ -107,10 +81,6 @@ struct IObjectIterator
 
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
-
-    /// The JOIN runtime filters every row of the read passes, set before the first `next`. An iterator
-    /// may skip the objects that cannot contain any of their keys once the filters are built.
-    virtual void setJoinRuntimeFilters(const RuntimeFilterIndexAnalysisDescriptors & /*descriptors*/, RuntimeFilterLookupPtr /*lookup*/) {}
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -137,11 +107,6 @@ public:
         iterator->setEmitProfileEvents(value);
     }
 
-    void setJoinRuntimeFilters(const RuntimeFilterIndexAnalysisDescriptors & descriptors, RuntimeFilterLookupPtr lookup) override
-    {
-        iterator->setJoinRuntimeFilters(descriptors, std::move(lookup));
-    }
-
 private:
     const ObjectIterator iterator;
     const StorageObjectStorageConfigurationPtr configuration;
@@ -157,7 +122,7 @@ class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
 public:
     ObjectIteratorSplitByBuckets(
         ObjectIterator iterator_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        const String & format_,
         ObjectStoragePtr object_storage_,
         const ContextPtr & context_,
         const StorageID & storage_id_ = StorageID::createEmpty(),
@@ -169,7 +134,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    StorageObjectStorageConfigurationPtr configuration;
+    String format;
     ObjectStoragePtr object_storage;
     FormatSettings format_settings;
     StorageID storage_id;

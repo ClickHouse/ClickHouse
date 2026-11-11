@@ -31,7 +31,7 @@ SELECT
     countIf(level = 'Warning' AND message LIKE '%`booster=gblinear` is deprecated%') > 0,
     countIf(message LIKE '[%' OR message LIKE 'WARNING:%' OR message LIKE '%\n') = 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
+WHERE event_date >= yesterday()
     AND logger_name = 'XGBoost'
     AND query_id IN (
         SELECT query_id FROM system.query_log

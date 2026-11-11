@@ -38,24 +38,18 @@ targets.
 Load chdb_hook in one of the following ways as a super user. Use whichever
 makes the most sense for your use case:
 
-<Note>
-On ClickHouse Managed Postgres:
-
-- The ClickHouse Cloud SQL Console does not yet support the `LOAD 'chdb_hook'`
-  command, but it can be run via psql or any other database connection.
-- `ALTER SYSTEM` isn't allowed and `postgresql.conf` can't be edited, so the
-  examples below that rely on them don't apply. Use `ALTER DATABASE` or
-  `ALTER ROLE` instead.
-- Alternatively, contact [support](https://clickhouse.com/support/program) to
-  add `chdb_hook` to your Postgres service configuration, after which it can
-  also be used in the SQL Console.
-</Note>
-
 * Explicitly via the [LOAD] command; lasts for the duration of a session:
 
     ```sql
     LOAD 'chdb_hook';
     ```
+
+    <Note>
+    The ClickHouse Cloud SQL Console does not yet support the `LOAD 'chdb_hook'`
+    command, but it can be run via psql or any other database connection.
+    Otherwise, contact your support representative to add it to your Postgres
+    service configuration, after which it can be used in the SQL Console.
+    </Note>
 
 * For all sessions, via the [session_preload_libraries] setting, via
   `postgresql.conf`:
@@ -326,7 +320,7 @@ Defaults to `30000` (30s).
 
 #### `encoding_check` {#encoding_check}
 
-Defines how to handle invalid characters under the [database encoding] when
+Defines how to to handle invalid characters under the [database encoding] when
 converting chDB String and JSON values. One of:
 *   `fail` (default): raise an error
 *   `remove` removes invalid bytes
@@ -790,7 +784,7 @@ chdb_hook adheres to [Semantic Versioning] for its public releases.
 * The minor version increments for backward compatible SQL changes
 * The patch version increments for binary-only changes
 
-Once installed, PostgreSQL reports the version via the Postgres 18
+Once installed, PostgreSQL the version via the the Postgres 18
 [`pg_get_loaded_modules()`] function.
 
 ```sql

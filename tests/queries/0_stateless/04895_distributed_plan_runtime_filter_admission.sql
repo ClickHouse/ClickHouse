@@ -5,10 +5,8 @@ CREATE TABLE t_large (lid UInt64) ENGINE = MergeTree ORDER BY lid SETTINGS index
 INSERT INTO t_small SELECT number * 100 FROM numbers(100);
 INSERT INTO t_large SELECT number FROM numbers(1000000);
 
-SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
+SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
--- The checks of serialized partials count one per build task: pin the eight read tasks.
-SET distributed_plan_default_reader_bucket_count = 8;
 SET log_processors_profiles = 1;
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 SET distributed_plan_join_runtime_filters = 1;
@@ -37,7 +35,7 @@ SELECT
     (
         SELECT count() > 0 FROM system.text_log
         WHERE logger_name = 'joinRuntimeFilter' AND message LIKE '%refused at%'
-            AND event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
+            AND event_date >= yesterday() AND query_id IN (
                 SELECT query_id FROM system.query_log
                 WHERE type = 'QueryFinish' AND is_initial_query AND log_comment = '04895_refused'
                     AND current_database = currentDatabase() AND event_date >= yesterday())
@@ -79,7 +77,7 @@ SELECT countIf(startsWith(message, 'Registered runtime filter')) >= 1
        AND toUInt64OrZero(extract(message, 'blocks processed (\\d+)'))
            + toUInt64OrZero(extract(message, 'blocks skipped (\\d+)')) > 0) >= 1
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'RuntimeFilter'
+WHERE event_date >= yesterday() AND logger_name = 'RuntimeFilter'
   AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE type = 'QueryFinish' AND event_date >= yesterday()
@@ -93,7 +91,7 @@ SELECT
     (
         SELECT count() > 0 FROM system.text_log
         WHERE logger_name = 'joinRuntimeFilter' AND message LIKE '%admitted at%'
-            AND event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
+            AND event_date >= yesterday() AND query_id IN (
                 SELECT query_id FROM system.query_log
                 WHERE type = 'QueryFinish' AND is_initial_query AND log_comment = '04895_admitted'
                     AND current_database = currentDatabase() AND event_date >= yesterday())

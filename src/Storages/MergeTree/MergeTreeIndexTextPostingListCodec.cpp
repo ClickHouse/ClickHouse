@@ -216,7 +216,10 @@ void SegmentedPostingListCodec::decodeBlock(std::span<const std::byte> & in, std
 
     /// `in` is the remaining segment payload: a full block self-delimits, and the final tail block sees exactly
     /// its own bytes remaining (the Index Section is not part of this buffer). We only need `in` advanced past it.
-    block_codec->decodeBlock(in, out.size(), out, prev_row_id);
+    block_codec->decodeBlock(in, out.size(), out);
+
+    /// Restore the original array from the decompressed delta values.
+    std::inclusive_scan(out.begin(), out.end(), out.begin(), std::plus<uint32_t>{}, prev_row_id);
     prev_row_id = out.back();
 }
 

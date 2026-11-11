@@ -36,4 +36,4 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "SELECT k, count() FROM ($(c
 
 # The query has to reach the statistics cache, or it would not hash the filter at all.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-${CLICKHOUSE_CLIENT} --param_query_id="$query_id" --query "SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = {query_id:String} AND logger_name = 'HashTablesStatistics'"
+${CLICKHOUSE_CLIENT} --param_query_id="$query_id" --query "SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday() AND query_id = {query_id:String} AND logger_name = 'HashTablesStatistics'"

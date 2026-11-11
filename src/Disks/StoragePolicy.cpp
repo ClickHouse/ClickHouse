@@ -2,7 +2,6 @@
 #include <base/sort.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/DiskSelector.h>
 #include <Disks/createVolume.h>
 
 #include <Interpreters/Context.h>
@@ -15,8 +14,6 @@
 
 #include <algorithm>
 #include <exception>
-#include <filesystem>
-#include <map>
 #include <ranges>
 #include <set>
 
@@ -477,9 +474,6 @@ std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & 
 
 void StoragePolicy::buildVolumeIndices()
 {
-    /// `cache` and `encrypted` disks share the files of the disk they wrap, so two disks of a policy must not resolve to the same directory.
-    std::map<std::pair<const IMetadataStorage *, String>, String> policy_disk_by_directory;
-
     for (size_t index = 0; index < volumes.size(); ++index)
     {
         const VolumePtr & volume = volumes[index];
@@ -499,17 +493,6 @@ void StoragePolicy::buildVolumeIndices()
                 throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                                 "Disk names must be unique in storage policy {} ({} "
                                 "is duplicated)" , backQuote(name), backQuote(disk_name));
-
-            if (auto metadata_storage = unwrapEncryptedAndCacheLayers(disk))
-            {
-                String directory = std::filesystem::path(disk->getPath()).lexically_normal().string();
-                auto [it, inserted] = policy_disk_by_directory.emplace(std::pair{metadata_storage.get(), directory}, disk_name);
-                if (!inserted)
-                    throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
-                                    "Disks {} and {} in storage policy {} store data in the same directory {}, "
-                                    "so a table would load each of its parts twice",
-                                    backQuote(it->second), backQuote(disk_name), backQuote(name), backQuote(directory));
-            }
 
             volume_index_by_disk_name[disk_name] = index;
         }

@@ -46,7 +46,6 @@ namespace DB
     DECLARE(String, google_adc_client_id, "", "", 0) \
     DECLARE(String, google_adc_client_secret, "", "", 0) \
     DECLARE(String, google_adc_refresh_token, "", "", 0) \
-    DECLARE(String, google_service_account_key, "", "", 0) \
 
 /// `max_connections` used to bound the per-endpoint session pool of the S3 client, which was
 /// removed in 21.4; the global pool that replaced it is bounded by the `disk_connections_*`,
@@ -112,7 +111,6 @@ S3AuthSettings::S3AuthSettings(const S3AuthSettings & settings)
     , access_headers(settings.access_headers)
     , users(settings.users)
     , server_side_encryption_kms_config(settings.server_side_encryption_kms_config)
-    , google_credentials_explicit(settings.google_credentials_explicit)
     , impl(std::make_unique<S3AuthSettingsImpl>(*settings.impl))
 {
 }
@@ -179,21 +177,6 @@ bool S3AuthSettings::hasUpdates(const S3AuthSettings & other) const
 
 void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
 {
-    /// The Google credential mechanisms (the ADC triple and `google_service_account_key`) are mutually exclusive, so a
-    /// layer that supplies one of them replaces the other one of this base as well, instead of leaving an ambiguous
-    /// pair: a key of an endpoint section replaces the ADC triple of the general `<s3>` section, and a key that takes
-    /// the place of the ADC triple in the server config replaces, on reload, the triple an existing table kept from
-    /// the previous config. A single layer that supplies both is still refused when the client is built.
-    if (settings.impl->isChanged("google_service_account_key"))
-    {
-        impl->set("google_adc_client_id", "");
-        impl->set("google_adc_client_secret", "");
-        impl->set("google_adc_refresh_token", "");
-    }
-    if (settings.impl->isChanged("google_adc_client_id") || settings.impl->isChanged("google_adc_client_secret")
-        || settings.impl->isChanged("google_adc_refresh_token"))
-        impl->set("google_service_account_key", "");
-
     for (auto & setting : settings.impl->all())
     {
         if (setting.isValueChanged())
@@ -241,7 +224,6 @@ void S3AuthSettings::clearServerManagedGcpOAuth()
     impl->set("google_adc_client_id", "");
     impl->set("google_adc_client_secret", "");
     impl->set("google_adc_refresh_token", "");
-    impl->set("google_service_account_key", "");
 }
 
 NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const

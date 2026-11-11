@@ -3,7 +3,6 @@
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/maskSensitiveQueryParameters.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
@@ -244,7 +243,8 @@ namespace
         Poco::URI::QueryParameters kept_params;
         for (const auto & [key, value] : uri.getQueryParameters())
         {
-            if (isPresignedURLParameterName(key))
+            if (key == "AWSAccessKeyId" || key == "Signature" || key == "Expires" || key.starts_with("X-Amz-")
+                || key == "GoogleAccessId" || key.starts_with("X-Goog-"))
                 changed = true;
             else
                 kept_params.push_back({key, value});
@@ -436,8 +436,7 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
                 return key
                     && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token"
                         || *key == "external_id"
-                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token"
-                        || *key == "google_service_account_key");
+                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token");
             }),
         res.kv_args.end());
 

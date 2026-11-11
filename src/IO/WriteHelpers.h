@@ -30,15 +30,12 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Core/Defines.h>
-#include <Core/Names.h>
-#include <base/unit.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
 
 class Exception;
-struct FormatSettings;
 
 /// Helper functions for formatted and binary output.
 
@@ -63,8 +60,8 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
 /// Write a non-zero number of bytes to buffer. Mirrors readNBytes.
 inline void writeNBytes(const char * input, size_t size, WriteBuffer & buf)
 {
-    /// Unlike `WriteBuffer::write`, it does not check that the buffer is neither finalized nor canceled, which
-    /// saves a load per value in loops that write many small values of a size known at compile time.
+    /// WriteBuffer::write is defined out of line and copies a run-time size, while __builtin_memcpy
+    /// of a size the caller knows at compile time lowers to a couple of stores.
     if (size <= buf.available()) [[likely]]
     {
         __builtin_memcpy(buf.position(), input, size);
@@ -225,7 +222,120 @@ inline void writeString(std::string_view ref, WriteBuffer & buf)
  *  - it is assumed that string is in UTF-8, the invalid UTF-8 is not processed
  *  - all other non-ASCII characters remain as is
  */
-void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings);
+inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
+{
+    /// A byte with a nonzero entry never gets copied verbatim; it always reaches the switch below.
+    /// 0xE2 needs an entry because it leads U+2028 and U+2029: a bulk copy would swallow the lead byte and
+    /// emit the sequence raw. Their continuation bytes need none, being written unchanged either way.
+    static constexpr auto stop_tables = []
+    {
+        std::array<std::array<UInt8, 256>, 2> tables{};
+        for (auto & table : tables)
+        {
+            for (size_t i = 0; i <= 0x1F; ++i)
+                table[i] = 1;
+            table['"'] = 1;
+            table['\\'] = 1;
+            table[0xE2] = 1;
+        }
+        tables[true]['/'] = 1;
+        return tables;
+    }();
+    const auto & stop = stop_tables[settings.json.escape_forward_slashes];
+
+    writeChar('"', buf);
+
+    const char * it = begin;
+
+    while (true)
+    {
+        const char * run_end = it;
+        while (run_end != end && !stop[static_cast<UInt8>(*run_end)])
+            ++run_end;
+
+        if (run_end != it)
+        {
+            buf.write(it, static_cast<size_t>(run_end - it));
+            it = run_end;
+        }
+
+        if (it == end)
+            break;
+
+        switch (*it)
+        {
+            case '\b':
+                writeChar('\\', buf);
+                writeChar('b', buf);
+                break;
+            case '\f':
+                writeChar('\\', buf);
+                writeChar('f', buf);
+                break;
+            case '\n':
+                writeChar('\\', buf);
+                writeChar('n', buf);
+                break;
+            case '\r':
+                writeChar('\\', buf);
+                writeChar('r', buf);
+                break;
+            case '\t':
+                writeChar('\\', buf);
+                writeChar('t', buf);
+                break;
+            case '\\':
+                writeChar('\\', buf);
+                writeChar('\\', buf);
+                break;
+            case '/':
+                if (settings.json.escape_forward_slashes)
+                    writeChar('\\', buf);
+                writeChar('/', buf);
+                break;
+            case '"':
+                writeChar('\\', buf);
+                writeChar('"', buf);
+                break;
+            default:
+                UInt8 c = *it;
+                if (c <= 0x1F)
+                {
+                    /// Escaping of ASCII control characters.
+
+                    UInt8 higher_half = c >> 4;
+                    UInt8 lower_half = c & 0xF;
+
+                    writeCString("\\u00", buf);
+                    writeChar('0' + higher_half, buf);
+
+                    if (lower_half <= 9)
+                        writeChar('0' + lower_half, buf);
+                    else
+                        writeChar('A' + lower_half - 10, buf);
+                }
+                else if (end - it >= 3 && it[0] == '\xE2' && it[1] == '\x80' && (it[2] == '\xA8' || it[2] == '\xA9'))
+                {
+                    /// This is for compatibility with JavaScript, because unescaped line separators are prohibited in string literals,
+                    ///  and these code points are alternative line separators.
+
+                    if (it[2] == '\xA8')
+                        writeCString("\\u2028", buf);
+                    if (it[2] == '\xA9')
+                        writeCString("\\u2029", buf);
+
+                    /// Byte sequence is 3 bytes long. We have additional two bytes to skip.
+                    it += 2;
+                }
+                else
+                    writeChar(*it, buf);
+        }
+
+        ++it;
+    }
+
+    writeChar('"', buf);
+}
 
 
 /** Will escape quote_character and a list of special characters('\b', '\f', '\n', '\r', '\t', '\0', '\\').
@@ -253,48 +363,49 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
         {
             buf.write(pos, next_pos - pos);
             pos = next_pos;
-            /// One `write` of a constant size per escape sequence keeps this function small enough to be inlined.
-            char escaped[2] = {'\\', 0};
-            size_t escaped_size = 2;
             switch (*pos)
             {
                 case quote_character:
+                {
                     if constexpr (escape_quote_with_quote)
-                        escaped[0] = quote_character;
-                    escaped[1] = quote_character;
+                        writeChar(quote_character, buf);
+                    else
+                        writeChar('\\', buf);
+                    writeChar(quote_character, buf);
                     break;
+                }
                 case '\b':
-                    escaped[1] = 'b';
+                    writeChar('\\', buf);
+                    writeChar('b', buf);
                     break;
                 case '\f':
-                    escaped[1] = 'f';
+                    writeChar('\\', buf);
+                    writeChar('f', buf);
                     break;
                 case '\n':
-                    escaped[1] = 'n';
+                    writeChar('\\', buf);
+                    writeChar('n', buf);
                     break;
                 case '\r':
-                    escaped[1] = 'r';
+                    writeChar('\\', buf);
+                    writeChar('r', buf);
                     break;
                 case '\t':
-                    escaped[1] = 't';
+                    writeChar('\\', buf);
+                    writeChar('t', buf);
                     break;
                 case '\0':
-                    escaped[1] = '0';
+                    writeChar('\\', buf);
+                    writeChar('0', buf);
                     break;
                 case '\\':
                     if constexpr (escape_backslash_with_backslash)
-                        escaped[1] = '\\';
-                    else
-                        escaped_size = 1;
+                        writeChar('\\', buf);
+                    writeChar('\\', buf);
                     break;
                 default:
-                    escaped[0] = *pos;
-                    escaped_size = 1;
+                    writeChar(*pos, buf);
             }
-            if (escaped_size == 2)
-                buf.write(escaped, 2);
-            else
-                buf.write(escaped[0]);
             ++pos;
         }
         /// NOLINTEND(readability-else-after-return)
@@ -445,6 +556,51 @@ inline void writeAnyMarkdownEscapedString(const char * begin, const char * end, 
 inline void writeJSONString(std::string_view s, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeJSONString(s.data(), s.data() + s.size(), buf, settings);
+}
+
+template <typename T>
+void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
+{
+    bool is_finite = isFinite(x);
+
+    const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
+        || (settings.json.quote_denormals && !is_finite) || (is_floating_point<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
+
+    if (need_quote)
+        writeChar('"', ostr);
+
+    if (is_finite)
+    {
+        if constexpr (is_floating_point<T>)
+            writeFloatText(x, ostr, settings);
+        else
+            writeText(x, ostr);
+    }
+    else if (!settings.json.quote_denormals)
+        writeCString("null", ostr);
+    else
+    {
+        if constexpr (is_floating_point<T>)
+        {
+            if (signBit(x))
+            {
+                if (isNaN(x))
+                    writeCString("-nan", ostr);
+                else
+                    writeCString("-inf", ostr);
+            }
+            else
+            {
+                if (isNaN(x))
+                    writeCString("nan", ostr);
+                else
+                    writeCString("inf", ostr);
+            }
+        }
+    }
+
+    if (need_quote)
+        writeChar('"', ostr);
 }
 
 
@@ -1260,10 +1416,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     /// belongs to the whole part, which has already been written by then.
     chassert(!fixed_fractional_length || fractional_length >= scale);
 
-    /// The decimal point and the digits are written with one `write`.
-    char point_and_digits[max_digits + 1];
-    point_and_digits[0] = '.';
-    char * buf = point_and_digits + 1;
+    char buf[max_digits];
     if constexpr (sizeof(T) <= sizeof(UInt64))
         writeFixedDigits(static_cast<UInt64>(x), scale, buf);
     else if constexpr (sizeof(T) <= sizeof(UInt128))
@@ -1289,7 +1442,8 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
             --length;
     }
 
-    ostr.write(point_and_digits, length + 1);
+    writeChar('.', ostr);
+    ostr.write(buf, length);
 }
 
 template <typename T>
@@ -1332,7 +1486,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
     writeIntText(part, ostr);
 
     bool fractional_written = false;
-    if (rounded_scale || (fixed_fractional_length && fractional_length > 0))
+    if (scale || (fixed_fractional_length && fractional_length > 0))
     {
         part = DecimalUtils::getFractionalPart(rounded, rounded_scale);
         if (part || trailing_zeros)
