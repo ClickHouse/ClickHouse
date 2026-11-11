@@ -1,0 +1,29 @@
+#pragma once
+
+#include <IO/IFileBasedSourceReader.h>
+#include <Disks/IDisk.h>
+#include <Common/Logger.h>
+
+namespace DB
+{
+
+class IObjectStorage;
+using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
+
+/// Reads from any IObjectStorage (S3, Azure, HDFS, etc.).
+class ObjectStorageSourceReader : public IFileBasedSourceReader
+{
+public:
+    ObjectStorageSourceReader(ObjectStoragePtr storage, const ReadSettings & read_settings);
+
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override;
+
+    String name() const override { return "ObjectStorageSourceReader"; }
+
+private:
+    ObjectStoragePtr storage;
+    ReadSettings read_settings;
+    LoggerPtr log = getLogger("ObjectStorageSourceReader");
+};
+
+}

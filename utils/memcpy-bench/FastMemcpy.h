@@ -654,12 +654,12 @@ __attribute__((__no_sanitize__("undefined"))) inline void *memcpy_tiny(void * __
 //---------------------------------------------------------------------
 // main routine
 //---------------------------------------------------------------------
+void* memcpy_fast_sse(void * __restrict destination, const void * __restrict source, size_t size);
 void* memcpy_fast_sse(void * __restrict destination, const void * __restrict source, size_t size) /// NOLINT(misc-definitions-in-headers)
 {
     unsigned char *dst = (unsigned char*)destination;
     const unsigned char *src = (const unsigned char*)source;
     static size_t cachesize = 0x200000; // L2-cache size
-    size_t padding;
 
     // small memory copy
     if (size <= 128)
@@ -668,7 +668,7 @@ void* memcpy_fast_sse(void * __restrict destination, const void * __restrict sou
     }
 
     // align destination to 16 bytes boundary
-    padding = (16 - (((size_t)dst) & 15)) & 15;
+    size_t padding = (16 - (((size_t)dst) & 15)) & 15;
 
     if (padding > 0)
     {

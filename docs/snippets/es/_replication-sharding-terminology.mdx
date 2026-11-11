@@ -1,0 +1,25 @@
+---
+title: Terminología de replicación y segmentación
+---
+
+<div id="terminology">
+  ## Terminología
+</div>
+
+<div id="replica">
+  ### Réplica
+</div>
+
+Una copia de los datos. ClickHouse siempre tiene al menos una copia de sus datos, por lo que el número mínimo de **réplicas** es uno. Este es un detalle importante: puede que no esté acostumbrado a considerar la copia original de sus datos como una réplica, pero ese es el término que se usa en el código y la documentación de ClickHouse. Añadir una segunda réplica de sus datos proporciona tolerancia a fallos.
+
+<div id="shard">
+  ### Segmento
+</div>
+
+Un subconjunto de datos.  ClickHouse siempre tiene al menos un segmento para sus datos, así que, si no divide los datos entre varios servidores, sus datos se almacenarán en un único segmento.  Distribuir los datos entre varios servidores puede servir para repartir la carga si esta supera la capacidad de un solo servidor. El servidor de destino se determina mediante la **clave de sharding** y se define al crear la tabla distribuida. La clave de sharding puede ser aleatoria o el resultado de una [función hash](/es/reference/functions/regular-functions/hash-functions).  Los ejemplos de implementación que incluyen sharding usarán `rand()` como clave de sharding y ofrecerán más información sobre cuándo y cómo elegir una clave de sharding diferente.
+
+<div id="distributed-coordination">
+  ### Coordinación distribuida
+</div>
+
+ClickHouse Keeper proporciona el sistema de coordinación para la replicación de datos y la ejecución de consultas DDL distribuidas. ClickHouse Keeper es compatible con Apache ZooKeeper.

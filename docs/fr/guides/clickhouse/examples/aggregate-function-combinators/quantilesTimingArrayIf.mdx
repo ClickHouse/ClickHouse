@@ -1,0 +1,70 @@
+---
+slug: '/examples/aggregate-function-combinators/quantilesTimingArrayIf'
+title: 'quantilesTimingArrayIf'
+description: "Exemple d’utilisation du combinateur quantilesTimingArrayIf"
+keywords: ['quantilesTiming', 'array', 'if', 'combinator', 'examples', 'quantilesTimingArrayIf']
+sidebarTitle: 'quantilesTimingArrayIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Les combinateurs [`Array`](/fr/reference/functions/aggregate-functions/combinators#-array) et [`If`](/fr/reference/functions/aggregate-functions/combinators#-if)
+peuvent être appliqués à la fonction [`quantilesTiming`](/fr/reference/functions/aggregate-functions/quantileTiming)
+pour calculer les quantiles des valeurs de temps dans des tableaux pour les lignes où la condition est true,
+à l’aide de la fonction de combinateur d’agrégation `quantilesTimingArrayIf`.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Dans cet exemple, nous allons créer une table qui stocke les temps de réponse de l’API pour différents endpoints,
+et utiliser `quantilesTimingArrayIf` pour calculer les quantiles des temps de réponse pour les requêtes ayant abouti.
+
+```sql title="Query"
+CREATE TABLE api_responses(
+    endpoint String,
+    response_times_ms Array(UInt32),
+    success_rate Float32
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO api_responses VALUES
+    ('orders', [82, 94, 98, 87, 103, 92, 89, 105], 0.98),
+    ('products', [45, 52, 48, 51, 49, 53, 47, 50], 0.95),
+    ('users', [120, 125, 118, 122, 121, 119, 123, 124], 0.92);
+
+SELECT
+    endpoint,
+    quantilesTimingArrayIf(0, 0.25, 0.5, 0.75, 0.95, 0.99, 1.0)(response_times_ms, success_rate >= 0.95) as response_time_quantiles
+FROM api_responses
+GROUP BY endpoint;
+```
+
+La fonction `quantilesTimingArrayIf` calcule des quantiles uniquement pour les endpoints dont le taux de réussite est supérieur à 95 %.
+Le tableau renvoyé contient les quantiles suivants dans l’ordre :
+
+* 0 (minimum)
+* 0.25 (premier quartile)
+* 0.5 (médiane)
+* 0.75 (troisième quartile)
+* 0.95 (95e percentile)
+* 0.99 (99e percentile)
+* 1.0 (maximum)
+
+```response title="Response"
+   ┌─endpoint─┬─response_time_quantiles─────────────────────────────────────────────┐
+1. │ orders   │ [82, 87, 92, 98, 103, 104, 105]                                     │
+2. │ products │ [45, 47, 49, 51, 52, 52, 53]                                        │
+3. │ users    │ [nan, nan, nan, nan, nan, nan, nan]                                 │
+   └──────────┴─────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`quantilesTiming`](/fr/reference/functions/aggregate-functions/quantileTiming)
+* [`combinateur If`](/fr/reference/functions/aggregate-functions/combinators#-if)

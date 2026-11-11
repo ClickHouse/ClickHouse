@@ -27,7 +27,7 @@ namespace
  * should produce:
  *   ['abc', '111']
  */
-class FunctionExtractGroups : public IFunction
+class FunctionExtractGroups final : public IFunction
 {
 public:
     static constexpr auto name = "extractGroups";
@@ -42,15 +42,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
-            {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        return "(String | FixedString, const String | FixedString) -> Array(String)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -63,19 +57,12 @@ public:
         if (needle.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} length of 'needle' argument must be greater than 0.", getName());
 
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(needle);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(needle);
+        const size_t groups_count = Regexps::getCapturingGroupsCount(regexp, needle);
         const auto & re2 = regexp.getRE2();
 
-        if (!re2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
-
-        const size_t groups_count = re2->NumberOfCapturingGroups();
-
-        if (!groups_count)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
-
         // Including 0-group, which is the whole regexp.
-        PODArrayWithStackMemory<std::string_view, 128> matched_groups(groups_count + 1);
+        Regexps::MatchedGroups matched_groups(groups_count + 1);
 
         ColumnArray::ColumnOffsets::MutablePtr offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnString::MutablePtr data_col = ColumnString::create();
@@ -112,14 +99,14 @@ public:
 REGISTER_FUNCTION(ExtractGroups)
 {
     FunctionDocumentation::Description description = R"(
-Extracts all groups from non-overlapping substrings matched by a regular expression.
+Extracts the capturing groups from the first substring matched by a regular expression. To extract groups from all matches, use [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) or [`extractAllGroupsVertical`](/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical).
     )";
     FunctionDocumentation::Syntax syntax = "extractGroups(s, regexp)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string to extract from.", {"String", "FixedString"}},
-        {"regexp", "Regular expression. Constant.", {"const String", "const FixedString"}}
+        {"regexp", "Regular expression. Must contain between 1 and 127 capturing groups. Constant.", {"const String", "const FixedString"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"If the function finds at least one matching group, it returns Array(Array(String)) column, clustered by group_id (`1` to `N`, where `N` is number of capturing groups in regexp). If there is no matching group, it returns an empty array.", {"Array(Array(String))"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"If the regular expression matches, returns an array containing the captured groups (`1` to `N`, where `N` is the number of capturing groups in `regexp`) of the first match. If there is no match, returns an empty array.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
         {
             "Usage example",
@@ -132,7 +119,7 @@ WITH '< Server: nginx
 SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 )",
             R"(
-[['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
+['Server','nginx']
     )"
         }
     };

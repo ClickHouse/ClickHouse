@@ -52,8 +52,8 @@ SELECT _table, key FROM view2 ORDER BY key ASC;
 view2	1
 view2	2
 SELECT _table, key, value FROM buffer1 ORDER BY key ASC;
-buffer1	7	70
-buffer1	8	80
+d5	7	70
+d5	8	80
 buffer1	9	90
 SELECT _table, key, value FROM mv1 ORDER BY key ASC;
 mv1	10	2

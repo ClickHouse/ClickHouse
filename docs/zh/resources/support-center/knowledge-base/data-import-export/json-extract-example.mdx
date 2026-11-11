@@ -1,0 +1,72 @@
+---
+title: JSON 提取示例
+description: "一个演示如何从 JSON 中提取基本类型的简短示例"
+date: 2021-09-01
+tags: ['数据格式']
+keywords: ['JSON', '提取基本类型']
+---
+
+<div id="json-extract-example">
+  ## JSON 提取示例
+</div>
+
+这只是一个简短的示例，用来演示 [JSONExtract](/zh/reference/functions/regular-functions/json-functions) 函数的用法。
+
+创建一个表：
+
+```sql
+CREATE TABLE default.json_extract_example
+(
+    `rawJSON` String EPHEMERAL,
+    `a1` String DEFAULT JSONExtractString(rawJSON, 'a1'),
+    `a2` Boolean DEFAULT JSONExtractBool(rawJSON, 'a2'),
+    `a3.aa1` Float DEFAULT JSONExtractFloat(JSONExtractRaw(rawJSON, 'a3'), 'aa1'),
+    `a3.aa2` UInt8 DEFAULT JSONExtractUInt(JSONExtractRaw(rawJSON, 'a3'), 'aa2')
+)
+ENGINE = MergeTree
+ORDER BY (a1, a2)
+```
+
+添加 JSON 原始字符串：
+
+```sql
+INSERT INTO default.json_extract_example (rawJSON) VALUES ('{"a1": "XX", "a2": true, "a3":{"aa1":23.11,"aa2":12}}');
+```
+
+查询数据：
+
+```
+SELECT *
+FROM json_extract_example
+FORMAT Pretty
+```
+
+输出：
+
+```
+┏━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━┓
+┃ a1 ┃ a2   ┃ a3.aa1 ┃ a3.aa2 ┃
+┡━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━┩
+│ XX │ true │  23.11 │     12 │
+└────┴──────┴────────┴────────┘
+```
+
+各项均以原始 JSON 类型存储：
+
+```sql
+SELECT
+    toTypeName(a1),
+    toTypeName(a2),
+    toTypeName(a3.aa1),
+    toTypeName(a3.aa2)
+FROM default.json_extract_example
+FORMAT Pretty
+```
+
+```
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ toTypeName(a1) ┃ toTypeName(a2) ┃ toTypeName(a3.aa1) ┃ toTypeName(a3.aa2) ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ String         │ Bool           │ Float32            │ UInt8              │
+└────────────────┴────────────────┴────────────────────┴────────────────────┘
+```

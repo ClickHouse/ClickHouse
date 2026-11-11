@@ -1,0 +1,4 @@
+#1 simple query
+"rows_read": 100
+#2 scalar subquery
+"rows_read": 100001

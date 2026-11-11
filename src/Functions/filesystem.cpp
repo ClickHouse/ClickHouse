@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -12,20 +13,23 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_DISK;
 }
 namespace
 {
 
-class FilesystemImpl : public IFunction
+class FilesystemImpl final : public IFunction
 {
 public:
     using GetFunc = UInt64 (*)(const DiskPtr &);
 
     FilesystemImpl(ContextPtr context_, const char * name_, GetFunc get_func_)
-        : context(context_), function_name(name_), get_func(get_func_) {}
+        : default_disk(context_->getDisk("default"))
+        , disk_map(context_->getDisksMap())
+        , function_name(name_)
+        , get_func(get_func_)
+    {
+    }
 
     static FunctionPtr create(ContextPtr context_, const char * name, GetFunc get_func)
     {
@@ -46,33 +50,24 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Read per executing node, so two nodes can disagree.
+    bool isServerConstant() const override { return true; }
+
+    String getSignatureString() const override
     {
-        if (arguments.size() > 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
-        }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0]))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
-        }
-        return std::make_shared<DataTypeUInt64>();
+        return "([StringOrFixedString]) -> UInt64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments.empty())
         {
-            auto disk = context->getDisk("default");
-            return DataTypeUInt64().createColumnConst(input_rows_count, get_func(disk));
+            return DataTypeUInt64().createColumnConst(input_rows_count, get_func(default_disk));
         }
 
         auto col = arguments[0].column;
         if (const ColumnString * col_str = checkAndGetColumn<ColumnString>(col.get()))
         {
-            auto disk_map = context->getDisksMap();
-
             auto col_res = ColumnVector<UInt64>::create(col_str->size());
             auto & data = col_res->getData();
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -90,7 +85,8 @@ public:
     }
 
 private:
-    ContextPtr context;
+    DiskPtr default_disk;
+    DisksMap disk_map;
     const char * function_name;
     GetFunc get_func;
 };
@@ -105,7 +101,7 @@ REGISTER_FUNCTION(Filesystem)
 {
     FunctionDocumentation::Description description_filesystemAvailable = R"(
 Returns the amount of free space in the filesystem hosting the database persistence.
-The returned value is always smaller than the total free space ([`filesystemUnreserved`](../../sql-reference/functions/other-functions.md#filesystemUnreserved)) because some space is reserved for the operating system.
+The returned value is always smaller than the total free space ([`filesystemUnreserved`](/reference/functions/regular-functions/other-functions#filesystemUnreserved)) because some space is reserved for the operating system.
     )";
     FunctionDocumentation::Syntax syntax_filesystemAvailable = "filesystemAvailable([disk_name])";
     FunctionDocumentation::Arguments arguments_filesystemAvailable = {
@@ -133,7 +129,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
 
     FunctionDocumentation::Description description_filesystemCapacity = R"(
 Returns the capacity of the filesystem in bytes.
-Needs the [path](../../operations/server-configuration-parameters/settings.md#path) to the data directory to be configured.
+Needs the [path](/reference/settings/server-settings/settings/other#path) to the data directory to be configured.
 )";
     FunctionDocumentation::Syntax syntax_filesystemCapacity = "filesystemCapacity([disk_name])";
     FunctionDocumentation::Arguments arguments_filesystemCapacity = {

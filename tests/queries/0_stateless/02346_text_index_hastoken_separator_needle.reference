@@ -1,0 +1,11 @@
+-- hasToken with separator needle, brute-force scan
+-- hasToken with separator needle, index lookup
+-- Valid single-token needles still use the index, brute-force scan
+1
+1
+-- Valid single-token needles still use the index, index lookup
+1
+1
+-- hasTokenOrNull with separator needle returns NULL per row
+3
+3

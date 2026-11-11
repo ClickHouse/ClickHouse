@@ -1,13 +1,12 @@
 #pragma once
-#include <cassert>
 #include <cstddef>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <memory>
 #include <mutex>
 #include <utility>
 
 #include <boost/core/noncopyable.hpp>
 
-#include <Common/PODArray.h>
 #include <IO/ReadBuffer.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>
@@ -39,7 +38,7 @@ public:
 
 private:
     /// For `USING` join key columns should have values from right side instead of defaults
-    std::unordered_map<size_t, size_t> left_to_right_key_remap;
+    UnorderedMapWithMemoryTracking<size_t, size_t> left_to_right_key_remap;
 
     std::array<Chunk, 2> chunks;
 

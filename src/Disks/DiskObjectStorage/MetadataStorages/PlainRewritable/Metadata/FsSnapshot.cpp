@@ -1,0 +1,535 @@
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/BlobLinkCounts.h>
+
+#include <Common/Exception.h>
+#include <Common/UniqueLock.h>
+
+#include <base/defines.h>
+
+#include <ranges>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int CANNOT_CREATE_FILE;
+    extern const int CANNOT_RMDIR;
+    extern const int DIRECTORY_ALREADY_EXISTS;
+    extern const int DIRECTORY_DOESNT_EXIST;
+    extern const int FILE_ALREADY_EXISTS;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+using FsNodePtr = std::shared_ptr<FsNode>;
+using FsNodeConstPtr = std::shared_ptr<const FsNode>;
+
+bool isVirtual(const FsNodePtr & node)
+{
+    return !node->info.has_value();
+}
+
+template <class Ptr>
+Ptr walk(Ptr node, const NormalizedPath & path)
+{
+    for (const auto & step : path)
+    {
+        node = node->subdirectories.findChild(step);
+        if (!node)
+            return nullptr;
+    }
+
+    return node;
+}
+
+void traverseNode(const std::string & path, const FsNodePtr & start, const std::function<void(const std::string &, const FsNodePtr &)> & observe)
+{
+    std::vector<std::pair<std::filesystem::path, FsNodePtr>> unvisited;
+    unvisited.emplace_back(path, start);
+
+    while (!unvisited.empty())
+    {
+        auto [node_path, node] = std::move(unvisited.back());
+        unvisited.pop_back();
+
+        observe(node_path, node);
+
+        node->subdirectories.forEachChild([&](const auto & subdir, const auto & subnode)
+        {
+            unvisited.emplace_back(node_path / subdir, subnode);
+        });
+    }
+}
+
+bool hasFileOnPath(const FsNodePtr & root, const NormalizedPath & path)
+{
+    auto node = root;
+
+    for (const auto & step : path)
+    {
+        if (!isVirtual(node) && node->info->files.contains(step))
+            return true;
+
+        node = node->subdirectories.findChild(step);
+        if (!node)
+            return false;
+    }
+
+    return false;
+}
+
+std::pair<FsNodePtr, FsNodePtr> clonePath(const FsNodePtr & start, const NormalizedPath & path)
+{
+    FsNodePtr cloned_start = std::make_shared<FsNode>(*start);
+    FsNodePtr node = cloned_start;
+
+    for (const auto & step : path)
+    {
+        FsNodePtr cloned_child;
+        if (auto child = node->subdirectories.findChild(step))
+            cloned_child = std::make_shared<FsNode>(*child);
+        else
+            cloned_child = std::make_shared<FsNode>();
+
+        node->subdirectories.putChild(step, cloned_child);
+        node = std::move(cloned_child);
+    }
+
+    return {std::move(cloned_start), std::move(node)};
+}
+
+void trimPath(FsNodePtr node, const NormalizedPath & path)
+{
+    std::vector<std::pair<FsNodePtr, std::string>> spine;
+    for (const auto & step : path)
+    {
+        spine.emplace_back(node, step);
+        node = node->subdirectories.findChild(step);
+    }
+
+    for (const auto & [parent, name] : spine | std::views::reverse)
+    {
+        const FsNodePtr child = parent->subdirectories.findChild(name);
+        if (!isVirtual(child) || !child->subdirectories.isEmpty())
+            break;
+
+        parent->subdirectories.removeChild(name);
+    }
+}
+
+FsNodePtr updateInfo(const FsNodePtr & root, const NormalizedPath & path, const DirectoryRemoteInfo & new_info)
+{
+    const auto [cloned_root, cloned_leaf] = clonePath(root, path);
+    cloned_leaf->info = new_info;
+    return cloned_root;
+}
+
+FsNodePtr moveTree(const FsNodePtr & root, const NormalizedPath & from, const NormalizedPath & to)
+{
+    chassert(!from.empty());
+    chassert(!to.empty());
+    chassert(!walk(root, to));
+
+    const FsNodePtr detached = walk(root, from);
+    chassert(detached);
+
+    const auto [without_subtree, cloned_from_parent] = clonePath(root, from.parent_path());
+    cloned_from_parent->subdirectories.removeChild(from.filename());
+    trimPath(without_subtree, from.parent_path());
+
+    const auto [cloned_root, cloned_to_parent] = clonePath(without_subtree, to.parent_path());
+    cloned_to_parent->subdirectories.putChild(to.filename(), detached);
+
+    return cloned_root;
+
+}
+
+FsNodePtr unlinkTree(const FsNodePtr & root, const NormalizedPath & path)
+{
+    chassert(!path.empty());
+    chassert(walk(root, path));
+
+    const auto [cloned_root, cloned_parent] = clonePath(root, path.parent_path());
+    cloned_parent->subdirectories.removeChild(path.filename());
+    trimPath(cloned_root, path.parent_path());
+
+    return cloned_root;
+}
+
+}
+
+std::string getDefaultBlobKey(const std::string & directory_remote_path, const std::string & file_name)
+{
+    return directory_remote_path + "/" + file_name;
+}
+
+std::string getBlobKey(const DirectoryRemoteInfo & directory, const std::string & file_name, const FileRemoteInfo & file)
+{
+    if (!file.blob_key.empty())
+        return file.blob_key;
+    return getDefaultBlobKey(directory.remote_path, file_name);
+}
+
+FsSnapshot::FsSnapshot(std::shared_ptr<BlobLinkCounts> blob_link_counts_)
+    : root(std::make_shared<FsNode>())
+    , blob_link_counts(std::move(blob_link_counts_))
+{
+    chassert(blob_link_counts);
+}
+
+FsSnapshot::FsSnapshot(std::shared_ptr<FsNode> root_, std::shared_ptr<BlobLinkCounts> blob_link_counts_)
+    : root(std::move(root_))
+    , blob_link_counts(std::move(blob_link_counts_))
+{
+    chassert(blob_link_counts);
+}
+
+void FsSnapshot::recordDirectoryPath(const std::string & path, DirectoryRemoteInfo info)
+{
+    UniqueLock lock(mutex);
+    const auto normalized_path = normalizePath(path);
+
+    if (const auto node = walk(root, normalized_path); node && !isVirtual(node))
+        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory '{}' was already recorded", normalized_path.string());
+
+    if (hasFileOnPath(root, normalized_path))
+        throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "There is a file on the path '{}', can't create a directory", normalized_path.string());
+
+    root = updateInfo(root, normalized_path, info);
+    remote_layout_directories_delta += 1;
+    remote_layout_files_delta += info.files.size();
+    record(FsEdits::RecordDirectory{normalized_path.string(), std::move(info)});
+}
+
+void FsSnapshot::moveDirectory(const std::string & from, const std::string & to)
+{
+    UniqueLock lock(mutex);
+    const auto normalized_from = normalizePath(from);
+    const auto normalized_to = normalizePath(to);
+
+    const auto node_from = walk(root, normalized_from);
+    if (!node_from)
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", normalized_from.string());
+
+    if (normalized_from.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Directory '{}' is root", normalized_from.string());
+
+    if (normalized_to.string().starts_with(normalized_from.string() + '/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Directory '{}' can't be moved to '{}' inside itself", normalized_from.string(), normalized_to.string());
+
+    if (walk(root, normalized_to))
+        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "There is a subdirectory '{}' under the path '{}', can't move", normalized_to.filename().string(), normalized_to.parent_path().string());
+
+    if (hasFileOnPath(root, normalized_to))
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "There is a file on the path '{}', can't move", normalized_to.string());
+
+    root = moveTree(root, normalized_from, normalized_to);
+    record(FsEdits::MoveDirectory{normalized_from.string(), normalized_to.string()});
+}
+
+void FsSnapshot::removeDirectory(const std::string & path)
+{
+    UniqueLock lock(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto node = walk(root, normalized_path);
+
+    if (!node)
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", normalized_path.string());
+
+    if (normalized_path.empty())
+        throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory '{}' is root", normalized_path.string());
+
+    root = unlinkTree(root, normalized_path);
+
+    traverseNode("", node, [&](const std::string &, const FsNodePtr & subtree_node) TSA_REQUIRES(mutex)
+    {
+        if (isVirtual(subtree_node))
+            return;
+
+        remote_layout_files_delta -= subtree_node->info->files.size();
+        remote_layout_directories_delta -= 1;
+    });
+    record(FsEdits::RemoveDirectory{normalized_path.string()});
+}
+
+void FsSnapshot::markDirectoryExplicit(const std::string & path)
+{
+    UniqueLock lock(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto node = walk(root, normalized_path);
+
+    if (!node)
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", normalized_path.string());
+
+    if (isVirtual(node))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual, it cannot have an explicit file list", normalized_path.string());
+
+    /// Recorded even if the directory is already explicit, so that the replay does not depend on the state it is replayed on.
+    record(FsEdits::MarkDirectoryExplicit{normalized_path.string()});
+
+    if (node->info->has_explicit_file_list)
+        return;
+
+    auto new_directory_info = node->info.value();
+    new_directory_info.has_explicit_file_list = true;
+    root = updateInfo(root, normalized_path, new_directory_info);
+}
+
+void FsSnapshot::recordFile(const std::string & path, FileRemoteInfo info)
+{
+    UniqueLock lock(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto node = walk(root, normalized_path.parent_path());
+
+    if (!node)
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", normalized_path.string());
+
+    if (isVirtual(node))
+        throw Exception(ErrorCodes::CANNOT_CREATE_FILE, "Creation of a file under the virtual directory is not possible");
+
+    if (node->subdirectories.findChild(normalized_path.filename()))
+        throw Exception(ErrorCodes::CANNOT_CREATE_FILE, "There is a subdirectory '{}' under the path '{}'. Can't create file", normalized_path.filename().string(), normalized_path.parent_path().string());
+
+    if (node->info->files.contains(normalized_path.filename()))
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File '{}' already exists", normalized_path.string());
+
+    /// The default location is represented by an empty key.
+    if (info.blob_key == getDefaultBlobKey(node->info->remote_path, normalized_path.filename()))
+        info.blob_key.clear();
+
+    auto new_directory_info = node->info.value();
+    new_directory_info.files.emplace(normalized_path.filename(), info);
+    root = updateInfo(root, normalized_path.parent_path(), new_directory_info);
+    remote_layout_files_delta += 1;
+    record(FsEdits::RecordFile{normalized_path.string(), info});
+}
+
+void FsSnapshot::removeFile(const std::string & path)
+{
+    UniqueLock lock(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto node = walk(root, normalized_path.parent_path());
+
+    if (!node)
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", normalized_path.string());
+
+    if (isVirtual(node))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Removal of a file under the virtual directory is not possible");
+
+    if (!node->info->files.contains(normalized_path.filename()))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File '{}' does not exist", normalized_path.string());
+
+    auto new_directory_info = node->info.value();
+    new_directory_info.files.erase(normalized_path.filename());
+    root = updateInfo(root, normalized_path.parent_path(), new_directory_info);
+    remote_layout_files_delta -= 1;
+    record(FsEdits::RemoveFile{normalized_path.string()});
+}
+
+uint32_t FsSnapshot::getBlobLinkCount(const std::string & blob_key) const
+{
+    UniqueLock lock(mutex);
+    int64_t count = blob_link_counts->get(blob_key);
+    if (const auto it = blob_link_deltas.find(blob_key); it != blob_link_deltas.end())
+        count += it->second;
+
+    if (count < 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Blob '{}' is not referenced by any file", blob_key);
+
+    return static_cast<uint32_t>(count);
+}
+
+void FsSnapshot::addBlobLink(const std::string & blob_key)
+{
+    UniqueLock lock(mutex);
+    ++blob_link_deltas[blob_key];
+    record(FsEdits::AddBlobLink{blob_key});
+}
+
+void FsSnapshot::removeBlobLink(const std::string & blob_key)
+{
+    UniqueLock lock(mutex);
+    --blob_link_deltas[blob_key];
+    record(FsEdits::RemoveBlobLink{blob_key});
+}
+
+std::vector<std::string> FsSnapshot::listDirectory(const std::string & path) const
+{
+    UniqueLock lock(mutex);
+    const auto node = walk(root, normalizePath(path));
+
+    if (!node)
+        return {};
+
+    std::vector<std::string> result;
+    node->subdirectories.forEachChild([&](const auto & name, const auto &) { result.push_back(name); });
+
+    if (!isVirtual(node))
+        result.append_range(node->info->files | std::views::keys);
+
+    return result;
+}
+
+bool FsSnapshot::existsDirectory(const std::string & path) const
+{
+    UniqueLock lock(mutex);
+    const auto node = walk(root, normalizePath(path));
+
+    if (!node)
+        return false;
+
+    return true;
+}
+
+std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> FsSnapshot::getSubtreeRemoteInfo(const std::string & path) const
+{
+    UniqueLock lock(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto start_node = walk(root, normalized_path);
+
+    if (!start_node)
+        return {};
+
+    std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> subtree_info;
+    traverseNode("", start_node, [&subtree_info](const std::string & node_path, const FsNodePtr & node)
+    {
+        subtree_info[node_path] = node->info;
+    });
+
+    return subtree_info;
+}
+
+std::optional<DirectoryRemoteInfo> FsSnapshot::getDirectoryRemoteInfo(const std::string & path) const
+{
+    UniqueLock lock(mutex);
+    const auto node = walk(root, normalizePath(path));
+
+    if (!node)
+        return std::nullopt;
+
+    return node->info;
+}
+
+std::optional<FileRemoteInfo> FsSnapshot::getFileRemoteInfo(const std::string & path) const
+{
+    const auto normalized_path = normalizePath(path);
+    const auto directory_remote_info = getDirectoryRemoteInfo(normalized_path.parent_path());
+
+    if (!directory_remote_info)
+        return std::nullopt;
+
+    if (!directory_remote_info->files.contains(normalized_path.filename()))
+        return std::nullopt;
+
+    return directory_remote_info->files.at(normalized_path.filename());
+}
+
+bool FsSnapshot::existsFile(const std::string & path) const
+{
+    UniqueLock lock(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto node = walk(root, normalized_path.parent_path());
+
+    if (!node || isVirtual(node))
+        return false;
+
+    return node->info->files.contains(normalized_path.filename());
+}
+
+std::shared_ptr<FsNode> FsSnapshot::getRoot() const
+{
+    UniqueLock lock(mutex);
+    return root;
+}
+
+void FsSnapshot::resetToRoot(std::shared_ptr<FsNode> new_root)
+{
+    UniqueLock lock(mutex);
+    root = std::move(new_root);
+    blob_link_deltas.clear();
+    remote_layout_directories_delta = 0;
+    remote_layout_files_delta = 0;
+    journal.emplace();
+}
+
+std::pair<int64_t, int64_t> FsSnapshot::getRemoteLayoutDeltas() const
+{
+    UniqueLock lock(mutex);
+    return {remote_layout_directories_delta, remote_layout_files_delta};
+}
+
+std::unordered_map<std::string, int64_t> FsSnapshot::getBlobLinkDeltas() const
+{
+    UniqueLock lock(mutex);
+    return blob_link_deltas;
+}
+
+std::shared_ptr<const BlobObjectKeyRemap> FsSnapshot::getBackupsOfPendingReplaceTargets() const
+{
+    UniqueLock lock(mutex);
+    return backups_of_pending_replace_targets;
+}
+
+void FsSnapshot::setBackupsOfPendingReplaceTargets(std::shared_ptr<const BlobObjectKeyRemap> backups)
+{
+    UniqueLock lock(mutex);
+    backups_of_pending_replace_targets = std::move(backups);
+}
+
+void FsSnapshot::resetDeltas()
+{
+    UniqueLock lock(mutex);
+    blob_link_deltas.clear();
+    remote_layout_directories_delta = 0;
+    remote_layout_files_delta = 0;
+}
+
+FsJournal FsSnapshot::getJournal() const
+{
+    UniqueLock lock(mutex);
+    return journal.value_or(FsJournal{});
+}
+
+void FsSnapshot::replay(const FsJournal & edits)
+{
+    for (const auto & edit : edits)
+    {
+        std::visit([this](const auto & concrete_edit)
+        {
+            using Edit = std::decay_t<decltype(concrete_edit)>;
+
+            if constexpr (std::is_same_v<Edit, FsEdits::RecordDirectory>)
+                recordDirectoryPath(concrete_edit.path, concrete_edit.info);
+            else if constexpr (std::is_same_v<Edit, FsEdits::MoveDirectory>)
+                moveDirectory(concrete_edit.from, concrete_edit.to);
+            else if constexpr (std::is_same_v<Edit, FsEdits::RemoveDirectory>)
+                removeDirectory(concrete_edit.path);
+            else if constexpr (std::is_same_v<Edit, FsEdits::RecordFile>)
+                recordFile(concrete_edit.path, concrete_edit.info);
+            else if constexpr (std::is_same_v<Edit, FsEdits::RemoveFile>)
+                removeFile(concrete_edit.path);
+            else if constexpr (std::is_same_v<Edit, FsEdits::MarkDirectoryExplicit>)
+                markDirectoryExplicit(concrete_edit.path);
+            else if constexpr (std::is_same_v<Edit, FsEdits::AddBlobLink>)
+                addBlobLink(concrete_edit.blob_key);
+            else if constexpr (std::is_same_v<Edit, FsEdits::RemoveBlobLink>)
+                removeBlobLink(concrete_edit.blob_key);
+            else
+                static_assert(false, "Unhandled edit type");
+        }, edit);
+    }
+}
+
+void FsSnapshot::record(FsEdit edit)
+{
+    if (journal)
+        journal->push_back(std::move(edit));
+}
+
+}

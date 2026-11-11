@@ -1,0 +1,76 @@
+---
+slug: '/examples/aggregate-function-combinators/avgResample'
+title: 'avgResample'
+description: 'Ejemplo de uso del combinador Resample con avg'
+keywords: ['avg', 'Resample', 'combinator', 'ejemplos', 'avgResample']
+sidebarTitle: 'avgResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descripción
+</div>
+
+El [`Resample`](/es/reference/functions/aggregate-functions/combinators#-resample)
+combinador se puede aplicar a la función de agregación [`count`](/es/reference/functions/aggregate-functions/count)
+para contar los valores de una columna clave específica en un número fijo
+de intervalos (`N`).
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+<div id="basic-example">
+  ### Ejemplo básico
+</div>
+
+Veamos un ejemplo. Crearemos una tabla que contiene `name`, `age` y
+`wage` de los empleados, e insertaremos algunos datos en ella:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+Obtengamos el salario promedio de las personas cuya edad se encuentra en los intervalos `[30,60)`
+y `[60,75)` (`[` es exclusivo y `)` es inclusivo). Como usamos una
+representación entera para la edad, obtenemos edades en los intervalos `[30, 59]` y `[60,74]`.
+Para ello, aplicamos el combinador `Resample` a la función de agregación `avg`.
+
+```sql
+WITH avg_wage AS
+(
+    SELECT avgResample(30, 75, 30)(wage, age) AS original_avg_wage
+    FROM employee_data
+)
+SELECT
+    arrayMap(x -> round(x, 3), original_avg_wage) AS avg_wage_rounded
+FROM avg_wage;
+```
+
+```response
+┌─avg_wage_rounded─┐
+│ [11.5,12.95]     │
+└──────────────────┘
+```
+
+<div id="see-also">
+  ## Véase también
+</div>
+
+* [`count`](/es/reference/functions/aggregate-functions/count)
+* [`Resample combinador`](/es/reference/functions/aggregate-functions/combinators#-resample)

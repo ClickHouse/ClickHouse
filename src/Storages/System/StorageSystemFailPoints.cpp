@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemFailPoints.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -47,3 +48,6 @@ void StorageSystemFailPoints::fillData(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFailPoints) }

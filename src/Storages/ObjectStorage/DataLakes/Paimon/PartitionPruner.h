@@ -22,7 +22,7 @@ namespace Paimon
         PartitionPruner(const DB::PaimonTableSchema & table_schema,
                         const DB::ActionsDAG & filter_dag,
                         DB::ContextPtr context);
-        bool canBePruned(const DB::PaimonManifestEntry & manifest_entry);
+        bool canBePruned(const DB::PaimonManifestEntry & manifest_entry) const;
     private:
         const DB::PaimonTableSchema & table_schema;
         std::optional<DB::KeyCondition> key_condition;

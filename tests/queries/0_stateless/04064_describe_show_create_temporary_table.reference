@@ -1,0 +1,12 @@
+SHOW CREATE TABLE (no database qualifier) should show temporary table:
+CREATE TEMPORARY TABLE t\n(\n    `world` UInt64\n)\nENGINE = Memory
+DESCRIBE TABLE (no database qualifier) should show temporary table:
+world	UInt64
+DESCRIBE TEMPORARY TABLE:
+world	UInt64
+SHOW CREATE TEMPORARY TABLE:
+CREATE TEMPORARY TABLE t\n(\n    `world` UInt64\n)\nENGINE = Memory
+SHOW CREATE VIEW with same-named temporary table succeeds:
+OK
+DESCRIBE unquoted table named temporary:
+x	UInt8

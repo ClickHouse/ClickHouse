@@ -1,4 +1,5 @@
 #include <Common/Logger.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -33,7 +34,7 @@ namespace ErrorCodes
 
 namespace
 {
-    bool checkIfAllValuesAreTypeNames(const std::vector<String> & names)
+    bool checkIfAllValuesAreTypeNames(const VectorWithMemoryTracking<String> & names)
     {
         for (const auto & name : names)
         {
@@ -43,7 +44,7 @@ namespace
         return true;
     }
 
-    bool isSubsetOf(const std::unordered_set<std::string_view> & subset, const std::unordered_set<std::string_view> & set)
+    bool isSubsetOf(const UnorderedSetWithMemoryTracking<std::string_view> & subset, const UnorderedSetWithMemoryTracking<std::string_view> & set)
     {
         for (const auto & element : subset)
         {
@@ -72,11 +73,13 @@ RowInputFormatWithNamesAndTypes<FormatReaderImpl>::RowInputFormatWithNamesAndTyp
     , with_names(with_names_)
     , with_types(with_types_)
     , format_reader(std::move(format_reader_))
+    , column_indexes_by_names(format_settings_.input_format_column_matching_case_sensitivity)
     , is_binary(is_binary_)
     , try_detect_header(try_detect_header_)
     , allow_variable_number_of_columns(allow_variable_number_of_columns_)
 {
-    column_indexes_by_names = getNamesToIndexesMap(getPort().getHeader());
+    column_indexes_by_names.initFromBlock(getPort().getHeader());
+    format_reader->setDataTypes(data_types);
 }
 
 template <typename FormatReaderImpl>
@@ -85,7 +88,8 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     /// Search and remove BOM only in textual formats (CSV, TSV etc), not in binary ones (RowBinary*).
     /// Also, we assume that column name or type cannot contain BOM, so, if format has header,
     /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
-    if (!is_binary && (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8()))
+    /// The same applies if the header can be detected automatically, because the first row can be a header.
+    if (!is_binary && (with_names || with_types || try_detect_header || data_types.at(0)->textCanContainOnlyValidUTF8()))
     {
         skipBOMIfExists(*in);
     }
@@ -93,8 +97,8 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     /// Skip prefix before names and types.
     format_reader->skipPrefixBeforeHeader();
 
-    std::vector<String> column_names;
-    std::vector<String> type_names;
+    VectorWithMemoryTracking<String> column_names;
+    VectorWithMemoryTracking<String> type_names;
     if (with_names)
         column_names = format_reader->readNames();
 
@@ -153,7 +157,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
 }
 
 template <typename FormatReaderImpl>
-void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out)
+void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(VectorWithMemoryTracking<String> & column_names_out, VectorWithMemoryTracking<String> & type_names_out)
 {
     auto & read_buf = getReadBuffer();
     PeekableReadBuffer * peekable_buf = dynamic_cast<PeekableReadBuffer *>(&read_buf);
@@ -175,8 +179,8 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
     /// that all values from this row is a subset of column names from provided header
     /// or column names from provided header is a subset of values from this row
     auto column_names = getPort().getHeader().getNames();
-    std::unordered_set<std::string_view> column_names_set(column_names.begin(), column_names.end());
-    std::unordered_set<std::string_view> first_row_values_set(first_row_values.begin(), first_row_values.end());
+    UnorderedSetWithMemoryTracking<std::string_view> column_names_set(column_names.begin(), column_names.end());
+    UnorderedSetWithMemoryTracking<std::string_view> first_row_values_set(first_row_values.begin(), first_row_values.end());
     if (!isSubsetOf(first_row_values_set, column_names_set) && !isSubsetOf(column_names_set, first_row_values_set))
     {
         /// Rollback to the beginning of the first row to parse it as data later.
@@ -276,7 +280,8 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns &
                     data_types[*column_index],
                     serializations[*column_index],
                     is_last_file_column,
-                    column_mapping->names_of_columns[file_column]);
+                    column_mapping->names_of_columns[file_column],
+                    *column_index);
             else
                 format_reader->skipField(file_column);
         }
@@ -306,7 +311,8 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns &
                     data_types[*column_index],
                     serializations[*column_index],
                     is_last_file_column,
-                    column_mapping->names_of_columns[file_column]);
+                    column_mapping->names_of_columns[file_column],
+                    *column_index);
             else
                 format_reader->skipField(file_column);
         }
@@ -366,7 +372,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDeserializeField(cons
     {
         format_reader->checkNullValueForNonNullable(type);
         const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
-        format_reader->readField(column, type, serializations[*index], is_last_file_column, column_mapping->names_of_columns[file_column]);
+        format_reader->readField(column, type, serializations[*index], is_last_file_column, column_mapping->names_of_columns[file_column], *index);
     }
     else
     {
@@ -448,16 +454,17 @@ FormatWithNamesAndTypesSchemaReader::FormatWithNamesAndTypesSchemaReader(
 
 NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
 {
-    if (with_names || with_types)
+    /// The first row can be a header, so a BOM before it is skipped, see `RowInputFormatWithNamesAndTypes::readPrefix`.
+    if (with_names || with_types || try_detect_header)
         skipBOMIfExists(in);
 
     format_reader->skipPrefixBeforeHeader();
 
-    std::vector<String> column_names;
+    VectorWithMemoryTracking<String> column_names;
     if (with_names)
         column_names = format_reader->readNames();
 
-    std::vector<String> data_type_names;
+    VectorWithMemoryTracking<String> data_type_names;
     if (with_types)
     {
         format_reader->skipRowBetweenDelimiter();
@@ -506,7 +513,7 @@ namespace
     }
 }
 
-void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names)
+void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(VectorWithMemoryTracking<String> & column_names, VectorWithMemoryTracking<String> & type_names)
 {
     auto first_row = readRowAndGetFieldsAndDataTypes();
 
@@ -558,7 +565,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
     }
 
     /// Create default names c1,c2,... for better exception messages.
-    std::vector<String> default_colum_names;
+    VectorWithMemoryTracking<String> default_colum_names;
     default_colum_names.reserve(first_row_types.size());
     for (size_t i = 0; i != first_row_types.size(); ++i)
         default_colum_names.push_back("c" + std::to_string(i + 1));
@@ -613,9 +620,9 @@ std::optional<DataTypes> FormatWithNamesAndTypesSchemaReader::readRowAndGetDataT
     return readRowAndGetDataTypesImpl();
 }
 
-std::vector<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(const std::vector<String> & fields)
+VectorWithMemoryTracking<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(const VectorWithMemoryTracking<String> & fields)
 {
-    std::vector<String> names;
+    VectorWithMemoryTracking<String> names;
     names.reserve(fields.size());
     auto escaping_rule = format_reader->getEscapingRule();
     for (const auto & field : fields)

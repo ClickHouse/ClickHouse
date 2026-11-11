@@ -26,10 +26,10 @@ REGISTER_FUNCTION(UpperUTF8)
 Converts a string to uppercase, assuming that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 
-:::note
+<Note>
 This function doesn't detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point (such as `ẞ` and `ß`), the result may be incorrect for that code point.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "upperUTF8(s)";
     FunctionDocumentation::Arguments arguments = {

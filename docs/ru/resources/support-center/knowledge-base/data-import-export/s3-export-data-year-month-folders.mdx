@@ -1,0 +1,88 @@
+---
+date: 2023-03-24
+title: "Как записывать данные в S3 с разбиением на партиции по году и месяцу?"
+description: "Узнайте, как записывать данные в S3 бакет в ClickHouse с разбиением на партиции по году и месяцу, используя пользовательскую структуру путей для их организации."
+tags: ['Экспорт данных', 'Нативные клиенты и интерфейсы']
+keywords: ['S3', 'Запись с разбиением на партиции']
+---
+
+<div id="learn-how-to-do-partitioned-writes-by-year-and-month-on-s3">
+  ## Узнайте, как выполнять запись с разбиением на партиции по году и месяцу в S3
+</div>
+
+Я хочу экспортировать данные, организовав путь в S3 бакете так, чтобы структура была следующей:
+
+* 2022
+  * 1
+  * 2
+  * ...
+  * 12
+* 2021
+  * 1
+  * 2
+  * ...
+  * 12
+
+и так далее ...
+
+<div id="answer">
+  ## Ответ
+</div>
+
+Рассмотрим таблицу ClickHouse:
+
+```sql
+CREATE TABLE sample_data (
+    `name` String,
+    `age` Int,
+    `time` DateTime
+) ENGINE = MergeTree
+ORDER BY
+    name
+```
+
+Добавьте 10000 записей:
+
+```sql
+INSERT INTO
+    sample_data
+SELECT
+    *
+FROM
+    generateRandom(
+        'name String, age Int, time DateTime',
+        10,
+        10,
+        10
+    )
+LIMIT
+    10000;
+```
+
+Выполните эту команду, чтобы создать нужную структуру в S3 бакете `my_bucket` (обратите внимание: в этом примере файлы записываются в формате Parquet):
+
+```sql
+INSERT INTO
+    FUNCTION s3(
+        'https://s3-host:4321/my_bucket/{_partition_id}/file.parquet.gz',
+        's3-access-key',
+        's3-secret-access-key',
+        Parquet,
+        'name String, age Int, time DateTime'
+    ) PARTITION BY concat(
+        formatDateTime(time, '%Y'),
+        '/',
+        formatDateTime(time, '%m')
+    )
+SELECT
+    name,
+    age,
+    time
+FROM
+    sample_data
+Query id: 55adcf22-f6af-491e-b697-d09694bbcc56
+
+Ok.
+
+0 rows in set. Elapsed: 15.579 sec. Processed 10.00 thousand rows, 219.93 KB (641.87 rows/s., 14.12 KB/s.)
+```

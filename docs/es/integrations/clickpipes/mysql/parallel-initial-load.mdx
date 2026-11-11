@@ -1,0 +1,75 @@
+---
+title: 'Instantánea paralela en el ClickPipe para MySQL'
+description: 'Documentación sobre la instantánea paralela en el ClickPipe para MySQL'
+slug: /integrations/clickpipes/mysql/parallel_initial_load
+sidebarTitle: 'Cómo funciona la instantánea paralela'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Este documento explica cómo funciona la instantánea/carga inicial en paralelo en el ClickPipe para MySQL y describe los parámetros de la instantánea que pueden utilizarse para controlarla.
+
+<div id="overview-mysql-snapshot">
+  ## Descripción general
+</div>
+
+La carga inicial es la primera fase de un ClickPipe con CDC, en la que el ClickPipe sincroniza en ClickHouse los datos históricos de las tablas de la base de datos de origen antes de iniciar CDC. A menudo, los desarrolladores hacen esto de forma secuencial, con un solo hilo.
+Sin embargo, el ClickPipe para MySQL puede paralelizar este proceso, lo que puede acelerar significativamente la carga inicial.
+
+<div id="key-mysql-snapshot">
+  ### Columna de clave de partición
+</div>
+
+Una vez habilitada la feature flag, deberías ver la siguiente configuración en el selector de tablas de ClickPipe (tanto al crear como al editar un ClickPipe):
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp" alt="Columna de clave de partición" size="md" />
+
+El ClickPipe para MySQL usa una columna de la tabla de origen para particionar lógicamente las tablas de origen. Esta columna se llama **columna de clave de partición**. Se utiliza para dividir la tabla de origen en particiones, que luego el ClickPipe puede procesar en paralelo.
+
+<Warning>
+  La columna de clave de partición debe tener un índice en la tabla de origen para obtener una mejora significativa del rendimiento. Puedes comprobarlo ejecutando `SHOW INDEX FROM <table_name>` en MySQL.
+</Warning>
+
+<div id="logical-partitioning-mysql-snapshot">
+  ### Particionamiento lógico
+</div>
+
+Veamos la siguiente configuración:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp" alt="Parámetros de la instantánea" size="md" />
+
+<div id="numrows-mysql-snapshot">
+  #### Número de filas en la instantánea por partición
+</div>
+
+Esta configuración controla cuántas filas componen una partición. ClickPipe leerá la tabla de origen en fragmentos de este tamaño, y estos se procesarán en paralelo según el paralelismo de la carga inicial configurado. El valor predeterminado es 100.000 filas por partición.
+
+<div id="parallelism-mysql-snapshot">
+  #### Paralelismo de carga inicial
+</div>
+
+Esta configuración controla cuántas particiones se procesan en paralelo. El valor predeterminado es 4, lo que significa que ClickPipe leerá 4 particiones de la tabla de origen en paralelo. Este valor puede aumentarse para acelerar la carga inicial, pero se recomienda mantenerlo dentro de un rango razonable según las especificaciones de la instancia de origen para evitar sobrecargar la base de datos de origen. ClickPipe ajustará automáticamente el número de particiones en función del tamaño de la tabla de origen y del número de filas por partición.
+
+<div id="tables-parallel-mysql-snapshot">
+  #### Número de tablas de la instantánea en paralelo
+</div>
+
+No está directamente relacionado con la instantánea en paralelo, pero esta configuración controla cuántas tablas se procesan en paralelo durante la carga inicial. El valor predeterminado es 1. Ten en cuenta que esto se suma al paralelismo de las particiones, así que si tienes 4 particiones y 2 tablas, el ClickPipe leerá 8 particiones en paralelo.
+
+<div id="monitoring-parallel-mysql-snapshot">
+  ### Supervisión de la instantánea paralela en MySQL
+</div>
+
+Puede ejecutar **SHOW processlist** en MySQL para ver la instantánea paralela en acción. El ClickPipe creará múltiples conexiones a la base de datos de origen, cada una leyendo una partición diferente de la tabla de origen. Si ve consultas **SELECT** con distintos rangos, significa que el ClickPipe está leyendo las tablas de origen. Aquí también puede ver COUNT(*) y la consulta de particionamiento.
+
+<div id="limitations-parallel-mysql-snapshot">
+  ### Limitaciones
+</div>
+
+* Los parámetros de la instantánea no se pueden editar después de crear el pipe. Si desea cambiarlos, tendrá que crear un nuevo ClickPipe.
+* Al añadir tablas a un ClickPipe existente, no se pueden cambiar los parámetros de la instantánea. El ClickPipe usará los parámetros existentes para las nuevas tablas.

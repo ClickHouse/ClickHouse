@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: memory-engine
+# Tags: memory-engine, no-flaky-check
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh

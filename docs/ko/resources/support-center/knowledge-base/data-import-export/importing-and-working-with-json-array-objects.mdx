@@ -1,0 +1,303 @@
+---
+title: ClickHouse에서 JSON 배열 객체 가져오기 및 쿼리하기
+description: JSON 배열 객체를 ClickHouse로 가져오고 JSON 함수와 배열 연산을 사용해 고급 쿼리를 수행하는 방법을 알아보세요.
+date: 2023-03-24
+tags: ['데이터 포맷']
+keywords: ['JSON 배열 객체']
+---
+
+<div id="question">
+  ## 질문
+</div>
+
+JSON 배열은 어떻게 가져오고 내부 객체는 어떻게 쿼리합니까?
+
+<div id="answer">
+  ## 답변
+</div>
+
+이 한 줄짜리 JSON 배열을 `sample.json`에 저장하세요
+
+```
+{"_id":"1","channel":"help","events":[{"eventType":"open","time":"2021-06-18T09:42:39.527Z"},{"eventType":"close","time":"2021-06-18T09:48:05.646Z"}]},{"_id":"2","channel":"help","events":[{"eventType":"open","time":"2021-06-18T09:42:39.535Z"},{"eventType":"edit","time":"2021-06-18T09:42:41.317Z"}]},{"_id":"3","channel":"questions","events":[{"eventType":"close","time":"2021-06-18T09:42:39.543Z"},{"eventType":"create","time":"2021-06-18T09:52:51.299Z"}]},{"_id":"4","channel":"general","events":[{"eventType":"create","time":"2021-06-18T09:42:39.552Z"},{"eventType":"edit","time":"2021-06-18T09:47:29.109Z"}]},{"_id":"5","channel":"general","events":[{"eventType":"edit","time":"2021-06-18T09:42:39.560Z"},{"eventType":"open","time":"2021-06-18T09:42:39.680Z"},{"eventType":"close","time":"2021-06-18T09:42:41.207Z"},{"eventType":"edit","time":"2021-06-18T09:42:43.372Z"},{"eventType":"edit","time":"2021-06-18T09:42:45.642Z"}]}
+```
+
+데이터를 확인하세요:
+
+```sql
+clickhousebook.local :) SELECT * FROM file('/path/to/sample.json','JSONEachRow');
+
+SELECT *
+FROM file('/path/to/sample.json', 'JSONEachRow')
+
+Query id: 0bbfa09f-ac7f-4a1e-9227-2961b5ffc2d4
+
+┌─_id─┬─channel───┬─events─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│   1 │ help      │ [{'eventType':'open','time':'2021-06-18T09:42:39.527Z'},{'eventType':'close','time':'2021-06-18T09:48:05.646Z'}]                                                                                                                                           │
+│   2 │ help      │ [{'eventType':'open','time':'2021-06-18T09:42:39.535Z'},{'eventType':'edit','time':'2021-06-18T09:42:41.317Z'}]                                                                                                                                            │
+│   3 │ questions │ [{'eventType':'close','time':'2021-06-18T09:42:39.543Z'},{'eventType':'create','time':'2021-06-18T09:52:51.299Z'}]                                                                                                                                         │
+│   4 │ general   │ [{'eventType':'create','time':'2021-06-18T09:42:39.552Z'},{'eventType':'edit','time':'2021-06-18T09:47:29.109Z'}]                                                                                                                                          │
+│   5 │ general   │ [{'eventType':'edit','time':'2021-06-18T09:42:39.560Z'},{'eventType':'open','time':'2021-06-18T09:42:39.680Z'},{'eventType':'close','time':'2021-06-18T09:42:41.207Z'},{'eventType':'edit','time':'2021-06-18T09:42:43.372Z'},{'eventType':'edit','time':'2021-06-18T09:42:45.642Z'}] │
+└─────┴───────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec. 
+```
+
+JSON 행을 받을 테이블을 생성합니다:
+
+```sql
+clickhousebook.local :) CREATE TABLE IF NOT EXISTS sample_json_objects_array (
+                            `rawJSON` String EPHEMERAL,
+                            `_id` String DEFAULT JSONExtractString(rawJSON, '_id'),
+                            `channel` String DEFAULT JSONExtractString(rawJSON, 'channel'),
+                            `events` Array(JSON) DEFAULT JSONExtractArrayRaw(rawJSON, 'events')
+                        ) ENGINE = MergeTree
+                        ORDER BY
+                            channel
+
+CREATE TABLE IF NOT EXISTS sample_json_objects_array
+(
+    `rawJSON` String EPHEMERAL,
+    `_id` String DEFAULT JSONExtractString(rawJSON, '_id'),
+    `channel` String DEFAULT JSONExtractString(rawJSON, 'channel'),
+    `events` Array(JSON) DEFAULT JSONExtractArrayRaw(rawJSON, 'events')
+)
+ENGINE = MergeTree
+ORDER BY channel
+
+Query id: d02696dd-3f9f-4863-be2a-b2c9a1ae922d
+
+0 rows in set. Elapsed: 0.173 sec. 
+```
+
+데이터를 삽입하세요:
+
+```
+clickhousebook.local :) INSERT INTO
+                            sample_json_objects_array
+                        SELECT
+                            *
+                        FROM
+                            file(
+                                '/opt/cases/000000/sample_json_objects_arrays.json',
+                                'JSONEachRow'
+                            );
+
+INSERT INTO sample_json_objects_array SELECT *
+FROM file('/opt/cases/000000/sample.json', 'JSONEachRow')
+
+Query id: 60c4beab-3c2c-40c1-9c6f-bbbd7118dde3
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+JSON 객체 유형에서 데이터 추론이 어떻게 동작했는지 확인하세요:
+
+```sql
+clickhousebook.local :) DESCRIBE TABLE sample_json_objects_array SETTINGS describe_extend_object_types = 1;
+
+DESCRIBE TABLE sample_json_objects_array
+SETTINGS describe_extend_object_types = 1
+
+Query id: 302c0c84-1b63-4f60-ad95-d91c0267b0d4
+
+┌─name────┬─type────────────────────────────────────────┬─default_type─┬─default_expression─────────────────────┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ rawJSON │ String                                      │ EPHEMERAL    │ defaultValueOfTypeName('String')       │         │                  │                │
+│ _id     │ String                                      │ DEFAULT      │ JSONExtractString(rawJSON, '_id')      │         │                  │                │
+│ channel │ String                                      │ DEFAULT      │ JSONExtractString(rawJSON, 'channel')  │         │                  │                │
+│ events  │ Array(Tuple(eventType String, time String)) │ DEFAULT      │ JSONExtractArrayRaw(rawJSON, 'events') │         │                  │                │
+└─────────┴─────────────────────────────────────────────┴──────────────┴────────────────────────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+`Events`는 각각 *eventType* `String` 필드와 *time* `String` 필드를 포함하는 `Tuple`의 *배열*입니다. 후자의 유형은 적절하지 않습니다(`DateTime`이 더 적합합니다).
+
+데이터를 살펴보겠습니다:
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            channel,
+                            events.eventType,
+                            events.time
+                        FROM sample_json_objects_array
+                        WHERE has(events.eventType, 'close')
+
+SELECT
+    _id,
+    channel,
+    events.eventType,
+    events.time
+FROM sample_json_objects_array
+WHERE has(events.eventType, 'close')
+
+Query id: 3ddd6843-5206-4f52-971f-1699f0ba1728
+
+┌─_id─┬─channel───┬─events.eventType──────────────────────┬─events.time──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 5   │ general   │ ['edit','open','close','edit','edit'] │ ['2021-06-18T09:42:39.560Z','2021-06-18T09:42:39.680Z','2021-06-18T09:42:41.207Z','2021-06-18T09:42:43.372Z','2021-06-18T09:42:45.642Z'] │
+│ 1   │ help      │ ['open','close']                      │ ['2021-06-18T09:42:39.527Z','2021-06-18T09:48:05.646Z']                                                                                  │
+│ 3   │ questions │ ['close','create']                    │ ['2021-06-18T09:42:39.543Z','2021-06-18T09:52:51.299Z']                                                                                  │
+└─────┴───────────┴───────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+3 rows in set. Elapsed: 0.001 sec. 
+```
+
+몇 개의 쿼리를 실행해 보겠습니다:
+
+`eventType` 값이 `close`인 이벤트의 `_id` 및 `channel`
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            channel,
+                            events.eventType
+                        FROM
+                            sample_json_objects_array
+                        WHERE
+                            has(events.eventType,'close')
+
+SELECT
+    _id,
+    channel,
+    events.eventType
+FROM sample_json_objects_array
+WHERE has(events.eventType, 'close')
+
+Query id: 033a0c56-7bfa-4261-a334-7323bdc40f87
+
+┌─_id─┬─channel───┬─events.eventType──────────────────────┐
+│ 5   │ general   │ ['edit','open','close','edit','edit'] │
+│ 1   │ help      │ ['open','close']                      │
+│ 3   │ questions │ ['close','create']                    │
+└─────┴───────────┴───────────────────────────────────────┘
+┌─_id─┬─channel───┬─events.eventType──────────────────────┐
+│ 5   │ general   │ ['edit','open','close','edit','edit'] │
+│ 1   │ help      │ ['open','close']                      │
+│ 3   │ questions │ ['close','create']                    │
+└─────┴───────────┴───────────────────────────────────────┘
+
+6 rows in set. Elapsed: 0.001 sec. 
+```
+
+`time`을 기준으로 쿼리하고 싶습니다. 예를 들어 지정한 시간 범위의 모든 이벤트를 조회하려고 하는데, `String`으로 가져온 것을 확인할 수 있습니다:
+
+```sql
+clickhousebook.local :) SELECT toTypeName(events.time) FROM sample_json_objects_array;
+
+SELECT toTypeName(events.time)
+FROM sample_json_objects_array
+
+Query id: 27f07f02-66cd-420d-8623-eeed7d501014
+
+┌─toTypeName(events.time)─┐
+│ Array(String)           │
+│ Array(String)           │
+│ Array(String)           │
+│ Array(String)           │
+│ Array(String)           │
+└─────────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec. 
+```
+
+따라서 이를 날짜로 처리하려면 먼저 `DateTime`으로 변환합니다.
+배열을 변환할 때는 map 함수를 사용합니다:
+
+```sql
+clickhousebook.local :) 
+                        SELECT
+                            _id,
+                            channel,
+                            arrayMap(x->parseDateTimeBestEffort(x), events.time)
+                        FROM
+                            sample_json_objects_array
+
+SELECT
+    _id,
+    channel,
+    arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+FROM sample_json_objects_array
+
+Query id: f3c7881e-b41c-4872-9c67-5c25966599a1
+
+┌─_id─┬─channel───┬─arrayMap(lambda(tuple(x), parseDateTimeBestEffort(x)), events.time)─────────────────────────────────────────────┐
+│ 4   │ general   │ ['2021-06-18 11:42:39','2021-06-18 11:47:29']                                                                   │
+│ 5   │ general   │ ['2021-06-18 11:42:39','2021-06-18 11:42:39','2021-06-18 11:42:41','2021-06-18 11:42:43','2021-06-18 11:42:45'] │
+│ 1   │ help      │ ['2021-06-18 11:42:39','2021-06-18 11:48:05']                                                                   │
+│ 2   │ help      │ ['2021-06-18 11:42:39','2021-06-18 11:42:41']                                                                   │
+│ 3   │ questions │ ['2021-06-18 11:42:39','2021-06-18 11:52:51']                                                                   │
+└─────┴───────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec.
+```
+
+두 배열에 `toTypeName`을 적용하면 차이점을 확인할 수 있습니다:
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            channel,
+                            toTypeName(events.time) as events_as_strings,
+                            toTypeName(arrayMap(x->parseDateTimeBestEffort(x), events.time)) as events_as_datetime
+                        FROM
+                            sample_json_objects_array
+
+SELECT
+    _id,
+    channel,
+    toTypeName(events.time) AS events_as_strings,
+    toTypeName(arrayMap(x -> parseDateTimeBestEffort(x), events.time)) AS events_as_datetime
+FROM sample_json_objects_array
+
+Query id: 1af54994-b756-472f-88d7-8b5cdca0e54e
+
+┌─_id─┬─channel───┬─events_as_strings─┬─events_as_datetime─┐
+│ 4   │ general   │ Array(String)     │ Array(DateTime)    │
+│ 5   │ general   │ Array(String)     │ Array(DateTime)    │
+│ 1   │ help      │ Array(String)     │ Array(DateTime)    │
+│ 2   │ help      │ Array(String)     │ Array(DateTime)    │
+│ 3   │ questions │ Array(String)     │ Array(DateTime)    │
+└─────┴───────────┴───────────────────┴────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec. 
+```
+
+이제 주어진 인터벌 내에 `time`이 있는 행들의 `id`를 가져오겠습니다.
+
+`arrayCount`를 사용해 `map` 함수가 반환한 배열의 항목 중 `x BETWEEN toDateTime('2021-06-18 11:46:00', 'Europe/Rome') AND toDateTime('2021-06-18 11:50:00', 'Europe/Rome')` 조건과 일치하는 항목 수가 0보다 큰지 확인합니다.
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+                        FROM
+                            sample_json_objects_array
+                        WHERE
+                            arrayCount(
+                                x -> x BETWEEN toDateTime('2021-06-18 11:46:00', 'Europe/Rome')
+                                AND toDateTime('2021-06-18 11:50:00', 'Europe/Rome'),
+                                arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+                            ) > 0;
+
+SELECT
+    _id,
+    arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+FROM sample_json_objects_array
+WHERE arrayCount(x -> ((x >= toDateTime('2021-06-18 11:46:00', 'Europe/Rome')) AND (x <= toDateTime('2021-06-18 11:50:00', 'Europe/Rome'))), arrayMap(x -> parseDateTimeBestEffort(x), events.time)) > 0
+
+Query id: d4882fc3-9f99-4e87-9f89-47683f10656d
+
+┌─_id─┬─arrayMap(lambda(tuple(x), parseDateTimeBestEffort(x)), events.time)─┐
+│ 4   │ ['2021-06-18 11:42:39','2021-06-18 11:47:29']                       │
+│ 1   │ ['2021-06-18 11:42:39','2021-06-18 11:48:05']                       │
+└─────┴─────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.002 sec. 
+```
+
+⚠️
+
+이 글을 작성한 시점 기준으로 현재 JSON 구현은 실험적 기능이며, 프로덕션 환경에는 적합하지 않다는 점을 유의하십시오.
+
+이 예시는 JSON을 빠르게 가져와 쿼리를 시작하는 방법을 보여줍니다. 또한 스키마 타입을 사전에 지정할 필요 없이 JSON 객체를 `JSON` 타입으로 가져오는 사용 편의성과의 절충점을 보여줍니다. 빠른 테스트에는 편리하지만, 데이터를 장기적으로 활용하려면 이 예시에서도 데이터를 가장 적절한 타입으로 저장하는 것이 좋습니다. 따라서 위에서 설명한 것처럼 수집 후 단계에서의 변환을 피하려면 `time` 필드에는 `String` 대신 `DateTime`을 사용하십시오. JSON 처리에 대한 자세한 내용은 [documentation](/ko/guides/clickhouse/data-formats/json/intro)을 참조하십시오.

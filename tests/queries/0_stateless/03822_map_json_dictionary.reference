@@ -1,0 +1,124 @@
+=== Testing FLAT Layout (Map + JSON) ===
+1	Alice	New York	95.5	New York	dark	Unknown	0	Unknown	0
+2	Bob	London	87.5	London	light	Unknown	0	Unknown	0
+3	Charlie	Tokyo	90	Tokyo	dark	Unknown	0	Unknown	0
+=== Testing HASHED Layout (Map + JSON) ===
+1	Alice	New York	95.5	New York	dark	Unknown	0	Unknown	0
+2	Bob	London	87.5	London	light	Unknown	0	Unknown	0
+3	Charlie	Tokyo	90	Tokyo	dark	Unknown	0	Unknown	0
+=== Testing HASHED_ARRAY Layout (Map + JSON) ===
+1	Alice	New York	95.5	New York	dark	Unknown	0	Unknown	0
+2	Bob	London	87.5	London	light	Unknown	0	Unknown	0
+3	Charlie	Tokyo	90	Tokyo	dark	Unknown	0	Unknown	0
+=== Testing CACHE Layout (Map + JSON) ===
+1	Alice	New York	95.5	New York	dark	Unknown	0	Unknown	0
+2	Bob	London	87.5	London	light	Unknown	0	Unknown	0
+3	Charlie	Tokyo	90	Tokyo	dark	Unknown	0	Unknown	0
+=== Testing RANGE_HASHED Layout (Map + JSON) ===
+1	Alice	New York	95.5	New York	dark	Unknown	0	Unknown	0
+2	Bob	London	87.5	London	light	Unknown	0	Unknown	0
+3	Charlie	Tokyo	90	Tokyo	dark	Unknown	0	Unknown	0
+=== Mixed Dictionary Info ===
+mixed_test_cache	Cache	UInt64	['name','metadata','tags','scores','profile','settings','preferences','metadata_json']	['String','Map(String, String)','Map(String, Array(String))','Map(String, Float64)','JSON','JSON','JSON','JSON']
+mixed_test_flat	Flat	UInt64	['name','metadata','tags','scores','profile','settings','preferences','metadata_json']	['String','Map(String, String)','Map(String, Array(String))','Map(String, Float64)','JSON','JSON','JSON','JSON']
+mixed_test_hashed	Hashed	UInt64	['name','metadata','tags','scores','profile','settings','preferences','metadata_json']	['String','Map(String, String)','Map(String, Array(String))','Map(String, Float64)','JSON','JSON','JSON','JSON']
+mixed_test_hashed_array	HashedArray	UInt64	['name','metadata','tags','scores','profile','settings','preferences','metadata_json']	['String','Map(String, String)','Map(String, Array(String))','Map(String, Float64)','JSON','JSON','JSON','JSON']
+mixed_test_range_hashed	RangeHashed	UInt64	['name','metadata','tags','scores','profile','settings','preferences','metadata_json']	['String','Map(String, String)','Map(String, Array(String))','Map(String, Float64)','JSON','JSON','JSON','JSON']
+=== dictGet missing key materialization (Map + JSON profile) - FLAT ===
+		\N	\N
+=== dictGet missing key materialization (Map + JSON profile) - HASHED ===
+		\N	\N
+=== dictGet missing key materialization (Map + JSON profile) - HASHED_ARRAY ===
+		\N	\N
+=== dictGet missing key materialization (Map + JSON profile) - CACHE ===
+		\N	\N
+=== dictGet missing key materialization (Map + JSON profile) - RANGE_HASHED ===
+		\N	\N
+=== Typed JSON paths - dictGetOrDefault missing key (cast) - FLAT ===
+0	UInt32	Unknown
+=== Typed JSON paths - dictGet missing key (cast) - FLAT ===
+0	UInt32	
+=== JSON nested/array/sub-object access - FLAT ===
+1	['reading','swimming']	reading	['python','sql']	14	false	30	UInt32
+2	['gaming','music']	gaming	['java','javascript']	12	true	25	UInt32
+3	['cooking','travel']	cooking	['c++','go']	16	false	35	UInt32
+=== JSON nested/array/sub-object access - HASHED ===
+1	['reading','swimming']	reading	['python','sql']	14	false
+2	['gaming','music']	gaming	['java','javascript']	12	true
+3	['cooking','travel']	cooking	['c++','go']	16	false
+=== JSON nested/array/sub-object access - HASHED_ARRAY ===
+1	['reading','swimming']	reading	['python','sql']	14	false
+2	['gaming','music']	gaming	['java','javascript']	12	true
+3	['cooking','travel']	cooking	['c++','go']	16	false
+=== JSON nested/array/sub-object access - CACHE ===
+1	['reading','swimming']	reading	['python','sql']	14	false
+2	['gaming','music']	gaming	['java','javascript']	12	true
+3	['cooking','travel']	cooking	['c++','go']	16	false
+=== JSON nested/array/sub-object access - RANGE_HASHED ===
+1	['reading','swimming']	reading	['python','sql']	14	false
+2	['gaming','music']	gaming	['java','javascript']	12	true
+3	['cooking','travel']	cooking	['c++','go']	16	false
+=== JSON type introspection (dynamicType + toTypeName) ===
+Int8	String	Array(String)	Bool	JSON	JSON
+=== JSONAllPaths on dictGet JSON result ===
+['age','city','country','hobbies','skills.languages','skills.programming']
+=== JSONAllPathsWithTypes on dictGet JSON result ===
+{'age':'Int8','city':'String','country':'String','hobbies':'Array(String)','skills.languages':'Array(String)','skills.programming':'Array(String)'}
+=== JSONDynamicPaths on dictGet JSON result ===
+['age','city','country','hobbies','skills.languages','skills.programming']
+=== JSON value comparison ===
+1	0	0	0	1
+=== JSON cast syntax (::String, ::Int64) on sub-paths ===
+30	New York	14	UInt64	String
+=== JSON typed path + SKIP in dictionary definition ===
+1	Alice	30	New York	String	UInt32	Dynamic
+2	Bob	25	London	String	UInt32	Dynamic
+3	Charlie	35	Tokyo	String	UInt32	Dynamic
+=== JSON typed path + SKIP missing key materialization ===
+	0	\N	String	UInt32
+=== Testing Deep Nested JSON ===
+1	DeepTest1	deep_value_1	Alice	United States
+2	DeepTest2	\N	\N	\N
+3	DeepTest3	\N	\N	\N
+=== Testing HASHED Dictionary with Deep Nested JSON ===
+1	DeepTest1	deep_value_1	Alice
+2	DeepTest2	\N	\N
+3	DeepTest3	\N	\N
+=== Deep JSON Dictionary Info ===
+deep_json_test_flat	Flat	UInt64	['name','deep_data','nested_structure','complex_hierarchy']	['String','JSON','JSON','JSON']
+deep_json_test_hashed	Hashed	UInt64	['name','deep_data','nested_structure','complex_hierarchy']	['String','JSON','JSON','JSON']
+=== Testing NULL Value Detection - FLAT ===
+1	Alice	0	0
+2	Bob	1	1
+3	Charlie	0	0
+4	David	1	1
+=== Testing NULL Value Detection - HASHED_ARRAY ===
+1	0	Nullable(JSON)
+2	1	Nullable(JSON)
+3	0	Nullable(JSON)
+4	1	Nullable(JSON)
+5	1	Nullable(JSON)
+=== Testing NULL Value Detection - HASHED ===
+1	0	Nullable(JSON)
+2	1	Nullable(JSON)
+3	0	Nullable(JSON)
+4	1	Nullable(JSON)
+5	1	Nullable(JSON)
+=== Testing NULL Value Detection - CACHE ===
+1	0	Nullable(JSON)
+2	1	Nullable(JSON)
+3	0	Nullable(JSON)
+4	1	Nullable(JSON)
+5	1	Nullable(JSON)
+=== Testing NULL Value Detection - RANGE_HASHED ===
+1	0	Nullable(JSON)
+2	1	Nullable(JSON)
+3	0	Nullable(JSON)
+999	1	Nullable(JSON)
+=== Testing NULL Value Detection - RANGE_HASHED (table read) ===
+1	0	0
+2	1	1
+3	0	0
+4	1	1
+=== IP_TRIE one-statement Map+JSON test ===
+Corp-Private-DC1	datacenter-subnet	48	64512	documentation-subnet

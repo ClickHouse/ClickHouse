@@ -58,6 +58,10 @@ void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
         {
             ostr << "QUERY";
         }
+        else if (operation.mode == ResourceAccessMode::MemoryReservation)
+        {
+            ostr << "MEMORY RESERVATION";
+        }
         else
         {
             switch (operation.mode)

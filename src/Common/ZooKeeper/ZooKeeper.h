@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -23,9 +24,11 @@ namespace Poco::Net
     class SocketAddress;
 }
 
+
 namespace ProfileEvents
 {
     extern const Event CannotRemoveEphemeralNode;
+    extern const Event ZooKeeperWatchTriggeredOther;
 }
 
 namespace CurrentMetrics
@@ -52,10 +55,6 @@ namespace zkutil
 
 /// Preferred size of multi command (in the number of operations)
 constexpr size_t MULTI_BATCH_SIZE = 100;
-
-/// Path "default:/foo" refers to znode "/foo" in the default zookeeper,
-/// path "other:/foo" refers to znode "/foo" in auxiliary zookeeper named "other".
-constexpr std::string_view DEFAULT_ZOOKEEPER_NAME = "default";
 
 struct ShuffleHost;
 
@@ -84,6 +83,14 @@ struct MultiReadResponses
     template <typename TResponses>
     explicit MultiReadResponses(TResponses responses_) : responses(std::move(responses_))
     {}
+
+    /// One MultiRead request in flight, see `ZooKeeper::asyncTryGet`.
+    MultiReadResponses(std::future<Coordination::MultiResponse> future_, size_t num_requests_)
+        : responses(MultiResponseWithFuture{std::move(future_), num_requests_})
+    {
+        /// The response is checked with the rule of `tryMulti`; `multi` would also have to report the failed sub-request.
+        static_assert(try_multi, "A MultiRead awaited on the first access exists only for try-requests");
+    }
 
     size_t size() const
     {
@@ -119,6 +126,10 @@ struct MultiReadResponses
                     }
                     return resp[index];
                 }
+                else if constexpr (std::same_as<TResponses, MultiResponseWithFuture>)
+                {
+                    return dynamic_cast<ResponseType &>(*resp.get()[index]);
+                }
                 else
                 {
                     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No responses set for MultiRead");
@@ -128,13 +139,16 @@ struct MultiReadResponses
     }
 
     /// If Keeper/ZooKeeper doesn't support MultiRead feature we will dispatch
-    /// asynchronously all the read requests separately
+    /// asynchronously all the read requests separately; a MultiRead request sent
+    /// with `ZooKeeper::asyncTryGet` is awaited on the first access as well.
     /// Sometimes it's important to process all requests instantly
     /// e.g. we want to trigger exceptions while we are in the ZK client retry loop
     void waitForResponses()
     {
         if (auto * responses_with_futures = std::get_if<ResponsesWithFutures>(&responses))
             responses_with_futures->waitForResponses();
+        else if (auto * multi_response_with_future = std::get_if<MultiResponseWithFuture>(&responses))
+            multi_response_with_future->get();
     }
 
 private:
@@ -172,7 +186,36 @@ private:
         size_t size() const { return future_responses.size(); }
     };
 
-    std::variant<std::monostate, RegularResponses, ResponsesWithFutures> responses;
+    /// One MultiRead request in flight, awaited on the first access: the lazy counterpart of
+    /// `RegularResponses`, as `ResponsesWithFutures` is for [Zoo]Keepers without the MultiRead feature.
+    /// Awaited with a plain `future.get` like those futures: the receive thread finalizes the session
+    /// after a session timeout without responses or three session timeouts with a request unanswered.
+    struct MultiResponseWithFuture
+    {
+        MultiResponseWithFuture(std::future<Coordination::MultiResponse> future_, size_t num_requests_)
+            : future(std::move(future_)), num_requests(num_requests_)
+        {}
+
+        std::future<Coordination::MultiResponse> future;
+        size_t num_requests;
+        std::optional<Coordination::MultiResponse> response;
+
+        Coordination::Responses & get()
+        {
+            if (!response.has_value())
+                response = future.get();
+            /// The rule of `tryMulti` (the constructor allows try-requests only): user errors such as
+            /// `ZNONODE` stay in the sub-responses, anything else throws.
+            if (response->error != Coordination::Error::ZOK && !Coordination::isUserError(response->error))
+                throw KeeperException(response->error);
+
+            return response->responses;
+        }
+
+        size_t size() const { return num_requests; }
+    };
+
+    std::variant<std::monostate, RegularResponses, ResponsesWithFutures, MultiResponseWithFuture> responses;
 };
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
@@ -189,10 +232,18 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
+    explicit ZooKeeper(
+        ZooKeeperArgs args_,
+        std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+        std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
 
     /// Allows to keep info about availability zones when starting a new session
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+    ZooKeeper(
+        const ZooKeeperArgs & args_,
+        std::shared_ptr<DB::ZooKeeperLog> zk_log_,
+        std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_,
+        Strings availability_zones_,
+        std::unique_ptr<Coordination::IKeeper> existing_impl);
 
     explicit ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl);
 
@@ -442,6 +493,8 @@ public:
 
     Int64 getClientID() const;
 
+    Coordination::IKeeper::WatchesSnapshot getWatchesSnapshot() const;
+
     /// Remove the node with the subtree.
     /// If Keeper supports RemoveRecursive operation then it will be performed atomically.
     /// Otherwise if someone concurrently adds or removes a node in the subtree, the result is undefined.
@@ -452,6 +505,11 @@ public:
     /// For instance, you can call this method twice concurrently for the same node and the end
     /// result would be the same as for the single call.
     Coordination::Error tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit = 1000);
+
+    /// Lists all descendant paths under `path`.
+    Strings listRecursive(const std::string & path, uint32_t children_nodes_limit = 1000000);
+
+    Coordination::Error tryListRecursive(const std::string & path, Strings & res, uint32_t children_nodes_limit = 1000000);
 
     /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
     /// Node defined as RemoveException will not be deleted.
@@ -470,12 +528,17 @@ public:
     /// Wait for the node to disappear or return immediately if it doesn't exist.
     /// If condition is specified, it is used to return early (when condition returns false)
     /// The function returns true if waited and false if waiting was interrupted by condition.
-    bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
+    /// triggered_event identifies the subsystem owning the watch for profile-event accounting.
+    bool waitForDisappear(
+        const std::string & path,
+        const WaitCondition & condition = {},
+        ProfileEvents::Event triggered_event = ProfileEvents::ZooKeeperWatchTriggeredOther);
 
     /// Checks if a the ephemeral node exists. These nodes are removed automatically by ZK when the session ends
     /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it
-    /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
-    /// disappear automatically after 3x session_timeout.
+    /// If the node exists and its value is different, it will wait for it to disappear. It will throw
+    /// REPLICA_ALREADY_EXISTS if the node doesn't disappear automatically after 3x session_timeout, or if it was
+    /// rewritten between the read and the removal.
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
     void deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition);
 
@@ -529,6 +592,13 @@ public:
         bool with_stat = false,
         bool with_data = false);
 
+    using FutureListWithOptions = std::future<Coordination::ListWithOptionsResponse>;
+    FutureListWithOptions asyncListWithOptions(const std::string & path, const Coordination::ListOptions & options);
+    FutureListWithOptions asyncTryListWithOptionsNoThrow(
+        const std::string & path,
+        const Coordination::ListOptions & options,
+        Coordination::WatchCallbackPtrOrEventPtr watch_callback = {});
+
     using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
     /// Like the previous one but don't throw any exceptions on future.get()
@@ -567,6 +637,19 @@ public:
     /// Doesn't throw in the following cases:
     /// * The node doesn't exist
     FutureGet asyncTryGet(const std::string & path);
+
+    /// Like `tryGet` with several paths, but does not wait for the responses: the request is sent here and
+    /// awaited on the first access to the result (or in `waitForResponses`), so that the requests of several
+    /// callers can be in flight at once. A hardware error of the request is thrown on that first access;
+    /// the per-path results, a missing node included, are in the sub-responses as with `tryGet`.
+    MultiTryGetResponse asyncTryGet(const std::vector<std::string> & paths)
+    {
+        return multiRead<Coordination::GetResponse, /*try_multi=*/ true, /*async=*/ true>(
+            paths.begin(),
+            paths.end(),
+            [&](const auto & path) { return zkutil::makeGetRequest(path); },
+            [&](const auto & path) { return asyncTryGet(path); });
+    }
 
     /// Doesn't throw in the following cases:
     /// * The node doesn't exist
@@ -656,9 +739,14 @@ private:
     template <typename TResponse>
     using AsyncFunction = std::function<std::future<TResponse>(const std::string &)>;
 
-    template <typename TResponse, bool try_multi, typename TIter>
-    MultiReadResponses<TResponse, try_multi> multiRead(TIter start, TIter end, RequestFactory request_factory, AsyncFunction<TResponse> async_fun)
+    /// `async`: with the MultiRead feature, return before the response arrives and wait for it on the first
+    /// access to the result, as the futures of the path without MultiRead do anyway. Only for try-requests.
+    template <typename TResponse, bool try_multi, bool async = false, typename TIter>
+    MultiReadResponses<TResponse, try_multi> multiRead(
+        TIter start, TIter end, RequestFactory request_factory, AsyncFunction<TResponse> async_fun)
     {
+        static_assert(try_multi || !async, "A MultiRead awaited on the first access exists only for try-requests");
+
         if (isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
         {
             Coordination::Requests requests;
@@ -667,6 +755,13 @@ private:
 
             if constexpr (try_multi)
             {
+                if constexpr (async)
+                {
+                    /// An empty MultiRead is not sent: `tryMulti` answers it without a request.
+                    if (!requests.empty())
+                        return MultiReadResponses<TResponse, try_multi>{asyncTryMultiNoThrow(requests), requests.size()};
+                }
+
                 Coordination::Responses responses;
                 tryMulti(requests, responses);
                 return MultiReadResponses<TResponse, try_multi>{std::move(responses)};
@@ -692,6 +787,16 @@ private:
         return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
     }
 
+    /// Wait for a future with progress-based timeout using session_timeout_ms.
+    /// On each iteration, waits up to session_timeout_ms for the future. If it
+    /// becomes ready, returns true. Otherwise, checks if the server made progress
+    /// (any received data via `getLastReceivedTimestamp`). If yes, waits another full
+    /// session_timeout_ms. If no progress for a full session_timeout_ms — gives up.
+    /// Worst-case latency: session_timeout_ms after no progress before returning false.
+    /// Defense-in-depth: only fires if the receive thread is stuck.
+    template <typename T>
+    bool waitForFutureWithProgress(std::future<T> & future) const;
+
     std::unique_ptr<Coordination::IKeeper> impl;
     mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
 
@@ -711,7 +816,7 @@ private:
 
     AtomicStopwatch session_uptime;
 
-    int32_t session_node_version;
+    int32_t session_node_version{};
 
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> reconnect_task;
 };
@@ -743,6 +848,17 @@ public:
     std::string getPath() const
     {
         return path;
+    }
+
+    ZooKeeper & getZooKeeper() const
+    {
+        return zookeeper;
+    }
+
+    /// Keeper removes the ephemeral nodes of an expired session.
+    bool isLost() const
+    {
+        return zookeeper.expired();
     }
 
     bool isCreated() const
@@ -808,12 +924,6 @@ private:
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
-
-String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, LoggerPtr log = nullptr);
-
-String extractZooKeeperName(const String & path);
-
-String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
 

@@ -1,13 +1,13 @@
 #pragma once
 
 #include <cstdint>
-#include <unordered_map>
 
 #include "config.h"
 
-#if USE_ARROW || USE_ORC || USE_PARQUET
+#if USE_ARROW || USE_PARQUET
 
-#include <DataTypes/IDataType.h>
+#include <Formats/ColumnNameMaps.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <arrow/table.h>
@@ -26,8 +26,8 @@ public:
         const Block & header_,
         const std::string & format_name_,
         const FormatSettings & format_settings_,
-        const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse_,
-        const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet_,
+        const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse_,
+        const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet_,
         bool allow_missing_columns_,
         bool null_as_default_,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -42,6 +42,13 @@ public:
         std::shared_ptr<const arrow::KeyValueMetadata> metadata,
         BlockMissingValues * block_missing_values = nullptr);
 
+    /// Validate that every validity bitmap in the record batch (recursively, including nested
+    /// children and dictionaries) covers its declared rows.  Must be called before building an
+    /// arrow::Table from the batch: Arrow computes an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds when the bitmap is
+    /// truncated.  Throws INCORRECT_DATA on a malformed bitmap.
+    static void checkRecordBatchValidityBitmaps(const arrow::RecordBatch & batch);
+
     /// Transform arrow schema to ClickHouse header
     static Block arrowSchemaToCHHeader(
         const arrow::Schema & schema,
@@ -49,18 +56,19 @@ public:
         const std::string & format_name,
         const FormatSettings & format_settings,
         bool skip_columns_with_unsupported_types = false,
+        bool allow_arrow_null_type = false,
         bool allow_inferring_nullable_columns = true,
         bool case_insensitive_matching = false,
         bool allow_geoparquet_parser = true,
         bool enable_json_parsing = true,
-        const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse = std::nullopt,
-        const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet = std::nullopt);
+        const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse = std::nullopt,
+        const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet = std::nullopt);
 
     struct DictionaryInfo
     {
         std::shared_ptr<ColumnWithTypeAndName> values;
         Int64 default_value_index = -1;
-        UInt64 dictionary_size;
+        UInt64 dictionary_size{};
     };
 
 private:
@@ -70,7 +78,7 @@ private:
         std::shared_ptr<arrow::Field> field;
     };
 
-    using NameToArrowColumn = std::unordered_map<std::string, ArrowColumn>;
+    using NameToArrowColumn = UnorderedMapWithMemoryTracking<std::string, ArrowColumn>;
 
     Chunk arrowColumnsToCHChunk(
         const NameToArrowColumn & name_to_arrow_column,
@@ -94,10 +102,10 @@ private:
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
-    std::unordered_map<std::string, DictionaryInfo> dictionary_infos;
+    UnorderedMapWithMemoryTracking<std::string, DictionaryInfo> dictionary_infos;
 
-    std::optional<std::unordered_map<String, String>> parquet_columns_to_clickhouse;
-    std::optional<std::unordered_map<String, String>> clickhouse_columns_to_parquet;
+    std::optional<ColumnNameMap> parquet_columns_to_clickhouse;
+    std::optional<ColumnNameMap> clickhouse_columns_to_parquet;
 };
 
 }

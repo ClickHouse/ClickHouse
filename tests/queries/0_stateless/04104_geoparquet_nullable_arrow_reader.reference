@@ -1,0 +1,10 @@
+=== Arrow: schema inference with geoparquet parser disabled ===
+Nullable(String)
+=== Arrow: NULL check with geoparquet parser disabled ===
+0	Point1
+1	Point2
+=== Arrow: schema inference with geoparquet parser enabled ===
+Point
+=== Arrow: NULL check with geoparquet parser enabled ===
+0	Point1
+0	Point2

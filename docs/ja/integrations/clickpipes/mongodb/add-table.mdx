@@ -1,0 +1,38 @@
+---
+title: 'ClickPipeに特定のテーブルを追加する'
+description: 'ClickPipeに特定のテーブルを追加するために必要な手順を説明します。'
+sidebarTitle: 'テーブルを追加'
+slug: /integrations/clickpipes/mongodb/add_table
+show_title: false
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+特定のテーブルをパイプに追加すると便利なケースがあります。これは、トランザクション処理や分析のワークロードが拡大するにつれて、一般的に必要になってきます。
+
+<div id="add-tables-steps">
+  ## 特定のテーブルを ClickPipe に追加する手順
+</div>
+
+これは、以下の手順で行えます。
+
+1. パイプを[一時停止](/ja/integrations/clickpipes/mongodb/pause-and-resume)します。
+2. Edit Table settings をクリックします。
+3. 対象のテーブルを探します。検索バーで検索できます。
+4. チェックボックスをクリックしてテーブルを選択します。
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+
+5. update をクリックします。
+6. 更新が正常に完了すると、パイプのステータスはこの順に `Setup`、`Snapshot`、`Running` になります。テーブルの初期ロードは **Tables** タブで確認できます。
+
+<Info>
+  既存のテーブルの CDC は、新しいテーブルのスナップショットが完了すると自動的に再開されます。
+</Info>

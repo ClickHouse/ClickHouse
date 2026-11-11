@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Sources/ArrowFlightSource.h>
 
 #if USE_ARROWFLIGHT
@@ -5,65 +6,107 @@
 #include <Storages/ArrowFlight/ArrowFlightConnection.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <arrow/table.h>
-
+#include <fmt/ranges.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int ARROWFLIGHT_CONNECTION_FAILURE;
-extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
-extern const int ARROWFLIGHT_INTERNAL_ERROR;
+    extern const int ARROWFLIGHT_CONNECTION_FAILURE;
+    extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
+    extern const int ARROWFLIGHT_INTERNAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace Setting
 {
     extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
+    extern const SettingsUInt64 arrow_flight_request_timeout_sec;
+}
+
+namespace
+{
+
+UInt64 getRequestTimeoutSec(const ContextPtr & context)
+{
+    if (!context)
+        return 0;
+    return context->getSettingsRef()[Setting::arrow_flight_request_timeout_sec];
+}
+
+Block convertBlockToHeader(Block block, const Block & header, ContextPtr context)
+{
+    auto converting_dag = ActionsDAG::makeConvertingActions(
+        block.cloneEmpty().getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        context);
+
+    auto actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+    actions->execute(block);
+    return block;
+}
+
+Block buildOutputHeader(const Block & sample_block_, const Block & virtual_header_)
+{
+    Block output_header = sample_block_.cloneEmpty();
+    for (const auto & column : virtual_header_)
+        output_header.insert(column.cloneEmpty());
+
+    return output_header;
+}
+
 }
 
 ArrowFlightSource::ArrowFlightSource(
     std::shared_ptr<ArrowFlightConnection> connection_,
     const String & dataset_name_,
     const Block & sample_block_,
+    const Block & virtual_header_,
     ContextPtr context_)
-    : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
+    : ISource(std::make_shared<const Block>(buildOutputHeader(sample_block_, virtual_header_)))
     , connection(connection_)
     , sample_block(sample_block_)
+    , virtual_header(virtual_header_)
+    , context(context_)
+    , request_timeout_sec(getRequestTimeoutSec(context_))
 {
-    initializeEndpoints(dataset_name_, context_);
+    initializeEndpoints(dataset_name_);
 }
 
 ArrowFlightSource::ArrowFlightSource(
     std::shared_ptr<ArrowFlightConnection> connection_,
-    std::vector<arrow::flight::FlightEndpoint> endpoints_,
-    const Block & sample_block_)
+    VectorWithMemoryTracking<arrow::flight::FlightEndpoint> endpoints_,
+    const Block & sample_block_,
+    ContextPtr context_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , connection(connection_)
     , sample_block(sample_block_)
+    , context(context_)
+    , request_timeout_sec(getRequestTimeoutSec(context_))
     , endpoints(std::move(endpoints_))
 {
 }
 
 ArrowFlightSource::ArrowFlightSource(
     std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_,
-    const Block & sample_block_)
+    const Block & sample_block_,
+    ContextPtr context_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , sample_block(sample_block_)
+    , context(context_)
     , stream_reader(std::move(stream_reader_))
 {
     initializeSchema();
 }
 
-
-ArrowFlightSource::~ArrowFlightSource() = default;
-
-
-void ArrowFlightSource::initializeEndpoints(const String & dataset_name_, ContextPtr context)
+void ArrowFlightSource::initializeEndpoints(const String & dataset_name_)
 {
-    auto client = connection->getClient();
-    auto options = connection->getOptions();
+    auto client = connection->getClient(request_timeout_sec);
+    auto options = connection->getCallOptions(request_timeout_sec);
 
     arrow::flight::FlightDescriptor descriptor;
     if (context && context->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
@@ -76,7 +119,7 @@ void ArrowFlightSource::initializeEndpoints(const String & dataset_name_, Contex
         descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
     }
 
-    auto flight_info_res = client->GetFlightInfo(*options, descriptor);
+    auto flight_info_res = client->GetFlightInfo(options, descriptor);
     if (!flight_info_res.ok())
     {
         throw Exception(
@@ -90,7 +133,9 @@ void ArrowFlightSource::initializeEndpoints(const String & dataset_name_, Contex
     if (flight_info->endpoints().empty())
         throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "FlightInfo returned with no endpoints");
 
-    endpoints = flight_info->endpoints();
+    /// `FlightInfo` only exposes its endpoints by const reference, so this copy is unavoidable.
+    const auto & info_endpoints = flight_info->endpoints();
+    endpoints.assign(info_endpoints.begin(), info_endpoints.end());
 }
 
 
@@ -101,23 +146,49 @@ bool ArrowFlightSource::nextEndpoint()
 
     const auto & endpoint = endpoints[current_endpoint];
 
-    auto client = connection->getClient();
-    auto options = connection->getOptions();
+    auto client = connection->getClient(request_timeout_sec);
+    auto options = connection->getCallOptions(request_timeout_sec);
 
     arrow::flight::Ticket ticket = endpoint.ticket;
 
-    auto stream_reader_res = client->DoGet(*options, ticket);
+    auto stream_reader_res = client->DoGet(options, ticket);
     if (!stream_reader_res.ok())
     {
         throw Exception(
             ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to initialize Arrow Flight stream: {}", stream_reader_res.status().ToString());
     }
 
-    stream_reader = std::move(stream_reader_res.ValueOrDie());
+    std::shared_ptr<arrow::flight::FlightStreamReader> new_reader = std::move(stream_reader_res).ValueOrDie();
+    {
+        std::lock_guard lock{flight_reader_mutex};
+        flight_reader = new_reader;
+    }
+    stream_reader = new_reader;
+
+    /// ISource::cancel sets is_cancelled before calling onCancel, so a cancellation raised
+    /// while DoGet was still running found no published reader to abort.
+    if (isCancelled())
+        new_reader->Cancel();
+
     initializeSchema();
 
     ++current_endpoint;
     return true;
+}
+
+void ArrowFlightSource::onCancel() noexcept
+{
+    /// Runs in parallel with generate, which blocks inside the reader's Next. The mutex may
+    /// therefore only cover the handover, never the call itself, and the copy keeps the reader
+    /// alive for the duration of Cancel.
+    std::shared_ptr<arrow::flight::FlightStreamReader> reader;
+    {
+        std::lock_guard lock{flight_reader_mutex};
+        reader = flight_reader;
+    }
+
+    if (reader)
+        reader->Cancel();
 }
 
 
@@ -133,12 +204,22 @@ void ArrowFlightSource::initializeSchema()
     }
 }
 
+Block ArrowFlightSource::fillVirtualColumns(Block result_block)
+{
+    if (!virtual_header.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_header.getNames());
+
+    return result_block;
+}
 
 Chunk ArrowFlightSource::generate()
 {
     arrow::flight::FlightStreamChunk chunk;
     while (!chunk.data)
     {
+        if (isCancelled())
+            return {};
+
         if (!stream_reader && !nextEndpoint())
         {
             /// No more endpoints, we've read everything.
@@ -149,7 +230,13 @@ Chunk ArrowFlightSource::generate()
 
         auto chunk_res = stream_reader->Next();
         if (!chunk_res.ok())
+        {
+            /// onCancel aborts the Flight call, so a cancelled query reaches this as a failed
+            /// read. Reporting it would turn `KILL QUERY` into an Arrow transport error.
+            if (isCancelled())
+                return {};
             throw Exception(ErrorCodes::ARROWFLIGHT_INTERNAL_ERROR, "Arrow Flight internal error: {}", chunk_res.status().ToString());
+        }
 
         chunk = chunk_res.ValueOrDie();
 
@@ -157,10 +244,10 @@ Chunk ArrowFlightSource::generate()
         {
             /// We've finished reading from this stream reader, now it's time to try the next endpoint.
             stream_reader = nullptr;
+            std::lock_guard lock{flight_reader_mutex};
+            flight_reader = nullptr;
         }
     }
-
-    MutableColumns columns;
 
     ArrowColumnToCHColumn converter(sample_block, "Arrow",
                                     /* format_settings= */ {},
@@ -171,6 +258,11 @@ Chunk ArrowFlightSource::generate()
                                     FormatSettings::DateTimeOverflowBehavior::Throw,
                                     /* allow_geoparquet_parser = */ false);
 
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*chunk.data);
+
     auto table_res = arrow::Table::FromRecordBatches({chunk.data});
     if (!table_res.ok())
     {
@@ -178,7 +270,11 @@ Chunk ArrowFlightSource::generate()
     }
     auto table = std::move(table_res).ValueOrDie();
 
-    return converter.arrowTableToCHChunk(table, chunk.data->num_rows(), nullptr, nullptr);
+    auto block_initial = sample_block.cloneWithColumns(converter.arrowTableToCHChunk(table, chunk.data->num_rows(), nullptr, nullptr).detachColumns());
+    auto block_with_virtuals = fillVirtualColumns(std::move(block_initial));
+    auto block_projected = convertBlockToHeader(std::move(block_with_virtuals), getPort().getHeader(), context);
+
+    return Chunk(block_projected.getColumns(), block_projected.rows());
 }
 
 }

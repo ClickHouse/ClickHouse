@@ -16,7 +16,7 @@ namespace
 {
 
 /// Returns number of fields in Enum data type of passed value.
-class FunctionGetSizeOfEnumType : public IFunction
+class FunctionGetSizeOfEnumType final : public IFunction
 {
 public:
     static constexpr auto name = "getSizeOfEnumType";
@@ -39,16 +39,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        WhichDataType which(arguments[0]);
-
-        if (which.isEnum8())
-            return std::make_shared<DataTypeUInt8>();
-        if (which.isEnum16())
-            return std::make_shared<DataTypeUInt16>();
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
+        return "(Enum8) -> UInt8 OR (Enum16) -> UInt16";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -78,7 +71,7 @@ private:
 REGISTER_FUNCTION(GetSizeOfEnumType)
 {
     FunctionDocumentation::Description description = R"(
-Returns the number of fields in the given [`Enum`](../../sql-reference/data-types/enum.md).
+Returns the number of fields in the given [`Enum`](/reference/data-types/enum).
 )";
     FunctionDocumentation::Syntax syntax = "getSizeOfEnumType(x)";
     FunctionDocumentation::Arguments arguments = {

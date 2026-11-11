@@ -95,7 +95,7 @@ def test_replicated_table():
 
     node_1_1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster_2x2' TO {backup_name}")
 
-    node_1_1.query(f"DROP TABLE tbl ON CLUSTER 'cluster_2x2' SYNC")
+    node_1_1.query("DROP TABLE tbl ON CLUSTER 'cluster_2x2' SYNC")
 
     node_1_1.query(f"RESTORE ALL ON CLUSTER 'cluster_2x2' FROM {backup_name}")
 
@@ -134,8 +134,8 @@ def test_two_tables_with_uuid_in_zk_path():
         f"BACKUP TABLE table_a, TABLE table_b ON CLUSTER 'cluster_2x2' TO {backup_name}"
     )
 
-    node_1_1.query(f"DROP TABLE table_a ON CLUSTER 'cluster_2x2' SYNC")
-    node_1_1.query(f"DROP TABLE table_b ON CLUSTER 'cluster_2x2' SYNC")
+    node_1_1.query("DROP TABLE table_a ON CLUSTER 'cluster_2x2' SYNC")
+    node_1_1.query("DROP TABLE table_b ON CLUSTER 'cluster_2x2' SYNC")
 
     node_1_1.query(f"RESTORE ALL ON CLUSTER 'cluster_2x2' FROM {backup_name}")
 

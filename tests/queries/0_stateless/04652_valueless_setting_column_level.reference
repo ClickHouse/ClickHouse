@@ -1,0 +1,6 @@
+-- The shorthand is rejected in a column declaration
+ok
+-- A column-level setting with a value still works
+ok
+-- And it is rejected in ALTER ... MODIFY COLUMN as well
+ok

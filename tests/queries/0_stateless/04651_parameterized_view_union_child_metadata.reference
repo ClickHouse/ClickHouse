@@ -1,0 +1,26 @@
+--- create ---
+v_except	[('n','UInt64')]
+v_flat	[('n','UInt64')]
+v_intersect	[('n','UInt64')]
+v_nested_union	[('n','UInt64')]
+v_not_parameterized	[]
+--- reload ---
+v_except	[('n','UInt64')]
+v_flat	[('n','UInt64')]
+v_intersect	[('n','UInt64')]
+v_nested_union	[('n','UInt64')]
+v_not_parameterized	[]
+--- query after reload ---
+2
+7
+2
+3
+9
+5
+--- create (parenthesized) ---
+v_paren	[('n','UInt64')]
+--- reload (parenthesized) ---
+v_paren	[('n','UInt64')]
+1
+3
+8

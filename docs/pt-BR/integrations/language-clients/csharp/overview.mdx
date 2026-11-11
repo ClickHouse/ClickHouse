@@ -1,0 +1,48 @@
+---
+sidebarTitle: 'C#'
+keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'cliente', 'driver', 'conectar', 'integrar']
+slug: /integrations/csharp
+description: 'Os clientes C# oficiais para se conectar ao ClickHouse via HTTP ou TCP nativo.'
+title: 'Clientes C# do ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-cs'
+---
+
+Os clientes C# oficiais se conectam ao ClickHouse via HTTP ou pelo protocolo TCP nativo.
+Ambos os clientes são distribuídos no pacote NuGet `ClickHouse.Driver`.
+
+## HTTP {#http}
+
+O cliente HTTP oferece a API `ClickHouseClient`, de alto nível e thread-safe, e a API ADO.NET
+usada por ORMs. Ele é compatível com o .NET 6.0 e versões posteriores e é recomendado para a maioria das aplicações.
+
+Use o cliente HTTP quando precisar de:
+
+* ADO.NET ou um ORM;
+* entrada e saída em CSV, JSONEachRow, Parquet ou stream bruto;
+* autenticação bearer ou cabeçalhos HTTP personalizados;
+* resolução personalizada de tipos de parâmetros, formatação de parâmetros ou conversão na leitura;
+* banco de dados ou função definidos por consulta;
+* melhor desempenho com `JSON`. O cliente TCP só consegue transferir valores `JSON` como texto.
+
+[Leia a documentação do cliente HTTP](./http).
+
+## Native TCP {#native-tcp}
+
+O cliente TCP nativo é experimental, e sua API pública pode mudar em um lançamento futuro. Ele oferece
+a API `ClickHouseTcpClient` para leituras de blocos colunares, compressão nativa, conexões em pool e
+sessões fixas. É compatível com o .NET 8.0 e versões mais recentes.
+
+Use o cliente TCP nativo quando você precisar de:
+
+* melhor desempenho, especialmente ao processar dados em colunas;
+* blocos de dados colunares;
+* conexões persistentes;
+* sessões fixas por meio de `OpenSessionAsync`;
+* callbacks de progresso, perfil, log, totais e extremos;
+* propagação de contexto de rastreamento W3C para o ClickHouse.
+
+[Leia a documentação do cliente TCP nativo](./tcp).

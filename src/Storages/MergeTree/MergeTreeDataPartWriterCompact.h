@@ -4,6 +4,7 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
@@ -24,14 +25,13 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_);
 
-    void write(const Block & block, const IColumnPermutation * permutation) override;
+    void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
 
     void finalizeIndexGranularity() final;
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
@@ -56,7 +56,7 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) override;
+    void addStreams(const NameAndTypePair & name_and_type) override;
 
     ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 

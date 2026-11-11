@@ -1,0 +1,242 @@
+---
+sidebarTitle: 'Uso de valores de fecha/hora en JDBC'
+keywords: ['java', 'jdbc', 'driver', 'integrar', 'Fecha', 'Hora', 'Timestamp']
+description: 'Guía para usar valores de fecha/hora en JDBC'
+slug: /integrations/language-clients/java/jdbc_date_time_guide
+title: 'Guía sobre valores de fecha/hora'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+Date, Time y Timestamp requieren especial atención porque hay varios problemas habituales relacionados con ellos.
+El problema más común es cómo gestionar las zonas horarias. Otro problema es su representación en cadena y cómo utilizarla.
+Además, cada base de datos y driver tiene sus propias particularidades y limitaciones.
+
+Este documento pretende servir como guía para la toma de decisiones mediante la descripción de tareas, la presentación de detalles de implementación y la explicación de los problemas.
+
+<div id="timezones">
+  ## Zonas horarias
+</div>
+
+Todos sabemos que las zonas horarias son difíciles de gestionar (horario de verano, cambios constantes en los desfases). Pero esta sección trata de otro problema relacionado con las zonas horarias: cómo se relacionan con la representación textual de las marcas de tiempo.
+
+<div id="clickhouse-datetime-string-conversion">
+  ### Cómo ClickHouse convierte cadenas de `DateTime`
+</div>
+
+ClickHouse usa las siguientes reglas para convertir valores de cadena de `DateTime`:
+
+* Si una columna se define con una zona horaria (`DateTime64(9, ‘Asia/Tokyo’)`), el valor de cadena se tratará como una marca de tiempo en esa zona horaria. `2026-01-01 13:00:00` será `2026-01-01 04:00:00` en hora `UTC`.
+* Si una columna no tiene definida ninguna zona horaria, solo se usa la zona horaria del servidor. Importante: la configuración `session_timezone` no tiene ningún efecto. Por lo tanto, si la zona horaria del servidor es `UTC` y la zona horaria de la sesión es `America/Los_Angeles`, `2026-01-01 13:00:00` se escribirá como hora `UTC`.
+* Cuando se lee un valor de una columna sin una zona horaria definida, se usa `session_timezone` o, si no está configurado, la zona horaria del servidor. Por eso, la lectura de marcas de tiempo como cadenas puede verse afectada por `session_timezone`. No hay nada incorrecto en ello, pero conviene tenerlo en cuenta.
+
+<div id="writing-timestamps-across-timezones">
+  ### Escritura de timestamps en distintas zonas horarias
+</div>
+
+Ahora supongamos que tenemos una aplicación en ejecución en la región `us-west` con la zona horaria local `UTC-8`, y que necesitamos escribir un timestamp local `2026-01-01 02:00:00` que en `UTC` es `2026-01-01 10:00:00`:
+
+* Escribirlo como una cadena requiere convertirlo a la zona horaria del servidor o de la columna.
+* Escribirlo como una estructura de tiempo nativa del lenguaje requiere que el driver conozca la zona horaria de destino, pero:
+  * No siempre es posible
+  * La API del driver no está bien diseñada para esto
+  * La única manera es describir qué transformaciones se realizarán para que la aplicación pueda compensarlo (o escribir un Unix timestamp como un número)
+
+<div id="java-and-jdbc-timestamp-apis">
+  ### Java y las API de timestamp de JDBC
+</div>
+
+Java y JDBC tienen distintas formas de establecer un timestamp:
+
+1. Usa la clase `Timestamp`, que en realidad es un Unix timestamp.
+   1. Cuando se usa con un objeto `Calendar`, permite reinterpretar el `Timestamp` en la zona horaria del calendario.
+   2. `Timestamp` tiene un calendario interno que no es muy evidente.
+2. Usa la clase `LocalDateTime`, que se puede convertir fácilmente a cualquier zona horaria, pero no existe ningún método que permita pasar una zona horaria de destino.
+3. Usa la clase `ZonedDateTime`, que ayuda con la conversión de zona horaria al escribir en un `DateTime` sin zona horaria (porque sabemos que debe usarse la zona horaria del servidor).
+   1. Pero escribir un `ZonedDateTime` en una columna con una zona horaria definida requiere que el usuario compense la conversión del driver.
+4. Usa `Long` para escribir milisegundos de Unix timestamp.
+5. Usa `String` para realizar todas las conversiones del lado de la aplicación (lo cual no es muy portable).
+
+<Warning>
+  Se recomienda usar `java.time.ZoneId#of(java.lang.String)` al buscar una zona horaria por ID.
+  Este método lanzará una excepción si no se encuentra la zona horaria (`java.util.TimeZone#getTimeZone(java.lang.String)` volverá silenciosamente a `GMT`).
+
+  La forma correcta de obtener la zona horaria `Tokyo` es:
+
+  `TimeZone.getTimeZone(ZoneId.of("Asia/Tokyo"))`
+</Warning>
+
+<div id="date">
+  ## Fecha
+</div>
+
+Las fechas son, por naturaleza, independientes de la zona horaria. Existen los tipos `Date` y `Date32` para almacenar fechas. Ambos tipos usan un número de días desde la época (`1970-01-01`). `Date` usa únicamente números positivos de días, por lo que su rango termina en `2149-06-06`. `Date32` admite números negativos de días para cubrir fechas anteriores a `1970-01-01`, pero su rango es más reducido (de `1900-01-01` a `2100-01-01`, donde 0 es `1970-01-01`). ClickHouse considera `2026-01-01` como `2026-01-01` en cualquier zona horaria, y no existe ningún parámetro de zona horaria para las definiciones de columnas.
+
+<div id="using-localdate">
+  ### Uso de `java.time.LocalDate`
+</div>
+
+En Java, la clase más adecuada para representar valores de fecha es `java.time.LocalDate`. El cliente utiliza esta clase para almacenar el valor de las columnas `Date` y `Date32` (leyendo `LocalDate.ofEpochDay((long)readUnsignedShortLE())`).
+
+Recomendamos usar `java.time.LocalDate` porque no se ve afectada por las conversiones de zona horaria y forma parte de la API moderna de fecha y hora.
+
+<div id="using-java-sql-date">
+  ### Uso de `java.sql.Date`
+</div>
+
+`LocalDate` se introdujo en Java 8. Antes de eso, se usaba `java.sql.Date` para escribir y leer fechas. Internamente, esta clase es un contenedor de un instante (un valor temporal que representa un punto absoluto en el tiempo). Debido a ello, `toString()` devuelve una fecha distinta según la zona horaria en la que se ejecute la JVM. Esto obliga al driver a construir los valores con cuidado y requiere que el usuario sea consciente de ello.
+
+<div id="calendar-based-reinterpretation">
+  ### Reinterpretación basada en calendario
+</div>
+
+`java.sql.ResultSet` tiene un método para obtener valores de fecha que acepta un `Calendar`, y `java.sql.PreparedStatement` incluye un método similar. Esto se diseñó para permitir que el driver JDBC reinterprete un valor de fecha en la zona horaria especificada. Por ejemplo, la DB tiene el valor `2026-01-01`, pero la aplicación quiere interpretar esta fecha como la medianoche en `Tokyo`. Esto significa que el objeto `java.sql.Date` devuelto tendrá un instante específico y, al convertirlo a la zona horaria local, puede corresponder a una fecha distinta debido a la diferencia horaria. Podemos lograr lo mismo con `LocalDate` mediante `java.time.LocalDate#atStartOfDay(java.time.ZoneId)`.
+
+El driver JDBC de ClickHouse siempre devuelve un objeto `java.sql.Date` que apunta a la fecha **local** a medianoche. En otras palabras, si la fecha es `2026-01-01`, nos referimos a `2026-01-01 12:00 AM` en la zona horaria de la JVM (el mismo comportamiento que los drivers JDBC de PostgreSQL y MariaDB).
+
+<div id="time">
+  ## Time
+</div>
+
+Los valores de Time, al igual que los de Date, no dependen de la zona horaria en la mayoría de los casos. ClickHouse no realiza ninguna transformación de los valores literales de hora a ninguna zona horaria: `’6:30’` es el mismo en cualquier lugar donde se lea.
+
+<div id="clickhouse-time-types">
+  ### Tipos de tiempo de ClickHouse
+</div>
+
+`Time` y `Time64` se introdujeron en la versión `25.6`. Antes de eso, se usaban en su lugar los tipos de timestamp `DateTime` y `DateTime64` (que se analizan más adelante en esta guía). `Time` se almacena como un entero de 32 bits que representa una cantidad de segundos, y su rango es `[-999:59:59, 999:59:59]`. `Time64` se codifica como un Decimal64 sin signo y almacena distintas unidades de tiempo según la precisión. Las opciones habituales son 3 (milisegundos), 6 (microsegundos) y 9 (nanosegundos). El rango de valores de precisión es `[0, 9]`.
+
+<div id="java-type-mapping">
+  ### Correspondencia de tipos de Java
+</div>
+
+El cliente lee `Time` y `Time64` y los almacena como `LocalDateTime`. Esto se hace para admitir el rango de tiempos negativos (`LocalTime` no lo admite). En este caso, la parte de la fecha corresponde a la fecha de época `1970-01-01`, por lo que los valores negativos quedarán antes de esa fecha.
+
+La compatibilidad principal con los tipos de tiempo se implementa mediante `LocalTime` (cuando el valor cabe dentro de un día) y `Duration` para abarcar todo el rango de valores. `LocalDateTime` solo puede usarse para lectura.
+
+<div id="using-java-sql-time">
+  ### Uso de `java.sql.Time`
+</div>
+
+El uso de `java.sql.Time` está limitado al intervalo de `LocalTime`. Internamente, `java.sql.Time` se convierte en un literal de cadena. El valor puede modificarse usando un parámetro `Calendar` con `PreparedStatement#setTime()`.
+
+<div id="totime-function">
+  ### La función `toTime`
+</div>
+
+<Note>
+  * `toTime` siempre requiere `Date`, `DateTime` u otro tipo similar. No acepta cadenas. Problema relacionado: https://github.com/ClickHouse/ClickHouse/issues/89896
+  * Es un alias de [`toTimeWithFixedDate`](/es/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
+  * Hay un problema relacionado con la zona horaria: https://github.com/ClickHouse/ClickHouse/pull/90310
+</Note>
+
+<div id="timestamp">
+  ## timestamp
+</div>
+
+Una timestamp es un punto específico en el tiempo. Por ejemplo, una timestamp Unix representa cualquier instante como un número de segundos relativo a `1970-01-01 00:00:00` `UTC` (un número negativo de segundos representa una timestamp anterior a la hora Unix, y un número positivo representa una posterior). Esta representación es fácil de calcular y manejar si el observador se encuentra en la zona horaria `UTC` o la usa en lugar de su zona horaria local.
+
+<div id="clickhouse-timestamp-types">
+  ### Tipos de timestamp de ClickHouse
+</div>
+
+En ClickHouse existen los tipos de timestamp `DateTime` (entero de 32 bits; la resolución siempre es en segundos) y `DateTime64` (entero de 64 bits; la resolución depende de la definición). Los valores siempre se almacenan como timestamps UTC. Esto significa que, cuando se representan como números, no se aplica ninguna conversión de zona horaria.
+
+<div id="string-representation-and-timezone-behavior">
+  ### Representación en cadena y comportamiento de la zona horaria
+</div>
+
+La representación en cadena tiene ciertas complejidades:
+
+* Si no se especifica ninguna zona horaria en la definición de la columna y se pasa una cadena al escribir, se convertirá de la zona horaria del servidor a un número de timestamp UTC. Cuando se lee un valor de esa columna, se convertirá de un timestamp UTC a un timestamp literal usando la zona horaria del servidor o de la sesión (se aplica un enfoque similar a los literales de timestamp en expresiones donde la zona horaria no se define explícitamente).
+* Si se especifica una zona horaria en la definición de la columna, solo se usa esa zona horaria en todas las conversiones de cadenas. Esto contradice la lógica aplicada cuando no se especifica ninguna zona horaria, por lo que requiere comprender bien cómo se escriben los datos para cada columna de la consulta.
+* Si se pasa una fecha como cadena en un formato que incluye una zona horaria, se necesita una función de conversión. Normalmente se usa [`parseDateTimeBestEffort`](/es/reference/functions/regular-functions/type-conversion-functions#parseDateTimeBestEffort).
+
+<div id="how-jdbc-driver-handles-timestamps">
+  ### Cómo el driver JDBC gestiona los timestamps
+</div>
+
+En el controlador JDBC, convertimos los timestamps en una representación numérica:
+
+```java
+"fromUnixTimestamp64Nano(" + epochSeconds * 1_000_000_000L + nanos + ")"
+```
+
+Esta representación resuelve la mayoría de los problemas de conversión de los valores de timestamp, ya que envía los datos al servidor en un formato unificado. Sin embargo, este enfoque requiere un pequeño ajuste en las Sentencias SQL, pero ofrece la forma más sencilla y directa de escribir timestamps en cualquier columna.
+
+`DateTime` y `DateTime64` se leen y almacenan en el cliente como `java.time.ZonedDateTime`, lo que facilita la conversión de estos valores a cualquier otra zona horaria (se conserva la información de la zona horaria).
+
+<div id="common-pitfall-todatetime64">
+  ### Error habitual con `toDateTime64`
+</div>
+
+El siguiente ejemplo de código parece correcto, pero falla en la aserción:
+
+```java
+String sql = "SELECT toDateTime64(?, 3)";
+try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+    LocalDateTime localTs = LocalDateTime.parse("2021-01-01T01:34:56");
+    stmt.setObject(1, localTs);
+    try (ResultSet rs = stmt.executeQuery()) {
+        rs.next();
+        assertEquals(rs.getObject(1, LocalDateTime.class), localTs);
+    }
+}
+```
+
+Esto ocurre porque `toDateTime64` usa la zona horaria del servidor y no tiene en cuenta la zona horaria de origen.
+
+<div id="conversion-tables">
+  ## Tablas de conversión
+</div>
+
+Si un par de conversión no aparece en las tablas de abajo, significa que esa conversión no es compatible. Por ejemplo, las columnas `Date` no pueden leerse como `java.sql.Timestamp` porque no tienen parte de hora.
+El driver no convierte valores enteros en ningún valor de fecha u hora. Llamar a `pstmt.setLong("timestamp", 1772132359L)` hará que `1772132359` se escriba como un número en el servidor, que se tratará como
+un Unix timestamp UTC en segundos.
+
+<div id="writing-values-setobject">
+  ### Escritura de valores con `PreparedStatement#setObject`
+</div>
+
+La siguiente tabla muestra cómo se convierten los valores al establecerlos con `PreparedStatement#setObject(column, value)`:
+
+| Clase de `value`          | Conversión                                                                                            |
+| ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `java.time.LocalDate`     | Se formatea como `YYYY-MM-DD`.                                                                        |
+| `java.sql.Date`           | Se convierte con el calendario predeterminado y se formatea como `LocalDate` (`YYYY-MM-DD`).          |
+| `java.time.LocalTime`     | Se formatea como `HH:mm:ss`.                                                                          |
+| `java.time.Duration`      | Se formatea como `HHH:mm:ss`. El valor puede ser negativo.                                            |
+| `java.sql.Time`           | Se convierte con el calendario predeterminado y se formatea como `LocalTime` (`HH:mm`).               |
+| `java.time.LocalDateTime` | Se convierte en una timestamp Unix en nanosegundos y se envuelve con `fromUnixTimestamp64Nano`. |
+| `java.time.ZonedDateTime` | Se convierte en una timestamp Unix en nanosegundos y se envuelve con `fromUnixTimestamp64Nano`. |
+| `java.sql.Timestamp`      | Se convierte en una timestamp Unix en nanosegundos y se envuelve con `fromUnixTimestamp64Nano`. |
+
+<Note>
+  El tipo de la columna debe considerarse desconocido. La aplicación es la que debe decidir qué pasar a la sentencia preparada.
+</Note>
+
+<div id="reading-values-getobject">
+  ### Lectura de valores con `ResultSet#getObject`
+</div>
+
+La siguiente tabla muestra cómo se convierten los valores cuando se leen con `ResultSet#getObject(column, class)`:
+
+| Tipo de dato de ClickHouse de `column` | Valor de `class`          | Conversión                                                                                                                                                                                                                                                                                               |
+| -------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Date` o `Date32`                      | `java.time.LocalDate`     | Valor de la DB (número de días) convertido a `LocalDate`.                                                                                                                                                                                                                                                |
+| `Date` o `Date32`                      | `java.sql.Date`           | Valor de la DB (número de días) convertido a `LocalDate` y luego a `java.sql.Date`, usando la medianoche de la zona horaria local como parte de la hora. Si se usa un calendario, se utilizará su zona horaria en lugar de la local. Ejemplo: valor de la DB `1970-01-10` → `LocalDate` es `1970-01-10`. |
+| `Time` o `Time64`                      | `java.time.LocalTime`     | Valor de la DB convertido a `LocalDateTime` y luego a `LocalTime`. Esto solo funciona para horas dentro de un mismo día.                                                                                                                                                                                 |
+| `Time` o `Time64`                      | `java.time.LocalDateTime` | Valor de la DB convertido a `LocalDateTime`.                                                                                                                                                                                                                                                             |
+| `Time` o `Time64`                      | `java.sql.Time`           | Valor de la DB convertido a `LocalDateTime` y luego a `java.sql.Time` usando el calendario predeterminado. Esto solo funciona para horas dentro de un mismo día.                                                                                                                                         |
+| `Time` o `Time64`                      | `java.time.Duration`      | Valor de la DB convertido a `LocalDateTime` y luego a `Duration`.                                                                                                                                                                                                                                        |
+| `DateTime` o `DateTime64`              | `java.time.LocalDateTime` | Valor de la DB convertido a `ZonedDateTime` y luego a `LocalDateTime`.                                                                                                                                                                                                                                   |
+| `DateTime` o `DateTime64`              | `java.time.ZonedDateTime` | Valor de la DB convertido a `ZonedDateTime`.                                                                                                                                                                                                                                                             |
+| `DateTime` o `DateTime64`              | `java.sql.Timestamp`      | Valor de la DB convertido a `ZonedDateTime` y luego a `java.sql.Timestamp` usando la zona horaria predeterminada.                                                                                                                                                                                        |
+
+<div id="using-calendar-based-methods">
+  ### Uso de métodos basados en calendario
+</div>
+
+Use `ResultSet#getTime(column, calendar)` y `ResultSet#getDate(column, calendar)` si los valores se almacenaron con `PreparedStatement#setTime(param, value, calendar)` y `PreparedStatement#setDate(param, value, calendar)`, respectivamente.

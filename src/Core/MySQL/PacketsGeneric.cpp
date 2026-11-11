@@ -35,7 +35,9 @@ OKPacket::OKPacket(
 
 size_t OKPacket::getPayloadSize() const
 {
-    size_t result = 2 + getLengthEncodedNumberSize(affected_rows);
+    /// The header is one byte, and both `affected_rows` and `last_insert_id` are length-encoded,
+    /// so the size of `last_insert_id` must be accounted for as well; it is not always one byte.
+    size_t result = 1 + getLengthEncodedNumberSize(affected_rows) + getLengthEncodedNumberSize(last_insert_id);
 
     if (capabilities & CLIENT_PROTOCOL_41)
     {
@@ -46,16 +48,14 @@ size_t OKPacket::getPayloadSize() const
         result += 2;
     }
 
-    if (capabilities & CLIENT_SESSION_TRACK)
-    {
-        result += getLengthEncodedStringSize(info);
-        if (status_flags & SERVER_SESSION_STATE_CHANGED)
-            result += getLengthEncodedStringSize(session_state_changes);
-    }
-    else
-    {
-        result += info.size();
-    }
+    /// `info` is always a length-encoded string, matching real MySQL. The protocol documentation
+    /// describes it as a rest-of-packet string when `CLIENT_SESSION_TRACK` is not negotiated, but the
+    /// MySQL server length-encodes it unconditionally, and `MySQL Connector/J` >= 8.2 reads it as a
+    /// length-encoded string regardless of the negotiated capabilities. Writing a plain string here
+    /// made `Connector/J` interpret the first byte of `info` as a length and fail to connect.
+    result += getLengthEncodedStringSize(info);
+    if ((capabilities & CLIENT_SESSION_TRACK) && (status_flags & SERVER_SESSION_STATE_CHANGED))
+        result += getLengthEncodedStringSize(session_state_changes);
 
     return result;
 }
@@ -77,18 +77,12 @@ void OKPacket::readPayloadImpl(ReadBuffer & payload)
         payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
     }
 
-    if (capabilities & CLIENT_SESSION_TRACK)
-    {
+    /// Some servers omit the `info` field completely when there is nothing to report, so only read
+    /// it when bytes remain in the packet.
+    if (!payload.eof())
         readLengthEncodedString(info, payload);
-        if (status_flags & SERVER_SESSION_STATE_CHANGED)
-        {
-            readLengthEncodedString(session_state_changes, payload);
-        }
-    }
-    else
-    {
-        readString(info, payload);
-    }
+    if ((capabilities & CLIENT_SESSION_TRACK) && (status_flags & SERVER_SESSION_STATE_CHANGED) && !payload.eof())
+        readLengthEncodedString(session_state_changes, payload);
 }
 
 void OKPacket::writePayloadImpl(WriteBuffer & buffer) const
@@ -108,16 +102,9 @@ void OKPacket::writePayloadImpl(WriteBuffer & buffer) const
         buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
     }
 
-    if (capabilities & CLIENT_SESSION_TRACK)
-    {
-        writeLengthEncodedString(info, buffer);
-        if (status_flags & SERVER_SESSION_STATE_CHANGED)
-            writeLengthEncodedString(session_state_changes, buffer);
-    }
-    else
-    {
-        writeString(info, buffer);
-    }
+    writeLengthEncodedString(info, buffer);
+    if ((capabilities & CLIENT_SESSION_TRACK) && (status_flags & SERVER_SESSION_STATE_CHANGED))
+        writeLengthEncodedString(session_state_changes, buffer);
 }
 
 EOFPacket::EOFPacket() : warnings(0x00), status_flags(0x00)
@@ -137,7 +124,7 @@ size_t EOFPacket::getPayloadSize() const
 void EOFPacket::readPayloadImpl(ReadBuffer & payload)
 {
     payload.readStrict(reinterpret_cast<char *>(&header), 1);
-    assert(header == 0xfe);
+    chassert(header == 0xfe);
     payload.readStrict(reinterpret_cast<char *>(&warnings), 2);
     payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
 }
@@ -152,7 +139,7 @@ void EOFPacket::writePayloadImpl(WriteBuffer & buffer) const
 void AuthSwitchPacket::readPayloadImpl(ReadBuffer & payload)
 {
     payload.readStrict(reinterpret_cast<char *>(&header), 1);
-    assert(header == 0xfe);
+    chassert(header == 0xfe);
     readStringUntilEOF(plugin_name, payload);
 }
 
@@ -173,7 +160,7 @@ size_t ERRPacket::getPayloadSize() const
 void ERRPacket::readPayloadImpl(ReadBuffer & payload)
 {
     payload.readStrict(reinterpret_cast<char *>(&header), 1);
-    assert(header == 0xff);
+    chassert(header == 0xff);
 
     payload.readStrict(reinterpret_cast<char *>(&error_code), 2);
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Port.h>
@@ -8,7 +9,7 @@
 namespace DB
 {
 
-struct AddSequenceNumber : ISimpleTransform
+struct AddSequenceNumber final : ISimpleTransform
 {
 public:
     explicit AddSequenceNumber(SharedHeader header_)
@@ -24,7 +25,7 @@ private:
     UInt64 chunk_sequence_number = 0;
 };
 
-class SortChunksBySequenceNumber : public IProcessor
+class SortChunksBySequenceNumber final : public IProcessor
 {
 public:
     SortChunksBySequenceNumber(const Block & header_, size_t num_inputs_);
@@ -39,9 +40,9 @@ public:
 
 private:
     const size_t num_inputs;
-    std::vector<Int64> chunk_snums;
-    std::vector<Chunk> chunks;
-    std::vector<bool> is_input_finished;
+    VectorWithMemoryTracking<Int64> chunk_snums;
+    Chunks chunks;
+    VectorWithMemoryTracking<bool> is_input_finished;
 };
 
 }

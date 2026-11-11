@@ -18,7 +18,7 @@ extern const int BAD_ARGUMENTS;
 namespace
 {
 
-class FunctionWKB : public IFunction
+class FunctionWKB final : public IFunction
 {
 public:
     static inline const char * name = "wkb";
@@ -31,19 +31,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
+    String getSignatureString() const override
+    {
+        return "(Any) -> String";
+    }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    /*
-    * Functions like recursiveRemoveLowCardinality don't pay enough attention to custom types and just erase
-    * the information about it during type conversions.
-    * While it is a big problem the quick solution would be just to disable default low cardinality implementation
-    * because it doesn't make a lot of sense for geo types.
-    */
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -57,6 +52,8 @@ public:
             transform = std::make_shared<WKBLineStringTransform>();
         else if (arguments[0].type->getName() == WKBPolygonTransform::name)
             transform = std::make_shared<WKBPolygonTransform>();
+        else if (arguments[0].type->getName() == WKBMultiPointTransform::name)
+            transform = std::make_shared<WKBMultiPointTransform>();
         else if (arguments[0].type->getName() == WKBMultiLineStringTransform::name)
             transform = std::make_shared<WKBMultiLineStringTransform>();
         else if (arguments[0].type->getName() == WKBMultiPolygonTransform::name)
@@ -90,13 +87,13 @@ REGISTER_FUNCTION(WKB)
         .arguments{{"geometry", "The input geometry type to convert into WKB."}},
         .examples{
             {"first call",
-             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();"
-             "INSERT INTO geom1 VALUES((0, 0));"
+             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();\n"
+             "INSERT INTO geom1 VALUES((0, 0));\n"
              "SELECT hex(wkb(a)) FROM geom1;",
              R"(
-    ┌─hex(wkb(a))─-----------------------------------------┐
-    │ 010100000000000000000000000000000000003440           │
-    └──────────────────────────────────────────────────────┘
+┌─hex(wkb(a))────────────────────────────────┐
+│ 010100000000000000000000000000000000000000 │
+└────────────────────────────────────────────┘
                 )"},
         },
         .introduced_in = {25, 7},

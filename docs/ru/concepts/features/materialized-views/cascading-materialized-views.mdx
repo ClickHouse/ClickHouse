@@ -1,0 +1,378 @@
+---
+slug: /guides/developer/cascading-materialized-views
+title: 'Каскадные materialized views'
+description: 'Как использовать несколько materialized views на основе исходной таблицы.'
+keywords: ['materialized view', 'агрегация']
+doc_type: 'guide'
+---
+
+Этот пример показывает, как создать materialized view, а затем каскадно построить вторую materialized view поверх первой. На этой странице вы увидите, как это сделать, какие для этого есть возможности и какие существуют ограничения. Разные сценарии использования можно реализовать, создав materialized view, которая использует другую materialized view в качестве источника.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/QDAJTKZT8y4?si=1KqPNHHfaKfxtPat" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<br />
+
+Пример:
+
+Мы будем использовать фиктивный набор данных с количеством просмотров в час для набора доменных имён.
+
+Наша цель
+
+1. Нам нужны данные, агрегированные по месяцам для каждого доменного имени,
+2. Нам также нужны данные, агрегированные по годам для каждого доменного имени.
+
+Вы можете выбрать один из следующих вариантов:
+
+* Писать запросы, которые будут читать и агрегировать данные во время выполнения SELECT-запроса
+* Подготовить данные во время приёма в новом формате
+* Подготовить данные во время приёма в виде определённой агрегации.
+
+Подготовка данных с помощью materialized views позволит сократить объём данных и вычислений, которые ClickHouse должен выполнять, и тем самым ускорить ваши SELECT-запросы.
+
+<div id="source-table-for-the-materialized-views">
+  ## Исходная таблица для materialized views
+</div>
+
+Создайте исходную таблицу: поскольку наша цель — строить отчёты по агрегированным данным, а не по отдельным строкам, мы можем разобрать входящие данные, передать нужную информацию в Materialized Views и отбросить сами данные. Это соответствует нашим целям и позволяет сэкономить место в хранилище, поэтому мы будем использовать движок таблицы `Null`.
+
+```sql
+CREATE DATABASE IF NOT EXISTS analytics;
+```
+
+```sql
+CREATE TABLE analytics.hourly_data
+(
+    `domain_name` String,
+    `event_time` DateTime,
+    `count_views` UInt64
+)
+ENGINE = Null
+```
+
+<Note>
+  Вы можете создать materialized view на таблице Null. Тогда данные, записываемые в таблицу, будут влиять на materialized view, но исходные необработанные данные по-прежнему будут отбрасываться.
+</Note>
+
+<div id="monthly-aggregated-table-and-materialized-view">
+  ## Ежемесячная aggregated table и materialized view
+</div>
+
+Для первого materialized view нам нужно создать целевую table `Target`; в этом примере это будет `analytics.monthly_aggregated_data`, где мы будем хранить сумму просмотров по месяцам и доменным именам.
+
+```sql
+CREATE TABLE analytics.monthly_aggregated_data
+(
+    `domain_name` String,
+    `month` Date,
+    `sumCountViews` AggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (domain_name, month)
+```
+
+materialized view, которое будет передавать данные в целевую таблицу, будет выглядеть так:
+
+```sql
+CREATE MATERIALIZED VIEW analytics.monthly_aggregated_data_mv
+TO analytics.monthly_aggregated_data
+AS
+SELECT
+    toDate(toStartOfMonth(event_time)) AS month,
+    domain_name,
+    sumState(count_views) AS sumCountViews
+FROM analytics.hourly_data
+GROUP BY
+    domain_name,
+    month
+```
+
+<div id="yearly-aggregated-table-and-materialized-view">
+  ## Ежегодно агрегированная таблица и materialized view
+</div>
+
+Теперь мы создадим второе materialized view, которое будет связано с предыдущей целевой таблицей `monthly_aggregated_data`.
+
+Сначала мы создадим новую целевую таблицу, в которой будет храниться суммарное количество просмотров, агрегированное по годам для каждого доменного имени.
+
+```sql
+CREATE TABLE analytics.year_aggregated_data
+(
+    `domain_name` String,
+    `year` UInt16,
+    `sumCountViews` UInt64
+)
+ENGINE = SummingMergeTree()
+ORDER BY (domain_name, year)
+```
+
+На этом шаге определяется каскад. Оператор `FROM` будет использовать таблицу `monthly_aggregated_data`, то есть поток данных будет таким:
+
+1. Данные поступают в таблицу `hourly_data`.
+2. ClickHouse перенаправит полученные данные в первую materialized view — `monthly_aggregated_data`,
+3. Наконец, данные, полученные на шаге 2, будут перенаправлены в `year_aggregated_data`.
+
+```sql
+CREATE MATERIALIZED VIEW analytics.year_aggregated_data_mv
+TO analytics.year_aggregated_data
+AS
+SELECT
+    toYear(toStartOfYear(month)) AS year,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    year
+```
+
+<Note>
+  Распространённое заблуждение при работе с materialized view состоит в том, что данные читаются из таблицы. `Materialized views` работают не так: пересылается не итоговый результат в таблице, а вставленный блок данных.
+
+  Представим, что в этом примере в `monthly_aggregated_data` используется движок CollapsingMergeTree. Данные, передаваемые в наше второе materialized view `year_aggregated_data_mv`, не будут итоговым результатом схлопнутой таблицы; будет передан блок данных с полями, определёнными в `SELECT ... GROUP BY`.
+
+  Если вы используете CollapsingMergeTree, ReplacingMergeTree или даже SummingMergeTree и планируете создать каскадное materialized view, вам нужно понимать описанные здесь ограничения.
+</Note>
+
+<div id="sample-data">
+  ## Пример данных
+</div>
+
+Теперь протестируем наше каскадное materialized view, вставив немного данных:
+
+```sql
+INSERT INTO analytics.hourly_data (domain_name, event_time, count_views)
+VALUES ('clickhouse.com', '2019-01-01 10:00:00', 1),
+       ('clickhouse.com', '2019-02-02 00:00:00', 2),
+       ('clickhouse.com', '2019-02-01 00:00:00', 3),
+       ('clickhouse.com', '2020-01-01 00:00:00', 6);
+```
+
+Если вы выполните SELECT для содержимого `analytics.hourly_data`, то увидите следующее, потому что движок таблицы — `Null`, хотя данные были обработаны.
+
+```sql
+SELECT * FROM analytics.hourly_data
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+Мы использовали небольшой набор данных, чтобы можно было отследить и сравнить результат с ожидаемым; когда ваш поток будет правильно работать на небольшом наборе данных, вы сможете просто перейти к большому объёму данных.
+
+<div id="results">
+  ## Результаты
+</div>
+
+Если вы попытаетесь выполнить запрос к целевой таблице, выбрав поле `sumCountViews`, то увидите бинарное представление (в некоторых терминалах), поскольку значение хранится не как число, а как тип AggregateFunction.
+Чтобы получить итоговый результат агрегации, следует использовать суффикс `-Merge`.
+
+Специальные символы, хранящиеся в AggregateFunction, можно увидеть с помощью этого запроса:
+
+```sql
+SELECT sumCountViews FROM analytics.monthly_aggregated_data
+```
+
+```response
+┌─sumCountViews─┐
+│               │
+│               │
+│               │
+└───────────────┘
+
+3 rows in set. Elapsed: 0.003 sec.
+```
+
+Вместо этого давайте попробуем использовать суффикс `Merge`, чтобы получить значение `sumCountViews`:
+
+```sql
+SELECT
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data;
+```
+
+```response
+┌─sumCountViews─┐
+│            12 │
+└───────────────┘
+
+1 строка в наборе. Elapsed: 0.003 sec.
+```
+
+В `AggregatingMergeTree` мы определили `AggregateFunction` как `sum`, поэтому можем использовать `sumMerge`. Если в `AggregateFunction` используется функция `avg`, то следует использовать `avgMerge`, и так далее.
+
+```sql
+SELECT
+    month,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    month
+```
+
+Теперь мы можем убедиться, что materialized views позволяют достичь поставленной нами цели.
+
+Теперь, когда данные хранятся в целевой таблице `monthly_aggregated_data`, мы можем получить агрегированные по месяцам данные для каждого доменного имени:
+
+```sql
+SELECT
+   month,
+   domain_name,
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+   domain_name,
+   month
+```
+
+```response
+┌──────month─┬─domain_name────┬─sumCountViews─┐
+│ 2020-01-01 │ clickhouse.com │             6 │
+│ 2019-01-01 │ clickhouse.com │             1 │
+│ 2019-02-01 │ clickhouse.com │             5 │
+└────────────┴────────────────┴───────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+Данные по каждому доменному имени, агрегированные по годам:
+
+```sql
+SELECT
+   year,
+   domain_name,
+   sum(sumCountViews)
+FROM analytics.year_aggregated_data
+GROUP BY
+   domain_name,
+   year
+```
+
+```response
+┌─year─┬─domain_name────┬─sum(sumCountViews)─┐
+│ 2019 │ clickhouse.com │                  6 │
+│ 2020 │ clickhouse.com │                  6 │
+└──────┴────────────────┴────────────────────┘
+
+2 строки в наборе. Прошло: 0.004 сек.
+```
+
+<div id="combining-multiple-source-tables-to-single-target-table">
+  ## Объединение нескольких исходных таблиц в одну целевую таблицу
+</div>
+
+materialized views также можно использовать, чтобы объединять несколько исходных таблиц в одну целевую таблицу. Это полезно, когда нужно создать materialized view с логикой, аналогичной `UNION ALL`.
+
+Сначала создайте две исходные таблицы, представляющие разные наборы метрик:
+
+```sql
+CREATE TABLE analytics.impressions
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+
+CREATE TABLE analytics.clicks
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+```
+
+Затем создайте таблицу `Target` с объединённым набором метрик:
+
+```sql
+CREATE TABLE analytics.daily_overview
+(
+    `on_date` Date,
+    `domain_name` String,
+    `impressions` SimpleAggregateFunction(sum, UInt64),
+    `clicks` SimpleAggregateFunction(sum, UInt64)
+) ENGINE = AggregatingMergeTree ORDER BY (on_date, domain_name)
+```
+
+Создайте два materialized view, направленных на одну и ту же таблицу `Target`. Отсутствующие столбцы не нужно указывать явно:
+
+```sql
+CREATE MATERIALIZED VIEW analytics.daily_impressions_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS impressions,
+    0 clicks         ---<<<--- если пропустить, значение будет таким же — 0
+FROM
+    analytics.impressions
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+
+CREATE MATERIALIZED VIEW analytics.daily_clicks_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS clicks,
+    0 impressions    ---<<<--- если пропустить, значение будет таким же — 0
+FROM
+    analytics.clicks
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+```
+
+Теперь при вставке значений они будут агрегироваться в соответствующих столбцах таблицы `Target`:
+
+```sql
+INSERT INTO analytics.impressions (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-02-01 00:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+
+INSERT INTO analytics.clicks (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+```
+
+Объединённые показы и клики в таблице `Target`:
+
+```sql
+SELECT
+    on_date,
+    domain_name,
+    sum(impressions) AS impressions,
+    sum(clicks) AS clicks
+FROM
+    analytics.daily_overview
+GROUP BY
+    on_date,
+    domain_name
+;
+```
+
+Этот запрос должен вернуть что-то вроде:
+
+```response
+┌────on_date─┬─domain_name────┬─impressions─┬─clicks─┐
+│ 2019-01-01 │ clickhouse.com │           2 │      2 │
+│ 2019-03-01 │ clickhouse.com │           1 │      1 │
+│ 2019-02-01 │ clickhouse.com │           1 │      0 │
+└────────────┴────────────────┴─────────────┴────────┘
+
+3 rows in set. Elapsed: 0.018 sec.
+```

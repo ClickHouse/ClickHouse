@@ -1,0 +1,361 @@
+---
+sidebarTitle: 'المرجع التقني'
+slug: /integrations/fivetran/reference
+description: 'تعيين الأنواع، وتفاصيل محرك الجدول، وأعمدة البيانات الوصفية، واستعلامات تصحيح الأخطاء لوجهة Fivetran ClickHouse.'
+title: 'المرجع التقني'
+doc_type: 'guide'
+keywords: ['fivetran', 'وجهة ClickHouse', 'مرجع تقني']
+---
+
+<div id="setup-details">
+  ## تفاصيل الإعداد
+</div>
+
+<div id="user-and-role-management">
+  ### إدارة المستخدمين والأدوار
+</div>
+
+يُفضَّل عدم استخدام المستخدم `default`؛ وبدلاً من ذلك، أنشئ مستخدمًا مخصّصًا لاستخدامه مع وجهة Fivetran هذه فقط. ستؤدي الأوامر التالية، عند تنفيذها باستخدام المستخدم `default`، إلى إنشاء مستخدم جديد باسم `fivetran_user` ومنحه الامتيازات المطلوبة.
+
+```sql
+CREATE USER fivetran_user IDENTIFIED BY '<password>'; -- use a secure password generator
+
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+بالإضافة إلى ذلك، يمكنك سحب صلاحية الوصول إلى بعض قواعد البيانات من المستخدم `fivetran_user`.
+على سبيل المثال، بتنفيذ تعليمة SQL التالية، نقيّد الوصول إلى قاعدة البيانات `default`:
+
+```sql
+REVOKE ALL ON default.* FROM fivetran_user;
+```
+
+يمكنك تنفيذ هذه العبارات في وحدة تحكم ClickHouse SQL.
+
+<div id="advanced-configuration">
+  ### الإعداد المتقدم
+</div>
+
+تدعم وجهة ClickHouse Cloud ملف إعداد JSON اختياريًا لحالات الاستخدام المتقدمة. ويتيح لك هذا الملف ضبط سلوك الوجهة بدقة من خلال تجاوز الإعدادات الافتراضية التي تتحكم في أحجام الدُفعات، والتوازي، ومجمّعات الاتصال، ومهلات الطلبات.
+
+<Note>
+  ملف الإعداد هذا اختياري بالكامل. وإذا لم يتم رفع أي ملف، فستستخدم الوجهة إعدادات افتراضية مناسبة تعمل جيدًا مع معظم حالات الاستخدام.
+</Note>
+
+يجب أن يكون الملف بصيغة JSON صالحة وأن يتوافق مع المخطط الموضّح أدناه.
+
+إذا احتجت إلى تعديل الإعداد بعد الإعداد الأولي، يمكنك تحرير إعدادات الوجهة في لوحة معلومات Fivetran ورفع ملف مُحدَّث.
+
+يحتوي ملف الإعداد على قسم رئيسي:
+
+```json
+{
+  "destination_configurations": { ... }
+}
+```
+
+يمكنك ضمنه تحديد الإعدادات التالية التي تتحكم في السلوك الداخلي لموصل وجهة ClickHouse نفسه.
+تؤثر هذه الإعدادات في كيفية معالجة الموصل للبيانات قبل إرسالها إلى ClickHouse.
+
+| الإعداد                  | النوع   | الافتراضي | النطاق المسموح  | الوصف                                                                                                                            |
+| ------------------------ | ------- | --------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `write_batch_size`       | integer | `100000`  | 5,000 – 100,000 | عدد الصفوف في كل Batch لعمليات الإدراج والتحديث والاستبدال.                                                                      |
+| `select_batch_size`      | integer | `1500`    | 200 – 1,500     | عدد الصفوف في كل Batch لاستعلامات SELECT المستخدمة أثناء التحديثات.                                                              |
+| `mutation_batch_size`    | integer | `1500`    | 200 – 1,500     | عدد الصفوف في كل Batch لعمليات mutation من نوع ALTER TABLE UPDATE في وضع السجل التاريخي. خفِّضه إذا كنت تواجه عبارات SQL كبيرة.  |
+| `hard_delete_batch_size` | integer | `1500`    | 200 – 1,500     | عدد الصفوف في كل Batch لعمليات الحذف النهائي في المزامنات العادية وفي وضع السجل التاريخي. خفِّضه إذا كنت تواجه عبارات SQL كبيرة. |
+
+جميع الحقول اختيارية. إذا لم يتم تحديد حقل، فستُستخدم القيمة الافتراضية.
+إذا كانت قيمة ما خارج النطاق المسموح، فستُبلغ الوجهة عن خطأ أثناء المزامنة.
+تُتجاهل الحقول غير المعروفة بصمت (مع تسجيل تحذير) ولا تتسبب في أخطاء، مما يتيح التوافق المستقبلي عند إضافة إعدادات جديدة.
+
+مثال:
+
+```json
+{
+  "destination_configurations": {
+    "write_batch_size": 50000,
+    "select_batch_size": 200
+  }
+}
+```
+
+<div id="type-mapping">
+  ## مطابقة تحويل الأنواع
+</div>
+
+تربط وجهة Fivetran ClickHouse [أنواع بيانات Fivetran](https://fivetran.com/docs/destinations#datatypes) بأنواع ClickHouse على النحو التالي:
+
+| نوع Fivetran  | نوع ClickHouse                                                   |
+| ------------- | ---------------------------------------------------------------- |
+| BOOLEAN       | [Bool](/ar/reference/data-types/boolean)                            |
+| SHORT         | [Int16](/ar/reference/data-types/int-uint)                          |
+| INT           | [Int32](/ar/reference/data-types/int-uint)                          |
+| LONG          | [Int64](/ar/reference/data-types/int-uint)                          |
+| BIGDECIMAL    | [Decimal(P, S)](/ar/reference/data-types/decimal)                   |
+| FLOAT         | [Float32](/ar/reference/data-types/float)                           |
+| DOUBLE        | [Float64](/ar/reference/data-types/float)                           |
+| LOCALDATE     | [Date32](/ar/reference/data-types/date32)                           |
+| LOCALDATETIME | [DateTime64(0, &#39;UTC&#39;)](/ar/reference/data-types/datetime64) |
+| INSTANT       | [DateTime64(9, &#39;UTC&#39;)](/ar/reference/data-types/datetime64) |
+| STRING        | [String](/ar/reference/data-types/string)                           |
+| LOCALTIME     | [String](/ar/reference/data-types/string) * **                      |
+| BINARY        | [String](/ar/reference/data-types/string) *                         |
+| XML           | [String](/ar/reference/data-types/string) *                         |
+| JSON          | [String](/ar/reference/data-types/string) *                         |
+
+<Note>
+  * تُخزَّن BINARY وXML وLOCALTIME وJSON بصفتها [String](/ar/reference/data-types/string) لأن نوع `String` في ClickHouse يمكنه تمثيل مجموعة اعتباطية من البايتات. وتضيف الوجهة تعليقًا إلى العمود للإشارة إلى نوع البيانات الأصلي. ولا يُستخدم نوع البيانات [JSON](/ar/reference/data-types/newjson) في ClickHouse لأنه وُسِم بأنه متقادم ولم يُوصَ به مطلقًا للاستخدام في بيئات الإنتاج.
+  ** ملاحظة: التذكرة الخاصة بتتبّع دعم النوع LOCALTIME: [clickhouse-fivetran-destination #15](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues/15).
+</Note>
+
+<div id="date-and-time-value-ranges">
+  ### نطاقات قيم التاريخ والوقت
+</div>
+
+يمكن لمصادر Fivetran إرسال قيم التاريخ والوقت ضمن النطاق [0001-01-01, 9999-12-31](https://fivetran.com/docs/destinations#dateandtimevaluerange).
+تكون نطاقات أنواع التاريخ في ClickHouse Cloud أضيق، لذا تُقصَر القيم الواقعة خارج النطاق المدعوم بصمت على أقرب حد:
+
+| نوع Fivetran  | نوع ClickHouse Cloud         | الحد الأدنى للقيمة  | الحد الأقصى للقيمة  |
+| ------------- | ---------------------------- | ------------------- | ------------------- |
+| LOCALDATE     | Date32                       | 1900-01-01          | 2299-12-31          |
+| LOCALDATETIME | DateTime64(0, &#39;UTC&#39;) | 1900-01-01 00:00:00 | 2262-04-11 23:47:16 |
+| INSTANT       | DateTime64(9, &#39;UTC&#39;) | 1900-01-01 00:00:00 | 2262-04-11 23:47:16 |
+
+* الحد الأعلى لـ INSTANT هو 2262-04-11 23:47:16 لأن DateTime64(9) يخزّن النانوثواني منذ epoch بصيغة int64، وتوافق 2^63 - 1 نانوثانية هذا التاريخ.
+  يدعم ClickHouse نفسه DateTime64 بدقة &lt;= 9 حتى 2299-12-31 23:59:59.
+* الحد الأعلى لـ LOCALDATETIME مقيَّد أيضًا عند 2262-04-11 23:47:16 بسبب [خلل معروف](https://github.com/ClickHouse/clickhouse-go/issues/1311) في مشغّل ClickHouse للغة Go، حيث يُستدعى `time.Time.UnixNano()` لجميع درجات دقة DateTime64 قبل تغيير المقياس، مما يسبب overflow في int64 للتواريخ التي تتجاوز 2262 حتى عند الدقة 0.
+
+<div id="table-structure">
+  ## جداول الوجهة
+</div>
+
+تستخدم وجهة ClickHouse Cloud
+محركًا من نوع [Replacing](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) من
+عائلة [SharedMergeTree](/ar/products/cloud/features/infrastructure/shared-merge-tree)
+(وتحديدًا، `SharedReplacingMergeTree`)، ويُحدَّد الإصدار بواسطة العمود `_fivetran_synced`.
+
+يُنشأ كل عمود، باستثناء المفاتيح الأساسية (مفاتيح الترتيب) وأعمدة البيانات الوصفية الخاصة بـ Fivetran،
+بنوع [Nullable(T)](/ar/reference/data-types/nullable)، حيث إن `T` هو
+نوع في ClickHouse Cloud استنادًا إلى [تعيين أنواع البيانات](#type-mapping).
+
+تختلف بنية الجدول بحسب
+[وضع المزامنة](https://fivetran.com/docs/using-fivetran/features#deletedrowhandling)
+المُعدّ للموصل: **الحذف المنطقي** (الافتراضي) أو **وضع السجل التاريخي** (SCD Type 2).
+
+<div id="soft-delete-mode">
+  ### وضع الحذف المنطقي
+</div>
+
+في وضع الحذف المنطقي، يتضمن كل جدول وجهة أعمدة البيانات الوصفية التالية:
+
+| العمود              | النوع                  | الوصف                                                                                                          |
+| ------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `_fivetran_synced`  | `DateTime64(9, 'UTC')` | الطابع الزمني الذي تمت فيه مزامنة السجل بواسطة Fivetran. ويُستخدم كعمود الإصدار لـ `SharedReplacingMergeTree`. |
+| `_fivetran_deleted` | `Bool`                 | علامة الحذف المنطقي. تُضبط على `true` عند حذف السجل من المصدر.                                                 |
+| `_fivetran_id`      | `String`               | معرّف فريد يُنشأ تلقائيًا. لا يظهر إلا عندما لا يحتوي الجدول المصدر على مفاتيح أساسية.                         |
+
+<div id="single-pk">
+  #### مفتاح أساسي واحد في جدول المصدر
+</div>
+
+على سبيل المثال، يحتوي جدول المصدر `users` على عمود مفتاح أساسي `id` (`INT`) وعمود عادي `name` (`STRING`).
+سيُعرَّف جدول الوجهة على النحو التالي:
+
+```sql
+CREATE TABLE `users`
+(
+    `id`                Int32,
+    `name`              Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY id
+SETTINGS index_granularity = 8192
+```
+
+في هذه الحالة، يُختار العمود `id` كمفتاح فرز للجدول.
+
+<div id="multiple-pks">
+  #### مفاتيح أساسية متعددة في جدول المصدر
+</div>
+
+إذا كان جدول المصدر يحتوي على عدة مفاتيح أساسية، فستُستخدم بحسب ترتيب ظهورها في تعريف جدول المصدر في Fivetran.
+
+على سبيل المثال، توجد جدول مصدر باسم `items` يضم أعمدة المفتاح الأساسي `id` (`INT`) و`name` (`STRING`)، بالإضافة إلى
+عمود عادي إضافي هو `description` (`STRING`). سيُعرَّف جدول الوجهة على النحو التالي:
+
+```sql
+CREATE TABLE `items`
+(
+    `id`                Int32,
+    `name`              String,
+    `description`       Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name)
+SETTINGS index_granularity = 8192
+```
+
+في هذه الحالة، يُختار العمودان `id` و`name` كمفتاحَي فرز للجدول.
+
+<div id="no-pks">
+  #### عدم وجود مفاتيح أساسية في الجدول المصدر
+</div>
+
+إذا كان الجدول المصدر لا يحتوي على مفاتيح أساسية، فستضيف Fivetran معرّفًا فريدًا في عمود باسم `_fivetran_id`.
+لنفترض وجود جدول `events` لا يضم في المصدر سوى العمودين `event` (`STRING`) و`timestamp` (`LOCALDATETIME`).
+في هذه الحالة، يكون جدول الوجهة كما يلي:
+
+```sql
+CREATE TABLE events
+(
+    `event`             Nullable(String),
+    `timestamp`         Nullable(DateTime),
+    `_fivetran_id`      String,
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY _fivetran_id
+SETTINGS index_granularity = 8192
+```
+
+نظرًا لأن `_fivetran_id` فريد، ولعدم وجود خيارات أخرى للمفتاح الأساسي، يُستخدم كمفتاح فرز للجدول.
+
+<div id="history-mode">
+  ### وضع السجل التاريخي (SCD Type 2)
+</div>
+
+عند تمكين [وضع السجل التاريخي](https://fivetran.com/docs/using-fivetran/features#historymode)،
+تحتفظ الوجهة بكل إصدار من كل سجل بدلًا من استبدال القيم السابقة.
+وهذا يطبّق [Slowly Changing Dimension Type 2](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) ‏(SCD Type 2)،
+مع الحفاظ على سجل تدقيق كامل لجميع التغييرات.
+
+في وضع السجل التاريخي، يتضمن كل جدول وجهة أعمدة البيانات الوصفية التالية:
+
+| Column             | Type                             | Description                                                                                                         |
+| ------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `_fivetran_synced` | `DateTime64(9, 'UTC')`           | الطابع الزمني الذي تمت فيه مزامنة السجل بواسطة Fivetran. ويُستخدم بوصفه عمود الإصدار لـ `SharedReplacingMergeTree`. |
+| `_fivetran_start`  | `DateTime64(9, 'UTC')`           | الطابع الزمني الذي أصبح عنده هذا الإصدار من السجل نشطًا. وهو جزء من مفتاح فرز الجدول.                               |
+| `_fivetran_end`    | `Nullable(DateTime64(9, 'UTC'))` | الطابع الزمني الذي استُبدل عنده هذا الإصدار. وتُضبط قيمته على `2262-04-11 23:47:16` للسجلات النشطة حاليًا.          |
+| `_fivetran_active` | `Nullable(Bool)`                 | ما إذا كان هذا هو الإصدار النشط حاليًا من السجل.                                                                    |
+| `_fivetran_id`     | `String`                         | معرّف فريد يُنشأ تلقائيًا. لا يظهر إلا عندما لا يحتوي الجدول المصدر على مفاتيح أساسية.                              |
+
+يُدرج العمود `_fivetran_start` دائمًا في عبارة `ORDER BY` باعتباره العنصر الأخير في مفتاح الفرز المركب.
+وهذا يتيح وجود عدة إصدارات من السجل نفسه (بأوقات بدء مختلفة) معًا داخل الجدول.
+
+عند تحديث سجل:
+
+* تُضبط قيمة `_fivetran_end` في الإصدار السابق على قيمة `_fivetran_start` في الإصدار الجديد ناقص نانوثانية واحدة، وتُضبط قيمة `_fivetran_active` على `false`.
+* يُدرج الإصدار الجديد مع ضبط `_fivetran_active` على `true` وضبط `_fivetran_end` على `2262-04-11 23:47:16.000000000` (وهي القيمة القصوى لـ `DateTime64(9)`).
+
+<div id="history-single-pk">
+  #### مفتاح أساسي واحد في الجدول المصدر
+</div>
+
+على سبيل المثال، يحتوي الجدول المصدر `users` على العمود `id` (`INT`) كمفتاح أساسي، والأعمدة العادية `name` (`STRING`) و`status` (`STRING`).
+وسيُعرَّف الجدول الوجهة في وضع السجل التاريخي على النحو التالي:
+
+```sql
+CREATE TABLE `users`
+(
+    `id`               Int32,
+    `name`             Nullable(String),
+    `status`           Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+في هذه الحالة، يشكّل `id` و `_fivetran_start` مفتاح الفرز المركّب.
+
+بعد بضع عمليات المزامنة، قد يحتوي الجدول على البيانات التالية:
+
+| id | name    | status | &#95;fivetran&#95;start       | &#95;fivetran&#95;end         | &#95;fivetran&#95;active |
+| -- | ------- | ------ | ----------------------------- | ----------------------------- | ------------------------ |
+| 1  | name 1  | TODO   | 2025-11-10 20:57:00.000000000 | 2025-11-11 20:56:59.999000000 | false                    |
+| 1  | name 11 | TODO   | 2025-11-11 20:57:00.000000000 | 2262-04-11 23:47:16.000000000 | true                     |
+| 2  | name 2  | TODO   | 2025-11-10 20:57:00.000000000 | 2262-04-11 23:47:16.000000000 | true                     |
+
+يحتوي السجل `id=1` على إصدارين: الإصدار الأصلي (`name 1`، غير نشط) والإصدار المحدَّث (`name 11`، نشط).
+أما السجل `id=2`، فلديه إصدار واحد فقط، وهو النشط حاليًا.
+
+<div id="history-multiple-pks">
+  #### وجود عدة مفاتيح أساسية في الجدول المصدر
+</div>
+
+إذا كان الجدول المصدر يحتوي على عدة مفاتيح أساسية، فستُدرَج جميعها في `ORDER BY` مع `_fivetran_start` باعتباره العنصر الأخير.
+
+على سبيل المثال، لنفترض وجود جدول مصدر باسم `items` يحتوي على عمودَي مفتاح أساسي هما `id` (`INT`) و`name` (`STRING`)، بالإضافة إلى
+عمود عادي آخر هو `description` (`STRING`). ويُعرَّف جدول الوجهة في وضع السجل التاريخي على النحو التالي:
+
+```sql
+CREATE TABLE `items`
+(
+    `id`               Int32,
+    `name`             String,
+    `description`      Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+في هذه الحالة، يُشكّل `id` و`name` و`_fivetran_start` مفتاح الفرز المركب.
+
+<div id="history-no-pks">
+  #### لا توجد مفاتيح أساسية في جدول المصدر
+</div>
+
+إذا كان جدول المصدر لا يحتوي على مفاتيح أساسية، فستضيف Fivetran معرّفًا فريدًا في عمود باسم `_fivetran_id`،
+وسيُضاف `_fivetran_start` إلى مفتاح الفرز.
+لنفترض وجود جدول `events` لا يحتوي في المصدر إلا على العمودين `event` (`STRING`) و`timestamp` (`LOCALDATETIME`).
+ويكون جدول الوجهة في وضع السجل التاريخي كما يلي:
+
+```sql
+CREATE TABLE events
+(
+    `event`            Nullable(String),
+    `timestamp`        Nullable(DateTime),
+    `_fivetran_id`     String,
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (_fivetran_id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+نظرًا إلى أن `_fivetran_id` و`_fivetran_start` يشكّلان مفتاح الفرز المركب.
+
+<div id="selecting-latest-version">
+  ### اختيار أحدث إصدار من البيانات من دون تكرارات
+</div>
+
+ينفّذ `SharedReplacingMergeTree` إلغاء تكرار البيانات في الخلفية
+[فقط أثناء عمليات الدمج وفي وقت غير معلوم](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree).
+ومع ذلك، يمكن اختيار أحدث إصدار من البيانات من دون تكرارات عند الحاجة باستخدام الكلمة المفتاحية `FINAL`:
+
+```sql
+SELECT *
+FROM example FINAL
+LIMIT 1000 
+```
+
+راجِع قسم [تحسين استعلامات القراءة](/ar/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#optimizing-reading-queries)&quot; في دليل استكشاف الأخطاء وإصلاحها للاطّلاع على نصائح حول تحسين الاستعلامات.
+
+<div id="retries-on-network-failures">
+  ## إعادة المحاولة عند فشل الشبكة
+</div>
+
+تعيد وجهة ClickHouse Cloud المحاولة عند حدوث أخطاء شبكة عابرة باستخدام خوارزمية التراجع الأسي.
+وهذا آمن حتى إذا قامت الوجهة بإدراج البيانات، لأن
+محرك الجدول `SharedReplacingMergeTree` يتعامل مع أي نُسخ مكررة محتملة.

@@ -36,24 +36,36 @@ for iteration in {1..5}; do
     ${CLICKHOUSE_CLIENT} --query "
         CREATE TABLE ${CLICKHOUSE_DATABASE}.filelog_dst (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
     "
+    # `FileLog` polls the directory using exponential backoff. The default
+    # `poll_directory_watch_events_backoff_max` is 32s, and under sanitizer
+    # builds (especially `MSan` and `ASan`+azure) with `BackgroundSchedulePool`
+    # contention the polling cycle can drift to that upper bound, so the
+    # 150s warm-up loop below occasionally times out before the file is
+    # picked up. Cap the backoff at 1s to bound the worst-case polling
+    # cycle to ~1s plus scheduling jitter — same pattern as in
+    # `02968_file_log_multiple_read`.
     ${CLICKHOUSE_CLIENT} --query "
         CREATE TABLE ${CLICKHOUSE_DATABASE}.filelog_src (k UInt64, v UInt64)
         ENGINE = FileLog('${DATA_DIR}/', 'CSV')
+        SETTINGS poll_directory_watch_events_backoff_max = 1000
     "
     ${CLICKHOUSE_CLIENT} --query "
         CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE}.filelog_mv TO ${CLICKHOUSE_DATABASE}.filelog_dst
         AS SELECT * FROM ${CLICKHOUSE_DATABASE}.filelog_src
     "
 
-    # Wait until the background thread picks up some data
-    for attempt in {1..30}; do
+    # Wait until the background thread picks up some data.
+    # The destination table may use Azure blob storage when the test runs with
+    # --azure-blob-storage, and under ASan the MergeTree part upload can stall
+    # for 30+ seconds, so use a generous timeout.
+    for attempt in {1..300}; do
         count=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLICKHOUSE_DATABASE}.filelog_dst")
         [[ "${count}" -ge 10 ]] && break
-        sleep 0.2
+        sleep 0.5
     done
 
     if [[ "${count}" -lt 10 ]]; then
-        echo "Warm-up failed: only ${count} rows consumed after 30 attempts" >&2
+        echo "Warm-up failed: only ${count} rows consumed after 300 attempts" >&2
         exit 1
     fi
 

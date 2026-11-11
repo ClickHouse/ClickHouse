@@ -1,0 +1,89 @@
+---
+title: ClickHouseでパラメーター化ビューを使う方法
+description: クエリ時のパラメーターに基づいてデータを動的に絞り込むために、ClickHouseでパラメーター化ビューを作成してクエリする方法を学びます。
+date: 2023-08-01
+tags: ['ユースケース']
+keywords: ['パラメーター化ビュー']
+---
+
+<div id="using-parameterized-views-in-clickhouse">
+  ## ClickHouse でパラメーター化ビューを使用する
+</div>
+
+パラメーター化ビューを使うと、クエリ実行時に指定するパラメーターに応じて、その場でデータをさまざまな切り口から分析できます。
+
+基本的な例を見てみましょう。
+
+1. テーブルを作成する
+
+```sql
+clickhouse-cloud :) CREATE TABLE raw_data (id UInt32, data String) ENGINE = MergeTree ORDER BY id
+
+CREATE TABLE raw_data
+(
+`id` UInt32,
+`data` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: aa21e614-1e10-4bba-88ce-4c7183a9148e
+
+Ok.
+
+0 rows in set. Elapsed: 0.332 sec.
+```
+
+2. サンプルのランダムデータをいくつか挿入する
+
+```sql
+clickhouse-cloud :) INSERT INTO raw_data SELECT * FROM generateRandom('`id` UInt32,
+`data` String',1,1) LIMIT 1000000;
+
+INSERT INTO raw_data SELECT *
+FROM generateRandom('`id` UInt32,
+`data` String', 1, 1)
+LIMIT 1000000
+
+Query id: c552a34a-b72f-45e1-bed0-778923e1b5c9
+
+Ok.
+
+0 rows in set. Elapsed: 0.438 sec. Processed 1.05 million rows, 10.99 MB (2.39 million rows/s., 25.11 MB/s.)
+```
+
+3. パラメーター化ビューを作成します:
+
+```sql
+clickhouse-cloud :) CREATE VIEW raw_data_parametrized AS SELECT * FROM raw_data WHERE id BETWEEN {id_from:UInt32} AND {id_to:UInt32}
+
+CREATE VIEW raw_data_parametrized AS
+SELECT *
+FROM raw_data
+WHERE (id >= {id_from:UInt32}) AND (id <= {id_to:UInt32})
+
+Query id: 45fb83a6-aa55-4197-a7cd-9e1ad2c76d48
+
+Ok.
+
+0 rows in set. Elapsed: 0.102 sec.
+```
+
+4. 想定されるパラメータを `FROM` 句に渡して、パラメーター化ビューをクエリします:
+
+```sql
+clickhouse-cloud :) SELECT count() FROM raw_data_parametrized(id_from=0, id_to=50000);
+
+SELECT count()
+FROM raw_data_parametrized(id_from = 0, id_to = 50000)
+
+Query id: 5731aae1-3e68-4e63-b57f-d50f29055744
+
+┌─count()─┐
+│ 317019 │
+└─────────┘
+
+1 row in set. Elapsed: 0.004 sec. Processed 319.49 thousand rows, 319.49 KB (76.29 million rows/s., 76.29 MB/s.)
+```
+
+詳細については、[https://clickhouse.com/docs/sql-reference/statements/create/view#parameterized-view](https://clickhouse.com/docs/sql-reference/statements/create/view#parameterized-view) をご参照ください

@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -11,7 +12,7 @@ namespace
 {
 
 /// Returns name of IColumn instance.
-class FunctionToColumnTypeName : public IFunction
+class FunctionToColumnTypeName final : public IFunction
 {
 public:
     static constexpr auto name = "toColumnTypeName";
@@ -40,9 +41,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeString>();
+        return "(Any) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

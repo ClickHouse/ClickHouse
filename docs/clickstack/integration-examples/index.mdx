@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/integration-guides
+description: 'Data ingestion for ClickStack - The ClickHouse Observability Stack'
+title: 'Integration guides'
+doc_type: 'landing-page'
+keywords: ['ClickStack data ingestion', 'observability data ingestion', 'ClickStack integration guides']
+---
+
+ClickStack provides multiple ways to ingest observability data into your ClickHouse instance. This section contains quick start guides for various log, trace, and metrics sources.
+
+<Note>
+Several of these integration guides use ClickStack Open Source's built-in OpenTelemetry Collector for quick testing and evaluation. 
+
+For production deployments, we recommend running integrations as OpenTelemetry Collector agents close to your workloads. These agents should forward telemetry data via OTLP to a ClickStack OpenTelemetry Collector, which then delivers the data either to a self-managed ClickHouse instance for the ClickStack Open Source distribution or to Managed ClickStack. See ["Sending OpenTelemetry data"](/clickstack/ingesting-data/opentelemetry) for production configuration.
+</Note>
+
+| Section | Description |
+|------|-------------|
+| [Host logs](/clickstack/integration-examples/host-logs) | Collect host system logs |
+| [AWS Lambda Logs using Rotel](/clickstack/integration-examples/aws-lambda) | Forward Lambda logs with Rotel |
+| [AWS CloudWatch](/clickstack/integration-examples/cloudwatch) | Forward CloudWatch log groups |
+| [Cloudflare Logs](/clickstack/integration-examples/cloudflare) | Collect Cloudflare logs |
+| [JVM Metrics](/clickstack/integration-examples/jvm-metrics) | Monitor JVM performance |
+| [Kafka Logs](/clickstack/integration-examples/kafka-logs) | Collect Kafka broker logs |
+| [Kafka Metrics](/clickstack/integration-examples/kafka-metrics) | Monitor Kafka performance |
+| [Kubernetes](/clickstack/integration-examples/kubernetes) | Monitor K8s clusters |
+| [MongoDB Logs](/clickstack/integration-examples/mongodb-logs) | Collect MongoDB server logs |
+| [MySQL Logs](/clickstack/integration-examples/mysql) | Collect MySQL slow query/error logs |
+| [Nginx Logs](/clickstack/integration-examples/nginx-logs) | Collect Nginx access/error logs |
+| [Nginx Traces](/clickstack/integration-examples/nginx-traces) | Trace Nginx HTTP requests |
+| [Node.js Traces](/clickstack/integration-examples/nodejs-traces) | Trace Node.js HTTP requests |
+| [PostgreSQL Logs](/clickstack/integration-examples/postgres-logs) | Collect Postgres logs |
+| [PostgreSQL Metrics](/clickstack/integration-examples/postgres-metrics) | Monitor Postgres performance |
+| [Redis Logs](/clickstack/integration-examples/redis-logs) | Collect Redis server logs |
+| [Redis Metrics](/clickstack/integration-examples/redis-metrics) | Monitor Redis performance |
+| [Systemd Logs](/clickstack/integration-examples/systemd) | Collect Systemd/Journald logs |
+| [Temporal Metrics](/clickstack/integration-examples/temporal)| Monitor Temporal Cloud Metrics |

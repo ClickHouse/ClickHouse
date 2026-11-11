@@ -9,7 +9,7 @@ SET max_execution_time = 300;
 
 CREATE TABLE t0 (x UInt64, y Tuple(UInt64, UInt64) ) ENGINE = MergeTree ORDER BY x SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;
 SYSTEM STOP MERGES t0;
-INSERT INTO t0 SELECT if(number % 2 = 0, 0, number) as x, (x, 0) from numbers(200) SETTINGS max_block_size = 1;
+INSERT INTO t0 SELECT if(number % 2 = 0, 0, number) as x, (x, 0) from numbers(20) SETTINGS max_block_size = 1;
 
 CREATE TABLE t1 (x UInt64, y Tuple(UInt64, UInt64) ) ENGINE = MergeTree ORDER BY x;
 

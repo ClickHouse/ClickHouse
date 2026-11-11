@@ -1,4 +1,5 @@
 #include <chrono>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemAsyncLoader.h>
 
 #include <Core/DecimalFunctions.h>
@@ -139,3 +140,6 @@ void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemAsyncLoader) }

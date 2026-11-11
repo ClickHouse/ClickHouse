@@ -20,15 +20,14 @@ bool LimitReadBuffer::nextImpl()
     /// Let underlying buffer calculate read bytes in `next()` call.
     in->position() = position();
 
-    if (bytes >= settings.read_no_less)
+    if (bytes >= settings.read_no_more)
     {
-        if (settings.expect_eof && bytes > settings.read_no_more)
+        /// A stream ending exactly at the limit is not an error, so the check waits until the limit is
+        /// reached. `eof` refills the nested buffer, it consumes nothing.
+        if (settings.expect_eof && !in->eof())
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Limit for LimitReadBuffer exceeded: {}", settings.excetion_hint);
 
-        if (bytes >= settings.read_no_more)
-            return false;
-
-        //throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected data, got {} bytes, expected {}", bytes, settings.read_atmost);
+        return false;
     }
 
     if (!in->next())
@@ -42,7 +41,8 @@ bool LimitReadBuffer::nextImpl()
         return false;
     }
 
-    BufferBase::set(in->position(), std::min(in->available(), getEffectiveBufferSize() - bytes), 0);
+    setWorkingBuffer(
+        in->buffer().subrange(in->position(), in->position() + std::min(in->available(), getEffectiveBufferSize() - bytes)), 0);
 
     return true;
 }
@@ -56,7 +56,7 @@ LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, Settings settings_)
     chassert(in);
     chassert(settings.read_no_less <= settings.read_no_more);
 
-    BufferBase::set(in->position(), std::min(in->available(), getEffectiveBufferSize()), 0);
+    setWorkingBuffer(in->buffer().subrange(in->position(), in->position() + std::min(in->available(), getEffectiveBufferSize())), 0);
 }
 
 
@@ -72,6 +72,19 @@ LimitReadBuffer::~LimitReadBuffer()
     /// Update underlying buffer's position in case when limit wasn't reached.
     if (!working_buffer.empty())
         in->position() = position();
+}
+
+bool LimitReadBuffer::poll(size_t timeout_microseconds)
+{
+    if (hasPendingData())
+        return true;
+
+    in->position() = position();
+
+    if (bytes >= getEffectiveBufferSize())
+        return true;
+
+    return in->poll(timeout_microseconds);
 }
 
 size_t LimitReadBuffer::getEffectiveBufferSize() const

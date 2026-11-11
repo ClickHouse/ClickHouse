@@ -169,7 +169,7 @@ def test_corrupted_random_part():
     )
 
     data_path = node.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='broken_table_1'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='broken_table_1'"
     ).strip()
     break_part("broken_table_1", "all_0_0_0")
 

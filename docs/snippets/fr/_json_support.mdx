@@ -1,0 +1,11 @@
+---
+title: Prise en charge du JSON
+---
+
+<div id="schema-choice-map-vs-json">
+  ## Choix du schéma : Map vs JSON
+</div>
+
+Par défaut, ClickStack stocke les attributs dans des colonnes `Map(LowCardinality(String), String)`. Il s’agit du schéma recommandé pour les charges de travail d’observabilité. Associé à la [sérialisation de map compartimentée](/fr/reference/data-types/map#bucketed-map-serialization) et à des index textuels sur les clés et les valeurs de la map, il permet des recherches sélectives sans la surcharge d’ingestion par clé propre aux sous-colonnes JSON dynamiques.
+
+Un schéma de type `JSON` est disponible en bêta pour évaluation sur des charges de travail avec un ensemble réduit et stable de clés d’attributs. Il n’est **pas recommandé** par défaut. Consultez [Map vs JSON type](/fr/clickstack/ingesting-data/schema/map-vs-json) pour la comparaison complète et les variables d’environnement requises pour activer la prise en charge de JSON.

@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemSettings.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Core/Settings.h>
@@ -9,6 +10,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 
 
@@ -41,6 +43,7 @@ development and the expectations one might have when using them:
 * PRODUCTION: The feature is stable, safe to use and does not have issues interacting with other PRODUCTION features.
 * BETA: The feature is stable and safe. The outcome of using it together with other features is unknown and correctness is not guaranteed. Testing and reports are welcome.
 * EXPERIMENTAL: The feature is under development. Only intended for developers and ClickHouse enthusiasts. The feature might or might not work and could be removed at any time.
+* PRIVATE PREVIEW: The feature is on a clear path to general availability. Its applicability is still limited and it is not recommended for production use.
 * OBSOLETE: No longer supported. Either it is already removed or it will be removed in future releases.
 )"},
     };
@@ -53,7 +56,10 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
     const auto & constraints = constraints_and_current_profiles->constraints;
 
     MutableColumnsAndConstraints params(res_columns, constraints);
-    settings.dumpToSystemSettingsColumns(params);
+    settings.dumpToSystemSettingsColumns(params, canDisplaySecrets(context));
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSettings) }

@@ -1,0 +1,147 @@
+---
+slug: /best-practices/select-data-types
+sidebarTitle: 'اختيار أنواع البيانات'
+title: 'اختيار أنواع البيانات'
+description: 'صفحة توضّح كيفية اختيار أنواع البيانات في ClickHouse'
+keywords: ['أنواع البيانات']
+doc_type: 'reference'
+---
+
+import NullableColumns from '/snippets/ar/_avoid_nullable_columns.mdx';
+
+أحد الأسباب الرئيسية وراء أداء الاستعلامات العالي في ClickHouse هو كفاءة ضغط البيانات. فكلما قلّ حجم البيانات المخزنة على القرص، أصبحت الاستعلامات وعمليات insert أسرع بفضل تقليل الحمل الإضافي لعمليات I/O. كما أن البنية القائمة على الأعمدة في ClickHouse ترتّب البيانات المتشابهة جنبًا إلى جنب بطبيعتها، مما يتيح لخوارزميات الضغط وcodecs تقليص حجم البيانات بشكل كبير. ولتحقيق أقصى استفادة من مزايا الضغط هذه، من الضروري اختيار أنواع البيانات المناسبة بعناية.
+
+تعتمد كفاءة الضغط في ClickHouse أساسًا على ثلاثة عوامل: ordering key، وأنواع البيانات، وcodecs، وجميعها تُحدَّد من خلال مخطط الجدول. ويسهم اختيار أنواع البيانات المثلى في تحقيق تحسينات فورية في كلٍّ من التخزين وأداء الاستعلامات.
+
+يمكن لبعض الإرشادات البسيطة أن تُحسّن المخطط بشكل ملحوظ:
+
+* **استخدم أنواعًا صارمة:** اختر دائمًا نوع البيانات الصحيح للأعمدة. ينبغي أن تستخدم الحقول الرقمية وحقول التاريخ أنواعًا رقمية وأنواع تاريخ مناسبة بدلًا من أنواع String العامة. وهذا يضمن دلالات صحيحة لعمليات التصفية وaggregations.
+
+* **تجنّب الأعمدة Nullable:** تضيف الأعمدة Nullable حملًا إضافيًا من خلال الاحتفاظ بأعمدة منفصلة لتتبّع القيم null. لا تستخدم Nullable إلا إذا كان ذلك مطلوبًا صراحةً للتمييز بين الحالة الفارغة والحالة null. وبخلاف ذلك، فعادةً ما تكون القيم الافتراضية أو القيم المكافئة للصفر كافية. ولمزيد من المعلومات حول سبب وجوب تجنّب هذا النوع ما لم تكن هناك حاجة إليه، راجع [تجنّب الأعمدة Nullable](/ar/concepts/best-practices/select-data-type#avoid-nullable-columns).
+
+* **قلّل precision الرقمية إلى الحد الأدنى:** اختر الأنواع الرقمية ذات أقل عدد ممكن من البتات مع الحفاظ على استيعاب نطاق البيانات المتوقع. على سبيل المثال، فضّل [UInt16 بدلًا من Int32](/ar/reference/data-types/int-uint) إذا لم تكن القيم السالبة مطلوبة وكان النطاق يقع ضمن 0–65535.
+
+* **حسّن precision التاريخ والوقت:** اختر نوع التاريخ أو datetime الأقل دقة الذي يلبّي متطلبات الاستعلامات. استخدم Date أو Date32 للحقول التي تحتوي على التاريخ فقط، وفضّل DateTime على DateTime64 ما لم تكن دقة المللي ثانية أو أدق ضرورية.
+
+* **استفد من LowCardinality والأنواع المتخصصة:** بالنسبة إلى الأعمدة التي تحتوي على أقل من نحو 10,000 قيمة فريدة، استخدم أنواع LowCardinality لتقليل التخزين بشكل كبير عبر dictionary encoding. وبالمثل، استخدم FixedString فقط عندما تكون قيم العمود سلاسل ثابتة الطول تمامًا (مثل رموز البلدان أو العملات)، وفضّل أنواع Enum للأعمدة التي تحتوي على مجموعة محدودة من القيم الممكنة لتمكين تخزين فعّال والتحقق المدمج من صحة البيانات.
+
+* **استخدم Enum للتحقق من صحة البيانات:** يمكن استخدام النوع Enum لترميز الأنواع المعدودة بكفاءة. ويمكن أن تكون Enums إما 8 أو 16 بتًا، وذلك حسب عدد القيم الفريدة المطلوب تخزينها. فكّر في استخدامه إذا كنت بحاجة إلى التحقق المرتبط به عند وقت insert (ستُرفض القيم غير المعرّفة)، أو إذا كنت ترغب في تنفيذ استعلامات تستفيد من ترتيب طبيعي في قيم Enum، مثل تخيّل عمودًا للملاحظات يحتوي على ردود المستخدمين Enum(&#39;:(&#39; = 1, &#39;:|&#39; = 2, &#39;:)&#39; = 3).
+
+<div id="example">
+  ## مثال
+</div>
+
+يوفّر ClickHouse أدوات مدمجة لتسهيل تحسين الأنواع. فعلى سبيل المثال، يمكن لاستدلال المخطط تحديد الأنواع المبدئية تلقائيًا. لنأخذ مجموعة بيانات Stack Overflow المتاحة علنًا بتنسيق Parquet. يوفّر إجراء استدلال بسيط للمخطط باستخدام الأمر [`DESCRIBE`](/ar/reference/statements/describe-table) مخططًا مبدئيًا غير مُحسَّن.
+
+<Note>
+  يربط ClickHouse هذه القيم افتراضيًا بأنواع Nullable المكافئة. ويُفضَّل ذلك لأن المخطط يستند إلى عيّنة من الصفوف فقط.
+</Note>
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────────────────┬─type──────────────────────────────┐
+│ Id                         │ Nullable(Int64)                   │
+│ PostTypeId                 │ Nullable(Int64)                   │
+│ AcceptedAnswerId           │ Nullable(Int64)                   │
+│ CreationDate               │ Nullable(DateTime64(3, 'UTC'))    │
+│ Score                      │ Nullable(Int64)                   │
+│ ViewCount                  │ Nullable(Int64)                   │
+│ Body                       │ Nullable(String)                  │
+│ OwnerUserId                │ Nullable(Int64)                   │
+│ OwnerDisplayName           │ Nullable(String)                  │
+│ LastEditorUserId           │ Nullable(Int64)                   │
+│ LastEditorDisplayName      │ Nullable(String)                  │
+│ LastEditDate               │ Nullable(DateTime64(3, 'UTC'))    │
+│ LastActivityDate           │ Nullable(DateTime64(3, 'UTC'))    │
+│ Title                      │ Nullable(String)                  │
+│ Tags                       │ Nullable(String)                  │
+│ AnswerCount                │ Nullable(Int64)                   │
+│ CommentCount               │ Nullable(Int64)                   │
+│ FavoriteCount              │ Nullable(Int64)                   │
+│ ContentLicense             │ Nullable(String)                  │
+│ ParentId                   │ Nullable(String)                  │
+│ CommunityOwnedDate         │ Nullable(DateTime64(3, 'UTC'))    │
+│ ClosedDate                 │ Nullable(DateTime64(3, 'UTC'))    │
+└────────────────────────────┴───────────────────────────────────┘
+
+22 rows in set. Elapsed: 0.130 sec.
+```
+
+<Note>
+  لاحظ أننا نستخدم أدناه نمط glob ‏*.parquet لقراءة جميع الملفات في المجلد stackoverflow/parquet/posts.
+</Note>
+
+بتطبيق قواعدنا البسيطة المبكرة على جدول posts، يمكننا تحديد النوع الأمثل لكل عمود:
+
+| العمود                  | هل هو رقمي | الحد الأدنى، الحد الأقصى                                     | القيم الفريدة | القيم الفارغة | تعليق                                                                                                | النوع المُحسَّن                                                                                                                                              |
+| ----------------------- | ---------- | ------------------------------------------------------------ | ------------- | ------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PostTypeId`            | نعم        | 1, 8                                                         | 8             | لا            |                                                                                                      | `Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8)` |
+| `AcceptedAnswerId`      | نعم        | 0, 78285170                                                  | 12282094      | نعم           | ميّز بين NULL والقيمة 0                                                                              | UInt32                                                                                                                                                       |
+| `CreationDate`          | لا         | 2008-07-31 21:42:52.667000000, 2024-03-31 23:59:17.697000000 | *             | لا            | لا حاجة إلى دقة المللي ثانية، استخدم DateTime                                                        | DateTime                                                                                                                                                     |
+| `Score`                 | نعم        | -217, 34970                                                  | 3236          | لا            |                                                                                                      | Int32                                                                                                                                                        |
+| `ViewCount`             | نعم        | 2, 13962748                                                  | 170867        | لا            |                                                                                                      | UInt32                                                                                                                                                       |
+| `Body`                  | لا         | -                                                            | *             | لا            |                                                                                                      | String                                                                                                                                                       |
+| `OwnerUserId`           | نعم        | -1, 4056915                                                  | 6256237       | نعم           |                                                                                                      | Int32                                                                                                                                                        |
+| `OwnerDisplayName`      | لا         | -                                                            | 181251        | نعم           | اعتبر NULL سلسلة فارغة                                                                               | String                                                                                                                                                       |
+| `LastEditorUserId`      | نعم        | -1, 9999993                                                  | 1104694       | نعم           | 0 قيمة غير مستخدمة ويمكن استخدامها لتمثيل nulls                                                      | Int32                                                                                                                                                        |
+| `LastEditorDisplayName` | لا         | *                                                            | 70952         | نعم           | اعتبر NULL سلسلة فارغة. تم اختبار LowCardinality ولم يحقق أي فائدة                                   | String                                                                                                                                                       |
+| `LastEditDate`          | لا         | 2008-08-01 13:24:35.051000000, 2024-04-06 21:01:22.697000000 | -             | لا            | لا حاجة إلى دقة الملّي ثانية، استخدم DateTime                                                        | DateTime                                                                                                                                                     |
+| `LastActivityDate`      | لا         | 2008-08-01 12:19:17.417000000, 2024-04-06 21:01:22.697000000 | *             | لا            | لا حاجة إلى دقة المللي ثانية، استخدم DateTime                                                        | DateTime                                                                                                                                                     |
+| `Title`                 | لا         | -                                                            | *             | لا            | اعتبار Null كسلسلة فارغة                                                                             | String                                                                                                                                                       |
+| `الوسوم`                | لا         | -                                                            | *             | لا            | اعتبار Null كسلسلة فارغة                                                                             | String                                                                                                                                                       |
+| `AnswerCount`           | نعم        | 0, 518                                                       | 216           | لا            | اعتبر Null و0 متساويين                                                                               | UInt16                                                                                                                                                       |
+| `CommentCount`          | نعم        | 0, 135                                                       | 100           | لا            | اعتبر NULL و0 متماثلين                                                                               | UInt8                                                                                                                                                        |
+| `FavoriteCount`         | نعم        | 0, 225                                                       | 6             | نعم           | اعتبر NULL و0 متساويين                                                                               | UInt8                                                                                                                                                        |
+| `ContentLicense`        | لا         | -                                                            | 3             | لا            | يقدّم LowCardinality أداءً أفضل من FixedString                                                       | LowCardinality(String)                                                                                                                                       |
+| `ParentId`              | لا         | *                                                            | 20696028      | نعم           | اعتبر NULL سلسلة نصية فارغة                                                                          | String                                                                                                                                                       |
+| `CommunityOwnedDate`    | لا         | 2008-08-12 04:59:35.017000000, 2024-04-01 05:36:41.380000000 | -             | نعم           | يمكن اعتماد القيمة الافتراضية 1970-01-01 للقيم NULL. لا حاجة إلى دقة الملّي ثانية، استخدم DateTime   | DateTime                                                                                                                                                     |
+| `ClosedDate`            | لا         | 2008-09-04 20:56:44, 2024-04-06 18:49:25.393000000           | *             | نعم           | يُراعى استخدام القيمة الافتراضية 1970-01-01 لقيم NULL. لا حاجة إلى دقة الملّي ثانية، استخدم DateTime | DateTime                                                                                                                                                     |
+
+<Info>
+  **نصيحة**
+
+  يعتمد تحديد النوع المناسب لعمودٍ ما على فهم نطاقه العددي وعدد القيم الفريدة فيه. للعثور على النطاق في جميع الأعمدة وعدد القيم المتميزة، يمكنك استخدام الاستعلام البسيط `SELECT * APPLY min, * APPLY max, * APPLY uniq FROM table FORMAT Vertical`. نوصي بتنفيذ ذلك على مجموعة فرعية أصغر من البيانات، لأن ذلك قد يكون مكلفًا.
+</Info>
+
+ينتج عن ذلك المخطط المُحسَّن التالي (من حيث الأنواع):
+
+```sql
+CREATE TABLE posts
+(
+   Id Int32,
+   PostTypeId Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 
+   'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   AcceptedAnswerId UInt32,
+   CreationDate DateTime,
+   Score Int32,
+   ViewCount UInt32,
+   Body String,
+   OwnerUserId Int32,
+   OwnerDisplayName String,
+   LastEditorUserId Int32,
+   LastEditorDisplayName String,
+   LastEditDate DateTime,
+   LastActivityDate DateTime,
+   Title String,
+   Tags String,
+   AnswerCount UInt16,
+   CommentCount UInt8,
+   FavoriteCount UInt8,
+   ContentLicense LowCardinality(String),
+   ParentId String,
+   CommunityOwnedDate DateTime,
+   ClosedDate DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+<div id="avoid-nullable-columns">
+  ## تجنب الأعمدة من النوع Nullable
+</div>
+
+<NullableColumns />

@@ -1,0 +1,38 @@
+---
+title: 'Prise en charge de la propagation des modifications de schéma'
+slug: /integrations/clickpipes/postgres/schema-changes
+description: 'Page décrivant les types de modifications de schéma que ClickPipes peut détecter dans les tables source'
+doc_type: 'reference'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+ClickPipes for Postgres peut détecter les modifications de schéma dans les tables source et, dans certains cas, propager automatiquement ces modifications vers les tables de destination. La manière dont chaque opération DDL est gérée est décrite ci-dessous :
+
+[//]: # "TODO Étendre cette page avec le comportement lors d'un renommage, des modifications de type de données et de truncate, ainsi que des recommandations sur la façon de gérer les modifications de schéma incompatibles."
+
+| Type de modification de schéma                                                                         | Comportement                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ajout d&#39;une nouvelle colonne (`ALTER TABLE ADD COLUMN ...`)                                        | Propagée automatiquement dès que la table reçoit un insert/update/delete. Les nouvelles colonnes seront remplies pour toutes les lignes répliquées après la modification de schéma                                                                                                                                                                |
+| Ajout d&#39;une nouvelle colonne avec une valeur par défaut (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | Propagée automatiquement dès que la table reçoit un insert/update/delete. Les [valeurs par défaut prises en charge](#default-values-for-added-columns) sont également ajoutées à la colonne ClickHouse, elles s&#39;appliquent donc aux lignes déjà présentes dans ClickHouse ainsi qu&#39;aux lignes répliquées après la modification de schéma. |
+| Suppression d&#39;une colonne existante (`ALTER TABLE DROP COLUMN ...`)                                | Détectée, mais **non** propagée. Les colonnes supprimées auront la valeur `NULL` pour toutes les lignes répliquées après la modification de schéma                                                                                                                                                                                                |
+
+Notez que l&#39;ajout d&#39;une colonne est propagé à la fin de la synchronisation d&#39;un batch, ce qui peut se produire après que l&#39;intervalle de synchronisation ou la taille du pull batch a été atteint. Plus d&#39;informations sur le contrôle des synchronisations [ici](/fr/integrations/clickpipes/postgres/controlling-sync)
+
+<div id="default-values-for-added-columns">
+  ## Valeurs par défaut des colonnes ajoutées
+</div>
+
+Pour une colonne ajoutée, ClickPipes ne propage une valeur par défaut que lorsqu’il peut convertir cette valeur en toute sécurité pour ClickHouse. Lorsqu’une valeur par défaut est propagée, ClickHouse l’utilise lors de la lecture de parties de données antérieures à l’ajout de la nouvelle colonne. Ainsi, les lignes déjà présentes dans ClickHouse affichent la même valeur que PostgreSQL utilise pour les lignes antérieures à `ADD COLUMN` ; il n’est pas nécessaire d’actualiser entièrement la table.
+
+Pour PostgreSQL, ClickPipes lit la valeur que PostgreSQL a stockée pour les lignes préexistantes, plutôt que l’expression par défaut actuelle de la colonne. Cela est important lorsque la valeur par défaut est une expression : une expression non volatile telle que `now()` est évaluée par PostgreSQL lors de l’ajout de la colonne, et ClickPipes propage la valeur obtenue, et non l’expression. Les opérations `SET DEFAULT` ou `DROP DEFAULT` ultérieures ne modifient pas la valeur par défaut utilisée pour les lignes existantes et ne sont pas propagées vers ClickHouse.
+
+Les valeurs suivantes sont propagées :
+
+* Les valeurs booléennes et numériques finies.
+* Les valeurs textuelles, notamment `varchar`, `char`, les enums, les UUID, JSON/JSONB, `hstore`, les adresses réseau et les dates.
+* Les horodatages. Les horodatages avec fuseau horaire sont normalisés en UTC.
+
+Les valeurs par défaut sont omises lorsque leur représentation ne peut pas être transposée en toute sécurité dans ClickHouse, notamment `NULL`, les valeurs numériques non finies, `bytea`, les tableaux, les intervalles, les valeurs d’heure et les types géométriques. La colonne est tout de même ajoutée, mais ClickHouse utilise la valeur par défaut habituelle de son type pour les parties antérieures à l’ajout de la colonne. Une actualisation complète de la table est nécessaire si ces lignes existantes doivent contenir la valeur par défaut de la source.

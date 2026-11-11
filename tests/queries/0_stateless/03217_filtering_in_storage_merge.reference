@@ -2,5 +2,5 @@ Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
       ReadFromMerge
-        Filter
+        Expression
           ReadFromMergeTree (default.test_03217_merge_replica_1)

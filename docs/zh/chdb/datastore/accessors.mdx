@@ -1,0 +1,640 @@
+---
+title: 'DataStore 访问器'
+sidebarTitle: '访问器'
+slug: /chdb/datastore/accessors
+description: 'String、DateTime、Array、JSON、URL、IP 和 Geo 访问器，提供 185+ 种方法'
+keywords: ['chdb', 'datastore', 'accessor', 'str', 'dt', 'arr', 'json', 'url', 'ip', 'geo']
+doc_type: 'reference'
+---
+
+DataStore 提供 7 个访问器命名空间，包含 185+ 种用于特定领域操作的方法。
+
+| 访问器     | 方法  | 描述                         |
+| ------- | --- | -------------------------- |
+| `.str`  | 56  | 字符串操作                      |
+| `.dt`   | 42+ | DateTime 操作                |
+| `.arr`  | 37  | Array 操作 (ClickHouse 特有)   |
+| `.json` | 13  | JSON 解析 (ClickHouse 特有)    |
+| `.url`  | 15  | URL 解析 (ClickHouse 特有)     |
+| `.ip`   | 9   | IP 地址操作 (ClickHouse 特有)    |
+| `.geo`  | 14  | 地理空间/距离操作 (ClickHouse 特有)  |
+
+***
+
+<div id="str">
+  ## String 访问器 (`.str`)
+</div>
+
+支持全部 56 个 pandas `.str` 方法，以及 ClickHouse 字符串函数。
+
+<div id="str-case">
+  ### 大小写转换
+</div>
+
+| 方法             | ClickHouse  | 说明      |
+| -------------- | ----------- | ------- |
+| `upper()`      | `upper()`   | 转为大写    |
+| `lower()`      | `lower()`   | 转为小写    |
+| `capitalize()` | `initcap()` | 首字母大写   |
+| `title()`      | `initcap()` | 标题格式大小写 |
+| `swapcase()`   | -           | 大小写互换   |
+| `casefold()`   | `lower()`   | 大小写折叠   |
+
+```python
+ds['name_upper'] = ds['name'].str.upper()
+ds['name_title'] = ds['name'].str.title()
+```
+
+<div id="str-length">
+  ### 长度与大小
+</div>
+
+| 方法              | ClickHouse      | 描述              |
+| --------------- | --------------- | --------------- |
+| `len()`         | `length()`      | String 长度 (字节)  |
+| `char_length()` | `char_length()` | 字符数长度           |
+
+```python
+ds['name_len'] = ds['name'].str.len()
+```
+
+<div id="str-substring">
+  ### 子串和切片
+</div>
+
+| 方法                   | ClickHouse    | 描述         |
+| -------------------- | ------------- | ---------- |
+| `slice(start, stop)` | `substring()` | 截取子串       |
+| `slice_replace()`    | -             | 替换切片部分     |
+| `left(n)`            | `left()`      | 最左边的 n 个字符 |
+| `right(n)`           | `right()`     | 最右边的 n 个字符 |
+| `get(i)`             | -             | 指定索引处的字符   |
+
+```python
+ds['first_3'] = ds['name'].str.slice(0, 3)
+ds['last_4'] = ds['name'].str.right(4)
+```
+
+<div id="str-trim">
+  ### 去除空白
+</div>
+
+| Method     | ClickHouse    | Description |
+| ---------- | ------------- | ----------- |
+| `strip()`  | `trim()`      | 去除空白字符      |
+| `lstrip()` | `trimLeft()`  | 去除开头的空白字符   |
+| `rstrip()` | `trimRight()` | 去除末尾的空白字符   |
+
+```python
+ds['trimmed'] = ds['text'].str.strip()
+```
+
+<div id="str-search">
+  ### 搜索与匹配
+</div>
+
+| 方法                | ClickHouse     | 描述           |
+| ----------------- | -------------- | ------------ |
+| `contains(pat)`   | `position()`   | 包含子串         |
+| `startswith(pat)` | `startsWith()` | 以前缀开头        |
+| `endswith(pat)`   | `endsWith()`   | 以后缀结尾        |
+| `find(sub)`       | `position()`   | 查找位置         |
+| `rfind(sub)`      | -              | 从右侧查找        |
+| `index(sub)`      | `position()`   | 查找，找不到则报错    |
+| `rindex(sub)`     | -              | 从右侧查找，找不到则报错 |
+| `match(pat)`      | `match()`      | 正则匹配         |
+| `fullmatch(pat)`  | -              | 完全正则匹配       |
+| `count(pat)`      | -              | 统计出现次数       |
+
+```python
+# 包含子串
+ds['has_john'] = ds['name'].str.contains('John')
+
+# 正则匹配
+ds['valid_email'] = ds['email'].str.match(r'^[\w.-]+@[\w.-]+\.\w+$')
+```
+
+<div id="str-replace">
+  ### 替换
+</div>
+
+| 方法                               | ClickHouse           | 描述    |
+| -------------------------------- | -------------------- | ----- |
+| `replace(pat, repl)`             | `replace()`          | 替换匹配项 |
+| `replace(pat, repl, regex=True)` | `replaceRegexpAll()` | 正则替换  |
+| `removeprefix(prefix)`           | -                    | 移除前缀  |
+| `removesuffix(suffix)`           | -                    | 移除后缀  |
+| `translate(table)`               | -                    | 字符转换  |
+
+```python
+ds['cleaned'] = ds['text'].str.replace('\n', ' ')
+ds['digits_only'] = ds['phone'].str.replace(r'\D', '', regex=True)
+```
+
+<div id="str-split">
+  ### 分割
+</div>
+
+| Method            | ClickHouse        | Description |
+| ----------------- | ----------------- | ----------- |
+| `split(sep)`      | `splitByString()` | 分割为数组       |
+| `rsplit(sep)`     | -                 | 从右侧开始分割     |
+| `partition(sep)`  | -                 | 分割成 3 部分    |
+| `rpartition(sep)` | -                 | 从右侧分割成 3 部分 |
+
+```python
+ds['parts'] = ds['path'].str.split('/')
+```
+
+<div id="str-padding">
+  ### 填充
+</div>
+
+| 方法              | ClickHouse          | 描述   |
+| --------------- | ------------------- | ---- |
+| `pad(width)`    | `leftPad()`         | 左侧填充 |
+| `ljust(width)`  | `rightPad()`        | 右对齐  |
+| `rjust(width)`  | `leftPad()`         | 左对齐  |
+| `center(width)` | -                   | 居中   |
+| `zfill(width)`  | `leftPad(..., '0')` | 零填充  |
+
+```python
+ds['padded_id'] = ds['id'].astype(str).str.zfill(6)
+```
+
+<div id="str-tests">
+  ### 字符测试
+</div>
+
+| 方法            | 说明       |
+| ------------- | -------- |
+| `isalpha()`   | 全为字母     |
+| `isdigit()`   | 全为数字     |
+| `isalnum()`   | 仅包含字母和数字 |
+| `isspace()`   | 全为空白字符   |
+| `isupper()`   | 全为大写字母   |
+| `islower()`   | 全为小写字母   |
+| `istitle()`   | 标题大小写    |
+| `isnumeric()` | 数值字符     |
+| `isdecimal()` | 十进制字符    |
+
+```python
+ds['is_numeric'] = ds['code'].str.isdigit()
+```
+
+<div id="str-other">
+  ### 其他
+</div>
+
+| 方法                 | 描述          |
+| ------------------ | ----------- |
+| `repeat(n)`        | 重复 n 次      |
+| `reverse()`        | 反转字符串       |
+| `wrap(width)`      | 按指定宽度换行     |
+| `encode(enc)`      | 编码          |
+| `decode(enc)`      | 解码          |
+| `normalize(form)`  | Unicode 规范化 |
+| `extract(pat)`     | 提取正则分组      |
+| `extractall(pat)`  | 提取所有匹配结果    |
+| `cat(sep)`         | 拼接所有内容      |
+| `get_dummies(sep)` | 虚拟变量        |
+
+***
+
+<div id="dt">
+  ## DateTime 访问器 (`.dt`)
+</div>
+
+包含 pandas `.dt` 的 42+ 个方法，以及 ClickHouse 日期时间函数。
+
+<div id="dt-components">
+  ### 日期组成部分
+</div>
+
+| 属性              | ClickHouse        | 说明          |
+| --------------- | ----------------- | ----------- |
+| `year`          | `toYear()`        | 年           |
+| `month`         | `toMonth()`       | 月 (1-12)    |
+| `day`           | `toDayOfMonth()`  | 日 (1-31)    |
+| `hour`          | `toHour()`        | 小时 (0-23)   |
+| `minute`        | `toMinute()`      | 分钟 (0-59)   |
+| `second`        | `toSecond()`      | 秒 (0-59)    |
+| `millisecond`   | `toMillisecond()` | 毫秒          |
+| `microsecond`   | `toMicrosecond()` | 微秒          |
+| `quarter`       | `toQuarter()`     | 季 (1-4)     |
+| `dayofweek`     | `toDayOfWeek()`   | 星期几 (0=周一)  |
+| `dayofyear`     | `toDayOfYear()`   | 一年中的第几天     |
+| `week`          | `toWeek()`        | 周数          |
+| `days_in_month` | -                 | 当月天数        |
+
+```python
+ds['year'] = ds['date'].dt.year
+ds['month'] = ds['date'].dt.month
+ds['day_of_week'] = ds['date'].dt.dayofweek
+```
+
+<div id="dt-truncation">
+  ### 截断
+</div>
+
+| 方法                      | ClickHouse           | 说明       |
+| ----------------------- | -------------------- | -------- |
+| `to_start_of_day()`     | `toStartOfDay()`     | 当天起始时间   |
+| `to_start_of_week()`    | `toStartOfWeek()`    | 当周起始时间   |
+| `to_start_of_month()`   | `toStartOfMonth()`   | 当月起始时间   |
+| `to_start_of_quarter()` | `toStartOfQuarter()` | 当季度起始时间  |
+| `to_start_of_year()`    | `toStartOfYear()`    | 当年起始时间   |
+| `to_start_of_hour()`    | `toStartOfHour()`    | 当前小时起始时间 |
+| `to_start_of_minute()`  | `toStartOfMinute()`  | 当前分钟起始时间 |
+
+```python
+ds['month_start'] = ds['date'].dt.to_start_of_month()
+```
+
+<div id="dt-arithmetic">
+  ### 算术
+</div>
+
+| Method               | ClickHouse         | Description |
+| -------------------- | ------------------ | ----------- |
+| `add_years(n)`       | `addYears()`       | 添加年份        |
+| `add_months(n)`      | `addMonths()`      | 添加月份        |
+| `add_weeks(n)`       | `addWeeks()`       | 添加周数        |
+| `add_days(n)`        | `addDays()`        | 添加天数        |
+| `add_hours(n)`       | `addHours()`       | 添加小时        |
+| `add_minutes(n)`     | `addMinutes()`     | 添加分钟        |
+| `add_seconds(n)`     | `addSeconds()`     | 添加秒数        |
+| `subtract_years(n)`  | `subtractYears()`  | 减少年份        |
+| `subtract_months(n)` | `subtractMonths()` | 减少月份        |
+| `subtract_days(n)`   | `subtractDays()`   | 减少天数        |
+
+```python
+ds['next_month'] = ds['date'].dt.add_months(1)
+ds['last_week'] = ds['date'].dt.subtract_weeks(1)
+```
+
+<div id="dt-checks">
+  ### 布尔值检查
+</div>
+
+| 方法                   | 描述      |
+| -------------------- | ------- |
+| `is_month_start()`   | 每月第一天   |
+| `is_month_end()`     | 每月最后一天  |
+| `is_quarter_start()` | 每季度第一天  |
+| `is_quarter_end()`   | 每季度最后一天 |
+| `is_year_start()`    | 每年第一天   |
+| `is_year_end()`      | 每年最后一天  |
+| `is_leap_year()`     | 闰年      |
+
+```python
+ds['is_eom'] = ds['date'].dt.is_month_end()
+```
+
+<div id="dt-formatting">
+  ### 格式化
+</div>
+
+| 方法              | ClickHouse         | 说明      |
+| --------------- | ------------------ | ------- |
+| `strftime(fmt)` | `formatDateTime()` | 格式化为字符串 |
+| `day_name()`    | -                  | 星期名称    |
+| `month_name()`  | -                  | 月份名称    |
+
+```python
+ds['date_str'] = ds['date'].dt.strftime('%Y-%m-%d')
+ds['day_name'] = ds['date'].dt.day_name()
+```
+
+<div id="dt-timezone">
+  ### 时区
+</div>
+
+| 方法                | ClickHouse     | 描述   |
+| ----------------- | -------------- | ---- |
+| `tz_convert(tz)`  | `toTimezone()` | 转换时区 |
+| `tz_localize(tz)` | -              | 指定时区 |
+
+```python
+ds['utc_time'] = ds['timestamp'].dt.tz_convert('UTC')
+```
+
+***
+
+<div id="arr">
+  ## Array 访问器 (`.arr`)
+</div>
+
+ClickHouse 特有的数组操作 (共 37 个方法) 。
+
+<div id="arr-properties">
+  ### 属性
+</div>
+
+| 属性          | ClickHouse   | 描述           |
+| ----------- | ------------ | ------------ |
+| `length`    | `length()`   | 数组长度         |
+| `size`      | `length()`   | `length` 的别名 |
+| `empty`     | `empty()`    | 是否为空         |
+| `not_empty` | `notEmpty()` | 是否不为空        |
+
+```python
+ds['tag_count'] = ds['tags'].arr.length
+ds['has_tags'] = ds['tags'].arr.not_empty
+```
+
+<div id="arr-access">
+  ### 元素访问
+</div>
+
+| 方法                      | ClickHouse              | 说明      |
+| ----------------------- | ----------------------- | ------- |
+| `array_first()`         | `arrayElement(..., 1)`  | 第一个元素   |
+| `array_last()`          | `arrayElement(..., -1)` | 最后一个元素  |
+| `array_element(n)`      | `arrayElement()`        | 第 N 个元素 |
+| `array_slice(off, len)` | `arraySlice()`          | 数组切片    |
+
+```python
+ds['first_tag'] = ds['tags'].arr.array_first()
+ds['last_tag'] = ds['tags'].arr.array_last()
+```
+
+<div id="arr-aggregations">
+  ### 聚合
+</div>
+
+| Method            | ClickHouse       | Description |
+| ----------------- | ---------------- | ----------- |
+| `array_sum()`     | `arraySum()`     | 元素总和        |
+| `array_avg()`     | `arrayAvg()`     | 平均值         |
+| `array_min()`     | `arrayMin()`     | 最小值         |
+| `array_max()`     | `arrayMax()`     | 最大值         |
+| `array_product()` | `arrayProduct()` | 乘积          |
+| `array_uniq()`    | `arrayUniq()`    | 唯一值数量       |
+
+```python
+ds['total'] = ds['values'].arr.array_sum()
+ds['average'] = ds['values'].arr.array_avg()
+```
+
+<div id="arr-transformations">
+  ### 转换
+</div>
+
+| 方法                     | ClickHouse           | 描述      |
+| ---------------------- | -------------------- | ------- |
+| `array_sort()`         | `arraySort()`        | 升序排序    |
+| `array_reverse_sort()` | `arrayReverseSort()` | 降序排序    |
+| `array_reverse()`      | `arrayReverse()`     | 反转顺序    |
+| `array_distinct()`     | `arrayDistinct()`    | 元素去重    |
+| `array_compact()`      | `arrayCompact()`     | 移除连续重复项 |
+| `array_flatten()`      | `arrayFlatten()`     | 展平嵌套结构  |
+
+```python
+ds['sorted_tags'] = ds['tags'].arr.array_sort()
+ds['unique_tags'] = ds['tags'].arr.array_distinct()
+```
+
+<div id="arr-modifications">
+  ### 修改操作
+</div>
+
+| 方法                       | ClickHouse         | 说明     |
+| ------------------------ | ------------------ | ------ |
+| `array_push_back(elem)`  | `arrayPushBack()`  | 添加到末尾  |
+| `array_push_front(elem)` | `arrayPushFront()` | 添加到开头  |
+| `array_pop_back()`       | `arrayPopBack()`   | 删除最后一个 |
+| `array_pop_front()`      | `arrayPopFront()`  | 删除第一个  |
+| `array_concat(other)`    | `arrayConcat()`    | 连接     |
+
+<div id="arr-search">
+  ### 查找
+</div>
+
+| 方法                  | ClickHouse     | 描述     |
+| ------------------- | -------------- | ------ |
+| `has(elem)`         | `has()`        | 是否包含元素 |
+| `index_of(elem)`    | `indexOf()`    | 查找索引位置 |
+| `count_equal(elem)` | `countEqual()` | 统计出现次数 |
+
+```python
+ds['has_python'] = ds['skills'].arr.has('Python')
+```
+
+<div id="arr-string">
+  ### String 操作
+</div>
+
+| 方法                         | ClickHouse            | 描述     |
+| -------------------------- | --------------------- | ------ |
+| `array_string_concat(sep)` | `arrayStringConcat()` | 拼接为字符串 |
+
+```python
+ds['tags_str'] = ds['tags'].arr.array_string_concat(', ')
+```
+
+***
+
+<div id="json">
+  ## JSON 访问器 (`.json`)
+</div>
+
+ClickHouse 特有的 JSON 解析方法 (13 种) 。
+
+| 方法                 | ClickHouse            | 描述           |
+| ------------------ | --------------------- | ------------ |
+| `get_string(path)` | `JSONExtractString()` | 提取字符串        |
+| `get_int(path)`    | `JSONExtractInt()`    | 提取整数         |
+| `get_float(path)`  | `JSONExtractFloat()`  | 提取浮点数        |
+| `get_bool(path)`   | `JSONExtractBool()`   | 提取布尔值        |
+| `get_raw(path)`    | `JSONExtractRaw()`    | 提取原始 JSON    |
+| `get_keys()`       | `JSONExtractKeys()`   | 获取键          |
+| `get_type(path)`   | `JSONType()`          | 获取类型         |
+| `get_length(path)` | `JSONLength()`        | 获取长度         |
+| `has_key(key)`     | `JSONHas()`           | 检查键是否存在      |
+| `is_valid()`       | `isValidJSON()`       | 验证 JSON 是否有效 |
+| `to_json_string()` | `toJSONString()`      | 转换为 JSON     |
+
+```python
+# 解析 JSON 列
+ds['user_name'] = ds['json_data'].json.get_string('user.name')
+ds['user_age'] = ds['json_data'].json.get_int('user.age')
+ds['is_active'] = ds['json_data'].json.get_bool('user.active')
+ds['has_email'] = ds['json_data'].json.has_key('user.email')
+```
+
+***
+
+<div id="url">
+  ## URL 访问器 (`.url`)
+</div>
+
+ClickHouse 特有的 URL 解析功能 (15 个方法) 。
+
+| 方法                            | ClickHouse               | 说明               |
+| ----------------------------- | ------------------------ | ---------------- |
+| `domain()`                    | `domain()`               | 提取域名             |
+| `domain_without_www()`        | `domainWithoutWWW()`     | 不含 www 的域名       |
+| `top_level_domain()`          | `topLevelDomain()`       | 顶级域名             |
+| `protocol()`                  | `protocol()`             | 协议 (http/https)  |
+| `path()`                      | `path()`                 | URL 路径           |
+| `path_full()`                 | `pathFull()`             | 包含查询字符串的路径       |
+| `query_string()`              | `queryString()`          | 查询字符串            |
+| `fragment()`                  | `fragment()`             | 片段 (#...)        |
+| `port()`                      | `port()`                 | 端口号              |
+| `extract_url_parameter(name)` | `extractURLParameter()`  | 获取查询参数           |
+| `extract_url_parameters()`    | `extractURLParameters()` | 所有参数             |
+| `cut_url_parameter(name)`     | `cutURLParameter()`      | 移除参数             |
+| `decode_url_component()`      | `decodeURLComponent()`   | URL 解码           |
+| `encode_url_component()`      | `encodeURLComponent()`   | URL 编码           |
+
+```python
+# 解析 URL
+ds['domain'] = ds['url'].url.domain()
+ds['path'] = ds['url'].url.path()
+ds['utm_source'] = ds['url'].url.extract_url_parameter('utm_source')
+```
+
+***
+
+<div id="ip">
+  ## IP Accessor (`.ip`)
+</div>
+
+ClickHouse 特有的 IP 地址操作 (9 个方法) 。
+
+| Method                     | ClickHouse          | Description   |
+| -------------------------- | ------------------- | ------------- |
+| `to_ipv4()`                | `toIPv4()`          | 转换为 IPv4      |
+| `to_ipv6()`                | `toIPv6()`          | 转换为 IPv6      |
+| `ipv4_num_to_string()`     | `IPv4NumToString()` | 数值转换为字符串      |
+| `ipv4_string_to_num()`     | `IPv4StringToNum()` | 字符串转换为数值      |
+| `ipv6_num_to_string()`     | `IPv6NumToString()` | IPv6 数值转换为字符串 |
+| `ipv4_to_ipv6()`           | `IPv4ToIPv6()`      | 转换为 IPv6      |
+| `is_ipv4_string()`         | `isIPv4String()`    | 校验 IPv4       |
+| `is_ipv6_string()`         | `isIPv6String()`    | 校验 IPv6       |
+| `ipv4_cidr_to_range(cidr)` | `IPv4CIDRToRange()` | 将 CIDR 转换为范围  |
+
+```python
+# IP 操作
+ds['is_valid_ip'] = ds['ip'].ip.is_ipv4_string()
+ds['ip_num'] = ds['ip'].ip.ipv4_string_to_num()
+```
+
+***
+
+<div id="geo">
+  ## Geo 访问器 (`.geo`)
+</div>
+
+ClickHouse 特有的 Geo/距离相关操作 (14 个方法) 。
+
+<div id="geo-distance">
+  ### 距离函数
+</div>
+
+| 方法                            | ClickHouse              | 描述        |
+| ----------------------------- | ----------------------- | --------- |
+| `great_circle_distance(...)`  | `greatCircleDistance()` | 大圆距离      |
+| `geo_distance(...)`           | `geoDistance()`         | WGS-84 距离 |
+| `l1_distance(v1, v2)`         | `L1Distance()`          | 曼哈顿距离     |
+| `l2_distance(v1, v2)`         | `L2Distance()`          | 欧氏距离      |
+| `l2_squared_distance(v1, v2)` | `L2SquaredDistance()`   | 欧氏距离的平方   |
+| `linf_distance(v1, v2)`       | `LinfDistance()`        | 切比雪夫距离    |
+| `cosine_distance(v1, v2)`     | `cosineDistance()`      | 余弦距离      |
+
+<div id="geo-vector">
+  ### 向量运算
+</div>
+
+| 方法                    | ClickHouse      | 描述   |
+| --------------------- | --------------- | ---- |
+| `dot_product(v1, v2)` | `dotProduct()`  | 点积   |
+| `l2_norm(vec)`        | `L2Norm()`      | 向量范数 |
+| `l2_normalize(vec)`   | `L2Normalize()` | 归一化  |
+
+<div id="geo-h3">
+  ### H3 函数
+</div>
+
+| 方法                         | ClickHouse  | 描述           |
+| -------------------------- | ----------- | ------------ |
+| `geo_to_h3(lon, lat, res)` | `geoToH3()` | Geo 转为 H3 索引 |
+| `h3_to_geo(h3)`            | `h3ToGeo()` | H3 转为地理坐标    |
+
+<div id="geo-point">
+  ### 点运算
+</div>
+
+| 方法                           | ClickHouse          | 描述       |
+| ---------------------------- | ------------------- | -------- |
+| `point_in_polygon(pt, poly)` | `pointInPolygon()`  | 点是否在多边形内 |
+| `point_in_ellipses(...)`     | `pointInEllipses()` | 点是否在椭圆内  |
+
+```python
+from chdb.datastore import F
+
+# 计算距离
+ds['distance'] = F.great_circle_distance(
+    ds['lon1'], ds['lat1'],
+    ds['lon2'], ds['lat2']
+)
+
+# 向量相似度
+ds['similarity'] = F.cosine_distance(ds['embedding1'], ds['embedding2'])
+```
+
+***
+
+<div id="using-accessors">
+  ## 使用 访问器
+</div>
+
+<div id="lazy">
+  ### 惰性求值
+</div>
+
+大多数 访问器 方法都采用惰性求值——它们返回的是稍后才会求值的表达式：
+
+```python
+# 以下这些都是惰性求值
+ds['name_upper'] = ds['name'].str.upper()  # 尚未执行
+ds['year'] = ds['date'].dt.year            # 尚未执行
+ds['domain'] = ds['url'].url.domain()      # 尚未执行
+
+# 访问结果时才会触发执行
+df = ds.to_df()  # 此时所有操作才会执行
+```
+
+<div id="execute-immediately">
+  ### 立即执行的方法
+</div>
+
+某些 `.str` 方法必须立即执行，因为它们会更改结构：
+
+| 方法                 | 返回               | 原因            |
+| ------------------ | ---------------- | ------------- |
+| `partition(sep)`   | DataStore (3 列)  | 会生成多个列        |
+| `rpartition(sep)`  | DataStore (3 列)  | 会生成多个列        |
+| `get_dummies(sep)` | DataStore (N 列)  | 列数是动态的        |
+| `extractall(pat)`  | DataStore        | MultiIndex 结果 |
+| `cat(sep)`         | str              | 聚合 (N 行 → 1)  |
+
+<div id="chaining">
+  ### 访问器 的链式调用
+</div>
+
+访问器 方法可以进行链式调用：
+
+```python
+ds['clean_name'] = (ds['name']
+    .str.strip()
+    .str.lower()
+    .str.replace(' ', '_')
+)
+
+ds['next_month_start'] = (ds['date']
+    .dt.add_months(1)
+    .dt.to_start_of_month()
+)
+```

@@ -20,5 +20,6 @@ class ActionsDAG;
   */
 ActionsDAG addMissingDefaults(
     const Block & header, const NamesAndTypesList & required_columns,
-    const ColumnsDescription & columns, ContextPtr context, bool null_as_default = false);
+    const ColumnsDescription & columns, ContextPtr context, bool null_as_default = false,
+    bool share_nested_offsets = true);
 }

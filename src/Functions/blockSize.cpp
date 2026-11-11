@@ -11,7 +11,7 @@ namespace
 
 /** columnsSize() - get the columns size in number of rows.
   */
-class FunctionBlockSize : public IFunction
+class FunctionBlockSize final : public IFunction
 {
 public:
     static constexpr auto name = "blockSize";
@@ -46,9 +46,9 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt64>();
+        return "() -> UInt64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -62,7 +62,7 @@ public:
 REGISTER_FUNCTION(BlockSize)
 {
     FunctionDocumentation::Description description = R"(
-In ClickHouse, queries are processed in [blocks](/development/architecture#block) (chunks).
+In ClickHouse, queries are processed in [blocks](/resources/develop-contribute/introduction/architecture#block) (chunks).
 This function returns the size (row count) of the block the function is called on.
     )";
     FunctionDocumentation::Syntax syntax = "blockSize()";

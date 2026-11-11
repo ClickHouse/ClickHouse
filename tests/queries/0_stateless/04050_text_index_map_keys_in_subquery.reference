@@ -5,7 +5,7 @@ CreatingSets (Create sets before main query execution)
   Expression (Project names)
     Sorting (Sorting for ORDER BY)
       Expression ((Before ORDER BY + Projection))
-        Expression ((WHERE + Change column names to column identifiers))
+        Expression
           ReadFromMergeTree (default.tab)
           Indexes:
             PrimaryKey

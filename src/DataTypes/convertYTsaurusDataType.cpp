@@ -140,7 +140,7 @@ DataTypePtr convertYTPrimitiveType(const String & data_type, bool type_v3)
     return data_type_ptr;
 }
 
-bool isTypeComplex(const Poco::Dynamic::Var & item)
+static bool isTypeComplex(const Poco::Dynamic::Var & item)
 {
     return !item.isString();
 }

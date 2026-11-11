@@ -1,0 +1,145 @@
+/*===------- llvm/Config/llvm-config.h - llvm configuration -------*- C -*-===*/
+/*                                                                            */
+/* Part of the LLVM Project, under the Apache License v2.0 with LLVM          */
+/* Exceptions.                                                                */
+/* See https://llvm.org/LICENSE.txt for license information.                  */
+/* SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception                    */
+/*                                                                            */
+/*===----------------------------------------------------------------------===*/
+
+/* This file enumerates variables from the LLVM configuration so that they
+   can be in exported headers and won't override package specific directives.
+   This is a C header that can be included in the llvm-c headers. */
+
+#ifndef LLVM_CONFIG_H
+#define LLVM_CONFIG_H
+
+/* Define if LLVM_ENABLE_DUMP is enabled */
+/* #undef LLVM_ENABLE_DUMP */
+
+/* Target triple LLVM will generate code for by default */
+#define LLVM_DEFAULT_TARGET_TRIPLE "@LLVM_HOST_TRIPLE@"
+
+/* Define if threads enabled */
+#define LLVM_ENABLE_THREADS 1
+
+/* Has gcc/MSVC atomic intrinsics */
+#define LLVM_HAS_ATOMICS 1
+
+/* Host triple LLVM will be executed on */
+#define LLVM_HOST_TRIPLE "@LLVM_HOST_TRIPLE@"
+
+/* LLVM architecture name for the native architecture, if available */
+#define LLVM_NATIVE_ARCH @LLVM_TARGET_ARCH@
+
+/* LLVM name for the native AsmParser init function, if available */
+#define LLVM_NATIVE_ASMPARSER LLVMInitialize@LLVM_TARGET_ARCH@AsmParser
+
+/* LLVM name for the native AsmPrinter init function, if available */
+#define LLVM_NATIVE_ASMPRINTER LLVMInitialize@LLVM_TARGET_ARCH@AsmPrinter
+
+/* LLVM name for the native Disassembler init function, if available */
+#define LLVM_NATIVE_DISASSEMBLER LLVMInitialize@LLVM_TARGET_ARCH@Disassembler
+
+/* LLVM name for the native Target init function, if available */
+#define LLVM_NATIVE_TARGET LLVMInitialize@LLVM_TARGET_ARCH@Target
+
+/* LLVM name for the native TargetInfo init function, if available */
+#define LLVM_NATIVE_TARGETINFO LLVMInitialize@LLVM_TARGET_ARCH@TargetInfo
+
+/* LLVM name for the native target MC init function, if available */
+#define LLVM_NATIVE_TARGETMC LLVMInitialize@LLVM_TARGET_ARCH@TargetMC
+
+/* LLVM name for the native target MCA init function, if available */
+/* #undef LLVM_NATIVE_TARGETMCA */
+
+/* Define if this is Unixish platform */
+#define LLVM_ON_UNIX 1
+
+/* Define if we have the Intel JIT API runtime support library */
+#define LLVM_USE_INTEL_JITEVENTS 0
+
+/* Define if we have the oprofile JIT-support library */
+#define LLVM_USE_OPROFILE 0
+
+/* Define if we have the perf JIT-support library */
+#define LLVM_USE_PERF 0
+
+/* Major version of the LLVM API */
+#define LLVM_VERSION_MAJOR 21
+
+/* Minor version of the LLVM API */
+#define LLVM_VERSION_MINOR 1
+
+/* Patch version of the LLVM API */
+#define LLVM_VERSION_PATCH 5
+
+/* LLVM version string */
+#define LLVM_VERSION_STRING "21.1.5"
+
+/* Whether LLVM records statistics for use with GetStatistics(),
+ * PrintStatistics() or PrintStatisticsJSON()
+ */
+#define LLVM_FORCE_ENABLE_STATS 0
+
+/* Define if we have z3 and want to build it */
+/* #undef LLVM_WITH_Z3 */
+
+/* Define if we have curl and want to use it */
+/* #undef LLVM_ENABLE_CURL */
+
+/* Define if we have cpp-httplib and want to use it */
+/* #undef LLVM_ENABLE_HTTPLIB */
+
+/* Define if zlib compression is available */
+#define LLVM_ENABLE_ZLIB 0
+
+/* Define if zstd compression is available */
+#define LLVM_ENABLE_ZSTD 0
+
+/* Define if LLVM is using tflite */
+/* #undef LLVM_HAVE_TFLITE */
+
+/* Define to 1 if you have the <sysexits.h> header file. */
+#define HAVE_SYSEXITS_H 1
+
+/* Define if building libLLVM shared library */
+/* #undef LLVM_BUILD_LLVM_DYLIB */
+
+/* Define if building LLVM with BUILD_SHARED_LIBS */
+/* #undef LLVM_BUILD_SHARED_LIBS */
+
+/* Define if exporting LLVM public interface for shared library */
+/* #undef LLVM_ENABLE_LLVM_EXPORT_ANNOTATIONS */
+
+/* Define if exporting LLVM-C public interface for shared library */
+/* #undef LLVM_ENABLE_LLVM_C_EXPORT_ANNOTATIONS */
+
+/* Define if building LLVM with LLVM_FORCE_USE_OLD_TOOLCHAIN_LIBS */
+/* #undef LLVM_FORCE_USE_OLD_TOOLCHAIN */
+
+/* Define if llvm_unreachable should be optimized with undefined behavior
+ * in non assert builds */
+#define LLVM_UNREACHABLE_OPTIMIZE 1
+
+/* Define to 1 if you have the DIA SDK installed, and to 0 if you don't. */
+#define LLVM_ENABLE_DIA_SDK 0
+
+/* Define if plugins enabled */
+/* #undef LLVM_ENABLE_PLUGINS */
+
+/* Define if logf128 is available */
+/* #undef LLVM_HAS_LOGF128 */
+
+/* Define if building LLVM with LLVM_ENABLE_TELEMETRY */
+#define LLVM_ENABLE_TELEMETRY 1
+
+/* Define to 1 to enable expensive checks for debug location coverage checking,
+   and to 0 otherwise. */
+#define LLVM_ENABLE_DEBUGLOC_TRACKING_COVERAGE 0
+
+/* Define to 1 to enable expensive tracking of the origin of debug location
+   coverage bugs, and to 0 otherwise. */
+#define LLVM_ENABLE_DEBUGLOC_TRACKING_ORIGIN 0
+
+#endif

@@ -32,7 +32,16 @@ else
     DO_CHOWN=0
 fi
 
-KEEPER_CONFIG="${KEEPER_CONFIG:-/etc/clickhouse-keeper/keeper_config.xml}"
+# The configuration file can be written in any of the supported formats.
+if [ -z "$KEEPER_CONFIG" ]; then
+    KEEPER_CONFIG=/etc/clickhouse-keeper/keeper_config.xml
+    for candidate in /etc/clickhouse-keeper/keeper_config.xml /etc/clickhouse-keeper/keeper_config.yaml /etc/clickhouse-keeper/keeper_config.yml; do
+        if [ -f "$candidate" ]; then
+            KEEPER_CONFIG="$candidate"
+            break
+        fi
+    done
+fi
 
 if [ -f "$KEEPER_CONFIG" ] && ! $gosu test -f "$KEEPER_CONFIG" -a -r "$KEEPER_CONFIG"; then
     echo "Configuration file '$KEEPER_CONFIG' isn't readable by user with id '$USER'"

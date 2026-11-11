@@ -1,0 +1,28 @@
+<test>
+    <query>SELECT groupBitOrIf(number, rand32() % 2 = 0) FROM numbers(100000000)</query>
+    <query>SELECT groupBitAndIf(number, rand32() % 2 = 0) FROM numbers(100000000)</query>
+    <query>SELECT groupBitXorIf(number, rand32() % 2 = 0) FROM numbers(100000000)</query>
+
+    <query>SELECT groupBitOrIf(toUInt32(number), rand32() % 2 = 0) FROM numbers(100000000)</query>
+    <query>SELECT groupBitOrIf(toUInt8(number), rand32() % 2 = 0) FROM numbers(100000000)</query>
+
+    <query>SELECT groupBitOrIf(number::UInt128, rand32() % 2 = 0) FROM numbers(50000000)</query>
+    <query>SELECT groupBitOrIf(number::UInt256, rand32() % 2 = 0) FROM numbers(50000000)</query>
+    <query>SELECT groupBitXorIf(number::UInt256, rand32() % 2 = 0) FROM numbers(50000000)</query>
+
+    <query>SELECT groupBitOr(number) FROM numbers(100000000)</query>
+    <query>SELECT groupBitAnd(number) FROM numbers(100000000)</query>
+    <query>SELECT groupBitXor(number) FROM numbers(100000000)</query>
+
+    <!-- ~20% NULL values, random so the branch predictor doesn't do all the work -->
+    <create_query>CREATE TABLE nullint64 (x Nullable(UInt64)) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO nullint64
+                SELECT IF(rand() % 5 == 0, NULL::Nullable(UInt64), cityHash64(number)) AS x
+                FROM numbers_mt(200000000)
+                SETTINGS max_threads = 8
+    </fill_query>
+    <query>SELECT groupBitOr(x) FROM nullint64</query>
+    <query>SELECT groupBitXor(x) FROM nullint64</query>
+    <query>SELECT groupBitOrIf(x, rand32() % 2 = 0) FROM nullint64</query>
+    <drop_query>DROP TABLE IF EXISTS nullint64</drop_query>
+</test>

@@ -1,0 +1,43 @@
+<test>
+
+    <create_query>
+        CREATE TABLE dynamic_compact_read
+        (
+            key Dynamic,
+            blob1 Dynamic,
+            blob2 Dynamic,
+            grp_kind String,
+            tenant String,
+            flag_a Bool,
+            flag_b Bool,
+            rid String
+        )
+        ENGINE = MergeTree
+        ORDER BY (flag_a, flag_b, grp_kind, tenant, rid)
+        SETTINGS min_bytes_for_wide_part = 9223372036854775807
+    </create_query>
+
+    <fill_query>
+        INSERT INTO dynamic_compact_read SELECT
+            concat('k-', toString(number))::Dynamic AS key,
+            concat(repeat('x', 100), '-', toString(number))::Dynamic AS blob1,
+            concat(repeat('y', 100), '-', toString(number % 500))::Dynamic AS blob2,
+            concat('K', toString(number % 20)) AS grp_kind,
+            concat('t', toString(number % 200)) AS tenant,
+            false AS flag_a,
+            true AS flag_b,
+            concat('r-', toString(number)) AS rid
+        FROM numbers(2000000)
+    </fill_query>
+
+    <query>
+<![CDATA[SELECT T.key, T.blob1, T.blob2
+FROM dynamic_compact_read AS T
+WHERE ((has(_CAST(['k-0'], 'Array(String)'), T.key) AND (T.grp_kind = 'K0')) AND (T.tenant = 't0')) OR ((has(_CAST(['k-1'], 'Array(String)'), T.key) AND (T.grp_kind = 'K1')) AND (T.tenant = 't1')) OR ((has(_CAST(['k-2'], 'Array(String)'), T.key) AND (T.grp_kind = 'K2')) AND (T.tenant = 't2')) OR ((has(_CAST(['k-3'], 'Array(String)'), T.key) AND (T.grp_kind = 'K3')) AND (T.tenant = 't3')) OR ((has(_CAST(['k-4'], 'Array(String)'), T.key) AND (T.grp_kind = 'K4')) AND (T.tenant = 't4')) OR ((has(_CAST(['k-5'], 'Array(String)'), T.key) AND (T.grp_kind = 'K5')) AND (T.tenant = 't5')) OR ((has(_CAST(['k-6'], 'Array(String)'), T.key) AND (T.grp_kind = 'K6')) AND (T.tenant = 't6')) OR ((has(_CAST(['k-7'], 'Array(String)'), T.key) AND (T.grp_kind = 'K7')) AND (T.tenant = 't7')) OR ((has(_CAST(['k-8'], 'Array(String)'), T.key) AND (T.grp_kind = 'K8')) AND (T.tenant = 't8')) OR ((has(_CAST(['k-9'], 'Array(String)'), T.key) AND (T.grp_kind = 'K9')) AND (T.tenant = 't9')) OR ((has(_CAST(['k-10'], 'Array(String)'), T.key) AND (T.grp_kind = 'K10')) AND (T.tenant = 't10')) OR ((has(_CAST(['k-11'], 'Array(String)'), T.key) AND (T.grp_kind = 'K11')) AND (T.tenant = 't11')) OR ((has(_CAST(['k-12'], 'Array(String)'), T.key) AND (T.grp_kind = 'K12')) AND (T.tenant = 't12')) OR ((has(_CAST(['k-13'], 'Array(String)'), T.key) AND (T.grp_kind = 'K13')) AND (T.tenant = 't13')) OR ((has(_CAST(['k-14'], 'Array(String)'), T.key) AND (T.grp_kind = 'K14')) AND (T.tenant = 't14')) OR ((has(_CAST(['k-15'], 'Array(String)'), T.key) AND (T.grp_kind = 'K15')) AND (T.tenant = 't15')) OR ((has(_CAST(['k-16'], 'Array(String)'), T.key) AND (T.grp_kind = 'K16')) AND (T.tenant = 't16')) OR ((has(_CAST(['k-17'], 'Array(String)'), T.key) AND (T.grp_kind = 'K17')) AND (T.tenant = 't17')) OR ((has(_CAST(['k-18'], 'Array(String)'), T.key) AND (T.grp_kind = 'K18')) AND (T.tenant = 't18')) OR ((has(_CAST(['k-19'], 'Array(String)'), T.key) AND (T.grp_kind = 'K19')) AND (T.tenant = 't19')) OR ((has(_CAST(['k-20'], 'Array(String)'), T.key) AND (T.grp_kind = 'K0')) AND (T.tenant = 't20')) OR ((has(_CAST(['k-21'], 'Array(String)'), T.key) AND (T.grp_kind = 'K1')) AND (T.tenant = 't21')) OR ((has(_CAST(['k-22'], 'Array(String)'), T.key) AND (T.grp_kind = 'K2')) AND (T.tenant = 't22')) OR ((has(_CAST(['k-23'], 'Array(String)'), T.key) AND (T.grp_kind = 'K3')) AND (T.tenant = 't23')) OR ((has(_CAST(['k-24'], 'Array(String)'), T.key) AND (T.grp_kind = 'K4')) AND (T.tenant = 't24')) OR ((has(_CAST(['k-25'], 'Array(String)'), T.key) AND (T.grp_kind = 'K5')) AND (T.tenant = 't25')) OR ((has(_CAST(['k-26'], 'Array(String)'), T.key) AND (T.grp_kind = 'K6')) AND (T.tenant = 't26')) OR ((has(_CAST(['k-27'], 'Array(String)'), T.key) AND (T.grp_kind = 'K7')) AND (T.tenant = 't27')) OR ((has(_CAST(['k-28'], 'Array(String)'), T.key) AND (T.grp_kind = 'K8')) AND (T.tenant = 't28')) OR ((has(_CAST(['k-29'], 'Array(String)'), T.key) AND (T.grp_kind = 'K9')) AND (T.tenant = 't29')) OR ((has(_CAST(['k-30'], 'Array(String)'), T.key) AND (T.grp_kind = 'K10')) AND (T.tenant = 't30')) OR ((has(_CAST(['k-31'], 'Array(String)'), T.key) AND (T.grp_kind = 'K11')) AND (T.tenant = 't31')) OR ((has(_CAST(['k-32'], 'Array(String)'), T.key) AND (T.grp_kind = 'K12')) AND (T.tenant = 't32')) OR ((has(_CAST(['k-33'], 'Array(String)'), T.key) AND (T.grp_kind = 'K13')) AND (T.tenant = 't33')) OR ((has(_CAST(['k-34'], 'Array(String)'), T.key) AND (T.grp_kind = 'K14')) AND (T.tenant = 't34')) OR ((has(_CAST(['k-35'], 'Array(String)'), T.key) AND (T.grp_kind = 'K15')) AND (T.tenant = 't35')) OR ((has(_CAST(['k-36'], 'Array(String)'), T.key) AND (T.grp_kind = 'K16')) AND (T.tenant = 't36')) OR ((has(_CAST(['k-37'], 'Array(String)'), T.key) AND (T.grp_kind = 'K17')) AND (T.tenant = 't37')) OR ((has(_CAST(['k-38'], 'Array(String)'), T.key) AND (T.grp_kind = 'K18')) AND (T.tenant = 't38')) OR ((has(_CAST(['k-39'], 'Array(String)'), T.key) AND (T.grp_kind = 'K19')) AND (T.tenant = 't39')) OR ((has(_CAST(['k-40'], 'Array(String)'), T.key) AND (T.grp_kind = 'K0')) AND (T.tenant = 't40')) OR ((has(_CAST(['k-41'], 'Array(String)'), T.key) AND (T.grp_kind = 'K1')) AND (T.tenant = 't41')) OR ((has(_CAST(['k-42'], 'Array(String)'), T.key) AND (T.grp_kind = 'K2')) AND (T.tenant = 't42')) OR ((has(_CAST(['k-43'], 'Array(String)'), T.key) AND (T.grp_kind = 'K3')) AND (T.tenant = 't43')) OR ((has(_CAST(['k-44'], 'Array(String)'), T.key) AND (T.grp_kind = 'K4')) AND (T.tenant = 't44')) OR ((has(_CAST(['k-45'], 'Array(String)'), T.key) AND (T.grp_kind = 'K5')) AND (T.tenant = 't45')) OR ((has(_CAST(['k-46'], 'Array(String)'), T.key) AND (T.grp_kind = 'K6')) AND (T.tenant = 't46')) OR ((has(_CAST(['k-47'], 'Array(String)'), T.key) AND (T.grp_kind = 'K7')) AND (T.tenant = 't47')) OR ((has(_CAST(['k-48'], 'Array(String)'), T.key) AND (T.grp_kind = 'K8')) AND (T.tenant = 't48')) OR ((has(_CAST(['k-49'], 'Array(String)'), T.key) AND (T.grp_kind = 'K9')) AND (T.tenant = 't49'))
+FORMAT Null
+SETTINGS max_threads = 16;]]>
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS dynamic_compact_read</drop_query>
+
+</test>

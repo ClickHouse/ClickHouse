@@ -1,0 +1,15 @@
+<clickhouse>
+    <remote_servers>
+        <!-- Cluster intentionally configured without `<secret>`.
+             A client using `USER_INTERSERVER_MARKER` against this
+             cluster must be rejected at the Hello phase. -->
+        <no_secret_cluster>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </no_secret_cluster>
+    </remote_servers>
+</clickhouse>

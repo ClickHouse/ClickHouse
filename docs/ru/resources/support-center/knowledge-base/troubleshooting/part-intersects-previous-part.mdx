@@ -1,0 +1,76 @@
+---
+title: "DB::Exception: Часть XXXXX пересекается с предыдущей частью YYYYY. Это баг или результат ручного вмешательства в данные ZooKeeper."
+date: 2023-05-02
+description: "В этой статье рассказывается, как устранить ошибку DB::Exception, связанную с пересечением частей в ClickHouse, которая часто вызвана состоянием гонки или ручным вмешательством в данные ZooKeeper."
+tags: ['Ошибки и исключения', 'Системные таблицы']
+keywords: ['Пересечение частей', 'system.replicas']
+---
+
+<div id="why-it-occurs">
+  ## Почему это происходит
+</div>
+
+При возникновении этой ошибки таблица становится доступной только для чтения, а в сообщении об ошибке указаны пересекающиеся части.
+
+Вы можете увидеть эту ошибку в журналах или с помощью
+
+```sql
+SELECT *
+FROM system.replicas
+WHERE is_readonly = 1
+```
+
+Сообщение об ошибке выглядит следующим образом:
+
+```
+Code: 49. DB::Exception: Part XXXXX intersects previous part YYYYY. It is a bug or a result of manual intervention in the ZooKeeper data. (LOGICAL_ERROR) (version 21.12.4.1 (official build))
+```
+
+<div id="cause-of-the-error">
+  ## Причина ошибки
+</div>
+
+Эта ошибка может возникать из-за состояния гонки между `mergeSelectingTask` и повторной инициализацией очереди.
+
+<div id="solution">
+  ## Решение
+</div>
+
+Выполните следующие запросы на всех репликах:
+
+```sql
+DETACH TABLE table_name;  -- Требуется для DROP REPLICA
+
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/table_path_in_zk/'; -- Удалит всё из /table_path_in_zk
+
+ATTACH TABLE table_name;  -- Таблица будет в режиме только для чтения, поскольку метаданные в ZK отсутствуют
+```
+
+Затем выполните следующее на всех репликах:
+
+```sql
+SYSTEM RESTORE REPLICA table_name;  -- Отсоединит все партиции, пересоздаст метаданные в ZK (как для новой пустой таблицы) и присоединит все партиции обратно
+
+SYSTEM SYNC REPLICA table_name; -- Ожидание синхронизации частей между репликами. Также рекомендуется проверить `system.detached_parts` на всех репликах после завершения восстановления.
+```
+
+<Tip>
+  Рекомендуется обновить ClickHouse до последней версии
+</Tip>
+
+<div id="additional-resources">
+  ## Дополнительные ресурсы
+</div>
+
+Связанные PR и задачи на GitHub:
+
+* [ClickHouse/ClickHouse#34096](https://github.com/ClickHouse/ClickHouse/pull/34096)
+* [ClickHouse/ClickHouse#30651](https://github.com/ClickHouse/ClickHouse/pull/30651)
+* [ClickHouse/ClickHouse#31060](https://github.com/ClickHouse/ClickHouse/pull/31060)
+* [ClickHouse/ClickHouse#35863](https://github.com/ClickHouse/ClickHouse/issues/35863)
+
+<div id="versions-affected">
+  ## Затронутые версии:
+</div>
+
+ClickHouse v 22.12 и более ранних версий

@@ -1,0 +1,25 @@
+== result ==
+1	1
+1	2
+1	3
+== explain ==
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.partition_id_folding)
+    Indexes:
+      Min-Max
+        Condition: true
+        Parts: 3/3
+        Granules: 9/9
+      Partition
+        Condition: true
+        Parts: 3/3
+        Granules: 9/9
+      PrimaryKey
+        Keys:
+          b
+        Condition: or((b in [11, +Inf)), or((b in [11, +Inf)), (b in [1, +Inf))))
+        Parts: 1/3
+        Granules: 3/9
+        Search Algorithm: generic exclusion search
+      Ranges: 1

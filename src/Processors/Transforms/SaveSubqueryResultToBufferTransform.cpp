@@ -1,4 +1,5 @@
 #include <Processors/Transforms/SaveSubqueryResultToBufferTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Processors/ChunkBuffer.h>
 #include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
@@ -10,7 +11,7 @@ namespace DB
 SaveSubqueryResultToBufferTransform::SaveSubqueryResultToBufferTransform(
     SharedHeader header_,
     ChunkBufferPtr chunk_buffer_,
-    const std::vector<size_t> & columns_to_save_indices_
+    const VectorWithMemoryTracking<size_t> & columns_to_save_indices_
 )
     : ISimpleTransform(header_, header_, false)
     , chunk_buffer(std::move(chunk_buffer_))
@@ -26,7 +27,9 @@ void SaveSubqueryResultToBufferTransform::transform(Chunk & chunk)
     for (size_t index : columns_to_save_indices)
         columns_to_save.push_back(chunk.getColumns()[index]);
 
-    chunk_buffer->append(Chunk(std::move(columns_to_save), chunk.getNumRows()));
+    Chunk chunk_to_save(std::move(columns_to_save), chunk.getNumRows());
+    compactReplicatedColumns(chunk_to_save);
+    chunk_buffer->append(std::move(chunk_to_save));
 }
 
 void SaveSubqueryResultToBufferTransform::onFinish()

@@ -1,0 +1,100 @@
+<test>
+    <!--
+        Many independent small reads against the same part. Deserializing a `LowCardinality`
+        prefix checks whether the part has a single shared dictionary by looking at the part's
+        marks, so a small `index_granularity` makes any per-read work proportional to the mark
+        count dominate the reads themselves.
+    -->
+    <create_query>
+        CREATE TABLE lc_many_marks_point_lookups
+        (
+            k String,
+            ts UInt32,
+            lc1 LowCardinality(String),
+            lc2 LowCardinality(String),
+            lc3 LowCardinality(String),
+            lc4 LowCardinality(String),
+            lc5 LowCardinality(String),
+            lc6 LowCardinality(String),
+            v UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY (k, ts)
+        SETTINGS index_granularity = 8, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO lc_many_marks_point_lookups
+        SELECT
+            'K' || toString(number % 200),
+            number % 5000,
+            ['alpha', 'beta', 'gamma'][(number % 3) + 1],
+            'constant',
+            'c3', 'c4', 'c5', 'c6',
+            number
+        FROM numbers(2000000)
+        SETTINGS max_insert_threads = 1, max_insert_block_size = 2000000
+    </fill_query>
+
+    <!--
+        Each branch is a separate read task with its own prefix cache, so the check is paid
+        once per branch per `LowCardinality` column. Every branch must select those columns,
+        otherwise no `LowCardinality` prefix is deserialized at all.
+    -->
+    <query>
+        SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K0' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K1' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K2' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K3' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K4' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K5' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K6' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K7' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K8' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K9' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K10' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K11' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K12' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K13' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K14' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K15' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K16' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K17' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K18' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K19' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K20' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K21' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K22' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K23' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K24' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K25' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K26' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K27' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K28' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K29' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K30' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K31' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K32' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K33' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K34' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K35' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K36' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K37' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K38' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K39' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K40' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K41' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K42' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K43' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K44' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K45' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K46' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K47' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K48' GROUP BY k
+        UNION ALL SELECT k, argMax((lc1, lc2, lc3, lc4, lc5, lc6, v), ts) FROM lc_many_marks_point_lookups WHERE k = 'K49' GROUP BY k
+        FORMAT Null
+        SETTINGS max_threads = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS lc_many_marks_point_lookups</drop_query>
+</test>

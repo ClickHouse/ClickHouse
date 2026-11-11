@@ -1,0 +1,45 @@
+---
+slug: /faq/general/olap
+title: 'OLAP이란 무엇입니까?'
+toc_hidden: true
+toc_priority: 100
+description: 'Online Analytical Processing이 무엇인지 설명합니다'
+keywords: ['OLAP']
+doc_type: '참고'
+---
+
+[OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing)은 Online Analytical Processing의 약자입니다. 이는 기술적 관점과 비즈니스 관점의 두 측면에서 볼 수 있는 포괄적인 용어입니다. 하지만 아주 단순하게는 이 단어들을 거꾸로 읽으면 됩니다:
+
+Processing
+:   일부 원본 데이터가 처리되고...
+
+Analytical
+:   ...분석 보고서와 인사이트를 생성하며...
+
+Online
+:   ...실시간으로 이루어집니다.
+
+<div id="olap-from-the-business-perspective">
+  ## 비즈니스 관점에서 본 OLAP
+</div>
+
+최근 몇 년 사이 기업 현업 담당자들은 데이터의 가치를 인식하기 시작했습니다. 감에만 의존해 의사결정을 내리는 기업은 대개 경쟁에서 뒤처지기 마련입니다. 성공한 기업은 데이터 기반 접근 방식을 통해 비즈니스 의사결정에 조금이라도 도움이 될 수 있는 모든 데이터를 수집하고, 이를 적시에 분석할 수 있는 체계도 갖추어야 합니다. 바로 이 지점에서 OLAP 데이터베이스 관리 시스템(DBMS)이 필요해집니다.
+
+비즈니스 측면에서 OLAP는 기업이 운영 활동을 지속적으로 계획하고 분석하며 보고할 수 있도록 지원하여, 효율성을 극대화하고 비용을 절감하며 궁극적으로 시장 점유율 확대에 기여합니다. 이는 사내 시스템에서 직접 수행할 수도 있고, 웹/모바일 분석 서비스나 CRM 서비스와 같은 SaaS 제공업체에 위탁할 수도 있습니다. OLAP는 많은 BI 애플리케이션(비즈니스 인텔리전스)을 뒷받침하는 기술입니다.
+
+ClickHouse는 OLAP 데이터베이스 관리 시스템으로, 도메인별 데이터를 분석하는 이러한 SaaS 솔루션의 backend로 매우 자주 사용됩니다. 그러나 일부 기업은 여전히 자사 데이터를 제3자 제공업체와 공유하는 데 신중하며, 사내 데이터 웨어하우스 방식 역시 충분히 실현 가능한 선택지입니다.
+
+<div id="olap-from-the-technical-perspective">
+  ## 기술적 관점에서 본 OLAP
+</div>
+
+모든 데이터베이스 관리 시스템(database management system)은 OLAP(Online **Analytical** Processing)와 OLTP(Online **Transactional** Processing)의 두 그룹으로 분류할 수 있습니다. 전자는 대량의 과거 데이터를 기반으로 보고서를 작성하는 데 초점을 맞추며, 그 빈도는 높지 않습니다. 반면 후자는 일반적으로 지속적으로 발생하는 트랜잭션 스트림을 처리하면서 데이터의 현재 상태를 계속 변경합니다.
+
+실제로 OLAP와 OLTP는 뚜렷이 구분되는 범주라기보다 하나의 스펙트럼에 가깝습니다. 대부분의 실제 시스템은 보통 둘 중 하나에 초점을 맞추지만, 반대 유형의 워크로드도 필요하다면 이를 위한 몇 가지 해결책이나 우회 방법을 제공합니다. 이런 상황에서는 기업이 여러 스토리지 시스템을 연동해 운영해야 하는 경우가 많습니다. 이것이 아주 큰 문제는 아닐 수 있지만, 시스템이 많아질수록 유지 비용은 더 커집니다. 그래서 최근 몇 년간의 추세는 단일 데이터베이스 관리 시스템이 두 종류의 워크로드를 모두 균형 있게 처리하는 HTAP(**Hybrid Transactional/Analytical Processing**)입니다.
+
+DBMS가 처음에는 순수 OLAP 또는 순수 OLTP로 시작했더라도, 경쟁력을 유지하려면 HTAP 방향으로 나아갈 수밖에 없습니다. ClickHouse도 예외는 아닙니다. 처음에는 [가능한 한 빠른 OLAP 시스템](/ko/get-started/about/why-clickhouse-is-so-fast)으로 설계되었고, 지금도 완전한 트랜잭션 지원을 제공하지는 않지만, 일관된 읽기/쓰기와 데이터 업데이트/삭제를 위한 뮤테이션 같은 일부 기능은 추가될 수밖에 없었습니다.
+
+OLAP와 OLTP 시스템 사이의 근본적인 상충 관계는 여전히 남아 있습니다.
+
+* 분석 보고서를 효율적으로 작성하려면 컬럼을 개별적으로 읽을 수 있어야 하므로, 대부분의 OLAP 데이터베이스는 [열 지향](/ko/resources/support-center/knowledge-base/general-faqs/columnar-database) 구조를 사용합니다.
+* 반면 컬럼을 분리해 저장하면 추가나 제자리 수정 같은 행 단위 작업의 비용이 컬럼 수에 비례해 증가합니다. 시스템이 만일에 대비해 이벤트의 모든 세부 정보를 수집하려고 한다면 이 컬럼 수는 매우 커질 수 있습니다. 따라서 대부분의 OLTP 시스템은 데이터를 행 단위로 저장합니다.

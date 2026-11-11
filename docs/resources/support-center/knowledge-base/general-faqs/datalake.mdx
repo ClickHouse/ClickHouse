@@ -1,0 +1,17 @@
+---
+title: 'Does ClickHouse support data lakes?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/datalake
+description: 'ClickHouse supports data lakes, including Iceberg, Delta Lake, Apache Hudi, Apache Paimon, Hive'
+doc_type: 'reference'
+keywords: ['data lake', 'lakehouse']
+---
+
+ClickHouse supports data lakes, including Iceberg, Delta Lake, Apache Hudi, Apache Paimon, Hive.
+
+It provides support for **reading** and **writing**, full compatibility with partition pruning, statistics-based pruning, schema evolution, positional deletes, equality deletes, time travel, and introspection.
+
+Data Lakes in ClickHouse are supported with **Unity**, **AWS Glue**, **Rest**, **Polaris**, and **Hive Metastore** catalogs, as well as individual tables.
+
+Query performance on data lakes is top-notch thanks to distributed processing, efficient native Parquet reader, and data files caching.

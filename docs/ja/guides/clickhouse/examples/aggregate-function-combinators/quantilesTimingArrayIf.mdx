@@ -1,0 +1,69 @@
+---
+slug: '/examples/aggregate-function-combinators/quantilesTimingArrayIf'
+title: 'quantilesTimingArrayIf'
+description: 'quantilesTimingArrayIf combinatorの使用例'
+keywords: ['quantilesTiming', 'array', 'if', 'combinator', 'examples', 'quantilesTimingArrayIf']
+sidebarTitle: 'quantilesTimingArrayIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`Array`](/ja/reference/functions/aggregate-functions/combinators#-array) と [`If`](/ja/reference/functions/aggregate-functions/combinators#-if) の
+combinator は、[`quantilesTiming`](/ja/reference/functions/aggregate-functions/quantileTiming)
+関数に適用できます。これにより、`quantilesTimingArrayIf` aggregate combinator function を使用して、条件が真である行の配列内のタイミング値の分位点を計算できます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+この例では、さまざまなエンドポイントの API 応答時間を格納するテーブルを作成し、
+成功したリクエストの応答時間の分位点を計算するために `quantilesTimingArrayIf` を使用します。
+
+```sql title="Query"
+CREATE TABLE api_responses(
+    endpoint String,
+    response_times_ms Array(UInt32),
+    success_rate Float32
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO api_responses VALUES
+    ('orders', [82, 94, 98, 87, 103, 92, 89, 105], 0.98),
+    ('products', [45, 52, 48, 51, 49, 53, 47, 50], 0.95),
+    ('users', [120, 125, 118, 122, 121, 119, 123, 124], 0.92);
+
+SELECT
+    endpoint,
+    quantilesTimingArrayIf(0, 0.25, 0.5, 0.75, 0.95, 0.99, 1.0)(response_times_ms, success_rate >= 0.95) as response_time_quantiles
+FROM api_responses
+GROUP BY endpoint;
+```
+
+The `quantilesTimingArrayIf` 関数は、成功率が 95% を超えるエンドポイントに対してのみ分位点を計算します。
+返される配列には、以下の分位点がこの順序で含まれます。
+
+* 0 (最小値)
+* 0.25 (第1四分位数)
+* 0.5 (中央値)
+* 0.75 (第3四分位数)
+* 0.95 (95パーセンタイル)
+* 0.99 (99パーセンタイル)
+* 1.0 (最大値)
+
+```response title="Response"
+   ┌─endpoint─┬─response_time_quantiles─────────────────────────────────────────────┐
+1. │ orders   │ [82, 87, 92, 98, 103, 104, 105]                                     │
+2. │ products │ [45, 47, 49, 51, 52, 52, 53]                                        │
+3. │ users    │ [nan, nan, nan, nan, nan, nan, nan]                                 │
+   └──────────┴─────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`quantilesTiming`](/ja/reference/functions/aggregate-functions/quantileTiming)
+* [`If combinator`](/ja/reference/functions/aggregate-functions/combinators#-if)

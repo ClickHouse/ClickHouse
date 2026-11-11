@@ -1,0 +1,6 @@
+-- no lazy step in the plan for url
+0
+-- the query works
+0	val_0
+1	val_1
+2	val_2

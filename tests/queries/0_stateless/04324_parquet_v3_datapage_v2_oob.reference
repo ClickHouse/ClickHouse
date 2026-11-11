@@ -1,0 +1,10 @@
+nint_wrap: rejected
+nstr_wrap: rejected
+arr_wrap: rejected
+nint_negdef: rejected
+nint_neguncomp: rejected
+nint_badtype: rejected
+nint_badenc: rejected
+nint_negnumvals: rejected
+strdict_negnumvals: rejected
+multipage_negnrows: rejected

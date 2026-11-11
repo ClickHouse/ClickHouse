@@ -5,7 +5,7 @@ Expression ((Project names + Projection))
       Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20089, 20089])
@@ -23,10 +23,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20089, 20089])
@@ -50,10 +50,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20090, 20090])
@@ -77,10 +77,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20090, 20090])
@@ -104,10 +104,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20091, 20091])
@@ -134,7 +134,7 @@ Expression ((Project names + Projection))
       Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20091, 20091])
@@ -152,10 +152,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20091, 20091])
@@ -179,10 +179,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20092, 20092])
@@ -206,10 +206,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20093, 20093])
@@ -236,7 +236,7 @@ Expression ((Project names + Projection))
       Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20094, 20094])
@@ -254,10 +254,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20094, 20094])
@@ -284,7 +284,7 @@ Expression ((Project names + Projection))
       Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20095, 20095])
@@ -305,7 +305,7 @@ Expression ((Project names + Projection))
       Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20096, 20096])
@@ -323,10 +323,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20096, 20096])
@@ -350,10 +350,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20097, 20097])
@@ -377,10 +377,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20097, 20097])
@@ -404,10 +404,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20098, 20098])
@@ -431,10 +431,10 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in [20098, 20098])

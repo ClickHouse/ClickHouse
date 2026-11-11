@@ -25,10 +25,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static CHJIT & getJITInstance()
+namespace
 {
-    static CHJIT jit;
-    return jit;
+    std::mutex expression_jit_mutex;
+    /// See `aggregator_jit_instance` in `Aggregator.cpp` for the rationale of `shared_ptr` ownership.
+    std::shared_ptr<CHJIT> expression_jit_instance;
+}
+
+static std::shared_ptr<CHJIT> getJITInstancePtr()
+{
+    std::lock_guard lock(expression_jit_mutex);
+    if (!expression_jit_instance)
+        expression_jit_instance = std::make_shared<CHJIT>();
+    return expression_jit_instance;
+}
+
+void resetExpressionJITInstance()
+{
+    std::lock_guard lock(expression_jit_mutex);
+    expression_jit_instance.reset();
 }
 
 static LoggerPtr getLogger()
@@ -40,17 +55,29 @@ class CompiledFunctionHolder : public CompiledExpressionCacheEntry
 {
 public:
 
-    explicit CompiledFunctionHolder(CompiledFunction compiled_function_)
+    explicit CompiledFunctionHolder(CompiledFunction compiled_function_, std::shared_ptr<CHJIT> jit_owner_)
         : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
         , compiled_function(compiled_function_)
+        , jit_owner(std::move(jit_owner_))
     {}
 
     ~CompiledFunctionHolder() override
     {
-        getJITInstance().deleteCompiledModule(compiled_function.compiled_module);
+        try
+        {
+            /// Use the JIT instance that compiled this module (see `CompiledAggregateFunctionsHolder`).
+            jit_owner->deleteCompiledModule(compiled_function.compiled_module);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     CompiledFunction compiled_function;
+
+private:
+    std::shared_ptr<CHJIT> jit_owner;
 };
 
 class LLVMExecutableFunction : public IExecutableFunction
@@ -79,7 +106,7 @@ public:
         if (input_rows_count)
         {
             std::vector<ColumnData> columns(arguments.size() + 1);
-            std::vector<ColumnPtr> columns_backup;
+            Columns columns_backup;
 
             for (size_t i = 0; i < arguments.size(); ++i)
             {
@@ -169,6 +196,8 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
 
     const DataTypePtr & getResultType() const override { return dag.back().result_type; }
+
+    const std::vector<FunctionBasePtr> & getNestedFunctions() const { return nested_functions; }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
@@ -290,8 +319,9 @@ static FunctionBasePtr compile(
         auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(hash_key, [&] ()
         {
             LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
-            auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
-            return std::make_shared<CompiledFunctionHolder>(compiled_function);
+            auto jit_owner = getJITInstancePtr();
+            auto compiled_function = compileFunction(*jit_owner, *llvm_function);
+            return std::make_shared<CompiledFunctionHolder>(compiled_function, std::move(jit_owner));
         });
 
         std::shared_ptr<CompiledFunctionHolder> compiled_function_holder = std::static_pointer_cast<CompiledFunctionHolder>(compiled_function_cache_entry);
@@ -299,8 +329,9 @@ static FunctionBasePtr compile(
     }
     else
     {
-        auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
-        auto compiled_function_holder = std::make_shared<CompiledFunctionHolder>(compiled_function);
+        auto jit_owner = getJITInstancePtr();
+        auto compiled_function = compileFunction(*jit_owner, *llvm_function);
+        auto compiled_function_holder = std::make_shared<CompiledFunctionHolder>(compiled_function, std::move(jit_owner));
 
         llvm_function->setCompiledFunction(std::move(compiled_function_holder));
     }
@@ -310,7 +341,7 @@ static FunctionBasePtr compile(
 
 static bool isCompilableConstant(const ActionsDAG::Node & node)
 {
-    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
+    return node.column && canBeNativeType(*node.result_type);
 }
 
 static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * node)
@@ -359,12 +390,20 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
         {
             return false;
         }
+
+        /// Declared argument types can disagree with the children: a DAG rewrite may repoint a child
+        /// without updating `function_base`, and an alias carries its own copy of the type, which a
+        /// rewrite can leave behind. Compilation lowers the type the argument actually holds.
+        if (i < node.children.size() && !canBeNativeType(*removeAliasIfNecessary(node.children[i])->result_type))
+        {
+            return false;
+        }
     }
 
     return function.isCompilable();
 }
 
-static CompileDAG getCompilableDAG(
+CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children,
     const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
@@ -434,9 +473,7 @@ static CompileDAG getCompilableDAG(
             }
 
             bool skip_compile = std::find(skip_arguments.begin(), skip_arguments.end(), frame.next_child_to_visit) != skip_arguments.end();
-            if (skip_compile
-                && (!child->column || !isColumnConst(*child->column)
-                    || dynamic_cast<const ColumnConst *>(child->column.get())->getField().isNull()))
+            if (skip_compile && (!child->column || child->column->onlyNull()))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Only constant nodes with non-null value could skip compilation");
 
             stack.emplace(Frame{.node = child, .skip_compile = skip_compile});
@@ -465,6 +502,12 @@ static CompileDAG getCompilableDAG(
     }
 
     return dag;
+}
+
+const std::vector<FunctionBasePtr> * ActionsDAG::getCompiledFunctions(const IFunctionBase & function)
+{
+    const auto * llvm_function = typeid_cast<const LLVMFunction *>(&function);
+    return llvm_function ? &llvm_function->getNestedFunctions() : nullptr;
 }
 
 void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)

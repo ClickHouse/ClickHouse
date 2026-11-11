@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <Common/StackWithMemoryTracking.h>
 
 #if USE_MSGPACK
 
@@ -52,15 +53,16 @@ public:
 
     /// Update info_stack
     void set_info(IColumn & column, DataTypePtr type, UInt8 & read);
-    void reset();
+    /// Called by msgpack's parse_helper::init.
+    void init();
 
 private:
     /// Stack is needed to process arrays and maps
-    std::stack<Info> info_stack;
+    StackWithMemoryTracking<Info> info_stack;
     bool null_as_default;
 };
 
-class MsgPackRowInputFormat : public IRowInputFormat
+class MsgPackRowInputFormat final : public IRowInputFormat
 {
 public:
     MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
@@ -87,14 +89,14 @@ private:
     const DataTypes data_types;
 };
 
-class MsgPackSchemaReader : public IRowSchemaReader
+class MsgPackSchemaReader final : public IRowSchemaReader
 {
 public:
     MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
 private:
     msgpack::object_handle readObject();
-    DataTypePtr getDataType(const msgpack::object & object);
+    DataTypePtr getDataType(const msgpack::object & object, size_t depth);
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;

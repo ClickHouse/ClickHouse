@@ -1,0 +1,6 @@
+ClickHouse <span class="accent">Reference</span>
+const DOCS_SECTION_TYPE = {
+'formats': 'Format',
+function typeFromDocsHref(href)
+function resolveDocEntity(term, href)
+1

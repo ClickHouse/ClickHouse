@@ -47,6 +47,8 @@ public:
                 LOG_TRACE(trace_log, fmt::runtime(msg)); break;
             case Poco::Message::PRIO_TEST:
                 LOG_TEST(trace_log, fmt::runtime(msg)); break;
+            case Poco::Message::PRIO_END:
+                break;
         }
     }
 

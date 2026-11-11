@@ -1,0 +1,37 @@
+--- server preference order ---
+[zstd, gzip, br] -> zstd
+[br, gzip] -> br
+[gzip] -> gzip
+--- q=0 rejects an encoding ---
+[br;q=0, gzip] -> gzip
+[zstd;q=0] -> (none)
+[gzip;q=0.0] -> (none)
+[zstd;q=0, br;q=0.000] -> (none)
+--- missing q defaults to 1 ---
+[gzip;q=0.5, zstd] -> zstd
+[zstd;q=0.1, br;q=1] -> zstd
+[br;q=0.8, gzip] -> br
+[bz2;q=0.8, gzip] -> gzip
+--- no substring false positives ---
+[X-gzip-custom] -> (none)
+[my-br-extra, gzip] -> gzip
+--- whitespace is ignored ---
+[  gzip, zstd  ] -> zstd
+[zstd; q=0, gzip ; q=1] -> gzip
+--- tokens are case-insensitive ---
+[GZip] -> gzip
+[gZIP] -> gzip
+[ZSTD] -> zstd
+[zstd, GZIP] -> zstd
+[Snappy;q=0.5, gzIP;q=0.3] -> snappy
+[zstd;Q=0, GZip;Q=0.5] -> gzip
+--- the * wildcard ---
+[*] -> zstd
+[*;q=0] -> (none)
+[gzip;q=0, *;q=1] -> zstd
+[zstd;q=0, *;q=1] -> br
+--- empty Accept-Encoding ---
+[] -> (none)
+--- negotiated bodies really use the advertised encoding ---
+Hello, world
+Hello, world

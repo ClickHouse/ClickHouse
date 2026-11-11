@@ -1,0 +1,142 @@
+---
+title: 'استخدام قاعدة بيانات clickhouse-local'
+sidebarTitle: 'استخدام قاعدة بيانات clickhouse-local'
+slug: /chdb/guides/clickhouse-local
+description: 'تعرّف على كيفية استخدام قاعدة بيانات clickhouse-local مع chDB'
+keywords: ['chdb', 'clickhouse-local']
+doc_type: 'guide'
+---
+
+[clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local) هي واجهة CLI تتضمن إصدارًا مضمّنًا من ClickHouse.
+وتمنح المستخدمين إمكانات ClickHouse من دون الحاجة إلى تثبيت خادم.
+في هذا الدليل، سنتعرّف على كيفية استخدام قاعدة بيانات clickhouse-local من خلال chDB.
+
+<div id="setup">
+  ## التهيئة
+</div>
+
+لننشئ أولًا بيئة افتراضية:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+والآن سنثبّت chDB.
+تأكد من أنك تستخدم الإصدار 2.0.2 أو أحدث:
+
+```bash
+pip install "chdb>=2.0.2"
+```
+
+والآن سنثبّت [ipython](https://ipython.org/):
+
+```bash
+pip install ipython
+```
+
+سنستخدم `ipython` لتنفيذ الأوامر في بقية هذا الدليل، ويمكنك تشغيله بتنفيذ:
+
+```bash
+ipython
+```
+
+<div id="installing-clickhouse-local">
+  ## تثبيت clickhouse-local
+</div>
+
+تنزيل clickhouse-local وتثبيته هو نفسه [تنزيل ClickHouse وتثبيته](/ar/get-started/setup/install).
+يمكن القيام بذلك بتشغيل الأمر التالي:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+لتشغيل clickhouse-local بحيث تُحفَظ البيانات بشكل دائم في مجلد، نحتاج إلى تمرير `--path`:
+
+```bash
+./clickhouse -m --path demo.chdb
+```
+
+<div id="ingesting-data-into-clickhouse-local">
+  ## إدخال البيانات إلى clickhouse-local
+</div>
+
+تخزّن قاعدة البيانات الافتراضية البيانات في الذاكرة فقط، لذا سنحتاج إلى إنشاء قاعدة بيانات مُسمّاة لضمان حفظ أي بيانات نُدخلها على القرص.
+
+```sql
+CREATE DATABASE foo;
+```
+
+لننشئ جدولًا وندرج فيه بعض الأرقام العشوائية:
+
+```sql
+CREATE TABLE foo.randomNumbers
+ORDER BY number AS
+SELECT rand() AS number
+FROM numbers(10_000_000);
+```
+
+لنكتب استعلامًا لنرى البيانات التي لدينا:
+
+```sql
+SELECT quantilesExact(0, 0.5, 0.75, 0.99)(number) AS quants
+FROM foo.randomNumbers
+```
+
+```response
+┌─quants────────────────────────────────┐
+│ [69,2147776478,3221525118,4252096960] │
+└───────────────────────────────────────┘
+```
+
+بمجرد الانتهاء من ذلك، تأكّد من تنفيذ `exit;` من واجهة CLI، إذ لا يمكن سوى لعملية واحدة الاحتفاظ بقفل على هذا المجلد.
+إذا لم نفعل ذلك، فسنحصل على الخطأ التالي عند محاولة الاتصال بقاعدة البيانات من خلال chDB:
+
+```text
+ChdbError: Code: 76. DB::Exception: Cannot lock file demo.chdb/status. Another server instance in same directory is already running. (CANNOT_OPEN_FILE)
+```
+
+<div id="connecting-to-a-clickhouse-local-database">
+  ## الاتصال بقاعدة بيانات clickhouse-local
+</div>
+
+عُد إلى واجهة `ipython` واستورِد الوحدة `session` من chDB:
+
+```python
+from chdb import session as chs
+```
+
+هيّئ جلسة تشير إلى `demo.chdb`:
+
+```python
+sess = chs.Session("demo.chdb")
+```
+
+يمكننا بعد ذلك تشغيل الاستعلام نفسه الذي يُرجع قيم الكوانتايل للأرقام:
+
+```python
+sess.query("""
+SELECT quantilesExact(0, 0.5, 0.75, 0.99)(number) AS quants
+FROM foo.randomNumbers
+""", "Vertical")
+
+Row 1:
+──────
+quants: [0,9976599,2147776478,4209286886]
+```
+
+يمكننا أيضًا إدخال بيانات إلى قاعدة البيانات هذه باستخدام chDB:
+
+```python
+sess.query("""
+INSERT INTO foo.randomNumbers
+SELECT rand() AS number FROM numbers(10_000_000)
+""")
+
+Row 1:
+──────
+quants: [0,9976599,2147776478,4209286886]
+```
+
+يمكننا بعد ذلك إعادة تنفيذ استعلام quantiles من خلال chDB أو clickhouse-local.

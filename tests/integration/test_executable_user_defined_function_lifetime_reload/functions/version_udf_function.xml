@@ -1,0 +1,14 @@
+<functions>
+    <function>
+        <type>executable_pool</type>
+        <name>version_udf</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>version_udf.sh</command>
+        <pool_size>4</pool_size>
+        <lifetime>2</lifetime>
+    </function>
+</functions>

@@ -1,7 +1,6 @@
 #pragma once
 #include <variant>
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -29,8 +28,8 @@ struct DeadLetterQueueElement
     struct KafkaDetails
     {
         String topic_name;
-        Int64 partition;
-        Int64 offset;
+        Int64 partition = 0;
+        Int64 offset = 0;
         String key;
     };
     struct RabbitMQDetails

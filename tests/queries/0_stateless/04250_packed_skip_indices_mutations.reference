@@ -1,0 +1,34 @@
+[A_wide_update_indexed]
+  secondary_indices: materialized
+  count=91 expected=91 granules(m_v)=filtered check=1
+[B_wide_update_unindexed]
+  secondary_indices: materialized
+  count=91 expected=91 granules(m_v)=filtered check=1
+[C_wide_lightweight_delete]
+  secondary_indices: materialized
+  count=1 expected=1 granules(m_v)=filtered check=1
+[D_wide_mixed_update_set]
+  set_index_layout: per_file
+  secondary_indices: materialized
+  count=91 expected=91 granules(m_v)=filtered check=1
+[E_wide_mixed_update_minmax]
+  set_index_layout: per_file
+  secondary_indices: materialized
+  count=91 expected=91 granules(m_v)=filtered check=1
+[F_wide_drop_one_of_two_packed]
+  secondary_indices: materialized
+  count=91 expected=91 granules(m_w)=filtered check=1
+[G_wide_drop_perfile_index]
+  set_index_layout: per_file
+  secondary_indices: materialized
+  count=91 expected=91 granules(m_v)=filtered check=1
+[H_wide_add_column]
+  secondary_indices: materialized
+  count=91 expected=91 granules(m_v)=filtered check=1
+[I_compact_update_indexed]
+  secondary_indices: materialized
+  count=91 expected=91 granules(m_v)=filtered check=1
+[J_wide_drop_only_packed_index]
+  secondary_indices_bytes_before_positive=yes
+  secondary_indices_bytes_after=0
+  count=91 expected=91 granules(m_v)=missing check=1

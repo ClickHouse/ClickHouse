@@ -1,0 +1,475 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kubernetes
+description: 'Интеграция Kubernetes для ClickStack — стек обсервабилити ClickHouse'
+title: 'Kubernetes'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', 'журналы', 'обсервабилити', 'мониторинг контейнеров']
+---
+
+ClickStack использует коллектор OpenTelemetry (OTel) для сбора журналов, метрик и событий Kubernetes из кластеров Kubernetes и их пересылки в ClickStack. Мы поддерживаем нативный формат логов OTel и не требуем никакой дополнительной конфигурации, специфичной для конкретного вендора.
+
+Это руководство охватывает следующее:
+
+* **Журналы**
+* **Метрики инфраструктуры**
+
+<Note>
+  Чтобы передавать метрики уровня приложения или APM/трейсы, вам также потребуется добавить в приложение интеграцию для соответствующего языка.
+</Note>
+
+В этом руководстве предполагается, что вы уже развернули [коллектор ClickStack OTel в роли шлюза](/ru/clickstack/ingesting-data/collector), защищённый ключом API для приёма данных.
+
+<div id="creating-the-otel-helm-chart-config-files">
+  ## Создание файлов конфигурации Helm-чарта OTel
+</div>
+
+Чтобы собирать журналы и метрики как с каждого узла, так и с самого кластера, потребуется развернуть два отдельных коллектора OpenTelemetry. Один будет развернут как ДемонСет для сбора журналов и метрик с каждого узла, а другой — как Развертывание для сбора журналов и метрик с самого кластера.
+
+<div id="create-api-key-secret">
+  ### Создание секрета с API key
+</div>
+
+Создайте новый secret Kubernetes, используя [ключ API для приёма данных](/ru/clickstack/ingesting-data/opentelemetry#sending-otel-data) из HyperDX. Он будет использоваться компонентами, устанавливаемыми ниже, для безопасной отправки данных в ваш коллектор ClickStack OTel:
+
+```shell
+kubectl create secret generic hyperdx-secret \
+--from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
+```
+
+Кроме того, создайте ConfigMap, указав адрес вашего коллектора ClickStack OTel:
+
+```shell
+kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=<OTEL_COLLECTOR_ENDPOINT>
+# например: kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
+```
+
+<div id="creating-the-daemonset-configuration">
+  ### Создание конфигурации ДемонСет
+</div>
+
+ДемонСет будет собирать журналы и метрики с каждого узла в кластере, но не будет собирать события Kubernetes или метрики на уровне всего кластера.
+
+Скачайте манифест для ДемонСет:
+
+```shell
+curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
+```
+
+<Tabs>
+  <Tab title="Управляемый ClickStack">
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # daemonset.yaml
+      mode: daemonset
+
+      # Требуется для использования метрик утилизации CPU/памяти из kubeletstats
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Настраивает Kubernetes Processor для добавления метаданных Kubernetes.
+        # Добавляет процессор k8sattributes во все конвейеры и необходимые правила в РольКластера.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # Если включено, процессор извлечет все метки связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя метки будет использоваться как ключ.
+          extractAllPodLabels: true
+          # Если включено, процессор извлечет все аннотации связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя аннотации будет использоваться как ключ.
+          extractAllPodAnnotations: true
+        # Настраивает коллектор на сбор метрик узлов, подов и контейнеров через API-сервер Кубелета.
+        # Добавляет приёмник kubeletstats в конвейер метрик и необходимые правила в РольКластера.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # Настраивает дополнительные метрики Кубелета
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+
+  <Tab title="ClickStack с открытым исходным кодом">
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # daemonset.yaml
+      mode: daemonset
+
+      # Требуется для использования метрик утилизации CPU/памяти из kubeletstats
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Настраивает процессор Kubernetes для добавления метаданных Kubernetes.
+        # Добавляет процессор k8sattributes во все конвейеры и добавляет необходимые правила в РольКластера.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # Если включено, процессор извлечет все метки связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя метки будет использоваться как ключ.
+          extractAllPodLabels: true
+          # Если включено, процессор извлечет все аннотации связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя аннотации будет использоваться как ключ.
+          extractAllPodAnnotations: true
+        # Настраивает коллектор на сбор метрик узлов, подов и контейнеров из API kubelet.
+        # Добавляет приёмник kubeletstats в конвейер метрик и добавляет необходимые правила в РольКластера.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # Настраивает дополнительные метрики kubelet
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            headers:
+              authorization: "${env:HYPERDX_API_KEY}"
+            compression: gzip
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+</Tabs>
+
+<div id="creating-the-deployment-configuration">
+  ### Создание конфигурации развертывания
+</div>
+
+Чтобы собирать события Kubernetes и метрики всего кластера, потребуется развернуть отдельный OpenTelemetry Collector в виде развертывания.
+
+Скачайте манифест развертывания:
+
+```shell
+curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
+```
+
+<Tabs>
+  <Tab title="Управляемый ClickStack">
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+       
+      # Нам нужен только один такой коллектор — если их будет больше, появятся дубликаты данных
+      replicaCount: 1
+       
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # Если включено, процессор извлечёт все метки связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя метки будет использоваться как ключ.
+          extractAllPodLabels: true
+          # Если включено, процессор извлечёт все аннотации связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя аннотации будет использоваться как ключ.
+          extractAllPodAnnotations: true
+        # Настраивает коллектор на сбор событий Kubernetes.
+        # Добавляет k8sobject receiver в конвейер журналов и по умолчанию собирает события Kubernetes.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # Настраивает Kubernetes Cluster Receiver для сбора метрик уровня кластера.
+        # Добавляет k8s_cluster receiver в конвейер метрик и добавляет необходимые правила в ClusterRole.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+
+  <Tab title="ClickStack с открытым исходным кодом">
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+       
+      # Нам нужен только один такой коллектор — если их будет больше, появятся дубликаты данных
+      replicaCount: 1
+       
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # Если включено, процессор извлечёт все метки связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя метки будет использоваться как ключ.
+          extractAllPodLabels: true
+          # Если включено, процессор извлечёт все аннотации связанного пода и добавит их как атрибуты ресурса.
+          # Точное имя аннотации будет использоваться как ключ.
+          extractAllPodAnnotations: true
+        # Настраивает коллектор на сбор событий Kubernetes.
+        # Добавляет k8sobject receiver в конвейер журналов и по умолчанию собирает события Kubernetes.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # Настраивает Kubernetes Cluster Receiver для сбора метрик уровня кластера.
+        # Добавляет k8s_cluster receiver в конвейер метрик и добавляет необходимые правила в ClusterRole.
+        # Подробнее: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:HYPERDX_API_KEY}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+</Tabs>
+
+<div id="deploying-the-otel-collector">
+  ## Развертывание OpenTelemetry Collector
+</div>
+
+Теперь OpenTelemetry Collector можно развернуть в кластере Kubernetes с помощью [Helm-чарта OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector).
+
+Добавьте Helm-репозиторий OpenTelemetry:
+
+```shell
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # Добавить репозиторий OTel Helm
+```
+
+Установите чарт, используя указанную выше конфигурацию:
+
+```shell copy
+helm install my-opentelemetry-collector-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
+helm install my-opentelemetry-collector-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
+```
+
+Теперь в HyperDX должны отображаться метрики, журналы и события Kubernetes из вашего кластера Kubernetes.
+
+<div id="forwarding-resouce-tags-to-pods">
+  ## Пересылка тегов ресурсов в поды (рекомендуется)
+</div>
+
+Чтобы коррелировать журналы, метрики и трассировки приложения с метаданными Kubernetes
+(например, именем пода, пространством имен и т. д.), нужно передать метаданные Kubernetes
+в приложение с помощью переменной среды `OTEL_RESOURCE_ATTRIBUTES`.
+
+Ниже приведен пример развертывания, в котором метаданные Kubernetes передаются в
+приложение через переменные среды:
+
+```yaml
+# my_app_deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+        # В сочетании с Kubernetes Attribute Processor это обеспечит
+        # связь журналов и метрик пода с именем сервиса.
+        service.name: <MY_APP_NAME>
+    spec:
+      containers:
+        - name: app-container
+          image: my-image
+          env:
+            # ... другие переменные окружения
+            # Сбор метаданных K8s из Downward API для передачи приложению
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: DEPLOYMENT_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['deployment']
+            # Передача метаданных K8s приложению через OTEL_RESOURCE_ATTRIBUTES
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),k8s.deployment.name=$(DEPLOYMENT_NAME)
+```

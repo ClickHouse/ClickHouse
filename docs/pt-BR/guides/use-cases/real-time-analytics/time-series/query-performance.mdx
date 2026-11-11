@@ -1,0 +1,274 @@
+---
+title: 'Desempenho de consultas - séries temporais'
+sidebarTitle: 'Desempenho de consultas'
+description: 'Melhorando o desempenho de consultas de séries temporais'
+slug: /use-cases/time-series/query-performance
+keywords: ['séries temporais', 'desempenho de consultas', 'otimização', 'indexação', 'particionamento', 'ajuste de consultas', 'desempenho']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Após otimizar o armazenamento, o próximo passo é melhorar o desempenho das consultas.
+Esta seção aborda duas técnicas principais: otimizar as chaves `ORDER BY` e usar visões materializadas.
+Veremos como essas abordagens podem reduzir o tempo das consultas de segundos para milissegundos.
+
+<div id="time-series-optimize-order-by">
+  ## Otimize as chaves `ORDER BY`
+</div>
+
+Antes de tentar outras otimizações, você deve otimizar as chaves `ORDER BY` para garantir que o ClickHouse produza os resultados mais rápidos possíveis.
+A escolha da chave `ORDER BY` certa depende em grande parte das consultas que você vai executar. Suponha que a maioria das nossas consultas filtre pelas colunas `project` e `subproject`.
+Nesse caso, é uma boa ideia adicioná-las à chave `ORDER BY` — assim como a coluna `time`, já que também fazemos consultas com base no tempo.
+
+Vamos criar outra versão da tabela que tenha os mesmos tipos de coluna de `wikistat`, mas seja ordenada por `(project, subproject, time)`.
+
+```sql
+CREATE TABLE wikistat_project_subproject
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (project, subproject, time);
+```
+
+Vamos agora comparar várias consultas para ter uma ideia de quanto a expressão da nossa chave `ORDER BY` é essencial para o desempenho. Observe que não aplicamos nossas otimizações anteriores de tipos de dados e codec, portanto quaisquer diferenças no desempenho das consultas se devem apenas à ordem de ordenação.
+
+<table>
+  <thead>
+    <tr>
+      <th style={{ width: '36%' }}>Consulta</th>
+      <th style={{ textAlign: 'right', width: '32%' }}>`(time)`</th>
+      <th style={{ textAlign: 'right', width: 'right', width: '32%' }}>`(project, subproject, time)`</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>
+        ```sql
+        SELECT project, sum(hits) AS h
+        FROM wikistat
+        GROUP BY project
+        ORDER BY h DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.381 sec</td>
+      <td style={{ textAlign: 'right' }}>1.660 sec</td>
+    </tr>
+
+    <tr>
+      <td>
+        ```sql
+        SELECT subproject, sum(hits) AS h
+        FROM wikistat
+        WHERE project = 'it'
+        GROUP BY subproject
+        ORDER BY h DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.148 sec</td>
+      <td style={{ textAlign: 'right' }}>0.058 sec</td>
+    </tr>
+
+    <tr>
+      <td>
+        ```sql
+        SELECT toStartOfMonth(time) AS m, sum(hits) AS h
+        FROM wikistat
+        WHERE (project = 'it') AND (subproject = 'zero')
+        GROUP BY m
+        ORDER BY m DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.192 sec</td>
+      <td style={{ textAlign: 'right' }}>0.012 sec</td>
+    </tr>
+
+    <tr>
+      <td>
+        ```sql
+        SELECT path, sum(hits) AS h
+        FROM wikistat
+        WHERE (project = 'it') AND (subproject = 'zero')
+        GROUP BY path
+        ORDER BY h DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.968 sec</td>
+      <td style={{ textAlign: 'right' }}>0.010 sec</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="time-series-materialized-views">
+  ## Visões materializadas
+</div>
+
+Outra opção é usar visões materializadas para agregar e armazenar os resultados de consultas usadas com frequência. Esses resultados podem ser consultados em vez dos da tabela original. Suponha que, no nosso caso, a consulta a seguir seja executada com bastante frequência:
+
+```sql
+SELECT path, SUM(hits) AS v
+FROM wikistat
+WHERE toStartOfMonth(time) = '2015-05-01'
+GROUP BY path
+ORDER BY v DESC
+LIMIT 10
+```
+
+```text
+┌─path──────────────────┬────────v─┐
+│ -                     │ 89650862 │
+│ Angelsberg            │ 19165753 │
+│ Ana_Sayfa             │  6368793 │
+│ Academy_Awards        │  4901276 │
+│ Accueil_(homonymie)   │  3805097 │
+│ Adolf_Hitler          │  2549835 │
+│ 2015_in_spaceflight   │  2077164 │
+│ Albert_Einstein       │  1619320 │
+│ 19_Kids_and_Counting  │  1430968 │
+│ 2015_Nepal_earthquake │  1406422 │
+└───────────────────────┴──────────┘
+
+10 rows in set. Elapsed: 2.285 sec. Processed 231.41 million rows, 9.22 GB (101.26 million rows/s., 4.03 GB/s.)
+Peak memory usage: 1.50 GiB.
+```
+
+<div id="time-series-create-materialized-view">
+  ### Criar visão materializada
+</div>
+
+Podemos criar a seguinte visão materializada:
+
+```sql
+CREATE TABLE wikistat_top
+(
+    `path` String,
+    `month` Date,
+    hits UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY (month, hits);
+```
+
+```sql
+CREATE MATERIALIZED VIEW wikistat_top_mv 
+TO wikistat_top
+AS
+SELECT
+    path,
+    toStartOfMonth(time) AS month,
+    sum(hits) AS hits
+FROM wikistat
+GROUP BY path, month;
+```
+
+<div id="time-series-backfill-destination-table">
+  ### Carga retroativa da tabela de destino
+</div>
+
+Esta tabela de destino só será populada quando novos registros forem inseridos na tabela `wikistat`, portanto precisamos fazer uma [carga retroativa](/pt-BR/guides/clickhouse/data-modelling/backfilling).
+
+A maneira mais fácil de fazer isso é usar uma instrução [`INSERT INTO SELECT`](/pt-BR/reference/statements/insert-into#inserting-the-results-of-select) para inserir diretamente na tabela de destino da visão materializada [usando](https://github.com/ClickHouse/examples/tree/main/ClickHouse_vs_ElasticSearch/DataAnalytics#variant-1---directly-inserting-into-the-target-table-by-using-the-materialized-views-transformation-query) a consulta `SELECT` da visão (transformação):
+
+```sql
+INSERT INTO wikistat_top
+SELECT
+    path,
+    toStartOfMonth(time) AS month,
+    sum(hits) AS hits
+FROM wikistat
+GROUP BY path, month;
+```
+
+Dependendo da cardinalidade do conjunto de dados brutos (temos 1 bilhão de linhas!), essa pode ser uma abordagem que consome muita memória. Como alternativa, você pode usar uma variante que requer o mínimo de memória:
+
+* Criar uma tabela temporária com o engine de tabela Null
+* Conectar uma cópia da visão materializada normalmente usada a essa tabela temporária
+* Usar uma consulta `INSERT INTO SELECT` para copiar todos os dados do conjunto de dados brutos para essa tabela temporária
+* Excluir a tabela temporária e a visão materializada temporária.
+
+Com essa abordagem, as linhas do conjunto de dados brutos são copiadas bloco a bloco para a tabela temporária (que não armazena nenhuma dessas linhas) e, para cada bloco de linhas, um estado parcial é calculado e gravado na tabela de destino, onde esses estados são mesclados incrementalmente em segundo plano.
+
+```sql
+CREATE TABLE wikistat_backfill
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = Null;
+```
+
+Em seguida, criaremos uma visão materializada para ler a partir de `wikistat_backfill` e gravar em `wikistat_top`
+
+```sql
+CREATE MATERIALIZED VIEW wikistat_backfill_top_mv 
+TO wikistat_top
+AS
+SELECT
+    path,
+    toStartOfMonth(time) AS month,
+    sum(hits) AS hits
+FROM wikistat_backfill
+GROUP BY path, month;
+```
+
+E, por fim, vamos popular `wikistat_backfill` a partir da tabela `wikistat` inicial:
+
+```sql
+INSERT INTO wikistat_backfill
+SELECT * 
+FROM wikistat;
+```
+
+Quando essa consulta for concluída, podemos excluir a tabela de backfill e a visão materializada:
+
+```sql
+DROP VIEW wikistat_backfill_top_mv;
+DROP TABLE wikistat_backfill;
+```
+
+Agora podemos fazer consultas na visão materializada em vez da tabela original:
+
+```sql
+SELECT path, sum(hits) AS hits
+FROM wikistat_top
+WHERE month = '2015-05-01'
+GROUP BY ALL
+ORDER BY hits DESC
+LIMIT 10;
+```
+
+```text
+┌─path──────────────────┬─────hits─┐
+│ -                     │ 89543168 │
+│ Angelsberg            │  7047863 │
+│ Ana_Sayfa             │  5923985 │
+│ Academy_Awards        │  4497264 │
+│ Accueil_(homonymie)   │  2522074 │
+│ 2015_in_spaceflight   │  2050098 │
+│ Adolf_Hitler          │  1559520 │
+│ 19_Kids_and_Counting  │   813275 │
+│ Andrzej_Duda          │   796156 │
+│ 2015_Nepal_earthquake │   726327 │
+└───────────────────────┴──────────┘
+
+10 rows in set. Elapsed: 0.004 sec.
+```
+
+A melhora de desempenho aqui é impressionante.
+Antes, levava pouco mais de 2 segundos para calcular a resposta dessa consulta, e agora leva apenas 4 milissegundos.

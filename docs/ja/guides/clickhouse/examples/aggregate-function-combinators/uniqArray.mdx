@@ -1,0 +1,66 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArray'
+title: 'uniqArray'
+description: 'uniqArray combinator の使用例'
+keywords: ['uniq', 'array', 'combinator', 'examples', 'uniqArray']
+sidebarTitle: 'uniqArray'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`Array`](/ja/reference/functions/aggregate-functions/combinators#-array) combinator は
+[`uniq`](/ja/reference/functions/aggregate-functions/uniq)
+関数に適用でき、`uniqArray` aggregate combinator function を使って、すべての配列にわたる一意な要素数の概算を計算できます。
+
+`uniqArray` 関数は、データセット内の
+複数の配列にまたがる一意な要素を数える必要がある場合に便利です。これは
+`uniq(arrayJoin())` を使うのと同等で、`arrayJoin` がまず配列を平坦化し、その後
+`uniq` が一意な要素を数えます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+この例では、`uniqArray` の動作を示すために、異なるカテゴリにまたがるユーザーの関心を収めたサンプルデータセットを使用します。`uniq(arrayJoin())` と比較することで、一意な要素の数え方の違いを示します。
+
+```sql title="Query"
+CREATE TABLE user_interests
+(
+    user_id UInt32,
+    interests Array(String)
+) ENGINE = Memory;
+
+INSERT INTO user_interests VALUES
+    (1, ['reading', 'gaming', 'music']),
+    (2, ['gaming', 'sports', 'music']),
+    (3, ['reading', 'cooking']);
+
+SELECT 
+    uniqArray(interests) AS unique_interests_total,
+    uniq(arrayJoin(interests)) AS unique_interests_arrayJoin
+FROM user_interests;
+```
+
+`uniqArray` 関数は、`uniq(arrayJoin())` と同様に、すべての配列をまとめて見たときの一意な要素数を数えます。
+この例では:
+
+* `uniqArray` は 5 を返します。これは、すべてのユーザーの興味を合わせると、一意な興味が 5 つあるためです: &#39;reading&#39;、&#39;gaming&#39;、&#39;music&#39;、&#39;sports&#39;、&#39;cooking&#39;
+* `uniq(arrayJoin())` も 5 を返し、どちらの関数もすべての配列を通して一意な要素を数えることを示しています
+
+```response title="Response"
+   ┌─unique_interests_total─┬─unique_interests_arrayJoin─┐
+1. │                      5 │                          5 │
+   └────────────────────────┴────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`uniq`](/ja/reference/functions/aggregate-functions/uniq)
+* [`arrayJoin`](/ja/reference/functions/regular-functions/array-join)
+* [`Array combinator`](/ja/reference/functions/aggregate-functions/combinators#-array)
+* [`uniqCombined`](/ja/reference/functions/aggregate-functions/uniqCombined)

@@ -9,7 +9,7 @@ namespace DB
 /** A stream of blocks from which you can read the next block from an explicitly provided list.
   * Also see SourceFromSingleChunk.
   */
-class BlocksListSource : public ISource
+class BlocksListSource final : public ISource
 {
 public:
     /// Acquires the ownership of the block list.

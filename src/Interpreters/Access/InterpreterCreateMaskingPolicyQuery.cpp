@@ -25,6 +25,7 @@ BlockIO InterpreterCreateMaskingPolicyQuery::execute()
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Masking Policies are available only in ClickHouse Cloud");
 }
 
+void registerInterpreterCreateMaskingPolicyQuery(InterpreterFactory & factory);
 void registerInterpreterCreateMaskingPolicyQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

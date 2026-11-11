@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'MongoDB ClickPipe 수명 주기'
+description: '다양한 파이프 상태와 그 의미'
+slug: /integrations/clickpipes/mongodb/lifecycle
+title: 'MongoDB ClickPipe 수명 주기'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+이 문서는 MongoDB ClickPipe의 여러 단계와 가능한 상태, 그리고 각 상태의 의미를 설명합니다.
+
+<div id="provisioning">
+  ## 프로비저닝
+</div>
+
+Create ClickPipe 버튼을 클릭하면 ClickPipe가 `Provisioning` 상태로 생성됩니다. 프로비저닝 과정에서는 서비스에서 ClickPipes를 실행하기 위한 기반 인프라를 준비하고, 파이프의 초기 메타데이터도 일부 등록합니다. 서비스 내 ClickPipes의 컴퓨트는 공유되므로 두 번째 ClickPipe는 첫 번째보다 훨씬 더 빠르게 생성됩니다. 필요한 인프라가 이미 준비되어 있기 때문입니다.
+
+<div id="setup">
+  ## 설정
+</div>
+
+파이프가 프로비저닝되면 `Setup` 상태로 전환됩니다. 이 상태에서 대상 ClickHouse 테이블을 생성합니다.
+
+<div id="snapshot">
+  ## 스냅샷
+</div>
+
+설정이 완료되면 `Snapshot` 상태로 전환됩니다(`Running`으로 전환되는 CDC 전용 파이프는 예외입니다). `Snapshot`, `Initial Snapshot`, `Initial Load`(더 일반적으로 사용되는 표현)는 서로 바꿔 사용할 수 있습니다. 이 상태에서는 소스 MongoDB 컬렉션의 스냅샷을 생성해 ClickHouse에 적재합니다. oplog의 보존 설정은 초기 적재에 걸리는 시간을 고려해야 합니다. resync가 트리거되거나 기존 파이프에 새 테이블이 추가될 때도 파이프는 `Snapshot` 상태로 전환됩니다.
+
+<div id="running">
+  ## 실행 중
+</div>
+
+초기 적재가 완료되면 파이프는 `Running` 상태로 진입합니다(`snapshot-only` 파이프인 경우 `Completed` 상태로 전환됨). 이때 파이프가 `Change-Data Capture`를 시작합니다. 이 상태에서는 소스 MongoDB 클러스터에서 ClickHouse로 변경 사항을 스트리밍하기 시작합니다. CDC를 제어하는 방법에 대한 자세한 내용은 [CDC 제어 문서](/ko/integrations/clickpipes/mongodb/controlling-sync)를 참조하십시오.
+
+<div id="paused">
+  ## 일시 중지됨
+</div>
+
+파이프가 `Running` 상태가 되면 일시 중지할 수 있습니다. 이렇게 하면 CDC 프로세스가 중단되고 파이프는 `Paused` 상태로 전환됩니다. 이 상태에서는 소스 MongoDB에서 새 데이터를 가져오지 않지만, ClickHouse에 있는 기존 데이터는 그대로 유지됩니다. 이 상태에서 파이프를 다시 재개할 수 있습니다.
+
+<div id="pausing">
+  ## 일시 중지
+</div>
+
+<Note>
+  이 상태는 곧 지원될 예정입니다. [OpenAPI](/ko/products/cloud/features/admin-features/api/openapi)를 사용 중이라면, 정식으로 출시된 후에도 통합이 계속 정상적으로 작동할 수 있도록 지금 미리 이 상태에 대한 지원을 추가하는 것이 좋습니다.
+</Note>
+
+Pause 버튼을 클릭하면 파이프가 `Pausing` 상태가 됩니다. 이는 CDC 프로세스를 중지하는 중에만 나타나는 일시적인 상태입니다. CDC 프로세스가 완전히 중지되면 파이프는 `Paused` 상태가 됩니다.
+
+<div id="modifying">
+  ## 수정 중
+</div>
+
+<Note>
+  이 상태는 곧 추가될 예정입니다. [OpenAPI](/ko/products/cloud/features/admin-features/api/openapi)를 사용 중이라면, 출시 후에도 통합이 계속 정상적으로 작동할 수 있도록 지금부터 이 상태에 대한 지원을 추가해 두는 것을 권장합니다.
+</Note>
+
+현재 이 상태는 파이프가 테이블을 제거하는 중임을 나타냅니다.
+
+<div id="resync">
+  ## Resync
+</div>
+
+<Note>
+  이 상태는 곧 제공될 예정입니다. [OpenAPI](/ko/products/cloud/features/admin-features/api/openapi)를 사용 중이라면, 릴리스 후에도 통합이 계속 정상적으로 작동할 수 있도록 지금부터 이를 지원하는 것을 고려하십시오.
+</Note>
+
+이 상태는 파이프가 resync 단계에 있으며, 이 단계에서 &#95;resync 테이블을 원래 테이블과 원자적으로 스왑하고 있음을 나타냅니다. resync에 관한 자세한 내용은 [resync 문서](/ko/integrations/clickpipes/mongodb/resync)에서 확인할 수 있습니다.
+
+<div id="completed">
+  ## 완료됨
+</div>
+
+이 상태는 스냅샷 전용 파이프에 적용되며, 스냅샷이 완료되어 더 이상 할 작업이 없음을 의미합니다.
+
+<div id="failed">
+  ## 실패
+</div>
+
+파이프에서 복구할 수 없는 오류가 발생하면 `Failed` 상태로 전환됩니다. 이 상태에서 복구하려면 지원팀에 문의하거나 파이프를 [resync](/ko/integrations/clickpipes/mongodb/resync)하세요.

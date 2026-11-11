@@ -12,7 +12,7 @@ public:
 
     ASTPtr clone() const override { return make_intrusive<ASTJSONPath>(*this); }
 
-    ASTJSONPathQuery * jsonpath_query;
+    ASTJSONPathQuery * jsonpath_query{};
 };
 
 }

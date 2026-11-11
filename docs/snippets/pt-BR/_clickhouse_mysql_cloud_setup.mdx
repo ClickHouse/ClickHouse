@@ -1,0 +1,127 @@
+---
+title: Configuração do MySQL no ClickHouse Cloud
+---
+
+<Steps>
+  <Step title={<>Selecione <code>Connect your app</code></>} id="select-connect-your-app">
+    Após criar seu serviço no ClickHouse Cloud, na tela `Connect your app`, selecione MySQL no menu suspenso.
+
+    <Frame>
+      <img src="/images/_snippets/mysql1.webp" alt="Tela de credenciais do ClickHouse Cloud mostrando o menu suspenso de seleção da interface MySQL" />
+    </Frame>
+  </Step>
+
+  <Step title="Habilite a interface MySQL" id="enable-mysql-interface">
+    Ative o interruptor para habilitar a interface MySQL para este serviço específico.
+    Isso abrirá a porta `3306` para esse serviço e exibirá uma tela de conexão MySQL com seu usuário MySQL exclusivo.
+
+    <Frame>
+      <img src="/images/_snippets/mysql2.webp" alt="Interruptor para habilitar a interface MySQL no ClickHouse Cloud e detalhes da conexão" />
+    </Frame>
+
+    Como alternativa, para habilitar a interface MySQL em um serviço existente:
+  </Step>
+
+  <Step title={<>Selecione <code>Connect</code></>} id="select-connect">
+    Certifique-se de que seu serviço esteja no estado `Running` e clique no serviço para o qual você deseja habilitar a interface MySQL.
+    Selecione &quot;Connect&quot; no menu à esquerda:
+
+    <Frame>
+      <img src="/images/_snippets/mysql3.webp" alt="Tela de conexão do serviço no ClickHouse Cloud com a opção Connect destacada" />
+    </Frame>
+  </Step>
+
+  <Step title={<>Escolha <code>MySQL</code></>} id="choose-mysql">
+    Selecione `MySQL` no menu suspenso `Connect With`.
+
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/_snippets/mysql4.webp" alt="Tela de conexão do ClickHouse Cloud mostrando a seleção da opção MySQL" />
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Habilite a interface MySQL" id="enable-mysql-interface-existing-service">
+    Ative o interruptor para habilitar a interface MySQL para este serviço específico.
+    Isso abrirá a porta `3306` para esse serviço e exibirá sua tela de conexão MySQL, incluindo seu usuário MySQL exclusivo.
+  </Step>
+</Steps>
+
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/_snippets/mysql5.webp" alt="Tela de conexão do ClickHouse Cloud com a interface MySQL habilitada mostrando os detalhes da conexão" />
+  </Frame>
+</div>
+
+<div id="creating-multiple-mysql-users-in-clickhouse-cloud">
+  ## Criando um usuário MySQL somente leitura no ClickHouse Cloud
+</div>
+
+O ClickHouse Cloud cria automaticamente um usuário `mysql4<subdomain>` que usa a mesma senha do usuário padrão.
+A parte `<subdomain>` corresponde à primeira parte do hostname do seu ClickHouse Cloud.
+
+Esse formato de nome de usuário é necessário para compatibilidade com ferramentas que estabelecem conexões seguras, mas não incluem dados de [SNI (Server Name Indication)](https://www.cloudflare.com/learning/ssl/what-is-sni) no handshake de TLS.
+Sem as informações de SNI, o sistema não consegue fazer o roteamento interno corretamente, então o subdomínio incorporado ao nome de usuário fornece as informações de roteamento necessárias.
+O cliente de console do MySQL é um exemplo de ferramenta que precisa disso.
+
+<Tip>
+  Uma prática recomendada é criar um novo usuário MySQL somente leitura.
+</Tip>
+
+<Note>
+  Para um hostname do ClickHouse Cloud como `foobar.us-east1.aws.clickhouse.cloud`, a parte `<subdomain>` é `foobar`, e um nome de usuário MySQL personalizado poderia ser algo como `mysql4foobar_team1`.
+</Note>
+
+<Steps>
+  <Step title="Crie um perfil de configurações de somente leitura" id="create-a-custom-settings-user">
+    Crie um [perfil de configurações](/pt-BR/reference/statements/create/settings-profile) para aplicar ao seu usuário somente leitura,
+    definindo a configuração `readonly` como `1`:
+
+    ```sql
+    CREATE SETTINGS PROFILE readonly_profile SETTINGS readonly = 1
+    ```
+  </Step>
+
+  <Step title="Crie um novo usuário MySQL somente leitura" id="create-a-readonly-mysql-user">
+    [Crie um usuário](/pt-BR/reference/statements/create/user) com um nome neste formato:
+
+    ```sql
+    mysql4<subdomain>_<username>
+    ```
+
+    Aplique o `readonly_profile` ao novo usuário e certifique-se de que a senha esteja no formato double SHA1. Por exemplo:
+
+    ```sql
+    CREATE USER mysql4foobar_readonly
+    IDENTIFIED WITH double_sha1_password BY 'YourPassword42$'
+    SETTINGS PROFILE 'readonly_profile';
+    ```
+  </Step>
+
+  <Step title="Conceda ao novo usuário permissões para acessar as tabelas desejadas" id="grant-the-new-user-the-necessary-permissions">
+    [Conceda](/pt-BR/reference/statements/grant) ao novo usuário as permissões necessárias para interagir com as tabelas ou bancos de dados desejados.
+    Por exemplo, se você quiser conceder acesso apenas a `system.query_log`:
+
+    ```sql
+    GRANT SELECT ON system.query_log TO mysql4foobar_readonly;
+    ```
+
+    <Note>
+      Para o usuário somente leitura, certifique-se de conceder apenas permissões `SELECT` às tabelas que você deseja acessar.
+    </Note>
+
+    O usuário recém-criado pode ser usado para se conectar ao seu serviço do ClickHouse Cloud pela interface MySQL.
+  </Step>
+</Steps>
+
+<div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
+  ### Solução de problemas com vários usuários MySQL no ClickHouse Cloud
+</div>
+
+Se você criou um novo usuário MySQL e vê o seguinte erro ao se conectar pelo cliente de linha de comando do MySQL:
+
+```
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 54
+```
+
+Nesse caso, certifique-se de que o nome de usuário siga o formato `mysql4<subdomain>_<username>`, conforme descrito ([acima](#creating-multiple-mysql-users-in-clickhouse-cloud)).

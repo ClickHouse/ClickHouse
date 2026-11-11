@@ -1,0 +1,48 @@
+#!/usr/bin/expect -f
+
+# Test that clickhouse-local, when acting as a server (`SYSTEM START LISTEN HTTP`), serves HTTP
+# connections using the same default output format as clickhouse-server (`TabSeparated`), even when
+# started in interactive mode (where the terminal default is `PrettyCompact`).
+#
+# Previously the interactive default (`PrettyCompact`) leaked into the global context, so an HTTP
+# client received a `PrettyCompact`-formatted response and failed to parse it.
+#
+# We fetch the served response for `SELECT 1` via `LineAsString` and count the returned lines:
+# `TabSeparated` yields exactly one line, while any `Pretty*` format yields several (borders, header).
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --disable_suggestion --enable-progress-table-toggle=0 --listen_host 127.0.0.1 --http_port 0"
+expect ":) "
+
+send -- "SYSTEM START LISTEN HTTP\r"
+expect "Ok."
+
+# Build the marker at run time with `concat` so the expected token (`SERVED_HTTP_LINES_1`) never
+# appears in the query text itself: interactive clickhouse-local echoes the typed query back, and a
+# literal token in the query would be matched in that echo before the query even runs. The digit is
+# produced only in the result, where `SERVED_HTTP_LINES_` is followed by the row count. A single line
+# means `TabSeparated`; any `Pretty*` format would produce several lines (borders and header).
+send -- "SELECT concat('SERVED_HTTP_LINES_', toString(count())) FROM url('http://127.0.0.1:' || toString(getServerPort('http_port')) || '/?query=SELECT+1', LineAsString) FORMAT TSV\r"
+expect "SERVED_HTTP_LINES_1"
+
+send -- "exit\r"
+expect eof

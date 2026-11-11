@@ -1,0 +1,11 @@
+---
+title: JSON 支持
+---
+
+<div id="schema-choice-map-vs-json">
+  ## schema 选择：Map 与 JSON
+</div>
+
+默认情况下，ClickStack 将属性存储在 `Map(LowCardinality(String), String)` 列中。这是可观测性工作负载推荐使用的 schema。结合 [分桶 map 序列化](/zh/reference/data-types/map#bucketed-map-serialization) 以及针对 map 键和值的文本索引，它可以实现有选择性的查找，而无需承担动态 JSON 子列逐键摄取带来的额外开销。
+
+还提供处于 Beta 阶段的 `JSON` 类型 schema，可用于评估属性键集合较小且稳定的工作负载。**不建议**将其作为默认选项。有关完整对比以及启用 JSON 支持所需的环境变量，请参见 [Map vs JSON type](/zh/clickstack/ingesting-data/schema/map-vs-json)。

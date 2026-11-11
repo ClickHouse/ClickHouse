@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -7,9 +8,11 @@
 #include <iostream>
 #include <memory>
 #include <sys/mman.h>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 #include <zstd.h>
+#include <zstd_errors.h>
 
 #if defined(OS_DARWIN) && defined(__GNUC__)
 #   include <machine/endian.h>
@@ -29,7 +32,7 @@
 #include <types.h>
 
 /// blocking write
-ssize_t write_data(int fd, const void *buf, size_t count)
+static ssize_t write_data(int fd, const void *buf, size_t count)
 {
     for (size_t n = 0; n < count;)
     {
@@ -46,7 +49,7 @@ ssize_t write_data(int fd, const void *buf, size_t count)
 }
 
 /// blocking read
-ssize_t read_data(int fd, void *buf, size_t count)
+static ssize_t read_data(int fd, void *buf, size_t count)
 {
     for (size_t n = 0; n < count;)
     {
@@ -64,25 +67,26 @@ ssize_t read_data(int fd, void *buf, size_t count)
     return count;
 }
 
-/// Main compression part
-int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
-               off_t input_size, off_t output_size, ZSTD_CCtx * cctx)
+/// Compress one block into its own zstd frame
+static size_t doCompress(const char * input, off_t input_size, char * output, size_t output_size, int level)
 {
-    size_t compressed_size = ZSTD_compress2(cctx, output + out_offset, output_size, input + in_offset, input_size);
-    if (ZSTD_isError(compressed_size))
-    {
-        std::cerr << "Error (ZSTD): " << compressed_size << " " << ZSTD_getErrorName(compressed_size) << std::endl;
-        return 1;
-    }
-    in_offset += input_size;
-    out_offset += compressed_size;
-    return 0;
+    ZSTD_CCtx * cctx = ZSTD_createCCtx();
+    if (cctx == nullptr)
+        return static_cast<size_t>(-ZSTD_error_memory_allocation);
+
+    size_t result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
+    if (!ZSTD_isError(result))
+        result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
+    if (!ZSTD_isError(result))
+        result = ZSTD_compress2(cctx, output, output_size, input, input_size);
+
+    ZSTD_freeCCtx(cctx);
+    return result;
 }
 
 /// compress data from opened file into output file
-int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct stat & info_in, uint64_t & compressed_size)
+static int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct stat & info_in, uint64_t & compressed_size)
 {
-    off_t in_offset = 0;
     compressed_size = 0;
 
     /// mmap files
@@ -93,42 +97,26 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         return 1;
     }
 
-    /// Create context
-    ZSTD_CCtx * cctx = ZSTD_createCCtx();
-    if (cctx == nullptr)
-    {
-        std::cerr << "Error (ZSTD): failed to create compression context" << std::endl;
-        return 1;
-    }
-
-    size_t check_result;
-
-    /// Set level and enable checksums
-    check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
-    if (ZSTD_isError(check_result))
-    {
-        std::cerr << "Error (ZSTD): " << check_result << " " << ZSTD_getErrorName(check_result) << std::endl;
-        ZSTD_freeCCtx(cctx);
-        return 1;
-    }
-    check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
-    if (ZSTD_isError(check_result))
-    {
-        std::cerr << "Error (ZSTD): " << check_result << " " << ZSTD_getErrorName(check_result) << std::endl;
-        ZSTD_freeCCtx(cctx);
-        return 1;
-    }
-
     /// limits for size of block to prevent high memory usage or bad compression
     off_t max_block_size = 1ull<<27;
     off_t min_block_size = 1ull<<23;
-    off_t size = 0;
-    off_t current_block_size = 0;
 
-    /// Create buffer for compression
+    /// Split input into blocks: take blocks of maximum size,
+    /// optimize last block (it can be bigger, if it is not too huge)
+    std::vector<std::pair<off_t, off_t>> blocks;
+    for (off_t in_offset = 0; in_offset < info_in.st_size;)
+    {
+        off_t size = info_in.st_size - in_offset < max_block_size + min_block_size ? info_in.st_size - in_offset : max_block_size;
+        blocks.emplace_back(in_offset, size);
+        in_offset += size;
+    }
+
+    /// Blocks are independent frames, so a batch of them is compressed in parallel and written in order.
     /// Block can't become much bigger after compression.
+    size_t num_threads = std::max<size_t>(1, std::min<size_t>(std::thread::hardware_concurrency(), blocks.size()));
+    size_t output_size = 2 * max_block_size;
     char * output = static_cast<char*>(
-        mmap(nullptr, 2 * max_block_size,
+        mmap(nullptr, num_threads * output_size,
             PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE,
             -1,
             0)
@@ -136,72 +124,79 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     if (output == MAP_FAILED)
     {
         perror("mmap");
-        ZSTD_freeCCtx(cctx);
+        munmap(input, info_in.st_size);
         return 1;
     }
     if (-1 == lseek(out_fd, 0, SEEK_END))
     {
         perror("lseek");
-        ZSTD_freeCCtx(cctx);
+        munmap(input, info_in.st_size);
+        munmap(output, num_threads * output_size);
         return 1;
     }
 
     uint64_t total_size = 0;
+    int ret = 0;
+    std::vector<size_t> results(num_threads);
 
     /// Compress data
-    while (in_offset < info_in.st_size)
+    for (size_t batch_begin = 0; batch_begin < blocks.size() && ret == 0; batch_begin += num_threads)
     {
-        /// take blocks of maximum size
-        /// optimize last block (it can be bigger, if it is not too huge)
-        if (info_in.st_size - in_offset < max_block_size || info_in.st_size - in_offset < max_block_size + min_block_size)
-            size = info_in.st_size - in_offset;
-        else
-            size = max_block_size;
-
-        /// Compress data or exit if error happens
-        if (0 != doCompress(input, output, in_offset, current_block_size, size, ZSTD_compressBound(size), cctx))
+        size_t batch_size = std::min(num_threads, blocks.size() - batch_begin);
+        std::vector<std::thread> threads;
+        for (size_t i = 0; i < batch_size; ++i)
         {
-            if (0 != munmap(input, info_in.st_size))
-                perror("munmap");
-            if (0 != munmap(output, 2 * max_block_size))
-                perror("munmap");
-            ZSTD_freeCCtx(cctx);
-            return 1;
+            const auto & [offset, size] = blocks[batch_begin + i];
+            threads.emplace_back([&, i, offset, size]
+                { results[i] = doCompress(input + offset, size, output + i * output_size, output_size, level); });
         }
+        for (auto & thread : threads)
+            thread.join();
 
         /// Save data into file and refresh pointer
-        if (current_block_size != write_data(out_fd, output, current_block_size))
+        for (size_t i = 0; i < batch_size; ++i)
         {
-            perror("write");
-            ZSTD_freeCCtx(cctx);
-            return 1;
+            size_t current_block_size = results[i];
+            if (ZSTD_isError(current_block_size))
+            {
+                std::cerr << "Error (ZSTD): " << current_block_size << " " << ZSTD_getErrorName(current_block_size) << std::endl;
+                ret = 1;
+                break;
+            }
+            if (static_cast<ssize_t>(current_block_size) != write_data(out_fd, output + i * output_size, current_block_size))
+            {
+                perror("write");
+                ret = 1;
+                break;
+            }
+            off_t size = blocks[batch_begin + i].second;
+            pointer += current_block_size;
+            printf("...block compression rate: %.2f%%\n", static_cast<double>(current_block_size) / static_cast<double>(size) * 100); // NOLINT(modernize-use-std-print)
+            total_size += size;
+            compressed_size += current_block_size;
         }
-        pointer += current_block_size;
-        printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / static_cast<float>(size) * 100); // NOLINT(modernize-use-std-print)
-        total_size += size;
-        compressed_size += current_block_size;
-        current_block_size = 0;
     }
+
+    if (0 != munmap(input, info_in.st_size) ||
+        0 != munmap(output, num_threads * output_size))
+    {
+        perror("munmap");
+        return 1;
+    }
+    if (ret != 0)
+        return ret;
+
     std::cout <<
         "Compressed size: " << compressed_size <<
         ", compression rate: " << std::fixed << std::setprecision(2) <<
         static_cast<float>(compressed_size) / static_cast<float>(total_size) * 100 << "%"
         << std::endl;
 
-    if (0 != munmap(input, info_in.st_size) ||
-        0 != munmap(output, 2 * max_block_size))
-    {
-        perror("munmap");
-        ZSTD_freeCCtx(cctx);
-        return 1;
-    }
-
-    ZSTD_freeCCtx(cctx);
     return 0;
 }
 
 /// Save Metadata at the end of file
-int saveMetaData(const char* filenames[], int count, int output_fd, const MetaData& metadata,
+static int saveMetaData(const char* filenames[], int count, int output_fd, const MetaData& metadata,
                  FileData* files_data, size_t pointer, size_t sum_file_size)
 {
     /// Allocate memory for metadata
@@ -242,7 +237,7 @@ int saveMetaData(const char* filenames[], int count, int output_fd, const MetaDa
 }
 
 /// Fills metadata and calls compression function for each file
-int compressFiles(const char* out_name, const char* exec, char* filenames[], int count, int output_fd, int level, const struct stat& info_out)
+static int compressFiles(const char* out_name, const char* exec, char* filenames[], int count, int output_fd, int level, const struct stat& info_out)
 {
     MetaData metadata;
     size_t sum_file_size = 0;
@@ -295,7 +290,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
             files_data[i].exec = true;
 
         /// read data about input file
-        struct stat info_in;
+        struct stat info_in{};
         if (0 != fstat(input_fd, &info_in))
         {
             perror("fstat");
@@ -358,7 +353,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
     return 0;
 }
 
-int copy_decompressor(int input_fd, ssize_t decompressor_size, int output_fd)
+static int copy_decompressor(int input_fd, ssize_t decompressor_size, int output_fd)
 {
     const ssize_t buf_size = 1ul<<19;
     auto buf_memory = std::make_unique<char[]>(buf_size);
@@ -385,7 +380,7 @@ int copy_decompressor(int input_fd, ssize_t decompressor_size, int output_fd)
     return 0;
 }
 
-int copy_decompressor_self(const char *self, int output_fd)
+static int copy_decompressor_self(const char *self, int output_fd)
 {
     int input_fd = open(self, O_RDONLY);
     if (input_fd == -1)
@@ -438,9 +433,9 @@ int copy_decompressor_self(const char *self, int output_fd)
     return ret;
 }
 
-int copy_decompressor_file(const char *path, int output_fd)
+static int copy_decompressor_file(const char *path, int output_fd)
 {
-    struct stat info_in;
+    struct stat info_in{};
     if (stat(path, &info_in) != 0)
     {
         std::cerr << "Error: decompressor file [" << path << "]." << std::endl;
@@ -481,7 +476,7 @@ inline void usage(FILE * out, const char * name)
         name, ZSTD_maxCLevel());
 }
 
-const char * get_param(int argc, char * const argv[], const char * name)
+static const char * get_param(int argc, char * const argv[], const char * name)
 {
     if (nullptr == name || name[0] == 0)
         return nullptr;
@@ -511,6 +506,10 @@ const char * get_param(int argc, char * const argv[], const char * name)
 
 int main(int argc, char* argv[])
 {
+    /// musl defines `stdout` and `stderr` as recursive macros `(stdout)` / `(stderr)`,
+    /// which trigger `-Wdisabled-macro-expansion` when used as function arguments.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     if (argc == 1)
     {
         usage(stdout, argv[0]);
@@ -557,8 +556,9 @@ int main(int argc, char* argv[])
         usage(stderr, argv[0]);
         return 1;
     }
+#pragma clang diagnostic pop
 
-    struct stat info_out;
+    struct stat info_out{};
     if (stat(argv[start_of_files], &info_out) != -1 || errno != ENOENT)
     {
         std::cerr << "Error: output file [" << argv[start_of_files] << "] already exists" << std::endl;

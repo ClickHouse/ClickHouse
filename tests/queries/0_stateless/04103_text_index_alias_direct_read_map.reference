@@ -1,0 +1,4 @@
+materialized	2
+alias	2
+materialized EXPLAIN rewritten	1
+alias EXPLAIN rewritten	1

@@ -19,7 +19,8 @@ SETTINGS add_minmax_index_for_numeric_columns = true,
          add_minmax_index_for_string_columns = true,
          add_minmax_index_for_temporal_columns = true,
          index_granularity = 8192,
-         index_granularity_bytes = 10485760;
+         index_granularity_bytes = 10485760,
+         default_compression_codec = 'LZ4'; -- pin codec: the default is randomized server-side and changes data_compressed_bytes
 
 INSERT INTO tbl1 VALUES (1,1,1), (2,2,2), (3,3,3);
 

@@ -1,0 +1,11 @@
+default: REPLACE PARTITION FROM empty source is rejected
+destination data preserved	2
+opt-in: legacy silent-drop is still available
+destination data cleared	0
+compatibility = 26.5 also restores legacy silent-drop	0
+normal REPLACE swapped	999
+attach from empty did not touch dst	999
+replicated default: REPLACE PARTITION FROM empty source is rejected
+replicated destination data preserved	2
+replicated opt-in: legacy silent-drop still available
+replicated destination data cleared	0

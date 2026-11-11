@@ -1,0 +1,73 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/search
+title: 'ClickStack と Elastic における検索'
+sidebarTitle: '検索'
+description: 'ClickStack と Elastic における検索'
+doc_type: 'guide'
+keywords: ['clickstack', '検索', 'ログ', 'オブザーバビリティ', '全文検索']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="search-in-clickstack-and-elastic">
+  ## ClickStack と Elastic での検索
+</div>
+
+ClickHouse は SQL ネイティブの engine であり、高性能な分析ワークロード向けにゼロから設計されています。一方、Elasticsearch は SQL ライクなインターフェイスを提供し、SQL を基盤となる Elasticsearch の query DSL に変換します。つまり、SQL は第一級の機能ではなく、[機能面での互換性](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations) も限定的です。
+
+ClickHouse は完全な SQL をサポートするだけでなく、[`argMax`](/ja/reference/functions/aggregate-functions/argMax)、[`histogram`](/ja/reference/functions/aggregate-functions/parametric-functions#histogram)、[`quantileTiming`](/ja/reference/functions/aggregate-functions/quantileTiming) のようなオブザーバビリティ向けのさまざまな関数も備えており、構造化されたログ、メトリクス、トレースに対するクエリを簡潔に記述できます。
+
+シンプルなログやトレースの調査には、ClickStack UI (HyperDX) が、フィールドと値によるクエリ、範囲指定、ワイルドカードなどに対応した、直感的なテキストベースの絞り込みを行える [Lucene スタイルの構文](/ja/clickstack/features/search) を提供します。これは、Elasticsearch の [Lucene 構文](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) や、[Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql) の一部に相当します。
+
+<Image img="/images/use-cases/observability/hyperdx-search.webp" alt="検索" size="lg" />
+
+この検索インターフェイスは、こうした馴染みのある構文をサポートしつつ、内部ではそれを効率的な SQL の `WHERE` 句に変換します。そのため、Kibana ユーザーにも親しみやすく、必要に応じて SQL の強力な機能も活用できます。これにより、ClickHouse の [文字列検索関数](/ja/reference/functions/regular-functions/string-search-functions)、[類似度関数](/ja/reference/functions/regular-functions/string-functions#stringJaccardIndex)、[日時関数](/ja/reference/functions/regular-functions/date-time-functions) を幅広く活用できます。
+
+<Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg" />
+
+以下では、ClickStack と Elasticsearch の Lucene クエリ言語を比較します。
+
+<div id="clickstack-vs-elasticsearch-query-string">
+  ## ClickStack 検索構文と Elasticsearch query string の比較
+</div>
+
+ClickStack と Elasticsearch はどちらも、ログや トレース を直感的にフィルタリングできる柔軟なクエリ言語を提供しています。Elasticsearch の query string は DSL と索引エンジンに密接に統合されている一方、ClickStack は内部的に ClickHouse SQL に変換される、Lucene に着想を得た構文をサポートしています。以下の表では、一般的な検索パターンが両システムでどのように動作するかを示し、構文上の共通点とバックエンドでの実行方法の違いをまとめています。
+
+| **機能**         | **ClickStack 構文**                   | **Elasticsearch 構文**              | **コメント**                                                                                                                                                                                                                                     |
+| -------------- | ----------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 自由テキスト検索       | `error`                             | `error`                           | すべての索引済みフィールドを対象に一致します。ClickStack では、複数フィールドに対する SQL `ILIKE` に書き換えられます。                                                                                                                                                                      |
+| フィールド一致        | `level:error`                       | `level:error`                     | 構文は同一です。ClickStack では ClickHouse 内のフィールド値に完全一致します。                                                                                                                                                                                           |
+| フレーズ検索         | `"disk full"`                       | `"disk full"`                     | 引用符で囲んだテキストは、完全に同じ語順の並びに一致します。ClickHouse では文字列の等価比較または `ILIKE` を使用します。                                                                                                                                                                       |
+| フィールドのフレーズ一致   | `message:"disk full"`               | `message:"disk full"`             | SQL `ILIKE` または完全一致に変換されます。                                                                                                                                                                                                                  |
+| OR 条件          | `error OR warning`                  | `error OR warning`                | 用語の論理 OR です。どちらのシステムでもネイティブにサポートされます。                                                                                                                                                                                                        |
+| AND 条件         | `error AND db`                      | `error AND db`                    | どちらも積集合として扱われ、ユーザー向けの構文に違いはありません。                                                                                                                                                                                                            |
+| 否定             | `NOT error` or `-error`             | `NOT error` or `-error`           | どちらも同様にサポートされます。ClickStack では SQL `NOT ILIKE` に変換されます。                                                                                                                                                                                       |
+| グループ化          | `(error OR fail) AND db`            | `(error OR fail) AND db`          | どちらでも標準的なブール条件のグループ化です。                                                                                                                                                                                                                      |
+| ワイルドカード        | `error*` or `*fail*`                | `error*`, `*fail*`                | ClickStack は先頭および末尾のワイルドカードをサポートします。ES はパフォーマンス上の理由から、デフォルトで先頭ワイルドカードを無効にしています。用語の途中にワイルドカードを入れることはできません。たとえば `f*ail.` はサポートされません。ワイルドカードはフィールド一致と組み合わせて使用する必要があります。                                                                         |
+| 範囲 (数値/日付)     | `duration:[100 TO 200]`             | `duration:[100 TO 200]`           | ClickStack は SQL `BETWEEN` を使用します。Elasticsearch は range クエリに展開します。範囲内での無制限 `*` はサポートされません。たとえば `duration:[100 TO *]` は使用できません。必要な場合は、以下の `Unbounded ranges` を使用してください。                                                                       |
+| 非有界範囲 (数値/日付)  | `duration:>10` or `duration:>=10`   | `duration:>10` or `duration:>=10` | ClickStack は標準の SQL 演算子を使用します                                                                                                                                                                                                                |
+| 包含/排他          | `duration:{100 TO 200}` (exclusive) | Same                              | `{}` は排他的な境界を表します。範囲内の `*` はサポートされません。たとえば `duration:[100 TO *]` は使用できません                                                                                                                                                                    |
+| 存在チェック         | N/A                                 | `_exists_:user` or `field:*`      | `_exists_` はサポートされていません。`LogAttributes` などの `Map` カラムには `LogAttributes.log.file.path: *` を使用してください。ルートカラムは常に存在する必要があり、イベントに含まれていない場合はデフォルト値が入ります。デフォルト値または欠落カラムを検索する場合は、Elasticsearch と同じ構文 ` ServiceName:*` または `ServiceName != ''` を使用します。 |
+| 正規表現           | `match` function                    | `name:/joh?n(ath[oa]n)/`          | 現時点では Lucene 構文ではサポートされていません。SQL と [`match`](/ja/reference/functions/regular-functions/string-search-functions#match) function、またはその他の [string search functions](/ja/reference/functions/regular-functions/string-search-functions) を使用できます。       |
+| あいまい一致         | `editDistance('quikc', field) = 1`  | `quikc~`                          | 現時点では Lucene 構文ではサポートされていません。Distance functions は SQL で使用できます。たとえば `editDistance('rror', SeverityText) = 1` や [other similarity functions](/ja/reference/functions/regular-functions/string-functions#jaroSimilarity) を利用できます。                  |
+| 近接検索           | サポートされていません                         | `"fox quick"~5`                   | 現時点では Lucene 構文ではサポートされていません。                                                                                                                                                                                                                |
+| ブースト           | `quick^2 fox`                       | `quick^2 fox`                     | 現時点で ClickStack ではサポートされていません。                                                                                                                                                                                                               |
+| フィールドワイルドカード   | `service.*:error`                   | `service.*:error`                 | 現時点で ClickStack ではサポートされていません。                                                                                                                                                                                                               |
+| 特殊文字のエスケープ     | 予約文字は `\` でエスケープします                 | Same                              | 予約記号はエスケープが必要です。                                                                                                                                                                                                                             |
+
+<div id="empty-value-differences">
+  ## Exists/missing の違い
+</div>
+
+イベント内でフィールド自体を完全に省略でき、その結果として本当に「存在しない」状態になり得る Elasticsearch とは異なり、ClickHouse ではテーブルのスキーマに定義されたすべてのカラムが必ず存在します。`insert` イベントでフィールドが指定されていない場合は、次のようになります。
+
+* [`Nullable`](/ja/reference/data-types/nullable) フィールドでは、`NULL` が設定されます。
+* 非 Nullable フィールド (デフォルト) では、デフォルト値 (多くの場合は空文字列、0、またはそれに相当する値) が設定されます。
+
+ClickStack では、[`Nullable`](/ja/reference/data-types/nullable) は[推奨されていない](/ja/concepts/best-practices/avoidnullablecolumns)ため、後者を使用します。
+
+この挙動により、Elasticsearch の意味でフィールドが「存在する」かどうかを確認することは、直接的にはサポートされていません。
+
+代わりに、空でない値があるかどうかは、`field:*` または `field != ''` を使って確認できます。そのため、実際に欠落しているフィールドと、明示的に空のフィールドを区別することはできません。
+
+実運用では、この違いがオブザーバビリティのユースケースで問題になることはほとんどありませんが、システム間でクエリを移行する際には、この点を意識しておくことが重要です。

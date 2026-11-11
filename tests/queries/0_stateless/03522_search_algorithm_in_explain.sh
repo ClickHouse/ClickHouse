@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 $CLICKHOUSE_CLIENT -n -q "
 CREATE TABLE t (a UInt8, b UInt8) ORDER BY (a, b);
 INSERT INTO t VALUES (0,0);

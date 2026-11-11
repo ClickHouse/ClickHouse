@@ -1,0 +1,34 @@
+null residual left
+1	1
+1	3
+2	0
+3	3
+null residual semi
+1
+3
+null residual anti
+2
+string residual
+1	1
+2	2
+3	0
+max_block_size 1
+0	2
+1	1
+1	3
+2	0
+3	3
+empty right left-join
+1	0
+2	0
+3	0
+empty left right-join
+0	1
+0	2
+0	3
+empty both full-join
+0
+empty right anti
+1
+2
+3

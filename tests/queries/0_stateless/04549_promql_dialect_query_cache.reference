@@ -1,0 +1,9 @@
+-- 'auto' evaluation time transpiles to now(), the query cache must reject it by default
+QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS
+-- explicit evaluation time is deterministic, the second run is served from the cache
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+-- a different PromQL query must not collide with the cached one
+[('instance','host1')]	2023-11-14 22:13:20.000	2
+0	1
+1	0

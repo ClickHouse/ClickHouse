@@ -1,9 +1,12 @@
+-- Indexed auto/postfilter still use the vector index
+Description: vector_similarity GRANULARITY 100000000
+Description: vector_similarity GRANULARITY 100000000
 -- Search with index, strategy = auto
-Filter column: in(__table1.key, __set_Int32_XXX) (removed)
+Prewhere filter column: in(__table1.key, __set_Int32_XXX) (removed)
 -- Search with index, strategy = prefilter
 Prewhere filter column: in(__table1.key, __set_Int32_XXX) (removed)
 -- Search with index, strategy = postfilter
-Filter column: in(__table1.key, __set_Int32_XXX) (removed)
+Prewhere filter column: in(__table1.key, __set_Int32_XXX) (removed)
 -----
 -- Search without index, strategy = auto
 Prewhere filter column: in(__table1.key, __set_Int32_XXX) (removed)

@@ -1,0 +1,38 @@
+--- overflow_offset_length.puffin ---
+Puffin blob 0: offset/length out of bounds
+--- negative_offset.puffin ---
+Puffin blob 0: offset/length out of bounds
+--- length_exceeds_file.puffin ---
+Puffin blob 0: offset/length out of bounds
+--- blob_overlaps_footer.puffin ---
+Puffin blob 0: offset/length out of bounds
+--- invalid_roaring_bitmap.puffin ---
+Failed to deserialize deletion vector roaring bitmap
+BAD_ARGUMENTS
+--- invalid_bitmap_key.puffin ---
+Invalid deletion vector bitmap key
+--- dv_envelope_length_mismatch.puffin ---
+does not match combined length
+--- dv_envelope_bad_magic.puffin ---
+Invalid deletion vector magic
+--- dv_envelope_crc_mismatch.puffin ---
+Deletion vector CRC mismatch
+--- cardinality_mismatch_large_bitmap.puffin ---
+exceeds declared cardinality
+--- cardinality_exceeds_materialization_limit.puffin ---
+exceeds materialization limit
+BAD_ARGUMENTS
+--- oversized_dv_blob.puffin ---
+exceeds absolute limit
+--- invalid_cardinality_non_numeric.puffin ---
+property 'cardinality' must be an unsigned integer
+--- invalid_cardinality_negative.puffin ---
+property 'cardinality' must be an unsigned integer
+--- invalid_cardinality_non_numeric_subset ---
+property 'cardinality' must be an unsigned integer
+--- invalid_cardinality_negative_subset ---
+property 'cardinality' must be an unsigned integer
+--- puffin_wrong_type ---
+Unexpected type
+--- puffin_unknown_column ---
+Unexpected column

@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class DataTypeLowCardinality : public IDataType
+class DataTypeLowCardinality final : public IDataType
 {
 private:
     DataTypePtr dictionary_type;
@@ -62,9 +62,15 @@ public:
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
 
-    void forEachChild(const ChildCallback & callback) const override;
+    size_t getNumberOfChildren() const override { return 1; }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index == 0);
+        return dictionary_type;
+    }
 
 private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     template <typename ... Params>

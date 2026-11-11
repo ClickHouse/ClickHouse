@@ -1,0 +1,73 @@
+---
+slug: '/examples/aggregate-function-combinators/sumMap'
+title: 'sumMap'
+description: 'sumMap 조합자 사용 예시'
+keywords: ['sum', '맵', '결합자', '예시', 'sumMap']
+sidebarTitle: 'sumMap'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`맵`](/ko/reference/functions/aggregate-functions/combinators#-map) 조합자는 [`sum`](/ko/reference/functions/aggregate-functions/sum)
+함수에 적용할 수 있으며, `sumMap`
+집계 조합자 함수를 사용해 맵의 각 키별 값 합계를 계산합니다.
+
+<div id="example-usage">
+  ## 예시 사용
+</div>
+
+이 예시에서는 서로 다른 시간 슬롯의 상태 코드와 해당 개수를 저장하는 테이블(table)을 생성합니다.
+각 행에는 상태 코드와 해당 개수가 대응되는 맵이 포함됩니다. 각 시간 슬롯에서
+각 상태 코드의 총개수를 계산하기 위해 `sumMap`을 사용합니다.
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    sumMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+`sumMap` 함수는 각 타임슬롯 내에서 상태 코드별 총개수를 계산합니다. 예시는 다음과 같습니다.
+
+* 타임슬롯 &#39;2000-01-01 00:00:00&#39;:
+  * 상태 &#39;a&#39;: 15
+  * 상태 &#39;b&#39;: 25
+  * 상태 &#39;c&#39;: 35 + 45 = 80
+  * 상태 &#39;d&#39;: 55
+  * 상태 &#39;e&#39;: 65
+* 타임슬롯 &#39;2000-01-01 00:01:00&#39;:
+  * 상태 &#39;d&#39;: 75
+  * 상태 &#39;e&#39;: 85
+  * 상태 &#39;f&#39;: 95 + 105 = 200
+  * 상태 &#39;g&#39;: 115 + 125 = 240
+
+```response title="Response"
+   ┌────────────timeslot─┬─sumMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':200,'g':240}      │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':80,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`sum`](/ko/reference/functions/aggregate-functions/sum)
+* [`맵 조합자`](/ko/reference/functions/aggregate-functions/combinators#-map)

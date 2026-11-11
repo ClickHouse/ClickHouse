@@ -1,0 +1,16 @@
+=== Global grant: SELECT name (fast path) shows both tables ===
+t1
+t2
+=== Global grant: SELECT database, name (fast path) shows both tables ===
+{db}	t1
+{db}	t2
+=== DB-level grant: SELECT name (fast path) shows both tables ===
+t1
+t2
+=== DB-level grant: SELECT database, name (fast path) shows both tables ===
+{db}	t1
+{db}	t2
+=== Per-table grant: SELECT name (slow path) shows only t1 ===
+t1
+=== Per-table grant: SELECT database, name (slow path) shows only t1 ===
+{db}	t1

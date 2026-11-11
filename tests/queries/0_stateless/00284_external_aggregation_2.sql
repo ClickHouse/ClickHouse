@@ -10,7 +10,7 @@ SET group_by_two_level_threshold = 100000;
 SET max_bytes_before_external_group_by = '1Mi';
 SET max_bytes_ratio_before_external_group_by = 0;
 
--- method: key_string & key_string_two_level
+-- method: key_packed_string & key_packed_string_two_level
 CREATE TABLE t_00284_str(s String) ENGINE = MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t_00284_str SELECT toString(number) FROM numbers_mt(1e6);
 INSERT INTO t_00284_str SELECT toString(number) FROM numbers_mt(1e6);

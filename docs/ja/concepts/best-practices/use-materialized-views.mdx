@@ -1,0 +1,87 @@
+---
+slug: /best-practices/use-materialized-views
+sidebarTitle: 'materialized view を利用する'
+title: 'materialized view を利用する'
+description: 'materialized view について説明するページ'
+keywords: ['materialized views', 'メダリオンアーキテクチャ']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouseは、[**インクリメンタル**](/ja/concepts/features/materialized-views/incremental-materialized-view)と[**リフレッシャブル**](/ja/concepts/features/materialized-views/refreshable-materialized-view)という2種類のmaterialized viewをサポートしています。どちらも、結果を事前に計算して保存することでクエリを高速化するためのものですが、基になるクエリがいつ・どのように実行されるか、どのようなワークロードに適しているか、またデータの鮮度をどう扱うかという点で大きく異なります。
+
+**materialized viewは、[データ型](/ja/concepts/best-practices/select-data-type)や[主キーの最適化](/ja/concepts/best-practices/choosing-a-primary-key)に関する従来のベストプラクティスを実施したうえで、高速化したい特定のクエリパターンに対して利用を検討してください。**
+
+**インクリメンタルmaterialized view**はリアルタイムで更新されます。新しいデータがソーステーブルに挿入されると、ClickHouseはmaterialized viewのクエリを新しいdata blockに自動的に適用し、その結果を別のターゲットテーブルに書き込みます。時間の経過とともに、ClickHouseはこれらの部分的な結果をmergeし、完全で最新のビューを生成します。このアプローチは、計算コストをinsert timeに移し、新しいデータだけを処理するため、非常に効率的です。その結果、ターゲットテーブルに対する`SELECT`クエリは高速かつ軽量になります。インクリメンタルビューはすべてのaggregation関数をサポートし、各クエリが挿入されるdatasetのうち小さく直近のsubsetだけを対象に実行されるため、PB規模のデータにも適切にスケールします。
+
+<Image img="/images/bestpractices/incremental_materialized_view.webp" size="lg" alt="materialized view" />
+
+**リフレッシュ可能なマテリアライズドビュー**は、これとは対照的に、スケジュールに基づいて更新されます。これらのビューは定期的にクエリ全体を再実行し、その結果でターゲットテーブルを上書きします。これは、Postgresのような従来のOLTPデータベースにおけるmaterialized viewに似ています。
+
+<Image img="/images/bestpractices/refreshable_materialized_view.webp" size="lg" alt="リフレッシュ可能なマテリアライズドビューの図" />
+
+インクリメンタルmaterialized viewとリフレッシュ可能なマテリアライズドビューのどちらを選ぶかは、主にクエリの性質、データがどの程度の頻度で変化するか、さらにビューの更新で各行の挿入をその都度反映する必要があるのか、それとも定期的なrefreshで十分なのかによって決まります。こうしたトレードオフを理解することは、ClickHouseで高性能かつスケーラブルなmaterialized viewを設計するうえで重要です。
+
+<div id="when-to-use-incremental-materialized-views">
+  ## インクリメンタルmaterialized viewを使用する場合
+</div>
+
+一般に、インクリメンタルmaterialized viewが推奨されます。ソーステーブルに新しいデータが入るたびに、リアルタイムで自動的に更新されるためです。これらはすべての集計関数をサポートしており、特に単一テーブルに対する集計で効果を発揮します。insert時に結果を増分的に計算することで、クエリははるかに小さいデータのサブセットに対して実行されるため、これらのビューは PB 規模のデータに対しても無理なくスケールします。ほとんどの場合、クラスター全体のパフォーマンスに目立った影響はありません。
+
+次のような場合は、インクリメンタルmaterialized viewを使用してください。
+
+* insert のたびに更新されるリアルタイムのクエリ結果が必要な場合。
+* 大量のデータに対して、集計やフィルタリングを頻繁に行う場合。
+* クエリに、単一テーブルに対する単純な変換または集計が含まれる場合。
+
+インクリメンタルmaterialized viewの例については、[こちら](/ja/concepts/features/materialized-views/incremental-materialized-view)を参照してください。
+
+<div id="when-to-use-refreshable-materialized-views">
+  ## リフレッシュ可能なマテリアライズドビューを使用するタイミング
+</div>
+
+リフレッシュ可能なマテリアライズドビューは、クエリを増分的ではなく定期的に実行し、そのクエリ結果を保存して高速に取得できるようにします。
+
+特に有用なのは、クエリ性能が重要で (たとえばサブミリ秒のレイテンシ) 、結果が多少古くても許容できる場合です。クエリは毎回全体を再実行するため、リフレッシュ可能なビューは、比較的短時間で計算できるクエリや、低い頻度 (たとえば1時間ごと) で実行できるクエリに最適です。たとえば、「top N」の結果のキャッシュやルックアップテーブルなどがこれに当たります。
+
+実行頻度は、システムに過剰な負荷をかけないよう慎重に調整する必要があります。大量のリソースを消費する非常に複雑なクエリは、注意してスケジュールする必要があります。こうしたクエリは、cache に影響を与え、CPU やメモリを消費することで、クラスター全体の性能を低下させる可能性があります。クラスターに過負荷をかけないよう、クエリの実行時間はリフレッシュ間隔に対して十分短くする必要があります。たとえば、クエリ自体の計算に少なくとも 10 秒かかる場合は、ビューの更新を 10 秒ごとにスケジュールしてはいけません。
+
+<div id="summary">
+  ## まとめ
+</div>
+
+要するに、次のような場合はリフレッシュ可能なマテリアライズドビューを使用します。
+
+* キャッシュされたクエリ結果をすぐに利用できる必要があり、鮮度のわずかな遅れは許容できる場合。
+* クエリの結果セットについて上位 N 件が必要な場合。
+* 結果セットのサイズが時間の経過とともに際限なく増加しない場合。際限なく増加すると、ターゲットビューのパフォーマンスは低下します。
+* 複数のテーブルにまたがる複雑な JOIN や非正規化を行っており、いずれかのソーステーブルが変更されるたびに更新が必要な場合。
+* バッチワークフローや非正規化タスクを構築する場合、または DBT の DAG に似たビュー依存関係を作成する場合。
+
+リフレッシュ可能なマテリアライズドビューの例については、[こちら](/ja/concepts/features/materialized-views/refreshable-materialized-view)を参照してください。
+
+<div id="append-vs-replace-mode">
+  ### APPEND と REPLACE モード
+</div>
+
+リフレッシュ可能なマテリアライズドビューでは、ターゲットテーブルへのデータの書き込み方法として `APPEND` と `REPLACE` の2つのモードをサポートしています。これらのモードは、ビューのクエリ結果をリフレッシュ時にどのように書き込むかを定義します。
+
+`REPLACE` はデフォルトの動作です。ビューがリフレッシュされるたびに、ターゲットテーブルの既存の内容は最新のクエリ結果で完全に上書きされます。これは、結果セットのキャッシュのように、ビューが常に最新の状態を反映している必要があるユースケースに適しています。
+
+一方、`APPEND` では、内容を置き換えるのではなく、新しい行をターゲットテーブルの末尾に追加できます。これにより、定期的なスナップショットの取得など、より幅広いユースケースに対応できます。`APPEND` は、各リフレッシュがそれぞれ特定時点の状態を表す場合や、結果を履歴として蓄積したい場合に特に有用です。
+
+次のような場合は `APPEND` モードを選択してください。
+
+* 過去のリフレッシュ履歴を保持したい。
+* 定期的なスナップショットやレポートを作成している。
+* リフレッシュ結果を時間の経過とともに段階的に収集する必要がある。
+
+次のような場合は `REPLACE` モードを選択してください。
+
+* 必要なのが最新の結果だけである。
+* 古いデータは完全に破棄すべきである。
+* ビューが現在の状態またはルックアップを表している。
+
+[Medallion architecture](https://clickhouse.com/blog/building-a-medallion-architecture-for-bluesky-json-data-with-clickhouse) を構築している場合は、`APPEND` 機能の活用例を確認できます。

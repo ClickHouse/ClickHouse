@@ -1,0 +1,94 @@
+---
+title: 設定の拡張
+---
+
+<div id="extending-collector-config">
+  ### collector の設定を拡張する
+</div>
+
+ClickStack 版の OTel collector では、カスタム設定ファイルをマウントし、環境変数を設定することで、ベース設定を拡張できます。
+
+カスタムの receiver、プロセッサ、またはパイプラインを追加するには、次の手順に従います。
+
+1. 追加設定を含むカスタム設定ファイルを作成します
+2. ファイルを `/etc/otelcol-contrib/custom.config.yaml` にマウントします
+3. 環境変数 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml` を設定します
+
+**カスタム設定の例:**
+
+```yaml
+receivers:
+  # ローカルファイルからログを収集する
+  filelog:
+    include:
+      - /var/log/**/*.log
+      - /var/log/syslog
+      - /var/log/messages
+    start_at: beginning
+
+  # ホストシステムのメトリクスを収集する
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      disk:
+      network:
+      filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+
+service:
+  pipelines:
+    # ログパイプライン
+    logs/host:
+      receivers: [filelog]
+      processors:
+        - memory_limiter
+        - transform
+        - batch
+      exporters:
+        - clickhouse
+    
+    # メトリクスパイプライン
+    metrics/hostmetrics:
+      receivers: [hostmetrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+**スタンドアロン collector を使用してデプロイする:**
+
+```bash
+docker run -d \
+  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+  # -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} \
+  -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+  -e CLICKHOUSE_USER=default \
+  -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+  -v "$(pwd)/custom-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+  -p 4317:4317 -p 4318:4318 \
+  clickhouse/clickstack-otel-collector:latest
+```
+
+<Note>
+  カスタム設定では、新しい receiver、プロセッサ、パイプラインのみを定義します。ベースのプロセッサ (`memory_limiter`、`batch`) と exporter (`clickhouse`) はすでに定義されているため、名前を指定して参照してください。カスタム設定はベース設定にマージされるため、既存のコンポーネントを上書きすることはできません。
+</Note>
+
+より複雑な設定については、[デフォルトの ClickStack collector 設定](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml)および[ClickHouse exporter のドキュメント](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options)を参照してください。
+
+<div id="configuration-structure">
+  #### 設定構造
+</div>
+
+[`receivers`](https://opentelemetry.io/docs/collector/transforming-telemetry/)、[`operators`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md)、[`processors`](https://opentelemetry.io/docs/collector/configuration/#processors) など、OTel collector の設定方法の詳細については、[OpenTelemetry collector の公式ドキュメント](https://opentelemetry.io/docs/collector/configuration)を参照することを推奨します。

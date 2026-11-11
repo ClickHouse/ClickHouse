@@ -48,9 +48,28 @@ endif ()
 # But use 2 parallel jobs, since:
 # - this is what llvm does
 # - and I've verfied that lld-11 does not use all available CPU time (in peak) while linking one binary
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND ENABLE_THINLTO AND PARALLEL_LINK_JOBS GREATER 2)
-    message(STATUS "ThinLTO provides its own parallel linking - limiting parallel link jobs to 2.")
-    set (PARALLEL_LINK_JOBS 2)
+#
+# Each ThinLTO link of a large binary (clickhouse, standalone keeper) can use
+# ~100 GB RAM when debug info is kept (-g), so don't run more concurrent LTO
+# links than physically fit in memory - otherwise the linker is OOM-killed.
+# With debug info disabled (-g0, DISABLE_ALL_DEBUG_SYMBOLS) a link needs only
+# ~50 GB, so two still fit and we keep them parallel.
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND ENABLE_THINLTO AND PARALLEL_LINK_JOBS GREATER 1)
+    if (DISABLE_ALL_DEBUG_SYMBOLS)
+        set (MAX_THINLTO_LINK_MEMORY 51200)  # megabytes per concurrent ThinLTO link, measured ~49 GB with -g0
+    else ()
+        set (MAX_THINLTO_LINK_MEMORY 102400) # megabytes per concurrent ThinLTO link, measured ~100 GB with -g
+    endif ()
+    math (EXPR THINLTO_LINK_JOBS "${TOTAL_PHYSICAL_MEMORY} / ${MAX_THINLTO_LINK_MEMORY}")
+    if (THINLTO_LINK_JOBS LESS 1)
+        set (THINLTO_LINK_JOBS 1)
+    elseif (THINLTO_LINK_JOBS GREATER 2)
+        set (THINLTO_LINK_JOBS 2) # 2 is plenty; ThinLTO is already internally parallel
+    endif ()
+    if (THINLTO_LINK_JOBS LESS PARALLEL_LINK_JOBS)
+        message(STATUS "ThinLTO provides its own parallel linking - limiting parallel link jobs to ${THINLTO_LINK_JOBS} (system has ${TOTAL_PHYSICAL_MEMORY} MB RAM, ~${MAX_THINLTO_LINK_MEMORY} MB per link).")
+        set (PARALLEL_LINK_JOBS ${THINLTO_LINK_JOBS})
+    endif ()
 endif()
 
 message(STATUS "Building sub-tree with ${PARALLEL_COMPILE_JOBS} compile jobs and ${PARALLEL_LINK_JOBS} linker jobs (system: ${NUMBER_OF_LOGICAL_CORES} cores, ${TOTAL_PHYSICAL_MEMORY} MB RAM, 'OFF' means the native core count).")

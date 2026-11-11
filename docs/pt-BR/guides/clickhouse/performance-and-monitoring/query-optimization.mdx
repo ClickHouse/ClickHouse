@@ -1,0 +1,38 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: 'Visão geral'
+title: 'Otimização de consultas'
+description: 'Aprenda a diagnosticar consultas lentas no ClickHouse, identificar gargalos e escolher otimizações específicas'
+doc_type: 'guide'
+keywords: ['otimização de consultas', 'desempenho', 'melhores práticas', 'ajuste de consultas', 'eficiência', 'log de consultas', 'EXPLAIN']
+---
+
+Estes guias apresentam um fluxo de trabalho para investigar e melhorar consultas lentas no ClickHouse. Identifique uma consulta lenta recorrente, isole o gargalo, escolha uma otimização específica e compare o resultado com uma referência reproduzível.
+
+<div id="choose-where-to-start">
+  ## Escolha por onde começar
+</div>
+
+Os três primeiros guias formam um fluxo de trabalho completo, mas você também pode começar pela etapa que corresponde ao que já sabe.
+
+<CardGroup cols={1}>
+  <Card title="Diagnostique consultas lentas" icon="magnifying-glass" href="/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
+    Comece aqui quando precisar identificar um padrão recorrente de consultas lentas. Use o histórico de consultas local ou de todo o cluster para escolher uma execução representativa, inspecionar o uso de recursos e formular uma hipótese inicial.
+  </Card>
+
+  <Card title="Isole gargalos de consultas" icon="layer-group" href="/pt-BR/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
+    Comece aqui quando tiver uma consulta lenta, mas ainda não souber quais operações mais afetam seu desempenho. Compare versões progressivamente mais simples da consulta em condições controladas.
+  </Card>
+
+  <Card title="Escolha uma abordagem de otimização" icon="sliders" href="/pt-BR/guides/clickhouse/performance-and-monitoring/optimization-approaches">
+    Comece aqui quando tiver evidências sobre o gargalo e precisar escolher uma alteração específica. Compare abordagens para reduzir os dados lidos, alinhar a organização dos dados às suas consultas ou pré-calcular operações repetitivas.
+  </Card>
+</CardGroup>
+
+<div id="example">
+  ## Exemplo
+</div>
+
+<Card title="Exemplo prático de otimização" icon="flask" href="/pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization-example">
+  Comece com consultas de workload no conjunto de dados NYC Taxi e, em seguida, aplique alterações no schema e na chave de ordenação, medindo cada estágio em relação à mesma referência.
+</Card>

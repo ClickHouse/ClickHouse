@@ -1,0 +1,34 @@
+-- 1 unreferenced duplicates
+1	10
+2	20
+-- 2 redefinition reads the previous definition
+40
+-- 3 the query body reads the last definition
+2
+-- 4 chain of three definitions
+20
+-- 5 two references to the redefined name
+2	2
+-- 6 redefinition in a nested scope shadows the outer CTE
+3
+-- 7 IN with a redefined CTE
+2
+-- 8 the first definition reads the table of the same name
+12
+-- 9 progressive redefinition
+0	0	0	100	300
+1	10	20	120	360
+2	20	40	140	420
+-- 10 UNION CTE redefined
+3
+-- 11 consumer declared between two definitions
+2	2
+-- 12 view
+1	80	high
+2	30	low
+-- 13 MATERIALIZED and RECURSIVE CTEs cannot be redefined
+-- 14 identical redefinitions are distinct definitions
+20
+6
+-- 15 all definitions in resolve process fall through to the outer CTE
+102

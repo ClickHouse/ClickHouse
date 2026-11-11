@@ -1,0 +1,204 @@
+---
+title: 'Java 客户端概览'
+keywords: ['ClickHouse', 'java', 'jdbc', '客户端', '集成', 'r2dbc']
+description: 'Java 连接 ClickHouse 的方式'
+slug: /integrations/java
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+* [Client 0.8+](/zh/integrations/language-clients/java/client)
+* [JDBC 0.8+](/zh/integrations/language-clients/java/jdbc)
+* [R2DBC Driver](/zh/integrations/language-clients/java/r2dbc)
+
+<div id="clickhouse-client">
+  ## ClickHouse client
+</div>
+
+Java client 是一个实现了自身 API 的库，用于屏蔽与 ClickHouse server 进行网络通信的底层细节。目前仅支持 HTTP interface。该库还提供了处理不同 ClickHouse formats 以及其他相关功能的实用工具。
+
+Java Client 最早于 2015 年开发。如今，它的代码库已变得非常难以维护，API 也较为混乱，并且很难再继续优化。因此，我们在 2024 年将其重构为一个新组件 `client-v2`。它具有更清晰的 API、更轻量的代码库和更好的性能提升，同时对 ClickHouse formats 的支持也更完善 (主要是 RowBinary 和 Native) 。JDBC 在不久的将来将使用这个客户端。
+
+<div id="supported-data-types">
+  ### 支持的数据类型
+</div>
+
+| **数据类型**                | **Client V2 支持情况** | **Client V1 支持情况** |
+| ----------------------- | ------------------ | ------------------ |
+| Int8                    | ✔                  | ✔                  |
+| Int16                   | ✔                  | ✔                  |
+| Int32                   | ✔                  | ✔                  |
+| Int64                   | ✔                  | ✔                  |
+| Int128                  | ✔                  | ✔                  |
+| Int256                  | ✔                  | ✔                  |
+| UInt8                   | ✔                  | ✔                  |
+| UInt16                  | ✔                  | ✔                  |
+| UInt32                  | ✔                  | ✔                  |
+| UInt64                  | ✔                  | ✔                  |
+| UInt128                 | ✔                  | ✔                  |
+| UInt256                 | ✔                  | ✔                  |
+| Float32                 | ✔                  | ✔                  |
+| Float64                 | ✔                  | ✔                  |
+| Decimal                 | ✔                  | ✔                  |
+| Decimal32               | ✔                  | ✔                  |
+| Decimal64               | ✔                  | ✔                  |
+| Decimal128              | ✔                  | ✔                  |
+| Decimal256              | ✔                  | ✔                  |
+| Bool                    | ✔                  | ✔                  |
+| String                  | ✔                  | ✔                  |
+| FixedString             | ✔                  | ✔                  |
+| Nullable                | ✔                  | ✔                  |
+| Date                    | ✔                  | ✔                  |
+| Date32                  | ✔                  | ✔                  |
+| DateTime                | ✔                  | ✔                  |
+| DateTime32              | ✔                  | ✔                  |
+| DateTime64              | ✔                  | ✔                  |
+| Interval                | ✗                  | ✗                  |
+| Enum                    | ✔                  | ✔                  |
+| Enum8                   | ✔                  | ✔                  |
+| Enum16                  | ✔                  | ✔                  |
+| Array                   | ✔                  | ✔                  |
+| Map                     | ✔                  | ✔                  |
+| Nested                  | ✔                  | ✔                  |
+| Tuple                   | ✔                  | ✔                  |
+| UUID                    | ✔                  | ✔                  |
+| IPv4                    | ✔                  | ✔                  |
+| IPv6                    | ✔                  | ✔                  |
+| Object                  | ✗                  | ✔                  |
+| Point                   | ✔                  | ✔                  |
+| Nothing                 | ✔                  | ✔                  |
+| MultiPolygon            | ✔                  | ✔                  |
+| Ring                    | ✔                  | ✔                  |
+| Polygon                 | ✔                  | ✔                  |
+| SimpleAggregateFunction | ✔                  | ✔                  |
+| AggregateFunction*      | ✔                  | ✔                  |
+| Variant                 | ✔                  | ✗                  |
+| Dynamic                 | ✔                  | ✗                  |
+| JSON                    | ✔                  | ✗                  |
+
+[ClickHouse 数据类型](/zh/reference/data-types/index)
+
+<Info>
+  **部分支持**
+
+  * **AggregateFunction** — 仅支持直接以二进制方式读取 `groupBitmap`。对于其他聚合函数 (`min`、`max`、`avg` 等) ，请在查询中使用 `-Merge` 组合器 (例如 `minMerge()`、`avgMerge()`) ，以便在服务端解析其状态。不支持对 `AggregateFunction` 类型的列执行 `SELECT * FROM table ...`。
+</Info>
+
+<Info>
+  **数据类型说明**
+
+  * **Decimal** — 在 21.9 及以上版本中，设置 `SET output_format_decimal_trailing_zeros=1` 以保持一致性。
+  * **Enum** — 可同时按字符串和整数处理。
+  * **UInt64** — 在 client-v1 中映射为 `long`。
+</Info>
+
+<div id="features">
+  ### 功能
+</div>
+
+客户端功能表：
+
+| 名称                | Client V2 | Client V1 |            注释           |
+| ----------------- | :-------: | :-------: | :---------------------: |
+| HTTP 连接           |     ✔     |     ✔     |                         |
+| HTTP 压缩 (LZ4)     |     ✔     |     ✔     |                         |
+| 应用程序控制压缩          |     ✔     |     ✗     |                         |
+| 服务器响应压缩 - LZ4     |     ✔     |     ✔     |                         |
+| 客户端请求压缩 - LZ4     |     ✔     |     ✔     |                         |
+| HTTPS             |     ✔     |     ✔     |                         |
+| 客户端 SSL 证书 (mTLS) |     ✔     |     ✔     |                         |
+| HTTP 代理           |     ✔     |     ✔     |                         |
+| POJO SerDe        |     ✔     |     ✗     |                         |
+| 连接池               |     ✔     |     ✔     | 使用 Apache HTTP Client 时 |
+| 命名参数              |     ✔     |     ✔     |                         |
+| 失败时重试             |     ✔     |     ✔     |                         |
+| 故障转移              |     ✗     |     ✔     |                         |
+| 负载均衡              |     ✗     |     ✔     |                         |
+| 服务器自动发现           |     ✗     |     ✔     |                         |
+| 日志注释              |     ✔     |     ✔     |                         |
+| 会话角色              |     ✔     |     ✔     |                         |
+| SSL 客户端身份验证       |     ✔     |     ✔     |                         |
+| SNI 配置            |     ✔     |     ✗     |                         |
+| 会话时区              |     ✔     |     ✔     |                         |
+
+JDBC 驱动继承了其底层客户端实现的相同功能。其他 JDBC 功能请参见其[页面](/zh/integrations/language-clients/java/jdbc)。
+
+<div id="compatibility">
+  ### 兼容性
+</div>
+
+* 此仓库中的所有项目均已针对 ClickHouse 所有[当前活跃的 LTS 版本](https://github.com/ClickHouse/ClickHouse/pulls?q=is%3Aopen+is%3Apr+label%3Arelease)进行了测试。
+* [支持策略](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support)
+* 我们建议持续升级客户端，以免错过安全修复和新改进
+* 如果你在迁移到 v2 API 时遇到问题，请[创建 issue](https://github.com/ClickHouse/clickhouse-java/issues/new?assignees=\&labels=v2-feedback\&projects=\&template=v2-feedback.md\&title=)，我们会及时回复！
+
+<div id="logging">
+  ### 日志
+</div>
+
+我们的 Java 客户端使用 [SLF4J](https://www.slf4j.org/) 进行日志记录。你可以使用任何兼容 SLF4J 的日志框架，例如 `Logback` 或 `Log4j`。
+例如，如果你使用 Maven，可以将以下依赖添加到 `pom.xml` 文件中：
+
+```xml title="pom.xml"
+<dependencies>
+    <!-- SLF4J API -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version> <!-- 使用最新版本 -->
+    </dependency>
+
+    <!-- Logback 核心 -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-core</artifactId>
+        <version>1.5.16</version> <!-- 使用最新版本 -->
+    </dependency>
+
+    <!-- Logback Classic（将 SLF4J 桥接到 Logback） -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>1.5.16</version> <!-- 使用最新版本 -->
+    </dependency>
+</dependencies>
+```
+
+<div id="configuring-logging">
+  #### 配置日志
+</div>
+
+这取决于所使用的日志框架。例如，如果你使用的是 `Logback`，则可以在名为 `logback.xml` 的文件中配置日志：
+
+```xml title="logback.xml"
+<configuration>
+    <!-- 控制台 Appender -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 文件 Appender -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>logs/app.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 根 Logger -->
+    <root level="info">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- 特定包的自定义日志级别 -->
+    <logger name="com.clickhouse" level="info" />
+</configuration>
+```
+
+[更新日志](https://github.com/ClickHouse/clickhouse-java/blob/main/CHANGELOG.md)

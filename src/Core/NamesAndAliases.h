@@ -9,6 +9,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -16,15 +17,18 @@ namespace DB
 class NameAndAliasPair
 {
 public:
-    NameAndAliasPair(const String & name_, const DataTypePtr & type_, const String & expression_)
+    NameAndAliasPair(const String & name_, const DataTypePtr & type_, const String & expression_, const String & comment_ = {})
         : name(name_)
         , type(type_)
         , expression(expression_)
+        , comment(comment_)
     {}
 
     String name;
     DataTypePtr type;
     String expression;
+    /// Optional description of the column, exposed in `SHOW CREATE TABLE` and `system.columns`.
+    String comment;
 };
 
 /// This needed to use structured bindings for NameAndTypePair
@@ -40,7 +44,7 @@ decltype(auto) get(const NameAndAliasPair & name_and_alias)
         return name_and_alias.expression;
 }
 
-using NamesAndAliases = std::vector<NameAndAliasPair>;
+using NamesAndAliases = VectorWithMemoryTracking<NameAndAliasPair>;
 
 }
 

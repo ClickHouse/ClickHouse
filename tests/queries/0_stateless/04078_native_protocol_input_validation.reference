@@ -1,0 +1,4 @@
+valid queries work
+invalid stage values are rejected
+invalid query_kind values are rejected
+invalid compression values are rejected

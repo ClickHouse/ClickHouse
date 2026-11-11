@@ -1,0 +1,3 @@
+WITH (functor, x) -> functor(x) AS lambda, (x -> (x + 1)) AS functor_1, (x -> toString(x)) AS functor_2 SELECT lambda(functor_1, 1), lambda(functor_2, 1)
+WITH x -> (x + 1) AS functor_1, (x -> (x + 2)) AS functor_2 SELECT functor_1(1), functor_2(1)
+SELECT arrayMap(x -> (x + 1), [1, 2, 3]), arrayMap(y -> (y - 1), [4, 5, 6])

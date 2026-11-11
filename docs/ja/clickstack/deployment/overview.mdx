@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/deployment
+title: 'デプロイメントオプション'
+description: 'ClickStack のデプロイ - The ClickHouse Observability Stack'
+doc_type: 'reference'
+keywords: ['ClickStack', 'オブザーバビリティ']
+---
+
+ClickStack には、さまざまなユースケースに対応する複数のデプロイメントオプションがあります。
+
+各デプロイメントオプションの概要を以下に示します。[Getting Started ガイド](/ja/clickstack/getting-started/index) では、主にオプション 1 と 2 を紹介しています。ここでは網羅性のため、すべて掲載しています。
+
+| Name               | Description                                                                       | Suitable For                             | Limitations                                 | Example Link                                              |
+| ------------------ | --------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------- | --------------------------------------------------------- |
+| Managed ClickStack | ClickHouse Cloud でホストされる ClickHouse と ClickStack UI (HyperDX) 。                   | 本番デプロイメント、デモ、概念実証                        | なし                                          | [Managed](/ja/clickstack/deployment/managed)                 |
+| All-in-One         | すべての ClickStack コンポーネントを同梱した単一の Docker コンテナ。                                      | 非本番デプロイメント、デモ、概念実証                       | 本番環境には非推奨                                   | [All-in-One](/ja/clickstack/deployment/all-in-one)           |
+| Helm               | Kubernetes ベースのデプロイメント向けの公式 Helm チャート。ClickHouse Cloud に対応し、本番環境でのスケーリングもサポートします。 | Kubernetes 上での本番デプロイメント                  | Kubernetes の知識が必要、Helm によるカスタマイズが必要         | [Helm](/ja/clickstack/deployment/helm)                       |
+| Docker Compose     | Docker Compose を使って各 ClickStack コンポーネントを個別にデプロイします。                               | ローカルテスト、概念実証、単一サーバーでの本番運用、独自の ClickHouse | フォールトトレランスがなく、複数コンテナの管理が必要                  | [Docker Compose](/ja/clickstack/deployment/docker-compose)   |
+| HyperDX Only       | 独自の ClickHouse とスキーマを使って HyperDX を単独で利用します。                                       | 既存の ClickHouse ユーザー、カスタムイベントパイプライン       | ClickHouse は含まれず、インジェストとスキーマはユーザーが管理する必要がある | [HyperDX Only](/ja/clickstack/deployment/hyperdx-only)       |
+| Local Mode Only    | ブラウザー内で完全に実行され、ローカルストレージを使用します。バックエンドも永続化もありません。                                  | デモ、デバッグ、HyperDX での開発                     | 認証なし、永続化なし、アラートなし、単一ユーザーのみ                  | [Local Mode Only](/ja/clickstack/deployment/local-mode-only) |

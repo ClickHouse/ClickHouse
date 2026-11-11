@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ParsedTemplateFormatString.h>
@@ -59,12 +60,14 @@ private:
     const ParsedTemplateFormatString row_format;
 
     bool end_of_stream = false;
-    std::vector<size_t> always_default_columns;
+    VectorWithMemoryTracking<size_t> always_default_columns;
     const char default_csv_delimiter;
 
     const std::string row_between_delimiter;
 
     std::unique_ptr<TemplateFormatReader> format_reader;
+    /// Error recovery consumes the row-between delimiter before returning to normal row parsing.
+    bool row_between_delimiter_already_skipped = false;
 };
 
 class TemplateFormatReader
@@ -104,10 +107,10 @@ private:
     const std::string row_between_delimiter;
     const FormatSettings & format_settings;
     size_t format_data_idx;
-    size_t row_num;
+    size_t row_num{};
 };
 
-class TemplateSchemaReader : public IRowSchemaReader
+class TemplateSchemaReader final : public IRowSchemaReader
 {
 public:
     TemplateSchemaReader(ReadBuffer & in_,

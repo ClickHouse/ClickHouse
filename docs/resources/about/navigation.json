@@ -1,0 +1,13 @@
+{
+  "groups": [
+    {
+      "group": "About ClickHouse",
+      "pages": [
+        "resources/about/index",
+        "resources/about/adopters",
+        "resources/about/support"
+      ]
+    }
+  ],
+  "item": "About"
+}

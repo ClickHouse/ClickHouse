@@ -116,6 +116,12 @@ TYPEID_MAP(String)
 struct Array;
 TYPEID_MAP(Array)
 
+struct Map;
+TYPEID_MAP(Map)
+
+struct Object;
+TYPEID_MAP(Object)
+
 #undef TYPEID_MAP
 
 }

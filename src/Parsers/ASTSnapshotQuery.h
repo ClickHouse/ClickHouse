@@ -18,7 +18,7 @@ public:
 
     struct Element
     {
-        ElementType type;
+        ElementType type{};
         String table_name;
         String database_name;
         std::set<DatabaseAndTableName> except_tables;

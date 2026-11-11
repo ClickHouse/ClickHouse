@@ -1,0 +1,24 @@
+{
+  "group": "Format Settings",
+  "root": "reference/settings/formats",
+  "directory": "none",
+  "pages": [
+    "reference/settings/formats/bool",
+    "reference/settings/formats/date-time",
+    "reference/settings/formats/format",
+    "reference/settings/formats/format-avro",
+    "reference/settings/formats/format-binary",
+    "reference/settings/formats/format-capn",
+    "reference/settings/formats/format-csv",
+    "reference/settings/formats/format-custom",
+    "reference/settings/formats/format-regexp",
+    "reference/settings/formats/format-schema",
+    "reference/settings/formats/format-template",
+    "reference/settings/formats/input-format",
+    "reference/settings/formats/output-format",
+    "reference/settings/formats/schema-inference",
+    "reference/settings/formats/show-create",
+    "reference/settings/formats/type-json",
+    "reference/settings/formats/other"
+  ]
+}

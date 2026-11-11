@@ -28,6 +28,7 @@ from dst	0	A	all_1_1_0
 from dst	0	A	all_2_2_0
 Indentical blocks in insertion
 from dst	0	A	all_1_1_0
+from dst	0	A	all_2_2_0
 Indentical blocks after materialised view`s transformation
 first attempt
 from dst	1	B	all_1_1_0

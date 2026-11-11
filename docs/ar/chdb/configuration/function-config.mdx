@@ -1,0 +1,301 @@
+---
+title: 'التهيئة على مستوى الدالة'
+sidebarTitle: 'تهيئة الدالة'
+slug: /chdb/configuration/function-config
+description: 'إعداد محرك التنفيذ وتصحيح Dtype على مستوى الدالة'
+keywords: ['chdb', 'DataStore', 'دالة', 'تهيئة', 'Dtype', 'تصحيح']
+doc_type: 'reference'
+---
+
+يوفّر DataStore تحكمًا دقيقًا في التنفيذ على مستوى الدالة، بما في ذلك تحديد المحرك وتصحيح Dtype.
+
+<div id="function-engine">
+  ## تهيئة دالة Engine
+</div>
+
+عيّن محرك التنفيذ مختلفًا لوظائف محددة.
+
+<div id="setting-engines">
+  ### إعداد محركات الدوال
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# Force specific functions to use chdb
+function_config.use_chdb('length', 'substring', 'concat')
+
+# Force specific functions to use pandas
+function_config.use_pandas('upper', 'lower', 'capitalize')
+
+# Set default preference
+function_config.prefer_chdb()    # Default to chdb
+function_config.prefer_pandas()  # Default to pandas
+
+# Reset to auto
+function_config.reset()
+```
+
+<div id="when-to-use">
+  ### متى يُستخدم
+</div>
+
+**افرض استخدام chdb في الحالات التالية:**
+
+* الدوال التي تحقق أداءً أفضل في ClickHouse
+* الدوال التي تستفيد من تحسينات SQL
+* عمليات السلاسل النصية/التاريخ والوقت واسعة النطاق
+
+**افرض استخدام pandas في الحالات التالية:**
+
+* الدوال ذات السلوك الخاص بـ pandas
+* عندما تكون مطابقة pandas الدقيقة مطلوبة
+* عمليات السلاسل النصية المخصّصة
+
+<div id="function-example">
+  ### مثال
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import function_config
+
+# Configure function engines
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper')
+
+ds = pd.read_csv("data.csv")
+
+# length() will use chdb
+ds['name_len'] = ds['name'].str.len()
+
+# substring() will use chdb  
+ds['prefix'] = ds['name'].str.slice(0, 3)
+
+# upper() will use pandas
+ds['name_upper'] = ds['name'].str.upper()
+```
+
+***
+
+<div id="overlapping">
+  ## الدوال المشتركة
+</div>
+
+تتوفّر أكثر من 159 دالة في كلٍّ من محركَي chdb وpandas:
+
+| الفئة              | الدوال                                                                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **السلاسل النصية** | `length`, `upper`, `lower`, `trim`, `ltrim`, `rtrim`, `concat`, `substring`, `replace`, `reverse`, `contains`, `startswith`, `endswith` |
+| **الرياضيات**      | `abs`, `round`, `floor`, `ceil`, `exp`, `log`, `log10`, `sqrt`, `pow`, `sin`, `cos`, `tan`                                              |
+| **DateTime**       | `year`, `month`, `day`, `hour`, `minute`, `second`, `dayofweek`, `dayofyear`, `quarter`                                                 |
+| **التجميع**        | `sum`, `avg`, `min`, `max`, `count`, `std`, `var`, `median`                                                                             |
+
+بالنسبة إلى الدوال المشتركة، يُحدَّد المحرك بناءً على:
+
+1. الإعداد الصريح للدالة (إذا كان مضبوطًا)
+2. إعداد `execution_engine` العام
+3. الاختيار التلقائي استنادًا إلى السياق
+
+***
+
+<div id="chdb-only">
+  ## الدوال الخاصة بـ chdb فقط
+</div>
+
+بعض الدوال لا تتوفر إلا عبر ClickHouse:
+
+| الفئة           | الدوال                                                                             |
+| --------------- | ---------------------------------------------------------------------------------- |
+| **Array**       | `arraySum`, `arrayAvg`, `arraySort`, `arrayDistinct`, `groupArray`, `arrayElement` |
+| **JSON**        | `JSONExtractString`, `JSONExtractInt`, `JSONExtractFloat`, `JSONHas`               |
+| **URL**         | `domain`, `path`, `protocol`, `extractURLParameter`                                |
+| **IP**          | `IPv4StringToNum`, `IPv4NumToString`, `isIPv4String`                               |
+| **Geo**         | `greatCircleDistance`, `geoDistance`, `geoToH3`                                    |
+| **Hash**        | `cityHash64`, `xxHash64`, `sipHash64`, `MD5`, `SHA256`                             |
+| **Conditional** | `sumIf`, `countIf`, `avgIf`, `minIf`, `maxIf`                                      |
+
+تستخدم هذه الدوال محرك chdb تلقائيًا بغض النظر عن الإعدادات.
+
+***
+
+<div id="pandas-only">
+  ## دوال خاصة بـ pandas
+</div>
+
+بعض الدوال لا تتوفر إلا من خلال pandas:
+
+| الفئة             | الدوال                                    |
+| ----------------- | ----------------------------------------- |
+| **Apply**         | دوال lambda مخصصة، ودوال يعرّفها المستخدم |
+| **Complex Pivot** | جداول Pivot مع تجميعات مخصصة              |
+| **Stack/Unstack** | عمليات معقدة لإعادة تشكيل البيانات        |
+| **Interpolate**   | طُرق الاستيفاء للسلاسل الزمنية            |
+
+تستخدم هذه الدوال تلقائيًا محرك pandas بغضّ النظر عن الإعدادات.
+
+***
+
+<div id="dtype-correction">
+  ## تصحيح Dtype
+</div>
+
+اضبط كيفية قيام DataStore بتصحيح أنواع البيانات بين المحركات.
+
+<div id="correction-levels">
+  ### مستويات التصحيح
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# No correction
+config.set_correction_level(CorrectionLevel.NONE)
+
+# Critical types only (NULL handling, boolean)
+config.set_correction_level(CorrectionLevel.CRITICAL)
+
+# High priority (default) - common type mismatches
+config.set_correction_level(CorrectionLevel.HIGH)
+
+# Medium - more aggressive correction
+config.set_correction_level(CorrectionLevel.MEDIUM)
+
+# All - correct all possible types
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+<div id="level-details">
+  ### تفاصيل مستوى التصحيح
+</div>
+
+| المستوى          | الوصف               | الأنواع المصحَّحة                                             |
+| ---------------- | ------------------- | ------------------------------------------------------------- |
+| `NONE`           | من دون تصحيح تلقائي | لا شيء                                                        |
+| `CRITICAL`       | تصحيحات أساسية      | معالجة `NULL`، وتحويل القيم المنطقية                          |
+| `HIGH` (افتراضي) | تصحيحات شائعة       | دقة الأعداد الصحيحة/العائمة، وDateTime، وترميز السلاسل النصية |
+| `MEDIUM`         | مزيد من التصحيحات   | دقة Decimal، ومعالجة المنطقة الزمنية                          |
+| `ALL`            | أقصى تصحيح          | جميع فروق الأنواع                                             |
+
+<div id="when-correction">
+  ### متى تحتاج الأنواع إلى تصحيح
+</div>
+
+يمكن أن تظهر اختلافات في الأنواع عندما:
+
+1. **ClickHouse → pandas**: أحجام مختلفة للأعداد الصحيحة (Int64 مقابل int64)
+2. **pandas → ClickHouse**: تحويل كائنات Python إلى أنواع SQL
+3. **NULL handling**: `NA` في pandas مقابل `NULL` في ClickHouse
+4. **Boolean**: تمثيلات مختلفة للقيم المنطقية
+5. **DateTime**: اختلافات في المناطق الزمنية
+
+<div id="function-example">
+  ### مثال
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# Strict mode - expect exact type matches
+config.set_correction_level(CorrectionLevel.NONE)
+
+# Relaxed mode - auto-fix type issues
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+***
+
+<div id="api">
+  ## واجهة برمجة تطبيقات تهيئة دالة
+</div>
+
+<div id="function-config-object">
+  ### الكائن function_config
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# Force engine for functions
+function_config.use_chdb(*function_names)
+function_config.use_pandas(*function_names)
+
+# Set default preference
+function_config.prefer_chdb()
+function_config.prefer_pandas()
+
+# Reset to default (auto)
+function_config.reset()
+
+# Check configuration
+function_config.get_engine('length')  # Returns 'chdb', 'pandas', or 'auto'
+```
+
+<div id="per-call">
+  ### تجاوز المحرّك لكل استدعاء
+</div>
+
+تدعم بعض الطرائق تجاوز المحرّك لكل استدعاء:
+
+```python
+# Using engine parameter (where supported)
+ds['result'] = ds['col'].str.upper(engine='pandas')
+```
+
+***
+
+<div id="best-practices">
+  ## أفضل الممارسات
+</div>
+
+<div id="start-with-defaults">
+  ### 1. ابدأ بالإعدادات الافتراضية
+</div>
+
+```python
+# Use auto mode, let DataStore decide
+config.use_auto()
+```
+
+<div id="configure-for-specific-workloads">
+  ### 2. هيِّئ لأعباء عمل محددة
+</div>
+
+```python
+# For ClickHouse-optimized string processing
+function_config.use_chdb('length', 'substring', 'concat')
+
+# For pandas-compatible string behavior
+function_config.use_pandas('upper', 'lower')
+```
+
+<div id="use-appropriate-correction-level">
+  ### 3. استخدم مستوى التصحيح المناسب
+</div>
+
+```python
+# Development: more permissive
+config.set_correction_level(CorrectionLevel.ALL)
+
+# Production: stricter
+config.set_correction_level(CorrectionLevel.HIGH)
+```
+
+<div id="test-both-engines">
+  ### 4. اختبر كلا المحركين
+</div>
+
+```python
+# Test with chdb
+config.use_chdb()
+result_chdb = process_data()
+
+# Test with pandas
+config.use_pandas()
+result_pandas = process_data()
+
+# Compare results
+assert result_chdb.equals(result_pandas)
+```

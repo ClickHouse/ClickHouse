@@ -2,6 +2,7 @@
 
 #if USE_BZIP2
 #    include <IO/Bzip2ReadBuffer.h>
+#    include <IO/CompressionLibraryErrors.h>
 #    include <bzlib.h>
 #    include <IO/WithFileName.h>
 
@@ -25,10 +26,7 @@ public:
         int ret = BZ2_bzDecompressInit(&stream, 0, 0);
 
         if (ret != BZ_OK)
-            throw Exception(
-                ErrorCodes::BZIP2_STREAM_DECODER_FAILED,
-                "bzip2 stream encoder init failed: error code: {}",
-                ret);
+            throw Exception(ErrorCodes::BZIP2_STREAM_DECODER_FAILED, "bzip2 stream decoder init failed: {}", bzip2ErrorToString(ret));
     }
 
     ~Bzip2StateWrapper()
@@ -45,25 +43,20 @@ public:
 
         if (ret != BZ_OK)
             throw Exception(
-                ErrorCodes::BZIP2_STREAM_DECODER_FAILED,
-                "bzip2 stream encoder reinit decompress end failed: error code: {}",
-                ret);
+                ErrorCodes::BZIP2_STREAM_DECODER_FAILED, "bzip2 stream decoder reinit decompress end failed: {}", bzip2ErrorToString(ret));
 
         memset(&stream, 0, sizeof(bz->stream));
 
         ret = BZ2_bzDecompressInit(&stream, 0, 0);
 
         if (ret != BZ_OK)
-            throw Exception(
-                ErrorCodes::BZIP2_STREAM_DECODER_FAILED,
-                "bzip2 stream encoder reinit failed: error code: {}",
-                ret);
+            throw Exception(ErrorCodes::BZIP2_STREAM_DECODER_FAILED, "bzip2 stream decoder reinit failed: {}", bzip2ErrorToString(ret));
 
         stream.avail_out = avail_out;
         stream.next_out = next_out;
     }
 
-    bz_stream stream;
+    bz_stream stream{};
 };
 
 Bzip2ReadBuffer::Bzip2ReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char *existing_memory, size_t alignment)
@@ -80,7 +73,7 @@ bool Bzip2ReadBuffer::nextImpl()
     if (eof_flag)
         return false;
 
-    int ret;
+    int ret = 0;
     do
     {
         if (!bz->stream.avail_in)
@@ -88,6 +81,15 @@ bool Bzip2ReadBuffer::nextImpl()
             in->nextIfAtEnd();
             bz->stream.avail_in = static_cast<unsigned>(in->buffer().end() - in->position());
             bz->stream.next_in = in->position();
+
+            /// If the inner stream is completely empty (e.g. a URL returned 404
+            /// and http_skip_not_found_url_for_globs is set), there is nothing to decompress.
+            if (!bz->stream.avail_in && in->eof()
+                && bz->stream.total_in_lo32 == 0 && bz->stream.total_in_hi32 == 0)
+            {
+                eof_flag = true;
+                return false;
+            }
         }
 
         bz->stream.avail_out = static_cast<unsigned>(internal_buffer.size());
@@ -119,8 +121,8 @@ bool Bzip2ReadBuffer::nextImpl()
     if (ret != BZ_OK)
         throw Exception(
             ErrorCodes::BZIP2_STREAM_DECODER_FAILED,
-            "bzip2 stream decoder failed: error code: {}{}",
-            ret,
+            "bzip2 stream decoder failed: {}{}",
+            bzip2ErrorToString(ret),
             getExceptionEntryWithFileName(*in));
 
     if (in->eof())

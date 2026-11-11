@@ -39,5 +39,14 @@
             <url>http://minio1:9001/root/test_cache4.jsonl</url>
             <no_sign_request>true</no_sign_request>
         </s3_json_no_sign>
+        <!-- A collection carrying an operator-provisioned STS external_id (the secret half of the
+             assume-role triple) and a session name, but no role_arn. Used to prove a query-supplied
+             role_arn does not silently borrow this external_id. The value is deliberately wrong for
+             the mock STS, so if it leaks the assume fails; if it is dropped the assume succeeds. -->
+        <s3_role_extid_leak>
+            <url>http://minio1:9001/root/test_role_extid_leak.csv</url>
+            <role_session_name>miniorole</role_session_name>
+            <external_id>wrong-external-id</external_id>
+        </s3_role_extid_leak>
     </named_collections>
 </clickhouse>

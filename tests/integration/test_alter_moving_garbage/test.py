@@ -235,7 +235,7 @@ def test_delete_race_leftovers(cluster):
     for i in range(100):
         known_remote_paths = set(
             node.query(
-                f"SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 's32'"
+                "SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 's32'"
             ).splitlines()
         )
 

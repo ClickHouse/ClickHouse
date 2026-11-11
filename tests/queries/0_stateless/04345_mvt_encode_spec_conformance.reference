@@ -1,0 +1,37 @@
+-- Layer envelope decodes to version 2, the requested name and extent, and the property keys (MVT spec 4.1)
+[2]	['points']	[4096]	[['cluster_count']]
+-- Standard 4.3.5.1 Example Point (25,17): GeomType POINT and command stream [9,50,34]
+1	1
+-- Standard 4.3.5.3 Example Linestring (2,2)(2,10)(10,10): GeomType LINESTRING and command stream [9,4,4,18,0,16,16,0]
+1	1
+-- Standard 4.3.5.4 Example Polygon (3,6)(8,12)(20,34): GeomType POLYGON and command stream [9,6,12,18,10,12,24,44,15]
+1	1
+-- Standard 4.3.5.5 Example Multi Linestring: a second MoveTo continues the same geometry [.. ,9,17,17,10,4,8]
+1	1
+-- Equivalence class: a polygon with a hole emits two rings, each terminated by ClosePath (command id 15)
+1	2
+-- Equivalence class: each property type decodes to its MVT Value variant (spec 4.4): string/float/double/sint/uint/bool
+Row 1:
+──────
+keys:         ['str','f32','f64','i','u','b']
+string_value: ['s','','','','','']
+float_value:  [0,1.5,0,0,0,0]
+double_value: [0,0,2.5,0,0,0]
+sint_value:   [0,0,0,-7,0,0]
+uint_value:   [0,0,0,0,8,0]
+bool_value:   [0,0,0,0,0,1]
+-- Equivalence class: Date decodes to uint_value and Date32 to sint_value (the days since epoch)
+1	1
+-- Equivalence class: feature_id_name emits the named element as Feature.id and excludes it from the tags
+1	1	1	1
+-- Equivalence class: a shared value is interned once (pool size 1); two distinct values give pool size 2
+1
+2
+-- Equivalence class: stringify_unsupported encodes an Int128 as its exact decimal string_value
+['170141183460469231731687303715884105727']
+-- Boundary: zoom 0 with extent 1 projects the world origin to pixel (0,0): command stream [9,0,0]
+1	1
+-- Boundary: at the maximum zoom (32) a point projects into the tile that contains it and encodes as a POINT feature
+1
+-- Boundary: an extent at the upper end (1073741824) is recorded verbatim in the layer
+1

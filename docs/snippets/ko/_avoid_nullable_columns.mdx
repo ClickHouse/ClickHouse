@@ -1,0 +1,31 @@
+---
+title: 널 허용 컬럼 피하기
+---
+
+[`Nullable` 컬럼](/ko/reference/data-types/nullable) (예: `Nullable(String)`)은 `UInt8` 타입의 별도 컬럼을 생성합니다. 사용자가 `Nullable` 컬럼을 사용할 때마다 이 추가 컬럼도 처리해야 합니다. 그 결과 저장 공간이 더 필요해지며, 거의 항상 성능에 부정적인 영향을 미칩니다.
+
+`Nullable` 컬럼을 피하려면 해당 컬럼의 기본값을 설정하는 것이 좋습니다. 예를 들어, 다음과 같이 사용하는 대신:
+
+```sql highlight={4}
+CREATE TABLE default.sample
+(
+    `x` Int8,
+    `y` Nullable(Int8)
+)
+ENGINE = MergeTree
+ORDER BY x
+```
+
+사용
+
+```sql highlight={4}
+CREATE TABLE default.sample2
+(
+    `x` Int8,
+    `y` Int8 DEFAULT 0
+)
+ENGINE = MergeTree
+ORDER BY x
+```
+
+사용 사례를 고려하면 기본값이 적절하지 않을 수 있습니다.

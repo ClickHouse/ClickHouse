@@ -1,0 +1,58 @@
+---
+description: 'Détails des méthodes alternatives de sauvegarde ou de restauration'
+sidebarTitle: 'Méthodes alternatives'
+slug: /operations/backup/alternative_methods
+title: 'Méthodes alternatives de sauvegarde ou de restauration'
+doc_type: 'reference'
+---
+
+ClickHouse stocke les données sur disque, et il existe de nombreuses façons de sauvegarder ces disques.
+Voici quelques solutions de remplacement utilisées par le passé, qui peuvent convenir
+à votre cas d’usage.
+
+<div id="duplicating-source-data-somewhere-else">
+  ### Dupliquer les données source ailleurs
+</div>
+
+Souvent, les données ingérées dans ClickHouse sont acheminées via une forme de
+file d’attente persistante, comme [Apache Kafka](https://kafka.apache.org). Dans ce cas, il est possible de configurer un
+ensemble supplémentaire d’abonnés qui liront le même flux de données pendant qu’il est
+écrit dans ClickHouse et le stockeront ailleurs, dans un stockage à froid. La plupart des entreprises
+disposent déjà d’une solution de stockage à froid recommandée, qui peut être un stockage d’objets
+ou un système de fichiers distribué comme [HDFS](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html).
+
+<div id="filesystem-snapshots">
+  ### Snapshots de système de fichiers
+</div>
+
+Certains systèmes de fichiers locaux offrent une fonctionnalité de snapshot (par exemple, [ZFS](https://en.wikipedia.org/wiki/ZFS)),
+mais ils ne sont pas forcément le meilleur choix pour traiter des requêtes en direct. Une solution possible
+consiste à créer des répliques supplémentaires avec ce type de système de fichiers et à les exclure
+des tables [Distributed](/fr/reference/engines/table-engines/special/distributed) utilisées pour les requêtes `SELECT`.
+Les snapshots sur ces répliques seront hors d&#39;atteinte de toute requête modifiant des données.
+En prime, ces répliques peuvent disposer de configurations matérielles particulières avec davantage de
+disques par serveur, ce qui peut être économique.
+
+Pour de plus petits volumes de données, un simple `INSERT INTO ... SELECT ...` vers des tables distantes
+peut également convenir.
+
+<div id="manipulations-with-parts">
+  ### Manipulations avec les parts
+</div>
+
+ClickHouse permet d&#39;utiliser la requête `ALTER TABLE ... FREEZE PARTITION ...` pour créer
+une copie locale des partitions d&#39;une table. Cela est implémenté au moyen de liens physiques vers le dossier `/var/lib/clickhouse/shadow/`,
+ce qui ne consomme généralement pas d&#39;espace disque supplémentaire pour les anciennes données. Les copies
+de fichiers créées ne sont pas gérées par le serveur ClickHouse, vous pouvez donc simplement les laisser sur place :
+vous disposerez d&#39;une sauvegarde simple qui ne nécessite aucun système externe supplémentaire,
+mais elle restera vulnérable aux problèmes matériels. Pour cette raison, il est préférable de
+les copier vers un autre emplacement distant, puis de supprimer les copies locales.
+Les systèmes de fichiers distribués et les stockages objet restent de bonnes options pour cela,
+mais de simples serveurs de fichiers connectés avec une capacité suffisante peuvent également convenir
+(dans ce cas, le transfert s&#39;effectuera via le système de fichiers réseau ou éventuellement [rsync](https://en.wikipedia.org/wiki/Rsync)).
+Les données peuvent être restaurées depuis une sauvegarde à l&#39;aide de `ALTER TABLE ... ATTACH PARTITION ...`
+
+Pour plus d&#39;informations sur les requêtes liées à la manipulation des partitions, consultez la
+[documentation `ALTER`](/fr/reference/statements/alter/partition).
+
+Un outil tiers est disponible pour automatiser cette approche : [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).

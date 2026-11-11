@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 #include <optional>
 
@@ -18,7 +18,7 @@ namespace DB
   *
   * In text, after skipping `offset` primes, take every `step`-th prime until `limit` primes are taken.
   */
-class StorageSystemPrimes final : public IStorage
+class StorageSystemPrimes final : public StorageWithCommonVirtualColumns
 {
 public:
     StorageSystemPrimes(
@@ -30,7 +30,9 @@ public:
 
     std::string getName() const override { return "SystemPrimes"; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

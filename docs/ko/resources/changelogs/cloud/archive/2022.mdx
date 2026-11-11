@@ -1,0 +1,254 @@
+---
+slug: /whats-new/cloud/2022
+sidebarTitle: '2022'
+title: 'Cloud 변경 로그 - 2022'
+description: '2022년 ClickHouse Cloud 변경 로그'
+doc_type: 'changelog'
+keywords: ['변경 로그', '릴리스 노트', '업데이트', '새 기능', 'Cloud 변경 내역', '2022']
+---
+
+<div id="december-20-2022">
+  ## 2022년 12월 20일
+</div>
+
+이번 릴리스에서는 관리자가 SQL 콘솔에 더 원활하게 로그인할 수 있게 되었고, 콜드 읽기 시 읽기 성능이 향상되었으며, ClickHouse Cloud용 Metabase 커넥터도 개선되었습니다.
+
+<div id="console-changes-27">
+  ### Console 변경 사항
+</div>
+
+* 관리자 사용자가 SQL 콘솔에 원활하게 접근할 수 있도록 개선했습니다
+* 신규 초대 사용자의 기본 역할을 &quot;관리자&quot;로 변경했습니다
+* 온보딩 설문을 추가했습니다
+
+<div id="reliability-and-performance-3">
+  ### 안정성 및 성능
+</div>
+
+* 네트워크 장애 발생 시 복구할 수 있도록 오래 실행되는 삽입 쿼리에 대한 재시도 로직을 추가했습니다
+* 콜드 읽기 성능을 개선했습니다
+
+<div id="integrations-changes-26">
+  ### 통합 변경 사항
+</div>
+
+* [Metabase plugin](/ko/integrations/connectors/data-visualization/metabase-and-clickhouse)이 오랫동안 기다려온 v0.9.1 대규모 업데이트를 받았습니다. 이제 최신 Metabase 버전과 호환되며, ClickHouse Cloud에서 철저한 테스트를 거쳤습니다.
+
+<div id="december-6-2022---general-availability">
+  ## 2022년 12월 6일 - 정식 출시
+</div>
+
+ClickHouse Cloud는 이제 SOC2 Type II 컴플라이언스, 프로덕션 워크로드를 위한 가동 시간 SLA, 공개 상태 페이지를 지원하며 프로덕션 환경에서 사용할 준비를 마쳤습니다. 이번 릴리스에는 AWS Marketplace 통합, ClickHouse 사용자를 위한 데이터 탐색 워크벤치인 SQL 콘솔, 그리고 ClickHouse Cloud에서 자기 주도형으로 학습할 수 있는 ClickHouse Academy와 같은 주요 기능이 포함됩니다. 자세한 내용은 이 [블로그](https://clickhouse.com/blog/clickhouse-cloud-generally-available)에서 확인하십시오.
+
+<div id="production-ready">
+  ### 프로덕션 준비 완료
+</div>
+
+* SOC2 Type II 컴플라이언스([blog](https://clickhouse.com/blog/clickhouse-cloud-is-now-soc-2-type-ii-compliant) 및 [Trust Center](https://trust.clickhouse.com/)에서 자세한 내용 확인 가능)
+* ClickHouse Cloud의 공개 [Status Page](https://status.clickhouse.com/)
+* 프로덕션 워크로드를 위한 업타임 SLA 제공
+* [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-jettukeanwrfc)에서 이용 가능
+
+<div id="major-new-capabilities">
+  ### 주요 신규 기능
+</div>
+
+* ClickHouse 사용자를 위한 데이터 탐색 워크벤치인 SQL 콘솔을 도입했습니다
+* ClickHouse Cloud에서 자기 주도형 학습을 제공하는 [ClickHouse Academy](https://learn.clickhouse.com/visitor_class_catalog)를 출시했습니다
+
+<div id="pricing-and-metering-changes">
+  ### 가격 및 사용량 측정 변경
+</div>
+
+* 평가판 기간을 30일로 연장
+* 초기 프로젝트와 개발/스테이징 환경에 적합한, 고정 용량에 월 비용이 낮은 개발 서비스를 도입
+* ClickHouse Cloud의 운영 방식과 확장성을 지속적으로 개선함에 따라 운영 서비스의 가격을 새롭게 인하
+* 컴퓨트 사용량 측정의 세분화 수준과 정밀도를 개선
+
+<div id="integrations-changes-26">
+  ### 통합 변경 사항
+</div>
+
+* ClickHouse Postgres / MySQL integration 엔진 지원이 추가되었습니다
+* SQL 사용자 정의 함수(UDF) 지원이 추가되었습니다
+* Kafka Connect Sink가 베타 상태로 승격되었습니다
+* 버전, 업데이트 상태 등 다양한 메타데이터를 도입해 Integrations UI를 개선했습니다
+
+<div id="console-changes-27">
+  ### Console 변경 사항
+</div>
+
+* Cloud Console에서 다단계 인증 지원
+* 모바일 기기용 Cloud Console 탐색 개선
+
+<div id="documentation-changes">
+  ### 문서 변경 사항
+</div>
+
+* ClickHouse Cloud 전용 [문서](/ko/products/cloud/getting-started/intro) 섹션이 새로 추가되었습니다
+
+<div id="bug-fixes-5">
+  ### 버그 수정
+</div>
+
+* 종속성 처리 문제로 인해 백업에서의 복원이 항상 작동하지 않던 알려진 문제를 해결했습니다
+
+<div id="november-29-2022">
+  ## 2022년 11월 29일
+</div>
+
+이번 릴리스에는 SOC2 Type II 컴플라이언스 지원, ClickHouse 버전 22.11 업데이트, 그리고 여러 ClickHouse 클라이언트 및 통합 개선이 포함됩니다.
+
+<div id="general-changes-4">
+  ### 일반 변경 사항
+</div>
+
+* SOC2 Type II 컴플라이언스를 달성했습니다(자세한 내용은 [블로그](https://clickhouse.com/blog/clickhouse-cloud-is-now-soc-2-type-ii-compliant) 및 [Trust Center](https://trust.clickhouse.com)에서 확인할 수 있습니다)
+
+<div id="console-changes-27">
+  ### Console 변경 사항
+</div>
+
+* 서비스가 자동으로 일시 중지되었음을 나타내는 &quot;Idle&quot; 상태 표시기를 추가했습니다
+
+<div id="clickhouse-2211-version-upgrade">
+  ### ClickHouse 22.11 버전 업그레이드
+</div>
+
+* Hudi 및 DeltaLake 테이블 엔진과 테이블 함수 지원 추가
+* S3 디렉터리의 재귀 순회 개선
+* 복합 시간 인터벌 구문 지원 추가
+* 삽입 시 재시도를 지원해 삽입 안정성 개선
+* 전체 변경 사항은 [자세한 22.11 변경 로그](#clickhouse-2211-version-upgrade)를 참조하십시오
+
+<div id="integrations-1">
+  ### 통합
+</div>
+
+* Python client: v3.11 지원, 삽입 성능 개선
+* Go client: DateTime 및 Int64 지원 관련 수정
+* JS client: 상호 SSL 인증 지원
+* dbt-clickhouse: DBT v1.3 지원
+
+<div id="bug-fixes-5">
+  ### 버그 수정
+</div>
+
+* 업그레이드 후 이전 ClickHouse 버전이 표시되던 버그를 수정했습니다
+* 이제 &quot;default&quot; 계정의 권한 부여를 변경해도 세션이 중단되지 않습니다
+* 새로 생성한 비관리자 계정에는 더 이상 기본적으로 시스템 테이블(system table) 접근 권한이 부여되지 않습니다
+
+<div id="known-issues-in-this-release">
+  ### 이 릴리스의 알려진 문제
+</div>
+
+* 종속성 해결 문제로 인해 백업에서 복원이 작동하지 않을 수 있습니다
+
+<div id="november-17-2022">
+  ## 2022년 11월 17일
+</div>
+
+이번 릴리스에서는 로컬 ClickHouse 테이블과 HTTP 소스의 딕셔너리을 사용할 수 있게 되었으며, Mumbai 리전 지원이 추가되고 Cloud Console의 사용자 경험이 개선되었습니다.
+
+<div id="general-changes-4">
+  ### 일반 변경 사항
+</div>
+
+* 로컬 ClickHouse 테이블 및 HTTP 소스에서 가져오는 [딕셔너리](/ko/reference/statements/create/dictionary) 지원이 추가되었습니다
+* Mumbai [리전](/ko/products/cloud/reference/supported-regions) 지원이 추가되었습니다
+
+<div id="console-changes-27">
+  ### Console 변경 사항
+</div>
+
+* 청구 인보이스 서식을 개선했습니다
+* 결제 수단 입력을 위한 사용자 인터페이스를 간소화했습니다
+* 백업 활동에 대한 로깅을 더 세분화했습니다
+* 파일 업로드 중 오류 처리를 개선했습니다
+
+<div id="bug-fixes-5">
+  ### 버그 수정
+</div>
+
+* 일부 파트에 단일 대용량 파일이 있는 경우 백업이 실패할 수 있던 버그를 수정했습니다
+* 같은 시점에 액세스 목록 변경이 적용되면 백업에서 복원이 성공하지 않던 버그를 수정했습니다
+
+<div id="known-issues">
+  ### 알려진 문제
+</div>
+
+* 종속성 해결 문제로 인해 백업에서 복원이 제대로 작동하지 않을 수 있습니다
+
+<div id="november-3-2022">
+  ## 2022년 11월 3일
+</div>
+
+이번 릴리스에서는 가격 정책에서 읽기 및 쓰기 단위를 제거하고(자세한 내용은 [가격 페이지](https://clickhouse.com/pricing)를 참조하십시오), ClickHouse 버전을 22.10으로 업데이트하며, self-service 고객을 위한 더 높은 수준의 수직 스케일링 지원을 추가하고, 더 나은 기본 설정을 통해 안정성을 개선합니다.
+
+<div id="general-changes-4">
+  ### 일반 변경 사항
+</div>
+
+* 요금 모델에서 읽기/쓰기 단위를 제거했습니다
+
+<div id="configuration-changes-2">
+  ### 구성 변경
+</div>
+
+* 안정성을 위해 이제 사용자는 `allow_suspicious_low_cardinality_types`, `allow_suspicious_fixed_string_types`, `allow_suspicious_codecs` 설정(기본값: false)을 더 이상 변경할 수 없습니다.
+
+<div id="console-changes-27">
+  ### Console 변경 사항
+</div>
+
+* 유료 고객의 셀프 서비스 수직 스케일링 최대치를 메모리 720GB까지 늘렸습니다
+* 백업에서 복원하는 워크플로를 개선하여 IP 액세스 목록 규칙과 비밀번호를 설정할 수 있도록 했습니다
+* 서비스 생성 대화 상자에 GCP 및 Azure 대기자 명단을 도입했습니다
+* 파일 업로드 중 오류 처리를 개선했습니다
+* 청구 관리 워크플로를 개선했습니다
+
+<div id="clickhouse-2210-version-upgrade">
+  ### ClickHouse 22.10 버전 업그레이드
+</div>
+
+* 대용량 파트(최소 10 GiB)가 많은 경우 &quot;too many parts&quot; 임계값을 완화하여 객체 스토리지에서의 머지를 개선했습니다. 이를 통해 단일 테이블의 단일 파티션에서 최대 페타바이트 규모의 데이터를 처리할 수 있습니다.
+* 특정 시간 임계값이 지난 후 머지되도록 `min_age_to_force_merge_seconds` 설정을 통해 머지 제어를 개선했습니다.
+* 설정을 기본값으로 재설정하는 MySQL 호환 구문 `SET setting_name = DEFAULT`를 추가했습니다.
+* Morton curve 인코딩, Java 정수 해시, 난수 생성을 위한 함수를 추가했습니다.
+* 전체 변경 사항 목록은 [자세한 22.10 변경 로그](#clickhouse-2210-version-upgrade)를 참조하십시오.
+
+<div id="october-25-2022">
+  ## 2022년 10월 25일
+</div>
+
+이번 릴리스에서는 소규모 워크로드의 컴퓨트 사용량을 크게 줄이고, 컴퓨트 가격을 인하했으며(자세한 내용은 [pricing](https://clickhouse.com/pricing) 페이지를 참조하십시오), 더 나은 기본 설정으로 안정성을 높이고, ClickHouse Cloud 콘솔의 청구 및 사용량 뷰를 개선했습니다.
+
+<div id="general-changes-4">
+  ### 일반 변경 사항
+</div>
+
+* 서비스의 최소 메모리 할당량을 24G로 줄였습니다
+* 서비스 유휴 타임아웃을 30분에서 5분으로 줄였습니다
+
+<div id="configuration-changes-3">
+  ### 구성 변경 사항
+</div>
+
+* max&#95;parts&#95;in&#95;total을 100k에서 10k로 줄였습니다. MergeTree 테이블의 `max_parts_in_total` 설정 기본값이 100,000에서 10,000으로 낮아졌습니다. 이렇게 변경한 이유는 데이터 파트 수가 많으면 Cloud에서 서비스 시작 시간이 느려질 가능성이 크다는 점을 확인했기 때문입니다. 일반적으로 파트 수가 많다는 것은 파티션 키를 지나치게 세분화해 선택했음을 의미하며, 이는 대개 실수로 발생하므로 피해야 합니다. 이번 기본값 변경으로 이러한 사례를 더 일찍 감지할 수 있습니다.
+
+<div id="console-changes-27">
+  ### Console 변경 사항
+</div>
+
+* 체험판 사용자를 위해 청구 보기에서 크레딧 사용량 세부 정보를 개선했습니다
+* Usage 보기에서 툴팁과 도움말 텍스트를 개선하고, 가격 페이지 링크를 추가했습니다
+* IP 필터링 옵션을 전환할 때의 작업 흐름을 개선했습니다
+* Cloud Console에 이메일 확인 재전송 버튼을 추가했습니다
+
+<div id="october-4-2022---beta">
+  ## 2022년 10월 4일 - 베타
+</div>
+
+ClickHouse Cloud는 2022년 10월 4일부터 공개 베타를 시작했습니다. 자세한 내용은 이 [블로그](https://clickhouse.com/blog/clickhouse-cloud-public-beta)를 참조하십시오.
+
+ClickHouse Cloud 버전은 ClickHouse core v22.10을 기반으로 합니다. 호환되는 기능 목록은 [Cloud Compatibility](/ko/products/cloud/guides/cloud-compatibility) 가이드를 참조하십시오.

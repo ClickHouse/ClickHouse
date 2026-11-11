@@ -1,0 +1,14 @@
+---
+slug: /faq/operations/deploy-separate-storage-and-compute
+title: '是否可以将 ClickHouse 部署为存储与计算分离？'
+sidebarTitle: '是否可以将 ClickHouse 部署为存储与计算分离？'
+toc_hidden: true
+toc_priority: 20
+description: '本页回答是否可以将 ClickHouse 部署为存储与计算分离'
+doc_type: 'guide'
+keywords: ['存储', '磁盘配置', '数据组织', '卷管理', '存储层级']
+---
+
+简短的回答是“可以”。
+
+对象存储 (S3、GCS) 可作为 ClickHouse 表数据的弹性主存储后端。[S3-backed MergeTree](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse) 和 [GCS-backed MergeTree](/zh/reference/functions/table-functions/gcs) 指南均已发布。在这种配置下，只有元数据会存储在计算节点的本地磁盘上。由于新增节点只需复制元数据，因此你可以在这种架构中轻松扩缩计算资源。

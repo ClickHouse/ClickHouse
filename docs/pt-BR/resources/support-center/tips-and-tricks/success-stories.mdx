@@ -1,0 +1,67 @@
+---
+slug: /community-wisdom/creative-use-cases
+sidebarTitle: 'Histórias de sucesso'
+doc_type: 'guide'
+keywords: [
+  'casos de uso criativos do ClickHouse',
+  'histórias de sucesso do ClickHouse',
+  'usos não convencionais de bancos de dados',
+  'rate limiting com ClickHouse',
+  'aplicações de bancos de dados analíticos',
+  'análises mobile com ClickHouse',
+  'análises voltadas ao cliente',
+  'inovação em bancos de dados',
+  'aplicações em tempo real com ClickHouse',
+  'soluções alternativas de bancos de dados',
+  'quebrando convenções de bancos de dados',
+  'histórias de sucesso em produção'
+]
+title: 'Lições - casos de uso criativos'
+description: 'Encontre soluções para os problemas mais comuns no ClickHouse, incluindo consultas lentas, erros de memória, problemas de conexão e de configuração.'
+---
+
+*Este guia faz parte de uma coleção de descobertas reunidas em encontros da comunidade. Para ver mais soluções práticas e insights, você pode [explorar por problema específico](/pt-BR/resources/support-center/tips-and-tricks/community-wisdom).*
+*Precisa de dicas para depurar um problema em produção? Confira o guia da comunidade [Debugging Insights](/pt-BR/resources/support-center/tips-and-tricks/debugging-insights).*
+
+Estas histórias mostram como empresas tiveram sucesso ao usar o ClickHouse em seus casos de uso, algumas até desafiando categorias tradicionais de bancos de dados e provando que, às vezes, a ferramenta &quot;errada&quot; acaba sendo exatamente a solução certa.
+
+<div id="clickhouse-rate-limiter">
+  ## ClickHouse como limitador de taxa
+</div>
+
+Quando a Craigslist precisou adicionar um sistema de rate limiting de primeira linha para proteger seus usuários, enfrentou a mesma decisão que toda equipe de engenharia encontra: seguir a abordagem convencional e usar Redis, ou explorar algo diferente. Brad Lhotsky, na Craigslist, sabia que o Redis era a escolha padrão — praticamente todo tutorial e exemplo de rate limiting na internet usa Redis, e por um bom motivo. Ele tem primitivas ricas para operações de rate limiting, padrões bem estabelecidos e um histórico comprovado. Mas a experiência da Craigslist com Redis não batia com os exemplos de manual. *&quot;Nossa experiência com Redis não é como nos filmes... há vários problemas estranhos de manutenção que enfrentamos quando reiniciamos um nó em um cluster Redis e algum pico de latência atinge o front-end.&quot;* Para uma equipe pequena que valoriza a simplicidade operacional, essas dores de cabeça estavam se tornando um problema real.
+
+Então, quando Brad recebeu os requisitos de rate limiting, adotou uma abordagem diferente: *&quot;Perguntei ao meu chefe: &#39;O que você acha desta ideia? Talvez eu possa tentar isso com ClickHouse?&#39;&quot;* A ideia era incomum — usar um banco de dados analítico para algo que normalmente seria resolvido na camada de cache — mas atendia aos requisitos centrais deles: operar em fail-open, não acrescentar penalidades de latência e ser segura do ponto de vista de manutenção para uma equipe pequena. A solução aproveitou a infraestrutura existente, na qual os logs de acesso já fluíam para o ClickHouse via Kafka. Em vez de manter um cluster Redis separado, eles podiam analisar padrões de requisição diretamente nos dados de logs de acesso e injetar regras de rate limiting na API de ACL existente. A abordagem implicava uma latência um pouco maior do que no Redis, que *&quot;meio que trapaceia ao materializar esse conjunto de dados de antemão&quot;* em vez de fazer consultas de agregação em tempo real, mas as consultas ainda eram concluídas em menos de 100 milissegundos.
+
+**Principais resultados:**
+
+* Grande melhoria em relação à infraestrutura baseada em Redis
+* O TTL integrado para limpeza automática eliminou a sobrecarga de manutenção
+* A flexibilidade do SQL permitiu regras complexas de rate limiting além de contadores simples
+* Aproveitou o pipeline de dados existente em vez de exigir infraestrutura separada
+
+<div id="customer-analytics">
+  ## ClickHouse para análise de clientes
+</div>
+
+Quando a ServiceNow precisou modernizar sua plataforma de análise mobile, surgiu uma pergunta simples: *&quot;Por que substituir algo que funciona?&quot;* Amir Vaza, da ServiceNow, sabia que o sistema existente era confiável, mas as demandas dos clientes estavam ultrapassando sua capacidade. *&quot;A motivação para substituir um modelo confiável existente vem, na verdade, do lado do produto&quot;*, explicou Amir. A ServiceNow oferecia análise mobile como parte da sua solução para web, mobile e chatbots, mas os clientes queriam uma flexibilidade analítica que fosse além dos dados pré-agregados.
+
+O sistema anterior usava cerca de 30 tabelas diferentes com dados pré-agregados segmentados por dimensões fixas: aplicação, versão do app e plataforma. Para propriedades personalizadas — pares chave-valor que os clientes podiam enviar — eles criavam contadores separados para cada grupo. Essa abordagem oferecia alto desempenho no dashboard, mas tinha uma grande limitação. *&quot;Embora isso seja ótimo para uma análise rápida dos valores, como mencionei, essa limitação leva a uma grande perda de contexto analítico&quot;*, observou Amir. Os clientes não conseguiam realizar análises complexas da jornada do cliente nem fazer perguntas como &quot;quantas sessões começaram com o termo de busca &#39;research RSA token&#39;&quot; e então analisar o que esses usuários fizeram em seguida. A estrutura pré-agregada eliminava o contexto sequencial necessário para análises em várias etapas, e cada nova dimensão analítica exigia trabalho de engenharia para pré-agregar e armazenar os dados.
+
+Então, quando as limitações ficaram claras, a ServiceNow migrou para o ClickHouse e eliminou completamente essas restrições de pré-computação. Em vez de calcular cada variável antecipadamente, eles transformaram os metadados em pontos de dados e inseriram tudo diretamente no ClickHouse. Eles usaram a fila de async insert do ClickHouse, que Amir chamou de *&quot;realmente incrível&quot;*, para lidar com a ingestão de dados com eficiência. Com essa abordagem, os clientes passaram a poder criar seus próprios segmentos, fatiar os dados livremente em quaisquer dimensões e realizar análises complexas da jornada do cliente que antes não eram possíveis.
+
+**Principais resultados:**
+
+* Segmentação dinâmica em quaisquer dimensões sem pré-computação
+* Análises complexas da jornada do cliente passaram a ser possíveis
+* Os clientes podiam criar seus próprios segmentos e fatiar os dados livremente
+* Fim dos gargalos de engenharia para novos requisitos analíticos
+
+<div id="video-sources">
+  ## Vídeos
+</div>
+
+* **[Quebrando as regras - Criando um rate limiting com ClickHouse](https://www.youtube.com/watch?v=wRwqrbUjRe4)** - Brad Lhotsky (Craigslist)
+* **[ClickHouse como solução analítica no ServiceNow](https://www.youtube.com/watch?v=b4Pmpx3iRK4)** - Amir Vaza (ServiceNow)
+
+*Essas histórias mostram como desafiar ideias convencionais sobre bancos de dados pode levar a soluções inovadoras que redefinem o que é possível com bancos de dados analíticos.*

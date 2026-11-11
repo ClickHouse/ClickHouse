@@ -1,0 +1,48 @@
+---
+title: 'Resincronizar un ClickPipe de base de datos'
+description: 'Guía para resincronizar un ClickPipe de base de datos'
+slug: /integrations/clickpipes/mongodb/resync
+sidebarTitle: 'Resincronizar un ClickPipe'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="what-mongodb-resync-do">
+  ### ¿Qué hace la resincronización?
+</div>
+
+La resincronización implica las siguientes operaciones, en este orden:
+
+1. Se elimina el ClickPipe existente y se inicia un nuevo ClickPipe de &quot;resincronización&quot;. De este modo, cuando se realiza una resincronización, se detectan los cambios en las estructuras de las tablas de origen.
+2. El ClickPipe de resincronización crea (o reemplaza) un nuevo conjunto de tablas de destino con los mismos nombres que las tablas originales, salvo por el sufijo `_resync`.
+3. Se realiza la carga inicial en las tablas `_resync`.
+4. A continuación, las tablas `_resync` se intercambian con las tablas originales. Las filas con eliminación lógica se transfieren de las tablas originales a las tablas `_resync` antes del intercambio.
+
+Se conservan todos los ajustes del ClickPipe original en el ClickPipe de resincronización. Las estadísticas del ClickPipe original se borran en la UI.
+
+<Note>
+  Puede resincronizar varias veces; no obstante, tenga en cuenta la carga en la base de datos de origen cuando resincronice,
+  ya que cada vez se lleva a cabo una carga inicial con hilos paralelos.
+</Note>
+
+<div id="guide-mongodb-resync">
+  ### Guía para resincronizar ClickPipe
+</div>
+
+1. En la pestaña **Data Sources**, haz clic en el ClickPipe de MongoDB que quieres resincronizar.
+2. Ve a la pestaña **Settings**.
+3. Haz clic en el botón **Resync**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+
+4. Debería aparecer un cuadro de diálogo de confirmación. Haz clic en **Resync** otra vez.
+5. Ve a la pestaña **Metrics**.
+6. Espera a que el estado del pipe sea **Setup** o **Snapshot**.
+7. La carga inicial de la resincronización puede consultarse en la pestaña **Tables**, en la sección **Initial Load Stats**.
+8. Una vez completada la carga inicial, el pipe intercambiará atómicamente las tablas `_resync` por las tablas originales. Durante el intercambio, el estado será **Resync**.
+9. Una vez completado el intercambio, el pipe pasará al estado **Running** y realizará CDC si está habilitado.

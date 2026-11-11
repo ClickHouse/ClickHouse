@@ -1,0 +1,70 @@
+---
+title: Configuração do Keeper
+---
+
+Para que a replicação funcione, é necessário configurar e
+implantar um cluster do ClickHouse Keeper. O ClickHouse Keeper fornece o sistema de coordenação para a replicação de dados,
+atuando como um substituto direto do ZooKeeper, que também pode ser usado.
+No entanto, o ClickHouse Keeper é recomendado, pois oferece melhores garantias e
+confiabilidade, além de usar menos recursos do que o ZooKeeper. Para alta disponibilidade e para
+manter o quórum, recomenda-se executar pelo menos três nós do ClickHouse Keeper.
+
+<Note>
+  O ClickHouse Keeper pode ser executado em qualquer nó do cluster junto com o ClickHouse, embora
+  seja recomendável executá-lo em um nó dedicado, o que permite escalar e
+  gerenciar o cluster do ClickHouse Keeper independentemente do cluster do banco de dados.
+</Note>
+
+Crie os arquivos `keeper_config.xml` para cada nó do ClickHouse Keeper
+usando o comando abaixo a partir da raiz da pasta de exemplo:
+
+```bash
+for i in {01..03}; do
+  touch fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper/keeper_config.xml
+done
+```
+
+Modifique os arquivos de configuração vazios criados em cada
+diretório de nó `fs/volumes/clickhouse-keeper-{}/etc/clickhouse-keeper`. As
+linhas destacadas abaixo precisam ser ajustadas para cada nó:
+
+```xml title="/clickhouse-keeper/keeper_config.xml" highlight={12}
+<clickhouse replace="true">
+    <logger>
+        <level>information</level>
+        <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+        <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    <listen_host>0.0.0.0</listen_host>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>information</raft_logs_level>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>clickhouse-keeper-01</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>clickhouse-keeper-02</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>clickhouse-keeper-03</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+```

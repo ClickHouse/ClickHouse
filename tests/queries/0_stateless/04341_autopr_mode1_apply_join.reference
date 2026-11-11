@@ -1,0 +1,9 @@
+inner	1
+left	1
+right	1
+04341_join_inner_apply	1
+04341_join_inner_collect	0
+04341_join_left_apply	1
+04341_join_left_collect	0
+04341_join_right_apply	1
+04341_join_right_collect	0
