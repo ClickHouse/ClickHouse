@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -64,6 +66,9 @@
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
+#endif
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <DistributedCache/DistributedCacheCommon.h>
@@ -193,10 +198,47 @@ namespace
         return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
     }
 
-    String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
+    /// The identity of the credentials with which `object_storage` reads, for the key of the page cache: it serves bytes
+    /// without a request, so a reader must not get the bytes read with other credentials (e.g. a reader allowed to list
+    /// the objects but not to read them). `std::nullopt` if it is not known, then each read is authorized by a `HEAD`
+    /// request with its own credentials instead. Not used for `Web`, whose key includes the URLs and the headers.
+    std::optional<String> getCredentialsIdentityForPageCache(IObjectStorage & object_storage)
+    {
+        switch (object_storage.getType())
+        {
+            case ObjectStorageType::Local:
+                /// Read with the permissions of the server.
+                return String{};
+            case ObjectStorageType::S3:
+            {
+#if USE_AWS_S3
+                auto client = object_storage.tryGetS3StorageClient();
+                if (!client)
+                    return std::nullopt;
+                /// Anonymous credentials (`NOSIGN`) are empty, and all such readers share the same identity.
+                const auto credentials = client->getCredentials();
+                SipHash hash;
+                hash.update(credentials.GetAWSAccessKeyId());
+                hash.update('\0');
+                hash.update(credentials.GetAWSSecretKey());
+                hash.update('\0');
+                hash.update(credentials.GetSessionToken());
+                hash.update('\0');
+                return toString(hash.get128());
+#else
+                return std::nullopt;
+#endif
+            }
+            default:
+                return std::nullopt;
+        }
+    }
+
+    String getPageCachePathForObjectStorage(
+        const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage, const String & credentials_identity)
     {
         if (object_storage->getType() != ObjectStorageType::Web)
-            return fmt::format("s3:{}:{}", getObjectStorageHash(*object_storage), object_info.getPath());
+            return fmt::format("s3:{}:{}:{}", getObjectStorageHash(*object_storage), credentials_identity, object_info.getPath());
 
         /// The path of a `Web` object is relative to the base URLs, and the response can depend on the headers
         /// (e.g. credentials), so both are part of the key: the same path with the same `ETag` from another origin
@@ -2321,9 +2363,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     else if (object_storage->getType() == ObjectStorageType::Azure)
         validate_etag_on_read = settings[Setting::azure_validate_etag_on_read];
 
+    /// Whether the metadata comes from a `HEAD` request of this read, with its credentials.
+    bool metadata_is_fetched_by_this_read = false;
     if (!object_info.metadata)
     {
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        metadata_is_fetched_by_this_read = true;
     }
     else if (!object_info.metadata->is_fetched && !object_info.metadata->is_from_table_records && validate_etag_on_read)
     {
@@ -2331,6 +2376,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         /// read-time validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch
         /// that merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        metadata_is_fetched_by_this_read = true;
     }
 
     /// A cache serves bytes without a request with this reader's credentials, so it needs an identity scoped to them.
@@ -2341,6 +2387,23 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         && !object_info.metadata->getContentCacheToken())
     {
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        metadata_is_fetched_by_this_read = true;
+    }
+
+    /// The page cache serves bytes without a request, and its key includes the identity of the credentials of the read
+    /// where it is known. Otherwise, the read is authorized by a `HEAD` request with its own credentials, because the
+    /// metadata from a listing proves only the permission to list the objects, not to read them.
+    String page_cache_credentials_identity;
+    if (use_page_cache && object_storage->getType() != ObjectStorageType::Web)
+    {
+        if (auto credentials_identity = getCredentialsIdentityForPageCache(*object_storage))
+        {
+            page_cache_credentials_identity = std::move(*credentials_identity);
+        }
+        else if (!metadata_is_fetched_by_this_read)
+        {
+            object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        }
     }
 
     if (use_page_cache && !object_info.metadata->getContentCacheToken())
@@ -2489,7 +2552,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_page_cache)
     {
         pipeline.needMemoryCache(
-            getPageCachePathForObjectStorage(object_info, object_storage),
+            getPageCachePathForObjectStorage(object_info, object_storage, page_cache_credentials_identity),
             "etag:" + *object_info.metadata->getContentCacheToken(),
             modified_read_settings.page_cache_settings);
     }
