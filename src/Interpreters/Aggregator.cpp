@@ -3388,7 +3388,21 @@ private:
         UInt64 row_bytes = 0;
         for (size_t raw = 0; raw < num_raw_columns; ++raw)
         {
-            const size_t grown_to = columns.raw_key_columns[raw]->byteSize();
+            const auto * column = columns.raw_key_columns[raw];
+            /// Aggregation by dictionary index inserts keys into a column that shares the source
+            /// dictionary, and `byteSize` does not count a shared dictionary, so the column grows by
+            /// the index alone. Price the referenced value as well: every group has a distinct key,
+            /// so each value is charged once, the way a materialized column carries it.
+            const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column);
+            if (low_cardinality && low_cardinality->isSharedDictionary())
+            {
+                const size_t last = low_cardinality->size() - 1;
+                const auto & indexes = low_cardinality->getIndexes();
+                row_bytes += indexes.byteSizeAt(last) + low_cardinality->getDictionary().byteSizeAt(indexes.getUInt(last));
+                continue;
+            }
+
+            const size_t grown_to = column->byteSize();
             row_bytes += grown_to - std::min(grown_to, scratch_bytes[raw]);
         }
         bytes += row_bytes;

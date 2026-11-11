@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/SortDescription.h>
@@ -315,19 +316,46 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputNanoseconds, elapsed_nanoseconds);
 }
 
+/// The bytes a key column carries once it is sent, regardless of who owns its dictionary.
+/// `ColumnLowCardinality::byteSize` leaves out a shared dictionary, but aggregation by dictionary
+/// index emits keys that share the source dictionary, and the values they reference still travel.
+static size_t keyColumnBytes(const IColumn & column)
+{
+    const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column);
+    if (!low_cardinality || !low_cardinality->isSharedDictionary())
+        return column.byteSize();
+
+    const auto & indexes = low_cardinality->getIndexes();
+    std::vector<UInt64> referenced(indexes.size());
+    for (size_t row = 0; row < indexes.size(); ++row)
+        referenced[row] = indexes.getUInt(row);
+    std::ranges::sort(referenced);
+    const auto [unique_end, _] = std::ranges::unique(referenced);
+
+    size_t bytes = indexes.byteSize();
+    const auto & dictionary = low_cardinality->getDictionary();
+    for (auto it = referenced.begin(); it != unique_end; ++it)
+        bytes += dictionary.byteSizeAt(*it);
+    return bytes;
+}
+
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types)
 {
     const auto & columns = chunk.getColumns();
     ColumnsWithTypeAndName cols;
     cols.reserve(keys_positions.size());
+    size_t key_bytes = 0;
     for (size_t i = 0; i < keys_positions.size(); ++i)
+    {
         cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
+        key_bytes += keyColumnBytes(*columns[keys_positions[i]]);
+    }
     recordColumns(
         block->output_bytes_statistics[OutputStatisticsType::AggregationKeys],
         chunk.getNumRows(),
         cols,
-        /*full_bytes=*/{},
+        key_bytes,
         keyOrderProviderFor(columns, keys_positions, key_types));
 }
 
