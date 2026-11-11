@@ -6,10 +6,6 @@ keywords: ['managed postgres', 'postgresql', 'cloud database', 'postgres service
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
-
 ClickHouse Managed Postgres is an enterprise-grade managed Postgres service built for performance and scale. Backed by NVMe storage that is physically collocated with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS.
 
 Built in partnership with [Ubicloud](https://www.ubicloud.com/), whose founding team has a track record of delivering world-class Postgres at Citus Data, Heroku, and Microsoft, ClickHouse Managed Postgres solves the performance challenges that fast-growing applications commonly face: slower ingestion and updates, slow vacuums, increased tail latency, and WAL spikes caused by limited disk IOPS.
@@ -18,13 +14,17 @@ Built in partnership with [Ubicloud](https://www.ubicloud.com/), whose founding 
 
 Use Postgres for transactional application workloads (OLTP), such as creating orders, updating inventory, and managing user accounts. Postgres is your system of record: related changes can commit or roll back together in a transaction.
 
-When your application also needs analytics over large datasets, add a ClickHouse service and connect the two with ClickPipes:
+When your application also needs analytics over large datasets, add a ClickHouse service and connect the two with ClickPipes.
+
+<Note>
+[WalShadow](/products/managed-postgres/sync-to-clickhouse/walshadow), now in Private Preview, offers lower-latency, high-throughput replication from Postgres to ClickHouse.
+</Note>
 
 ```mermaid
 flowchart LR
-    Application -->|Reads and writes| Postgres
-    Postgres -->|Committed changes via ClickPipes| ClickHouse
-    Analytics -->|Queries| ClickHouse
+    Application -->|#nbsp;Reads and writes#nbsp;| Postgres
+    Postgres -->|#nbsp;CDC#nbsp;| ClickHouse
+    Analytics -->|#nbsp;Queries#nbsp;| ClickHouse
 ```
 
 1. Your application reads and writes operational data in Postgres, using transactions to group related changes.
@@ -59,7 +59,7 @@ ClickHouse Managed Postgres is available on the following cloud providers:
 
 | Cloud provider | Availability |
 |----------------|--------------|
-| AWS | Public Beta |
+| AWS | Generally Available |
 | GCP | Private Preview |
 
 <Note>
@@ -73,6 +73,10 @@ ClickHouse Managed Postgres integrates natively with ClickHouse to bring transac
 ### Postgres to ClickHouse replication {#postgres-replication}
 
 Replicate your Postgres data to ClickHouse using the [Postgres CDC connector in ClickPipes](/integrations/clickpipes/postgres/index). The connector handles both initial load and continuous incremental sync, and is battle-tested by hundreds of enterprise customers moving hundreds of terabytes per month.
+
+<Note>
+[WalShadow](/products/managed-postgres/sync-to-clickhouse/walshadow), now in Private Preview, offers lower-latency, high-throughput replication from Postgres to ClickHouse.
+</Note>
 
 ### pg_clickhouse: unified query layer {#pg-clickhouse}
 
