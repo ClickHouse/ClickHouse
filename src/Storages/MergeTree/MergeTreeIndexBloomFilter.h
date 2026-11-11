@@ -7,16 +7,8 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
-#include <unordered_set>
-
 namespace DB
 {
-
-/// Positions in the index sample block of the `mapKeys` and `mapValues` functions over a `Map` column.
-/// A table column can be literally named `mapKeys(m)`, so the name alone does not identify them.
-using MapIndexPositions = std::unordered_set<size_t>;
-
-MapIndexPositions collectMapIndexPositions(const ExpressionActions & index_expression);
 
 class Set;
 using ConstSetPtr = std::shared_ptr<const Set>;
@@ -88,7 +80,7 @@ public:
         size_t hash_functions_,
         IsShadowingColumn is_column_shadowing_map_subcolumn_,
         JSONIndexArgumentTypes json_argument_types_,
-        MapIndexPositions map_index_positions_);
+        ActionsDAG::NodeRawConstPtrs index_nodes_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -108,7 +100,8 @@ private:
     const IsShadowingColumn is_column_shadowing_map_subcolumn;
     /// Argument types of the JSON index functions of this index, by position in `header`.
     const JSONIndexArgumentTypes json_argument_types;
-    const MapIndexPositions map_index_positions;
+    /// By position in `header`.
+    const ActionsDAG::NodeRawConstPtrs index_nodes;
     const bool validate_enum_literals_in_operators;
     std::vector<RPNElement> rpn;
 

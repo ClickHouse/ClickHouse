@@ -1,6 +1,7 @@
--- A `bloom_filter` index on a table column literally named `mapKeys(m)` or `mapValues(m)`
--- must not be used for predicates over the `Map` column `m`.
+-- A `bloom_filter` index on a column literally named like an expression is not used for that expression.
 
+DROP TABLE IF EXISTS t_bf_array;
+DROP TABLE IF EXISTS t_bf_lower;
 DROP TABLE IF EXISTS t_bf_fixed;
 DROP TABLE IF EXISTS t_bf_lc;
 DROP TABLE IF EXISTS t_bf_real;
@@ -39,7 +40,7 @@ SELECT count() FROM t_bf_lc WHERE mapContainsKey(m, 'k');
 SELECT count() FROM t_bf_lc WHERE mapContainsValue(m, 'v');
 SELECT count() FROM t_bf_lc WHERE has(m, 'k');
 
--- A real index on the `mapKeys(m)` expression is still used.
+-- A real `mapKeys(m)` index is still used.
 CREATE TABLE t_bf_real
 (
     m Map(String, String),
@@ -51,7 +52,51 @@ INSERT INTO t_bf_real VALUES (map('k', 'v'));
 
 SELECT count() FROM t_bf_real WHERE m['k'] = 'v' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM t_bf_real WHERE mapContainsKey(m, 'k') SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM t_bf_real WHERE has(mapKeys(m), 'k') SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0;
+
+CREATE TABLE t_bf_array
+(
+    m Map(String, String),
+    `mapKeys(m)` Array(String),
+    `mapValues(m)` Array(String),
+    INDEX idx_k `mapKeys(m)` TYPE bloom_filter,
+    INDEX idx_v `mapValues(m)` TYPE bloom_filter
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_bf_array VALUES (map('k', 'v'), ['x'], ['y']);
+
+SET optimize_functions_to_subcolumns = 0;
+
+SELECT count() FROM t_bf_array WHERE has(mapKeys(m), 'k');
+SELECT count() FROM t_bf_array WHERE mapKeys(m) IN (['k']);
+SELECT count() FROM t_bf_array WHERE arrayJoin(mapKeys(m)) = 'k';
+SELECT count() FROM t_bf_array WHERE arrayJoin(mapKeys(m)) IN ('k');
+SELECT count() FROM t_bf_array WHERE has(mapValues(m), 'v');
+SELECT count() FROM t_bf_array WHERE mapValues(m) IN (['v']);
+
+-- Still used for the column itself.
+SELECT count() FROM t_bf_array WHERE has(`mapKeys(m)`, 'x') SETTINGS force_data_skipping_indices = 'idx_k';
+SELECT count() FROM t_bf_array WHERE `mapKeys(m)` IN (['x']) SETTINGS force_data_skipping_indices = 'idx_k';
+SELECT count() FROM t_bf_array WHERE has(`mapValues(m)`, 'y') SETTINGS force_data_skipping_indices = 'idx_v';
+
+-- Not specific to `Map`.
+CREATE TABLE t_bf_lower
+(
+    s String,
+    `lower(s)` String,
+    INDEX idx `lower(s)` TYPE bloom_filter
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_bf_lower VALUES ('ABC', 'x');
+
+SELECT count() FROM t_bf_lower WHERE lower(s) = 'abc';
+SELECT count() FROM t_bf_lower WHERE lower(s) IN ('abc');
+SELECT count() FROM t_bf_lower WHERE `lower(s)` = 'x' SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE t_bf_fixed;
 DROP TABLE t_bf_lc;
 DROP TABLE t_bf_real;
+DROP TABLE t_bf_array;
+DROP TABLE t_bf_lower;
