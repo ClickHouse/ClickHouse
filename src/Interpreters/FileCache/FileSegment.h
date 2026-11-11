@@ -397,7 +397,7 @@ private:
     std::condition_variable cv;
     /// Dedups concurrent increasePriority() calls; a pure try-lock, so an atomic flag is enough.
     std::atomic_flag increasing_priority;
-    /// A leaf lock for the fields below: only the mutex of `FileCacheEfficiency` is taken under it.
+    /// A leaf lock for the fields below: only the rotation mutex of `FileCacheEfficiency` is taken under it.
     mutable ByteMutex efficiency_mutex;
     bool removed_from_cache TSA_GUARDED_BY(efficiency_mutex) = false;
     /// Whether `reserved_size` is counted in `FileCacheSegmentSizes`.

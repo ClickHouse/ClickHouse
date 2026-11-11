@@ -15,7 +15,8 @@ namespace DB
 
 /// Active (served from the cache), passive (not served, in file segments with a hit) and idle bytes of one
 /// `FileCache` per window of `efficiency_window_sec`, for all and for large file segments. Keeps the current
-/// window and a snapshot of the last full one. The mutex is a leaf lock.
+/// window and a snapshot of the last full one. The counters are atomics without a common lock: an update that
+/// races with a rotation can land in the next window. These are statistics, so that error is fine.
 class FileCacheEfficiency
 {
 public:
@@ -64,10 +65,9 @@ public:
     };
 
     /// The updates below are no-ops unless `segment_window` is the current window. The caller changes the sizes of
-    /// `get_bytes` before an update that adds bytes and after one that removes them: then the counters never exceed the
-    /// sizes, and a rotation in between sees the change as idle bytes.
+    /// `get_bytes` before an update that adds bytes and after one that removes them, so that the counters do not
+    /// exceed the sizes.
     void addPassiveBytes(Window segment_window, Int64 bytes, bool large);
-    /// Under one lock, so that a rotation sees all of `delta` or none of it.
     void apply(Window segment_window, const Delta & delta);
 
     /// `reserved_bytes` become passive if the read starts a new window for the file segment.
@@ -80,7 +80,7 @@ public:
         bool large = false;
     };
 
-    /// Rotates if needed, counts `read` in the current window and returns it, under one lock.
+    /// Rotates if needed, counts `read` in the current window and returns it.
     Window countRead(const SegmentRead & read);
 
     /// The last full window.
@@ -90,12 +90,14 @@ public:
 
 private:
     /// Lazy: the first call after the window ends freezes it. The asynchronous metrics bound the lag.
-    void rotateIfNeeded(Window now_window) TSA_REQUIRES(mutex);
+    void rotateIfNeeded(Window now_window);
 
     struct WindowStats
     {
-        Int64 active = 0;
-        Int64 passive = 0;
+        std::atomic<Int64> active = 0;
+        std::atomic<Int64> passive = 0;
+
+        void add(Int64 active_delta, Int64 passive_delta);
     };
 
     const UInt64 window_sec;
@@ -104,11 +106,13 @@ private:
     Stopwatch watch;
     std::atomic<Int64> time_shift_for_testing_ms = 0;
 
-    std::mutex mutex;
-    Window window TSA_GUARDED_BY(mutex) = 0;
-    WindowStats stats TSA_GUARDED_BY(mutex);
-    WindowStats large_stats TSA_GUARDED_BY(mutex);
-    Snapshot snapshot TSA_GUARDED_BY(mutex);
+    std::atomic<Window> window = 0;
+    WindowStats stats;
+    WindowStats large_stats;
+
+    /// Serializes the rotations and guards `snapshot`. The updates do not take it.
+    std::mutex rotation_mutex;
+    Snapshot snapshot TSA_GUARDED_BY(rotation_mutex);
 };
 
 }
