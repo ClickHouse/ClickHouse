@@ -3667,8 +3667,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition/definition levels for arrays in column {}", column_info.name);
     }
 
-    if (subchunk.null_map && !column_info.output_nullable && !column_info.group_nullable && !column_info.levels_only_arrays
-        && !options.format.null_as_default)
+    if (subchunk.null_map && !column_info.output_nullable && !column_info.group_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
         /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.

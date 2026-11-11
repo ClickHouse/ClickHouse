@@ -1255,6 +1255,45 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     output.nullable_group = nullable_group;
 }
 
+/// Decodes the values as stored, ignoring the logical type, whose conversion can reject valid values.
+static void setPhysicalValuesDecoder(const parq::SchemaElement & element, PageDecoderInfo & decoder, DataTypePtr & type)
+{
+    decoder.physical_type = element.type;
+    size_t size = 0;
+    switch (element.type)
+    {
+        case parq::Type::BOOLEAN:
+        {
+            auto converter = std::make_shared<IntConverter>();
+            converter->input_size = 1;
+            converter->input_signed = false;
+            decoder.fixed_size_converter = std::move(converter);
+            type = std::make_shared<DataTypeUInt8>();
+            return;
+        }
+        case parq::Type::BYTE_ARRAY:
+            decoder.string_converter = std::make_shared<TrivialStringConverter>();
+            type = std::make_shared<DataTypeString>();
+            return;
+        case parq::Type::INT32: size = 4; break;
+        case parq::Type::INT64: size = 8; break;
+        case parq::Type::INT96: size = 12; break;
+        case parq::Type::FLOAT: size = 4; break;
+        case parq::Type::DOUBLE: size = 8; break;
+        case parq::Type::FIXED_LEN_BYTE_ARRAY:
+            if (element.type_length > 0)
+                size = size_t(element.type_length);
+            break;
+    }
+    if (size == 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type: {}", thriftToString(element));
+
+    auto converter = std::make_shared<FixedStringConverter>();
+    converter->input_size = size;
+    decoder.fixed_size_converter = std::move(converter);
+    type = std::make_shared<DataTypeFixedString>(size);
+}
+
 std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
     size_t first_schema_idx, size_t first_primitive_column_idx, size_t num_subtrees,
     const VectorWithMemoryTracking<LevelInfo> & base_levels, const String & name)
@@ -1330,14 +1369,11 @@ std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
         const parq::SchemaElement & element = file_metadata.schema[leaf.schema_idx];
         PageDecoderInfo decoder;
         DataTypePtr decoded_type;
-        DataTypePtr inferred_type;
         try
         {
             if (!element.__isset.type)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet metadata is missing physical type for column {}", element.name);
-            processPrimitiveColumn(
-                element, /*type_hint=*/ nullptr, /*time_as_stored_integer=*/ false, decoder, decoded_type, inferred_type,
-                /*geo_metadata=*/ std::nullopt, leaf.column_idx);
+            setPhysicalValuesDecoder(element, decoder, decoded_type);
         }
         catch (Exception & e)
         {
@@ -1354,12 +1390,9 @@ std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
         primitive.column_idx = leaf.column_idx;
         primitive.schema_idx = leaf.schema_idx;
         primitive.name = name;
-        primitive.output_nullable = !leaf.levels.back().is_array
-            && !typeid_cast<const DataTypeArray *>(inferred_type.get())
-            && !typeid_cast<const DataTypeTuple *>(inferred_type.get())
-            && !typeid_cast<const DataTypeVariant *>(inferred_type.get());
+        primitive.output_nullable = !leaf.levels.back().is_array;
         primitive.decoder = std::move(decoder);
-        primitive.decoded_type = decoded_type ? decoded_type : inferred_type;
+        primitive.decoded_type = decoded_type;
         primitive.output_type = primitive.decoded_type;
         if (primitive.output_nullable)
             primitive.output_type = std::make_shared<DataTypeNullable>(primitive.output_type);

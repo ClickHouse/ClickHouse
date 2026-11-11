@@ -35,7 +35,8 @@ $CHL -q "select 'tuple in element, all elements missing:', * from file('$struct_
 $CHL -q "select 'tuple in element, missing with dot:', * from file('$struct_file', Parquet, '\`s.t.b\` Array(String)')"
 $CHL -q "select 'tuple in element with dot, all elements missing:', * from file('$struct_file', Parquet, '\`s.t\` Array(Tuple(b String))')"
 
-# The leaf read for the array sizes holds a NULL of a type that cannot be Nullable (`Geometry`).
+# The leaf read for the array sizes is not decoded with its logical type: a NULL `GEOMETRY` (`Geometry`
+# cannot be Nullable), and an `INT96` timestamp and a `DATE` out of the range of `DateTime64(9)` and `Date32`.
 geo_file=${CLICKHOUSE_TEST_UNIQUE_NAME}_geo.parquet
 python3 - "$geo_file" <<'PY'
 import sys
@@ -64,6 +65,20 @@ pq.write_table(pa.table({"x": x}), sys.argv[1])
 PY
 $CHL -q "select 'geometry leaf, all elements missing:', * from file('$geo_file', Parquet, 'x Array(Tuple(z Nullable(Int32)))') settings input_format_null_as_default = 0"
 $CHL -q "select 'geometry leaf, missing with dot:', * from file('$geo_file', Parquet, '\`x.z\` Array(Nullable(Int32))') settings input_format_null_as_default = 0"
+range_file=${CLICKHOUSE_TEST_UNIQUE_NAME}_range.parquet
+python3 - "$range_file" <<'PY'
+import datetime
+import sys
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+x = pa.array([[{"old": datetime.datetime(3000, 1, 1)}]], pa.list_(pa.struct([("old", pa.timestamp("us"))])))
+y = pa.array([[{"old": 1 << 30}]], pa.list_(pa.struct([("old", pa.date32())])))
+pq.write_table(pa.table({"x": x, "y": y}), sys.argv[1], use_deprecated_int96_timestamps=True)
+PY
+$CHL -q "select 'values out of range, all elements missing:', * from file('$range_file', Parquet, 'x Array(Tuple(q Int32)), y Array(Tuple(q Int32))')"
+$CHL -q "select 'values out of range, missing with dot:', * from file('$range_file', Parquet, '\`x.q\` Array(Int32), \`y.q\` Array(Int32)')"
 
 # An Iceberg list that is dropped and added again keeps its old field ids in the old data files. An
 # element of the new list is not in such a file, and does not get the sizes of the old list.
@@ -148,4 +163,4 @@ $CHL -q "insert into function file('$cost_file', Parquet) select [(number, repea
 $CHL --print-profile-events -q "select * from file('$cost_file', Parquet, '\`x.id\` Array(UInt64), \`x.z\` Array(String)') format Null" 2>&1 \
     | grep -o 'ParquetDecompressedBytes: [0-9]*' | awk '{ bytes += $2 } END { print "decompressed some but less than 100000 bytes:", (bytes > 0 && bytes < 100000) }'
 
-rm -r $file $nested_file $struct_file $geo_file $iceberg_dir $case_file $cost_file
+rm -r $file $nested_file $struct_file $geo_file $range_file $iceberg_dir $case_file $cost_file
