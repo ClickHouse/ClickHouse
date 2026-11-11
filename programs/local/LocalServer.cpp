@@ -1562,52 +1562,21 @@ void LocalServer::connectAndInitializeInputTable()
     }
 }
 
-void LocalServer::beforeExecutingCommandLineQueries()
+namespace
 {
-    /// A nested query file may read SQL from stdin after inferred data was hidden.
-    /// Never make that SQL source available as the command-line input table.
-    if (!implicit_stdin_table_to_activate || query_file_reads_stdin)
-        return;
+/// Tracks the inferred stdin table's public alias across command-line statements.
+/// The state distinguishes database collisions from user DROP/replacement.
+struct DeferredStdinTableAlias
+{
+    ContextMutablePtr session_context;
+    std::shared_ptr<TemporaryTableHolder> inferred_table;
+    String public_name;
+    String private_name;
+    bool alias_was_exposed = false;
+    bool alias_overridden_by_user = false;
+    bool inferred_alias_retired = false;
 
-    auto & local_connection = static_cast<LocalConnection &>(*connection);
-    auto session_context = local_connection.getSessionContext();
-    if (!private_stdin_table_name)
-    {
-        /// Autodetection failed before the query files. Explicit FROM queries
-        /// may still work; FROM-less queries must not silently read system.one.
-        /// Preserve an intentional implicit-table override from the SQL files.
-        if (!client_context->getSettingsRef().isChanged("implicit_table_at_top_level")
-            && !session_context->getSettingsRef().isChanged("implicit_table_at_top_level"))
-            client_context->setSetting("implicit_table_at_top_level", *implicit_stdin_table_to_activate);
-        return;
-    }
-
-    const String & private_name = *private_stdin_table_name;
-    auto inferred_table = session_context->findExternalTable(private_name);
-    if (!inferred_table)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table {} is missing", backQuote(private_name));
-
-    /// Query files can truncate or rewrite stdin after schema inference.
-    /// The first command-line query must read the current bytes, not the
-    /// positional buffer that was populated before the query files ran.
-    if (auto * file_storage = inferred_table->getTable()->as<StorageFile>())
-        file_storage->discardInferredFileDescriptorReadBuffer();
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table is not a File storage");
-
-    const String public_name = *implicit_stdin_table_to_activate;
-    /// Only expose the public alias when it cannot shadow a table in the query's
-    /// effective database. Check per query because SET/USE and query-level
-    /// SETTINGS database can change that database within the same -q argument.
-    /// Query contexts copy the session's external-table map when sendQuery starts.
-    /// Update both copies so a database collision cannot leave a stale alias in the current query.
-    /// Remember why the public alias disappeared: collision-driven hiding can
-    /// be undone when the database changes, but a user DROP/replacement cannot.
-    /// Keep only one name registered for the inferred table to avoid counting
-    /// it twice against max_temporary_tables.
-    local_connection.setBeforeQueryCallback(
-        [session_context, inferred_table, public_name, private_name, alias_was_exposed = false, alias_overridden_by_user = false, inferred_alias_retired = false]
-        (ContextMutablePtr query_context) mutable
+    void operator()(ContextMutablePtr query_context)
     {
         auto database_name = query_context->getSettingsRef()[Setting::database].value;
         if (database_name.empty())
@@ -1669,7 +1638,55 @@ void LocalServer::beforeExecutingCommandLineQueries()
         if (!database_collision
             && query_context->getSettingsRef()[Setting::implicit_table_at_top_level].value == private_name)
             query_context->setSetting("implicit_table_at_top_level", public_name);
-    });
+    }
+};
+}
+
+void LocalServer::beforeExecutingCommandLineQueries()
+{
+    /// A nested query file may read SQL from stdin after inferred data was hidden.
+    /// Never make that SQL source available as the command-line input table.
+    if (!implicit_stdin_table_to_activate || query_file_reads_stdin)
+        return;
+
+    auto & local_connection = static_cast<LocalConnection &>(*connection);
+    auto session_context = local_connection.getSessionContext();
+    if (!private_stdin_table_name)
+    {
+        /// Autodetection failed before the query files. Explicit FROM queries
+        /// may still work; FROM-less queries must not silently read system.one.
+        /// Preserve an intentional implicit-table override from the SQL files.
+        if (!client_context->getSettingsRef().isChanged("implicit_table_at_top_level")
+            && !session_context->getSettingsRef().isChanged("implicit_table_at_top_level"))
+            client_context->setSetting("implicit_table_at_top_level", *implicit_stdin_table_to_activate);
+        return;
+    }
+
+    const String & private_name = *private_stdin_table_name;
+    auto inferred_table = session_context->findExternalTable(private_name);
+    if (!inferred_table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table {} is missing", backQuote(private_name));
+
+    /// Query files can truncate or rewrite stdin after schema inference.
+    /// The first command-line query must read the current bytes, not the
+    /// positional buffer that was populated before the query files ran.
+    if (auto * file_storage = inferred_table->getTable()->as<StorageFile>())
+        file_storage->discardInferredFileDescriptorReadBuffer();
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table is not a File storage");
+
+    const String public_name = *implicit_stdin_table_to_activate;
+    /// Only expose the public alias when it cannot shadow a table in the query's
+    /// effective database. Check per query because SET/USE and query-level
+    /// SETTINGS database can change that database within the same -q argument.
+    /// Query contexts copy the session's external-table map when sendQuery starts.
+    /// Update both copies so a database collision cannot leave a stale alias in the current query.
+    /// Remember why the public alias disappeared: collision-driven hiding can
+    /// be undone when the database changes, but a user DROP/replacement cannot.
+    /// Keep only one name registered for the inferred table to avoid counting
+    /// it twice against max_temporary_tables.
+    local_connection.setBeforeQueryCallback(
+        DeferredStdinTableAlias{session_context, inferred_table, public_name, private_name});
 
     /// The inferred table stays addressable by its private name for FROM-less
     /// queries, even when an explicit user table owns the public name.

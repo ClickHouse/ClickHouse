@@ -152,6 +152,19 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT f_stdin_01523(
 printf '%s\n' '\i /dev/stdin' > "$SECOND_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$SECOND_SQL_FILE_NAME" -q 'SELECT f_stdin_01523(41)' < "$TEMP_SQL_FILE_NAME"
 
+# Nested includes must reject stdin SQL as data, even when it is not autodetectable.
+printf '%s\n' '-- comment' $'SELECT 1,\t2;' 'SELECT 3;' > "$TEMP_SQL_FILE_NAME"
+printf '%s\n' '\i /dev/stdin' > "$SECOND_SQL_FILE_NAME"
+if output=$($CLICKHOUSE_LOCAL --queries-file="$SECOND_SQL_FILE_NAME" -q 'SELECT 42' < "$TEMP_SQL_FILE_NAME"); then
+    if [[ "$output" != $'1\t2\n3\n42' ]]; then
+        echo 'nested stdin SQL produced wrong output'
+        exit 1
+    fi
+else
+    echo 'nested stdin SQL failed'
+    exit 1
+fi
+
 # A prelude that does not read stdin must not make read() replay the same rows.
 printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
 echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
@@ -257,6 +270,20 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
 $CLICKHOUSE_LOCAL --async_insert=0 --queries-file="$TEMP_SQL_FILE_NAME" \
     -q 'DROP TABLE `table`; CREATE TEMPORARY TABLE `table` (c1 UInt8) ENGINE=Memory; INSERT INTO `table` SELECT 9 FROM system.one; SELECT sum(c1) FROM `table`' \
     < "$STDIN_DATA_FILE_NAME"
+
+# A replaced public input table must also receive implicit SELECTs without FROM.
+echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
+if output=$($CLICKHOUSE_LOCAL --async_insert=0 --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'DROP TABLE `table`; CREATE TEMPORARY TABLE `table` (c1 UInt8) ENGINE=Memory; INSERT INTO `table` SELECT 9 FROM system.one; SELECT sum(c1); SELECT sum(c1) FROM `table`' \
+    < "$STDIN_DATA_FILE_NAME"); then
+    if [[ "$output" != $'99\n9\n9' ]]; then
+        echo 'public input replacement changed implicit SELECT semantics'
+        exit 1
+    fi
+else
+    echo 'public input replacement failed'
+    exit 1
+fi
 
 # A profile-supplied implicit-table setting must not be overwritten.
 printf '%s\n' "CREATE SETTINGS PROFILE profile_01523 SETTINGS implicit_table_at_top_level = '' READONLY;" \
