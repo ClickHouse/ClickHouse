@@ -143,7 +143,7 @@ private:
     std::string zookeeper_name;
     fs::path zk_path;
     const bool enable_logging_to_queue_log;
-    const bool parallel_inserts;
+    std::atomic<bool> parallel_inserts;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
@@ -177,8 +177,14 @@ private:
 
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
-    std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
-    std::vector<UInt64> streaming_task_refresh_epochs;
+    struct StreamingTask
+    {
+        /// Declared before the holder, since it is used by the task.
+        UInt64 refresh_epoch = 0;
+        BackgroundSchedulePoolTaskHolder holder;
+    };
+    mutable std::mutex streaming_tasks_mutex;
+    std::vector<std::unique_ptr<StreamingTask>> streaming_tasks TSA_GUARDED_BY(streaming_tasks_mutex);
     std::atomic<size_t> max_files_override{0};
 
     LoggerPtr log;
@@ -215,7 +221,9 @@ private:
     /// A background thread function,
     /// executing the whole process of reading from object storage
     /// and pushing result to dependent tables.
-    void threadFunc(size_t streaming_tasks_index);
+    void threadFunc(StreamingTask & task, size_t streaming_tasks_index);
+    /// Replace streaming tasks with deactivated ones, the old ones must be deactivated.
+    void createStreamingTasks(size_t count);
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.

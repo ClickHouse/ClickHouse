@@ -519,13 +519,30 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
 
-    for (size_t i = 0; i < task_count; ++i)
-    {
-        auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
-        streaming_tasks.emplace_back(std::move(task));
-    }
-    streaming_task_refresh_epochs.resize(task_count, 0);
+    createStreamingTasks(task_count);
     max_files_override = 0;
+}
+
+void StorageObjectStorageQueue::createStreamingTasks(size_t count)
+{
+    std::vector<std::unique_ptr<StreamingTask>> tasks;
+    tasks.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        auto * task = tasks.emplace_back(std::make_unique<StreamingTask>()).get();
+        task->holder = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, task, i]{ threadFunc(*task, i); });
+        /// Otherwise `SYSTEM START`/`SYSTEM REFRESH` can schedule the task before the caller is ready.
+        task->holder->deactivate();
+    }
+
+    std::lock_guard lock(streaming_tasks_mutex);
+    /// New tasks should not replay REFRESH that had been already handled.
+    if (!streaming_tasks.empty())
+    {
+        for (auto & task : tasks)
+            task->refresh_epoch = streaming_tasks.front()->refresh_epoch;
+    }
+    streaming_tasks = std::move(tasks);
 }
 
 void StorageObjectStorageQueue::startup()
@@ -588,8 +605,11 @@ void StorageObjectStorageQueue::startup()
 
     /// Start background tasks.
     metadata->startup();
-    for (auto & task : streaming_tasks)
-        task->activateAndSchedule();
+    {
+        std::lock_guard lock(streaming_tasks_mutex);
+        for (auto & task : streaming_tasks)
+            task->holder->activateAndSchedule();
+    }
 
     startup_finished = true;
 }
@@ -613,8 +633,9 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         Stopwatch watch;
         LOG_DEBUG(log, "Waiting for streaming to finish...");
 
+        std::lock_guard lock(streaming_tasks_mutex);
         for (auto & task : streaming_tasks)
-            task->deactivate();
+            task->holder->deactivate();
 
         LOG_DEBUG(
             log, "Finished {} streaming tasks (took: {} ms)",
@@ -656,8 +677,9 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
 void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
 {
+    std::lock_guard lock(streaming_tasks_mutex);
     for (auto & task : streaming_tasks)
-        task->schedule();
+        task->holder->schedule();
 }
 
 void StorageObjectStorageQueue::rebuildObjectStorageClient(ContextPtr rebuild_context)
@@ -888,11 +910,8 @@ size_t StorageObjectStorageQueue::getDependencies() const
     return DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext()).size();
 }
 
-void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
+void StorageObjectStorageQueue::threadFunc(StreamingTask & task, size_t streaming_tasks_index)
 {
-    chassert(streaming_tasks_index < streaming_tasks.size());
-    auto & task = streaming_tasks[streaming_tasks_index];
-
     if (shutdown_called)
         return;
 
@@ -913,7 +932,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     /// for them; a viewless table still claims, draining a pending permit so it cannot fire later.
     const bool deps_ready = num_views == 0 || dependencies_count > 0;
 
-    if (deps_ready && !stream_control.claimCycle(streaming_task_refresh_epochs.at(streaming_tasks_index)))
+    if (deps_ready && !stream_control.claimCycle(task.refresh_epoch))
     {
         /// SYSTEM STOP/PAUSE blocks polling: skip processing. SYSTEM START wakes the task promptly
         /// via `onActionLockRemove`; meanwhile reschedule with a moderate period to avoid busy-looping.
@@ -989,7 +1008,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         }
 
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_interval_ms);
-        task->scheduleAfter(reschedule_interval_ms);
+        task.holder->scheduleAfter(reschedule_interval_ms);
 
         if (reschedule_interval_ms > 5000) /// TODO: Add a setting
         {
@@ -1070,10 +1089,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     const auto & table_metadata = metadata->getTableMetadata();
     const size_t processing_threads_num = table_metadata.processing_threads_num;
-    const size_t threads = parallel_inserts ? 1 : processing_threads_num;
+    const bool use_parallel_inserts = parallel_inserts;
+    const size_t threads = use_parallel_inserts ? 1 : processing_threads_num;
 
     LOG_TRACE(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
-        threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
+        threads, processing_threads_num, use_parallel_inserts, is_deduplication_v2);
 
     while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
     {
@@ -1464,8 +1484,7 @@ UInt64 StorageObjectStorageQueue::generateCommitID()
 
 static const std::unordered_set<std::string_view> changeable_settings_unordered_mode{
     "processing_threads_num",
-    /// Is not allowed to change on fly:
-    /// "parallel_inserts",
+    "parallel_inserts",
     "loading_retries",
     "after_processing",
     "tracked_files_limit",
@@ -1503,6 +1522,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
+    "parallel_inserts",
     "loading_retries",
     "after_processing",
     "polling_min_timeout_ms",
@@ -1539,8 +1559,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
 
 static const std::unordered_set<std::string_view> changeable_settings_exclusive_mode{
     "processing_threads_num",
-    /// Is not allowed to change on fly:
-    /// "parallel_inserts",
+    "parallel_inserts",
     "loading_retries",
     "after_processing",
     "polling_min_timeout_ms",
@@ -1810,6 +1829,9 @@ void StorageObjectStorageQueue::alter(
         const auto mode = metadata->getTableMetadata().getMode();
         const size_t dependencies_count = getDependencies();
         bool requires_detached_mv = false;
+        bool new_parallel_inserts = parallel_inserts;
+        bool parallel_inserts_changed = false;
+        bool processing_threads_num_changed = false;
 
         for (auto & setting : new_settings)
         {
@@ -1852,22 +1874,38 @@ void StorageObjectStorageQueue::alter(
                 requires_detached_mv = true;
             }
 
+            if (setting.name == "parallel_inserts")
+            {
+                new_parallel_inserts = SettingFieldBool(setting.value).value;
+                parallel_inserts_changed = true;
+            }
+            else if (setting.name == "processing_threads_num")
+                processing_threads_num_changed = true;
+
             changed_settings.push_back(setting);
         }
-        if (requires_detached_mv)
+        /// The number of streaming tasks changes, so they are re-created once the running ones finish.
+        const bool recreate_streaming_tasks = parallel_inserts_changed || (processing_threads_num_changed && new_parallel_inserts);
+        const bool restart_streaming = requires_detached_mv || recreate_streaming_tasks;
+        /// Otherwise the running tasks finish only once the whole backlog is processed.
+        if (recreate_streaming_tasks)
+            stream_control.requestCancel();
+        if (restart_streaming)
         {
+            std::lock_guard lock(streaming_tasks_mutex);
             LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
 
             for (auto & task : streaming_tasks)
-                task->deactivate();
+                task->holder->deactivate();
 
             LOG_TRACE(log, "Deactivated streaming tasks");
         }
         SCOPE_EXIT({
-            if (requires_detached_mv)
+            if (restart_streaming)
             {
+                std::lock_guard lock(streaming_tasks_mutex);
                 for (auto & task : streaming_tasks)
-                    task->activateAndSchedule();
+                    task->holder->activateAndSchedule();
 
                 LOG_TRACE(log, "Re-activated streaming tasks");
             }
@@ -1935,11 +1973,16 @@ void StorageObjectStorageQueue::alter(
                 commit_on_select = change.value.safeGet<UInt64>();
             else if (change.name == "deduplication_v2")
                 deduplication_v2 = change.value.safeGet<UInt64>();
+            else if (change.name == "parallel_inserts")
+                parallel_inserts = new_parallel_inserts;
         }
+
+        if (recreate_streaming_tasks)
+            createStreamingTasks(parallel_inserts ? metadata->getTableMetadata().processing_threads_num.load() : 1);
 
         metadata->updateSettings(changed_settings);
         /// Reset streaming_iterator as it can hold state which we could have just altered.
-        if (requires_detached_mv)
+        if (restart_streaming)
             streaming_file_iterator.reset();
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
@@ -2020,7 +2063,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::keeper_path] = fmt::format("{}:{}", zookeeper_name, zk_path.string());
     settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
     settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
-    settings[ObjectStorageQueueSetting::parallel_inserts] = parallel_inserts;
+    settings[ObjectStorageQueueSetting::parallel_inserts] = parallel_inserts.load();
     settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
     settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
     settings[ObjectStorageQueueSetting::bucketing_mode] = table_metadata.bucketing_mode;
@@ -2222,7 +2265,12 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 "Table {} is being dropped or server is shutting down",
                 getStorageID().getNameForLogs());
 
-        if (!startup_finished || streaming_tasks.empty())
+        bool has_streaming_tasks = false;
+        {
+            std::lock_guard lock(streaming_tasks_mutex);
+            has_streaming_tasks = !streaming_tasks.empty();
+        }
+        if (!startup_finished || !has_streaming_tasks)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot wait for path to be processed: background streaming for {} "
                 "has not started yet",
