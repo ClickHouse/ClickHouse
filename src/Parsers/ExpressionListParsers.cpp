@@ -1622,6 +1622,64 @@ static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts, s
     return base;
 }
 
+/// Whether the subscript can have a free name that is not visible in its syntax: a call of a function can be a call
+/// of a lambda function, like `f` in `WITH y -> y + x AS f`, whose expression is resolved where it is called.
+static bool containsFunction(const IAST * node, size_t depth, size_t max_depth)
+{
+    checkSubscriptsExpansionDepth(depth, max_depth);
+
+    if (node->as<ASTFunction>() || node->as<ASTSubquery>())
+        return true;
+    for (const auto & child : node->children)
+        if (containsFunction(child.get(), depth + 1, max_depth))
+            return true;
+    return false;
+}
+
+/** Like `applySubscripts`, but the subscripts after the first empty subscript that are not literals are calculated outside
+  * of the generated lambda functions, if one of them contains a function, so that a generated parameter cannot capture a free name:
+  *   arr[][f(0)] -> arrayMap((b, s1) -> arrayMap(x -> x[s1], b), [arr], [f(0)])[1]
+  * Then the generated lambda functions contain only the generated names.
+  */
+static ASTPtr applySubscriptsWithoutCapture(ASTPtr base, std::span<const ASTPtr> subscripts, size_t max_depth)
+{
+    auto first_empty = std::find(subscripts.begin(), subscripts.end(), nullptr);
+    bool has_function = std::any_of(first_empty, subscripts.end(),
+        [&](const ASTPtr & subscript) { return subscript && containsFunction(subscript.get(), 0, max_depth); });
+    if (!has_function)
+        return applySubscripts(std::move(base), subscripts, max_depth);
+
+    base = applySubscripts(std::move(base), subscripts.first(first_empty - subscripts.begin()), max_depth);
+
+    Strings names{"b"};
+    ASTs arrays{makeASTOperator("array", std::move(base))};
+    ASTs rest;
+    for (auto it = first_empty; it != subscripts.end(); ++it)
+    {
+        if (!*it || (*it)->as<ASTLiteral>())
+        {
+            rest.push_back(*it);
+            continue;
+        }
+        names.push_back("s" + std::to_string(names.size()));
+        arrays.push_back(makeASTOperator("array", *it));
+        rest.push_back(make_intrusive<ASTIdentifier>(names.back()));
+    }
+
+    auto body = applySubscripts(make_intrusive<ASTIdentifier>("b"), rest, max_depth);
+    auto lambda = makeASTLambda(names, std::move(body));
+    lambda->setIsOperator(true);
+    lambda->setIsLambdaFunction(true);
+    lambda->setKind(ASTFunction::Kind::LAMBDA_FUNCTION);
+    /// The parameters are formatted as `(b, s1)`, like they are parsed.
+    lambda->arguments->children[0]->as<ASTFunction &>().setIsOperator(true);
+
+    auto map = makeASTFunction("arrayMap", std::move(lambda));
+    for (auto & array : arrays)
+        map->arguments->children.push_back(std::move(array));
+    return makeASTOperator("arrayElement", std::move(map), make_intrusive<ASTLiteral>(UInt64(1)));
+}
+
 static void expandSubscripts(ASTPtr & node, size_t depth, size_t max_depth)
 {
     checkSubscriptsExpansionDepth(depth, max_depth);
@@ -1686,7 +1744,7 @@ static void expandSubscripts(ASTPtr & node, size_t depth, size_t max_depth)
 
     std::reverse(chain.begin(), chain.end());
     auto alias = node->tryGetAlias();
-    node = applySubscripts(base, chain, max_depth);
+    node = applySubscriptsWithoutCapture(base, chain, max_depth);
     if (!alias.empty())
         node->setAlias(alias);
 }
