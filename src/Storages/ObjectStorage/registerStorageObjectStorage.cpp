@@ -292,7 +292,7 @@ With the `hive` partition strategy, the default set by `file_like_engine_default
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern that skips hidden paths (segments starting with `_` or `.`, e.g. `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), following the Hive ecosystem convention. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
 
@@ -373,6 +373,8 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `storage_class_name` - Options: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+- `upload_checksum_algorithm` - Optional. Checksum algorithm for uploads: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256` (sent as `x-amz-checksum-*`). Empty uses `Content-MD5`, or `CRC32` for S3Express buckets. Ignored for GCS.
+- `delete_checksum_algorithm` - Optional. Checksum algorithm for batch `DeleteObjects` requests: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256`. Empty uses `MD5`, `CRC32` for S3Express buckets, or `SHA256` when `MD5` is unavailable (FIPS mode) or rejected by the server. Ignored for GCS.
 - `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
 ### Data cache {#data-cache}
@@ -418,7 +420,7 @@ With the `hive` partition strategy, the default set by `file_like_engine_default
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`, except that hidden paths (segments below the table root starting with `_` or `.`, e.g. `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`) are skipped, following the Hive ecosystem convention. For plain glob paths without a partition strategy, the same filtering is available via the `s3_skip_hidden_files` / `azure_skip_hidden_files` / `hdfs_skip_hidden_files` settings.
 Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
@@ -1285,6 +1287,7 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `uuid` | `UUID` | |
 | `fixed(N)` | `FixedString(N)` | |
 | `decimal(P, S)` | `Decimal(P, S)` | |
+| `unknown` | `Nullable(Nothing)` | Always `NULL`, not stored in data files (since Iceberg v3 only) |
 
 ### Complex types {#complex-types}
 
@@ -1310,6 +1313,7 @@ ClickHouse supports reading Iceberg tables whose schema has evolved over time. T
 * int -> long
 * float -> double
 * decimal(P, S) -> decimal(P', S) where P' > P.
+* unknown -> any primitive type (since Iceberg v3 only)
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
@@ -1914,9 +1918,12 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 
 ## Primary-key tables {#primary-key-tables}
 
-Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
-snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
-declares `primary-key` therefore throws.
+Merge-on-read is not implemented, so a primary-key table is read only where Paimon reads it without merging: a bucket is
+read when all its data files are above level 0, are known to have no retract rows, and are in one level. With
+`deletion-vectors.enabled` or `'merge-engine' = 'first-row'` the files may be in several levels, and, unless
+`batch-scan-mode` is set to a mode other than `none`, level-0 files are not read until they are compacted, as in Paimon.
+Reading any other bucket throws; a full compaction in Paimon (`compact_strategy => 'full'`) makes it readable. Incremental
+reads of primary-key tables are not supported.
 
 ## Tables with deletion vectors {#deletion-vectors}
 
