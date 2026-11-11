@@ -96,10 +96,10 @@ struct AggregateEmission
     bool return_nullable;
 };
 
-/// One argument type the aggregate accepts, and what to emit for a call with it.
+/// One argument list the aggregate accepts, and what to emit for a call with it.
 struct AggregateOverload
 {
-    std::string_view arg; /// Short type name of the overload's single argument (or "any" to accept every type).
+    std::vector<std::string_view> arg_types;
     std::string_view urn;
 
     /// Over empty input ClickHouse aggregates return a default (sum of nothing is 0) where most Substrait functions return NULL.
@@ -126,27 +126,33 @@ std::unordered_map<std::string_view, MappedAggregate> buildAggregateTable()
     std::unordered_map<std::string_view, MappedAggregate> table;
 
     /// count of nothing is zero on both sides, so keyless count is the same function.
+    /// count takes one argument of any type or none. With none its compound signature is "count:".
     const AggregateEmission count_emission{.name = "count", .return_type = "i64", .return_nullable = false};
-    const AggregateOverload count_overload{
-        .arg = "any",
-        .urn = SubstraitExtensionURN::aggregate_generic,
-        .keyed = count_emission,
-        .keyless = count_emission,
-        .options = overflow_silent};
-    table["count"] = {.invocation = substrait::AggregateFunction::AGGREGATION_INVOCATION_ALL, .overloads = {count_overload}};
-    table["uniqExact"] = {.invocation = substrait::AggregateFunction::AGGREGATION_INVOCATION_DISTINCT, .overloads = {count_overload}};
+    const auto count_overload = [&](std::vector<std::string_view> arg_types)
+    {
+        return AggregateOverload{
+            .arg_types = std::move(arg_types),
+            .urn = SubstraitExtensionURN::aggregate_generic,
+            .keyed = count_emission,
+            .keyless = count_emission,
+            .options = overflow_silent};
+    };
+    table["count"] = {
+        .invocation = substrait::AggregateFunction::AGGREGATION_INVOCATION_ALL, .overloads = {count_overload({"any"}), count_overload({})}};
+    table["uniqExact"]
+        = {.invocation = substrait::AggregateFunction::AGGREGATION_INVOCATION_DISTINCT, .overloads = {count_overload({"any"})}};
 
     MappedAggregate sum{.invocation = substrait::AggregateFunction::AGGREGATION_INVOCATION_ALL, .overloads = {}};
     for (std::string_view t : {"i8", "i16", "i32", "i64"})
         sum.overloads.push_back(
-            {.arg = t,
+            {.arg_types = {t},
              .urn = SubstraitExtensionURN::arithmetic,
              .keyed = {.name = "sum", .return_type = "i64", .return_nullable = true},
              .keyless = AggregateEmission{.name = "sum0", .return_type = "i64", .return_nullable = false},
              .options = overflow_silent});
     for (std::string_view t : {"fp32", "fp64"})
         sum.overloads.push_back(
-            {.arg = t,
+            {.arg_types = {t},
              .urn = SubstraitExtensionURN::arithmetic,
              .keyed = {.name = "sum", .return_type = "fp64", .return_nullable = true},
              .keyless = AggregateEmission{.name = "sum0", .return_type = "fp64", .return_nullable = false},
@@ -154,7 +160,7 @@ std::unordered_map<std::string_view, MappedAggregate> buildAggregateTable()
     /// The unsigned extension declares no sum0.
     for (std::string_view t : {"u!u8", "u!u16", "u!u32", "u!u64"})
         sum.overloads.push_back(
-            {.arg = t,
+            {.arg_types = {t},
              .urn = SubstraitExtensionURN::unsigned_integers,
              .keyed = {.name = "sum", .return_type = "u!u64", .return_nullable = true},
              .keyless = std::nullopt,
@@ -166,14 +172,14 @@ std::unordered_map<std::string_view, MappedAggregate> buildAggregateTable()
         MappedAggregate entry{.invocation = substrait::AggregateFunction::AGGREGATION_INVOCATION_ALL, .overloads = {}};
         for (std::string_view t : {"i8", "i16", "i32", "i64", "fp32", "fp64"})
             entry.overloads.push_back(
-                {.arg = t,
+                {.arg_types = {t},
                  .urn = SubstraitExtensionURN::arithmetic,
                  .keyed = {.name = name, .return_type = t, .return_nullable = true},
                  .keyless = std::nullopt,
                  .options = {}});
         for (std::string_view t : {"u!u8", "u!u16", "u!u32", "u!u64"})
             entry.overloads.push_back(
-                {.arg = t,
+                {.arg_types = {t},
                  .urn = SubstraitExtensionURN::unsigned_integers,
                  .keyed = {.name = name, .return_type = t, .return_nullable = true},
                  .keyless = std::nullopt,
@@ -184,7 +190,7 @@ std::unordered_map<std::string_view, MappedAggregate> buildAggregateTable()
     table["avg"]
         = {.invocation = substrait::AggregateFunction::AGGREGATION_INVOCATION_ALL,
            .overloads
-           = {{.arg = "fp64",
+           = {{.arg_types = {"fp64"},
                .urn = SubstraitExtensionURN::arithmetic,
                .keyed = {.name = "avg", .return_type = "fp64", .return_nullable = true},
                .keyless = std::nullopt,
@@ -225,17 +231,15 @@ std::expected<ResolvedAggregate, String> mapAggregateFunction(
         return blocked(fmt::format("aggregate function {} is not mapped to Substrait", name));
     const MappedAggregate & mapping = it->second;
 
-    /// count is the one aggregate callable with no argument. Its compound signature is the name with the colon, "count:".
-    const bool count_without_args = name == "count" && argument_types.empty();
-    if (!count_without_args && argument_types.size() != 1)
-        return blocked(fmt::format("aggregate function {} with {} arguments is not mapped to Substrait", name, argument_types.size()));
+    std::vector<String> arg_shorts;
+    for (const auto & type : argument_types)
+        arg_shorts.push_back(substraitTypeShortName(type, extensions));
 
-    const String arg = count_without_args ? "" : substraitTypeShortName(argument_types[0], extensions);
-    const auto matches
-        = [&](const AggregateOverload & overload) { return count_without_args || overload.arg == "any" || overload.arg == arg; };
+    const auto accepts = [](std::string_view declared, std::string_view actual) { return declared == "any" || declared == actual; };
+    const auto matches = [&](const AggregateOverload & overload) { return std::ranges::equal(overload.arg_types, arg_shorts, accepts); };
     const auto overload_it = std::ranges::find_if(mapping.overloads, matches);
     if (overload_it == mapping.overloads.end())
-        return blocked(fmt::format("aggregate function {} has no Substrait overload for {}", name, arg));
+        return blocked(fmt::format("aggregate function {} has no Substrait overload for {}", name, fmt::join(arg_shorts, ", ")));
     const AggregateOverload & overload = *overload_it;
 
     if (!has_grouping_keys && !overload.keyless)
@@ -248,7 +252,7 @@ std::expected<ResolvedAggregate, String> mapAggregateFunction(
 
     return ResolvedAggregate{
         .urn = overload.urn,
-        .signature = fmt::format("{}:{}", emission.name, count_without_args ? std::string_view{} : overload.arg),
+        .signature = fmt::format("{}:{}", emission.name, fmt::join(overload.arg_types, "_")),
         .output_type = makeAggregateOutputType(emission.return_type, emission.return_nullable, extensions),
         .invocation = mapping.invocation,
         .options = overload.options,
@@ -331,14 +335,6 @@ const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const Qu
     return states.at(&root).verdict;
 }
 
-const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::verdictFor(const QueryPlan::Node & node) const
-{
-    const auto it = states.find(&node);
-    if (it == states.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Node was not visited by the Substrait serializer");
-    return it->second.verdict;
-}
-
 std::vector<std::pair<const QueryPlan::Node *, String>> SubstraitPlanSerializer::blockingSteps(const QueryPlan::Node & root) const
 {
     std::vector<std::pair<const QueryPlan::Node *, String>> result;
@@ -348,7 +344,7 @@ std::vector<std::pair<const QueryPlan::Node *, String>> SubstraitPlanSerializer:
         const auto * node = stack.back();
         stack.pop_back();
 
-        const auto & verdict = verdictFor(*node);
+        const auto & verdict = states.at(node).verdict;
         if (verdict.subtree_eligible)
             continue;
 
@@ -402,10 +398,11 @@ SubstraitPlanSerializer::convertStep(const QueryPlan::Node & node, std::vector<N
         return convertReadFromMergeTree(*read);
 
     /// FilterStep and ExpressionStep share everything but the FilterRel wrapper.
-    const auto * filter = typeid_cast<const FilterStep *>(step);
-    const auto * expression = typeid_cast<const ExpressionStep *>(step);
-    if (filter || expression)
-        return convertFilterOrExpression(filter, expression, *children.at(0));
+    if (const auto * filter = typeid_cast<const FilterStep *>(step))
+        return convertFilterOrExpression(
+            filter->getExpression(), *filter->getOutputHeader(), filter->getFilterColumnName(), *children.at(0));
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+        return convertFilterOrExpression(expression->getExpression(), *expression->getOutputHeader(), std::nullopt, *children.at(0));
 
     if (const auto * aggregating = typeid_cast<const AggregatingStep *>(step))
         return convertAggregation(*aggregating, *children.at(0));
@@ -474,33 +471,32 @@ std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerialize
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String>
-SubstraitPlanSerializer::convertFilterOrExpression(const FilterStep * filter, const ExpressionStep * expression, NodeState & child)
+std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerializer::convertFilterOrExpression(
+    const ActionsDAG & dag, const Block & output_header, const std::optional<String> & filter_column_name, NodeState & child)
 {
     NodeState out;
 
     SubstraitExpressionConverter converter(child.schema, extensions);
-    const auto & dag = filter ? filter->getExpression() : expression->getExpression();
 
     substrait::Expression condition;
-    if (filter)
+    if (filter_column_name)
     {
-        const auto * condition_node = dag.tryFindInOutputs(filter->getFilterColumnName());
+        const auto * condition_node = dag.tryFindInOutputs(*filter_column_name);
         if (!condition_node)
-            return blocked(fmt::format("filter column {} is not among the expression outputs", filter->getFilterColumnName()));
+            return blocked(fmt::format("filter column {} is not among the expression outputs", *filter_column_name));
 
         auto converted = converter.convert(*condition_node);
         if (!converted)
             return std::unexpected(std::move(converted.error()));
         if (converted->type.kind_case() != substrait::Type::kBool)
-            return blocked(fmt::format("filter condition {} is not a boolean", filter->getFilterColumnName()));
+            return blocked(fmt::format("filter condition {} is not a boolean", *filter_column_name));
         condition = std::move(converted->expression);
     }
 
     /// The child nests into a FilterRel when there is a condition, and the projection wraps the result.
     substrait::Rel rel;
     rel.Swap(&child.rel);
-    if (filter)
+    if (filter_column_name)
     {
         substrait::Rel filter_rel;
         auto * filter_body = filter_rel.mutable_filter();
@@ -509,8 +505,7 @@ SubstraitPlanSerializer::convertFilterOrExpression(const FilterStep * filter, co
         *filter_body->mutable_input() = std::move(rel);
         rel = std::move(filter_rel);
     }
-    auto converted
-        = converter.convertProjection(dag, *(filter ? filter->getOutputHeader() : expression->getOutputHeader()), std::move(rel));
+    auto converted = converter.convertProjection(dag, output_header, std::move(rel));
     if (!converted)
         return std::unexpected(std::move(converted.error()));
     out.rel = std::move(converted->rel);
@@ -796,7 +791,7 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
                 return blocked("join condition is not a boolean");
             converted_conjuncts.push_back(std::move(*converted));
         }
-        return std::move(makeConjunction(std::move(converted_conjuncts), extensions).expression);
+        return makeConjunction(std::move(converted_conjuncts), extensions);
     };
 
     substrait::Rel join_rel;
@@ -806,6 +801,8 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
             return blocked("CROSS JOIN with a condition is not supported");
         auto * cross = join_rel.mutable_cross();
         cross->mutable_common()->mutable_direct();
+        cross->mutable_left()->Swap(&left.rel);
+        cross->mutable_right()->Swap(&right.rel);
     }
     else
     {
@@ -825,6 +822,8 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
                 return std::unexpected(std::move(residual.error()));
             *join_body->mutable_post_join_filter() = std::move(*residual);
         }
+        join_body->mutable_left()->Swap(&left.rel);
+        join_body->mutable_right()->Swap(&right.rel);
     }
 
     /// A SEMI/ANTI join outputs only the kept side, so the projection on top resolves names against that side's schema alone.
@@ -835,17 +834,6 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
         side_converter.emplace(*post_join_schema, extensions);
     auto & output_converter = side_converter ? *side_converter : converter;
 
-    /// Attach the children, then the projection wraps the join.
-    if (join_rel.has_cross())
-    {
-        join_rel.mutable_cross()->mutable_left()->Swap(&left.rel);
-        join_rel.mutable_cross()->mutable_right()->Swap(&right.rel);
-    }
-    else
-    {
-        join_rel.mutable_join()->mutable_left()->Swap(&left.rel);
-        join_rel.mutable_join()->mutable_right()->Swap(&right.rel);
-    }
     auto converted = output_converter.convertProjection(join.getActionsDAG(), *join.getOutputHeader(), std::move(join_rel));
     if (!converted)
         return std::unexpected(std::move(converted.error()));

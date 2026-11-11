@@ -64,7 +64,7 @@ enum class Coercion : uint8_t
 /// One overload of a Substrait function ("add:i64_i64" takes {"i64", "i64"} and returns "i64").
 struct FunctionOverload
 {
-    std::vector<std::string_view> args;
+    std::vector<std::string_view> arg_types;
     std::string_view return_type;
     std::string_view urn; /// Extension that declares this function.
     FunctionOptions options = {};
@@ -76,7 +76,6 @@ struct MappedFunction
     std::string_view substrait_name;
     Coercion coercion = Coercion::None;
     bool variadic = false;
-    bool same_type_args = false;
     bool never_null = false;
     bool negate_result = false; /// For negated ClickHouse functions with no negated Substrait form, as in notLike -> not(like(...)).
     std::vector<FunctionOverload> overloads;
@@ -118,13 +117,6 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
         return entry;
     };
 
-    const auto add_comparison = [&](std::string_view ch_name, std::string_view substrait_name, Coercion coercion) -> MappedFunction &
-    {
-        auto & entry = add_function(ch_name, substrait_name, {}, coercion);
-        entry.same_type_args = true;
-        return entry;
-    };
-
     add_function("plus", "add", sameTypeArithmeticOverloads(), Coercion::ToResultType);
     add_function("minus", "subtract", sameTypeArithmeticOverloads(), Coercion::ToResultType);
     add_function("multiply", "multiply", sameTypeArithmeticOverloads(), Coercion::ToResultType);
@@ -152,14 +144,16 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
     /// abs maps only for floats. ClickHouse types abs(IntN) as UIntN, which doesn't match the same-type Substrait overloads.
     add_function("abs", "abs", {{{"fp32"}, "fp32", arithmetic}, {{"fp64"}, "fp64", arithmetic}});
 
-    add_comparison("equals", "equal", Coercion::ToCommonType);
-    add_comparison("notEquals", "not_equal", Coercion::ToCommonType);
-    add_comparison("less", "lt", Coercion::ToCommonType);
-    add_comparison("greater", "gt", Coercion::ToCommonType);
-    add_comparison("lessOrEquals", "lte", Coercion::ToCommonType);
-    add_comparison("greaterOrEquals", "gte", Coercion::ToCommonType);
-    add_comparison("isNull", "is_null", Coercion::None).never_null = true;
-    add_comparison("isNotNull", "is_not_null", Coercion::None).never_null = true;
+    /// Substrait declares comparisons as `any1, any1`, any type but the same one for both arguments. The coercion makes them the same.
+    const std::vector<FunctionOverload> compare_overload = {{{"any", "any"}, "bool", comparison}};
+    add_function("equals", "equal", compare_overload, Coercion::ToCommonType);
+    add_function("notEquals", "not_equal", compare_overload, Coercion::ToCommonType);
+    add_function("less", "lt", compare_overload, Coercion::ToCommonType);
+    add_function("greater", "gt", compare_overload, Coercion::ToCommonType);
+    add_function("lessOrEquals", "lte", compare_overload, Coercion::ToCommonType);
+    add_function("greaterOrEquals", "gte", compare_overload, Coercion::ToCommonType);
+    add_function("isNull", "is_null", {{{"any"}, "bool", comparison}}).never_null = true;
+    add_function("isNotNull", "is_not_null", {{{"any"}, "bool", comparison}}).never_null = true;
 
     const std::vector<FunctionOverload> boolean_overload = {{{"bool"}, "bool", boolean}};
     add_function("and", "and", boolean_overload, Coercion::None, /*variadic=*/true);
@@ -204,9 +198,9 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
     for (std::string_view trig : {"sin", "cos", "tan"})
         add_function(trig, trig, {{{"fp32"}, "fp32", arithmetic, fpArithOptions()}, {{"fp64"}, "fp64", arithmetic, fpArithOptions()}});
 
-    /// Overload matching reads only args.front(), so a variadic overload declares its one repeated argument type once.
+    /// Overload matching reads only `arg_types.front`, so a variadic overload declares its one repeated argument type once.
     for ([[maybe_unused]] const auto & [ch_name, mapped] : table)
-        chassert(!mapped.variadic || std::ranges::all_of(mapped.overloads, [](const auto & o) { return o.args.size() == 1; }));
+        chassert(!mapped.variadic || std::ranges::all_of(mapped.overloads, [](const auto & o) { return o.arg_types.size() == 1; }));
 
     return table;
 }
@@ -227,33 +221,35 @@ std::optional<Int128> tryGetIntegerField(const Field & field)
     return {};
 }
 
+template <typename To>
+bool fitsExactly(Int128 value)
+{
+    To result;
+    return accurate::convertNumeric<Int128, To>(value, result);
+}
+
 bool integerFits(Int128 value, std::string_view short_name)
 {
-    const auto fits = [&]<typename To>()
-    {
-        To result;
-        return accurate::convertNumeric<Int128, To>(value, result);
-    };
     if (short_name == "i8")
-        return fits.template operator()<Int8>();
+        return fitsExactly<Int8>(value);
     if (short_name == "i16")
-        return fits.template operator()<Int16>();
+        return fitsExactly<Int16>(value);
     if (short_name == "i32")
-        return fits.template operator()<Int32>();
+        return fitsExactly<Int32>(value);
     if (short_name == "i64")
-        return fits.template operator()<Int64>();
+        return fitsExactly<Int64>(value);
     if (short_name == "u!u8")
-        return fits.template operator()<UInt8>();
+        return fitsExactly<UInt8>(value);
     if (short_name == "u!u16")
-        return fits.template operator()<UInt16>();
+        return fitsExactly<UInt16>(value);
     if (short_name == "u!u32")
-        return fits.template operator()<UInt32>();
+        return fitsExactly<UInt32>(value);
     if (short_name == "u!u64")
-        return fits.template operator()<UInt64>();
+        return fitsExactly<UInt64>(value);
     if (short_name == "fp32")
-        return fits.template operator()<Float32>();
+        return fitsExactly<Float32>(value);
     if (short_name == "fp64")
-        return fits.template operator()<Float64>();
+        return fitsExactly<Float64>(value);
     return false;
 }
 
@@ -314,6 +310,25 @@ substrait::Expression makeCast(substrait::Type type, substrait::Expression input
     *cast->mutable_type() = std::move(type);
     *cast->mutable_input() = std::move(input);
     cast->set_failure_behavior(substrait::Expression_Cast_FailureBehavior_FAILURE_BEHAVIOR_THROW_EXCEPTION);
+    return result;
+}
+
+/// A call of the function `signature` from `urn` that returns `output_type`.
+substrait::Expression makeScalarCall(
+    std::string_view urn,
+    std::string_view signature,
+    std::vector<SubstraitExpressionConverter::ConvertedExpression> && arguments,
+    const substrait::Type & output_type,
+    SubstraitPlanExtensions & extensions,
+    const FunctionOptions & options = {})
+{
+    substrait::Expression result;
+    auto * function = result.mutable_scalar_function();
+    function->set_function_reference(extensions.internFunction(urn, signature));
+    for (auto & argument : arguments)
+        *function->add_arguments()->mutable_value() = std::move(argument.expression);
+    addFunctionOptions(options, *function);
+    *function->mutable_output_type() = output_type;
     return result;
 }
 
@@ -379,19 +394,11 @@ std::expected<ConvertedLiteral, String> convertFieldToLiteral(
             break;
         }
         case substrait::Type::kFp32:
-            if (target_short == "fp64")
-            {
-                out = encodeFloatLiteral(field.safeGet<Float64>(), "fp64", nullable);
-                break;
-            }
-            if (target_short != source_short)
-                return unsupported_target();
-            out.literal.set_fp32(static_cast<Float32>(field.safeGet<Float64>()));
-            break;
         case substrait::Type::kFp64:
-            if (target_short != source_short)
+            /// A float keeps its type or widens to fp64.
+            if (target_short != source_short && target_short != "fp64")
                 return unsupported_target();
-            out.literal.set_fp64(field.safeGet<Float64>());
+            out = encodeFloatLiteral(field.safeGet<Float64>(), target_short, nullable);
             break;
         case substrait::Type::kString: {
             if (target_short != source_short)
@@ -668,27 +675,25 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     };
 
     /// Coerce the arguments to one type per the mapping's rule.
-    String to_result_target;
     String coercion_target;
     if (mapping.coercion == Coercion::ToResultType)
     {
         auto target = result_short();
         if (!target)
             return std::unexpected(std::move(target.error()));
-        to_result_target = *target;
+        coercion_target = *target;
 
         /// ClickHouse can type a result narrower than the arguments (`Int64 % UInt8` is Int16), but Substrait arithmetic is same-type.
         /// Raise the target to the widest argument and cast the result down later.
-        if (substraitSignedIntRank(to_result_target) != 0)
+        if (substraitSignedIntRank(coercion_target) != 0)
         {
             for (const auto & arg : args)
             {
                 const auto arg_short = substraitTypeShortName(arg.type, extensions);
-                if (substraitSignedIntRank(arg_short) > substraitSignedIntRank(to_result_target))
-                    to_result_target = arg_short;
+                if (substraitSignedIntRank(arg_short) > substraitSignedIntRank(coercion_target))
+                    coercion_target = arg_short;
             }
         }
-        coercion_target = to_result_target;
     }
     else if (mapping.coercion == Coercion::ToCommonType)
     {
@@ -700,11 +705,10 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
             if (!isConstantNode(*arg.node))
                 non_constant_shorts.push_back(substraitTypeShortName(arg.type, extensions));
 
-        String target_short;
         if (non_constant_shorts.empty())
-            target_short = substraitTypeShortName(args.front().type, extensions);
+            coercion_target = substraitTypeShortName(args.front().type, extensions);
         else if (std::ranges::all_of(non_constant_shorts, [&](const auto & s) { return s == non_constant_shorts.front(); }))
-            target_short = non_constant_shorts.front();
+            coercion_target = non_constant_shorts.front();
         else
         {
             /// TODO: Mixed fp32 and fp64 blocks here, though coerceArgument can widen fp32 to fp64. The picker could say fp64.
@@ -712,12 +716,10 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
             {
                 if (substraitSignedIntRank(s) == 0)
                     return blocked(fmt::format("arguments of {} have incompatible types ({})", name, fmt::join(non_constant_shorts, ", ")));
-                if (target_short.empty() || substraitSignedIntRank(s) > substraitSignedIntRank(target_short))
-                    target_short = s;
+                if (coercion_target.empty() || substraitSignedIntRank(s) > substraitSignedIntRank(coercion_target))
+                    coercion_target = s;
             }
         }
-
-        coercion_target = target_short;
     }
     if (!coercion_target.empty())
         for (auto & arg : args)
@@ -725,43 +727,24 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
                 return std::unexpected(std::move(coerced.error()));
 
     /// Select the overload and compose the function signature.
-    static const FunctionOptions no_options;
-    std::string_view urn;
-    const FunctionOptions * options = &no_options;
-    std::string_view declared_return;
-    String signature;
+    std::vector<String> arg_shorts;
+    for (const auto & arg : args)
+        arg_shorts.push_back(substraitTypeShortName(arg.type, extensions));
 
-    if (mapping.same_type_args)
+    const auto accepts = [](std::string_view declared, std::string_view actual) { return declared == "any" || declared == actual; };
+    const auto matches = [&](const FunctionOverload & candidate)
     {
-        urn = SubstraitExtensionURN::comparison;
-        declared_return = "bool";
-        signature = fmt::format("{}:any", mapping.substrait_name);
-        for (size_t i = 1; i < args.size(); ++i)
-            signature += "_any";
-    }
-    else
-    {
-        std::vector<String> arg_shorts;
-        for (const auto & arg : args)
-            arg_shorts.push_back(substraitTypeShortName(arg.type, extensions));
+        if (mapping.variadic)
+            return std::ranges::all_of(arg_shorts, [&](const auto & s) { return accepts(candidate.arg_types.front(), s); });
+        return std::ranges::equal(candidate.arg_types, arg_shorts, accepts);
+    };
 
-        const auto matches = [&](const FunctionOverload & overload)
-        {
-            if (mapping.variadic)
-                return std::ranges::all_of(arg_shorts, [&](const auto & s) { return s == overload.args.front(); });
-            return std::ranges::equal(arg_shorts, overload.args);
-        };
-
-        const auto overload_it = std::ranges::find_if(mapping.overloads, matches);
-        if (overload_it == mapping.overloads.end())
-            return blocked(fmt::format("function {} has no Substrait overload for ({})", name, fmt::join(arg_shorts, ", ")));
-
-        urn = overload_it->urn;
-        options = &overload_it->options;
-        declared_return = overload_it->return_type;
-
-        signature = fmt::format("{}:{}", mapping.substrait_name, fmt::join(overload_it->args, "_"));
-    }
+    const auto overload_it = std::ranges::find_if(mapping.overloads, matches);
+    if (overload_it == mapping.overloads.end())
+        return blocked(fmt::format("function {} has no Substrait overload for ({})", name, fmt::join(arg_shorts, ", ")));
+    const FunctionOverload & overload = *overload_it;
+    const std::string_view declared_return = overload.return_type;
+    const String signature = fmt::format("{}:{}", mapping.substrait_name, fmt::join(overload.arg_types, "_"));
 
     bool needs_result_cast = false;
     ConvertedExpression out;
@@ -769,7 +752,7 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
 
     /// The known exact mismatches. Substrait declares `boolean` where ClickHouse returns UInt8, with the same values and bytes.
     /// It declares `i64` where ClickHouse returns UInt64 for counts and lengths, too small to overflow `i64`.
-    const DataTypePtr ch_result = removeNullable(removeLowCardinality(node.result_type));
+    const DataTypePtr ch_result = removeLowCardinalityAndNullable(node.result_type);
     if ((declared_return == "bool" && isUInt8(ch_result)) || (declared_return == "i64" && isUInt64(ch_result)))
     {
         const bool any_arg_nullable = std::ranges::any_of(args, [](const auto & a) { return isSubstraitTypeNullable(a.type); });
@@ -783,7 +766,7 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
         out.type = std::move(*ch_result_type);
         if (ch_result_short != declared_return)
         {
-            if (mapping.coercion == Coercion::ToResultType && declared_return == to_result_target)
+            if (mapping.coercion == Coercion::ToResultType && declared_return == coercion_target)
                 needs_result_cast = true;
             else
                 return blocked(
@@ -791,64 +774,38 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
         }
     }
 
-    substrait::Expression function_expression;
-    auto * function = function_expression.mutable_scalar_function();
-    function->set_function_reference(extensions.internFunction(urn, signature));
-    for (auto & arg : args)
-        *function->add_arguments()->mutable_value() = std::move(arg.expression);
-    addFunctionOptions(*options, *function);
-
     if (needs_result_cast)
     {
         /// The computation ran widened. The cast back to the ClickHouse result type.
-        *function->mutable_output_type() = makeSimpleSubstraitType(to_result_target, isSubstraitTypeNullable(out.type));
-        out.expression = makeCast(out.type, std::move(function_expression));
+        const auto widened_type = makeSimpleSubstraitType(coercion_target, isSubstraitTypeNullable(out.type));
+        out.expression = makeCast(
+            out.type, makeScalarCall(overload.urn, signature, std::move(args), widened_type, extensions, overload.options));
     }
     else
-    {
-        *function->mutable_output_type() = out.type;
-        out.expression = std::move(function_expression);
-    }
+        out.expression = makeScalarCall(overload.urn, signature, std::move(args), out.type, extensions, overload.options);
 
-    /// notLike (ClickHouse) → NOT like (Substrait), notEquls (ClickHouse) → NOT equals (Substrait), etc.
+    /// `notLike` becomes `not` over `like`.
     if (mapping.negate_result)
     {
         chassert(out.type.kind_case() == substrait::Type::kBool);
-        substrait::Expression inner = std::move(out.expression);
-        out.expression.Clear();
-        auto * not_function = out.expression.mutable_scalar_function();
-        not_function->set_function_reference(extensions.internFunction(SubstraitExtensionURN::boolean, "not:bool"));
-        *not_function->add_arguments()->mutable_value() = std::move(inner);
-        *not_function->mutable_output_type() = out.type;
+        std::vector<ConvertedExpression> operand(1);
+        operand.front().expression = std::move(out.expression);
+        out.expression = makeScalarCall(SubstraitExtensionURN::boolean, "not:bool", std::move(operand), out.type, extensions);
     }
 
     return out;
 }
 
-SubstraitExpressionConverter::ConvertedExpression
+substrait::Expression
 makeConjunction(std::vector<SubstraitExpressionConverter::ConvertedExpression> conjuncts, SubstraitPlanExtensions & extensions)
 {
     chassert(!conjuncts.empty());
     if (conjuncts.size() == 1)
-        return std::move(conjuncts.front());
+        return std::move(conjuncts.front().expression);
 
-    SubstraitExpressionConverter::ConvertedExpression out;
-    auto * function = out.expression.mutable_scalar_function();
-    function->set_function_reference(extensions.internFunction(SubstraitExtensionURN::boolean, "and:bool"));
-
-    bool any_nullable = false;
-
-    for (auto & conjunct : conjuncts)
-    {
-        chassert(conjunct.type.kind_case() == substrait::Type::kBool);
-        any_nullable |= isSubstraitTypeNullable(conjunct.type);
-        *function->add_arguments()->mutable_value() = std::move(conjunct.expression);
-    }
-
-    out.type.mutable_bool_()->set_nullability(substraitNullabilityOf(any_nullable));
-    *function->mutable_output_type() = out.type;
-
-    return out;
+    const bool any_nullable = std::ranges::any_of(conjuncts, [](const auto & c) { return isSubstraitTypeNullable(c.type); });
+    const auto type = makeSimpleSubstraitType("bool", any_nullable);
+    return makeScalarCall(SubstraitExtensionURN::boolean, "and:bool", std::move(conjuncts), type, extensions);
 }
 
 }

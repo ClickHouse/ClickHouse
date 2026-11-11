@@ -75,7 +75,7 @@ private:
 };
 
 /// Combines converted boolean conditions with `and` into one. A single condition passes through.
-SubstraitExpressionConverter::ConvertedExpression
+substrait::Expression
 makeConjunction(std::vector<SubstraitExpressionConverter::ConvertedExpression> conjuncts, SubstraitPlanExtensions & extensions);
 
 }

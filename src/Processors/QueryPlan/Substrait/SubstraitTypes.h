@@ -23,10 +23,7 @@ substrait::Type substraitUnsignedType(std::string_view name, bool nullable, Subs
 /// Short name of a type produced by convertTypeToSubstrait, for example "i64".
 String substraitTypeShortName(const substrait::Type & type, const SubstraitPlanExtensions & extensions);
 
-/// Only works for simple types (taxonomy of types is explained at the top of matching .cpp).
-void setSubstraitTypeByShortName(substrait::Type & type, std::string_view short_name);
-
-/// A simple type built from its short name.
+/// A simple type built from its short name (taxonomy of types is explained at the top of matching .cpp).
 substrait::Type makeSimpleSubstraitType(std::string_view short_name, bool nullable);
 
 /// Rank of a signed integer short name ("i8" = 1 .. "i64" = 4), else 0.

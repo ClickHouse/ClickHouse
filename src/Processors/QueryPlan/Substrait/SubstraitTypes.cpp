@@ -4,15 +4,12 @@
 
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <fmt/format.h>
 #include <google/protobuf/util/message_differencer.h>
 #include <Common/Exception.h>
@@ -210,23 +207,16 @@ String substraitTypeShortName(const substrait::Type & type, const SubstraitPlanE
     }
 }
 
-void setSubstraitTypeByShortName(substrait::Type & type, std::string_view short_name)
-{
-#define M(KIND, ACCESSOR, SHORT_NAME) \
-    if (short_name == (SHORT_NAME)) \
-    { \
-        type.mutable_##ACCESSOR(); \
-        return; \
-    }
-    FOR_EACH_SUBSTRAIT_SIMPLE_TYPE_KIND(M)
-#undef M
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type short name {} does not name a simple type", short_name);
-}
-
 substrait::Type makeSimpleSubstraitType(std::string_view short_name, bool nullable)
 {
     substrait::Type type;
-    setSubstraitTypeByShortName(type, short_name);
+#define M(KIND, ACCESSOR, SHORT_NAME) \
+    if (short_name == (SHORT_NAME)) \
+        type.mutable_##ACCESSOR();
+    FOR_EACH_SUBSTRAIT_SIMPLE_TYPE_KIND(M)
+#undef M
+    if (type.kind_case() == substrait::Type::KIND_NOT_SET)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Type short name {} does not name a simple type", short_name);
     setSubstraitTypeNullability(type, nullable);
     return type;
 }

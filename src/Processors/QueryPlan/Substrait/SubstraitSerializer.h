@@ -16,10 +16,10 @@ namespace DB
 {
 
 struct QueryPlanOptimizationSettings;
+class ActionsDAG;
 class AggregatingStep;
+class Block;
 class DistinctStep;
-class ExpressionStep;
-class FilterStep;
 class JoinStepLogical;
 class LimitStep;
 class OffsetStep;
@@ -48,9 +48,6 @@ public:
     /// Converts the subtree bottom-up. Returns the root's verdict.
     const Verdict & visit(const QueryPlan::Node & root);
 
-    /// Verdict for a visited node. Throw if unvisited.
-    const Verdict & verdictFor(const QueryPlan::Node & node) const;
-
     /// Nodes that do not convert while every child subtree does, with reasons. Empty when the whole visited subtree is eligible.
     std::vector<std::pair<const QueryPlan::Node *, String>> blockingSteps(const QueryPlan::Node & root) const;
 
@@ -68,8 +65,8 @@ private:
 
     std::expected<NodeState, String> convertStep(const QueryPlan::Node & node, std::vector<NodeState *> children);
     std::expected<NodeState, String> convertReadFromMergeTree(const ReadFromMergeTree & read);
-    std::expected<NodeState, String>
-    convertFilterOrExpression(const FilterStep * filter, const ExpressionStep * expression, NodeState & child);
+    std::expected<NodeState, String> convertFilterOrExpression(
+        const ActionsDAG & dag, const Block & output_header, const std::optional<String> & filter_column_name, NodeState & child);
     std::expected<NodeState, String> convertAggregation(const AggregatingStep & aggregating, NodeState & child);
     std::expected<NodeState, String> convertSorting(const SortingStep & sorting, NodeState & child);
     std::expected<NodeState, String> convertLimit(const LimitStep & limit, NodeState & child);
