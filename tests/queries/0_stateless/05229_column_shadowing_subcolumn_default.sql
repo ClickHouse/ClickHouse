@@ -6,9 +6,9 @@
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_shadow_alter;
-CREATE TABLE t_shadow_alter (a Array(UInt64), t Tuple(x UInt64), j JSON, s Nullable(String), b UInt64, `c.size0` UInt64, `n.x` Array(UInt64))
+CREATE TABLE t_shadow_alter (a Array(UInt64), t Tuple(x UInt64), j JSON, s Nullable(String), `c.size0` UInt64, `n.x` Array(UInt64))
 ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_shadow_alter (a, t, j, s, b, `c.size0`, `n.x`) VALUES ([1, 2], tuple(3), '{"k":4}', 'x', 5, 6, [7]);
+INSERT INTO t_shadow_alter (a, t, j, s, `c.size0`, `n.x`) VALUES ([1, 2], tuple(3), '{"k":4}', 'x', 6, [7]);
 
 SELECT 'ALTER that gives a stored column the name of a subcolumn is refused';
 ALTER TABLE t_shadow_alter ADD COLUMN `a.size0` UInt64 DEFAULT 7; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
@@ -18,17 +18,18 @@ ALTER TABLE t_shadow_alter ADD COLUMN `j.k` UInt64; -- { serverError ALTER_OF_CO
 ALTER TABLE t_shadow_alter ADD COLUMN `j.k.l` UInt64; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE t_shadow_alter ADD COLUMN `s.null` UInt8; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE t_shadow_alter ADD COLUMN `n.x.size0` UInt64; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-ALTER TABLE t_shadow_alter RENAME COLUMN b TO `a.size0`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-ALTER TABLE t_shadow_alter ADD COLUMN `d` UInt64, RENAME COLUMN `d` TO `a.size0`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter ADD COLUMN `a.d` UInt64, RENAME COLUMN `a.d` TO `a.size0`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter ADD COLUMN `a.d` UInt64;
+ALTER TABLE t_shadow_alter RENAME COLUMN `a.d` TO `a.size0`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter DROP COLUMN `a.d`;
 
-SELECT 'an ALIAS column, an unrelated dotted name and an existing column keep working';
+SELECT 'an ALIAS column and an unrelated dotted name keep working';
 ALTER TABLE t_shadow_alter ADD COLUMN `a.size0` UInt64 ALIAS length(a) + 100;
 ALTER TABLE t_shadow_alter ADD COLUMN `a.other` UInt64 DEFAULT 8;
 ALTER TABLE t_shadow_alter ADD COLUMN `n.y` Array(UInt64);
-ALTER TABLE t_shadow_alter ADD COLUMN c Array(UInt64);
 ALTER TABLE t_shadow_alter MODIFY COLUMN `a.size0` UInt64 ALIAS length(a) + 200;
 ALTER TABLE t_shadow_alter MODIFY COLUMN `a.size0` UInt64 DEFAULT 9; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-SELECT `a.size0`, `a.other`, `n.y`, c, `c.size0` FROM t_shadow_alter;
+SELECT `a.size0`, `a.other`, `n.y`, `c.size0` FROM t_shadow_alter;
 
 DROP TABLE t_shadow_alter;
 

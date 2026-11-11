@@ -24,7 +24,8 @@ OPTIMIZE TABLE t_merge_drops_nested_offsets FINAL;
 
 SELECT 'the nested column survives the merge';
 SELECT n.x, n.y FROM t_merge_drops_nested_offsets;
-SELECT length(n.x), length(n.y) FROM t_merge_drops_nested_offsets;
+-- Without the rewrite of `length` into the sizes subcolumn, which here resolves to the column `n.size0`.
+SELECT length(n.x), length(n.y) FROM t_merge_drops_nested_offsets SETTINGS optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_merge_drops_nested_offsets;
 DROP TABLE t_merge_drops_offsets;

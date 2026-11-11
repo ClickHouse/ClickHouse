@@ -1,39 +1,32 @@
-an explicit default in the parts that predate the column
-[0]	7
-[1,2]	7
-[3]	7
-and after a merge stores it
-[0]	7
-[1,2]	7
-[3]	7
-the array is still the array
-4
-the implicit default of the type
-[10,20,30]	0
-a nested column and a column added after it, in wide parts
+ALTER that gives a stored column the name of a subcolumn is refused
+an ALIAS column and an unrelated dotted name keep working
+202	8	[0]	6
+a part that does not hold the column reads its default
 Wide
-1	[1,2]	['a','b']	5
-2	[3]	['c']	5
-3	[4]	['d']	9
-1	2
-2	1
-3	1
-a nested column with its own offsets, in wide parts
-Wide
-1	[1,2]	['a','b']	5
-2	[3]	['c']	5
-3	[4]	['d']	9
-1	2
-2	1
-3	1
-a nested column and a column added after it, in compact parts
+1	[10,20,30]	7	3
+2	[40]	5	1
+1
 Compact
-1	[1,2]	['a','b']	5
-2	[3]	['c']	5
-3	[4]	['d']	9
-1	2
-2	1
-3	1
-a skip index over the subcolumn of that name is not used for the column
-2
-2
+1	[10,20,30]	7	3
+2	[40]	5	1
+1
+the same for a column named like a path of a JSON column, and its subcolumns
+1	(7)	7
+2	(8)	8
+a projection stores the column itself
+1	[1,2,3]	5
+2	[1]	7
+2	7
+2	7
+1	[1,2,3]	5
+2	[1]	7
+2	7
+a nested column and a column added after it
+Wide
+1	[1,2]	['a','b']	[0,0]	5	2
+2	[3]	['c']	[0]	5	1
+3	[4]	['d']	[6]	9	1
+Compact
+1	[1,2]	['a','b']	[0,0]	5	2
+2	[3]	['c']	[0]	5	1
+3	[4]	['d']	[6]	9	1
