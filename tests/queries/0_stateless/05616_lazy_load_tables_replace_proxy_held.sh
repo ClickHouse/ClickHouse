@@ -35,10 +35,11 @@ state() {
 
 echo "cold: $(state)"
 
-# The reader loads the table through the proxy and holds it until it is killed. It reads the table alone
-# in blocks of one row: a join may emit blocks of up to `max_joined_block_size_rows` rows, for which
-# `sleepEachRow` throws `TOO_SLOW`, and the reader would end and release the proxy too early.
-${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_DATABASE}_reader" --max_block_size 1 -q "
+# The reader loads the table through the proxy and holds it until it is killed. Neither `max_block_size` nor
+# a join bounds the size of the blocks reliably, and for a block longer than three rows `sleepEachRow` would
+# throw `TOO_SLOW` and end the reader, releasing the proxy too early. Lift the limit instead: a long sleep
+# still checks every second whether the query has been killed.
+${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_DATABASE}_reader" --function_sleep_max_microseconds_per_block 0 -q "
     SELECT sleepEachRow(1) FROM \`${DB}\`.t FORMAT Null" >/dev/null 2>&1 &
 
 # Wait until the reader has loaded the table, i.e. the engine is known.
