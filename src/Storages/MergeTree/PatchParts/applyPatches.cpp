@@ -103,7 +103,7 @@ static VectorWithMemoryTracking<IColumn::Patch::Source> createPatchSources(const
     return sources;
 }
 
-Block getUpdatedHeader(const PatchesIndices & patches)
+Block getUpdatedHeader(const PatchesIndices & patches, const NameSet * updated_columns)
 {
     Blocks headers;
 
@@ -120,8 +120,9 @@ Block getUpdatedHeader(const PatchesIndices & patches)
 
         for (const auto & column : patch->patch_blocks[0])
         {
-            /// Ignore system columns and columns that have no data.
-            if (isPatchPartSystemColumn(column.name) || !column.column)
+            /// Ignore system columns, columns that have no data and columns not updated by this group of patches.
+            if (isPatchPartSystemColumn(column.name) || !column.column
+                || (updated_columns && !updated_columns->contains(column.name)))
                 header.erase(column.name);
         }
 
