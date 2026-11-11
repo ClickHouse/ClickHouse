@@ -5,6 +5,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -702,6 +703,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         /// tuple `IN` shares this element, and a sibling component would re-enable the lookup.
         if ((function_name == "in" || function_name == "globalIn")
             && setHasEmptyArray(index_type, converted_column, row_size))
+            return false;
+
+        /// `IN` matches `-0.` and `0.` as equal (the set holds only `0.`), but the index stores the hash of
+        /// the original representation, so a granule with only `-0.` would be skipped. Do not use the index then.
+        if (containsFloatingPointZero(*converted_column))
             return false;
 
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
