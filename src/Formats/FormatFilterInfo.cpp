@@ -1,11 +1,11 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <Common/SipHash.h>
 #include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
 
@@ -166,13 +166,14 @@ FormatFilterInfo::FormatFilterInfo(
     , column_mapper(column_mapper_)
 {
     if (filter_actions_dag && context_->getSettingsRef()[Setting::use_query_condition_cache])
-        condition_hash = computeConditionHash(*filter_actions_dag, prewhere_info, context_);
+        condition_hash = computeConditionHash(*filter_actions_dag, prewhere_info, context_, row_level_filter);
 }
 
 std::optional<size_t> FormatFilterInfo::computeConditionHash(
     const ActionsDAG & filter_actions_dag,
     const PrewhereInfoPtr & prewhere_info,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const FilterDAGInfoPtr & row_level_filter)
 {
     /// PREWHERE runs before the row count this hash describes, so a row group PREWHERE empties looks
     /// like one the hashed condition rejected. A PREWHERE collected with the read's filters is inside
@@ -188,9 +189,33 @@ std::optional<size_t> FormatFilterInfo::computeConditionHash(
     if (outputs.size() != 1 || !VirtualColumnUtils::isDeterministic(outputs[0]))
         return {};
 
+    UInt64 dag_hash = filter_actions_dag.getHash();
+    if (row_level_filter)
+    {
+        /// `getMatchedBuckets` treats `rows_pass == 0` as unmatched, and the Parquet reader applies
+        /// `row_level_filter` before that count. A row policy must be part of the key, or a later read
+        /// without that policy reuses row groups the policy alone eliminated.
+        const auto * policy_node = row_level_filter->actions.tryFindInOutputs(row_level_filter->column_name);
+        if (!policy_node || !VirtualColumnUtils::isDeterministic(policy_node))
+            return {};
+
+        SipHash hash;
+        hash.update(dag_hash);
+        hash.update(row_level_filter->actions.getHash());
+        dag_hash = hash.get64();
+
+        /// Format-side key version. Entries written before the row policy was mixed in used the `WHERE`
+        /// hash alone and can hide row groups. `MergeTree` hashes its own key and is unaffected.
+        constexpr UInt64 format_query_condition_cache_key_version = 1;
+        SipHash version_hash;
+        version_hash.update(dag_hash);
+        version_hash.update(format_query_condition_cache_key_version);
+        dag_hash = version_hash.get64();
+    }
+
     const auto & settings = context->getSettingsRef();
     return queryConditionCacheHash(
-        filter_actions_dag.getHash(),
+        dag_hash,
         queryConditionCacheSettingsSalt(settings) ^ fileFormatPruningSettingsSalt(settings));
 }
 
