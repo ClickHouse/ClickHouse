@@ -81,7 +81,21 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 
 تُستخدم الأنماط داخل `{ }` لإنشاء مجموعة من الشظايا أو لتحديد عناوين التبديل الاحتياطي. للاطلاع على أنواع الأنماط المدعومة والأمثلة، راجع وصف الدالة [remote](/ar/reference/functions/table-functions/remote#globs-in-addresses).
 يُستخدم المحرف `|` داخل الأنماط لتحديد عناوين التبديل الاحتياطي. ويجري المرور عليها بالترتيب نفسه الوارد في النمط. ويكون عدد العناوين المُنشأة محدودًا بإعداد [glob&#95;expansion&#95;max&#95;elements](/ar/reference/settings/session-settings/other#glob_expansion_max_elements).
-للاطلاع على بنية glob للمسار ضمن URL (مثل `*` و `{a,b}` و `{N..M}` و `**`)، راجع [أنماط glob في المسار](/ar/reference/functions/table-functions/file#globs-in-path). لاحظ أن `?` يبدأ سلسلة الاستعلام في URL، ولا يمكن استخدامه كحرف بدل في مكوّن المسار.
+للاطلاع على بنية glob للمسار ضمن URL (مثل `*` و `{a,b}` و `{N..M}` و `**`)، راجع [أنماط glob في المسار](/ar/reference/functions/table-functions/file#globs-in-path). لاحظ أن `?` يبدأ الاستعلام في URL، ولا يمكن استخدامه كحرف بدل في مكوّن المسار.
+
+تُنشأ العناوين واحدًا تلو الآخر أثناء قراءة الاستعلام لها، ولذلك فإن `glob_expansion_max_elements` يحدّ من عدد العناوين التي يمكن لاستعلام واحد قراءتها، لا من حجم النمط نفسه. وبالتالي، يمكن للاستعلام الذي يتوقف مبكرًا أن يستخدم نمطًا يصف عناوين تفوق الحد بكثير:
+
+```sql
+-- Reads a single address, even though the pattern describes 100020001 of them.
+SELECT * FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TSV, 'x UInt64') LIMIT 1 SETTINGS max_threads = 1;
+
+-- Reading all of them is still rejected.
+SELECT count() FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TSV, 'x UInt64');
+```
+
+يُقيِّد المثال أعلاه الاستعلام بدفق تنفيذ واحد. أما الاستعلام الذي يقرأ بالتوازي فيُشغِّل عدة مصادر منذ البداية، ويأخذ كلٌّ منها عنوانًا من المولِّد قبل أن يُلغي `LIMIT` القراءة، ولذلك قد تُقرأ عدة عناوين بدلًا من عنوان واحد؛ ويتحدد الحد الأقصى لعددها بعدد التدفقات، لا بحجم النمط.
+
+يُطبَّق مسند `_path` أو `_file` على كل عنوان لحظة توليده، ولذلك فإن العناوين التي يستبعدها تُولَّد هي الأخرى وتُحتسب ضمن الحد؛ وكل ما في الأمر أن قراءتها هي وحدها التي تُتخطّى.
 
 ## أحرف البدل مع صفحات فهرس HTTP {#wildcards-with-http-index-pages}
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Reason: enables a server-wide REGULAR failpoint that affects all threads
 # Regression test for OSIOWaitMicroseconds being polluted with thread-lifetime
 # blkio accumulation when TasksStatsCounters::reset throws.

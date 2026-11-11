@@ -374,7 +374,7 @@ std::optional<BlockIO> tryExecute(const ASTPtr & query_ptr, ContextMutablePtr cu
     bool throw_if_exists = !create_function_query->if_not_exists && !create_function_query->or_replace;
     bool replace_if_exists = create_function_query->or_replace;
 
-    UserDefinedSQLFunctionFactory::instance().registerFunction(current_context, function_name, updated_query_ptr, throw_if_exists, replace_if_exists);
+    UserDefinedSQLFunctionFactory::instance().createFunction(current_context, function_name, updated_query_ptr, throw_if_exists, replace_if_exists);
 
     return BlockIO();
 }

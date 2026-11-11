@@ -1,0 +1,58 @@
+-- JOIN USING
+f_B	f_A	f_Y.A
+UInt16	UInt8	UInt16
+f_B	f_A	f_Y.A
+UInt16	UInt8	UInt16
+-- JOIN ON
+f_a	f_b	f_r.a	f_r.b
+1	2	3	4
+f_a	f_b	f_r.a	f_r.b
+1	2	3	4
+-- tables
+f_b	f_a	f_t2.a
+0	0	0
+0	3	0
+1	1	10
+1	4	10
+2	2	20
+2	5	20
+f_b	f_a	f_t2.a
+0	0	0
+0	3	0
+1	1	10
+1	4	10
+2	2	20
+2	5	20
+-- three joined tables
+f_t1.a	f_t2.a	f_t3.a
+1	2	3
+f_t1.a	f_t2.a	f_t3.a
+1	2	3
+-- the same prefix on two qualified matchers, and join_use_nulls
+f_A	f_B	f_Y.A	f_Y.B
+UInt8	UInt16	UInt16	UInt16
+f_a	f_r.a
+UInt8	Nullable(UInt8)
+-- lambda, chained prefixes, named untuple
+f_a	f_r.a
+1	2
+q_p_a	q_p_r.a
+1	2
+f_a.1	f_a.2	f_r.a.1	f_r.a.2
+1	2	3	4
+f_a.1	f_a.2	f_r.a.1	f_r.a.2
+1	2	3	4
+-- COLUMNS and tuple matchers
+f_a	f_r.a
+1	2
+f_a	f_r.a
+1	2
+f_tup.x	f_tup.y	f_tup2.x	f_tup2.y
+1	2	3	4
+-- a single table keeps the short name, REPLACE keeps the replaced column name
+f_a	f_b
+1	2
+a	a
+11	11
+a.1	a.2	a.1	a.2
+1	2	1	2

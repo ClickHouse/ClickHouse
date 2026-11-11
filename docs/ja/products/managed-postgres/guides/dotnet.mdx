@@ -1,0 +1,291 @@
+---
+slug: /cloud/managed-postgres/guides/dotnet
+sidebarTitle: '.NET (EF Core)'
+title: 'ClickHouse Managed Postgres で .NET と Entity Framework Core を使用する'
+description: 'Entity Framework Core と Npgsql を使用して ASP.NET Core の Minimal API を ClickHouse Managed Postgres に接続し、EF Core の移行を適用したうえで、検証済みの TLS 接続でクエリを実行します'
+keywords: ['managed postgres', '.net', 'dotnet', 'c#', 'asp.net core', 'entity framework core', 'ef core', 'npgsql', 'migrations', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-dotnet-beta" />
+
+[Entity Framework Core](https://learn.microsoft.com/ef/core/) (EF Core) は .NET 向けの ORM で、[Npgsql](https://www.npgsql.org/efcore/) はその PostgreSQL プロバイダーです。このガイドでは、ASP.NET Core の Minimal API を構築し、EF Core の移行でテーブルを作成したうえで、作成・読み取り・更新・削除を行う各エンドポイントを提供します。すべての接続で、証明書を完全に検証する TLS を使用します。
+
+## 前提条件 {#prerequisites}
+
+* [.NET SDK](https://dotnet.microsoft.com/download) 10。本ガイドは .NET SDK 10.0.401、EF Core 10.0.12、`Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3 (Npgsql 10.0.3) で動作確認しています。
+* ClickHouse Cloud アカウント
+* データベース作成用の [`psql`](https://www.postgresql.org/download/)。`CREATE DATABASE` ステートメントは [SQL コンソール](/ja/integrations/connectors/sql-clients/sql-console) で実行することもできます。
+
+## ClickHouse Managed Postgres サービスを作成する {#create-service}
+
+ClickHouse Cloud コンソールで **New service** をクリックし、**Postgres** を選択します。インスタンスは数分で利用可能になります。詳しい手順については、[クイックスタート](/ja/products/managed-postgres/quickstart)を参照してください。
+
+## 接続情報を取得する {#connection-details}
+
+サービスの左サイドバーで **Connect** をクリックします。**Directly** を選択したまま **Use SSL** をオンにし、パスワードとサーバーのホスト名をコピーします。続いて **Download CA certificate** をクリックします。証明書は後から **Settings → CA Certificate** でダウンロードすることもできます。この証明書はインスタンスごとに固有のものなので、Npgsql はこれを使って接続先が正しいサーバーであることを検証できます。
+
+このガイドでは、アプリと EF Core の移行のどちらでも、ポート `5432` で Postgres に**直接**接続します。ASP.NET Core アプリは長時間稼働するプロセスであり、Npgsql がアプリ内ですでに接続をプールしている (デフォルトでは接続文字列ごとに最大 100) ため、別途コネクションプーラーを用意する必要はありません。アプリのインスタンスを多数実行する場合は、[PgBouncer を使用する](#pgbouncer)を参照してください。
+
+Connect モーダルには .NET タブがなく、また Npgsql は **url** タブに表示される `postgresql://` 形式の URL を受け付けません。Npgsql では代わりに `Keyword=Value` 形式の接続文字列を使用します。URL の各値を次のように Npgsql のキーワードに対応付けてください。
+
+| Connect モーダル (**url** タブ)                                  | Npgsql キーワード                             |
+| ---------------------------------------------------------- | ---------------------------------------- |
+| ホスト (例: `your-instance.pg.clickhouse.cloud`)               | `Host=your-instance.pg.clickhouse.cloud` |
+| ポート: `5432` (**Directly**) または `6432` (**via PgBouncer**)  | `Port=5432`                              |
+| パス (例: `/postgres`)                                        | `Database=postgres`                      |
+| ユーザーとパスワード                                                 | `Username=postgres;Password=<PASSWORD>`  |
+| `sslmode=verify-full`                                      | `SSL Mode=VerifyFull`                    |
+| `sslrootcert=<service-name>-ca-certificate.pem`            | `Root Certificate=ca-certificate.pem`    |
+
+## プロジェクトのセットアップ {#project-setup}
+
+ASP.NET Core プロジェクトを作成し、Npgsql EF Core プロバイダーと EF Core のデザイン時パッケージを追加したうえで、`dotnet ef` コマンドラインツールをインストールします：
+
+```bash
+dotnet new web -o TodoApi
+cd TodoApi
+dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL
+dotnet add package Microsoft.EntityFrameworkCore.Design
+dotnet tool install --global dotnet-ef
+```
+
+<Tip>
+  **既存のアプリに追加する場合**
+
+  `dotnet new web` は不要です。アプリで EF Core を SQLite または別のプロバイダーと組み合わせて使用している場合は、次の手順を実行します。
+
+  * `dotnet remove package Microsoft.EntityFrameworkCore.Sqlite` と `dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL` を実行します。`Microsoft.EntityFrameworkCore.Design` と `dotnet-ef` ツールが未導入の場合は、これらもインストールします。
+  * `Program.cs` で `UseSqlite` を `UseNpgsql` に置き換え、`appsettings.json` から SQLite の接続文字列を削除します。
+  * 移行はプロバイダーに依存するため、`Migrations` フォルダーを削除します。新しい初期移行は [スキーマの作成](#migrations) で作成します。
+
+  その後、`TodoDb` の代わりにアプリの接続文字列名を使用して [接続の設定](#configure-connection) に進みます。[モデルの定義](#model) は飛ばしてください。
+</Tip>
+
+<Warning>
+  **macOS では TLS 1.3 を有効にする**
+
+  ClickHouse Managed Postgres は TLS 1.3 のみを受け付けます。macOS 上の .NET はデフォルトでは TLS 1.3 をサポートしていないため、すべての接続が `Exception while performing SSL handshake` というエラー (内部エラーは `bad protocol version`) で失敗します。.NET 10 では、TLS 1.3 をサポートする Apple の Network.framework を代わりに使用できます。`TodoApi.csproj` の `<Project>` 要素に次の内容を追加してください。
+
+  ```xml
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Net.Security.UseNetworkFramework" Value="true" />
+  </ItemGroup>
+  ```
+
+  この設定はアプリと `dotnet ef` の両方に適用されます。Linux や Windows では影響はありません。代わりに環境変数 `DOTNET_SYSTEM_NET_SECURITY_USENETWORKFRAMEWORK=1` を設定する方法もあります。
+</Warning>
+
+## 接続を設定する {#configure-connection}
+
+ダウンロードした CA 証明書をプロジェクトのディレクトリに移動し、`ca-certificate.pem` にリネームします。
+
+アプリ用のデータベースを作成します。`<PASSWORD>` とホストは、**Connect** モーダルに表示される値に置き換えてください。
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_dotnet;"
+```
+
+```text
+CREATE DATABASE
+```
+
+パスワードが `appsettings.json` やソース管理に含まれないよう、接続文字列は [Secret Manager](https://learn.microsoft.com/aspnet/core/security/app-secrets) に保存します。
+
+```bash
+dotnet user-secrets init
+dotnet user-secrets set "ConnectionStrings:TodoDb" "Host=your-instance.pg.clickhouse.cloud;Port=5432;Database=guide_dotnet;Username=postgres;Password=<PASSWORD>;SSL Mode=VerifyFull;Root Certificate=ca-certificate.pem"
+```
+
+ASP.NET Core は `Development` 環境でユーザーシークレットを読み込みます。`dotnet run` と `dotnet ef` はデフォルトでこの環境を使用します。本番環境では、代わりに環境変数 `ConnectionStrings__TodoDb` を設定してください。
+
+`SSL Mode=VerifyFull` を指定すると、Npgsql はサーバー証明書が `Root Certificate` の CA によって署名されていること、および証明書がホスト名と一致することを検証します。`Root Certificate` に相対パスを指定した場合、Npgsql はカレントワーキングディレクトリを基準に解決します。`dotnet run` や `dotnet ef` を使用する場合、これはプロジェクトディレクトリです。別の場所からアプリを起動する場合は、絶対パスを使用してください。
+
+<Note>
+  CA が誤っているか存在しない場合、またはホストが証明書と一致しない場合 (IP アドレスで接続した場合など)、接続は `Exception while performing SSL handshake` で失敗し、内部エラーとして `The remote certificate was rejected by the provided RemoteCertificateValidationCallback` が返されます。`Root Certificate` のファイルが存在しない場合、内部エラーは `Could not find file` になります。また、次の点にも注意してください。
+
+  * Npgsql のデフォルトは `SSL Mode=Prefer` です。また、`SSL Mode=Require` も、`Root Certificate` を設定していても証明書を検証しません。必ず `SSL Mode=VerifyFull` を設定してください。
+  * Npgsql は環境変数 `PGSSLROOTCERT` と `PGPASSWORD` を読み込みますが、`PGHOST` と `PGSSLMODE` は読み込みません。そのため、Connect モーダルの **env** タブに表示される変数だけでは不十分です。
+</Note>
+
+## モデルを定義する {#model}
+
+エンティティクラスを記述した `Todo.cs` を作成します。
+
+```csharp title="Todo.cs"
+public class Todo
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public bool IsDone { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+```
+
+`DbContext` を定義した `TodoDb.cs` を作成します：
+
+```csharp title="TodoDb.cs"
+using Microsoft.EntityFrameworkCore;
+
+public class TodoDb(DbContextOptions<TodoDb> options) : DbContext(options)
+{
+    public DbSet<Todo> Todos => Set<Todo>();
+}
+```
+
+`Program.cs` の内容を置き換えます。このコードでは、`TodoDb` を Npgsql プロバイダーで登録し、操作ごとに 1 つのエンドポイントをマッピングしています。既存のアプリの場合は、`UseNpgsql` を指定した `AddDbContext` の呼び出しを追加するだけで済みます。
+
+```csharp title="Program.cs"
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddDbContext<TodoDb>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("TodoDb")));
+
+var app = builder.Build();
+
+app.MapGet("/todos", async (TodoDb db) =>
+    await db.Todos.OrderBy(t => t.Id).ToListAsync());
+
+app.MapGet("/todos/{id}", async (int id, TodoDb db) =>
+    await db.Todos.FindAsync(id) is Todo todo ? Results.Ok(todo) : Results.NotFound());
+
+app.MapPost("/todos", async (Todo todo, TodoDb db) =>
+{
+    db.Todos.Add(todo);
+    await db.SaveChangesAsync();
+    return Results.Created($"/todos/{todo.Id}", todo);
+});
+
+app.MapPut("/todos/{id}", async (int id, Todo input, TodoDb db) =>
+{
+    var todo = await db.Todos.FindAsync(id);
+    if (todo is null) return Results.NotFound();
+
+    todo.Title = input.Title;
+    todo.IsDone = input.IsDone;
+    await db.SaveChangesAsync();
+    return Results.Ok(todo);
+});
+
+app.MapDelete("/todos/{id}", async (int id, TodoDb db) =>
+    await db.Todos.Where(t => t.Id == id).ExecuteDeleteAsync() == 1
+        ? Results.NoContent()
+        : Results.NotFound());
+
+// Reports the TLS version of the app's own database session
+app.MapGet("/db/tls", async (TodoDb db) =>
+    await db.Database
+        .SqlQuery<string>($"SELECT coalesce(version, 'none') AS \"Value\" FROM pg_stat_ssl WHERE pid = pg_backend_pid()")
+        .SingleAsync());
+
+app.Run();
+```
+
+`/db/tls` エンドポイントはアプリ自身のデータベースsessionの `pg_stat_ssl` を読み取るため、接続が暗号化されているかどうかを確認できます。
+
+## スキーマを作成する {#migrations}
+
+モデルから移行を生成し、適用します：
+
+```bash
+dotnet ef migrations add InitialCreate
+dotnet ef database update
+```
+
+```text
+Build started...
+Build succeeded.
+Done. To undo this action, use 'ef migrations remove'
+Build started...
+Build succeeded.
+Failed executing DbCommand (53ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+Acquiring an exclusive lock for migration application. See https://aka.ms/efcore-docs-migrations-lock for more information if this takes too long.
+Applying migration '20261001144437_InitialCreate'.
+Done.
+```
+
+`dotnet ef migrations add` は移行を `Migrations` フォルダーに書き出し、`dotnet ef database update` はその移行を適用して `__EFMigrationsHistory` テーブルに記録します。初回実行時には、EF Core がテーブルを作成する前に `__EFMigrationsHistory` に対する `SELECT` の失敗をログに出力しますが、無視して問題ありません。
+
+EF Core は移行を適用する前にロックを取得し、2 つのデプロイメントが同じデータベースを同時に移行しないようにします。Npgsql の場合、このロックは session レベルのアドバイザリロックではなく、移行トランザクション内で `__EFMigrationsHistory` に対して実行される `LOCK TABLE` です。そのため、ロックはトランザクションの終了時に解放されます。
+
+## 実行と動作確認 {#verify}
+
+ポート `3115` でアプリを起動します。
+
+```bash
+dotnet run --urls http://localhost:3115
+```
+
+```text
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:3115
+```
+
+別の端末で todo を 2 件作成し、1 件目を完了にしてから 2 件目を削除します。
+
+```bash
+curl -w "\n" -X POST localhost:3115/todos -H "Content-Type: application/json" -d '{"title": "Try EF Core"}'
+curl -w "\n" -X POST localhost:3115/todos -H "Content-Type: application/json" -d '{"title": "Write a migration"}'
+curl -w "\n" -X PUT localhost:3115/todos/1 -H "Content-Type: application/json" -d '{"title": "Try EF Core", "isDone": true}'
+curl -w "\n" -X DELETE localhost:3115/todos/2
+```
+
+```text
+{"id":1,"title":"Try EF Core","isDone":false,"createdAt":"2026-10-01T14:44:52.0478356Z"}
+{"id":2,"title":"Write a migration","isDone":false,"createdAt":"2026-10-01T14:44:52.8462161Z"}
+{"id":1,"title":"Try EF Core","isDone":true,"createdAt":"2026-10-01T14:44:52.047835Z"}
+
+```
+
+`DELETE` リクエストは `204 No Content` を返すため、その行は空になります。
+
+アプリのデータベース session で TLS が使用されていることを確認します。
+
+```bash
+curl localhost:3115/db/tls
+```
+
+```text
+TLSv1.3
+```
+
+ブラウザで [http://localhost:3115/todos](http://localhost:3115/todos) を開き、残っている todo の一覧を表示します。
+
+```json
+[{"id":1,"title":"Try EF Core","isDone":true,"createdAt":"2026-10-01T14:44:52.047835Z"}]
+```
+
+コンソールでデータを確認するには、サービスの左サイドバーで **SQL コンソール** を開き、`guide_dotnet`、続いて `public` を展開して、`Todos` テーブルをクリックします。EF Core はクラス名とプロパティ名を引用符付きの識別子として使用するため、テーブル名は `"Todos"`、カラム名は `"Id"`、`"Title"` などになります。テーブルには、残った 1 行が格納されています。
+
+| Id | Title       | IsDone | CreatedAt                     |
+| -- | ----------- | ------ | ----------------------------- |
+| 1  | Try EF Core | true   | 2026-10-01 14:44:52.047835+00 |
+
+## PgBouncer を使用する {#pgbouncer}
+
+Npgsql は、アプリのインスタンスごとに最大 100 個の接続を開きます (`Maximum Pool Size`)。複数のインスタンスの接続数の合計が Postgres の接続上限に近づく場合は、同梱の [PgBouncer](/ja/products/managed-postgres/connection#pgbouncer) を経由してアプリを接続してください。**Connect** モーダルで **via PgBouncer** を選択し、接続文字列のポートを `6432` に変更します。
+
+```bash
+dotnet user-secrets set "ConnectionStrings:TodoDb" "Host=your-instance.pg.clickhouse.cloud;Port=6432;Database=guide_dotnet;Username=postgres;Password=<PASSWORD>;SSL Mode=VerifyFull;Root Certificate=ca-certificate.pem"
+```
+
+同じ CA 証明書をそのまま使用できます。PgBouncer はトランザクションプーリングモードで動作するため、トランザクションごとに異なる Postgres 接続上で実行される可能性があります。EF Core と Npgsql のデフォルト設定を使用している場合、それ以外の変更は必要ありません。
+
+* **プリペアドステートメント:** EF Core はステートメントを準備せず、Npgsql の自動準備もデフォルトで無効 (`Max Auto Prepare=0`) になっています。そのため、クエリは名前なしステートメントを使用し、PgBouncer 経由でも問題なく動作します。この設定は変更しないでください。PgBouncer 経由では、`Max Auto Prepare` や `NpgsqlCommand.Prepare` によるプリペアドステートメントが `08P01: prepared statement did not exist` で断続的に失敗します (`No Reset On Close=true` を指定すると防げます)。また、移行によってカラムの型が変更されると、その後は新しい接続であっても `cached plan must not change result type` で失敗し続けます。プリペアドステートメントが必要な場合は、直接接続してください。
+* **セッション状態:** `search_path` を含め、`SET` で行った設定はトランザクションをまたいで引き継がれません。代わりに、トランザクション内で `SET LOCAL` を使用してください。PgBouncer は接続文字列のキーワード `Search Path` と `Options` を `unsupported startup parameter` で拒否しますが、`Timezone` と `Application Name` は使用できます。
+* **移行:** 移行のロックはトランザクションの終了とともに解放されるテーブルロックであるため、`dotnet ef database update` も PgBouncer 経由で実行できます。
+* **TLS の確認:** `pg_stat_ssl` が示すのは PgBouncer と Postgres 間の接続であるため、`/db/tls` は `none` を返します。ただし、アプリケーションから PgBouncer への接続は引き続き検証されており、誤った CA 証明書を使用すると同様に失敗します。
+
+## 次のステップ {#next-steps}
+
+* [接続](/ja/products/managed-postgres/connection): 接続文字列、PgBouncer、TLS
+* [設定](/ja/products/managed-postgres/settings): `max_connections` などの Postgres および PgBouncer のパラメータ
+* [読み取りレプリカ](/ja/products/managed-postgres/read-replicas): 読み取り専用クエリをレプリカに送信
+* [セキュリティ](/ja/products/managed-postgres/security): IP Access List とプライベートネットワーク

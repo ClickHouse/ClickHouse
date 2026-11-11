@@ -9,6 +9,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -24,6 +25,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/MultiplexedConnections.h>
@@ -42,6 +44,8 @@
 namespace ProfileEvents
 {
     extern const Event SuspendSendingQueryToShard;
+    extern const Event SelectedRows;
+    extern const Event SelectedBytes;
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
     extern const Event ParallelReplicasAvailableCount;
@@ -78,6 +82,7 @@ namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
     extern const char remote_query_executor_cancel_and_drain_in_receive_window[];
+    extern const char remote_query_executor_cancel_in_finish_drain[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -414,6 +419,9 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     Block res;
     res.info = block.info;
 
+    /// `ColumnBLOB::addCast` modifies the column in place, and header entries with the same name share a column of `block`.
+    UnorderedSetWithMemoryTracking<const IColumn *> blobs_with_cast;
+
     for (const auto & elem : header)
     {
         ColumnPtr column;
@@ -450,7 +458,8 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
             const auto & col = block.getByName(elem.name);
             if (auto * blob = typeid_cast<ColumnBLOB *>(col.column->assumeMutable().get()))
             {
-                blob->addCast(col.type, elem.type);
+                if (blobs_with_cast.insert(blob).second)
+                    blob->addCast(col.type, elem.type);
                 column = col.column;
             }
             else
@@ -599,7 +608,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     const auto & settings = context->getSettingsRef();
     const bool replica_unavailable = isReplicaUnavailable();
-    if (replica_unavailable || needToSkipUnavailableShard())
+    if (replica_unavailable || shouldSkipUnavailableShard())
     {
         /// To avoid sending the query again in the read(), we need to update the following flags:
         was_cancelled = true;
@@ -618,7 +627,10 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         if (replica_unavailable)
             finishFragmentSpanForUnavailableReplica();
         else
+        {
             finishFragmentSpanForSkippedShard("Shard is unavailable: no replicas to connect to (skipped because of `skip_unavailable_shards`)");
+            reportShardSkipped();
+        }
         return;
     }
 
@@ -633,11 +645,13 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     modified_client_info.query_kind = query_kind;
 
     /// A distributed query must carry a known initiator version: the receiving server uses it for
-    /// version-gated compatibility decisions (e.g. whether to enable the analyzer, see `TCPHandler`).
+    /// version-gated compatibility decisions.
     /// A zero version means the initiating query context was not populated as an initial query
     /// (a real client always reports its version, and a server that (re-)initiates a query fills it
     /// with its own version). Sending zero silently triggers wrong compatibility downgrades on the
     /// remote, so fail loudly instead.
+    /// A context that this server builds for its own query fills it with `Context::setInitiatorVersionIfUnset`.
+    /// Do not fill it here instead: this check exists to catch a context that lost it.
     if (modified_client_info.client_version_major == 0
         && modified_client_info.client_version_minor == 0
         && modified_client_info.client_version_patch == 0)
@@ -840,7 +854,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         read_context->resume();
 
         const bool replica_unavailable = isReplicaUnavailable();
-        if (replica_unavailable || needToSkipUnavailableShard())
+        if (replica_unavailable || shouldSkipUnavailableShard())
         {
             /// We need to tell the coordinator not to wait for this replica.
             /// But at this point it may lead to an incomplete result set, because
@@ -856,7 +870,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             if (replica_unavailable)
                 finishFragmentSpanForUnavailableReplica();
             else
+            {
                 finishFragmentSpanForSkippedShard("Shard is unavailable: lost all replica connections (skipped because of `skip_unavailable_shards`)");
+                reportShardSkipped();
+            }
             return ReadResult(Block());
         }
 
@@ -923,12 +940,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                         connections->dumpAddresses(),
                         packet.exception->displayText());
 
-                reportShardSkipped();
-
                 /// The server terminated the query with this exception and will not send `EndOfStream`,
                 /// so mark the executor finished to signal end of data.
                 finished = true;
                 finishFragmentSpanForSkippedShard(packet.exception->message());
+                reportShardSkipped();
                 return ReadResult(Block{});
             }
 
@@ -982,10 +998,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::ProfileEvents:
-            /// Pass profile events from remote server to client
-            if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                if (!profile_queue->emplace(std::move(packet.block)))
-                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            processProfileEventsPacket(std::move(packet.block));
             break;
 
         case Protocol::Server::TimezoneUpdate:
@@ -1001,6 +1014,39 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     }
 
     return ReadResult(ReadResult::Type::Nothing);
+}
+
+void RemoteQueryExecutor::processProfileEventsPacket(Block block)
+{
+    /// The local counters of the query do not include what the remote servers do for it, so their
+    /// reports are collected for the quotas over profile events, which are charged at the end of the
+    /// query with both. They are collected regardless of whether such limits govern the query now:
+    /// a limit installed by `ALTER QUOTA` while the query runs applies to the whole query at its end,
+    /// and the reports received before that could not be reconstructed.
+    if (auto process_list_elem = context->getProcessListElementSafe())
+        process_list_elem->addRemoteProfileEvents(block);
+
+    /// When this server executes a part of a query for another server, the read progress of the remote
+    /// server is already in the local `SelectedRows` / `SelectedBytes` (see `ReadProgressCallback`), which
+    /// are reported to the initiator together with the forwarded packet. The initiator of a distributed
+    /// `SELECT` skips these two in the reports anyway, but the initiator of a distributed `INSERT` takes
+    /// them from the reports (e.g. for a materialized view reading from `remote`), so it would count them
+    /// twice if they were forwarded.
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        UInt64 selected_rows = std::numeric_limits<UInt64>::max();
+        UInt64 selected_bytes = std::numeric_limits<UInt64>::max();
+        ProfileEvents::subtractIncrements(block, ProfileEvents::SelectedRows, selected_rows);
+        ProfileEvents::subtractIncrements(block, ProfileEvents::SelectedBytes, selected_bytes);
+    }
+
+    if (profile_events_callback)
+        profile_events_callback(block);
+
+    /// Pass profile events from remote server to client
+    if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
+        if (!profile_queue->emplace(std::move(block)))
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
 }
 
 void RemoteQueryExecutor::processReadTaskRequest()
@@ -1053,9 +1099,9 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
     /// Followers only block on the response when they actually need it (in-order modes pin
-    /// per-split parts via the response). In `Default` mode the caller discards the response,
-    /// so the round-trip would be pure overhead — skip it on both sides.
-    const bool send_response = announcement.mode != CoordinationMode::Default;
+    /// per-split parts via the response). In `Default` mode the caller needs it only when it asks
+    /// for the analyzed ranges, otherwise the round-trip would be pure overhead — skip it on both sides.
+    const bool send_response = announcement.mode != CoordinationMode::Default || announcement.wants_analyzed_ranges;
 
     announcement_received = true;
 
@@ -1066,6 +1112,14 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
+    {
+        std::lock_guard gate(finish_gate_mutex);
+        ++finish_in_progress;
+    }
+    /// Declared before `guard` so the decrement runs after `was_cancelled_mutex` is released: the gate
+    /// must never be taken while that mutex is held.
+    SCOPE_EXIT({ std::lock_guard gate(finish_gate_mutex); --finish_in_progress; });
+
     /// An exception thrown while cancelling or draining the connections is this fragment's failure.
     SCOPE_FAIL({ failFragmentSpan(); });
     LockAndBlocker guard(was_cancelled_mutex);
@@ -1154,6 +1208,11 @@ void RemoteQueryExecutor::finishUnlocked()
         return;
     }
 
+    /// This thread holds `was_cancelled_mutex` across the blocking drain below, which is the state in
+    /// which `cancel` must return instead of waiting for that mutex. Injected on this thread rather
+    /// than parking it for an outside cancel: `finish` runs from `RemoteSource::work`.
+    fiu_do_on(FailPoints::remote_query_executor_cancel_in_finish_drain, { cancel(); });
+
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
     /// packets that had been sent before the connection is fully finished in order to have final statistics of what
@@ -1179,12 +1238,11 @@ void RemoteQueryExecutor::finishUnlocked()
                             connections->dumpAddresses(),
                             packet.exception->displayText());
 
-                    reportShardSkipped();
-
                     /// The server terminated the query with this exception.
                     /// Record it before `finish` closes the span as cancelled: the first outcome wins.
                     finished = true;
                     finishFragmentSpanForSkippedShard(packet.exception->message());
+                    reportShardSkipped();
                     break;
                 }
 
@@ -1198,10 +1256,7 @@ void RemoteQueryExecutor::finishUnlocked()
                 break;
 
             case Protocol::Server::ProfileEvents:
-                /// Pass profile events from remote server to client
-                if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                    if (!profile_queue->emplace(std::move(packet.block)))
-                        throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+                processProfileEventsPacket(std::move(packet.block));
                 break;
 
             case Protocol::Server::ProfileInfo:
@@ -1223,10 +1278,20 @@ void RemoteQueryExecutor::finishUnlocked()
 
 void RemoteQueryExecutor::cancel()
 {
+    /// `finish` can hold `was_cancelled_mutex` across an unbounded blocking read, and this runs from a
+    /// sweep that must not stall, so it must not wait for that mutex. Taking it while still holding the
+    /// gate is what makes the check meaningful: a `finish` that owns it already incremented the counter.
+    UniqueLock gate(finish_gate_mutex);
+    if (finish_in_progress)
+        return;
+
     /// Failing to deliver the cancel (e.g. over a broken connection) ends the fragment
     /// abnormally: record it as ERROR instead of leaving it as a benign cancel.
     SCOPE_FAIL({ failFragmentSpan(); });
     LockAndBlocker guard(was_cancelled_mutex);
+    /// Released before `cancelUnlocked`, whose `tryCancel` does socket writes: holding the gate across
+    /// them would make every concurrent `finish` wait for that I/O here instead.
+    gate.unlock();
     cancelUnlocked();
 }
 
@@ -1419,14 +1484,24 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     profile_info_callback = std::move(callback);
 }
 
+void RemoteQueryExecutor::setProfileEventsCallback(ProfileEventsCallback callback)
+{
+    LockAndBlocker guard(was_cancelled_mutex);
+    profile_events_callback = std::move(callback);
+}
+
+bool RemoteQueryExecutor::shouldSkipUnavailableShard() const
+{
+    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
+}
+
 bool RemoteQueryExecutor::needToSkipUnavailableShard()
 {
-    if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
-    {
-        reportShardSkipped();
-        return true;
-    }
-    return false;
+    if (!shouldSkipUnavailableShard())
+        return false;
+
+    reportShardSkipped();
+    return true;
 }
 
 void RemoteQueryExecutor::reportShardSkipped()
@@ -1441,7 +1516,7 @@ void RemoteQueryExecutor::reportShardSkipped()
     /// `max_skip_unavailable_shards_ratio` limits are exceeded, so the safety bounds apply to every
     /// silently skipped shard regardless of why it was skipped (no connections or an ignored exception).
     if (unavailable_shard_tracker)
-        unavailable_shard_tracker->onShardSkipped();
+        unavailable_shard_tracker->onShardSkipped(got_data_from_replica);
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()

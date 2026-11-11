@@ -303,7 +303,7 @@ export const IntegrationGrid = () => {
           }, 8000)
 
           const response = await fetch(
-            "https://staging-cms.clickhouse.com/api/integrations?fields[0]=name&fields[1]=slug&fields[2]=category&fields[3]=supportLevel&fields[4]=docsLink&populate[logo][fields][0]=url&populate[logo_dark][fields][0]=url&pagination[pageSize]=500",
+            "https://cms-new.clickhouse.com/api/integrations?fields[0]=name&fields[1]=slug&fields[2]=category&fields[3]=supportLevel&fields[4]=docsLink&populate[logo][fields][0]=url&populate[logo_dark][fields][0]=url&pagination[pageSize]=500",
             {
               signal: controller.signal,
               headers: {

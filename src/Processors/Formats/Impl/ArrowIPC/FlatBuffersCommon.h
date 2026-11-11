@@ -21,6 +21,8 @@
 /// reference it as `::flatbuffers` regardless.
 #include <flatbuffers/flatbuffers.h>
 
+#include <cstdint>
+
 /// Apache Arrow's generated metadata headers declare everything in `org::apache::arrow::flatbuf` and
 /// define inline accessor/verifier functions as weak symbols. The Apache Arrow C++ library (linked
 /// into the same binary for the library-based formats and Arrow Flight) defines the exact same
@@ -41,6 +43,19 @@ namespace DB::ArrowIPC
 
 /// Short alias for the generated FlatBuffers namespace used throughout the native implementation.
 namespace flatbuf = arrow_fb::org::apache::arrow::flatbuf;
+
+/// `flatbuffers::Verifier` checks that the length prefix of a vector is 4-byte aligned, but not that its
+/// elements are aligned to their own size. A corrupted buffer can place a vector of 8-byte scalars or structs
+/// (`RecordBatch.nodes`, `RecordBatch.buffers`, `RecordBatch.variadicBufferCounts`, `Footer.recordBatches`)
+/// at an address that is 4 mod 8, and reading its elements would be a misaligned load. Check such vectors
+/// after verification. The storage the buffer is read into is aligned by the allocator, so a vector of a
+/// well-formed buffer passes. An empty vector has no elements to read, and writers do not align it (e.g. an
+/// empty `Footer.dictionaries` written by Apache Arrow C++ 21.0.0), so it is accepted.
+template <typename Vector>
+bool isFlatBuffersVectorAligned8(const Vector * vector)
+{
+    return vector == nullptr || vector->size() == 0 || reinterpret_cast<uintptr_t>(vector->Data()) % 8 == 0;
+}
 
 }
 

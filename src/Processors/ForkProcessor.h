@@ -26,6 +26,8 @@ public:
 
     Status prepare() override;
 
+    bool requiresAllOutputsPushable() const override { return true; }
+
     InputPort & getInputPort() { return inputs.front(); }
 };
 

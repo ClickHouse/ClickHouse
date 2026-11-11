@@ -9,7 +9,6 @@
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS quantize_shadow;
 -- The physical `vec.quantized` is a FixedString(12) - the same width as the `int8` code for 8 dims (8 + 4-byte norm),

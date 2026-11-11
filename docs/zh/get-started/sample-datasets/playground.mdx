@@ -12,9 +12,7 @@ Playground 中提供了多个示例数据集。
 
 你可以使用任何 HTTP 客户端向 Playground 发起查询，例如 [curl](https://curl.haxx.se) 或 [wget](https://www.gnu.org/software/wget/)，也可以使用 [JDBC](/zh/integrations/language-clients/java/jdbc) 或 [ODBC](/zh/concepts/features/interfaces/odbc) 驱动程序建立连接。有关支持 ClickHouse 的软件产品的更多信息，请参见[这里](/zh/integrations/home)。
 
-<div id="credentials">
-  ## 凭据
-</div>
+## 凭据 {#credentials}
 
 | 参数        | 值                                  |
 | :-------- | :--------------------------------- |
@@ -23,20 +21,18 @@ Playground 中提供了多个示例数据集。
 | 用户        | `explorer` 或 `play`                |
 | 密码        |  (空)                               |
 
-<div id="limitations">
-  ## 限制
-</div>
+## 限制 {#limitations}
 
-这些 queries 以只读用户身份执行，因此会有一些限制：
+查询以只读用户身份执行，因此存在以下限制：
 
-* 不允许执行 DDL queries
-* 不允许执行 INSERT queries
+* 不允许执行 DDL 查询
+* 不允许执行 INSERT 查询
 
-该 service 的使用也受到 quotas 限制。
+此外，该服务还设有用量配额。
 
-<div id="examples">
-  ## 示例
-</div>
+如需突破只读限制并尝试加载自己的数据，可以注册免费的 [ClickHouse Cloud 试用](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-playground)，或在本地[安装 ClickHouse](/zh/get-started/setup/install)。
+
+## 示例 {#examples}
 
 通过 `curl` 访问 HTTPS 端点的示例：
 
@@ -50,9 +46,7 @@ curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play Cl
 clickhouse client --secure --host play.clickhouse.com --user explorer
 ```
 
-<div id="specifications">
-  ## Playground 规格
-</div>
+## Playground 规格 {#specifications}
 
 我们的 ClickHouse Playground 采用以下配置运行：
 
