@@ -23,5 +23,11 @@
             <endpoint>http://localhost:11111/test/04093_s3_settings_query_override</endpoint>
             <max_single_part_upload_size>104857600</max_single_part_upload_size>
         </test_04093>
+
+        <!-- Endpoint for test 05546_s3_request_settings_validated_after_endpoint_override. -->
+        <test_05546>
+            <endpoint>http://localhost:11111/test/05546_s3_request_settings_validated_after_endpoint_override</endpoint>
+            <min_upload_part_size>5242880</min_upload_part_size>
+        </test_05546>
     </s3>
 </clickhouse>

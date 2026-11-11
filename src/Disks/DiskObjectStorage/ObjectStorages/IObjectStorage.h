@@ -418,6 +418,9 @@ public:
         /// server-internal table whose client was built restricted at metadata load) without detaching the table,
         /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
+
+        /// Validate the merged request settings, keep the current ones if they are invalid (disks: no query settings are applied on top).
+        bool validate_merged_settings = false;
     };
     virtual void applyNewSettings(
         const Poco::Util::AbstractConfiguration & /* config */,
