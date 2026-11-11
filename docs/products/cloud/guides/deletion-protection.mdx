@@ -7,7 +7,11 @@ keywords: ['deletion protection', 'delete service', 'ClickHouse Cloud', 'service
 doc_type: 'guide'
 ---
 
-Service deletion protection is a per-service setting that blocks deletion until you turn it off. Use it for services you want to keep from being removed by mistake in the Cloud console, through the [ClickHouse Cloud API](/cloud/manage/api/api-overview), or with Terraform.
+Service deletion protection is a per-service setting that blocks deletion until you turn it off. Use it for ClickHouse Cloud services you want to keep from being removed by mistake in the Cloud console, through the [ClickHouse Cloud API](/cloud/manage/api/api-overview), or with Terraform.
+
+<Note>
+This applies to ClickHouse Cloud services. It does not apply to [ClickHouse Managed Postgres](/cloud/managed-postgres) services.
+</Note>
 
 Protection is off by default. Turning it off does not delete the service. A protected service keeps running, and queries, scaling, and other settings are unchanged.
 
