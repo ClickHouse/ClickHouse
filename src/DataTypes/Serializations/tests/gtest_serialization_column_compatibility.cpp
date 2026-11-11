@@ -35,9 +35,7 @@ TEST(SerializationIsColumnCompatible, PlainSerializationAcceptsAnyColumn)
     const auto serialization = SerializationString::create();
 
     EXPECT_TRUE(serialization->isColumnCompatible(*ColumnString::create()));
-    /// Even for the columns it would not read into itself (its bulk paths cast to
-    /// `ColumnString`): the default declares no class requirement - a column of the wrong
-    /// type is a type-contract error, not the layout mismatch this check guards against.
+    /// The default declares no class requirement; a wrong column type is a different contract.
     EXPECT_TRUE(serialization->isColumnCompatible(*ColumnUInt8::create()));
     EXPECT_TRUE(serialization->isColumnCompatible(*nullableString()));
     EXPECT_TRUE(serialization->isColumnCompatible(*ColumnSparse::create(ColumnString::create())));

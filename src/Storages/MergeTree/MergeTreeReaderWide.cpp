@@ -230,10 +230,8 @@ size_t MergeTreeReaderWide::readRows(
         if (shared_columns.size() != num_columns)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} shared columns, got {}", num_columns, shared_columns.size());
 
-        /// The caller may create the result columns by the data type alone (e.g.
-        /// `Block::cloneEmptyColumns()`), while the part's serialization may deserialize into
-        /// another column class (Sparse - `ColumnSparse`) and append to it via `assert_cast`:
-        /// reading into a mismatched column is undefined behaviour, not an error.
+        /// Result columns created by the data type alone may not match the part's serializations
+        /// (see ISerialization::isColumnCompatible): reading into them would be UB.
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
             if (res_columns[pos] && !serializations[pos]->isColumnCompatible(*res_columns[pos]))
