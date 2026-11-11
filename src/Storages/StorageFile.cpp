@@ -3157,12 +3157,14 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
 
     /// A file that has disappeared is handled by the source, according to `engine_file_empty_if_not_exists`.
     struct stat file_stat{};
-    if (0 != stat(path.c_str(), &file_stat) || !S_ISREG(file_stat.st_mode) || file_stat.st_size == 0)
+    PlatformFileVersion file_version;
+    if (0 != platformStat(path, file_stat) || !S_ISREG(file_stat.st_mode) || file_stat.st_size == 0
+        || 0 != platformFileVersion(path, file_version))
         return nullptr;
 
     auto split_file = std::make_shared<StorageFileSource::SplitFile>();
     split_file->path = path;
-    split_file->file_cache_version = computeFileCacheVersionToken(file_stat);
+    split_file->file_cache_version = computeFileCacheVersionToken(file_version);
 
     auto read_buf = createReadBuffer(path, file_stat, /*use_table_fd=*/ false, /*table_fd=*/ -1, storage->compression_method, context);
     /// The file may have been rewritten between `stat` and opening it, then the version token does not
@@ -3188,7 +3190,7 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
 
     /// Consult the query condition cache once for the whole file, rather than in every source, and drop
     /// the row groups it knows to have no matching rows. See the comments in `StorageFileSource::generate`.
-    if (format_filter_info->condition_hash && isFileCacheVersionTokenSettled(file_stat) && query_condition_cache_table_id != UUIDHelpers::Nil)
+    if (format_filter_info->condition_hash && isFileCacheVersionTokenSettled(file_version.mtime_sec) && query_condition_cache_table_id != UUIDHelpers::Nil)
     {
         if (auto query_condition_cache = context->getQueryConditionCache())
         {
