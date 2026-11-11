@@ -839,11 +839,11 @@ static void splitAndModifyMutationCommands(
         return std::nullopt;
     };
 
+    NameSet mutated_columns;
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isPerFilePartStorage(part->getDataPartStorage())
         || part->getDataPartStorage().getType() != future_storage_type)
     {
-        NameSet mutated_columns;
         NameSet dropped_columns;
         NameSet extra_columns_for_indices_and_projections;
 
@@ -1021,6 +1021,7 @@ static void splitAndModifyMutationCommands(
                         .type = MutationCommand::Type::READ_COLUMN,
                         .column_name = rename_to,
                     });
+                    mutated_columns.emplace(rename_to);
                 }
 
                 /// Not needed for compact parts (not executed), added here only to produce correct
@@ -1147,6 +1148,7 @@ static void splitAndModifyMutationCommands(
 
                 for_interpreter.emplace_back(
                     MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+                mutated_columns.emplace(column.name);
             }
             else if (dropped_columns.contains(column.name))
             {
@@ -1180,11 +1182,11 @@ static void splitAndModifyMutationCommands(
                     .data_type = std::move(data_type),
                 }
             );
+            mutated_columns.emplace(column_name);
         }
     }
     else
     {
-        NameSet mutated_columns;
         NameSet extra_columns_for_indices;
 
 
@@ -1199,6 +1201,7 @@ static void splitAndModifyMutationCommands(
                     materialize_frozen.type = MutationCommand::Type::READ_COLUMN;
                     materialize_frozen.data_type = table_columns.getPhysical(command.column_name).type;
                     for_interpreter.push_back(std::move(materialize_frozen));
+                    mutated_columns.emplace(command.column_name);
                 }
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
                 /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
@@ -1279,6 +1282,7 @@ static void splitAndModifyMutationCommands(
                 {
                     for_interpreter.push_back(command);
                     for_file_renames.push_back(command);
+                    mutated_columns.emplace(command.column_name);
                 }
             }
             /// If we don't have this column in source part, we don't need to materialize it.
@@ -1357,6 +1361,7 @@ static void splitAndModifyMutationCommands(
                     .column_name = column_name,
                     .data_type = std::move(data_type),
                 });
+            mutated_columns.emplace(column_name);
         }
 
         num_for_file_renames_from_commands = for_file_renames.size();
@@ -1369,6 +1374,25 @@ static void splitAndModifyMutationCommands(
         for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
+        }
+    }
+
+    /// If no stored column remains physical in the table, materialize current physical columns
+    /// to preserve the rows. This applies to both full rewrites and mutations of wide parts.
+    const auto physical_columns = table_columns.getAllPhysical();
+    if (std::ranges::none_of(physical_columns, [&](const auto & column) { return part_columns.has(column.name); }))
+    {
+        for (const auto & column : physical_columns)
+        {
+            if (mutated_columns.contains(column.name))
+                continue;
+
+            for_interpreter.push_back(
+            {
+                .type = MutationCommand::Type::READ_COLUMN,
+                .column_name = column.name,
+                .data_type = column.type,
+            });
         }
     }
 

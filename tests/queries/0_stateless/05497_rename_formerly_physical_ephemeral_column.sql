@@ -26,3 +26,42 @@ INSERT INTO t_rename_formerly_physical_ephemeral (id, a_old, b_renamed) VALUES (
 SELECT id, b_renamed FROM t_rename_formerly_physical_ephemeral ORDER BY id;
 
 DROP TABLE t_rename_formerly_physical_ephemeral;
+
+-- No stored columns remain physical in the compact part.
+
+CREATE TABLE t_rename_formerly_physical_ephemeral (a UInt64)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000,
+    enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_rename_formerly_physical_ephemeral VALUES (7), (9);
+ALTER TABLE t_rename_formerly_physical_ephemeral ADD COLUMN b UInt64 DEFAULT 42;
+ALTER TABLE t_rename_formerly_physical_ephemeral MODIFY COLUMN a UInt64 EPHEMERAL;
+ALTER TABLE t_rename_formerly_physical_ephemeral RENAME COLUMN a TO a_old;
+
+SELECT count(), sum(b) FROM t_rename_formerly_physical_ephemeral;
+SELECT arraySort(groupUniqArray(column))
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_rename_formerly_physical_ephemeral' AND active;
+
+DROP TABLE t_rename_formerly_physical_ephemeral;
+
+-- No stored columns remain physical in the wide part.
+
+CREATE TABLE t_rename_formerly_physical_ephemeral (a UInt64)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_rename_formerly_physical_ephemeral VALUES (7), (9);
+SELECT part_type FROM system.parts
+WHERE database = currentDatabase() AND table = 't_rename_formerly_physical_ephemeral' AND active;
+
+-- The wide part has no stored columns that remain physical in the table.
+ALTER TABLE t_rename_formerly_physical_ephemeral ADD COLUMN b UInt64 DEFAULT 42;
+ALTER TABLE t_rename_formerly_physical_ephemeral MODIFY COLUMN a UInt64 EPHEMERAL;
+ALTER TABLE t_rename_formerly_physical_ephemeral RENAME COLUMN a TO a_old;
+
+SELECT count(), sum(b) FROM t_rename_formerly_physical_ephemeral;
+
+DROP TABLE t_rename_formerly_physical_ephemeral;
