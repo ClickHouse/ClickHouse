@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Tests input_format_parquet_footer_read_size: when the setting is 0 (default) the v3 reader reads
 -- a 64 KiB footer tail of a local file (and sizes it adaptively for other sources), and uses the
 -- explicit value otherwise. Every value - the default, a huge fixed read that covers the whole

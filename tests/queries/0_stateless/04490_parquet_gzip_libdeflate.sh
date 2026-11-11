@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 # Roundtrip varied data through Parquet with the gzip codec (compressed and decompressed by
 # libdeflate when available) and verify the data is byte-for-byte identical across levels.
 
