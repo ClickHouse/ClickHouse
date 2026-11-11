@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/Serializations/SerializationSparse.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
@@ -94,11 +95,15 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 
     try
     {
+        only_defaults_next_row.assign(columns_to_read.size(), std::nullopt);
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
             /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
             if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
-                addStreams(columns_to_read[i], serializations[i]);
+            {
+                if (addStreams(columns_to_read[i], serializations[i]))
+                    only_defaults_next_row[i] = 0;
+            }
         }
     }
     catch (...)
@@ -190,7 +195,7 @@ void MergeTreeReaderWide::prefetchForColumns(
     /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
-        if (isColumnSkipped(pos))
+        if (isColumnSkipped(pos) || only_defaults_next_row[pos])
             continue;
 
         const auto continue_reading = selector(pos);
@@ -335,18 +340,32 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
 
         try
         {
-            auto & cache = caches[column_to_read.getNameInStorage()];
-            auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
+            if (auto & next_row = only_defaults_next_row[pos])
+            {
+                /// As many rows as reading its sparse offsets would give: at most up to the end of the part.
+                const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+                if (!*continue_reading)
+                    *next_row = index_granularity.getMarkStartingRow(from_mark);
+                const size_t total_rows = index_granularity.getTotalRows();
+                const size_t num_rows = std::min(max_rows_to_read, total_rows - std::min(total_rows, *next_row));
+                column->insertManyDefaults(num_rows);
+                *next_row += num_rows;
+            }
+            else
+            {
+                auto & cache = caches[column_to_read.getNameInStorage()];
+                auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
 
-            readData(
-                column_to_read,
-                serializations[pos],
-                *column,
-                from_mark,
-                *continue_reading,
-                max_rows_to_read,
-                cache,
-                deserialize_states_cache);
+                readData(
+                    column_to_read,
+                    serializations[pos],
+                    *column,
+                    from_mark,
+                    *continue_reading,
+                    max_rows_to_read,
+                    cache,
+                    deserialize_states_cache);
+            }
 
             /// For elements of Nested, column_size_before_reading may be greater than column size
             ///  if offsets are not empty and were already read, but elements are empty.
@@ -939,13 +958,19 @@ void MergeTreeReaderWide::finishAccumulatedGranules()
     resetAccumulation();
 }
 
-void MergeTreeReaderWide::addStreams(
+bool MergeTreeReaderWide::addStreams(
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization)
 {
     bool has_any_stream = false;
     bool has_all_streams = true;
     bool has_derived_stream = false;
+
+    /// A sparse column has only default values in the part if all files of its values are empty:
+    /// every value that is not the default writes at least one byte to them.
+    const bool is_sparse = !name_and_type.isSubcolumn() && typeid_cast<const SerializationSparse *>(serialization.get());
+    bool has_values = false;
+    std::vector<std::pair<ISerialization::SubstreamPath, String>> sparse_streams;
 
     if (isColumnNotCacheable(name_and_type))
         columns_not_cacheable.insert(name_and_type.name);
@@ -973,7 +998,17 @@ void MergeTreeReaderWide::addStreams(
             return;
         }
 
-        getOrAddStream(substream_path, *stream_name);
+        if (is_sparse)
+        {
+            if (substream_path.back().type != ISerialization::Substream::SparseOffsets
+                && data_part_info_for_read->getFileSizeOrZero(*stream_name + DATA_FILE_EXTENSION) != 0)
+                has_values = true;
+            sparse_streams.emplace_back(substream_path, std::move(*stream_name));
+        }
+        else
+        {
+            getOrAddStream(substream_path, *stream_name);
+        }
         has_any_stream = true;
     };
 
@@ -988,6 +1023,13 @@ void MergeTreeReaderWide::addStreams(
     }
     serialization->enumerateStreams(enumerate_settings, callback, ISerialization::SubstreamData(serialization));
 
+    const bool only_defaults = is_sparse && has_any_stream && has_all_streams && !has_values;
+    if (!only_defaults)
+    {
+        for (const auto & [substream_path, stream_name] : sparse_streams)
+            getOrAddStream(substream_path, stream_name);
+    }
+
     if (has_any_stream && !has_all_streams)
         partially_read_columns.insert(name_and_type.name);
 
@@ -999,6 +1041,8 @@ void MergeTreeReaderWide::addStreams(
     /// derived substreams its type has besides (the element null maps of a `Variant`).
     if (!has_any_stream && (!has_derived_stream || !has_all_streams))
         columns_absent_from_part.insert(name_and_type.name);
+
+    return only_defaults;
 }
 
 bool MergeTreeReaderWide::isReadWithTypeInPart(const NameAndTypePair & name_and_type) const

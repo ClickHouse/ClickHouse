@@ -113,7 +113,8 @@ private:
         bool deserialize_prefixes,
         const ColumnReadSelector & selector);
 
-    void addStreams(
+    /// Returns true for a sparse column that has only default values in the part; it gets no streams.
+    bool addStreams(
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization);
 
@@ -193,6 +194,10 @@ private:
     /// Columns that are not cacheable, see `isColumnNotCacheable`. Such a column is read from the
     /// part by every read, like a partially read column. Filled by `addStreams`.
     NameSet columns_not_cacheable;
+
+    /// Set, by position, for the sparse columns that have only default values in the part (see
+    /// `addStreams`): the row their next read continues from.
+    std::vector<std::optional<size_t>> only_defaults_next_row;
 
     /// Whether the column at `pos` is read from the part even when the rest of the granule is
     /// served from the cache: a partially read column or a column that is not cacheable.
