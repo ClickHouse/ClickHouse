@@ -1434,6 +1434,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 for (auto & column_name : column_names_to_read)
                 {
                     auto name_to_read = getChildColumnToRead(column_name, child_columns, merge_columns);
+                    /// A child that cannot read subcolumns reads the whole column; the subcolumn is extracted
+                    /// in `convertAndFilterSourceStream`. The access check still authorizes the subcolumn itself.
+                    if (name_to_read && !storage->supportsSubcolumns() && !child_columns.has(*name_to_read))
+                        name_to_read = getColumnToReadInsteadOfSubcolumn(*name_to_read, child_columns, merge_columns);
                     if (!name_to_read)
                         continue;
 
