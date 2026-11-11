@@ -4,7 +4,18 @@
 
 /** Common defines for compression */
 
-/// Twice DBMS_MAX_DECOMPRESSED_SIZE: a block of incompressible data is larger after compression.
+/** The maximum size of a compressed block as stored, i.e. the "compressed size" field of the block header
+  * (the header and the compressed payload, without the checksum). The reader checks it before reading
+  * the block into memory, and the writer refuses to write a larger block.
+  *
+  * A block is compressed from at most DBMS_MAX_DECOMPRESSED_SIZE bytes (see below), but compression
+  * does not always make the data smaller: on incompressible input, codecs add their own overhead
+  * (e.g. LZ4 worst case is slightly above the input size, `T64`, `Gorilla`, `FPC` and encryption codecs add
+  * headers or per-value overhead, and a chain of codecs adds up). It is set to twice
+  * DBMS_MAX_DECOMPRESSED_SIZE to leave ample headroom for that, so that any block a writer
+  * produces from a maximum-sized input is still accepted by the reader, while the amount of memory
+  * a single block can make the reader allocate stays bounded.
+  */
 constexpr uint64_t DBMS_MAX_COMPRESSED_SIZE = 0x20000000ULL;    /// 512 MiB
 
 /** The decompressed size of a block is taken from the block header, and the buffer for it is
