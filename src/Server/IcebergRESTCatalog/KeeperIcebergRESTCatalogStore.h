@@ -19,6 +19,9 @@ using IcebergNamespaceName = std::vector<String>;
 /// Joins the levels of a namespace in a REST path. A level must not contain it.
 constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
+/// Checked for every table path the store builds. The handler maps `BAD_ARGUMENTS` to a 400 response.
+void validateTableName(const String & name);
+
 /// What Keeper stores for a table: the current `metadata.json` on object storage.
 struct IcebergTablePointer
 {
@@ -43,9 +46,13 @@ struct UpdateNamespacePropertiesResult
 ///   <root>/namespaces/<level>              data: JSON object of namespace properties
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively
 ///   <root>/namespaces/<level>/tables       one child per table
-///   <root>/namespaces/<level>/tables/<t>        data: table uuid, written once at create
-///   <root>/namespaces/<level>/tables/<t>/<uuid> data: metadata location, the node a commit updates
+///   <root>/namespaces/<level>/tables/<t>   data: table uuid, written once at create
+///   <root>/namespaces/<level>/tables/<t>/<uuid>  empty guard child, binds the name to the uuid
+///   <root>/tables_by_uuid/<uuid>           data: metadata location, the node a commit updates
 /// A table commit replaces the uuid node data with a version check, so concurrent commits are serialized by Keeper.
+/// The uuid node is outside the namespace tree, so a rename moves only the name node and the version keeps counting.
+/// Drop and rename read the uuid from the name node and then remove the guard child in the same multi-request as the name node.
+/// A table re-created under the same name has another guard child, so the multi-request fails instead of acting on the wrong table.
 /// Namespace levels and table names are encoded with `escapeForFileName`.
 class KeeperIcebergRESTCatalogStore
 {
@@ -84,6 +91,19 @@ public:
 
     bool dropTable(const IcebergNamespaceName & ns, const String & table);
 
+    enum class RenameTableResult
+    {
+        Renamed,
+        TableMissing,
+        /// The destination namespace does not exist.
+        NamespaceMissing,
+        TargetExists,
+    };
+
+    /// Moves the name node. The uuid node, the metadata location and the commit version stay the same.
+    RenameTableResult renameTable(
+        const IcebergNamespaceName & source_ns, const String & source, const IcebergNamespaceName & dest_ns, const String & dest);
+
     enum class UpdateTableResult
     {
         Updated,
@@ -110,7 +130,8 @@ private:
     String childNamespacesPath(const IcebergNamespaceName & name) const;
     String tablesPath(const IcebergNamespaceName & name) const;
     String tablePath(const IcebergNamespaceName & name, const String & table) const;
-    String tableUuidPath(const IcebergNamespaceName & name, const String & table, const String & uuid) const;
+    String tableUuidPath(const String & uuid) const;
+    String tableGuardPath(const IcebergNamespaceName & name, const String & table, const String & uuid) const;
 
     const String root_path;
     const zkutil::GetZooKeeper get_zookeeper;
