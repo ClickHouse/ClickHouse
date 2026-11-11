@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-random-merge-tree-settings
+# Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
+# no-parallel-replicas: the test asserts exact per-reader PREWHERE granule counts for a single-server
+# read plan; parallel replicas distribute marks across replicas and make the LIMIT early-termination
+# case non-deterministic.
 # The PREWHERE granule ProfileEvents must count only the granules PREWHERE actually evaluated:
 #   - a query that stops early (LIMIT) still counts the granules it read, and never declares the
 #     unread remainder of the granule it stopped in as dropped;
