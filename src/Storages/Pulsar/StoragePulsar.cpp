@@ -998,7 +998,10 @@ void registerStoragePulsar(StorageFactory & factory)
             /// a collection key unfolded from the table macros, which this function stores in the definition itself
             /// (see below), so that the definition stays loadable. A fresh definition (`CREATE` or a full `ATTACH`)
             /// may carry it only with the names of this table. A replayed one keeps the names the table had when
-            /// it was created, so it may differ after a `RENAME`.
+            /// it was created, so it may differ after a `RENAME`. A replayed definition is recognized by the macros
+            /// in the collection value alone, independently of their current expansion: a macro from the server
+            /// configuration may be changed so that it no longer reaches `{database}` or `{table}`, while the value
+            /// stored when the table was created stays frozen.
             if (args.storage_def->settings)
             {
                 const bool is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
@@ -1010,10 +1013,17 @@ void registerStoragePulsar(StorageFactory & factory)
                         && change.value.getType() == Field::Types::String)
                     {
                         const auto stored_value = named_collection->get<String>(change.name);
-                        const auto expanded_value = expand_table_macros(stored_value);
-                        if (expanded_value != stored_value
-                            && (is_replayed_definition || change.value.safeGet<String>() == expanded_value))
-                            continue;
+                        if (is_replayed_definition)
+                        {
+                            if (stored_value.contains('{'))
+                                continue;
+                        }
+                        else
+                        {
+                            const auto expanded_value = expand_table_macros(stored_value);
+                            if (expanded_value != stored_value && change.value.safeGet<String>() == expanded_value)
+                                continue;
+                        }
                     }
                     checkNamedCollectionOverride(*named_collection, change.name, args.getLocalContext());
                 }

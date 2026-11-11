@@ -1403,6 +1403,39 @@ def test_named_collection_overrides_in_settings(pulsar_cluster):
     )
     instance.query("DROP TABLE test.pulsar_nc SYNC")
 
+    # A locked key reaching `{table}` through a macro from the server configuration is stored
+    # unfolded, and the definition stays loadable after the macro stops depending on the table.
+    instance.query("DROP NAMED COLLECTION IF EXISTS pulsar_nc_nested")
+    instance.query(
+        """
+        CREATE NAMED COLLECTION pulsar_nc_nested AS
+            pulsar_service_url = 'pulsar://pulsar1:6650',
+            pulsar_topic_list = '{pulsar_table_topic}' NOT OVERRIDABLE,
+            pulsar_group_name = 'nc_nested_group',
+            pulsar_format = 'JSONEachRow'
+        """
+    )
+    instance.query(
+        "CREATE TABLE test.pulsar_nc_nested (key UInt64, value UInt64) ENGINE = Pulsar(pulsar_nc_nested)"
+    )
+    assert "pulsar_nc_nested_nested_topic" in instance.query("SHOW CREATE TABLE test.pulsar_nc_nested")
+    macros_path = "/etc/clickhouse-server/config.d/macros.xml"
+    original_macros = instance.exec_in_container(["cat", macros_path])
+    try:
+        instance.replace_config(
+            macros_path,
+            original_macros.replace("{table}_nested_topic</pulsar_table_topic>", "fixed_topic</pulsar_table_topic>"),
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+        instance.query("DETACH TABLE test.pulsar_nc_nested SYNC")
+        instance.query("ATTACH TABLE test.pulsar_nc_nested")
+        assert "pulsar_nc_nested_nested_topic" in instance.query("SHOW CREATE TABLE test.pulsar_nc_nested")
+    finally:
+        instance.replace_config(macros_path, original_macros)
+        instance.query("SYSTEM RELOAD CONFIG")
+    instance.query("DROP TABLE test.pulsar_nc_nested SYNC")
+    instance.query("DROP NAMED COLLECTION pulsar_nc_nested")
+
     instance.query("DROP USER pulsar_nc_user")
     instance.query("DROP NAMED COLLECTION pulsar_nc")
 
