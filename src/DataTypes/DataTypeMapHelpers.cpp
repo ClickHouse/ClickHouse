@@ -581,13 +581,21 @@ std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
     if (pos == String::npos)
         return std::nullopt;
 
-    /// A column or a static subcolumn claims the name, except a subcolumn of an `EPHEMERAL` column, which is
-    /// not readable. A dynamic lookup would resolve the Map key subcolumn itself.
-    if (columns.has(column_name)
-        || columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withRegularSubcolumns(), column_name))
+    /// A column or a static subcolumn claims the name, also a subcolumn of an `EPHEMERAL` column, which the analyzer
+    /// binds. A genuine Map key subcolumn is dynamic.
+    if (columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_name))
         return std::nullopt;
 
     auto map_column_name = column_name.substr(0, pos);
+
+    /// A dynamic subcolumn of a shorter column, such as a JSON path, claims the name before the Map does: name
+    /// resolution tries the shortest prefix first. Accept the name only if it is read from the Map's storage column.
+    const auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto read_column = columns.tryGetColumn(options, column_name);
+    auto map_column = columns.tryGetColumn(options, map_column_name);
+    if (!read_column || !map_column || read_column->getNameInStorage() != map_column->getNameInStorage())
+        return std::nullopt;
+
     auto serialized_key = column_name.substr(pos + map_key_marker.size());
     return std::pair{std::move(map_column_name), std::move(serialized_key)};
 }

@@ -27,8 +27,10 @@ void extractKeyValueFromMap(
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>`.
 /// Returns {map_column_name, serialized_key} if the column name has the expected format.
 ///
-/// Dots are legal in column names, so a column or a static subcolumn `m.key_x` may exist beside a Map `m`.
-/// It shadows the subcolumn: a predicate reads it, not the map, so the shape is refused.
+/// Dots are legal in column names, so `a.b.key_x` may name something other than key `x` of a Map `a.b`:
+/// a column `a.b.key_x`, an element of a Tuple `a`, or a path of a JSON `a`. A predicate reads that
+/// claimant, not the map, so the shape is refused unless the name resolves to the same storage column
+/// as the Map.
 std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
     const String & column_name, const ColumnsDescription & columns);
 
