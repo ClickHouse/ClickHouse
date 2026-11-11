@@ -651,6 +651,15 @@ TEST(MergedPartOffsetsTest, DropsBasic)
 
     EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(0), 2);
     EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(1), 2);
+
+    EXPECT_TRUE(merged_offsets.areRowsDropped(0, 0, 0));
+    EXPECT_TRUE(merged_offsets.areRowsDropped(0, 2, 2));
+    EXPECT_TRUE(merged_offsets.areRowsDropped(0, 4, 4));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(0, 0, 1));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(0, 2, 4));
+    EXPECT_TRUE(merged_offsets.areRowsDropped(1, 1, 2));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(1, 1, 3));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(1, 0, 3));
 }
 
 TEST(MergedPartOffsetsTest, DropsNothingDropped)
@@ -698,6 +707,10 @@ TEST(MergedPartOffsetsTest, DropsWholePartAndEmptyPart)
     EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(1), 0);
     EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(2), 0);
     EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(3), 2);
+
+    EXPECT_TRUE(merged_offsets.areRowsDropped(1, 0, 3));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(0, 0, 1));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(3, 1, 1));
 }
 
 TEST(MergedPartOffsetsTest, DropsAllRowsDropped)

@@ -31,15 +31,15 @@ SETTINGS index_granularity = 256, allow_experimental_text_index_phrase_search = 
 
 -- Same data in both tables. The second insert replaces every third row of the first one, the third insert replaces
 -- rows of the second one. Tokens: 'all' in every row, 'gone' only in replaced rows, 'few' in many rows of which
--- only a few survive, 'thin' in rows of which a few dozen survive.
+-- only a few survive, 'thin' in rows of which a few dozen survive, 'pair<N>' in three rows of which the first is replaced.
 INSERT INTO t_text_merged SELECT number, 1,
-    concat('all row', toString(number), if(number % 3 = 0, ' gone', ''), if(number % 3 != 0 AND number % 1000 = 1, ' few', if(number % 3 = 0, ' few', '')),
+    concat('all row', toString(number), ' pair', toString(intDiv(number, 3)), if(number % 3 = 0, ' gone', ''), if(number % 3 != 0 AND number % 1000 = 1, ' few', if(number % 3 = 0, ' few', '')),
         if(number % 3 = 0 OR number % 300 = 2, ' thin', ''), ' all tail') FROM numbers(30000);
 INSERT INTO t_text_merged SELECT number, 2, concat('all fresh row', toString(number), ' fresh all') FROM numbers(0, 30000, 3);
 INSERT INTO t_text_merged SELECT number, 3, concat('all newest ', toString(number % 7)) FROM numbers(0, 30000, 9);
 
 INSERT INTO t_text_rebuilt SELECT number, 1,
-    concat('all row', toString(number), if(number % 3 = 0, ' gone', ''), if(number % 3 != 0 AND number % 1000 = 1, ' few', if(number % 3 = 0, ' few', '')),
+    concat('all row', toString(number), ' pair', toString(intDiv(number, 3)), if(number % 3 = 0, ' gone', ''), if(number % 3 != 0 AND number % 1000 = 1, ' few', if(number % 3 = 0, ' few', '')),
         if(number % 3 = 0 OR number % 300 = 2, ' thin', ''), ' all tail') FROM numbers(30000);
 INSERT INTO t_text_rebuilt SELECT number, 2, concat('all fresh row', toString(number), ' fresh all') FROM numbers(0, 30000, 3);
 INSERT INTO t_text_rebuilt SELECT number, 3, concat('all newest ', toString(number % 7)) FROM numbers(0, 30000, 9);

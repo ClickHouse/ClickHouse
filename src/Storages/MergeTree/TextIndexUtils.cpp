@@ -637,18 +637,99 @@ void MergeTextIndexesTask::initializeTokensQueue()
     }
 }
 
+/// Whether all row ids of the token belong to rows dropped by the merge, decided from the embedded row ids
+/// or from the row ranges of the posting list segments, without decoding a posting list.
+/// A row id outside of the part is left to the checks of the merge, which report the corruption.
+static bool isTokenOfDroppedRows(const TokenPostingsInfo & info, const MergedPartOffsets & merged_part_offsets, size_t part_index)
+{
+    if (info.cardinality == 0)
+        return false;
+
+    const size_t part_rows = merged_part_offsets.getPartRowsCount(part_index);
+
+    if (info.header & PostingsSerialization::Flags::EmbeddedPostings)
+    {
+        if (info.embedded_postings.empty())
+            return false;
+
+        for (UInt32 row_id : info.embedded_postings)
+        {
+            if (row_id >= part_rows || merged_part_offsets.tryGetNewOffset(part_index, row_id))
+                return false;
+        }
+
+        return true;
+    }
+
+    if (info.ranges.empty())
+        return false;
+
+    for (const auto & range : info.ranges)
+    {
+        if (range.begin > range.end || range.end >= part_rows || !merged_part_offsets.areRowsDropped(part_index, range.begin, range.end))
+            return false;
+    }
+
+    return true;
+}
+
+/// Removes the tokens whose row ids all belong to rows dropped by the merge, so that they do not enter the merge queue.
+/// Such tokens are not written to the merged dictionary anyway (see flushPostingList).
+static void removeTokensOfDroppedRows(DictionaryBlock & block, const MergedPartOffsets & merged_part_offsets, size_t part_index)
+{
+    const size_t num_tokens = block.token_infos.size();
+    IColumn::Filter filter(num_tokens);
+    size_t num_kept = 0;
+
+    for (size_t i = 0; i < num_tokens; ++i)
+    {
+        filter[i] = !isTokenOfDroppedRows(block.token_infos[i], merged_part_offsets, part_index);
+        num_kept += filter[i];
+    }
+
+    if (num_kept == num_tokens)
+        return;
+
+    block.tokens = block.tokens->filter(filter, num_kept);
+
+    size_t pos = 0;
+    for (size_t i = 0; i < num_tokens; ++i)
+    {
+        if (!filter[i])
+            continue;
+
+        if (pos != i)
+            block.token_infos[pos] = std::move(block.token_infos[i]);
+        ++pos;
+    }
+
+    block.token_infos.erase(block.token_infos.begin() + num_kept, block.token_infos.end());
+}
+
 void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
 {
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
     auto * data_buffer = stream->getDataBuffer();
 
-    if (data_buffer->eof())
-        return;
+    while (!data_buffer->eof())
+    {
+        inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, /*with_postings=*/ true);
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, /*with_postings=*/ true);
-    const auto & tokens = inputs[source_num].tokens;
-    tokens_cursors[source_num].reset({tokens}, getHeader(), tokens->size());
-    tokens_queue.push(tokens_cursors[source_num]);
+        /// Only a part that lost rows can have tokens of dropped rows. A block left without tokens is skipped.
+        const size_t part_index = segments[source_num].part_index;
+        if (merged_part_offsets && merged_part_offsets->isMappingWithDrops()
+            && merged_part_offsets->getPartSurvivingRowsCount(part_index) < merged_part_offsets->getPartRowsCount(part_index))
+        {
+            removeTokensOfDroppedRows(inputs[source_num], *merged_part_offsets, part_index);
+            if (inputs[source_num].tokens->empty())
+                continue;
+        }
+
+        const auto & tokens = inputs[source_num].tokens;
+        tokens_cursors[source_num].reset({tokens}, getHeader(), tokens->size());
+        tokens_queue.push(tokens_cursors[source_num]);
+        return;
+    }
 }
 
 void MergeTextIndexesTask::checkRowIdsInPart(std::span<const UInt32> row_ids, size_t part_index) const

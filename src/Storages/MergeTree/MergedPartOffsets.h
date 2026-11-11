@@ -332,6 +332,19 @@ public:
         return value >> 1;
     }
 
+    /// Whether every source row of the part in [first, last] was dropped by the merge.
+    /// Values of a part do not decrease and each surviving row has its own odd value,
+    /// so the rows are all dropped if and only if both ends hold the same even value.
+    bool areRowsDropped(UInt64 part_index, UInt64 first, UInt64 last) const
+    {
+        chassert(mode == MappingMode::EnabledWithDrops);
+        chassert(part_index < offset_maps.size());
+        chassert(first <= last && last < offset_maps[part_index].size());
+
+        UInt64 value = offset_maps[part_index][first];
+        return !(value & 1) && offset_maps[part_index][last] == value;
+    }
+
     /// Number of rows of the part, which is the number of its mapped offsets.
     /// In EnabledWithDrops mode it includes the dropped rows once the mapping is flushed.
     size_t getPartRowsCount(UInt64 part_index) const
