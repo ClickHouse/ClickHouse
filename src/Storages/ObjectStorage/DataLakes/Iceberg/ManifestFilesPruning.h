@@ -68,7 +68,8 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
     Int32 target_schema_id,
     const DB::ActionsDAG * source_dag,
     std::vector<Int32> & used_columns_in_filter,
-    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter);
+    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter,
+    const DB::ContextPtr & context);
 
 /// Prune specific data files based on manifest content
 class ManifestFilesPruner

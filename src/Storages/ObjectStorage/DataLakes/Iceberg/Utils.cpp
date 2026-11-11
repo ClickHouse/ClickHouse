@@ -2435,7 +2435,7 @@ static DataTypePtr setTimezoneForTimestamptz(const DataTypePtr & type, const Str
     return type;
 }
 
-NamesAndTypesList setTimezoneForTimestamptz(const NamesAndTypesList & columns, const ContextPtr & context)
+static String getTimezoneForTimestamptz(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     String timezone = settings[Setting::iceberg_timezone_for_timestamptz];
@@ -2443,6 +2443,20 @@ NamesAndTypesList setTimezoneForTimestamptz(const NamesAndTypesList & columns, c
         timezone = settings[Setting::session_timezone];
     if (timezone.empty())
         timezone = DateLUT::serverTimezoneInstance().getTimeZone();
+    return timezone;
+}
+
+DataTypePtr setTimezoneForTimestamptz(const DataTypePtr & type, const ContextPtr & context)
+{
+    const String timezone = getTimezoneForTimestamptz(context);
+    if (timezone == "UTC")
+        return type;
+    return setTimezoneForTimestamptz(type, timezone);
+}
+
+NamesAndTypesList setTimezoneForTimestamptz(const NamesAndTypesList & columns, const ContextPtr & context)
+{
+    const String timezone = getTimezoneForTimestamptz(context);
     if (timezone == "UTC")
         return columns;
 

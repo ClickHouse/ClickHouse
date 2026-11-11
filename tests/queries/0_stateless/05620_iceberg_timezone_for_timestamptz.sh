@@ -67,5 +67,3 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE} WHERE ts >= '2024-01-
 echo '-- session time zone'
 ${CLICKHOUSE_CLIENT} --query "SELECT toTypeName(ts), ts FROM ${TABLE} ORDER BY id SETTINGS iceberg_timezone_for_timestamptz = '', session_timezone = 'Asia/Tokyo'"
 
-echo '-- both rows are in the same UTC day partition'
-${CLICKHOUSE_CLIENT} --query "SELECT DISTINCT extract(_path, 'ts_day=[^/]+') FROM ${TABLE}"

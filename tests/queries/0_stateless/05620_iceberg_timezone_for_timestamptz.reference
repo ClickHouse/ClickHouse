@@ -1,0 +1,21 @@
+-- default
+1	2024-01-01 23:30:00.000000	2024-01-01 23:30:00.000000	['2024-01-01 23:30:00.000000']
+2	2024-01-01 23:30:00.000000	2024-01-02 00:30:00.000000	['2024-01-01 23:30:00.000000']
+id	Nullable(Int32)
+ts	Nullable(DateTime64(6, \'UTC\'))
+local	Nullable(DateTime64(6))
+arr	Array(Nullable(DateTime64(6, \'UTC\')))
+-- Europe/Berlin
+1	2024-01-02 00:30:00.000000	2024-01-01 23:30:00.000000	['2024-01-02 00:30:00.000000']
+2	2024-01-02 00:30:00.000000	2024-01-02 00:30:00.000000	['2024-01-02 00:30:00.000000']
+id	Nullable(Int32)
+ts	Nullable(DateTime64(6, \'Europe/Berlin\'))
+local	Nullable(DateTime64(6))
+arr	Array(Nullable(DateTime64(6, \'Europe/Berlin\')))
+Nullable(DateTime64(6, \'Europe/Berlin\'))
+2
+2
+0
+-- session time zone
+Nullable(DateTime64(6, \'Asia/Tokyo\'))	2024-01-02 08:30:00.000000
+Nullable(DateTime64(6, \'Asia/Tokyo\'))	2024-01-02 08:30:00.000000

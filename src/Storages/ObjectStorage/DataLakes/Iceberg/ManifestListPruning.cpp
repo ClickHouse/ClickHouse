@@ -109,7 +109,7 @@ ManifestListPruner::ManifestListPruner(
     std::vector<Int32> used_columns_in_filter;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns_in_filter;
     auto transformed_dag = renameFilterDagColumnsToFieldIds(
-        schema_processor_, current_schema_id_, partition_schema_id_, filter_dag, used_columns_in_filter, row_lineage_columns_in_filter);
+        schema_processor_, current_schema_id_, partition_schema_id_, filter_dag, used_columns_in_filter, row_lineage_columns_in_filter, context);
 
     for (UInt32 i = 0; i < partition_specs->size(); ++i)
     {

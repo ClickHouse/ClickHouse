@@ -69,7 +69,8 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
     Int32 target_schema_id,
     const DB::ActionsDAG * source_dag,
     std::vector<Int32> & used_columns_in_filter,
-    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter)
+    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter,
+    const DB::ContextPtr & context)
 {
     const auto & inputs = source_dag->getInputs();
 
@@ -115,7 +116,7 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
             continue;
 
         auto numeric_column_name = DB::backQuote(DB::toString(column_id));
-        const auto * node = &dag_with_renames.addInput(numeric_column_name, column_from_manifest->type);
+        const auto * node = &dag_with_renames.addInput(numeric_column_name, setTimezoneForTimestamptz(column_from_manifest->type, context));
         node = &dag_with_renames.addAlias(*node, column->name);
         dag_with_renames.getOutputs().push_back(node);
     }
@@ -145,7 +146,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
     transformed_dag = renameFilterDagColumnsToFieldIds(
-        schema_processor, current_schema_id, initial_schema_id, filter_dag, used_columns_in_filter, row_lineage_columns);
+        schema_processor, current_schema_id, initial_schema_id, filter_dag, used_columns_in_filter, row_lineage_columns, context);
     chassert(transformed_dag != nullptr);
 
     if (partition_key_)
@@ -190,6 +191,8 @@ ManifestFilesPruner::ManifestFilesPruner(
             name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
             if (!name_and_type.has_value())
                 continue;
+
+            name_and_type->type = setTimezoneForTimestamptz(name_and_type->type, context);
 
             min_max_column_types.emplace(used_column_id, name_and_type->type);
             name_and_type->name = DB::backQuote(DB::toString(used_column_id));
@@ -244,6 +247,7 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         std::optional<DB::NameAndTypePair> column_characteristics = schema_processor.tryGetFieldCharacteristics(schema_id, source_id);
         if (!column_characteristics.has_value())
             continue;
+        column_characteristics->type = setTimezoneForTimestamptz(column_characteristics->type, context);
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
         auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
         result.partition_specification.emplace_back(source_id, transform_name, partition_name, static_cast<Int32>(i));
