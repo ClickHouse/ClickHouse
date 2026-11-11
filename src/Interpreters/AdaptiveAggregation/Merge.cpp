@@ -906,7 +906,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count) const
+    size_t * merged_group_count) const
 {
     auto & dest = *data[0];
     AggregatedChunks chunks;
@@ -915,7 +915,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
         [&](auto & method)
         {
             chunks = mergeAndConvertAdaptiveBucketImpl(
-                dest, method, data, session, task, final, bucket, is_cancelled, updater, full_group_count);
+                dest, method, data, session, task, final, bucket, is_cancelled, updater, merged_group_count);
         });
     return chunks;
 }
@@ -931,7 +931,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count) const
+    size_t * merged_group_count) const
 {
     /// The task's table, emptied by the conversion of its previous bucket's last unit, moves into this bucket's slot:
     /// the slots are exclusively owned by the tasks that merge their buckets, and a retired bucket's slot is never
@@ -1150,8 +1150,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             unit_groups = table.size();
         }
 
-        if (full_group_count)
-            *full_group_count += unit_groups;
+        if (merged_group_count)
+            *merged_group_count += unit_groups;
         if (updater)
             updater->recordAggregationStateSizes(dest, bucket);
 
