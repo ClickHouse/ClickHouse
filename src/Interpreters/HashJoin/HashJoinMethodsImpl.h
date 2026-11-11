@@ -13,6 +13,7 @@
 #include <base/scope_guard.h>
 
 #include <algorithm>
+#include <span>
 #include <type_traits>
 
 namespace ProfileEvents
@@ -173,11 +174,14 @@ BuildResult insertSlotRows(
     const Selector & selector,
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask,
-    Arena & pool)
+    Arena & pool,
+    [[maybe_unused]] const PaddedPODArray<UInt128> * prebuilt_keys,
+    [[maybe_unused]] const UInt8 * skip)
 {
     [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename MapsTemplate::MappedType, RowRef>;
     constexpr bool is_set = SetJoinMaps<MapsTemplate>;
     constexpr bool is_asof_join = std::is_same_v<MapsTemplate, HashJoin::MapsAsof>;
+    constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
 
     /// Copy the getter when that is cheap: the loop reloads a getter behind a reference after every out-of-line `RowRefList::insert`.
     std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> key_getter = key_getter_;
@@ -211,11 +215,36 @@ BuildResult insertSlotRows(
     if constexpr (can_prefetch)
         use_prefetch = HashMap::NUM_BUCKETS > 1 ? join.enableSoftwarePrefetch() : shouldUseJoinPrefetch(join.enableSoftwarePrefetch(), &map);
 
+    if constexpr (prepared)
+    {
+        /// Before the prefetcher is created, see `prepareRows`.
+        if (prebuilt_keys && rows)
+            key_getter.usePrebuiltKeys(*prebuilt_keys, selectorIndexAt(selector, 0));
+        else
+            key_getter.prepareRows(selector, skip);
+
+        /// The loop below skips the rows with a `NULL` key. As with the other key getters, such a row still keeps the block.
+        /// ALL and ASOF maps keep every block anyway.
+        if constexpr (mapped_one && !is_asof_join)
+        {
+            UInt8 any_null = 0;
+            if (null_map)
+                for (size_t i = 0; i < rows; ++i)
+                    any_null |= (*null_map)[selectorIndexAt(selector, i)];
+            result.is_inserted = any_null != 0;
+        }
+    }
+
     auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                map.prefetch(key_getter.getKeyHolder(selectorIndexAt(selector, k), pool));
+            {
+                const size_t row = selectorIndexAt(selector, k);
+                if (prepared && skip[row])
+                    return;
+                map.prefetch(key_getter.getKeyHolder(row, pool));
+            }
         });
 
     for (size_t i = 0; i < rows; ++i)
@@ -225,19 +254,27 @@ BuildResult insertSlotRows(
 
         const size_t ind = selectorIndexAt(selector, i);
 
-        chassert(!null_map || ind < null_map->size());
-        if (null_map && (*null_map)[ind])
+        if constexpr (prepared)
         {
-            /// nulls are not inserted into hash table,
-            /// keep them for RIGHT and FULL joins - a set map is never used by one of those
-            if constexpr (!is_set)
-                result.is_inserted = true;
-            continue;
+            if (skip[ind])
+                continue;
         }
+        else
+        {
+            chassert(!null_map || ind < null_map->size());
+            if (null_map && (*null_map)[ind])
+            {
+                /// nulls are not inserted into hash table,
+                /// keep them for RIGHT and FULL joins - a set map is never used by one of those
+                if constexpr (!is_set)
+                    result.is_inserted = true;
+                continue;
+            }
 
-        /// Check condition for right table from ON section
-        if (join_mask.isRowFiltered(ind))
-            continue;
+            /// Check condition for right table from ON section
+            if (join_mask.isRowFiltered(ind))
+                continue;
+        }
 
         if constexpr (is_asof_join)
             Inserter<HashMap, KeyGetter>::insertAsof(
@@ -266,15 +303,27 @@ BuildResult insertFromBlockImplTypeCase(
     const Sizes & key_sizes,
     UInt32 stored_block_no,
     ConstNullMapPtr null_map,
-    const JoinCommon::JoinMask & join_mask)
+    const JoinCommon::JoinMask & join_mask,
+    const PaddedPODArray<UInt128> * prebuilt_keys)
 {
     [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename MapsTemplate::MappedType, RowRef>;
     constexpr bool is_set = SetJoinMaps<MapsTemplate>;
     constexpr bool is_asof_join = std::is_same_v<MapsTemplate, HashJoin::MapsAsof>;
 
+    if constexpr (!PreparedKeyGetter<KeyGetter>)
+    {
+        if (prebuilt_keys)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join keys were built ahead for a key getter that does not read them");
+    }
+
     BuildSlots & slots = table.slots;
 
     KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
+
+    /// The skip bytes of the block, for the inserts of all slots.
+    const UInt8 * skip = nullptr;
+    if constexpr (PreparedKeyGetter<KeyGetter>)
+        skip = key_getter.skipOrAllSelected(buildRowSkipData(null_map, join_mask, key_getter.skip_buffer, 0, key_getter.num_rows));
 
     BuildResult result;
     /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so unless
@@ -297,7 +346,18 @@ BuildResult insertFromBlockImplTypeCase(
         auto insert_rows = [&](const auto & rows)
         {
             return insertSlotRows<MapsTemplate>(
-                join, table, map, key_getter, key_columns, stored_block_no, rows, null_map, join_mask, slots.arena(slot));
+                join,
+                table,
+                map,
+                key_getter,
+                key_columns,
+                stored_block_no,
+                rows,
+                null_map,
+                join_mask,
+                slots.arena(slot),
+                prebuilt_keys,
+                skip);
         };
         const BuildResult slot_result
             = selector.isContinuousRange() ? insert_rows(selector.getRange()) : insert_rows(selector.getIndexes());
@@ -321,16 +381,24 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
     const Sizes & key_sizes,
     UInt32 stored_block_no,
     ConstNullMapPtr null_map,
-    const JoinCommon::JoinMask & join_mask)
+    const JoinCommon::JoinMask & join_mask,
+    const PaddedPODArray<UInt128> * prebuilt_keys)
 {
     static_assert((STRICTNESS == JoinStrictness::Asof) == std::is_same_v<MapsTemplate, HashJoin::MapsAsof>);
+    if (prebuilt_keys && prebuilt_keys->size() != key_columns.at(0)->size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "{} join keys were built ahead for a block of {} rows",
+            prebuilt_keys->size(),
+            key_columns.at(0)->size());
+
     switch (type)
     {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
         return insertFromBlockImplTypeCase<MapsTemplate, \
             typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-            join, *join.data, *maps.TYPE, map_idx, per_slot, key_columns, key_sizes, stored_block_no, null_map, join_mask);
+            join, *join.data, *maps.TYPE, map_idx, per_slot, key_columns, key_sizes, stored_block_no, null_map, join_mask, prebuilt_keys);
 
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
@@ -766,11 +834,24 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     if constexpr (can_prefetch)
         use_prefetch = shouldUseJoinPrefetch(added_columns.enable_prefetch, map);
 
+    constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
+    /// Before the prefetcher is created, see `prepareRows`.
+    if constexpr (prepared)
+    {
+        skip_data = key_getter.skipOrAllSelected(skip_data);
+        key_getter.prepareRows(selector, skip_data);
+    }
+
     auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                map->prefetch(key_getter.getKeyHolder(selectorIndexAt(selector, k), pool));
+            {
+                const size_t row = selectorIndexAt(selector, k);
+                if (prepared && !fast_path && skip_data[row])
+                    return;
+                map->prefetch(key_getter.getKeyHolder(row, pool));
+            }
         });
 
     IColumn::Offset current_offset = 0;
@@ -786,7 +867,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
         bool skip_row = false;
         if constexpr (!fast_path)
-            skip_row = skip_data && skip_data[ind];
+            skip_row = (prepared || skip_data) && skip_data[ind];
 
         if (!skip_row)
         {
@@ -870,6 +951,13 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     chassert(mapv.size() == num_clauses && key_getter_vector.size() == num_clauses);
     const Map * const * maps = mapv.data();
     KeyGetter * key_getters = key_getter_vector.data();
+    constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
+    if constexpr (prepared)
+    {
+        skip_datas.resize(num_clauses);
+        for (size_t d = 0; d < num_clauses; ++d)
+            skip_datas[d] = key_getters[d].skipOrAllSelected(skip_datas[d]);
+    }
     const UInt8 * const * skip_data = skip_datas.data();
 
     /// Software prefetch for multi-map variant. A one-bucket map prefetches only the first map. A two-level map also
@@ -897,15 +985,25 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     MultiMapLookupSampler sampler(samples_lookups ? num_clauses : 0);
     size_t next_sampled_row = samples_lookups ? 0 : rows;
 
+    /// Before the prefetcher is created, see `prepareRows`: the first map, and the other maps that are prefetched from the
+    /// start. The maps that a sampled limit adds later are prepared then.
+    if constexpr (prepared)
+        for (size_t map_idx = 0; map_idx < num_prefetched_maps; ++map_idx)
+            key_getters[map_idx].prepareRows(selector, skip_data[map_idx]);
+
     auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
             {
-                maps[0]->prefetch(key_getters[0].getKeyHolder(selectorIndexAt(selector, k), pool));
+                const size_t row = selectorIndexAt(selector, k);
+                constexpr bool check_skip = prepared && !fast_path;
+                if (!check_skip || !skip_data[0][row])
+                    maps[0]->prefetch(key_getters[0].getKeyHolder(row, pool));
                 if constexpr (Map::NUM_BUCKETS > 1)
                     for (size_t map_idx = 1; map_idx < num_prefetched_maps; ++map_idx)
-                        maps[map_idx]->prefetch(key_getters[map_idx].getKeyHolder(selectorIndexAt(selector, k), pool));
+                        if (!check_skip || !skip_data[map_idx][row])
+                            maps[map_idx]->prefetch(key_getters[map_idx].getKeyHolder(row, pool));
             }
         });
 
@@ -927,7 +1025,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         {
             bool skip_row = false;
             if constexpr (!fast_path)
-                skip_row = skip_data[onexpr_idx] && skip_data[onexpr_idx][ind];
+                skip_row = (prepared || skip_data[onexpr_idx]) && skip_data[onexpr_idx][ind];
 
             if (!skip_row)
             {
@@ -960,7 +1058,19 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                     sampler.countLookup(map_idx);
                 }
                 if (sampler.sampleDone())
-                    num_prefetched_maps = sampler.takeLimit(max_prefetched_maps);
+                {
+                    const size_t limit = sampler.takeLimit(max_prefetched_maps);
+                    /// The prefetch reads the keys of the maps that it prefetches, so the keys of an added map are prepared
+                    /// from the next row on. A dropped map builds each key where it is read again, because few rows read it.
+                    if constexpr (prepared)
+                    {
+                        for (size_t map_idx = num_prefetched_maps; map_idx < limit; ++map_idx)
+                            key_getters[map_idx].prepareRange({ind + 1, selector.second}, skip_data[map_idx]);
+                        for (size_t map_idx = limit; map_idx < num_prefetched_maps; ++map_idx)
+                            key_getters[map_idx].prepareRange({}, nullptr);
+                    }
+                    num_prefetched_maps = limit;
+                }
                 next_sampled_row = MultiMapLookupSampler::nextSampledRow(i);
             }
         }
@@ -1158,11 +1268,37 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
             use_prefetch = shouldUseJoinPrefetch(added_columns.enable_prefetch, mapv[0]);
 
         const size_t selector_size = selector.size();
+
+        /// Before the prefetcher is created, see `prepareRows`. The loop below looks up every row that it does not skip in
+        /// every map, so the keys of every map are prepared. The prefetch reads the keys of the first map.
+        constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
+        [[maybe_unused]] const UInt8 * first_map_skip = nullptr;
+        if constexpr (prepared)
+        {
+            for (size_t map_idx = 0; map_idx < key_getter_vector.size(); ++map_idx)
+            {
+                auto & key_getter = key_getter_vector[map_idx];
+                const UInt8 * skip_rows = nullptr;
+                if (selector.isContinuousRange())
+                    skip_rows = added_columns.join_on_keys[map_idx].buildRowSkipData(
+                        key_getter.skip_buffer, selector.getRange().first, selector_size);
+                skip_rows = key_getter.skipOrAllSelected(skip_rows);
+                if (map_idx == 0)
+                    first_map_skip = skip_rows;
+                key_getter.prepareRows(selector, skip_rows);
+            }
+        }
+
         auto prefetcher = makeJoinPrefetcher(use_prefetch, selector_size,
             [&](size_t k) __attribute__((always_inline))
             {
                 if constexpr (can_prefetch)
-                    mapv[0]->prefetch(key_getter_vector[0].getKeyHolder(selector[k], *pool));
+                {
+                    const size_t row = selector[k];
+                    if (prepared && first_map_skip[row])
+                        return;
+                    mapv[0]->prefetch(key_getter_vector[0].getKeyHolder(row, *pool));
+                }
             });
 
         for (size_t row_idx = 0; row_idx < selector_size; ++row_idx)

@@ -6,16 +6,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# One block of 40000 rows is split into 40000 one-row row groups, each compressed by its own zstd stream at
-# level 15, so writing them takes more than 90 s on a release build, with and without the encoder threads.
+# One block of 1000000 rows is split into 1000000 one-row row groups, each compressed by its own zstd stream at
+# level 15, so writing them takes more than 5 s on a release build, with and without the encoder threads.
 # The oracle is the outer `timeout`: a `TIMEOUT_EXCEEDED` that does not arrive within 30 s fails the test.
 
 FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 
 for threads in 1 2; do
     if timeout 30 ${CLICKHOUSE_CLIENT} --max_execution_time 1 --timeout_overflow_mode throw --query "
-            INSERT INTO FUNCTION file('${FILE}', 'Parquet') SELECT number FROM numbers(40000)
-            SETTINGS output_format_parquet_row_group_size = 1, max_block_size = 40000, max_threads = ${threads},
+            INSERT INTO FUNCTION file('${FILE}', 'Parquet') SELECT number FROM numbers(1000000)
+            SETTINGS output_format_parquet_row_group_size = 1, max_block_size = 1000000, max_threads = ${threads},
                 max_insert_threads = 1, output_format_parquet_parallel_encoding = 1,
                 output_format_parquet_compression_method = 'zstd', output_format_compression_level = 15,
                 engine_file_truncate_on_insert = 1

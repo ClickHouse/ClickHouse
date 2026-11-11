@@ -25,6 +25,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 
 #include <algorithm>
@@ -316,6 +317,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
+void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
+    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+{
+    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+}
+
 void ReadFromObjectStorageStep::createIterator()
 {
     if (iterator_wrapper)
@@ -335,6 +342,12 @@ void ReadFromObjectStorageStep::createIterator()
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 
+    /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
+    if (!join_runtime_filters_for_file_pruning.empty())
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto lookup = query_context->getRuntimeFilterLookup())
+                iterator_wrapper->setJoinRuntimeFilters(join_runtime_filters_for_file_pruning, std::move(lookup));
+
     /// When the query result cache consistency check is active, record the exact object set this read
     /// consumes so `StorageObjectStorage::getModificationHash` can hash it at finalization instead of
     /// re-listing (closes a listing `A -> B -> A` race). Only wrapped when there is a capture to fill
@@ -349,10 +362,12 @@ void ReadFromObjectStorageStep::createIterator()
             /// was built from, so the two hashes could never compare equal even for an unchanged
             /// table. Mark the capture pruned instead of filling it with the subset - the consistency
             /// check then fails closed for this table rather than comparing incomparable sets.
-            const bool may_prune_object_set = predicate
-                && VirtualColumnUtils::createPathAndFileFilterDAG(
-                       predicate, virtual_columns, context, info.hive_partition_columns_to_read_from_file_path)
-                       .has_value();
+            /// A join runtime filter (set above) prunes data files the same way.
+            const bool may_prune_object_set = !join_runtime_filters_for_file_pruning.empty()
+                || (predicate
+                    && VirtualColumnUtils::createPathAndFileFilterDAG(
+                           predicate, virtual_columns, context, info.hive_partition_columns_to_read_from_file_path)
+                           .has_value());
             /// The capture records the generation the listing reported, before the object is read. On S3 or
             /// Azure with the `ETag` validation of reads turned off, an overwrite between the listing and the
             /// `GET` makes the read return a newer generation than the captured one, and the finalization

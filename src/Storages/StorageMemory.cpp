@@ -1,4 +1,5 @@
 #include <Common/CurrentThread.h>
+#include <Formats/FormatSettings.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
