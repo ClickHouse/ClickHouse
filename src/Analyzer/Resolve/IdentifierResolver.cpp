@@ -319,11 +319,11 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
         {
             std::shared_ptr<TableNode> current_database_result;
             if (canBeTablePathInCurrentDatabase(table_identifier, context))
-                current_database_result = tryResolveTableIdentifier("", table_identifier.getFullName(), context);
+                current_database_result = tryResolveTableIdentifier("", table_identifier.getFullName(), context, replaced_storage);
 
             IdentifierView table_identifier_view = table_identifier;
             table_identifier_view.popFirst();
-            auto specified_database_result = tryResolveTableIdentifier(table_identifier[0], std::string(table_identifier_view.getFullName()), context);
+            auto specified_database_result = tryResolveTableIdentifier(table_identifier[0], std::string(table_identifier_view.getFullName()), context, replaced_storage);
 
             if (specified_database_result && current_database_result)
                 throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
@@ -336,19 +336,20 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
         }
         else
         {
-            return tryResolveTableIdentifier(table_identifier[0], table_identifier[1], context);
+            return tryResolveTableIdentifier(table_identifier[0], table_identifier[1], context, replaced_storage);
         }
     }
     else
     {
-        return tryResolveTableIdentifier("", table_identifier[0], context);
+        return tryResolveTableIdentifier("", table_identifier[0], context, replaced_storage);
     }
 }
 
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     const std::string & database_name,
     const std::string & table_name,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const StoragePtr & replaced_storage)
 {
     StorageID storage_id(database_name, table_name);
 

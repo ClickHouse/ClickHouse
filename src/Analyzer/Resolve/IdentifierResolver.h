@@ -179,7 +179,8 @@ private:
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const std::string & database_name,
         const std::string & table_name,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage);
 
     IdentifierResolveResult tryResolveIdentifierFromStorage(
         const IdentifierLookup & identifier_lookup,
