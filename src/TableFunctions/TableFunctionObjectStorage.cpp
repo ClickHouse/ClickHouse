@@ -39,6 +39,8 @@ namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
 }
 
@@ -56,8 +58,13 @@ namespace DataLakeStorageSetting
 template <typename Definition, typename Configuration, bool is_data_lake>
 ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
-    if (!object_storage)
+    /// A client created read-only does not create a missing Azure container, which a write needs. The container
+    /// is created only while a client is built, so a cached writable client can also serve a read-only request.
+    if (!object_storage || (object_storage_is_readonly && !create_readonly))
+    {
         object_storage = configuration->createObjectStorage(context, create_readonly, std::nullopt);
+        object_storage_is_readonly = create_readonly;
+    }
     return object_storage;
 }
 
@@ -83,7 +90,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
                     else
                         configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
 #endif
@@ -100,7 +107,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
                     else
                         configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
 #endif
@@ -116,7 +123,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
                     else
                         configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
 #endif
@@ -194,12 +201,12 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
 
 template <typename Definition, typename Configuration, bool is_data_lake>
 ColumnsDescription TableFunctionObjectStorage<
-    Definition, Configuration, is_data_lake>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+    Definition, Configuration, is_data_lake>::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (configuration->structure == "auto")
     {
         configuration->check(context);
-        auto storage = getObjectStorage(context, !is_insert_query);
+        auto storage = getObjectStorage(context, /*create_readonly=*/ true);
         configuration->lazyInitializeIfNeeded(object_storage, context);
 
         std::string sample_path;
@@ -251,12 +258,18 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
+    /// The change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) is read by
+    /// `ReadFromDeltaLakeTableChangesStep`, which does not distribute work either, so every replica would return all changes.
+    const bool is_delta_lake_change_data_feed = configuration->isDataLakeConfiguration()
+        && (query_settings[Setting::delta_lake_snapshot_start_version] != -1
+            || query_settings[Setting::delta_lake_snapshot_end_version] != -1);
     const auto can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
-        && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
+        && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster")
+        && !is_delta_lake_change_data_feed;
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query && !context->isSQLSecurityOverriddenBody())
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
@@ -349,6 +362,8 @@ For GCS, substitute your HMAC key and HMAC secret where you see `access_key_id` 
 | `partition_columns_in_data_file`        | Parameter is optional. Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                          |
 | `extra_credentials`                     | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps. |
 | `storage_class_name`                    | Parameter is optional. Supported values: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). Defaults to `STANDARD`. |
+| `upload_checksum_algorithm`             | Parameter is optional. Checksum algorithm for uploads: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256` (sent as `x-amz-checksum-*`). Empty uses `Content-MD5`, or `CRC32` for S3Express buckets. Ignored for GCS.                                                                                                                                                                                                                          |
+| `delete_checksum_algorithm`             | Parameter is optional. Checksum algorithm for batch `DeleteObjects` requests: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256`. Empty uses `MD5`, `CRC32` for S3Express buckets, or `SHA256` when `MD5` is unavailable (FIPS mode) or rejected by the server. Ignored for GCS.                                                                                                                                                              |
 
 <Info>
 **GCS**
@@ -1876,7 +1891,7 @@ y: 993
 
 Enable `allow_insert_into_iceberg` to use this operation.
 
-The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. The operation also rejects affected manifests containing equality-delete files.
+The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. With `iceberg_insert_single_manifest_for_all_partitions` enabled, each insert stream of an `INSERT` writes the files of all partitions it received into one manifest (exactly one manifest per `INSERT` with `max_insert_threads = 1`), so a partition written by the same `INSERT` as other partitions cannot be dropped. The operation also rejects affected manifests containing equality-delete files.
 
 The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
 
@@ -2124,7 +2139,7 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 - Only Iceberg format version 2 tables are supported (v1 snapshots do not guarantee `manifest-list`, which is required to safely identify files for cleanup)
 - The current snapshot is always preserved, even if it is older than the specified timestamp
 - Requires the `allow_insert_into_iceberg` setting to be enabled
-- Requires the `allow_experimental_expire_snapshots` setting to be enabled
+- Requires the `allow_expire_snapshots` setting to be enabled
 - The catalog's own authorization (REST catalog auth, AWS Glue IAM, etc.) is enforced independently when ClickHouse updates the metadata
 </Note>
 
@@ -2292,9 +2307,11 @@ A table with the specified structure for reading data in the specified Paimon ta
 
 ## Limitations {#limitations}
 
-Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
-snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
-declares `primary-key` therefore throws.
+Merge-on-read is not implemented, so a primary-key table is read only where Paimon reads it without merging: a bucket is
+read when all its data files are above level 0, are known to have no retract rows, and are in one level. With
+`deletion-vectors.enabled` or `'merge-engine' = 'first-row'` the files may be in several levels, and, unless
+`batch-scan-mode` is set to a mode other than `none`, level-0 files are not read until they are compacted, as in Paimon.
+Reading any other bucket throws; a full compaction in Paimon (`compact_strategy => 'full'`) makes it readable.
 
 Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
 contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
@@ -2302,12 +2319,15 @@ deletion vectors therefore throws, even after `deletion-vectors.enabled` is turn
 A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
 it can be read again.
 
-Columns are matched to data files by name, not by Paimon field id, so **data files written before a column was renamed,
-or before a column was dropped and another one with the same name (compared case-insensitively) was added, cannot be
-read**: the result would contain `NULL` for the renamed column and the dropped column's values for the re-added one.
-Reading such a data file therefore throws. Adding and dropping columns is supported. Rewriting the table with the
-current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created
-after it readable.
+Each data file is read with the schema it was written with, and its top-level columns are matched to the current schema by
+Paimon field id, so renamed columns and columns dropped and re-added under the same name read as in Spark.
+
+Fields inside a `ROW` column are matched to data files by name, not by Paimon field id, so **data files written before a
+field inside a `ROW` was renamed, or before such a field was dropped and another one with the same name (compared
+case-insensitively) was added, cannot be read**: the result would contain `NULL` for the renamed field and the dropped
+field's values for the re-added one. Reading such a data file therefore throws. Adding and dropping fields is supported.
+Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`,
+makes the snapshots created after it readable.
 
 ## Defining a named collection {#defining-a-named-collection}
 
@@ -2597,6 +2617,10 @@ A table with the specified structure for reading data in the specified Hudi tabl
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
+
+## Limitations {#limitations}
+
+Merge-on-Read is not implemented: the log files of a Merge-on-Read table are not read. Reading a table whose latest file slices have log files, that is changes written after the last compaction, therefore throws `NOT_IMPLEMENTED` instead of returning the values from before those changes. Schema inference throws for such a table too. Copy-on-Write tables and Merge-on-Read tables without such log files, for example right after a compaction in Hudi, are read as usual.
 
 ## Related {#related}
 

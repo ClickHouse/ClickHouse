@@ -322,7 +322,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 **Note**: `start()` and `end()` take no arguments and return the outer query's requested start and end timestamps as scalar seconds since the Unix epoch. In an instant query, both return the evaluation timestamp. Subqueries and offsets do not change these values. `end()` uses the requested end even when it falls between evaluation steps. The existing `@ start()` and `@ end()` modifiers are unchanged. Standalone function names are case-sensitive.
 
-**Note**: `start`, `end`, `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `start`, `end`, `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
@@ -405,7 +405,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 **Note**: `start()` and `end()` take no arguments and return the outer query's requested start and end timestamps as scalar seconds since the Unix epoch. In an instant query, both return the evaluation timestamp. Subqueries and offsets do not change these values. `end()` uses the requested end even when it falls between evaluation steps. The existing `@ start()` and `@ end()` modifiers are unchanged. Standalone function names are case-sensitive.
 
-**Note**: `start`, `end`, `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `start`, `end`, `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
