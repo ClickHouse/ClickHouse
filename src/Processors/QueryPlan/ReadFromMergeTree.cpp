@@ -312,8 +312,12 @@ namespace Setting
     extern const SettingsBool force_creating_set_partitions_independently;
     extern const SettingsBool force_distinct_partitions_independently;
     extern const SettingsBool force_window_partitions_independently;
+    extern const SettingsBool force_optimize_projection;
+    extern const SettingsString force_optimize_projection_name;
     extern const SettingsBool force_primary_key;
     extern const SettingsString ignore_data_skipping_indexes;
+    extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_aggregation;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_distinct;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_window;
@@ -2998,6 +3002,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
+    const auto & settings = context->getSettingsRef();
+    /// The ranges are still needed to coordinate replicas or tasks, and to choose a forced or preferred projection.
+    const bool skip_ranges_analysis = no_rows_needed && !is_parallel_reading_from_replicas
+        && !settings[Setting::make_distributed_plan] && !settings[Setting::force_optimize_projection]
+        && !settings[Setting::prefer_optimize_projection] && settings[Setting::force_optimize_projection_name].value.empty();
+
     analyzed_result_ptr = selectRangesToRead(
         getParts(),
         mutations_snapshot,
@@ -3018,7 +3028,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         allow_query_condition_cache,
         allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
-        /*check_row_limits=*/true);
+        /*check_row_limits=*/true,
+        skip_ranges_analysis);
 
     /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
     if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
@@ -3051,7 +3062,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         allow_query_condition_cache && allow_query_condition_cache_,
         allow_top_k_prewhere_query_condition_cache && allow_query_condition_cache_,
         supportsSkipIndexesOnDataRead(),
-        /*check_row_limits=*/false);
+        /*check_row_limits=*/false,
+        /*skip_ranges_analysis=*/false);
 }
 
 bool ReadFromMergeTree::hasThrowingReadRowLimit() const
@@ -3159,10 +3171,29 @@ bool areAllSkipIndexColumnsInPrimaryKey(const KeyDescription & primary_key, cons
 
 }
 
-void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+/// Whether a JOIN runtime filter on `_part_starting_offset + _part_offset` can prune granules: the global row indexes
+/// of the rows of a granule are known without reading anything. A physical column of either name shadows the
+/// virtual one, like for `MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset`.
+static bool isRuntimeFilterGlobalRowIndexUsable(const StorageInMemoryMetadata & metadata)
 {
-    /// Prunable only if in the primary key or has a minmax/set/bloom_filter skip index.
+    const auto & columns = metadata.getColumns();
+    return !columns.has("_part_offset") && !columns.has("_part_starting_offset");
+}
+
+void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
+    const String & filter_id, const String & column_name, const DataTypePtr & column_type, bool is_global_row_index)
+{
     const auto & metadata = *storage_snapshot->metadata;
+    if (is_global_row_index)
+    {
+        if (!isRuntimeFilterGlobalRowIndexUsable(metadata))
+            return;
+        join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type, /*is_global_row_index=*/true});
+        LOG_DEBUG(log, "Registered join runtime filter {} on {}", filter_id, column_name);
+        return;
+    }
+
+    /// Prunable only if in the primary key or has a minmax/set/bloom_filter skip index.
     const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
     const bool is_primary_key_column
         = std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
@@ -3190,7 +3221,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
 void ReadFromMergeTree::copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step)
 {
     for (const auto & descr : replaced_step.join_runtime_filters_for_index_analysis)
-        addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+        addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
 }
 
 void ReadFromMergeTree::buildPartitionPruningIndexes(
@@ -3482,11 +3513,8 @@ bool ReadFromMergeTree::isPrewhereDeferredAfterFinal() const
 /// filter, and either may throw on the rows an earlier condition rejects. So read ahead only when no part
 /// needs that for a column PREWHERE reads, and no on-the-fly mutation or masking policy rewrites columns at
 /// read time. The decision is per query because the steps are built once for all parts.
-bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const
+bool ReadFromMergeTree::canReadColumnsAhead(const Names & column_names, const RangesInDataParts & parts) const
 {
-    if (!query_info.prewhere_info)
-        return false;
-
     if (mutations_snapshot
         && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations()))
         return false;
@@ -3497,7 +3525,7 @@ bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & pa
     const auto & columns = storage_snapshot->metadata->getColumns();
     std::vector<NameAndTypePair> storage_columns;
     NameSet seen_storage_columns;
-    for (const auto & column_name : query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames())
+    for (const auto & column_name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
         if (!column || !seen_storage_columns.insert(column->getNameInStorage()).second)
@@ -3517,6 +3545,11 @@ bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & pa
     }
 
     return true;
+}
+
+bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const
+{
+    return query_info.prewhere_info && canReadColumnsAhead(query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames(), parts);
 }
 
 void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
@@ -3759,7 +3792,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool allow_query_condition_cache_,
     bool allow_top_k_prewhere_query_condition_cache_,
     bool supports_skip_indexes_on_data_read,
-    bool check_row_limits)
+    bool check_row_limits,
+    bool skip_ranges_analysis)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
@@ -3887,6 +3921,18 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     for (const auto & part : res_parts)
         total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
     parts_before_pk = res_parts.size();
+
+    /// Before the query condition cache below, which records the ranges missing from the selection as not matching.
+    if (skip_ranges_analysis)
+    {
+        if (indexes->use_skip_indexes)
+            MergeTreeDataSelectExecutor::checkForcedSkipIndexes(indexes->skip_indexes, settings);
+        LOG_DEBUG(log, "Skipping the analysis of ranges to read: the query takes no row from this read");
+        result.total_parts = total_parts;
+        result.parts_before_pk = parts_before_pk;
+        result.total_marks_pk = total_marks_pk;
+        return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
 
     /// Check if we have projections or exact-range analysis, as that can determine whether we fail
@@ -5063,6 +5109,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    cloned_step->no_rows_needed = no_rows_needed;
     /// Plan-based parallel replicas clone the subtree to ship a fragment, and the fragment's local plan is
     /// optimized with `enable_join_runtime_filters = false` (the filters are already in it), so the
     /// optimization that attaches these descriptors does not run there and cannot put them back.
@@ -5835,6 +5882,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     /// Now check if we have to use primary-key or skip indexes for join pruning
     bool runtime_prune_primary_key = false;
+    bool runtime_prune_global_row_index = false;
     /// A masking policy rewrites columns at read time like a pending mutation, so the on-disk primary index
     /// does not describe the values the query sees and must not be used to prune granules during the read.
     const bool pending_mutations = mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
@@ -5881,6 +5929,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         std::unordered_set<String> seen_index_names;
         for (const auto & descr : runtime_filters_for_data_read)
         {
+            if (descr.is_global_row_index)
+            {
+                runtime_prune_global_row_index = isRuntimeFilterGlobalRowIndexUsable(metadata);
+                continue;
+            }
             if (std::find(pk_columns.begin(), pk_columns.end(), descr.key_column_name) != pk_columns.end())
             {
                 runtime_prune_primary_key = true;
@@ -5905,7 +5958,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// step, which is the invariant the parallel-replicas paths kept breaking; the granule counters only
         /// move once a granule is actually examined, which depends on the coordinator's assignment and on
         /// the filter being ready, so they cannot stand in for it.
-        if (runtime_prune_primary_key || !runtime_skip_indexes.empty())
+        if (runtime_prune_primary_key || runtime_prune_global_row_index || !runtime_skip_indexes.empty())
             ProfileEvents::increment(ProfileEvents::RuntimeFilterIndexAnalysisReads);
     }
 
@@ -5943,21 +5996,37 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         }
     }
 
-    /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter
+    /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter. The global row index descriptors get a predicate
+    /// of their own (see `MergeTreeSkipIndexReader::read`).
     MergeTreeSkipIndexReader::DynamicPredicateBuilder dynamic_predicate_builder;
+    MergeTreeSkipIndexReader::DynamicPredicateBuilder global_row_index_predicate_builder;
     MergeTreeSkipIndexReader::DynamicSkipIndexFilter dynamic_skip_index_filter;
     if (runtime_filter_lookup && !runtime_filters_for_data_read.empty())
     {
-        dynamic_predicate_builder =
-            [lookup = runtime_filter_lookup, descriptors = runtime_filters_for_data_read, ctx = context]
-            (ActionsDAG & dag) -> const ActionsDAG::Node *
-            {
-                return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
-            };
+        std::vector<RuntimeFilterIndexAnalysisDescriptor> key_descriptors;
+        std::vector<RuntimeFilterIndexAnalysisDescriptor> global_row_index_descriptors;
+        for (const auto & descr : runtime_filters_for_data_read)
+            (descr.is_global_row_index ? global_row_index_descriptors : key_descriptors).push_back(descr);
+
+        if (!key_descriptors.empty())
+            dynamic_predicate_builder =
+                [lookup = runtime_filter_lookup, descriptors = key_descriptors, ctx = context]
+                (ActionsDAG & dag) -> const ActionsDAG::Node *
+                {
+                    return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
+                };
+
+        if (!global_row_index_descriptors.empty())
+            global_row_index_predicate_builder =
+                [lookup = runtime_filter_lookup, descriptors = std::move(global_row_index_descriptors), ctx = context]
+                (ActionsDAG & dag) -> const ActionsDAG::Node *
+                {
+                    return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
+                };
 
         const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
-            [lookup = runtime_filter_lookup, descriptors = runtime_filters_for_data_read, bloom_filter_in_cap]
+            [lookup = runtime_filter_lookup, descriptors = std::move(key_descriptors), bloom_filter_in_cap]
             (const IMergeTreeIndex & index) -> bool
             {
                 if (index.index.type != "bloom_filter")
@@ -6008,8 +6077,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     }
 
     /// Need a reader if the join runtime filter selected something to prune.
-    /// Both flags stay unset when the guard above bails (setting off or FINAL).
-    if (!skip_index_reader && (runtime_prune_primary_key || !runtime_skip_indexes.empty()))
+    /// The flags stay unset when the guard above bails (setting off or FINAL).
+    if (!skip_index_reader && (runtime_prune_primary_key || runtime_prune_global_row_index || !runtime_skip_indexes.empty()))
     {
         skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
             UsefulSkipIndexes{},
@@ -6045,6 +6114,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             context,
             getLogger("MergeTreeSkipIndexReader"));
     }
+
+    if (skip_index_reader && runtime_prune_global_row_index && global_row_index_predicate_builder)
+        skip_index_reader->setGlobalRowIndexPruning(std::move(global_row_index_predicate_builder));
 
     if (skip_index_reader && top_k_primary_key_column_position)
         skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);

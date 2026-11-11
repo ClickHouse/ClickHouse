@@ -35,6 +35,7 @@
 #include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Planner/Utils.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -443,15 +444,8 @@ void checkAccessRightsForSelect(
         /// In this case just checking access for `required_columns` doesn't work correctly
         /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
         /// which is probably not the same column as the column the current user has access to.
-        auto access = context->getAccess();
-        const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-        for (const auto & column : table_metadata->getColumns())
-        {
-            /// An `Alias` also requires access to the same column of its target table.
-            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name)
-                && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)))
-                return;
-        }
+        if (!getColumnsSelectableByTrivialQuery(storage, table_id, table_metadata->getColumns(), context).empty())
+            return;
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
@@ -460,7 +454,21 @@ void checkAccessRightsForSelect(
     }
 
     /// General check.
-    context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    /// Map subcolumn names (e.g. `t.a` for a `Tuple` column `t`) back to their parent storage
+    /// column names before the access check. Column-level grants are stored against top-level
+    /// column names only, so `GRANT SELECT(t)` must implicitly cover `t.a`, `t.b`, etc.
+    if (table_metadata)
+    {
+        context->checkAccess(
+            AccessType::SELECT,
+            table_id,
+            table_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+                syntax_analyzer_result.requiredSourceColumnsForAccessCheck(), context, table_id));
+    }
+    else
+    {
+        context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    }
 }
 
 /// Settings-provided filters are user-controlled expressions over table columns and need the same check as the query.
