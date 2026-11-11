@@ -6,7 +6,9 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <expected>
+#include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -127,10 +129,19 @@ bool analyzeProjectionCandidate(
     const ContextPtr & context,
     const HypotheticalProjection * hypothetical_projection = nullptr);
 
+/// What `filterPartsAndCollectProjectionCandidates` changed on the parent read.
+/// Part pruning is already applied to the part list. Row filtering is only executed for
+/// `row_filtered_parts` that the parent read still contains when the plan is finished.
+struct ProjectionFilteringEffect
+{
+    bool pruned_parts = false;
+    std::unordered_set<const IMergeTreeDataPart *> row_filtered_parts;
+};
+
 /// Performs part-level filtering using projection to skip irrelevant data parts.
 /// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.
-/// Returns true if the projection was used for row-level and/or part-level filtering.
-bool filterPartsAndCollectProjectionCandidates(
+/// Returns the effect when the projection pruned parts or built a row filter, and `std::nullopt` when it had no effect.
+std::optional<ProjectionFilteringEffect> filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
     const MergeTreeDataSelectExecutor & reader,

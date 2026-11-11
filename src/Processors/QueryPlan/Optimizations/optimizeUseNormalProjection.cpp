@@ -596,20 +596,65 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (ratio < 0 || ratio > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting optimize_projection_skip_index_ratio should be >= 0 and <= 1 ({})", ratio);
 
-    /// Filtering-only projections are recorded after the final plan shape is known: if a later full
-    /// projection replaces the parent read entirely, they never appear in the executed plan.
-    std::vector<String> filtering_projection_names;
+    /// Filtering projections are recorded once the parent part set is final.
+    /// Part pruning has already changed that set, so it counts even when a full projection later
+    /// replaces the parent branch. Row filtering counts only for parts the parent read still executes.
+    struct FilteringProjectionUse
+    {
+        String name;
+        bool pruned_parts = false;
+        std::unordered_set<const IMergeTreeDataPart *> row_filtered_parts;
+    };
+    std::vector<FilteringProjectionUse> filtering_projections;
+
+    auto set_filtering_description = [&](const String & name, const char * description)
+    {
+        for (auto & stat : parent_reading_select_result->projection_stats)
+        {
+            if (stat.name == name)
+                stat.description = description;
+        }
+        for (auto & stat : parent_reading_select_result->index_stats)
+        {
+            if (stat.type == ReadFromMergeTree::IndexType::Projection && stat.name == name)
+                stat.description = description;
+        }
+    };
+
     auto commit_filtering_projections = [&]()
     {
-        for (const auto & name : filtering_projection_names)
+        const auto & surviving_parts = parent_reading_select_result->parts_with_ranges;
+        for (const auto & use : filtering_projections)
         {
-            result.used_filtering_projections.insert(name);
+            const bool row_filter_survives = std::any_of(surviving_parts.begin(), surviving_parts.end(), [&](const auto & part)
+            {
+                return use.row_filtered_parts.contains(part.data_part.get());
+            });
+
+            if (!use.pruned_parts && !row_filter_survives)
+            {
+                /// Analyzed, but neither effect is in the final plan. Drop the index entry so
+                /// EXPLAIN indexes does not claim the filter runs on the remaining parent read.
+                std::erase_if(parent_reading_select_result->index_stats, [&](const auto & stat)
+                {
+                    return stat.type == ReadFromMergeTree::IndexType::Projection && stat.name == use.name;
+                });
+                set_filtering_description(use.name, "Projection has been analyzed, but it does not filter the final read");
+                continue;
+            }
+
+            /// The row filter was attached to parts a full projection has since taken over.
+            /// Only the part pruning still affects the plan.
+            if (use.pruned_parts && !row_filter_survives && !use.row_filtered_parts.empty())
+                set_filtering_description(use.name, "Projection has been analyzed and is used for part-level filtering");
+
+            result.used_filtering_projections.insert(use.name);
             if (!query_info.is_internal && context->hasQueryContext())
             {
                 context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
                 {
                     .storage_id = reading->getMergeTreeData().getStorageID(),
-                    .projection_name = name,
+                    .projection_name = use.name,
                 });
             }
         }
@@ -645,7 +690,7 @@ UseProjectionsResult optimizeUseNormalProjections(
             if (query.filter_node && optimize_use_projection_filtering)
             {
                 MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
-                if (filterPartsAndCollectProjectionCandidates(
+                if (auto effect = filterPartsAndCollectProjectionCandidates(
                         *reading,
                         *projection,
                         reader,
@@ -654,7 +699,13 @@ UseProjectionsResult optimizeUseNormalProjections(
                         projection_query_info,
                         query.filter_node,
                         context))
-                    filtering_projection_names.push_back(projection->name);
+                {
+                    filtering_projections.push_back(FilteringProjectionUse{
+                        .name = projection->name,
+                        .pruned_parts = effect->pruned_parts,
+                        .row_filtered_parts = std::move(effect->row_filtered_parts),
+                    });
+                }
             }
 
             continue;
@@ -1145,9 +1196,9 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// Here we remove last steps from stack to be able to optimize again.
     stack.resize(iter.base() - stack.begin());
     result.applied_projection = best_candidate->projection->name;
-    /// A full projection that replaces the parent branch discards filtering-only projections.
-    if (has_parent_parts)
-        commit_filtering_projections();
+    /// `has_parent_parts` is whether the parent branch stays in the plan. It does not say whether a
+    /// filtering projection already removed parts, so commit from the final part set either way.
+    commit_filtering_projections();
     return result;
 }
 

@@ -543,7 +543,7 @@ void recordHypotheticalOutcome(
     outcome.forced = outcome.forced && outcome.chosen;
 }
 
-bool filterPartsAndCollectProjectionCandidates(
+std::optional<ProjectionFilteringEffect> filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
     const MergeTreeDataSelectExecutor & reader,
@@ -606,7 +606,7 @@ bool filterPartsAndCollectProjectionCandidates(
     }
 
     if (projection_parts.empty())
-        return false;
+        return std::nullopt;
 
     auto projection_marks_to_read = projection_parts.getMarksCountAllParts();
 
@@ -629,7 +629,7 @@ bool filterPartsAndCollectProjectionCandidates(
 
     /// Projection has no filtering effect, skip it
     if (projection_result_ptr->selected_marks == projection_marks_to_read)
-        return false;
+        return std::nullopt;
 
     /// Under `force_primary_key`, read the projection index only when its own key did the filtering.
     /// Marks can also be dropped without the key (through the query condition cache), which would
@@ -641,14 +641,17 @@ bool filterPartsAndCollectProjectionCandidates(
     size_t max_projection_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_projection_rows_to_use_projection_index];
     size_t min_table_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_table_rows_to_use_projection_index];
     auto & desc = reading.getProjectionIndexReadDescription();
+    ProjectionFilteringEffect effect;
     bool in_use = false;
     for (auto & part : projection_result_ptr->parts_with_ranges)
     {
-        valid_parts.emplace(part.data_part->getParentPart());
+        const auto * parent_part = part.data_part->getParentPart();
+        valid_parts.emplace(parent_part);
         if (projection_index_allowed && projection.sample_block.has("_parent_part_offset")
             && part.getRowsCount() <= max_projection_rows_to_use_projection_index
             && part.parent_ranges.total_rows >= min_table_rows_to_use_projection_index)
         {
+            effect.row_filtered_parts.emplace(parent_part);
             desc.read_ranges[part.part_index_in_query].push_back(std::move(part));
             in_use = true;
         }
@@ -656,6 +659,7 @@ bool filterPartsAndCollectProjectionCandidates(
 
     /// Remove ranges whose data parts are fully filtered by projection.
     size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
+    effect.pruned_parts = filtered_parts > 0;
 
     if (in_use)
     {
@@ -732,10 +736,10 @@ bool filterPartsAndCollectProjectionCandidates(
             .search_algorithm = search_algorithm,
         });
 
-        return true;
+        return effect;
     }
 
-    return false;
+    return std::nullopt;
 }
 
 void fallbackToLocalProjectionReading(const QueryPlanStepPtr & projection_reading)
