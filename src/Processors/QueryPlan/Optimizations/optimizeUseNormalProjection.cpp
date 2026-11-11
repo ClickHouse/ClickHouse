@@ -637,6 +637,11 @@ UseProjectionsResult optimizeUseNormalProjections(
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;
 
+        /// A lazy read made before reads its columns from the projection parts, unless it reads the parent parts by the
+        /// offsets the projection stores, see `can_serve_lazy_read`.
+        const bool lazy_read_from_projection_parts
+            = reading->hasLazilyReadColumns() && !(need_parent_part_offset && projection->with_parent_part_offset);
+
         MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
         bool analyzed = analyzeProjectionCandidate(
             candidate,
@@ -651,7 +656,8 @@ UseProjectionsResult optimizeUseNormalProjections(
             reading->isQueryConditionCacheAllowed(),
             reading->isTopKPrewhereQueryConditionCacheAllowed(),
             context,
-            hypothetical.get());
+            hypothetical.get(),
+            lazy_read_from_projection_parts ? reading->getColumnsReadLazily() : Names{});
 
         if (!analyzed)
         {

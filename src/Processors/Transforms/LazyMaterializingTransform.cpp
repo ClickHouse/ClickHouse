@@ -188,13 +188,41 @@ void LazyMaterializingRows::filterRangesAndFillRows(const PaddedPODArray<UInt64>
 {
     rows_in_parts.clear();
 
-    /// The reads of the main branch added their parts one after another. Each part is read by one of them.
+    /// The reads of the main branch added their parts one after another, in the order of the rows. Several reads can read
+    /// ranges of the same part - the two branches of lazy FINAL - so its ranges are united.
     std::ranges::stable_sort(ranges_in_data_parts, {}, &RangesInDataPart::part_starting_offset_in_query);
-    const auto same_part = std::ranges::adjacent_find(
-        ranges_in_data_parts, [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query == rhs.part_index_in_query; });
-    if (same_part != ranges_in_data_parts.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "LazyMaterializingTransform: The part {} is read by several reads of the main branch", same_part->data_part->name);
+    size_t united_parts = 0;
+    for (size_t index = 0; index < ranges_in_data_parts.size(); ++index)
+    {
+        auto & part = ranges_in_data_parts[index];
+        if (united_parts == 0 || ranges_in_data_parts[united_parts - 1].part_index_in_query != part.part_index_in_query)
+        {
+            if (united_parts != index)
+                ranges_in_data_parts[united_parts] = std::move(part);
+            ++united_parts;
+            continue;
+        }
+
+        auto & united = ranges_in_data_parts[united_parts - 1];
+        if (united.data_part != part.data_part)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "LazyMaterializingTransform: The rows of the part {} are read from {} and from {}",
+                part.part_index_in_query, united.data_part->name, part.data_part->name);
+
+        united.ranges.insert(united.ranges.end(), part.ranges.begin(), part.ranges.end());
+        std::ranges::sort(united.ranges, {}, &MarkRange::begin);
+
+        MarkRanges merged;
+        for (const auto & range : united.ranges)
+        {
+            if (!merged.empty() && range.begin <= merged.back().end)
+                merged.back().end = std::max(merged.back().end, range.end);
+            else
+                merged.push_back(range);
+        }
+        united.ranges = std::move(merged);
+    }
+    ranges_in_data_parts.erase(ranges_in_data_parts.begin() + united_parts, ranges_in_data_parts.end());
 
     /// Here we have a list of part/ranges and the list of sorted indexes.
     /// We need to remove unused granules from ranges, possibly splitting them to smaller ones.
