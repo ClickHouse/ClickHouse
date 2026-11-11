@@ -223,7 +223,7 @@ def s3_cancellation_table(cluster):
 
 
 S3_CANCELLATION_SETTINGS = (
-    "max_threads=1, load_marks_asynchronously=1, "
+    "max_threads=1, load_marks_asynchronously=1, use_statistics_for_sum_avg_aggregation=0, "
     "remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, "
     "filesystem_prefetches_limit=1, enable_filesystem_cache=0, use_uncompressed_cache=0"
 )

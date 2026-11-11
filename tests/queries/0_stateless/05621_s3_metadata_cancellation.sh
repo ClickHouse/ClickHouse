@@ -98,7 +98,7 @@ query --query "
     SYSTEM DROP FILESYSTEM CACHE 's3_cache_cancellation';
 "
 [[ $(query --enable_filesystem_cache=1 --read_from_filesystem_cache_if_exists_otherwise_bypass_cache=0 \
-    --query "SELECT sum(n) FROM ${database}.cached") == 8386560 ]]
+    --query "SELECT sum(n) FROM ${database}.cached SETTINGS use_statistics_for_sum_avg_aggregation=0") == 8386560 ]]
 cache_state()
 {
     query --query "SELECT key, file_segment_range_begin, size, state FROM system.filesystem_cache

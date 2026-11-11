@@ -161,7 +161,7 @@ def test_custom_query_cancellation_does_not_report_broken_part(cluster):
     query_future = executor.submit(
         node.query_and_get_answer_with_error,
         f"SELECT sum(id) FROM {TABLE_NAME} SETTINGS "
-        "max_threads=1, allow_prefetched_read_pool_for_remote_filesystem=1, "
+        "max_threads=1, allow_prefetched_read_pool_for_remote_filesystem=1, use_statistics_for_sum_avg_aggregation=0, "
         "remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, "
         "filesystem_prefetches_limit=1, enable_filesystem_cache=0, use_uncompressed_cache=0",
         query_id=query_id,
