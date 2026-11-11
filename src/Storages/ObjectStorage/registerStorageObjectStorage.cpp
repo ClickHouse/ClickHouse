@@ -292,7 +292,7 @@ With the `hive` partition strategy, the default set by `file_like_engine_default
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern that skips hidden paths (segments starting with `_` or `.`, e.g. `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), following the Hive ecosystem convention. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
 
@@ -418,7 +418,7 @@ With the `hive` partition strategy, the default set by `file_like_engine_default
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`, except that hidden paths (segments below the table root starting with `_` or `.`, e.g. `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`) are skipped, following the Hive ecosystem convention. For plain glob paths without a partition strategy, the same filtering is available via the `s3_skip_hidden_files` / `azure_skip_hidden_files` / `hdfs_skip_hidden_files` settings.
 Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
@@ -1285,6 +1285,7 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `uuid` | `UUID` | |
 | `fixed(N)` | `FixedString(N)` | |
 | `decimal(P, S)` | `Decimal(P, S)` | |
+| `unknown` | `Nullable(Nothing)` | Always `NULL`, not stored in data files (since Iceberg v3 only) |
 
 ### Complex types {#complex-types}
 
@@ -1310,6 +1311,7 @@ ClickHouse supports reading Iceberg tables whose schema has evolved over time. T
 * int -> long
 * float -> double
 * decimal(P, S) -> decimal(P', S) where P' > P.
+* unknown -> any primitive type (since Iceberg v3 only)
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
