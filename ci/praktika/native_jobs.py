@@ -277,8 +277,13 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
             Shell.check("rm -rf .git/modules", verbose=True)
             Shell.check("git submodule sync", verbose=True, strict=True)
             Shell.check("git submodule init", verbose=True, strict=True)
+            # `--jobs` parallelizes only the clones; the fetch of each pinned commit
+            # and its checkout run one submodule at a time, so fan out per submodule.
+            paths = [path for _, path in Digest._get_submodules()]
             Shell.check(
-                "git submodule update --depth=1 --single-branch --jobs 8",
+                "xargs --max-procs=8 --null --max-args=1 "
+                "git submodule update --depth=1 --single-branch --",
+                stdin_str="\0".join(paths) + "\0",
                 verbose=True,
                 strict=True,
                 retries=3,
