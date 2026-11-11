@@ -587,7 +587,6 @@ private:
     {
         String index_name;
         const TextIndexReadInfo * info = nullptr;
-        /// The query the index answers the function with.
         TextSearchQueryPtr search_query;
         /// The virtual column replacing the function. An empty name means the inject-only rewrite (no direct read).
         IndexReadTask::Column virtual_column;
