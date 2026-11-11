@@ -384,7 +384,7 @@ FROM values('series Int8, value Float64', (4, -1e308), (1, 1e308), (3, -9.988465
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
