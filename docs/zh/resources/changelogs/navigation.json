@@ -23,6 +23,7 @@
             {
               "group": "2026",
               "pages": [
+                "zh/resources/changelogs/cloud/release-notes/26_8",
                 "zh/resources/changelogs/cloud/release-notes/26_6",
                 "zh/resources/changelogs/cloud/release-notes/26_4",
                 "zh/resources/changelogs/cloud/release-notes/26_02"
@@ -77,6 +78,5 @@
       ]
     }
   ],
-  "icon": "/images/icons/icon-changelogs.svg",
   "item": "更新日志"
 }

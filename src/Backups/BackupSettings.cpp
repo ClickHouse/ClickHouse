@@ -7,6 +7,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Backups/SettingsFieldOptionalBool.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 
 #include <algorithm>
@@ -39,6 +40,7 @@ namespace ErrorCodes
     M(Bool, async) \
     M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
+    M(Bool, fsync_backup_files) \
     M(Bool, allow_s3_native_copy) \
     M(Bool, allow_azure_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
@@ -54,6 +56,7 @@ namespace ErrorCodes
     M(Bool, allow_checksums_from_remote_paths) \
     M(BackupDataFileNameGeneratorType, data_file_name_generator) \
     M(Bool, backup_data_from_refreshable_materialized_view_targets) \
+    M(OptionalBool, backup_named_collections) \
     LIST_OF_CLOUD_BACKUP_SETTINGS(M) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
@@ -105,6 +108,13 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
             /// both spellings in both places so they are interchangeable. See issue #68551.
             else if (setting.name == "s3_storage_class_name")
                 res.s3_storage_class = SettingFieldString{setting.value}.value;
+            /// Handled before the macro below so that naming the setting is recorded even when the
+            /// value given equals the default one.
+            else if (setting.name == "fsync_backup_files")
+            {
+                res.fsync_backup_files = SettingFieldBool{setting.value}.value;
+                res.fsync_backup_files_specified = true;
+            }
             else
 #define GET_BACKUP_SETTINGS_FROM_QUERY(TYPE, NAME) \
             if (setting.name == #NAME) \
@@ -118,6 +128,14 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
                 res.core_settings.emplace_back(setting);
             }
         }
+    }
+
+    /// `fsync_backup_files = DEFAULT` names the setting too, although its change was dropped above.
+    if (query.settings)
+    {
+        const auto & default_settings = query.settings->as<const ASTSetQuery &>().default_settings;
+        if (std::ranges::find(default_settings, "fsync_backup_files") != default_settings.end())
+            res.fsync_backup_files_specified = true;
     }
 
     if (query.base_backup_name)
@@ -174,6 +192,13 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
         query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
 
     LIST_OF_BACKUP_SETTINGS(COPY_BACKUP_SETTINGS_TO_QUERY)
+
+    /// A host that does not know `fsync_backup_files` must reject the query rather than write its
+    /// share of the backup without fsync, so an explicitly requested value is sent even when the
+    /// loop above omitted it for equalling the default. An unnamed one stays omitted.
+    if (fsync_backup_files_specified && fsync_backup_files == default_settings.fsync_backup_files)
+        query_settings->changes.emplace_back(
+            "fsync_backup_files", static_cast<Field>(SettingFieldBool{fsync_backup_files}));
 
     /// Only the `checksum` generator uses it, and not sending it otherwise keeps hosts that do not know this setting working.
     if (data_file_name_generator == BackupDataFileNameGeneratorType::Checksum && data_file_name_prefix_length)
