@@ -32,7 +32,7 @@ public:
     std::optional<size_t> contiguousEnd(size_t offset, size_t max_gap) const;
 
     /// The set with every gap up to `max_gap` filled, so each interval is one `contiguousEnd` run.
-    ByteRangeSet coalesce(size_t max_gap) const;
+    ByteRangeSet mergeGapsUpTo(size_t max_gap) const;
 
     void shift(size_t delta);
 

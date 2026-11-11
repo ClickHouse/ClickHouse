@@ -854,7 +854,7 @@ void ReaderExecutor::seek(size_t new_position)
 void ReaderExecutor::setRequestMap(ByteRangeSet ranges)
 {
     request_map = std::move(ranges);
-    request_runs = request_map->coalesce(min_bytes_for_seek);
+    request_runs = request_map->mergeGapsUpTo(min_bytes_for_seek);
     if (request_map->empty())
     {
         LOG_TEST(log, "Request map of {}: nothing", log_file_path);

@@ -104,7 +104,7 @@ std::optional<size_t> ByteRangeSet::contiguousEnd(size_t offset, size_t max_gap)
     return end;
 }
 
-ByteRangeSet ByteRangeSet::coalesce(size_t max_gap) const
+ByteRangeSet ByteRangeSet::mergeGapsUpTo(size_t max_gap) const
 {
     ByteRangeSet out;
     for (const auto & i : intervals)
