@@ -38,5 +38,4 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-# Threaded: a pooled/idle client connection must not block the real request.
-http.server.ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), Handler).serve_forever()
+http.server.HTTPServer(("0.0.0.0", int(sys.argv[1])), Handler).serve_forever()

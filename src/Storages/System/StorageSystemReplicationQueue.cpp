@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -15,7 +14,6 @@
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
-#include <Storages/System/extractTablesFilter.h>
 
 
 namespace DB
@@ -81,24 +79,15 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    /// Conditions on `database` and `table` act like an index: they keep the enumeration below
-    /// from resolving every table of every database just to throw the rows away afterwards.
-    const auto database_name_filter = extractNameFilter(predicate, "database", context);
-    const auto table_name_filter = extractNameFilter(predicate, "table", context);
-
     for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
-        if (database_name_filter && !database_name_filter(db.first))
-            continue;
-
         /// Check if database can contain replicated tables
         if (db.second->isExternal())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
-        auto iterator = db.second->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
-        for (; iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);
             if (!table)
@@ -193,6 +182,3 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemReplicationQueue) }

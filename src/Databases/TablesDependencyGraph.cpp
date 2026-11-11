@@ -45,12 +45,11 @@ TablesDependencyGraph & TablesDependencyGraph::operator=(const TablesDependencyG
 {
     if (this != &src)
     {
-        /// Copying the `nodes` set would share the `Node` objects with the source graph - they are held
-        /// by `shared_ptr` and point at each other - so every modification of the copy would also modify
-        /// the graph it was copied from. Rebuild the nodes instead, which is what makes a copy usable as
-        /// a scratch graph, e.g. to test what a rename would do to the dependencies.
-        clear();
-        mergeWith(src);
+        nodes = src.nodes;
+        nodes_by_database_and_table_names = src.nodes_by_database_and_table_names;
+        nodes_by_uuid = src.nodes_by_uuid;
+        levels_calculated = src.levels_calculated;
+        nodes_sorted_by_level_lazy = src.nodes_sorted_by_level_lazy;
     }
     return *this;
 }
@@ -117,25 +116,9 @@ void TablesDependencyGraph::addDependencies(const StorageID & table_id, const st
 {
     auto * table_node = addOrUpdateNode(table_id);
 
-    /// Adding a dependency removes a node from the graph if it gives the name of that node to another node.
-    std::vector<NodeSharedPtr> node_holders;
-    node_holders.reserve(dependencies.size() + 1);
-    node_holders.push_back(*nodes.find(table_node));
-    for (const auto & dependency : dependencies)
-    {
-        auto * dependency_node = addOrUpdateNode(dependency);
-        node_holders.push_back(*nodes.find(dependency_node));
-        if (!nodes.contains(table_node))
-            table_node = dependency_node; /// It has the name `table_node` had, so it's the node of `table_id` now.
-    }
-
     std::unordered_set<Node *> new_dependency_nodes;
-    for (size_t i = 1; i < node_holders.size(); ++i)
-    {
-        /// A removed node gave its name to the node of a later dependency, which is in the set.
-        if (nodes.contains(node_holders[i].get()))
-            new_dependency_nodes.emplace(node_holders[i].get());
-    }
+    for (const auto & dependency : dependencies)
+        new_dependency_nodes.emplace(addOrUpdateNode(dependency));
 
     if (table_node->dependencies == new_dependency_nodes)
         return;
@@ -262,15 +245,11 @@ std::vector<StorageID> TablesDependencyGraph::removeDependencies(const StorageID
         }
     }
 
-    /// `table_node` was its own dependency if it was removed above, and is dangling from then on.
-    if (!table_node_removed)
+    chassert(table_node->dependencies.empty());
+    if (remove_isolated_tables && !table_node_removed && table_node->dependents.empty())
     {
-        chassert(table_node->dependencies.empty());
-        if (remove_isolated_tables && table_node->dependents.empty())
-        {
-            /// The table `table_id` has no dependencies and no dependents now, so we will remove it from the graph.
-            removeNode(table_node);
-        }
+        /// The table `table_id` has no dependencies and no dependents now, so we will remove it from the graph.
+        removeNode(table_node);
     }
 
     setNeedRecalculateLevels();
@@ -414,7 +393,7 @@ void TablesDependencyGraph::removeNode(Node * node)
     chassert(it != nodes.end());
     nodes.erase(it);
 
-    setNeedRecalculateLevels();
+    nodes_sorted_by_level_lazy.clear();
 }
 
 

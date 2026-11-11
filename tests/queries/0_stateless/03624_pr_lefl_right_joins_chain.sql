@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab ( `k` Nullable(UInt32), `k1` Nullable(UInt32), `k2` Nullable(UInt32), `v` String ) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab VALUES (1, 1, 1, 'a'), (2, 2, 2, 'b');
@@ -10,6 +9,8 @@ INSERT INTO mem VALUES (1, 'A'), (2, 'B'), (3, 'B');
 DROP TABLE IF EXISTS mem2;
 CREATE TABLE mem2 ( `k` UInt64, `v` String ) ENGINE = Join(ANY, RIGHT, k);
 INSERT INTO mem2 VALUES (1, 'A'), (2, 'B'), (3, 'B');
+
+SET enable_analyzer = 1;
 
 SELECT '-- no parallel replicas --';
 SELECT *

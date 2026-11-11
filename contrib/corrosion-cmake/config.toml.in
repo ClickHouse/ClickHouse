@@ -1,14 +1,12 @@
 [profile.release]
 debug = false
 strip = true
-@RUST_RELEASE_PROFILE_EXTRA@
 
 # We use LTO to slightly decrease binary size
 [profile.release-thinlto]
 inherits = "release"
 lto = true
 
-@RUST_DEV_PROFILE@
 [source.vendored-sources]
 directory = "@RUST_VENDOR_DIR@"
 
