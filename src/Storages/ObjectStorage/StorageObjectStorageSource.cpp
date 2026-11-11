@@ -241,12 +241,6 @@ namespace
             || configuration.partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE;
     }
 
-    String getObjectStorageHash(const IObjectStorage & object_storage)
-    {
-        const String description = object_storage.getDescription();
-        return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
-    }
-
     String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
     {
         if (object_storage->getType() != ObjectStorageType::Web)

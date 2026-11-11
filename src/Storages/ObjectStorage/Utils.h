@@ -33,6 +33,9 @@ void validateSupportedColumns(
 /// `context` may not. For entrypoints that do not refresh the client for the session, e.g. `ALTER` of a data lake.
 void checkSessionMayUseServerIdentity(const IObjectStorage & object_storage, const ContextPtr & context);
 
+/// Identifies the storage object paths are relative to (its description without the query string, and its namespace).
+String getObjectStorageHash(const IObjectStorage & object_storage);
+
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
 
