@@ -46,5 +46,14 @@ void ASTSetRoleQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
 
     ostr << " TO ";
     to_users->format(ostr, settings);
+
+    formatOnCluster(ostr, settings);
+}
+
+
+void ASTSetRoleQuery::replaceCurrentUserTag(const String & current_user_name) const
+{
+    if (to_users)
+        to_users->replaceCurrentUserTag(current_user_name);
 }
 }

@@ -1,5 +1,4 @@
 -- Tags: no-fasttest, no-ordinary-database
-SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS tab_l2_mismatch;

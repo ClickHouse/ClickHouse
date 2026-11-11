@@ -1,0 +1,27 @@
+<test>
+    <create_query>
+CREATE TABLE window_functions_ranking (p UInt32, k UInt32, u UInt64) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <!-- 7000 partitions of 10000 rows in insertion order, so every window sorts; k has about ten ties per value inside a partition (prime modulus, so the ties do not line up with the partition step), u is unique. -->
+    <fill_query>INSERT INTO window_functions_ranking SELECT number % 7000, (number * 7919) % 1009, number FROM numbers_mt(70000000)</fill_query>
+
+    <!-- Ranking with ties: peer groups of about ten rows. -->
+    <query>SELECT rank() OVER (PARTITION BY p ORDER BY k) FROM window_functions_ranking WHERE p &lt; 2500 FORMAT Null</query>
+    <query>SELECT dense_rank() OVER (PARTITION BY p ORDER BY k) FROM window_functions_ranking WHERE p &lt; 2500 FORMAT Null</query>
+    <query>SELECT percent_rank() OVER (PARTITION BY p ORDER BY k) FROM window_functions_ranking WHERE p &lt; 2500 FORMAT Null</query>
+    <query>SELECT cume_dist() OVER (PARTITION BY p ORDER BY k) FROM window_functions_ranking WHERE p &lt; 2500 FORMAT Null</query>
+
+    <!-- Ranking without ties: every peer group is a single row. -->
+    <query>SELECT rank() OVER (PARTITION BY p ORDER BY u) FROM window_functions_ranking FORMAT Null</query>
+    <query>SELECT row_number() OVER (PARTITION BY p ORDER BY u) FROM window_functions_ranking FORMAT Null</query>
+    <query>SELECT ntile(10) OVER (PARTITION BY p ORDER BY u) FROM window_functions_ranking FORMAT Null</query>
+    <query>SELECT lag(u) OVER (PARTITION BY p ORDER BY u), lead(u) OVER (PARTITION BY p ORDER BY u) FROM window_functions_ranking FORMAT Null</query>
+
+    <!-- Frames defined by peer groups. -->
+    <query>SELECT sum(u) OVER (PARTITION BY p ORDER BY k) FROM window_functions_ranking WHERE p &lt; 1500 FORMAT Null</query>
+    <query>SELECT count() OVER (PARTITION BY p ORDER BY k GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM window_functions_ranking WHERE p &lt; 2200 FORMAT Null</query>
+    <query>SELECT count() OVER (PARTITION BY p ORDER BY k RANGE BETWEEN 5 PRECEDING AND 5 FOLLOWING) FROM window_functions_ranking WHERE p &lt; 2200 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS window_functions_ranking</drop_query>
+</test>

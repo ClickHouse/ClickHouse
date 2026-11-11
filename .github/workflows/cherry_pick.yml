@@ -52,8 +52,9 @@ jobs:
       - name: Debug Info
         uses: ./.github/actions/debug
       - name: Cherry pick
-        working-directory: ci/tools
-        run: python3 cherry_pick.py --loop
+        # Runs from the repo root: praktika resolves `ci/settings` relative to
+        # the process working directory.
+        run: python3 ci/tools/cherry_pick.py --loop
       - name: Cleanup
         if: always()
         run: |

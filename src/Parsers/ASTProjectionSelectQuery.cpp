@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <base/EnumReflection.h>
@@ -115,9 +117,14 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     {
         /// Let's convert tuple ASTFunction into ASTExpressionList, which generates consistent format
         /// between GROUP BY and ORDER BY projection definition.
+        /// The parser builds a `tuple` only from two or more top-level expressions without aliases.
+        /// A `tuple` of one argument or with an aliased argument was written as such and has to stay one:
+        /// unwrapping it would change the AST or produce a definition which cannot be parsed back.
         ostr << s.nl_or_ws << indent_str << "ORDER BY";
         ASTPtr order_by;
-        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple" && func->arguments && !func->arguments->children.empty())
+        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple" && func->arguments
+            && func->arguments->children.size() > 1
+            && std::ranges::none_of(func->arguments->children, [](const ASTPtr & argument) { return !argument->tryGetAlias().empty(); }))
             order_by = func->arguments;
         else
         {
@@ -225,7 +232,7 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
 
     auto setExpr = [&](const char * key, ASTProjectionSelectQuery::Expression expr)
     {
-        auto child = r.readChild(key);
+        auto child = r.readExpressionChild(key);
         if (child)
             this->setExpression(expr, std::move(child));
     };
@@ -234,7 +241,7 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// `as<ASTExpressionList &>()`, so reject a non-list node from malformed `clickhouse_json`.
     auto setExprList = [&](const char * key, ASTProjectionSelectQuery::Expression expr)
     {
-        if (auto child = r.readChildOfType<ASTExpressionList>(key))
+        if (auto child = r.readScreenedChildOfType<ASTExpressionList>(key))
             this->setExpression(expr, std::move(child));
     };
 
@@ -242,7 +249,7 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
 
     /// `formatImpl` always formats the SELECT expression list and unconditionally
     /// casts it to `ASTExpressionList`, so it must be present and of the right type.
-    auto select_child = r.readChild("select");
+    auto select_child = r.readExpressionChild("select");
     if (!select_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'select' during AST JSON deserialization");
     if (!select_child->as<ASTExpressionList>())
@@ -259,7 +266,7 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// `ASTExpressionList` or a sort-wrapper node. Such shapes would format as an ordinary
     /// `ORDER BY a, b` but later fail in projection analysis when `cloneToASTSelect` splices the
     /// node into the synthetic `SELECT` list, so reject them at the JSON boundary.
-    if (auto order_by_child = r.readChild("order_by"))
+    if (auto order_by_child = r.readExpressionChild("order_by"))
     {
         if (order_by_child->as<ASTExpressionList>() || order_by_child->as<ASTOrderByElement>()
             || order_by_child->as<ASTStorageOrderByElement>())

@@ -8,11 +8,13 @@ the format per table.
 
 import json
 import os
+import shlex
 import uuid
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_access_key, minio_secret_key
 
 CATALOG = "unity"
 
@@ -129,7 +131,8 @@ def start_proxy(node):
         [
             "bash",
             "-c",
-            f"python3 {PROXY_PATH} {PROXY_PORT} > {PROXY_LOG} 2>&1 &",
+            f"python3 {PROXY_PATH} {PROXY_PORT} {shlex.quote(minio_access_key)} {shlex.quote(minio_secret_key)}"
+            f" > {PROXY_LOG} 2>&1 &",
         ]
     )
 
@@ -164,6 +167,7 @@ def started_cluster():
             image="clickhouse/integration-test-with-unity-catalog",
             with_installed_binary=False,
             stay_alive=True,
+            with_minio=True,
             tag=os.environ.get("DOCKER_BASE_WITH_UNITY_CATALOG_TAG", "latest"),
         )
 
@@ -180,9 +184,9 @@ def started_cluster():
         cluster.shutdown()
 
 
-def skip_if_no_delta_kernel(node):
+def has_delta_kernel(node):
     # The Delta kernel (Rust) is not built under Memory Sanitizer, so the DeltaLake engine is absent.
-    has_delta_lake = (
+    return (
         int(
             node.query(
                 "SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'"
@@ -190,8 +194,16 @@ def skip_if_no_delta_kernel(node):
         )
         > 0
     )
-    if not has_delta_lake:
+
+
+def skip_if_no_delta_kernel(node):
+    if not has_delta_kernel(node):
         pytest.skip("Build does not support DeltaLake (Delta kernel is unavailable)")
+
+
+def probe_table(node):
+    """A seeded table to read: the Delta one, or its UniForm copy (read as Iceberg) without the Delta kernel."""
+    return DELTA_TABLE if has_delta_kernel(node) else UNIFORM_TABLE
 
 
 def unique_name(prefix):
@@ -241,12 +253,20 @@ def assert_seeded_rows(node, db_name, table):
 
 def uc_api_post(node, route, payload):
     """Registers objects the seeded data does not provide, such as a CSV table."""
+    return uc_api_request(node, "POST", route, json.dumps(payload).encode())
+
+
+def uc_api_delete(node, route):
+    return uc_api_request(node, "DELETE", route)
+
+
+def uc_api_request(node, method, route, data=None):
     script = f"""
 import json, urllib.request
 request = urllib.request.Request(
     {UC_URL + "/" + route!r},
-    data={json.dumps(payload)!r}.encode(),
-    method="POST",
+    data={data!r},
+    method={method!r},
     headers={{"Content-Type": "application/json"}},
 )
 print(urllib.request.urlopen(request).status)
@@ -321,6 +341,7 @@ def test_alter_switches_implementation(started_cluster):
 def test_list_and_read_delta_tables(started_cluster):
     """On an all-Delta catalog the new implementation must match the legacy one."""
     node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
     db_name = unique_name("v2_delta")
     create_database(node, db_name)
 
@@ -404,7 +425,11 @@ def test_iceberg_table_routes_to_iceberg_arm(started_cluster):
     direct = node.query(f"SHOW CREATE TABLE {direct_db}.`{UNIFORM_TABLE}`")
 
     assert "Iceberg" in proxied
-    assert "DeltaLake" in direct
+    # Without the Delta kernel the Delta arm marks the table unreadable (`ENGINE = Other`),
+    # but it still must not be routed to Iceberg.
+    assert "Iceberg" not in direct
+    if has_delta_kernel(node):
+        assert "DeltaLake" in direct
 
 
 def test_iceberg_table_is_listed_and_readable(started_cluster):
@@ -427,6 +452,7 @@ def test_iceberg_table_is_listed_and_readable(started_cluster):
 def test_mixed_formats_in_one_database(started_cluster):
     """One database serving both formats, which is the point of the engine."""
     node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
     db_name = unique_name("v2_mixed")
     create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
 
@@ -485,14 +511,124 @@ def test_create_and_insert_delta_table(started_cluster):
     assert len(commits) == 2, commits
 
 
+@pytest.mark.parametrize("use_v2", [0, 1])
+def test_insert_requests_write_credentials(started_cluster, use_v2):
+    """Unity vends read-only credentials for `READ`, so `INSERT` into an
+    external Delta table on S3 must request `READ_WRITE` ones."""
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    schema_name = unique_name("write_credentials")
+    table_name = "on_s3"
+    db_name = unique_name("write_credentials_db")
+    table_key = f"{schema_name}/{table_name}"
+    minio_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+
+    node.query(
+        f"CREATE TABLE {schema_name} (id Int32, name String) ENGINE = DeltaLake("
+        f"'{minio_endpoint}{started_cluster.minio_bucket}/{table_key}/', '{minio_access_key}', '{minio_secret_key}')",
+        settings=DELTA_WRITE_SETTINGS,
+    )
+    node.query(f"DROP TABLE {schema_name}")
+
+    uc_api_post(node, "schemas", {"name": schema_name, "catalog_name": CATALOG})
+    uc_api_post(
+        node,
+        "tables",
+        {
+            "name": table_name,
+            "catalog_name": CATALOG,
+            "schema_name": schema_name,
+            "table_type": "EXTERNAL",
+            "data_source_format": "DELTA",
+            "storage_location": f"s3://{started_cluster.minio_bucket}/{table_key}",
+            "columns": [
+                {
+                    "name": name,
+                    "type_text": type_text,
+                    "type_json": json.dumps(
+                        {"name": name, "type": type_json, "nullable": True, "metadata": {}}
+                    ),
+                    "type_name": type_name,
+                    "position": position,
+                    "nullable": True,
+                }
+                for position, (name, type_text, type_json, type_name) in enumerate(
+                    [("id", "int", "integer", "INT"), ("name", "string", "string", "STRING")]
+                )
+            ],
+        },
+    )
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""
+CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{PROXY_URL}')
+SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = {use_v2},
+         vended_credentials = true, catalog_credential = '{PAT_TOKEN}',
+         storage_endpoint = '{minio_endpoint}'
+        """,
+        settings={GATE_SETTING: "1"},
+    )
+    table = f"{db_name}.`{schema_name}.{table_name}`"
+
+    try:
+        proxy_control(node, "reset_credential_operations")
+        node.query(f"SELECT count() FROM {table}")
+        assert set(json.loads(proxy_control(node, "credential_operations"))) == {"READ"}
+
+        proxy_control(node, "reset_credential_operations")
+        node.query(f"INSERT INTO {table} VALUES (1, 'a'), (2, 'b')", settings=DELTA_WRITE_SETTINGS)
+        assert "READ_WRITE" in json.loads(proxy_control(node, "credential_operations"))
+
+        assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name}")
+        uc_api_delete(node, f"tables/{CATALOG}.{schema_name}.{table_name}")
+        uc_api_delete(node, f"schemas/{CATALOG}.{schema_name}")
+
+
+def test_drop_table(started_cluster):
+    """`DROP TABLE` removes the table from Unity, not only from ClickHouse."""
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    schema_name = unique_name("v2_drop")
+    table = f"{schema_name}.dropped"
+    db_name = unique_name("v2_drop_db")
+
+    uc_api_post(node, "schemas", {"name": schema_name, "catalog_name": CATALOG})
+    create_database(node, db_name)
+
+    node.query(
+        f"CREATE TABLE {db_name}.`{table}` (id Int32)"
+        f" ENGINE = DeltaLakeLocal('/var/lib/clickhouse/user_files/tmp/{table}')",
+        settings=DELTA_WRITE_SETTINGS,
+    )
+    assert show_tables(node, db_name, f"{schema_name}%") == [table]
+
+    # The table is external, so Databricks keeps its data. Asking to delete it is refused.
+    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
+        f"DROP TABLE {db_name}.`{table}`",
+        settings={"iceberg_delete_data_on_drop": 1},
+    )
+    assert show_tables(node, db_name, f"{schema_name}%") == [table]
+
+    node.query(f"DROP TABLE {db_name}.`{table}`")
+
+    assert show_tables(node, db_name, f"{schema_name}%") == []
+    assert "UNKNOWN_TABLE" in node.query_and_get_error(
+        f"SELECT * FROM {db_name}.`{table}`"
+    )
+
+
 def test_pat_token_authentication(started_cluster):
     node = started_cluster.instances["node1"]
+    table = probe_table(node)
     db_name = unique_name("v2_pat")
 
     # Succeeds with correct token.
     create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
-    assert DELTA_TABLE in show_tables(node, db_name, "default%")
-    assert_seeded_rows(node, db_name, DELTA_TABLE)
+    assert table in show_tables(node, db_name, "default%")
+    assert_seeded_rows(node, db_name, table)
 
     # Fails with incorrect token.
     bad_db = unique_name("v2_pat_bad")
@@ -504,16 +640,17 @@ def test_pat_token_authentication(started_cluster):
 def test_oauth_token_refresh(started_cluster):
     # Create DB with client ID and secret.
     node = started_cluster.instances["node1"]
+    table = probe_table(node)
     db_name = unique_name("v2_oauth")
     create_database(node, db_name, PROXY_URL, f"{CLIENT_ID}:{CLIENT_SECRET}")
-    assert_seeded_rows(node, db_name, DELTA_TABLE)
+    assert_seeded_rows(node, db_name, table)
 
     # Expire the token.
     proxy_control(node, "expire")
 
     # Verify refresh.
     assert_seeded_rows(node, db_name, UNIFORM_TABLE)
-    assert_seeded_rows(node, db_name, DELTA_TABLE)
+    assert_seeded_rows(node, db_name, table)
 
     # Verify failure with wrong secret.
     bad_db = unique_name("v2_oauth_bad")
@@ -524,9 +661,10 @@ def test_oauth_token_refresh(started_cluster):
 
 def test_static_token_expiry(started_cluster):
     node = started_cluster.instances["node1"]
+    table = probe_table(node)
     db_name = unique_name("v2_pat_expired")
     create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
-    assert_seeded_rows(node, db_name, DELTA_TABLE)
+    assert_seeded_rows(node, db_name, table)
 
     try:
         proxy_control(node, "revoke_pat")
@@ -547,12 +685,13 @@ def test_static_token_expiry(started_cluster):
     finally:
         proxy_control(node, "restore_pat")
 
-    assert_seeded_rows(node, db_name, DELTA_TABLE)
+    assert_seeded_rows(node, db_name, table)
 
 
 def test_iceberg_rest_denied_keeps_database_usable(started_cluster):
     """No Iceberg REST access: the table is unreadable, the database still works."""
     node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
     db_name = unique_name("v2_iceberg_rest_denied")
     create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
 
