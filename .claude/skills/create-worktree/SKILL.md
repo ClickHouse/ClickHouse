@@ -3,7 +3,7 @@ name: create-worktree
 description: Create a ClickHouse git worktree whose submodules share storage with the main checkout, add submodules to a worktree that was created without them, or update the submodules of a worktree after a merge moved their pins. Use when the user wants a new worktree for ClickHouse development, or when the submodules of a worktree must follow new pins.
 argument-hint: <branch-name>
 disable-model-invocation: false
-allowed-tools: Bash(git:*), Bash(ls:*), Bash(pwd:*), Bash(.claude/skills/create-worktree/worktree.sh:*), AskUserQuestion
+allowed-tools: Bash(git:*), Bash(ls:*), Bash(pwd:*), Bash(${CLAUDE_SKILL_DIR}/worktree.sh *), AskUserQuestion
 ---
 
 # Create ClickHouse Worktree Skill
@@ -65,11 +65,10 @@ If you are not sure, use `AskUserQuestion`: "Will you build or run tests in this
 
 ### 5. Run the script
 
-Run it from `MAIN_REPO`, with its output in a log file. With submodules, it takes several minutes. Run it in the background.
+Run the script next to this file, with its output in a log file. With submodules, it takes several minutes. Run it in the background.
 
 ```bash
-cd <MAIN_REPO>
-.claude/skills/create-worktree/worktree.sh create [--no-submodules] <MAIN_REPO> <WORKTREE_PATH> <branch-name> [<start-point>] \
+${CLAUDE_SKILL_DIR}/worktree.sh create [--no-submodules] <MAIN_REPO> <WORKTREE_PATH> <branch-name> [<start-point>] \
     > <MAIN_REPO>/tmp/create-worktree-<SAFE_BRANCH>.log 2>&1
 ```
 
@@ -89,12 +88,12 @@ Report to the user:
 
 - **After a merge or a checkout that moved submodule pins** in the worktree (for example a merge of master):
   ```bash
-  <MAIN_REPO>/.claude/skills/create-worktree/worktree.sh update-submodules <WORKTREE_PATH>
+  ${CLAUDE_SKILL_DIR}/worktree.sh update-submodules <WORKTREE_PATH>
   ```
   It reads the pins from the index, so it also works during a merge, after the conflicts in the submodules are resolved. It does not use `-f`: when local changes in a submodule are in the way, it fails for that submodule, and the user decides.
 - **A worktree was created with `--no-submodules`, and now it needs a build:**
   ```bash
-  <MAIN_REPO>/.claude/skills/create-worktree/worktree.sh add-submodules <WORKTREE_PATH>
+  ${CLAUDE_SKILL_DIR}/worktree.sh add-submodules <WORKTREE_PATH>
   ```
   If it reports that `<MAIN_REPO>/.git/worktrees/<name>/modules` exists, that directory is a partial setup, for example from an earlier `git submodule update --init`. Remove that directory, then run `add-submodules` again.
 
