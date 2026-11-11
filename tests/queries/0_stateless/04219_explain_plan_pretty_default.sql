@@ -1,7 +1,6 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings, no-random-settings
 -- EXPLAIN output may differ
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET use_statistics = 0;
 SET optimize_move_to_prewhere = 0;

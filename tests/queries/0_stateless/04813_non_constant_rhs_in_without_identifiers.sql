@@ -4,8 +4,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 1;
-
 SELECT number IN (materialize(1)) FROM numbers(3);
 SELECT number NOT IN (materialize(1)) FROM numbers(3);
 SELECT number IN (materialize(1), 2) FROM numbers(3);
