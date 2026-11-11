@@ -96,6 +96,12 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 
     field = String();
     String & s = field.safeGet<String>();
+    if (size <= istr.available())
+    {
+        s.resize(size);
+        istr.readStrict(s.data(), size);
+        return;
+    }
     readStringGrowing(s, size, istr);
 }
 
