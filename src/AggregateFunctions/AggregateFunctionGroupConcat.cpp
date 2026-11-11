@@ -1,9 +1,11 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {

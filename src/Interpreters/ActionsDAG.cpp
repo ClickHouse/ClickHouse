@@ -33,6 +33,7 @@
 #include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
