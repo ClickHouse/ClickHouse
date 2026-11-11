@@ -23,7 +23,7 @@ CustomSeparatedRowOutputFormat::CustomSeparatedRowOutputFormat(
 {
 }
 
-void CustomSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
+void CustomSeparatedRowOutputFormat::writeLine(std::span<const String> values)
 {
     writeRowStartDelimiter();
     for (size_t i = 0; i != values.size(); ++i)
