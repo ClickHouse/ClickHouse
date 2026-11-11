@@ -66,10 +66,14 @@ do
             WHERE database = currentDatabase() AND table = 'mtp_source' AND active"
 
         PARTS=$(parts_description)
+        EXPECTED=$(${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id), uniqExact(dt) FROM mtp_source")
+
+        # The source table is detached: the table function must not need it or any of its metadata.
+        ${CLICKHOUSE_CLIENT} --query "DETACH TABLE mtp_source"
 
         # A full scan returns the same thing as reading the table itself.
         read_parts "count(), sum(id), uniqExact(dt)" ""
-        ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id), uniqExact(dt) FROM mtp_source"
+        echo "${EXPECTED}"
 
         # The same with each part's mark ranges split across several threads.
         read_parts "count(), sum(id), uniqExact(dt)" "SETTINGS max_threads = 4,
@@ -81,6 +85,8 @@ do
         read_parts "count(), sum(id)" "PREWHERE id % 2 = 0"
         read_parts "data" "PREWHERE id = 42"
 
+        ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE mtp_source"
+
         # A materialized lightweight delete mask is applied. The synchronous mutation is the slowest
         # part of the test, so it runs once per part type, not for every storage type.
         if [[ ${min_bytes_for_full_part_storage} = 0 ]]
@@ -90,8 +96,11 @@ do
                 SETTINGS lightweight_delete_mode = 'alter_update', lightweight_deletes_sync = 2;
                 SYSTEM STOP MERGES mtp_source;"
             PARTS=$(parts_description)
+            EXPECTED=$(${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM mtp_source")
+            ${CLICKHOUSE_CLIENT} --query "DETACH TABLE mtp_source"
             read_parts "count(), sum(id)" ""
-            ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM mtp_source"
+            echo "${EXPECTED}"
+            ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE mtp_source"
         fi
     done
 done
