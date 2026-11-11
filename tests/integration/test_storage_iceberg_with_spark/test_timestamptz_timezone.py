@@ -20,11 +20,11 @@ def test_timestamptz_timezone(started_cluster_iceberg_with_spark):
     table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}"
 
     previous_spark_timezone = spark.conf.get("spark.sql.session.timeZone")
-    spark.conf.set("spark.sql.session.timeZone", "UTC")
+    spark.conf.set("spark.sql.session.timeZone", "Asia/Tokyo")
     try:
         spark.sql(f"CREATE TABLE {table_name} (id INT, ts TIMESTAMP) USING iceberg PARTITIONED BY (days(ts))")
         spark.sql(
-            f"INSERT INTO {table_name} VALUES (1, TIMESTAMP '2024-01-01 23:30:00'), (2, TIMESTAMP '2024-01-02 12:00:00')"
+            f"INSERT INTO {table_name} VALUES (1, TIMESTAMP '2024-01-02 08:30:00'), (2, TIMESTAMP '2024-01-02 21:00:00')"
         )
 
         default_upload_directory(started_cluster_iceberg_with_spark, storage_type, f"{table_path}/", f"{table_path}/")
@@ -73,9 +73,9 @@ def test_timestamptz_timezone(started_cluster_iceberg_with_spark):
             f"SELECT id, CAST(ts AS STRING) AS ts FROM {table_name} ORDER BY id"
         ).collect()
         assert [(row.id, row.ts) for row in rows] == [
-            (1, "2024-01-01 23:30:00"),
-            (2, "2024-01-02 12:00:00"),
-            (3, "2024-01-02 23:30:00"),
+            (1, "2024-01-02 08:30:00"),
+            (2, "2024-01-02 21:00:00"),
+            (3, "2024-01-03 08:30:00"),
         ]
         partitions = spark.sql(
             f"SELECT CAST(partition.ts_day AS STRING) AS day, record_count FROM default.{table_name}.files ORDER BY day"
