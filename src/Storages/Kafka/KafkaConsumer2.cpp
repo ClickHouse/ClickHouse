@@ -1,13 +1,8 @@
 #include <Storages/Kafka/KafkaConsumer2.h>
 
-#include <iterator>
 #include <IO/ReadBufferFromMemory.h>
-#include <Storages/Kafka/StorageKafkaUtils.h>
-#include <cppkafka/cppkafka.h>
-#include <cppkafka/exceptions.h>
-#include <cppkafka/topic_partition.h>
-#include <cppkafka/topic_partition_list.h>
-#include <fmt/ostream.h>
+#include <Storages/Kafka/Clients/Error.h>
+#include <Storages/Kafka/Clients/Types.h>
 #include <fmt/ranges.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DateLUT.h>
@@ -16,12 +11,14 @@
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
+#include <unordered_set>
 
 namespace ProfileEvents
 {
 extern const Event KafkaMessagesPolled;
 extern const Event KafkaCommitFailures;
 extern const Event KafkaCommits;
+extern const Event KafkaConsumerErrors;
 }
 
 namespace DB
@@ -33,10 +30,12 @@ namespace ErrorCodes
 };
 
 using namespace std::chrono_literals;
-static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
-static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
-static constexpr auto GET_KAFKA_METADATA_TIMEOUT_MS = 1000ms;
-static constexpr size_t DRAIN_REMOVED_PARTITION_BATCH_SIZE = 1024;
+static constexpr auto GET_KAFKA_METADATA_TIMEOUT = 1000ms;
+/// Offset resolution and commits are coordinator round trips with internal
+/// retries; the old implementation gave commits five tries of librdkafka's
+/// synchronous commit, which is in the same ballpark.
+static constexpr auto OFFSET_RESOLUTION_TIMEOUT = 10000ms;
+static constexpr auto COMMIT_TIMEOUT = 5000ms;
 
 bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) const
 {
@@ -49,6 +48,7 @@ KafkaConsumer2::KafkaConsumer2(
     size_t poll_timeout_,
     const std::atomic<bool> & stopped_,
     const Names & topics_,
+    const String & group_,
     size_t skip_bytes_)
     : exceptions_buffer(EXCEPTIONS_DEPTH)
     , log(log_)
@@ -58,185 +58,93 @@ KafkaConsumer2::KafkaConsumer2(
     , stopped(stopped_)
     , current(messages.begin())
     , topics(topics_)
+    , group(group_)
 {
 }
 
-KafkaConsumer2::~KafkaConsumer2()
-{
-    if (!consumer)
-        return;
+/// The client owns no threads and runs no callbacks, so the destruction is
+/// a plain synchronous teardown.
+KafkaConsumer2::~KafkaConsumer2() = default;
 
-    auto consumer_to_close = moveConsumer();
-    consumer_to_close.reset();
-}
-
-void KafkaConsumer2::createConsumer(cppkafka::Configuration consumer_config)
+void KafkaConsumer2::createConsumer(Kafka::ClientConfig consumer_config)
 {
-    if (consumer)
+    if (client)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KafkaConsumer2::createConsumer called when consumer already exists");
 
-    if (consumer_config.get("statistics.interval.ms") != "0")
-    {
-        consumer_config.set_stats_callback(
-            [weak_this = weak_from_this()](cppkafka::KafkaHandleBase &, const std::string & stat_json)
-            {
-                auto shared_this = weak_this.lock();
-                if (!shared_this)
-                    return;
-
-                std::lock_guard<std::mutex> lock(shared_this->rdkafka_stat_mutex);
-                shared_this->rdkafka_stat = stat_json;
-            });
-    }
-    // Create a consumer and subscribe to topics
-    consumer = std::make_shared<cppkafka::Consumer>(std::move(consumer_config));
-    consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
-}
-
-CppKafkaConsumerPtr && KafkaConsumer2::moveConsumer()
-{
-    // messages and queues should be destroyed before consumer
-    cleanQueuesAndMessages();
-    StorageKafkaUtils::consumerStopWithoutRebalance(
-        *consumer,
-        DRAIN_TIMEOUT_MS,
-        log,
-        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
-    return std::move(consumer);
-}
-
-void KafkaConsumer2::pollEvents()
-{
-    static constexpr auto max_tries = 5;
-    for (auto i = 0; i < max_tries; ++i)
-    {
-        auto msg = consumer->poll(EVENT_POLL_TIMEOUT);
-        if (!msg)
-            return;
-        // All the partition queues are detached, so the consumer shouldn't be able to poll any real messages
-        const auto err = msg.get_error();
-        chassert(RD_KAFKA_RESP_ERR_NO_ERROR != err.get_error() && "Consumer returned a message when it was not expected");
-        LOG_ERROR(log, "Consumer received error while polling events, code {}, error '{}'", err.get_error(), err.to_string());
-    }
-};
-
-bool KafkaConsumer2::polledDataUnusable(const TopicPartition & topic_partition) const
-{
-    const auto different_topic_partition = current == messages.end()
-        ? false
-        : (current->get_topic() != topic_partition.topic || current->get_partition() != topic_partition.partition_id);
-    return different_topic_partition;
+    client_id = consumer_config.client_id;
+    client = std::make_unique<Kafka::Client>(std::move(consumer_config));
 }
 
 void KafkaConsumer2::updateOffsets(TopicPartitionOffsets && topic_partition_offsets)
 {
-    cppkafka::TopicPartitionList original_topic_partitions;
-    original_topic_partitions.reserve(topic_partition_offsets.size());
-    std::transform(
-        std::move_iterator(topic_partition_offsets.begin()),
-        std::move_iterator(topic_partition_offsets.end()),
-        std::back_inserter(original_topic_partitions),
-        [](TopicPartitionOffset && tp) { return cppkafka::TopicPartition{std::move(tp.topic), tp.partition_id, tp.offset}; });
-    initializeQueues(original_topic_partitions);
-    stalled_status = StalledStatus::NOT_STALLED;
-}
+    chassert(client);
 
-void KafkaConsumer2::cleanQueuesAndMessages()
-{
-    queues.clear();
+    /// Offsets missing from Keeper resolve to the broker-committed offset of
+    /// the group, and to the earliest offset when the group has none either.
+    std::vector<Kafka::TopicPartition> unresolved;
+    for (const auto & tpo : topic_partition_offsets)
+        if (tpo.offset == INVALID_OFFSET)
+            unresolved.push_back(Kafka::TopicPartition{tpo.topic, tpo.partition_id});
+
+    CurrentOffsetsMap resolved;
+    if (!unresolved.empty())
+    {
+        for (const auto & committed : client->fetchCommittedOffsets(group, unresolved, OFFSET_RESOLUTION_TIMEOUT))
+            if (committed.offset >= 0)
+                resolved.emplace(TopicPartition{committed.topic, committed.partition}, committed.offset);
+
+        for (const auto & tp : unresolved)
+        {
+            if (resolved.contains(TopicPartition{tp.topic, tp.partition}))
+                continue;
+            const auto earliest = client->listOffset(tp, Kafka::OffsetSpec::earliest(), OFFSET_RESOLUTION_TIMEOUT);
+            LOG_TRACE(
+                log,
+                "Topic-partition [{}:{}] has no committed offset in Keeper or Kafka, starting from the earliest offset {}",
+                tp.topic,
+                tp.partition,
+                earliest);
+            resolved.emplace(TopicPartition{tp.topic, tp.partition}, earliest);
+        }
+    }
+
+    std::unordered_set<TopicPartition, TopicPartitionHash, TopicPartitionEquality> new_partitions;
+    CurrentOffsetsMap new_offsets;
+    for (const auto & tpo : topic_partition_offsets)
+    {
+        new_partitions.insert(tpo);
+        const auto offset = tpo.offset == INVALID_OFFSET ? resolved.at(tpo) : tpo.offset;
+        new_offsets.emplace(tpo, offset);
+    }
+
+    std::erase_if(readers, [&](const auto & entry) { return !new_partitions.contains(entry.first); });
+    for (const auto & [tp, offset] : new_offsets)
+    {
+        if (const auto it = readers.find(tp); it != readers.end())
+            it->second.seek(offset);
+        else
+            readers.try_emplace(tp, *client, Kafka::TopicPartition{tp.topic, tp.partition_id}, offset);
+    }
+
     messages.clear();
     current = messages.end();
-}
-
-void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
-{
-    std::unordered_set<TopicPartition, TopicPartitionHash, TopicPartitionEquality> new_partitions;
-    for (const auto & topic_partition : topic_partitions)
-        new_partitions.emplace(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
-
-    /// After a failed call `queues` may not match the consumer's assignment, so take the assignment from librdkafka.
-    cppkafka::TopicPartitionList removed_partitions;
-    for (const auto & topic_partition : consumer->get_assignment())
-        if (!new_partitions.contains(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()}))
-            removed_partitions.emplace_back(topic_partition.get_topic(), topic_partition.get_partition());
-
-    if (!removed_partitions.empty())
     {
-        /// Removing a partition from the assignment only stops its fetcher: the messages librdkafka has already
-        /// prefetched stay in the partition queue, which is owned by librdkafka and is not freed when we drop our handle.
-        /// Pausing makes these messages outdated, and reading the queue drops outdated messages and frees them.
-        /// Pausing alone is not enough: librdkafka purges the queue on pause, but the purge stops at the version barrier
-        /// that the pause itself puts at the head of the queue.
-        /// Remember the partitions before pausing them, so that they are resumed when they come back even if the pause
-        /// succeeds only for some of them and throws, or draining throws.
-        for (const auto & topic_partition : removed_partitions)
-            paused_partitions.emplace(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
-        consumer->pause_partitions(removed_partitions);
-
-        for (const auto & topic_partition : removed_partitions)
-        {
-            TopicPartition key{topic_partition.get_topic(), topic_partition.get_partition()};
-            /// The handle is lost if the previous call failed after the assignment.
-            if (!queues.contains(key))
-                queues.emplace(key, consumer->get_partition_queue(topic_partition));
-            const auto & queue = queues.at(key);
-            LOG_DEBUG(
-                log,
-                "Draining {} queued entries of partition {}:{} that is removed from the assignment",
-                queue.get_length(),
-                key.topic,
-                key.partition_id);
-            /// After the pause every queued message is outdated, so `consume_batch` frees them without returning them,
-            /// and normally the first call empties the queue. A paused partition gets no new messages, so the queue only
-            /// shrinks and its current length bounds the number of batches.
-            for (size_t batches_left = queue.get_length() / DRAIN_REMOVED_PARTITION_BATCH_SIZE + 1; batches_left > 0; --batches_left)
-                if (queue.consume_batch(DRAIN_REMOVED_PARTITION_BATCH_SIZE, 0ms).empty())
-                    break;
-        }
+        std::lock_guard lock(offsets_snapshot_mutex);
+        offsets_snapshot = std::move(new_offsets);
     }
-
-    cleanQueuesAndMessages();
-
-    queues.reserve(topic_partitions.size());
-    // `get_partition_queue` creates the partition queue if needed and disables forwarding to the main consumer queue.
-    // Do this before `assign` starts fetching, otherwise messages may leak into the main queue before we detach it.
-    try
-    {
-        for (const auto & topic_partition : topic_partitions)
-            queues.emplace(
-                TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()},
-                consumer->get_partition_queue(topic_partition));
-
-        consumer->assign(topic_partitions);
-
-        /// Unassigning clears only librdkafka's own pause flag, so a partition we paused stays paused when it comes back.
-        cppkafka::TopicPartitionList partitions_to_resume;
-        for (const auto & topic_partition : new_partitions)
-            if (paused_partitions.contains(topic_partition))
-                partitions_to_resume.emplace_back(topic_partition.topic, topic_partition.partition_id);
-        if (!partitions_to_resume.empty())
-        {
-            consumer->resume_partitions(partitions_to_resume);
-            /// Forget the partitions only after the resume succeeded, so that if it throws, the next call retries it.
-            for (const auto & topic_partition : partitions_to_resume)
-                paused_partitions.erase(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
-        }
-    }
-    catch (...)
-    {
-        cleanQueuesAndMessages();
-        throw;
-    }
+    stalled_status = StalledStatus::NOT_STALLED;
 }
 
 // it does the poll when needed
 ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, const std::optional<uint64_t> & message_count)
 {
     resetIfStopped();
+    if (stalled_status == StalledStatus::CONSUMER_STOPPED)
+        return nullptr;
 
-    // TODO: `polledDataUnusable` should be renamed to `clearMessagesIfNotSameTopicPartition` and it should be okay to
-    // continue without returning nullptr.
-    if (polledDataUnusable(topic_partition))
+    // TODO: it should be okay to continue after clearing the leftover messages of another topic-partition
+    // instead of returning nullptr.
+    if (current != messages.end() && current_topic_partition != topic_partition)
         return nullptr;
 
     if (hasMorePolledMessages())
@@ -245,49 +153,71 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
             return next_message;
     }
 
-    while (true)
+    stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
+
+    const auto reader = readers.find(topic_partition);
+    if (reader == readers.end())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "No reader for topic-partition [{}:{}]; `updateOffsets` must assign it first",
+            topic_partition.topic,
+            topic_partition.partition_id);
+
+    LOG_TRACE(log, "Batch size {}", batch_size);
+    /// The requested count may exceed the configured batch size (e.g. when a large intent is
+    /// replayed), but a single pull must still respect `kafka_poll_max_batch_size`. The caller
+    /// pulls the rest with further calls.
+    const auto messages_to_pull = std::min<uint64_t>(message_count.value_or(batch_size), batch_size);
+
+    Messages new_messages;
+    try
     {
-        stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
-
-        auto & queue_to_poll_from = queues.at(topic_partition);
-        LOG_TRACE(log, "Batch size {}", batch_size);
-        /// The requested count may exceed the configured batch size (e.g. when a large intent is
-        /// replayed), but a single pull must still respect `kafka_poll_max_batch_size`. The caller
-        /// pulls the rest with further calls.
-        const auto messages_to_pull = std::min<uint64_t>(message_count.value_or(batch_size), batch_size);
-        /// Don't drop old messages immediately, since we may need them for virtual columns.
-        auto new_messages = queue_to_poll_from.consume_batch(messages_to_pull, std::chrono::milliseconds(poll_timeout));
-        num_messages_read += new_messages.size();
-
-        resetIfStopped();
-        if (stalled_status == StalledStatus::CONSUMER_STOPPED)
-        {
-            return nullptr;
-        }
-
-        if (new_messages.empty())
-        {
-            LOG_TRACE(log, "Stalled");
-            return nullptr;
-        }
-
-        messages = std::move(new_messages);
-        current = messages.begin();
-        LOG_TRACE(
-            log,
-            "Polled batch of {} messages. Offsets position: {}",
-            messages.size(),
-            consumer->get_offsets_position(consumer->get_assignment()));
-        break;
+        new_messages = reader->second.poll(std::chrono::milliseconds(poll_timeout), messages_to_pull);
     }
-
-    filterMessageErrors();
-    if (current == messages.end())
+    catch (const Kafka::Exception & e)
     {
-        LOG_ERROR(log, "Only errors left");
+        /// Fetch errors are transient from the engine's point of view (stale
+        /// leaders and lost connections are retried inside the client already):
+        /// report them and stall; the next cycle retries. This mirrors the old
+        /// behavior where broker errors arrived as error messages in the batch.
+        ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
+        LOG_ERROR(
+            log,
+            "Consumer error while polling topic-partition [{}:{}]: {}",
+            topic_partition.topic,
+            topic_partition.partition_id,
+            e.message());
+        setExceptionInfo(e.message(), /* with_stacktrace = */ false);
         stalled_status = StalledStatus::ERRORS_RETURNED;
         return nullptr;
     }
+
+    num_messages_read += new_messages.size();
+
+    resetIfStopped();
+    if (stalled_status == StalledStatus::CONSUMER_STOPPED)
+        return nullptr;
+
+    if (new_messages.empty())
+    {
+        LOG_TRACE(log, "Stalled");
+        return nullptr;
+    }
+
+    messages = std::move(new_messages);
+    current = messages.begin();
+    current_topic_partition = topic_partition;
+    {
+        std::lock_guard lock(offsets_snapshot_mutex);
+        offsets_snapshot[topic_partition] = reader->second.position();
+    }
+    LOG_TRACE(
+        log,
+        "Polled batch of {} messages from [{}:{}]. Next position: {}",
+        messages.size(),
+        topic_partition.topic,
+        topic_partition.partition_id,
+        reader->second.position());
 
     ProfileEvents::increment(ProfileEvents::KafkaMessagesPolled, messages.size());
 
@@ -297,6 +227,7 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
 
 void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
 {
+    chassert(client);
     static constexpr auto max_retries = 5;
     bool committed = false;
 
@@ -307,22 +238,20 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
         topic_partition_offset.topic,
         topic_partition_offset.partition_id);
 
-    const auto topic_partition_list = std::vector{cppkafka::TopicPartition{
-        topic_partition_offset.topic,
-        topic_partition_offset.partition_id,
-        topic_partition_offset.offset,
-    }};
+    const std::vector<Kafka::TopicPartitionOffset> offsets_to_commit{
+        {.topic = topic_partition_offset.topic,
+         .partition = topic_partition_offset.partition_id,
+         .offset = topic_partition_offset.offset,
+         .leader_epoch = -1,
+         .metadata = {}}};
 
     for (auto try_count = 0; try_count < max_retries && !committed; ++try_count)
     {
         try
         {
-            // See https://github.com/confluentinc/librdkafka/issues/1470
-            // broker may reject commit if during offsets.commit.timeout.ms (5000 by default), there were not enough
-            // replicas available for the __consumer_offsets topic. also some other temporary issues like client-server
-            // connectivity problems are possible
-
-            consumer->commit(topic_partition_list);
+            /// The broker may transiently reject the commit, e.g. while the replicas of the
+            /// __consumer_offsets topic catch up, or on client-server connectivity problems.
+            client->commitOffsets(group, offsets_to_commit, COMMIT_TIMEOUT);
             committed = true;
             LOG_INFO(
                 log,
@@ -331,21 +260,16 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
                 topic_partition_offset.topic,
                 topic_partition_offset.partition_id);
         }
-        catch (const cppkafka::HandleException & e)
+        catch (const Kafka::Exception & e)
         {
-            // If there were actually no offsets to commit, return. Retrying won't solve anything here. Furthermore, we
-            // don't consider failing to commit as an error, because Kafka is not the primary store for committed
-            // offsets.
-            if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
-                committed = true;
-            else
-                LOG_ERROR(log, "Exception during attempt to commit to Kafka: {}", e.what());
+            /// Failing to commit is not an error: Kafka is not the primary store of committed
+            /// offsets, it only matters when a table is dropped and recreated.
+            LOG_ERROR(log, "Exception during attempt to commit to Kafka: {}", e.message());
         }
     }
 
     if (!committed)
     {
-        // The failure is not the biggest issue, it only counts when a table is dropped and recreated, otherwise the offsets are taken from keeper.
         ProfileEvents::increment(ProfileEvents::KafkaCommitFailures);
         LOG_ERROR(log, "All commit attempts failed");
     }
@@ -357,27 +281,25 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
 
 KafkaConsumer2::TopicPartitionOffsets KafkaConsumer2::getAllTopicPartitionOffsets() const
 {
-    std::unordered_set<String> topics_set;
-    topics_set.insert(topics.begin(), topics.end());
+    chassert(client);
     TopicPartitionOffsets topic_partition_offsets;
 
     try
     {
-        auto metadata = consumer->get_metadata(true, GET_KAFKA_METADATA_TIMEOUT_MS);
-        for (const auto & topic_metadata : metadata.get_topics())
+        const auto metadata = client->getMetadata(topics, GET_KAFKA_METADATA_TIMEOUT);
+        for (const auto & topic_metadata : metadata.topics)
         {
-            if (!topics_set.contains(topic_metadata.get_name()))
-                continue;
-
-            for (const auto & partition_metadata : topic_metadata.get_partitions())
+            for (const auto & partition_metadata : topic_metadata.partitions)
             {
                 topic_partition_offsets.emplace_back(
-                    TopicPartitionOffset{{topic_metadata.get_name(), static_cast<int32_t>(partition_metadata.get_id())}, INVALID_OFFSET});
+                    TopicPartitionOffset{{topic_metadata.name, partition_metadata.partition}, INVALID_OFFSET});
             }
         }
-    } catch (const cppkafka::HandleException & e)
+    }
+    catch (const Kafka::Exception & e)
     {
-        LOG_ERROR(log, "Exception during get topic partitions from Kafka: {}", e.what());
+        LOG_ERROR(log, "Exception during getting topic partitions from Kafka: {}", e.message());
+        topic_partition_offsets.clear();
     }
 
     return topic_partition_offsets;
@@ -385,34 +307,19 @@ KafkaConsumer2::TopicPartitionOffsets KafkaConsumer2::getAllTopicPartitionOffset
 
 KafkaConsumer2::Stat KafkaConsumer2::getStat() const
 {
-    CurrentOffsetsMap current_offsets;
-    cppkafka::TopicPartitionList cppkafka_offsets;
-    std::string consumer_id{};
-
-    if (consumer)
-    {
-        const auto cpp_assignments = consumer->get_assignment();
-        cppkafka_offsets = consumer->get_offsets_position(cpp_assignments);
-        consumer_id = consumer->get_member_id();
-    }
-
-    for (const auto & tpoffset : cppkafka_offsets)
-        current_offsets.emplace(TopicPartition{tpoffset.get_topic(), tpoffset.get_partition()}, tpoffset.get_offset());
-
     return {
-        .current_offsets = std::move(current_offsets),
-        .consumer_id = std::move(consumer_id),
-        .rdkafka_stat = std::invoke(
+        .current_offsets = std::invoke(
             [&]()
             {
-                std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
-                return rdkafka_stat;
+                std::lock_guard lock(offsets_snapshot_mutex);
+                return offsets_snapshot;
             }),
+        .consumer_id = client_id,
         .num_messages_read = num_messages_read.load(),
         .exceptions_buffer = std::invoke(
             [&]()
             {
-                std::lock_guard<std::mutex> lock(exception_mutex);
+                std::lock_guard lock(exception_mutex);
                 return exceptions_buffer;
             }),
     };
@@ -437,27 +344,15 @@ ReadBufferPtr KafkaConsumer2::getNextMessage()
 {
     while (current != messages.end())
     {
-        const auto * data = current->get_payload().get_data();
-        size_t size = current->get_payload().get_size();
+        const auto & value = current->value;
         ++current;
 
-        // `data` can be nullptr on case of the Kafka message has empty payload
-        if (data && size >= skip_bytes)
-            return std::make_shared<ReadBufferFromMemory>(data + skip_bytes, size - skip_bytes);
+        /// Kafka messages can have an absent (null) payload.
+        if (value && value->size() >= skip_bytes)
+            return std::make_shared<ReadBufferFromMemory>(value->data() + skip_bytes, value->size() - skip_bytes);
     }
 
     return nullptr;
-}
-
-void KafkaConsumer2::filterMessageErrors()
-{
-    chassert(current == messages.begin());
-
-    StorageKafkaUtils::eraseMessageErrors(
-        messages,
-        log,
-        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
-    current = messages.begin();
 }
 
 void KafkaConsumer2::resetIfStopped()

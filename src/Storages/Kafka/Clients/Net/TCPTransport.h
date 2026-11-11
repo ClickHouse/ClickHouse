@@ -35,9 +35,10 @@ public:
 protected:
     /// Wait until the socket is ready for `events` (POLLIN/POLLOUT), the
     /// deadline expires (throws Timeout), or a wakeup arrives (throws Wakeup).
-    void waitReady(short events, const Deadline & deadline, const char * op);
+    /// `events` has the native type of pollfd::events.
+    void waitReady(short events, const Deadline & deadline, const char * op); /// NOLINT(google-runtime-int)
 
-    int sockFd() const { return static_cast<int>(socket.impl()->sockfd()); }
+    int sockFd() const { return socket.impl()->sockfd(); }
 
     std::shared_ptr<const WakeupSource> wakeup_source;
     /// TLSTransport swaps in a SecureStreamSocket after the TCP connect.

@@ -2,15 +2,14 @@
 
 #include <Core/Names.h>
 #include <IO/ReadBuffer.h>
-#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
+#include <Storages/Kafka/Clients/Client.h>
+#include <Storages/Kafka/Clients/PartitionReader.h>
 #include <base/types.h>
-#include <cppkafka/cppkafka.h>
-#include <cppkafka/topic_partition.h>
-#include <cppkafka/topic_partition_list.h>
 #include <Common/CurrentMetrics.h>
 
-#include <unordered_set>
+#include <unordered_map>
 
 namespace CurrentMetrics
 {
@@ -25,18 +24,25 @@ class Logger;
 namespace DB
 {
 
-using CppKafkaConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class KafkaConsumer2;
 using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
 
+/// Consumer of the Kafka2 engine, built on the in-tree Kafka client
+/// (Storages/Kafka/Clients): a synchronous, zero-thread client where every
+/// assigned topic-partition is a PartitionReader positioned at an explicit
+/// offset. There are no consumer groups, no rebalancing and no background
+/// callbacks — KeeperHandlingConsumer owns the assignment through Keeper
+/// locks, and the Kafka-side commit is a group-less best-effort mirror.
 class KafkaConsumer2 : public IKafkaExceptionInfoSink, public std::enable_shared_from_this<KafkaConsumer2>
 {
 public:
-    static inline constexpr int INVALID_OFFSET = RD_KAFKA_OFFSET_INVALID;
-    static inline constexpr int BEGINNING_OFFSET = RD_KAFKA_OFFSET_BEGINNING;
-    static inline constexpr int END_OFFSET = RD_KAFKA_OFFSET_END;
+    /// Sentinel for "no offset stored in Keeper". The consumer resolves it to
+    /// the broker-committed offset of the consumer group, falling back to the
+    /// earliest offset (the `auto.offset.reset=earliest` behavior of the
+    /// librdkafka-based implementation).
+    static inline constexpr int64_t INVALID_OFFSET = -1001;
 
     struct TopicPartition
     {
@@ -73,18 +79,11 @@ public:
     {
         CurrentOffsetsMap current_offsets;
         std::string consumer_id;
-        std::string rdkafka_stat;
         UInt64 num_messages_read{};
         ExceptionsBuffer exceptions_buffer;
     };
 
     using TopicPartitionOffsets = std::vector<TopicPartitionOffset>;
-
-    struct TopicPartitionCount
-    {
-        String topic;
-        size_t partition_count;
-    };
 
     KafkaConsumer2(
         LoggerPtr log_,
@@ -92,17 +91,15 @@ public:
         size_t poll_timeout_,
         const std::atomic<bool> & stopped_,
         const Names & topics_,
+        const String & group_,
         size_t skip_bytes_ = 0);
 
     ~KafkaConsumer2() override;
 
-    void createConsumer(cppkafka::Configuration consumer_config);
-    bool hasConsumer() const { return consumer.get() != nullptr; }
-    CppKafkaConsumerPtr && moveConsumer();
-
-    // Poll only the main consumer queue without any topic-partition queues. This is useful to get notified about events, such as rebalance,
-    // new assignment, etc..
-    void pollEvents();
+    /// Creating the client is cheap (it owns no threads and connects lazily),
+    /// but it is still done on first use only, like before.
+    void createConsumer(Kafka::ClientConfig consumer_config);
+    bool hasConsumer() const { return client != nullptr; }
 
     auto pollTimeout() const { return poll_timeout; }
 
@@ -113,6 +110,9 @@ public:
     /// True when the last `consume` was cut short by a stop, leaving the batch incomplete.
     inline bool wasStoppedWhileConsuming() const { return stalled_status == StalledStatus::CONSUMER_STOPPED; }
 
+    /// Positions the readers of the given topic-partitions at the given
+    /// offsets, resolving INVALID_OFFSET sentinels through the broker.
+    /// Partitions missing from the list are dropped.
     void updateOffsets(TopicPartitionOffsets && topic_partition_offsets);
 
     /// Polls batch of messages from the given topic-partition and returns read buffer containing the next message or
@@ -120,16 +120,22 @@ public:
     /// `min(message_count, batch_size)` messages into the consumer.
     ReadBufferPtr consume(const TopicPartition & topic_partition, const std::optional<uint64_t> & message_count);
 
+    /// Best-effort group-less commit to Kafka; Keeper is the source of truth.
     void commit(const TopicPartitionOffset & topic_partition_offset);
 
     // Return values for the message that's being read.
-    String currentTopic() const { return current[-1].get_topic(); }
-    String currentKey() const { return current[-1].get_key(); }
-    auto currentOffset() const { return current[-1].get_offset(); }
-    auto currentPartition() const { return current[-1].get_partition(); }
-    auto currentTimestamp() const { return current[-1].get_timestamp(); }
-    const auto & currentHeaderList() const { return current[-1].get_header_list(); }
-    String currentPayload() const { return current[-1].get_payload(); }
+    const String & currentTopic() const { return current_topic_partition.topic; }
+    String currentKey() const { return current[-1].key.value_or(""); }
+    auto currentOffset() const { return current[-1].offset; }
+    auto currentPartition() const { return current_topic_partition.partition_id; }
+    /// Milliseconds since epoch, nullopt when the broker sent no timestamp.
+    std::optional<int64_t> currentTimestampMs() const
+    {
+        const auto timestamp_ms = current[-1].timestamp_ms;
+        return timestamp_ms >= 0 ? std::optional{timestamp_ms} : std::nullopt;
+    }
+    const std::vector<Kafka::RecordHeader> & currentHeaderList() const { return current[-1].headers; }
+    String currentPayload() const { return current[-1].value.value_or(""); }
 
     // Build the full list of partitions for our subscribed topics.
     TopicPartitionOffsets getAllTopicPartitionOffsets() const;
@@ -139,7 +145,7 @@ public:
     void setExceptionInfo(const std::string & text, bool with_stacktrace) override;
 
 private:
-    using Messages = std::vector<cppkafka::Message>;
+    using Messages = std::vector<Kafka::Record>;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
 
@@ -158,12 +164,12 @@ private:
     const size_t EXCEPTIONS_DEPTH = 10;
     ExceptionsBuffer exceptions_buffer TSA_GUARDED_BY(exception_mutex);
 
-    // order is important, need to be destructed *after* consumer
-    mutable std::mutex rdkafka_stat_mutex;
-    std::string rdkafka_stat TSA_GUARDED_BY(rdkafka_stat_mutex);
     std::atomic<UInt64> num_messages_read = 0;
 
-    CppKafkaConsumerPtr consumer{nullptr};
+    std::unique_ptr<Kafka::Client> client;
+    /// Reported as the consumer id of system.kafka_consumers (there is no
+    /// group member id: the client never joins a consumer group).
+    String client_id;
     LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
@@ -173,24 +179,24 @@ private:
 
     const std::atomic<bool> & stopped;
 
-    // order is important, need to be destructed before consumer
     Messages messages;
     Messages::const_iterator current;
+    /// The records do not carry their topic-partition; it is the one of the last poll.
+    TopicPartition current_topic_partition;
 
-    // order is important, need to be destructed before consumer
-    std::unordered_map<TopicPartition, cppkafka::Queue, TopicPartitionHash, TopicPartitionEquality> queues;
-    /// Partitions paused by `initializeQueues` when they were removed from the assignment. They have to be resumed
-    /// if they are assigned again, because librdkafka clears only its own pause flag on unassign.
-    std::unordered_set<TopicPartition, TopicPartitionHash, TopicPartitionEquality> paused_partitions;
+    /// One positioned reader per assigned topic-partition.
+    std::unordered_map<TopicPartition, Kafka::PartitionReader, TopicPartitionHash, TopicPartitionEquality> readers;
+
+    /// Reader positions for `getStat`, which runs concurrently with `consume`
+    /// (PartitionReader itself is single-threaded).
+    mutable std::mutex offsets_snapshot_mutex;
+    CurrentOffsetsMap offsets_snapshot TSA_GUARDED_BY(offsets_snapshot_mutex);
+
     const Names topics;
+    const String group;
 
-    bool polledDataUnusable(const TopicPartition & topic_partition) const;
     void resetIfStopped();
-    void filterMessageErrors();
     ReadBufferPtr getNextMessage();
-
-    void cleanQueuesAndMessages();
-    void initializeQueues(const cppkafka::TopicPartitionList & topic_partitions);
 };
 
 }

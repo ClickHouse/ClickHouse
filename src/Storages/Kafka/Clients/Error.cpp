@@ -118,7 +118,7 @@ const char * errorKindName(ErrorKind kind) noexcept
     return "Unknown";
 }
 
-int clickHouseErrorCode(ErrorKind kind) noexcept
+int toClickHouseErrorCode(ErrorKind kind) noexcept
 {
     switch (kind)
     {

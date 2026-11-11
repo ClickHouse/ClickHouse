@@ -157,6 +157,7 @@ protected:
                 }
                 catch (...) /// NOLINT(bugprone-empty-catch)
                 {
+                    /// Ok: the client may abort the exchange at any point; the test server thread just exits.
                 }
             });
     }
@@ -241,7 +242,7 @@ TEST_F(KafkaClientTLSTransport, ReadableSeesSslBufferedData)
             try
             {
                 Poco::Net::StreamSocket peer = server->acceptConnection();
-                char trigger;
+                char trigger = 0;
                 int got = 0;
                 while (got < 1)
                 {
@@ -254,6 +255,7 @@ TEST_F(KafkaClientTLSTransport, ReadableSeesSslBufferedData)
             }
             catch (...) /// NOLINT(bugprone-empty-catch)
             {
+                /// Ok: the client may abort the exchange at any point; the test server thread just exits.
             }
         });
 
@@ -269,7 +271,7 @@ TEST_F(KafkaClientTLSTransport, ReadableSeesSslBufferedData)
         std::this_thread::sleep_for(1ms);
     EXPECT_TRUE(transport.readable());
 
-    char byte;
+    char byte = 0;
     ASSERT_EQ(transport.readSome(&byte, 1, Deadline::after(5s)), 1u);
     EXPECT_EQ(byte, 'a');
 

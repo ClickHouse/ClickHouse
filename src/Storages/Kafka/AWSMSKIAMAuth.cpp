@@ -135,8 +135,10 @@ String extractRegionFromBroker(const String & broker_address)
     return "";
 }
 
-void setupAuthentication(
-    cppkafka::Configuration & kafka_config,
+/// Resolves the effective region and creates (or validates) the shared refresh
+/// context. Common to the librdkafka path (`setupAuthentication`) and the
+/// in-tree client path (`createTokenProvider`).
+static void prepareOAuthContext(
     const Poco::Util::AbstractConfiguration & config,
     const String & region,
     const String & broker_list,
@@ -176,9 +178,6 @@ void setupAuthentication(
 
     bool use_environment_credentials = config.getBool("kafka.use_environment_credentials", false);
 
-    kafka_config.set("sasl.mechanism", "OAUTHBEARER");
-    kafka_config.set("security.protocol", "SASL_SSL");
-
     if (!context_holder)
     {
         /// The configuration holds the filter by reference, so the filter must outlive `context_holder->provider`.
@@ -211,6 +210,21 @@ void setupAuthentication(
             "Consumer and producer of the same table must connect to MSK clusters in the same AWS region.",
             context_holder->region, effective_region);
     }
+
+}
+
+void setupAuthentication(
+    cppkafka::Configuration & kafka_config,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & region,
+    const String & broker_list,
+    LoggerPtr log,
+    std::shared_ptr<OAuthBearerTokenRefreshContext> & context_holder)
+{
+    prepareOAuthContext(config, region, broker_list, log, context_holder);
+
+    kafka_config.set("sasl.mechanism", "OAUTHBEARER");
+    kafka_config.set("security.protocol", "SASL_SSL");
 
     kafka_config.set_oauthbearer_token_refresh_callback(
         [context = context_holder](cppkafka::KafkaHandleBase & handle, const std::string* /* oauthbearer_config */)
@@ -283,6 +297,49 @@ void setupAuthentication(
                 rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "Unexpected exception");
             }
         });
+}
+
+std::function<Kafka::OAuthToken()> createTokenProvider(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & region,
+    const String & broker_list,
+    LoggerPtr log,
+    std::shared_ptr<OAuthBearerTokenRefreshContext> & context_holder)
+{
+    prepareOAuthContext(config, region, broker_list, log, context_holder);
+
+    /// Unlike the librdkafka path, there is no background refresh and no
+    /// set_token_failure dance: the provider runs synchronously at connection
+    /// authentication, and a throw fails that connection attempt.
+    return [context = context_holder]() -> Kafka::OAuthToken
+    {
+        if (!context->provider)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AWS MSK IAM: missing credentials provider");
+
+        auto credentials = context->provider->GetAWSCredentials();
+        if (credentials.IsExpiredOrEmpty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AWS MSK IAM: no AWS credentials available");
+
+        const auto now = std::chrono::system_clock::now();
+
+        /// The token is usable only while the credentials that signed it remain
+        /// valid, so the advertised expiry is capped by what they have left.
+        const auto remaining = credentialsRemainingValidity(credentials.GetExpiration().UnderlyingTimestamp(), now);
+        if (remaining <= std::chrono::seconds::zero())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AWS MSK IAM: AWS credentials expired {}s ago", -remaining.count());
+
+        const auto lifetime = advertisedTokenLifetime(remaining);
+        String token = generateAWSMSKToken(context->region, credentials);
+
+        LOG_INFO(
+            context->log,
+            "AWS MSK IAM token generated (region={}, expires in {}s, credentials expire in {}s)",
+            context->region,
+            lifetime.count(),
+            remaining.count());
+
+        return Kafka::OAuthToken{.value = std::move(token), .expiry = now + lifetime};
+    };
 }
 
 }

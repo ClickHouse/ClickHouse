@@ -9,7 +9,6 @@ using namespace Kafka::Protocol;
 using Kafka::Bytes;
 using Kafka::ErrorKind;
 using Kafka::Exception;
-using Kafka::RecordHeader;
 
 TEST(KafkaClientRecords, RecordBatchRoundTripsWithASingleRecord)
 {
@@ -272,12 +271,6 @@ TEST(KafkaClientRecords, TruncatedTrailingBatchIsToleratedAndFlaggedCutInsideThe
 
 TEST(KafkaClientRecords, TruncatedTrailingBatchIsToleratedAndFlaggedEmptyBlobDecodesToNothing)
 {
-    BatchRecord rec;
-    rec.value = Bytes{"payload-payload-payload"};
-    const RecordBatch b1 = RecordBatch::make(0, {rec});
-    const RecordBatch b2 = RecordBatch::make(1, {rec});
-    String blob = encodeBatches({b1, b2});
-
     const DecodedBatches got = decodeBatches({});
     EXPECT_FALSE(got.truncated);
     EXPECT_TRUE(got.batches.empty());

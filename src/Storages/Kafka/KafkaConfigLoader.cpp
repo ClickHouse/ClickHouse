@@ -10,6 +10,7 @@
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <Common/HiddenSecret.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
@@ -19,6 +20,7 @@
 #include <Common/QueryProfiler.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <chrdkafka_conf_sensitive.h>
 #include <csignal>
@@ -51,6 +53,7 @@ namespace KafkaSetting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -185,12 +188,12 @@ rd_kafka_resp_err_t KafkaInterceptors<TStorageKafka>::rdKafkaOnConfDup(
 }
 
 template struct KafkaInterceptors<StorageKafka>;
-template struct KafkaInterceptors<StorageKafka2>;
 
 namespace
 {
 
-void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & key, const String & value)
+template <typename TConfig>
+void setKafkaConfigValue(TConfig & kafka_config, const String & key, const String & value)
 {
     /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
     /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
@@ -206,8 +209,9 @@ void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & 
     kafka_config.set(setting_name_in_kafka_config, value);
 }
 
+template <typename TConfig>
 void loadConfigProperty(
-    cppkafka::Configuration & kafka_config,
+    TConfig & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     const String & tag)
@@ -218,7 +222,8 @@ void loadConfigProperty(
     setKafkaConfigValue(kafka_config, tag, property_value);
 }
 
-void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const String & collection_name, const String & config_prefix)
+template <typename TConfig>
+void loadNamedCollectionConfig(TConfig & kafka_config, const String & collection_name, const String & config_prefix)
 {
     const auto & collection = NamedCollectionFactory::instance().get(collection_name);
     for (const auto & key : collection->getKeys(-1, config_prefix))
@@ -229,8 +234,9 @@ void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const Str
     }
 }
 
+template <typename TConfig>
 void loadLegacyTopicConfig(
-    cppkafka::Configuration & kafka_config,
+    TConfig & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
     const String & collection_name,
     const String & config_prefix)
@@ -251,8 +257,9 @@ void loadLegacyTopicConfig(
 }
 
 /// Read server configuration into cppkafa configuration, used by new per-topic configuration
+template <typename TConfig>
 void loadTopicConfig(
-    cppkafka::Configuration & kafka_config,
+    TConfig & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
     const String & collection_name,
     const String & config_prefix,
@@ -291,8 +298,8 @@ void loadTopicConfig(
 }
 
 /// Read server configuration into cppkafka configuration, used by global configuration and by legacy per-topic configuration
-void loadFromConfig(
-    cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params, const String & config_prefix)
+template <typename TConfig>
+void loadFromConfig(TConfig & kafka_config, const KafkaConfigLoader::LoadConfigParams & params, const String & config_prefix)
 {
     if (!params.collection_name.empty())
     {
@@ -354,8 +361,9 @@ void loadFromConfig(
     }
 }
 
+template <typename TConfig>
 void loadLegacyConfigSyntax(
-    cppkafka::Configuration & kafka_config,
+    TConfig & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
     const String & collection_name,
     const Names & topics)
@@ -367,7 +375,8 @@ void loadLegacyConfigSyntax(
     }
 }
 
-void loadConsumerConfig(cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params)
+template <typename TConfig>
+void loadConsumerConfig(TConfig & kafka_config, const KafkaConfigLoader::LoadConfigParams & params)
 {
     const String consumer_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_CONSUMER_TAG;
     loadLegacyConfigSyntax(kafka_config, params.config, params.collection_name, params.topics);
@@ -375,7 +384,8 @@ void loadConsumerConfig(cppkafka::Configuration & kafka_config, const KafkaConfi
     loadFromConfig(kafka_config, params, consumer_path);
 }
 
-void loadProducerConfig(cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params)
+template <typename TConfig>
+void loadProducerConfig(TConfig & kafka_config, const KafkaConfigLoader::LoadConfigParams & params)
 {
     const String producer_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_PRODUCER_TAG;
     loadLegacyConfigSyntax(kafka_config, params.config, params.collection_name, params.topics);
@@ -626,8 +636,6 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
 
 template cppkafka::Configuration
 KafkaConfigLoader::getConsumerConfiguration<StorageKafka>(StorageKafka & storage, const ConsumerConfigParams & params, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr);
-template cppkafka::Configuration
-KafkaConfigLoader::getConsumerConfiguration<StorageKafka2>(StorageKafka2 & storage, const ConsumerConfigParams & params, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr);
 
 template <typename TKafkaStorage>
 cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params)
@@ -658,7 +666,275 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
 
 template cppkafka::Configuration
 KafkaConfigLoader::getProducerConfiguration<StorageKafka>(StorageKafka & storage, const ProducerConfigParams & params);
-template cppkafka::Configuration
-KafkaConfigLoader::getProducerConfiguration<StorageKafka2>(StorageKafka2 & storage, const ProducerConfigParams & params);
+
+namespace
+{
+
+/// Collects the raw librdkafka-style properties from the server configuration
+/// (via the same traversal the legacy loader uses) so the Kafka2 engine can map
+/// the supported subset onto the in-tree client and warn about the rest.
+struct RawKafkaProperties
+{
+    /// Ordered, so precedence and warnings are deterministic.
+    std::map<String, String> properties;
+
+    void set(const String & name, const String & value) { properties[name] = value; }
+};
+
+Kafka::Compression parseCompressionCodec(const String & value)
+{
+    if (boost::iequals(value, "none"))
+        return Kafka::Compression::None;
+    if (boost::iequals(value, "gzip"))
+        return Kafka::Compression::Gzip;
+    if (boost::iequals(value, "snappy"))
+        return Kafka::Compression::Snappy;
+    if (boost::iequals(value, "lz4"))
+        return Kafka::Compression::Lz4;
+    if (boost::iequals(value, "zstd"))
+        return Kafka::Compression::Zstd;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Kafka compression codec '{}'", value);
+}
+
+Kafka::SecurityProtocol parseSecurityProtocol(const String & value)
+{
+    if (boost::iequals(value, "plaintext"))
+        return Kafka::SecurityProtocol::Plaintext;
+    if (boost::iequals(value, "ssl"))
+        return Kafka::SecurityProtocol::Ssl;
+    if (boost::iequals(value, "sasl_plaintext"))
+        return Kafka::SecurityProtocol::SaslPlaintext;
+    if (boost::iequals(value, "sasl_ssl"))
+        return Kafka::SecurityProtocol::SaslSsl;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Kafka security protocol '{}'", value);
+}
+
+}
+
+KafkaConfigLoader::Kafka2Configuration KafkaConfigLoader::getKafka2Configuration(StorageKafka2 & storage, const Kafka2ConfigParams & params)
+{
+    /// Gather the raw properties exactly like the legacy loader: the global
+    /// <kafka> section, the legacy and new per-topic sections, and the
+    /// consumer/producer sections. The in-tree client is one unified handle,
+    /// so the consumer and producer sections are merged.
+    RawKafkaProperties raw;
+    loadFromConfig(raw, params, CONFIG_KAFKA_TAG);
+    loadConsumerConfig(raw, params);
+    loadProducerConfig(raw, params);
+
+    String brokers = params.brokers;
+    String client_id = params.multiple_consumers ? fmt::format("{}-{}", params.client_id, params.consumer_number) : params.client_id;
+    String protocol_name;
+    String mechanism_name;
+    String sasl_username;
+    String sasl_password;
+    String kerberos_service_name = "kafka";
+    String kerberos_keytab;
+    String kerberos_principal;
+    Kafka::TlsConfig tls;
+    bool has_tls_settings = false;
+    std::optional<String> compression_codec;
+    std::optional<Int64> compression_level;
+
+    for (const auto & [name, value] : raw.properties)
+    {
+        if (name == "security.protocol")
+            protocol_name = value;
+        else if (name == "sasl.mechanism" || name == "sasl.mechanisms")
+            mechanism_name = value;
+        else if (name == "sasl.username")
+            sasl_username = value;
+        else if (name == "sasl.password")
+            sasl_password = value;
+        else if (name == "sasl.kerberos.service.name")
+            kerberos_service_name = value;
+        else if (name == "sasl.kerberos.keytab")
+            kerberos_keytab = value;
+        else if (name == "sasl.kerberos.principal")
+            kerberos_principal = value;
+        else if (name == "ssl.ca.location")
+        {
+            tls.ca_location = value;
+            has_tls_settings = true;
+        }
+        else if (name == "ssl.certificate.location")
+        {
+            tls.certificate_location = value;
+            has_tls_settings = true;
+        }
+        else if (name == "ssl.key.location")
+        {
+            tls.key_location = value;
+            has_tls_settings = true;
+        }
+        else if (name == "ssl.key.password")
+        {
+            tls.key_password = value;
+            has_tls_settings = true;
+        }
+        else if (name == "enable.ssl.certificate.verification")
+        {
+            tls.verify = boost::iequals(value, "true") || value == "1";
+            has_tls_settings = true;
+        }
+        else if (name == "client.id")
+            client_id = value;
+        else if (name == "metadata.broker.list" || name == "bootstrap.servers")
+            brokers = StorageKafkaUtils::validateBrokerList(value, params.context);
+        else if (name == "compression.codec" || name == "compression.type")
+            compression_codec = value;
+        else if (name == "compression.level")
+            compression_level = parse<Int64>(value);
+        else
+            LOG_WARNING(
+                params.log, "Kafka configuration property '{}' is not supported by the Kafka2 engine and is ignored", name);
+    }
+
+    /// Table SETTINGS take priority over the server configuration (same
+    /// precedence as the legacy loader).
+    const auto & kafka_settings = storage.getKafkaSettings();
+    if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
+        protocol_name = kafka_settings[KafkaSetting::kafka_security_protocol].value;
+    if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty())
+        mechanism_name = kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
+    if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
+        sasl_username = kafka_settings[KafkaSetting::kafka_sasl_username].value;
+    if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
+        sasl_password = kafka_settings[KafkaSetting::kafka_sasl_password].value;
+    if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
+        compression_codec = kafka_settings[KafkaSetting::kafka_compression_codec].value;
+    if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
+        compression_level = kafka_settings[KafkaSetting::kafka_compression_level].value;
+    if (!kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value.empty())
+        LOG_WARNING(params.log, "Setting kafka_autodetect_client_rack is not supported by the Kafka2 engine and is ignored");
+
+    Kafka2Configuration result;
+    auto & client = result.client;
+
+    for (size_t start = 0; start < brokers.size();)
+    {
+        const size_t comma = brokers.find(',', start);
+        String entry = brokers.substr(start, comma == String::npos ? String::npos : comma - start);
+        boost::trim(entry);
+        if (!entry.empty())
+            client.bootstrap_brokers.push_back(std::move(entry));
+        if (comma == String::npos)
+            break;
+        start = comma + 1;
+    }
+    client.client_id = client_id;
+    client.log = params.log;
+    /// The librdkafka-based engine refreshed the topic metadata every minute
+    /// (`topic.metadata.refresh.interval.ms = 60000`).
+    client.metadata_max_age = std::chrono::minutes(1);
+
+    const bool is_msk_iam = boost::iequals(mechanism_name, "AWS_MSK_IAM");
+    auto protocol = Kafka::SecurityProtocol::Plaintext;
+    if (is_msk_iam)
+    {
+        if (!protocol_name.empty() && !boost::iequals(protocol_name, "sasl_ssl"))
+            LOG_WARNING(
+                params.log, "kafka_security_protocol='{}' will be overridden to 'sasl_ssl' - AWS MSK IAM requires SASL_SSL.", protocol_name);
+        protocol = Kafka::SecurityProtocol::SaslSsl;
+    }
+    else if (!protocol_name.empty())
+    {
+        protocol = parseSecurityProtocol(protocol_name);
+    }
+    client.security_protocol = protocol;
+
+    /// Pass TLS settings through even for protocols that cannot use them: the
+    /// client fails close on the inconsistency instead of silently ignoring
+    /// security settings.
+    if (has_tls_settings)
+        client.tls = tls;
+
+    if (is_msk_iam)
+    {
+#if USE_AWS_S3
+        const String aws_region = kafka_settings[KafkaSetting::kafka_aws_region].value;
+        std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> candidate;
+        auto token_provider = AWSMSKIAMAuth::createTokenProvider(params.config, aws_region, brokers, params.log, candidate);
+        /// Consumers and the producer of one table share the refresh context.
+        auto shared_context = storage.ensureOAuthContext(candidate);
+        if (shared_context != candidate)
+            token_provider = AWSMSKIAMAuth::createTokenProvider(params.config, aws_region, brokers, params.log, shared_context);
+        client.sasl = Kafka::SaslOauthBearerConfig{.token_provider = std::move(token_provider)};
+#else
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "AWS MSK IAM authentication is not supported in this build. ClickHouse must be built with USE_AWS_S3=1");
+#endif
+    }
+    else if (Kafka::usesSasl(protocol))
+    {
+        if (mechanism_name.empty())
+        {
+            /// librdkafka's default `sasl.mechanism` is GSSAPI; preserved for compatibility.
+            LOG_WARNING(params.log, "No SASL mechanism is configured; defaulting to GSSAPI, like librdkafka");
+            mechanism_name = "GSSAPI";
+        }
+
+        if (boost::iequals(mechanism_name, "PLAIN"))
+            client.sasl = Kafka::SaslPlainConfig{.username = sasl_username, .password = sasl_password, .authorization_id = {}};
+        else if (boost::iequals(mechanism_name, "SCRAM-SHA-256"))
+            client.sasl = Kafka::SaslScramConfig{
+                .algorithm = Kafka::SaslScramConfig::Algorithm::Sha256, .username = sasl_username, .password = sasl_password};
+        else if (boost::iequals(mechanism_name, "SCRAM-SHA-512"))
+            client.sasl = Kafka::SaslScramConfig{
+                .algorithm = Kafka::SaslScramConfig::Algorithm::Sha512, .username = sasl_username, .password = sasl_password};
+        else if (boost::iequals(mechanism_name, "GSSAPI"))
+        {
+            client.sasl = Kafka::SaslGssapiConfig{.service_name = kerberos_service_name, .principal = kerberos_principal};
+#if USE_KRB5
+            if (!kerberos_keytab.empty() && !kerberos_principal.empty())
+            {
+                LOG_DEBUG(params.log, "Running KerberosInit");
+                try
+                {
+                    kerberosInit(kerberos_keytab, kerberos_principal);
+                }
+                catch (Exception & e)
+                {
+                    LOG_ERROR(params.log, "KerberosInit failure: {}", getExceptionMessageForLogging(e, false));
+                }
+                LOG_DEBUG(params.log, "Finished KerberosInit");
+            }
+#else
+            if (!kerberos_keytab.empty() || !kerberos_principal.empty())
+                LOG_WARNING(params.log, "Ignoring Kerberos-related parameters because ClickHouse was built without krb5 library support.");
+#endif
+        }
+        else if (boost::iequals(mechanism_name, "OAUTHBEARER"))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Plain OAUTHBEARER is not supported by the Kafka2 engine; the only supported OAuth token source is AWS_MSK_IAM");
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SASL mechanism '{}'", mechanism_name);
+    }
+    else if (!mechanism_name.empty() || !sasl_username.empty() || !sasl_password.empty())
+    {
+        /// Fail close: silently ignored credentials hide a misconfiguration.
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "A SASL mechanism or SASL credentials are configured, but the security protocol '{}' does not use SASL",
+            Kafka::securityProtocolName(protocol));
+    }
+
+    if (compression_codec)
+        result.compression = parseCompressionCodec(*compression_codec);
+    if (compression_level)
+        result.compression_level = *compression_level;
+
+    LOG_TRACE(
+        params.log,
+        "Kafka2 client configuration: brokers='{}', client_id='{}', security_protocol='{}', compression='{}'",
+        brokers,
+        client.client_id,
+        Kafka::securityProtocolName(protocol),
+        compression_codec.value_or("none"));
+
+    return result;
+}
 
 }

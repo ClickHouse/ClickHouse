@@ -16,16 +16,7 @@
 
 #include <atomic>
 #include <filesystem>
-#include <list>
 #include <mutex>
-#include <rdkafka.h>
-
-namespace cppkafka
-{
-
-class Configuration;
-
-}
 
 namespace DB
 {
@@ -35,9 +26,6 @@ namespace AWSMSKIAMAuth { struct OAuthBearerTokenRefreshContext; }
 struct KafkaSettings;
 class Kafka2Source;
 class ReadFromStorageKafka2;
-template <typename TStorageKafka>
-struct KafkaInterceptors;
-class ThreadStatus;
 
 /// Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
 /// or as a basic building block for creating pipelines with a continuous insertion / ETL.
@@ -56,8 +44,8 @@ class ThreadStatus;
 /// behind.
 ///
 /// To not complicate things too much, the current implementation makes sure to fetch
-/// messages only from a single topic-partition on a single thread at a time by
-/// manipulating the queues of librdkafka. By pulling from multiple topic-partitions
+/// messages only from a single topic-partition on a single thread at a time (one
+/// positioned reader per topic-partition). By pulling from multiple topic-partitions
 /// the order of messages are not guaranteed, therefore they would have different
 /// hashes for deduplication.
 ///
@@ -65,8 +53,6 @@ class ThreadStatus;
 /// read offset is `n`, then we save the offset `n + 1`, same as Kafka does.
 class StorageKafka2 final : public IStreamingStorage, WithContext
 {
-    using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
-    friend KafkaInterceptors;
     friend class Kafka2Source;
     friend class ReadFromStorageKafka2;
 
@@ -190,9 +176,6 @@ private:
 
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
-    /// For memory accounting in the librdkafka threads.
-    std::mutex thread_statuses_mutex;
-    std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
     /// If named_collection is specified.
     String collection_name;
 
@@ -222,12 +205,9 @@ private:
 
     void assertActive() const;
     KafkaConsumer2Ptr createKafkaConsumer(size_t consumer_number);
-    // Returns full consumer related configuration, also the configuration
-    // contains global kafka properties.
-    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_sink);
-    // Returns full producer related configuration, also the configuration
-    // contains global kafka properties.
-    cppkafka::Configuration getProducerConfiguration();
+    /// Full client configuration for one consumer slot (table settings merged
+    /// with the global kafka properties of the server configuration).
+    Kafka::ClientConfig getConsumerClientConfig(size_t consumer_number);
 
     void threadFunc(size_t idx);
 
@@ -248,7 +228,7 @@ private:
     /// KeeperHandlingConsumer has to be acquired before polling it
     KeeperHandlingConsumerPtr acquireConsumer(size_t idx);
     void releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr);
-    void cleanConsumers();
+    void closeConsumers();
 
     std::optional<size_t> streamFromConsumer(KeeperHandlingConsumer & consumer_info, const Stopwatch & watch, UInt64 cycle_epoch);
 

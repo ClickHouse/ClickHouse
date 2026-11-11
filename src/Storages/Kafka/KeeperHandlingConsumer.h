@@ -13,10 +13,9 @@ namespace DB
 /// Wrapper around KafkaConsumer2 that manages locks, committed offsets and intent sizes in Keeper.
 ///
 /// It assigns a specific list of topic partitions to KafkaConsumer2 without relying on the rebalance logic of Kafka.
-/// The general workflow how to use this class is quite error-prone, but a lot of this boils down to the quirks of
-/// librdkafka:
+/// The general workflow to use this class:
 ///   1. If `isInUse()` returns false, `startUsing` must be called before calling `prepareToPoll` or `poll`. This will
-/// create the librdkafka consumer inside KafkaConsumer2 if necessary
+/// create the Kafka client inside KafkaConsumer2 if necessary
 ///   2. If `needsKeeper()` returns true, then `setKeeper` must be called to set the new Keeper session.
 ///   3. If `prepareToPoll` returns an empty optional, then it is possible to call `poll` to start to consume some
 /// messages.
@@ -24,7 +23,7 @@ namespace DB
 /// `OffsetGuard`.
 ///
 /// From thread-safety perspective the functions of this class falls into three categories:
-///   a) Functions `startUsing`, `stopUsing` and `moveConsumer`: they need exclusive access to the object, so they
+///   a) Functions `startUsing` and `stopUsing`: they need exclusive access to the object, so they
 /// cannot be called simultaneously with other functions. No exceptions.
 ///   b) Function `getStat`: it can be called simultaneously with any other functions (including itself), except for
 /// the functions of category a).
@@ -50,8 +49,9 @@ public:
         int64_t currentOffset() const;
         String currentKey() const;
         String currentPayload() const;
-        boost::optional<cppkafka::MessageTimestamp> currentTimestamp() const;
-        const cppkafka::Message::HeaderListType & currentHeaderList() const;
+        /// Milliseconds since epoch, nullopt when the broker sent no timestamp.
+        std::optional<int64_t> currentTimestampMs() const;
+        const std::vector<Kafka::RecordHeader> & currentHeaderList() const;
 
     private:
         const KafkaConsumer2 & kafka_consumer;
@@ -129,14 +129,13 @@ public:
     /// Returns an OffsetGuard that rollbacks the offsets unless it is committed or deactivated.
     std::optional<OffsetGuard> poll(MessageSinkFunction & message_sink);
 
-    using ConfigCreator = std::function<cppkafka::Configuration(IKafkaExceptionInfoSinkPtr)>;
+    using ConfigCreator = std::function<Kafka::ClientConfig()>;
     /// Returns true if a new consumer was created
     bool startUsing(const ConfigCreator & config_creator);
     void stopUsing();
     bool isInUse() const { return in_use; }
     UInt64 getLastUsedUsec() const { return last_used_usec; }
     bool hasConsumer() const { return kafka_consumer->hasConsumer(); }
-    CppKafkaConsumerPtr moveConsumer() const;
 
     /// Can be called simultaneously with most of the functions, see the class comment for details.
     StorageKafkaUtils::ConsumerStatistics getStat() const;

@@ -60,20 +60,21 @@ TEST(KafkaClientTCPTransport, ReadHonorsDeadline)
         {
             Poco::Net::StreamSocket peer = server.acceptConnection();
             /// Send nothing; wait for the client to hang up.
-            char byte;
+            char byte = 0;
             try
             {
                 peer.receiveBytes(&byte, 1);
             }
             catch (...) /// NOLINT(bugprone-empty-catch)
             {
+                /// Ok: the client may abort the exchange at any point; the test server thread just exits.
             }
         });
 
     TCPTransport transport(nullptr);
     transport.connect("127.0.0.1", server.address().port(), Deadline::after(5s));
 
-    char byte;
+    char byte = 0;
     try
     {
         transport.readSome(&byte, 1, Deadline::after(100ms));
@@ -95,13 +96,14 @@ TEST(KafkaClientTCPTransport, WakeupInterruptsBlockedRead)
         [&server]
         {
             Poco::Net::StreamSocket peer = server.acceptConnection();
-            char byte;
+            char byte = 0;
             try
             {
                 peer.receiveBytes(&byte, 1);
             }
             catch (...) /// NOLINT(bugprone-empty-catch)
             {
+                /// Ok: the client may abort the exchange at any point; the test server thread just exits.
             }
         });
 
@@ -116,7 +118,7 @@ TEST(KafkaClientTCPTransport, WakeupInterruptsBlockedRead)
             wakeup->wakeup();
         });
 
-    char byte;
+    char byte = 0;
     try
     {
         transport.readSome(&byte, 1, Deadline::after(30s));
@@ -135,7 +137,7 @@ TEST(KafkaClientTCPTransport, WakeupInterruptsBlockedRead)
 TEST(KafkaClientTCPTransport, ConnectToClosedPortFails)
 {
     /// Grab an ephemeral port and close the listener so the connect is refused.
-    UInt16 port;
+    UInt16 port = 0;
     {
         auto server = makeServer();
         port = server.address().port();
@@ -163,7 +165,7 @@ TEST(KafkaClientTCPTransport, ReadableReflectsBufferedData)
             Poco::Net::StreamSocket peer = server.acceptConnection();
             /// Respond only after the client's trigger byte, so the client can
             /// assert readable() == false before it.
-            char trigger;
+            char trigger = 0;
             int got = 0;
             while (got < 1)
                 got += peer.receiveBytes(&trigger, 1);
@@ -180,7 +182,7 @@ TEST(KafkaClientTCPTransport, ReadableReflectsBufferedData)
         std::this_thread::sleep_for(1ms);
     EXPECT_TRUE(transport.readable());
 
-    char byte;
+    char byte = 0;
     ASSERT_EQ(transport.readSome(&byte, 1, Deadline::after(5s)), 1u);
     EXPECT_EQ(byte, '!');
 

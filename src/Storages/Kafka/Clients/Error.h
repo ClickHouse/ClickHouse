@@ -35,7 +35,7 @@ bool isBrokerErrorRetriable(Int16 code) noexcept;
 const char * errorKindName(ErrorKind kind) noexcept;
 
 /// The DB::ErrorCodes code an ErrorKind maps to.
-int clickHouseErrorCode(ErrorKind kind) noexcept;
+int toClickHouseErrorCode(ErrorKind kind) noexcept;
 
 /// Tags a Kafka protocol error code for Exception construction. A dedicated
 /// leading type (instead of a plain Int16 parameter) keeps the fmt-string
@@ -56,7 +56,7 @@ public:
     /// Format the message with fmt, like the logging functions.
     template <typename... Args>
     Exception(ErrorKind kind_, FormatStringHelper<Args...> fmt, Args &&... args)
-        : DB::Exception(PreformattedMessage{fmt.format(std::forward<Args>(args)...)}, clickHouseErrorCode(kind_))
+        : DB::Exception(PreformattedMessage{fmt.format(std::forward<Args>(args)...)}, toClickHouseErrorCode(kind_))
         , kind(kind_)
     {
     }
@@ -65,7 +65,7 @@ public:
     /// symbolic name is appended to the message.
     template <typename... Args>
     Exception(BrokerCode broker_code_, FormatStringHelper<Args...> fmt, Args &&... args)
-        : DB::Exception(PreformattedMessage{fmt.format(std::forward<Args>(args)...)}, clickHouseErrorCode(ErrorKind::Broker))
+        : DB::Exception(PreformattedMessage{fmt.format(std::forward<Args>(args)...)}, toClickHouseErrorCode(ErrorKind::Broker))
         , kind(ErrorKind::Broker)
         , broker_code(broker_code_.value)
     {
@@ -74,7 +74,7 @@ public:
 
     /// For messages composed at runtime; prefer the fmt constructors.
     Exception(ErrorKind kind_, PreformattedMessage && message, Int16 broker_code_ = 0)
-        : DB::Exception(std::move(message), clickHouseErrorCode(kind_))
+        : DB::Exception(std::move(message), toClickHouseErrorCode(kind_))
         , kind(kind_)
         , broker_code(broker_code_)
     {

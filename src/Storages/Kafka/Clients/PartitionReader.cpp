@@ -1,5 +1,7 @@
 #include <Storages/Kafka/Clients/PartitionReader.h>
 
+#include <algorithm>
+
 namespace Kafka
 {
 
@@ -39,8 +41,7 @@ void PartitionReader::serve(std::vector<Record> & out, size_t max_records)
         buffer_pos = 0;
         /// The last fetch may end past the last record (control batches,
         /// compaction gaps) — skip the dead range on the next fetch.
-        if (fetched_next_offset > pos)
-            pos = fetched_next_offset;
+        pos = std::max(pos, fetched_next_offset);
     }
 }
 

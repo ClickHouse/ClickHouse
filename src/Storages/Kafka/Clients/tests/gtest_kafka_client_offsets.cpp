@@ -85,7 +85,7 @@ struct Rig
         return config;
     }
 
-    std::unique_ptr<Net::Transport> next()
+    std::unique_ptr<Net::Transport> next() const
     {
         if (pending->empty())
             throw Exception(ErrorKind::Connection, "Test scripted no further connections");

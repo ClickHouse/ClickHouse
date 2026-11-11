@@ -28,7 +28,7 @@ UInt32 murmur2(std::string_view data)
         /// A 4-byte little-endian chunk. All platforms ClickHouse supports are
         /// little-endian, so a plain memcpy load matches the reference's
         /// htole32 path (and its byte-assembling unaligned path).
-        UInt32 k;
+        UInt32 k = 0;
         std::memcpy(&k, bytes, 4);
 
         k *= m;
@@ -53,6 +53,9 @@ UInt32 murmur2(std::string_view data)
         case 1:
             h ^= static_cast<UInt32>(bytes[0]);
             h *= m;
+            break;
+        default: /// len == 0: nothing left.
+            break;
     }
 
     h ^= h >> 13;

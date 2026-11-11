@@ -43,7 +43,7 @@ void TCPTransport::close()
     socket.close();
 }
 
-void TCPTransport::waitReady(short events, const Deadline & deadline, const char * op)
+void TCPTransport::waitReady(short events, const Deadline & deadline, const char * op) /// NOLINT(google-runtime-int)
 {
     const UInt64 start_generation = wakeup_source ? wakeup_source->getGeneration() : 0;
     for (;;)

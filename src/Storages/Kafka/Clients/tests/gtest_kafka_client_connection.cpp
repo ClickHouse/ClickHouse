@@ -209,7 +209,7 @@ TEST(KafkaClientConnection, EofMidFrameIsAConnectionError)
 TEST(KafkaClientConnection, GarbageSizePrefixPointsAtANonPlaintextListener)
 {
     Rig rig;
-    rig.transport->script(String("\x7F\x7F\x7F\x7F more-garbage", 18));
+    rig.transport->script(String("\x7F\x7F\x7F\x7F more-garbage\0", 18));
     try
     {
         rig.connection.open("broker", 9092, forever);

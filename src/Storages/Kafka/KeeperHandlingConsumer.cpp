@@ -64,12 +64,12 @@ String KeeperHandlingConsumer::MessageInfo::currentPayload() const
     return kafka_consumer.currentPayload();
 }
 
-boost::optional<cppkafka::MessageTimestamp> KeeperHandlingConsumer::MessageInfo::currentTimestamp() const
+std::optional<int64_t> KeeperHandlingConsumer::MessageInfo::currentTimestampMs() const
 {
-    return kafka_consumer.currentTimestamp();
+    return kafka_consumer.currentTimestampMs();
 }
 
-const cppkafka::Message::HeaderListType & KeeperHandlingConsumer::MessageInfo::currentHeaderList() const
+const std::vector<Kafka::RecordHeader> & KeeperHandlingConsumer::MessageInfo::currentHeaderList() const
 {
     return kafka_consumer.currentHeaderList();
 }
@@ -168,9 +168,6 @@ void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> 
 std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll(UInt64 locks_refresh_polls)
 {
     chassert(isInUse());
-    LOG_TRACE(log, "Polling consumer {} for events", idx);
-    /// Always poll consumer for events to enable librdkafka callbacks to be handled
-    kafka_consumer->pollEvents();
 
     /// If the consumer has some permanent locks and the lock mustn't be refreshed yet, the consumer should be able to poll.
     if (!assigned_topic_partitions.empty() && poll_count <= locks_refresh_polls)
@@ -699,7 +696,7 @@ bool KeeperHandlingConsumer::startUsing(const ConfigCreator & config_creator)
 {
     auto create_consumer = !kafka_consumer->hasConsumer();
     if (create_consumer)
-        kafka_consumer->createConsumer(config_creator(kafka_consumer));
+        kafka_consumer->createConsumer(config_creator());
 
     in_use = true;
 
@@ -710,12 +707,6 @@ void KeeperHandlingConsumer::stopUsing()
 {
     in_use = false;
     last_used_usec = timeInMicroseconds(std::chrono::system_clock::now());
-}
-
-CppKafkaConsumerPtr KeeperHandlingConsumer::moveConsumer() const
-{
-    chassert(!isInUse() && "KeeperHandlingConsumer cannot destroy consumer when it is in use");
-    return kafka_consumer->moveConsumer();
 }
 
 std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(MessageSinkFunction & message_sink)
@@ -888,7 +879,9 @@ StorageKafkaUtils::ConsumerStatistics KeeperHandlingConsumer::getStat() const
         .exceptions_buffer = std::move(consumer_stat.exceptions_buffer),
         .in_use = in_use.load(),
         .last_used_usec = last_used_usec.load(),
-        .rdkafka_stat = std::move(consumer_stat.rdkafka_stat),
+        /// The in-tree client emits no statistics JSON (the librdkafka-based Kafka2 had them
+        /// disabled anyway, see the old `statistics.interval.ms = 0` workaround).
+        .rdkafka_stat = "",
     };
 }
 

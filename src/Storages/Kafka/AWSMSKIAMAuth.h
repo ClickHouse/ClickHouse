@@ -5,10 +5,12 @@
 #if USE_AWS_S3
 
 #include <base/types.h>
+#include <Storages/Kafka/Clients/Config.h>
 #include <Common/Logger.h>
 #include <cppkafka/configuration.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <chrono>
+#include <functional>
 
 namespace DB::S3 { class S3CredentialsProviderChain; }
 
@@ -65,6 +67,17 @@ bool isValidAWSRegion(const String & region);
 /// @param context_holder Shared pointer to hold the context, ensuring its lifetime matches the storage
 void setupAuthentication(
     cppkafka::Configuration & kafka_config,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & region,
+    const String & broker_list,
+    LoggerPtr log,
+    std::shared_ptr<OAuthBearerTokenRefreshContext> & context_holder);
+
+/// Token provider of the in-tree Kafka client (the Kafka2 engine): generates an
+/// AWS MSK IAM SigV4 token on the connecting thread whenever a connection
+/// authenticates. Resolves the region and fills `context_holder` like
+/// `setupAuthentication`; throws on failure, which fails the connection attempt.
+std::function<Kafka::OAuthToken()> createTokenProvider(
     const Poco::Util::AbstractConfiguration & config,
     const String & region,
     const String & broker_list,

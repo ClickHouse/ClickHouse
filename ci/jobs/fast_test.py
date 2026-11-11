@@ -41,6 +41,8 @@ def clone_submodules():
         "contrib/llvm-project",
         "contrib/lz4",
         "contrib/zstd",
+        # The Kafka protocol client (src/Storages/Kafka/Clients) links it unconditionally.
+        "contrib/crc32c",
         "contrib/zxc",
         "contrib/gdeflate",
         "contrib/re2",

@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <cppkafka/cppkafka.h>
 #include <Core/Names.h>
+#include <Storages/Kafka/Clients/Config.h>
+#include <Storages/Kafka/Clients/Types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Logger.h>
@@ -12,6 +14,7 @@ namespace DB
 {
 struct KafkaSettings;
 class VirtualColumnsDescription;
+class StorageKafka2;
 
 struct KafkaConfigLoader
 {
@@ -53,5 +56,30 @@ struct KafkaConfigLoader
 
     template <typename TKafkaStorage>
     static cppkafka::Configuration getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params);
+
+    /// --- The Kafka2 engine (the in-tree client) ---
+
+    struct Kafka2ConfigParams : public LoadConfigParams
+    {
+        String brokers;
+        String client_id;
+        bool multiple_consumers = false;
+        size_t consumer_number = 0;
+    };
+
+    /// One unified client configuration serves both consumption and production;
+    /// the producer-only compression knobs ride along separately.
+    struct Kafka2Configuration
+    {
+        Kafka::ClientConfig client;
+        Kafka::Compression compression = Kafka::Compression::None;
+        Int64 compression_level = -1;
+    };
+
+    /// Builds the in-tree client configuration from the table settings and the
+    /// server configuration. Only a small allowlist of librdkafka-style
+    /// properties is meaningful for the in-tree client; every other property
+    /// found in the `<kafka>` sections is logged and ignored.
+    static Kafka2Configuration getKafka2Configuration(StorageKafka2 & storage, const Kafka2ConfigParams & params);
 };
 }

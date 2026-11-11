@@ -213,7 +213,7 @@ std::vector<std::pair<Int32, BrokerAddress>> Cluster::controlCandidates()
 
 Cluster::Lease Cluster::acquireControl(const Net::Deadline & deadline)
 {
-    std::optional<Exception> last_error;
+    std::exception_ptr last_error;
     for (const auto & [node_id, address] : controlCandidates())
     {
         try
@@ -224,12 +224,12 @@ Cluster::Lease Cluster::acquireControl(const Net::Deadline & deadline)
         {
             if (e.getKind() == ErrorKind::Wakeup || e.getKind() == ErrorKind::Timeout)
                 throw;
-            last_error = e;
+            last_error = std::current_exception();
             LOG_DEBUG(log, "Control connection to {}:{} failed: {}", address.host, address.port, e.message());
         }
     }
     if (last_error)
-        throw *last_error;
+        std::rethrow_exception(last_error);
     throw Exception(ErrorKind::Connection, "No brokers reachable");
 }
 

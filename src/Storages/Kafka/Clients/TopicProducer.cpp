@@ -105,7 +105,7 @@ struct TopicProducer::Impl
         std::map<Int32, std::vector<Record>> groups;
         for (const auto & record : records)
         {
-            Int32 partition;
+            Int32 partition = 0;
             /// An empty string is a key; only a missing key is unkeyed.
             if (record.key)
             {
