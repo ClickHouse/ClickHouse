@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -8,6 +9,7 @@
 #include <Processors/Port.h>
 #include <Core/Defines.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
 #include <unordered_set>
 
@@ -153,7 +155,7 @@ void LimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out, ctx.version);
+        serializeSortDescription(description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 }
 
 QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)

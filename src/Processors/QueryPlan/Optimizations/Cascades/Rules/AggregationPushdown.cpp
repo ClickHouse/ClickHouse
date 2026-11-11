@@ -255,8 +255,7 @@ bool AggregationPushdown::checkPattern(GroupExpressionPtr expression, const Expr
         params.max_rows_to_group_by != 0 ||     /// global row limit must be enforced by one aggregator
         params.only_merge ||                    /// don't split a merge step that's already from a prior split
         agg_step->inOrder() ||
-        agg_step->explicitSortingRequired() ||
-        params.bucket_top_k != 0)               /// bucket top-K assumes this aggregation directly feeds its `ORDER BY ... LIMIT`
+        agg_step->explicitSortingRequired())
         return false;
 
     /// Global aggregation is not safe: an empty join output yields one global row originally,
@@ -724,6 +723,14 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     /// by a different key set over a different input, so a shared key would cross-contaminate
     /// `HashTablesStatistics` size hints between unrelated hash-table shapes; disable it here.
     partial_step->setStatsCacheKey(0);
+    /// The top-K threshold merge and the bucket-local Top-K conversion keep only the best groups,
+    /// which is exact only when the aggregation directly feeds its `ORDER BY ... LIMIT`. Below the
+    /// join they would prune groups before the join filters them, so drop both here. The merge
+    /// above the join (variant A) still feeds the `ORDER BY ... LIMIT` directly and keeps them;
+    /// when the plan is later split into partial aggregation and `MergingAggregatedStep`, that
+    /// step drops the threshold merge itself.
+    partial_step->disableThresholdTopK();
+    partial_step->disableBucketTopK();
     if (!full_pushdown)
         partial_step->setFinal(false);
     /// Unlike `TwoStageAggregationTransformation`, no bucket-order forcing under the

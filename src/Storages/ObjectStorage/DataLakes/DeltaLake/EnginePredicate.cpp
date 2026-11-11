@@ -240,10 +240,6 @@ namespace
             || !DB::isDateOrDate32(result_type->getTypeId()))
             return std::nullopt;
 
-        /// Removing nullability can throw; pruning must not hide those rows.
-        if (column->result_type->isNullable() && !conversion->result_type->isNullable())
-            return std::nullopt;
-
         const auto converted = convertLiteralToType(result_type, *literal, format_settings);
         if (!converted)
             return std::nullopt;

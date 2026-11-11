@@ -1,0 +1,6 @@
+-- no grants: denied
+ACCESS_DENIED
+-- SELECT on information_schema only: still denied, on system.grants
+ACCESS_DENIED
+-- with access to system.grants: allowed
+1

@@ -1,5 +1,4 @@
 import logging
-import os
 from ast import literal_eval
 from dataclasses import dataclass
 from pathlib import Path
@@ -373,73 +372,3 @@ class TestResult:
 
 
 TestResults = List[TestResult]
-
-
-class ReportColorTheme:
-    class ReportColor:
-        yellow = "#FFB400"
-        red = "#F00"
-        green = "#0A0"
-        blue = "#00B4FF"
-
-    default = (ReportColor.green, ReportColor.red, ReportColor.yellow)
-
-
-ColorTheme = Tuple[str, str, str]
-
-
-def _format_header(
-    header: str, branch_name: str, branch_url: Optional[str] = None
-) -> str:
-    result = header
-    if "ClickHouse" not in result:
-        result = f"ClickHouse {result}"
-    if branch_url:
-        result = f'{result} for <a href="{branch_url}">{branch_name}</a>'
-    else:
-        result = f"{result} for {branch_name}"
-    return result
-
-
-def _get_status_style(status: str, colortheme: Optional[ColorTheme] = None) -> str:
-    ok_statuses = (OK, SUCCESS, "PASSED")
-    fail_statuses = (FAIL, FAILURE, ERROR, "FAILED", "Timeout", "NOT_FAILED")
-
-    if colortheme is None:
-        colortheme = ReportColorTheme.default
-
-    style = "font-weight: bold;"
-    if status in ok_statuses:
-        style += f"color: {colortheme[0]};"
-    elif status in fail_statuses:
-        style += f"color: {colortheme[1]};"
-    else:
-        style += f"color: {colortheme[2]};"
-    return style
-
-
-def _get_html_url_name(url):
-    base_name = ""
-    if isinstance(url, str):
-        base_name = os.path.basename(url)
-    if isinstance(url, tuple):
-        base_name = url[1]
-
-    if "?" in base_name:
-        base_name = base_name.split("?")[0]
-
-    if base_name is not None:
-        return base_name.replace("%2B", "+").replace("%20", " ")
-    return None
-
-
-def _get_html_url(url):
-    href = None
-    name = None
-    if isinstance(url, str):
-        href, name = url, _get_html_url_name(url)
-    if isinstance(url, tuple):
-        href, name = url[0], _get_html_url_name(url)
-    if href and name:
-        return f'<a href="{href}">{_get_html_url_name(url)}</a>'
-    return ""

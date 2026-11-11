@@ -28,9 +28,7 @@ SET force_index_by_date = 1
 SET force_index_by_date
 ```
 
-<div id="set-time-zone">
-  ## SET TIME ZONE
-</div>
+## SET TIME ZONE {#set-time-zone}
 
 ```sql
 SET TIME ZONE [=] 'timezone'
@@ -49,13 +47,11 @@ SET TIME ZONE 'America/New_York';
 SELECT getSetting('session_timezone');
 ```
 
-The timezone value must be a valid name from the [IANA Time Zone Database](https://www.iana.org/time-zones). An invalid timezone name will result in an error.
+时区值必须是 `system.time_zones` 中列出的名称 (即服务器随附的 [IANA 时区数据库](https://www.iana.org/time-zones)中的名称) ，或采用 `Fixed/UTC±HH:MM:SS` 格式的固定偏移量。任何其他值，包括仅存在于操作系统时区数据库中的名称，都会导致错误。
 
 有关 `session_timezone` 设置的更多信息，请参见 [session&#95;timezone](/zh/reference/settings/session-settings/other#session_timezone)。
 
-<div id="setting-query-parameters">
-  ## 设置查询参数
-</div>
+## 设置查询参数 {#setting-query-parameters}
 
 `SET` 语句也可用于定义查询参数，只需在参数名前添加 `param_` 前缀。
 查询参数支持您编写包含占位符的通用查询，并在执行时将其替换为实际值。

@@ -10,14 +10,13 @@ doc_type: 'reference'
 
 这些设置用于配置 ClickHouse 服务器，由 ClickHouse 源代码自动生成。
 
-<div id="access_control_improvements">
-  ## access_control_improvements
-</div>
+## access_control_improvements {#access_control_improvements}
 
 访问控制系统中可选改进项的设置。
 
 | Setting                                         | Description                                                                                                                                                                                                                                                               | Default |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `enable_read_write_grants`                      | 为 `S3`、`HDFS`、`Kafka` 等外部数据源启用 `READ` 和 `WRITE` 特权的分离。此功能从 25.7 版本开始提供。设置为 `true` 后，可以分别为数据源授予 `READ` 和 `WRITE` 特权，而不必通过单项授权同时授予两者。                                                                                                                                       | `false` |
 | `on_cluster_queries_require_cluster_grant`      | 设置 `ON CLUSTER` 查询是否需要 `CLUSTER` 授权。                                                                                                                                                                                                                                      | `true`  |
 | `role_cache_expiration_time_seconds`            | 设置角色在上次访问后可在 Role Cache 中保留的秒数。                                                                                                                                                                                                                                           | `600`   |
 | `select_from_information_schema_requires_grant` | 设置 `SELECT * FROM information_schema.<table>` 是否需要授权，或者是否允许任意用户执行。如果设置为 true，则该查询需要 `GRANT SELECT ON information_schema.<table>`，与普通表相同。                                                                                                                                  | `true`  |
@@ -39,12 +38,11 @@ doc_type: 'reference'
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+    <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>
 ```
 
-<div id="access_control_path">
-  ## access_control_path
-</div>
+## access_control_path {#access_control_path}
 
 ClickHouse 服务器 用于存储由 SQL 命令创建的用户和角色配置的文件夹路径。
 

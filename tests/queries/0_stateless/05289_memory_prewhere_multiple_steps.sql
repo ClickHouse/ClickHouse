@@ -49,8 +49,9 @@ SELECT k, n FROM t_memory_prewhere_steps PREWHERE k = 5 AND n = 0 SETTINGS enabl
 SELECT k, n FROM t_memory_prewhere_steps PREWHERE n = 0 AND k = 5 SETTINGS enable_multiple_prewhere_read_steps = 1;
 
 -- The column of the second condition is read only for the block where the first one has passing rows.
-SELECT count() FROM t_memory_prewhere_steps PREWHERE k = 5 AND s != '' SETTINGS enable_multiple_prewhere_read_steps = 1, log_comment = '05289_multiple_steps';
-SELECT count() FROM t_memory_prewhere_steps PREWHERE k = 5 AND s != '' SETTINGS enable_multiple_prewhere_read_steps = 0, log_comment = '05289_single_step';
+-- The query condition cache would skip the other block in both queries.
+SELECT count() FROM t_memory_prewhere_steps PREWHERE k = 5 AND s != '' SETTINGS enable_multiple_prewhere_read_steps = 1, log_comment = '05289_multiple_steps', use_query_condition_cache = 0;
+SELECT count() FROM t_memory_prewhere_steps PREWHERE k = 5 AND s != '' SETTINGS enable_multiple_prewhere_read_steps = 0, log_comment = '05289_single_step', use_query_condition_cache = 0;
 
 SYSTEM FLUSH LOGS query_log;
 

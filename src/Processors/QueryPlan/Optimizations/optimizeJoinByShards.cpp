@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
@@ -65,8 +64,11 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 
     IQueryPlanStep * step = node.step.get();
 
-    if (typeid_cast<DistinctStep *>(step))
-        return true;
+    /// A preliminary `DISTINCT` deduplicates each stream independently, so it keeps the shards. A final one
+    /// merges its input into a single stream, which leaves this side with one stream while the other side
+    /// is still split into shards, and a `YShaped` join cannot fall back to a regular join in that case.
+    if (auto * distinct = typeid_cast<DistinctStep *>(step))
+        return distinct->isPreliminary();
 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
     {
@@ -340,7 +342,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 
     /// Do not break shards after full_sorting_merge JOIN. For hash join it is automatically true.
     for (const auto & join_step : data.joins_to_keep_in_order)
-        join_step->keepLeftPipelineInOrder();
+        join_step->keepLeftPipelineLayout();
 }
 
 /// Join can be executed by independent shards if the same sharding can apply for the keft and right part,
@@ -401,9 +403,8 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             const auto & join = join_step->getJoin();
 
             auto * hash_join = typeid_cast<HashJoin *>(join.get());
-            auto * concurrent_hash_join = typeid_cast<ConcurrentHashJoin *>(join.get());
             auto * full_sorting_merge_join = typeid_cast<FullSortingMergeJoin *>(join.get());
-            bool is_algo_supported = hash_join || concurrent_hash_join || full_sorting_merge_join;
+            bool is_algo_supported = hash_join || full_sorting_merge_join;
 
             bool can_split_left_table = frame.results.front() != std::nullopt && is_algo_supported && !join->hasDelayedBlocks();
             // std::cerr << "can_split_left_table " << can_split_left_table << std::endl;
