@@ -45,7 +45,6 @@ SELECT toUnixTimestamp(parseDateTimeBestEffort('2025-06-15 12:00:00', 'Pacific/K
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2025-06-15 12:00:00 Pacific/Kiritimati', 'yyyy-MM-dd HH:mm:ss z')) = toUnixTimestamp(toDateTime('2025-06-15 12:00:00', 'Pacific/Kiritimati'));
 
 SELECT '--- other consumers of the offset';
-SELECT EXTRACT(TIMEZONE_HOUR FROM toDateTime('2025-06-15 12:00:00', 'Pacific/Kiritimati')), EXTRACT(TIMEZONE_MINUTE FROM toDateTime('2025-06-15 12:00:00', 'Pacific/Kiritimati'));
 SELECT formatDateTime(toDateTime64(1750000000, 0, 'UTC'), '%z', 'Pacific/Kiritimati');
 SELECT toUTCTimestamp(CAST('2025-06-15 12:00:00' AS DateTime), 'Pacific/Kiritimati'), fromUTCTimestamp(CAST('2025-06-15 12:00:00' AS DateTime), 'Pacific/Kiritimati');
 SELECT toUTCTimestamp(CAST('2025-06-15 12:00:00.500' AS DateTime64(3)), 'Pacific/Kiritimati'), fromUTCTimestamp(CAST('2025-06-15 12:00:00.500' AS DateTime64(3)), 'Pacific/Kiritimati');

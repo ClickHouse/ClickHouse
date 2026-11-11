@@ -260,21 +260,22 @@ private:
 
     /// get implementation with interpolation
     Value getInterpolatedImpl(Float64 level) const
-    requires interpolated
+    requires(interpolated)
     {
         size_t size = map.size();
         if (0 == size)
             return Value();
 
+        Float64 res = getFloatInterpolatedImpl(level);
         if constexpr (is_decimal<Value>)
-            return Value(getNativeInterpolatedImpl(level));
+            return Value(static_cast<typename Value::NativeType>(res));
         else
-            return static_cast<Value>(getFloatInterpolatedImpl(level));
+            return static_cast<Value>(res);
     }
 
     /// getMany implementation with interpolation
     void getManyInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
-    requires interpolated
+    requires(interpolated)
     {
         size_t size = map.size();
         if (0 == size)
@@ -284,45 +285,21 @@ private:
             return;
         }
 
-        if constexpr (is_decimal<Value>)
+        std::unique_ptr<Float64 []> res_holder(new Float64[num_levels]);
+        Float64 * res = res_holder.get();
+        getManyFloatInterpolatedImpl(levels, indices, num_levels, res);
+        for (size_t i = 0; i < num_levels; ++i)
         {
-            using Native = typename Value::NativeType;
-            std::unique_ptr<Native []> res_holder(new Native[num_levels]);
-            Native * res = res_holder.get();
-            getManyNativeInterpolatedImpl(levels, indices, num_levels, res);
-            for (size_t i = 0; i < num_levels; ++i)
+            if constexpr (is_decimal<Value>)
+                result[i] = Value(static_cast<typename Value::NativeType>(res[i]));
+            else
                 result[i] = Value(res[i]);
         }
-        else
-        {
-            std::unique_ptr<Float64 []> res_holder(new Float64[num_levels]);
-            Float64 * res = res_holder.get();
-            getManyFloatInterpolatedImpl(levels, indices, num_levels, res);
-            for (size_t i = 0; i < num_levels; ++i)
-                result[i] = Value(res[i]);
-        }
-    }
-
-    /// Sorts the values into `array` and turns the weights into a cumulative sum, so that a
-    /// position in `[0, max_position]` selects a value. Returns `max_position`.
-    Weight buildCumulativeWeights(Pair * array, size_t size) const
-    requires interpolated
-    {
-        size_t i = 0;
-        for (const auto & pair : map)
-        {
-            array[i] = pair.getValue();
-            ++i;
-        }
-
-        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
-        std::partial_sum(array, array + size, array, [](const Pair & acc, const Pair & p) { return Pair(p.first, acc.second + p.second); });
-        return array[size - 1].second - 1;
     }
 
     /// getFloat implementation with interpolation
     Float64 getFloatInterpolatedImpl(Float64 level) const
-    requires interpolated
+    requires(interpolated)
     {
         size_t size = map.size();
 
@@ -333,14 +310,23 @@ private:
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
         Pair * array = array_holder.get();
 
-        Weight max_position = buildCumulativeWeights(array, size);
+        size_t i = 0;
+        for (const auto & pair : map)
+        {
+            array[i] = pair.getValue();
+            ++i;
+        }
+
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        std::partial_sum(array, array + size, array, [](const Pair & acc, const Pair & p) { return Pair(p.first, acc.second + p.second); });
+        Weight max_position = array[size - 1].second - 1;
         Float64 position = static_cast<Float64>(max_position) * level;
         return quantileInterpolated(array, size, position);
     }
 
     /// getManyFloat implementation with interpolation
     void getManyFloatInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Float64 * result) const
-    requires interpolated
+    requires(interpolated)
     {
         size_t size = map.size();
         if (0 == size)
@@ -354,7 +340,16 @@ private:
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
         Pair * array = array_holder.get();
 
-        Weight max_position = buildCumulativeWeights(array, size);
+        size_t i = 0;
+        for (const auto & pair : map)
+        {
+            array[i] = pair.getValue();
+            ++i;
+        }
+
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        std::partial_sum(array, array + size, array, [](Pair acc, Pair & p) { return Pair(p.first, acc.second + p.second); });
+        Weight max_position = array[size - 1].second - 1;
 
         for (size_t j = 0; j < num_levels; ++j)
         {
@@ -363,48 +358,9 @@ private:
         }
     }
 
-    UnderlyingType getNativeInterpolatedImpl(Float64 level) const
-    requires interpolated
-    {
-        size_t size = map.size();
-        std::unique_ptr<Pair[]> array_holder(new Pair[size]);
-        Pair * array = array_holder.get();
-
-        Weight max_position = buildCumulativeWeights(array, size);
-        Float64 position = static_cast<Float64>(max_position) * level;
-        return quantileInterpolatedNative(array, size, position);
-    }
-
-    void getManyNativeInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, UnderlyingType * result) const
-    requires interpolated
-    {
-        size_t size = map.size();
-        std::unique_ptr<Pair[]> array_holder(new Pair[size]);
-        Pair * array = array_holder.get();
-
-        Weight max_position = buildCumulativeWeights(array, size);
-
-        for (size_t j = 0; j < num_levels; ++j)
-        {
-            Float64 position = static_cast<Float64>(max_position) * levels[indices[j]];
-            result[indices[j]] = quantileInterpolatedNative(array, size, position);
-        }
-    }
-
-    /// The two values `position` falls between, and the weight of each.
-    struct InterpolationEndpoints
-    {
-        UnderlyingType lower_key;
-        UnderlyingType higher_key;
-        Float64 lower_coef;
-        Float64 higher_coef;
-    };
-
-    /// The `Float64 -> size_t` position casts below are undefined for a weight sum near
-    /// `UInt64::max`.
-    InterpolationEndpoints NO_SANITIZE_UNDEFINED
-    interpolationEndpoints(const Pair * array, size_t size, Float64 position) const
-    requires interpolated
+    /// Calculate quantile, using linear interpolation between two closest values
+    Float64 NO_SANITIZE_UNDEFINED quantileInterpolated(const Pair * array, size_t size, Float64 position) const
+    requires(interpolated)
     {
         size_t lower = static_cast<size_t>(std::floor(position));
         size_t higher = static_cast<size_t>(std::ceil(position));
@@ -420,40 +376,9 @@ private:
         UnderlyingType higher_key = higher_it->first;
 
         if (lower == higher || lower_key == higher_key)
-            return {lower_key, lower_key, 1., 0.};
+            return static_cast<Float64>(lower_key);
 
-        return {
-            lower_key,
-            higher_key,
-            static_cast<Float64>(higher) - position,
-            position - static_cast<Float64>(lower)};
-    }
-
-    /// Calculate quantile, using linear interpolation between two closest values
-    Float64 quantileInterpolated(const Pair * array, size_t size, Float64 position) const
-    requires interpolated
-    {
-        const auto endpoints = interpolationEndpoints(array, size, position);
-        /// Coincident endpoints are returned without forming a product: `inf * 0.0` is a NaN.
-        if (endpoints.lower_key == endpoints.higher_key)
-            return static_cast<Float64>(endpoints.lower_key);
-        return static_cast<Float64>(endpoints.lower_key) * endpoints.lower_coef
-            + static_cast<Float64>(endpoints.higher_key) * endpoints.higher_coef;
-    }
-
-    UnderlyingType quantileInterpolatedNative(const Pair * array, size_t size, Float64 position) const
-    requires interpolated
-    {
-        const auto endpoints = interpolationEndpoints(array, size, position);
-        return QuantileInterpolation::interpolate<UnderlyingType>(
-            endpoints.lower_key,
-            endpoints.higher_key,
-            endpoints.higher_coef,
-            [&] {
-                return static_cast<Float64>(endpoints.lower_key) * endpoints.lower_coef
-                    + static_cast<Float64>(endpoints.higher_key) * endpoints.higher_coef;
-            },
-            /* forms_native_difference= */ false);
+        return (static_cast<Float64>(higher) - position) * static_cast<Float64>(lower_key) + (position - static_cast<Float64>(lower)) * static_cast<Float64>(higher_key);
     }
 };
 
@@ -512,7 +437,6 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
-void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
@@ -524,30 +448,30 @@ Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a num
 To get the exact value, all the passed values are combined into an array, which is then partially sorted.
 Each value is counted with its weight, as if it is present `weight` times.
 A hash table is used in the algorithm.
-Because of this, if the passed values are frequently repeated, the function consumes less RAM than [`quantileExact`](/reference/functions/aggregate-functions/quantileExact#quantileExact).
+Because of this, if the passed values are frequently repeated, the function consumes less RAM than [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact#quantileExact).
 You can use this function instead of `quantileExact` and specify the weight 1.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [quantiles](/reference/functions/aggregate-functions/quantiles#quantiles) function.
+In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileExactWeighted(level)(expr, weight)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}},
+        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}},
         {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Quantile of the specified level. For numeric data types the output format matches the input format.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Quantile of the specified level.", {"Float64", "Date", "DateTime"}};
     FunctionDocumentation::Examples examples = {
     {
         "Computing exact weighted quantile",
         R"(
 CREATE TABLE t (
     n Int32,
-    val UInt32
+    val Int32
 ) ENGINE = Memory;
 
 -- Insert the sample data
@@ -571,41 +495,7 @@ SELECT quantileExactWeighted(n, val) FROM t;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
     factory.registerFunction(NameQuantileExactWeighted::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, false>, documentation});
-
-    FunctionDocumentation::Description description_quantiles = R"(
-Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously, taking into account the weight of each element.
-
-This function is equivalent to [`quantileExactWeighted`](/reference/functions/aggregate-functions/quantileExactWeighted) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
-    )";
-    FunctionDocumentation::Syntax syntax_quantiles = R"(
-quantilesExactWeighted(level1, level2, ...)(expr, weight)
-    )";
-    FunctionDocumentation::Arguments arguments_quantiles = {
-        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}},
-        {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
-    };
-    FunctionDocumentation::Parameters parameters_quantiles = {
-        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of quantiles of the specified levels in the same order as the levels were specified. For numeric data types the output format matches the input format.", {"Array((U)Int*)", "Array(Int128)", "Array(UInt128)", "Array(Int256)", "Array(UInt256)", "Array(Float*)", "Array(Decimal*)", "Array(Date)", "Array(DateTime)", "Array(DateTime64)"}};
-    FunctionDocumentation::Examples examples_quantiles = {
-    {
-        "Computing multiple exact weighted quantiles",
-        R"(
-SELECT quantilesExactWeighted(0.25, 0.5, 0.75)(number, 1) FROM numbers(10)
-        )",
-        R"(
-┌─quantilesExactWeighted(0.25, 0.5, 0.75)(number, 1)─┐
-│ [2,4,7]                                            │
-└────────────────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_quantiles = {1, 1};
-    FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
-
-    factory.registerFunction(NameQuantilesExactWeighted::name, {createAggregateFunctionQuantile<FuncQuantilesExactWeighted, false>, documentation_quantiles, properties});
+    factory.registerFunction(NameQuantilesExactWeighted::name, {createAggregateFunctionQuantile<FuncQuantilesExactWeighted, false>, {}, properties});
 
     FunctionDocumentation::Description description_interpolated = R"(
 Computes [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation, taking into account the weight of each element.
@@ -614,7 +504,7 @@ To get the interpolated value, all the passed values are combined into an array,
 Quantile interpolation is then performed using the [weighted percentile method](https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method) by building a cumulative distribution based on weights and then a linear interpolation is performed using the weights and the values to compute the quantiles.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [quantiles](/reference/functions/aggregate-functions/quantiles#quantiles) function.
+In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
 
 We strongly recommend using `quantileExactWeightedInterpolated` instead of `quantileInterpolatedWeighted` because `quantileExactWeightedInterpolated` is more accurate than `quantileInterpolatedWeighted`.
 See the example below for more details.
@@ -623,24 +513,17 @@ See the example below for more details.
 quantileExactWeightedInterpolated(level)(expr, weight)
     )";
     FunctionDocumentation::Arguments arguments_interpolated = {
-        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}},
+        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}},
         {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
     };
     FunctionDocumentation::Parameters parameters_interpolated = {
         {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_interpolated = {"Quantile of the specified level. Numeric arguments produce `Float64`, while `Decimal`, `Date`, `DateTime` and `DateTime64` arguments keep their input format.", {"Float64", "Decimal*", "Date", "DateTime", "DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_interpolated = {"Quantile of the specified level.", {"Float64", "Date", "DateTime"}};
     FunctionDocumentation::Examples examples_interpolated = {
     {
         "Computing exact weighted interpolated quantile",
         R"(
-CREATE TABLE t (
-    n Int32,
-    val UInt32
-) ENGINE = Memory;
-
-INSERT INTO t VALUES (0, 3), (1, 2), (2, 1), (5, 4);
-
 SELECT quantileExactWeightedInterpolated(n, val) FROM t;
         )",
         R"(
@@ -670,41 +553,8 @@ FROM numbers(9)
     FunctionDocumentation documentation_interpolated = {description_interpolated, syntax_interpolated, arguments_interpolated, parameters_interpolated, returned_value_interpolated, examples_interpolated, introduced_in_interpolated, category_interpolated};
 
     factory.registerFunction(NameQuantileExactWeightedInterpolated::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, true>, documentation_interpolated});
-    FunctionDocumentation::Description description_quantiles_interpolated = R"(
-Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation at different levels simultaneously, taking into account the weight of each element.
-
-This function is equivalent to [`quantileExactWeightedInterpolated`](/reference/functions/aggregate-functions/quantileExactWeightedInterpolated) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
-    )";
-    FunctionDocumentation::Syntax syntax_quantiles_interpolated = R"(
-quantilesExactWeightedInterpolated(level1, level2, ...)(expr, weight)
-    )";
-    FunctionDocumentation::Arguments arguments_quantiles_interpolated = {
-        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}},
-        {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
-    };
-    FunctionDocumentation::Parameters parameters_quantiles_interpolated = {
-        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_quantiles_interpolated = {"Array of quantiles of the specified levels in the same order as the levels were specified. Numeric arguments produce `Float64`, while `Decimal`, `Date`, `DateTime` and `DateTime64` arguments keep their input format.", {"Array(Float64)", "Array(Decimal*)", "Array(Date)", "Array(DateTime)", "Array(DateTime64)"}};
-    FunctionDocumentation::Examples examples_quantiles_interpolated = {
-    {
-        "Computing multiple exact weighted interpolated quantiles",
-        R"(
-SELECT quantilesExactWeightedInterpolated(0.25, 0.5, 0.75)(number, 1) FROM numbers(10)
-        )",
-        R"(
-┌─quantilesExactWeightedInterpolated(0.25, 0.5, 0.75)(number, 1)─┐
-│ [2.25,4.5,6.75]                                                │
-└────────────────────────────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_quantiles_interpolated = {24, 10};
-    FunctionDocumentation::Category category_quantiles_interpolated = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation_quantiles_interpolated = {description_quantiles_interpolated, syntax_quantiles_interpolated, arguments_quantiles_interpolated, parameters_quantiles_interpolated, returned_value_quantiles_interpolated, examples_quantiles_interpolated, introduced_in_quantiles_interpolated, category_quantiles_interpolated};
-
     factory.registerFunction(
-        NameQuantilesExactWeightedInterpolated::name, {createAggregateFunctionQuantile<FuncQuantilesExactWeighted, true>, documentation_quantiles_interpolated, properties});
+        NameQuantilesExactWeightedInterpolated::name, {createAggregateFunctionQuantile<FuncQuantilesExactWeighted, true>, {}, properties});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianExactWeighted", NameQuantileExactWeighted::name);

@@ -3,9 +3,7 @@
 #include <Common/PODArray.h>
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 
-#include <optional>
 #include <span>
-#include <unordered_set>
 
 namespace DB
 {
@@ -57,26 +55,6 @@ public:
     /// PrefetchHandle::reset can later subtract from MemoryUsageDiff correctly.
     void startPrefetch(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff);
 
-    /// Like startPrefetch, but a read task covers only these requests and the gaps between them, so what is
-    /// charged is what it allocates. Starts nothing and returns nullopt if that could exceed `max_memory`.
-    /// `created_task_first_handle` receives, per created read task, the position in `requests_to_start` of its first handle.
-    std::optional<size_t> startPrefetchWithinLimit(
-        const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory,
-        std::vector<size_t> * created_task_first_handle = nullptr);
-
-    /// Consecutive (in sorted order) ranges registered before finalizeRanges(), with gaps below min_bytes_for_seek between them (as in a read task).
-    struct AdjacentRanges
-    {
-        size_t first_range_idx = 0;
-        size_t last_range_idx = 0;
-        size_t begin = 0;
-        size_t end = 0;
-    };
-
-    /// Nullopt if the handles' ranges are not such ranges.
-    std::optional<AdjacentRanges> getAdjacentRanges(const std::vector<PrefetchHandle *> & handles);
-    bool extendsAdjacentRanges(const AdjacentRanges & run, const AdjacentRanges & next) const;
-
     /// If prefetched, returns prefetched data.
     /// If prefetch in progress, waits for it to complete.
     /// If prefetch not started, reads the data right here.
@@ -87,13 +65,6 @@ public:
     void readSync(char * to, size_t n, size_t offset);
 
     size_t getFileSize() const { return file_size; }
-    bool isLocalFile() const { return is_local_file; }
-
-    /// Whether started prefetches are read by background tasks that can run in parallel.
-    bool readsInBackground() const;
-
-    /// Whether reads go through the page cache, whose cells can be much larger than the ranges read.
-    bool readsThroughPageCache() const;
 
 private:
     friend class PrefetchHandle;
@@ -120,9 +91,6 @@ private:
 
         /// Whether this range can be piggy-backed to nearby other reads.
         std::atomic<bool> allow_incidental_read {true};
-
-        /// Whether the data of this range was handed out by getRangeData. To count used bytes once (introspection only).
-        std::atomic<bool> data_used {false};
 
         Task * task = nullptr; // if HasTask
         size_t range_set_idx = 0;
@@ -158,26 +126,14 @@ private:
             Deallocated,
         };
 
-        size_t offset{};
-        size_t length{};
+        size_t offset;
+        size_t length;
         double memory_amplification = 1;
 
         /// TODO [parquet]: If the range is long, it may make sense to have multiple subtasks reading parts of
         ///       the range in parallel (into subranges of one buffer). E.g. if there's a big column
         ///       chunk with no offset index, and we're reading over network.
         PaddedPODArray<char> buf;
-
-        /// When the underlying read buffer supports zero-copy cached reads, and the Task's range
-        /// happens to fit in one retained cache cell, we reference that cell here and don't use `buf`.
-        /// Lightweight mirror of SeekableReadBuffer::CachedRegion to avoid the heavy include.
-        struct CachedReadRegion
-        {
-            std::shared_ptr<void> handle;
-            const char * data = nullptr;
-            size_t size = 0;
-            size_t file_offset = 0;
-        };
-        std::optional<CachedReadRegion> cached_region;
 
         std::atomic<State> state {State::Scheduled};
         /// How many RequestState-s in HasTask state point to this Task.
@@ -206,14 +162,13 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
 
     std::mutex read_mutex;
-    ReadMode read_mode{};
+    ReadMode read_mode;
     SeekableReadBuffer * reader = nullptr;
     PaddedPODArray<char> entire_file;
 
-    size_t file_size{};
-    bool is_local_file = false;
-    size_t min_bytes_for_seek{};
-    size_t bytes_per_read_task{};
+    size_t file_size;
+    size_t min_bytes_for_seek;
+    size_t bytes_per_read_task;
 
     std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
 
@@ -231,15 +186,11 @@ private:
     std::mutex exception_mutex;
 
     void determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options);
-    /// Reads from the underlying ReadBuffer, for readSync and for tasks.
-    void readImpl(char * to, size_t n, size_t offset);
     /// Creates and starts a Task covering this request and possibly other nearby ranges.
     ///
     /// If splitting, the request is being cancelled and replaced by a smaller range
     /// (splitAndPrefetchRange), and only subrange [subrange_start, subrange_end) needs to be read.
     void pickRangesAndCreateTaskIfNotExists(RequestState *, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, std::unique_lock<std::mutex> lock);
-    /// Returns nullptr if the request already has a task. If set, only requests in `coalesce_only` are coalesced into it.
-    Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only);
     static void decreaseTaskRefcount(Task * task, size_t amount);
     void scheduleTask(Task * task);
     Task::State runTask(Task * task);
