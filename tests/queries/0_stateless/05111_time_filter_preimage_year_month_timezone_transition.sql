@@ -64,9 +64,9 @@ SELECT count() FROM t_preimage_transition WHERE toYYYYMM(managua64) = 199212;
 SELECT count() FROM t_preimage_transition WHERE toYYYYMM(managua64) = 199301;
 
 SELECT 'the rewrite still applies and carries the real local boundary';
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_preimage_transition WHERE toYear(lima) = 1993) WHERE explain LIKE '%1994-01-01 01:00:00%' SETTINGS enable_analyzer = 1;
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_preimage_transition WHERE toYYYYMM(managua64) = 199212) WHERE explain LIKE '%1993-01-01 01:00:00%' SETTINGS enable_analyzer = 1;
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_preimage_transition WHERE toYear(lima) = 1993) WHERE explain LIKE '%function_name: toYear%' SETTINGS enable_analyzer = 1;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_preimage_transition WHERE toYear(lima) = 1993) WHERE explain LIKE '%1994-01-01 01:00:00%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_preimage_transition WHERE toYYYYMM(managua64) = 199212) WHERE explain LIKE '%1993-01-01 01:00:00%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_preimage_transition WHERE toYear(lima) = 1993) WHERE explain LIKE '%function_name: toYear%';
 
 SELECT 'an implicit time zone is parsed in the session time zone';
 DROP TABLE IF EXISTS t_preimage_implicit;

@@ -364,6 +364,7 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"DeltaLakeLocal", "REMOTE TABLE"},
     {"DeltaLakeS3", "REMOTE TABLE"},
     {"Distributed", "REMOTE TABLE"},
+    {"Elasticsearch", "REMOTE TABLE"},
     {"GCS", "REMOTE TABLE"},
     {"HDFS", "REMOTE TABLE"},
     {"Hive", "REMOTE TABLE"},
@@ -444,6 +445,7 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"GenerateRandom", "TABLE"},
     {"FuzzJSON", "TABLE"},
     {"FuzzQuery", "TABLE"},
+    {"Obfuscate", "TABLE"},
 };
 
 const static std::string & getTableTypeMap()

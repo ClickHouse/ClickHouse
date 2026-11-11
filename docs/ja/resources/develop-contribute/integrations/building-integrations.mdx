@@ -9,15 +9,11 @@ doc_type: 'guide'
 
 このページでは、インテグレーションの対象範囲を理解し、インジェストと利用に関する作業範囲を整理できるように説明します。検証と公開については、[Testing your integration](/ja/resources/develop-contribute/integrations/testing-your-integration) および [Documenting your integration](/ja/resources/develop-contribute/integrations/documenting-your-integration) を参照してください。
 
-<div id="ingestion">
-  ## インジェスト
-</div>
+## インジェスト {#ingestion}
 
 ClickHouse にデータを取り込む経路は 2 つあります。製品側でインジェスト基盤を担うか、委任するかに応じて選択してください。
 
-<div id="path-a-clickpipes">
-  ### パス A: ClickPipes (マネージド、ClickHouse Cloud のみ)
-</div>
+### パス A: ClickPipes (マネージド、ClickHouse Cloud のみ) {#path-a-clickpipes}
 
 インジェスト基盤を自分で構築・運用したくない場合は、[ClickPipes](/ja/integrations/clickpipes/home) を利用できます。これは、顧客のデータソースから顧客の ClickHouse Cloud サービスへデータを取り込むマネージドサービスです。ClickPipes は、スケーリング、並列化、再試行、遅延レポートを処理します。
 
@@ -27,9 +23,7 @@ ClickHouse にデータを取り込む経路は 2 つあります。製品側で
 * **オブジェクトストレージ:** Amazon S3 (および S3 互換ストレージ) 、Google Cloud Storage、Azure Blob Storage
 * **CDC:** PostgreSQL、MySQL、MongoDB、BigQuery
 
-<div id="path-b-language-client">
-  ### パス B: 公式言語クライアントを使った自前のインジェスト
-</div>
+### パス B: 公式言語クライアントを使った自前のインジェスト {#path-b-language-client}
 
 パイプラインを自分で管理している場合は、[公式言語クライアント](/ja/integrations/language-clients/index) のいずれかを使用してください。これらのクライアントが、シリアライゼーション、バッチ処理、TLS、圧縮、接続プーリングを担います。渡すのはランタイムのプリミティブ値だけで、ワイヤ形式の処理はクライアントが行います。
 
@@ -41,9 +35,7 @@ ClickHouse にデータを取り込む経路は 2 つあります。製品側で
 
 関連項目: [バルク挿入](/ja/concepts/features/operations/insert/bulkinserts)。
 
-<div id="consumption">
-  ## 利用
-</div>
+## 利用 {#consumption}
 
 HTTP とネイティブ TCP は、どちらもクエリのやり取りに使用されます。ネイティブはバイナリで、オーバーヘッドも低めです。HTTP はロードバランサーやプロキシを経由して利用できます。どちらも第一級の選択肢なので、機能差ではなくインフラストラクチャに基づいて選択してください。
 
@@ -51,23 +43,17 @@ HTTP とネイティブ TCP は、どちらもクエリのやり取りに使用�
 * **BI および SQL ツール:** ClickHouse は公式の [JDBC v2 ドライバー](/ja/integrations/language-clients/java/index) (Java) と [ODBC ドライバ](/ja/concepts/features/interfaces/odbc) を提供しています。Tableau、Looker、Power BI、Metabase、Apache Superset、Grafana は、これらのドライバー、または ClickHouse とパートナーが保守する専用コネクタ経由で連携できます
 * **結果フォーマット:** 通常、シリアライゼーションはクライアント側で処理します。製品上必要であれば、転送時のフォーマットとして Arrow、Parquet、またはその他の列指向フォーマットを指定できます
 
-<div id="result-set-sizing">
-  ### 結果セットのサイズ設計
-</div>
+### 結果セットのサイズ設計 {#result-set-sizing}
 
 ほとんどの分析クエリは小さな結果セット (集計、要約、top-N) を返すため、転送がボトルネックになることはほとんどありません。ClickHouse のテーブルは数十億行を保持できるため、大規模なファクトテーブルに対して制限なしで `SELECT *` を実行すると、テラバイト級のデータが منتقلされる可能性があります。**アプリケーション側でリクエストを適切に設計してください。** `LIMIT`、ページネーション、ストリーミング読み取り、明示的なカラムリストを活用します。ユーザー向け分析機能を構築する場合、制限のない結果セットは転送の問題ではなく、UX の問題として捉えてください。
 
 ClickHouse は豊富な型システムを備えており、Array、Tuple、Map、JSON、Nested、LowCardinality などをサポートしています。公式クライアントはこれらを各言語で自然に扱える型へマッピングします。製品で ClickHouse のデータをエンドユーザーに提示する場合は、早い段階で型マッピング戦略を検討してください。
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
-いずれかの方法を選び、[ClickHouse Cloud のトライアル](https://clickhouse.com/cloud) でプロトタイプを作成したら、[パートナーポータル](https://clickhouse.com/partners) でインテグレーションを登録してください。
+いずれかの方法を選び、[ClickHouse Cloud のトライアル](https://clickhouse.cloud/signUp?loc=docs-resources-develop-contribute-integrations-building-integrations) でプロトタイプを作成したら、[パートナーポータル](https://clickhouse.com/partners) でインテグレーションを登録してください。
 
-<div id="user-agent-string-convention">
-  ## ユーザーエージェント文字列の規約
-</div>
+## ユーザーエージェント文字列の規約 {#user-agent-string-convention}
 
 HTTP クライアントは、インテグレーションを識別できる `User-Agent` 文字列を設定する必要があります。ClickHouse はこれをサーバー側で解析し、導入状況の追跡、使用状況テレメトリーの把握、ロードマップへの反映に役立てます。
 
@@ -91,8 +77,6 @@ HTTP クライアントは、インテグレーションを識別できる `User
 
 JDBC を使用する場合は、ドライバーが `User-Agent` と関連フィールドをどのように設定するかについて、[クライアント識別](/ja/integrations/language-clients/java/jdbc#client-identification) を参照してください。
 
-<div id="sandbox-and-trial-access">
-  ## サンドボックスとトライアルの利用
-</div>
+## サンドボックスとトライアルの利用 {#sandbox-and-trial-access}
 
-[ClickHouse Cloud](https://clickhouse.com/cloud) では、開発やインテグレーションの検証向けに無料トライアルを提供しています。House Mate パートナーの方は、[パートナーポータル](https://clickhouse.com/partners) から追加の開発用クレジットを申請できます。
+[ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-resources-develop-contribute-integrations-building-integrations) では、開発やインテグレーションの検証向けに無料トライアルを提供しています。House Mate パートナーの方は、[パートナーポータル](https://clickhouse.com/partners) から追加の開発用クレジットを申請できます。

@@ -27,6 +27,8 @@ namespace Setting
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsBool load_marks_asynchronously;
     extern const SettingsBool use_streaming_marks_compression;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
@@ -41,6 +43,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
+    extern const SettingsBool use_page_cache_lookahead_for_text_index;
 }
 
 namespace MergeTreeSetting
@@ -62,6 +65,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_compact_part;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_target_chunk_rows;
+    extern const MergeTreeSettingsMergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version;
     extern const MergeTreeSettingsMergeTreeDynamicSerializationVersion dynamic_serialization_version;
     extern const MergeTreeSettingsNonZeroUInt64 max_buckets_in_map;
     extern const MergeTreeSettingsMergeTreeMapBucketsStrategy map_buckets_strategy;
@@ -69,6 +73,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 map_buckets_min_avg_size;
     extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
     extern const MergeTreeSettingsBool enable_adaptive_codec_selection;
+    extern const MergeTreeSettingsNonZeroUInt64 adaptive_codec_selection_period;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -107,6 +112,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , object_shared_data_serialization_version(data_part->isZeroLevel() ? (*storage_settings)[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts] : (*storage_settings)[MergeTreeSetting::object_shared_data_serialization_version])
     , object_shared_data_buckets(isCompactPart(data_part) ? (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] : (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_wide_part])
     , object_shared_data_target_chunk_rows((*storage_settings)[MergeTreeSetting::object_shared_data_target_chunk_rows])
+    , object_typed_shared_data_serialization_version((*storage_settings)[MergeTreeSetting::object_typed_shared_data_serialization_version])
     , max_buckets_in_map((*storage_settings)[MergeTreeSetting::max_buckets_in_map])
     , map_buckets_strategy((*storage_settings)[MergeTreeSetting::map_buckets_strategy])
     , map_buckets_coefficient(static_cast<double>((*storage_settings)[MergeTreeSetting::map_buckets_coefficient]))
@@ -116,6 +122,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
     , compress_per_column_in_compact_parts((*storage_settings)[MergeTreeSetting::compress_per_column_in_compact_parts])
     , apply_adaptive_codec(try_adaptive_codec_ && (*storage_settings)[MergeTreeSetting::enable_adaptive_codec_selection])
+    , adaptive_codec_selection_period(isCompactPart(data_part) ? 1 : (*storage_settings)[MergeTreeSetting::adaptive_codec_selection_period])
 {
 }
 
@@ -136,6 +143,8 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     /// interchangeable. The setting is a debugging aid, so such queries skip the cache instead of
     /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::apply_deleted_mask];
+    result.use_query_condition_cache_for_time_conditions = settings[Setting::use_query_condition_cache_for_time_conditions];
+    result.query_condition_cache_time_condition_grid_factor = static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]);
     result.query_condition_cache_settings_salt = queryConditionCacheSettingsSalt(settings);
     result.enable_columns_cache_reads = settings[Setting::enable_reads_from_columns_cache];
     result.enable_columns_cache_writes = settings[Setting::enable_writes_to_columns_cache];
@@ -151,6 +160,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
+    result.use_page_cache_lookahead_for_text_index = settings[Setting::use_page_cache_lookahead_for_text_index];
     return result;
 }
 

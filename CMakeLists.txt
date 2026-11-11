@@ -229,6 +229,17 @@ if (OS_DARWIN)
     # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 
+    # Emit chained fixups (`LC_DYLD_CHAINED_FIXUPS`) instead of classic dyld rebase/bind opcodes.
+    # The clickhouse binary has about 1.4 million fixups; with opcodes dyld applies all of them
+    # at launch, touching every data page, while chained fixups are applied lazily as pages are
+    # first touched, which makes startup faster.
+    # Chained fixups need macOS 11, which is already the minimum for arm64, so this is not
+    # enabled for x86_64, where the deployment target is 10.15.
+    # Both lld and the cctools `ld` used for cross-compilation in CI understand the flag.
+    if (ARCH_AARCH64)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-fixup_chains")
+    endif ()
+
     # The `-all_load` flag forces loading of all symbols from all libraries,
     # and leads to multiply-defined symbols. This flag allows force loading
     # from a _specific_ library, which is what we need.
@@ -280,6 +291,36 @@ endif ()
 # Optionally split binaries and debug symbols.
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
+set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol table format retained in packaged binaries")
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata compact)
+
+set(SYMBOL_SECTIONS_VALID_VALUES symtab gnu_debugdata compact)
+if (NOT SYMBOL_SECTIONS IN_LIST SYMBOL_SECTIONS_VALID_VALUES)
+    message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Valid values: ${SYMBOL_SECTIONS_VALID_VALUES}")
+endif()
+
+if (SYMBOL_SECTIONS STREQUAL "compact" AND NOT SPLIT_DEBUG_SYMBOLS)
+    message(FATAL_ERROR "SYMBOL_SECTIONS=compact requires SPLIT_DEBUG_SYMBOLS=ON")
+endif()
+
+if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+    # `.gnu_debugdata` is an ELF section, and `SymbolIndex` reads it only on ELF targets.
+    if (NOT (OS_LINUX OR OS_FREEBSD))
+        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata is supported only for ELF targets (Linux, FreeBSD)")
+    endif()
+
+    if (NOT SPLIT_DEBUG_SYMBOLS)
+        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata requires SPLIT_DEBUG_SYMBOLS=ON")
+    endif()
+
+    ch_find_program(XZ_PATH NAMES "xz")
+    if (XZ_PATH)
+        message(STATUS "Using xz: ${XZ_PATH}")
+    else()
+        message(FATAL_ERROR "Cannot find xz required by SYMBOL_SECTIONS=gnu_debugdata")
+    endif()
+endif()
+
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
@@ -322,10 +363,6 @@ else ()
     set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
 endif ()
 
-if (COMPILER_CACHE STREQUAL "chcache")
-    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
-endif()
-
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
@@ -341,8 +378,9 @@ if (ENABLE_BUILD_PROFILING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
 
     if (LINKER_NAME MATCHES "lld")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
-        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
+        set (LINK_TIME_TRACE_GRANULARITY 50000 CACHE STRING "Minimum duration in microseconds of an event recorded in the linker time trace (lld --time-trace-granularity)")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
+        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
     endif ()
 endif ()
 
@@ -356,14 +394,18 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 
 # Align functions and loops to reduce performance sensitivity to code layout changes,
 # providing more stable benchmarks.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
+# -falign-loops applies only to non-LTO builds; ThinLTO builds pass the loop alignment to the linker below.
+# Sanitizer builds are not benchmarked, and the padding counts against the 2 GiB reach of x86-64 code.
+if (NOT SANITIZE)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
+endif ()
 
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
-# Sanitizer and coverage builds do not benefit from these size optimizations
-# and the extra sections hurt instruction-cache locality in hot loops,
-# causing timing-sensitive tests to fail.
-if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+if (NOT SANITIZE_COVERAGE AND (NOT WITH_COVERAGE OR FUZZER))
+    # Individual fuzzer targets intentionally link a minimal subset of ClickHouse. Keep
+    # section GC in coverage builds so unreachable code from an extracted object cannot
+    # retain references to unrelated server libraries.
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
@@ -374,7 +416,7 @@ if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
     endif ()
 endif()
 
-if (ARCH_AMD64)
+if (ARCH_AMD64 AND NOT SANITIZE)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
     # which makes benchmark results more stable.
     set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
@@ -400,14 +442,30 @@ endif()
 
 # Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
 # the guard page into another mapping. Only functions with frames larger than a page pay for it.
-# Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, WebAssembly and LoongArch.
+# Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, SunOS, WebAssembly and LoongArch.
 # Note: it's not enabled on RISC-V64 due to bugs in LLVM.
-if (NOT OS_DARWIN AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
+if (NOT OS_DARWIN AND NOT OS_SUNOS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
 endif ()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
+
+# Treat only a trailing `[]` member as a flexible array, so that the bounds of every other array are known to
+# `-Warray-bounds` and `__builtin_object_size`. Not with Undefined Behavior Sanitizer: its `array-bounds` check would
+# then reject the over-allocated `[0]` members of `uniqUpTo` and `histogram` states. Not on macOS: its SDK enables
+# `_FORTIFY_SOURCE=2` for C, and the checked `strcpy` would then reject the over-allocated `char name[1]` of
+# jemalloc's `prof_log.c`.
+if (NOT OS_DARWIN AND NOT (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined"))
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstrict-flex-arrays=3")
+endif ()
+
+# Clang turns a call to `sincos` into the `llvm.sincos` intrinsic, and for a musl target LLVM lowers that intrinsic
+# to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
+# llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
+if (USE_MUSL)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-builtin-sincos")
+endif ()
 
 # Do not maintain `errno` for math functions (`sqrt`, `log`, `pow`, ...). This changes no
 # computed result - `errno` is the only observable difference and ClickHouse never reads it
@@ -481,16 +539,23 @@ endif()
 # https://stackoverflow.com/questions/63386189/whats-the-difference-between-a-compilers-o0-option-and-og-option/63386263#63386263
 set(DEBUG_O_LEVEL "g" CACHE STRING "The -Ox level used for debug builds")
 
+# x86-64 MSan builds use -O2: their instrumented code must stay within the 2 GiB reach of the small code model.
+if (SANITIZE STREQUAL "memory" AND ARCH_AMD64 AND NOT ENABLE_FUZZING)
+    set (RELWITHDEBINFO_OPT_LEVEL "-O2")
+else ()
+    set (RELWITHDEBINFO_OPT_LEVEL "-O3")
+endif ()
+
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
-set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
+set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${RELWITHDEBINFO_OPT_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 
 set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${CMAKE_C_FLAGS_ADD}")
-set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
+set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${RELWITHDEBINFO_OPT_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 
 set (CMAKE_ASM_FLAGS                     "${CMAKE_ASM_FLAGS} ${COMPILER_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
-set (CMAKE_ASM_FLAGS_RELWITHDEBINFO      "${CMAKE_ASM_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
+set (CMAKE_ASM_FLAGS_RELWITHDEBINFO      "${CMAKE_ASM_FLAGS_RELWITHDEBINFO} ${RELWITHDEBINFO_OPT_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
 set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
 
 if (OS_DARWIN)
@@ -538,10 +603,15 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     # Link time optimization
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+    # Name each C++ module after its object file, so that units without external definitions are split for
+    # ThinLTO instead of being optimized in one serial regular LTO module. The name must be unique in a link.
+    string (APPEND CMAKE_CXX_COMPILE_OBJECT " -funique-source-file-names -funique-source-file-identifier=<OBJECT>")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
+        # ThinLTO generates code in the linker, which does not see -falign-loops.
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")
     endif()
 
     if (ENABLE_CFI)
@@ -622,28 +692,34 @@ include(cmake/dbms_glob_sources.cmake)
 # For some sophisticated platforms we have different issues with fPIC:
 # For example riscv toolchain itself compiled without fPIC
 #
+# The code is compiled with -fPIE, not -fPIC: it is linked into an executable, where the symbol
+# interposition that -fPIC pays for (GOT loads, TLS descriptors) never happens.
+#
 # This has to be configured before the first targets are created, in particular before
 # cmake/linux/default_libs.cmake adds the C++ runtime libraries from contrib: CMake copies the flags
 # into each subdirectory when add_subdirectory is called, so targets created earlier would silently
-# compile without -fPIC. That only breaks with compilers that do not default to PIE
+# compile without -fPIE. That only breaks with compilers that do not default to PIE
 # (clang with CLANG_DEFAULT_PIE_ON_LINUX=OFF, as configured by some distributions), because then the
 # non-relocatable objects of those libraries cannot be linked into the PIE executable.
 if (ARCH_AMD64 OR ARCH_AARCH64)
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 
-    # -fPIC only makes the code relocatable; whether the executable itself is position independent is
+    # -fPIE only makes the code relocatable; whether the executable itself is position independent is
     # the compiler driver's default unless the linker is asked explicitly, so ask it.
-    # musl links statically, and -static-pie needs an rcrt1.o that contrib/musl-cmake does not build.
-    # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
+    # musl links with -static-pie instead (see cmake/linux/default_libs.cmake).
+    # The FreeBSD sysroot carries no PIC startup objects (Scrt1.o).
+    # Mach-O needs no startup objects for it, so only the linker is asked.
     if (OS_LINUX AND NOT USE_MUSL)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
+    elseif (OS_DARWIN)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-pie")
     endif()
 endif()
 
 if (ENABLE_POSITION_INDEPENDENT_BINARY)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
 endif()
 
 add_library(global-group INTERFACE)
@@ -658,6 +734,7 @@ elseif (OS_SUNOS)
 elseif (OS_WASM)
     include(cmake/wasm/default_libs.cmake)
 endif ()
+
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
 
@@ -699,14 +776,33 @@ endif ()
 # Resolving everything at startup costs nothing here because we link dynamically only against libc
 # and we forbid dlopen (see programs/main.cpp).
 # Not on Darwin: ld64 does not accept '-z' options.
+# The native SunOS linker supports '-z now' but not '-z relro'; LLD supports both.
 if (NOT OS_DARWIN)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,now")
+    if (NOT LINKER_IS_SOLARIS)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro")
+    endif ()
 endif ()
 
 # Keep read-only data out of executable pages, so its bytes cannot serve as ROP gadgets.
 # Not on Darwin (no '-z' options in ld64) and not on WebAssembly (no ELF segments).
-if (NOT OS_DARWIN AND NOT OS_WASM)
+# The native SunOS linker does not support '-z separate-code'.
+if (NOT OS_DARWIN AND NOT OS_WASM AND NOT LINKER_IS_SOLARIS)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,separate-code")
+endif ()
+
+# Keep the stack non-executable even if an input object asks for an executable one (for GNU ld, an assembly source
+# without a `.note.GNU-stack` section does), and forbid loading the executable with `dlopen`. Same exclusions as above.
+if (NOT OS_DARWIN AND NOT OS_WASM AND NOT LINKER_IS_SOLARIS)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,noexecstack -Wl,-z,nodlopen")
+endif ()
+
+# Keep the static initializers (`.text.startup`) and the code the compiler marks cold (`.text.unlikely`) in
+# their own groups instead of next to their translation units all over `.text`. Startup then reads a few
+# hundred contiguous pages instead of thousands scattered over the binary, which matters most when the
+# binary is not in the page cache. Supported by lld and mold; same exclusions as above.
+if (NOT OS_DARWIN AND NOT OS_WASM)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,keep-text-section-prefix")
 endif ()
 
 if (ENABLE_TESTS)
@@ -792,11 +888,15 @@ include_directories(${CONFIG_INCLUDE_PATH})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
+
+# Forbid printing of pointers in our own code with `fmt`, `std::format` and iostreams (see the patches in the `fmtlib` and `llvm-project` submodules).
+# Memory addresses are internal state and must not leak into exception messages, logs or query results.
+# If an address is really needed (e.g. in a stack trace), convert it to an integer explicitly.
+add_compile_definitions (FMT_DISALLOW_POINTERS=1 _LIBCPP_DISALLOW_PRINTING_POINTERS=1)
+
 include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
-    add_subdirectory (rust)
-
     # With LTO Rust adds few symbols with global visibility, the most common is
     # rust_eh_personality. And this leads to linking errors because multiple
     # Rust libraries contains the same symbol.
@@ -847,10 +947,13 @@ if (FUZZER)
         OUTPUT_VARIABLE FUZZER_SOURCE_DICT_OUTPUT
         ERROR_VARIABLE FUZZER_SOURCE_DICT_OUTPUT)
     string (STRIP "${FUZZER_SOURCE_DICT_OUTPUT}" FUZZER_SOURCE_DICT_OUTPUT)
-    # Fail loudly: a missing dictionary makes a consumer's `cp tests/fuzz/*.dict`
-    # abort on an unmatched glob far from here.
+    # Fail here: consumers copy tests/fuzz/*.dict, a glob the committed
+    # per-target dictionaries satisfy even when all.dict is missing.
     if (NOT FUZZER_SOURCE_DICT_RESULT EQUAL 0)
         message (FATAL_ERROR "Failed to generate tests/fuzz/all.dict: ${FUZZER_SOURCE_DICT_OUTPUT}")
+    endif()
+    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/fuzz/all.dict")
+        message (FATAL_ERROR "tests/fuzz/all.dict is missing after generation")
     endif()
     message (STATUS "${FUZZER_SOURCE_DICT_OUTPUT}")
 
@@ -882,6 +985,12 @@ if (FUZZER)
                 get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
                 if (NOT target_compile_options MATCHES "-fno-sanitize=all")
                     target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link" "-fno-sanitize-coverage=pc-table")
+                    # Coverage-only fuzzer builds have no sanitizer runtime in their global
+                    # link flags. Link the no-main libFuzzer runtime into ordinary executables
+                    # so instrumented host tools resolve their SanitizerCoverage callbacks.
+                    if (WITH_COVERAGE AND NOT SANITIZE AND target_type STREQUAL "EXECUTABLE" AND NOT target MATCHES ".+_fuzzer")
+                        set_property(TARGET ${target} APPEND PROPERTY LINK_LIBRARIES ch_contrib::fuzzer_no_main)
+                    endif()
                 endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
@@ -909,20 +1018,6 @@ if (FUZZER)
 endif()
 
 include (cmake/sanitize_targets.cmake)
-
-if (COMPILER_CACHE STREQUAL "chcache" AND CHCACHE_EXECUTABLE_PATH STREQUAL "")
-    message(STATUS "Adding chcache as dependency to all other targets")
-    get_all_targets(all_targets)
-    set(chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
-
-    foreach(target ${all_targets})
-        if (target IN_LIST chcache_targets)
-            continue()
-        endif()
-
-        add_dependencies(${target} cargo-build_chcache)
-    endforeach()
-endif()
 
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
@@ -958,6 +1053,8 @@ if (NATIVE_BUILD_TARGETS
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
             "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
+            "-DSPLIT_DEBUG_SYMBOLS=${SPLIT_DEBUG_SYMBOLS}"
+            "-DSYMBOL_SECTIONS=${SYMBOL_SECTIONS}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT

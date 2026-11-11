@@ -1,5 +1,4 @@
 -- This form does not work even without Nullable(Tuple) for old analzyer
-SET enable_analyzer = 1;
 
 SET enable_nullable_tuple_type = 1;
 
