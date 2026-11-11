@@ -425,6 +425,26 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
 {
     using Key = AdaptiveRecordKey<Method>;
     const bool prefetch = prefetchesStagedKeys<Key>(table);
+
+    /// `fiu_do_on` calls `fiu_fail` only after the first failpoint has been enabled in the process, and from
+    /// then on at every check, even after that failpoint is disabled. `fiu_fail` takes process-wide locks of
+    /// libfiu: about a microsecond per call with a dozen merging threads, more than creating the states of a
+    /// key. So a drain asks once, at its first created key, and a `ONCE` failpoint is still consumed only by
+    /// a created key.
+    bool states_failure_checked = false;
+    const auto inject_states_failure = [&]() ALWAYS_INLINE
+    {
+        if (states_failure_checked)
+            return;
+        states_failure_checked = true;
+        /// Stands for the creation of the states failing, as on a memory limit: the key stays in the
+        /// table with a null state.
+        fiu_do_on(FailPoints::adaptive_aggregation_drain_create_states_throw,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while creating the states of a merged key");
+        });
+    };
+
     StagedRecordWalk walk;
     visitStagedRecordFormat<Key>(adaptive_argument_layout.get(), is_simple_count, [&]<typename Record>(Record format) ALWAYS_INLINE
     {
@@ -471,12 +491,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                         if (inserted)
                         {
                             it->getMapped() = nullptr;
-                            /// Stands for the creation of the states failing, as on a memory limit: the key stays
-                            /// in the table with a null state.
-                            fiu_do_on(FailPoints::adaptive_aggregation_drain_create_states_throw,
-                            {
-                                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while creating the states of a merged key");
-                            });
+                            inject_states_failure();
                             AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
                             createAggregateStates(place);
                             it->getMapped() = place;
@@ -508,12 +523,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                     if (inserted)
                     {
                         it->getMapped() = nullptr;
-                        /// Stands for the creation of the states failing, as on a memory limit: the key stays
-                        /// in the table with a null state.
-                        fiu_do_on(FailPoints::adaptive_aggregation_drain_create_states_throw,
-                        {
-                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while creating the states of a merged key");
-                        });
+                        inject_states_failure();
                         AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
                         createAggregateStates(place, use_compiled_functions);
                         it->getMapped() = place;
@@ -896,7 +906,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count) const
+    size_t * merged_group_count) const
 {
     auto & dest = *data[0];
     AggregatedChunks chunks;
@@ -905,7 +915,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
         [&](auto & method)
         {
             chunks = mergeAndConvertAdaptiveBucketImpl(
-                dest, method, data, session, task, final, bucket, is_cancelled, updater, full_group_count);
+                dest, method, data, session, task, final, bucket, is_cancelled, updater, merged_group_count);
         });
     return chunks;
 }
@@ -921,7 +931,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count) const
+    size_t * merged_group_count) const
 {
     /// The task's table, emptied by the conversion of its previous bucket's last unit, moves into this bucket's slot:
     /// the slots are exclusively owned by the tasks that merge their buckets, and a retired bucket's slot is never
@@ -1140,8 +1150,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             unit_groups = table.size();
         }
 
-        if (full_group_count)
-            *full_group_count += unit_groups;
+        if (merged_group_count)
+            *merged_group_count += unit_groups;
         if (updater)
             updater->recordAggregationStateSizes(dest, bucket);
 
