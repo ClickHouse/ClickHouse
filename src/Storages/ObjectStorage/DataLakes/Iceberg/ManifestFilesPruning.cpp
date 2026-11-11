@@ -130,6 +130,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
     const DB::KeyDescription * partition_key_,
+    const PartitionSpecification & partition_specification,
     DB::ContextPtr context,
     bool require_ready_sets)
     : schema_processor(schema_processor_)
@@ -173,6 +174,8 @@ ManifestFilesPruner::ManifestFilesPruner(
             /* single_point_ */ true,
             /* skip_analysis_ */ false,
             require_ready_sets);
+
+        int32_truncate_wraparounds = getInt32TruncateWraparounds(partition_specification, schema_processor, initial_schema_id);
     }
 
     for (Int32 used_column_id : used_columns_in_filter)
@@ -262,6 +265,34 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         result.key_description.emplace(DB::KeyDescription::getKeyFromAST(
             std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context));
 
+    return result;
+}
+
+std::vector<Int32TruncateWraparound> getInt32TruncateWraparounds(
+    const PartitionSpecification & partition_specification, const IcebergSchemaProcessor & schema_processor, Int32 schema_id)
+{
+    std::vector<Int32TruncateWraparound> result;
+    for (const auto & field : partition_specification)
+    {
+        const auto transform = parseTransformAndArgument(field.transform_name);
+        if (!transform || transform->transform_name != "icebergTruncate" || !transform->argument || field.tuple_index < 0)
+            continue;
+        const size_t width = *transform->argument;
+        if (width == 0 || width > static_cast<size_t>(std::numeric_limits<Int32>::max()))
+            continue;
+        const auto source = schema_processor.tryGetFieldCharacteristics(schema_id, field.source_id);
+        if (!source)
+            continue;
+        const WhichDataType source_type(removeNullable(source->type));
+        if (!source_type.isInt32() && !source_type.isInt64())
+            continue;
+
+        const Int64 min_value = std::numeric_limits<Int32>::min();
+        const Int64 signed_width = static_cast<Int64>(width);
+        const Int64 value = min_value - ((min_value % signed_width) + signed_width) % signed_width;
+        if (value < min_value)
+            result.push_back({static_cast<size_t>(field.tuple_index), value + (Int64{1} << 32), value, width <= (size_t{1} << 30)});
+    }
     return result;
 }
 
@@ -468,8 +499,22 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                     field = convertPartitionValueToType(field, type);
             }
 
-            bool can_be_true = key_condition.mayBeTrueInRange(
-                partition_value.size(), index_value.data(), index_value.data(), key.data_types);
+            bool ambiguous_key = false;
+            for (const auto & wraparound : int32_truncate_wraparounds)
+            {
+                if (wraparound.tuple_index >= index_value.size())
+                    continue;
+                auto & field = index_value[wraparound.tuple_index];
+                if (field.getType() == Field::Types::Int64 && field.safeGet<Int64>() == wraparound.stored)
+                {
+                    ambiguous_key |= !wraparound.exact;
+                    field = wraparound.value;
+                }
+            }
+
+            bool can_be_true = ambiguous_key
+                || key_condition.mayBeTrueInRange(
+                    partition_value.size(), index_value.data(), index_value.data(), key.data_types);
 
             if (!can_be_true)
             {

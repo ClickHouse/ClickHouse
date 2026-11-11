@@ -14,7 +14,7 @@ add_library(ch_rust::pco ALIAS _ch_rust_pco)
 # export a large number of internal symbols). Same guards as prql/polyglot.
 if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN
     AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
-    find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+    ch_find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     if (_LLD_FOR_STRIP)
         set(_pco_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_pco.a")
         add_custom_target(strip_pco_symbols
