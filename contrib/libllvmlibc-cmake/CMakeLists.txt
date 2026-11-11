@@ -5,11 +5,8 @@ if (NOT (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_S390X))
     return()
 endif()
 
-# Memory functions: mem_functions.cpp provides the weak memcmp/memcpy/memmove/
-# memset/bcmp; the strong memmem lives in memmem.cpp (added below).
 set(SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/big_int_checks.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/string/mem_functions.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asin.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinf.cpp"
@@ -63,11 +60,22 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/truncl.cpp"
 )
 
-# memmem is exported strong, so under sanitizers it would win the link over
-# compiler-rt's weak `memmem` interceptor and bypass its range checks. Skip it
-# there and let the interceptor wrap the system memmem, as before this PR.
-if (NOT SANITIZE)
-    list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/memmem.cpp")
+# Memory functions: mem_functions.cpp provides the weak memcmp/memcpy/memmove/
+# memset/bcmp; the strong memmem lives in memmem.cpp.
+#
+# They are not built on s390x: llvm-libc has no s390x specializations of them
+# (e.g. `memcmp` compares byte by byte), while glibc has optimized ones (e.g.
+# `memcmp` uses `clc` on 256-byte blocks). There only the math functions are
+# taken from llvm-libc.
+if (NOT ARCH_S390X)
+    list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/mem_functions.cpp")
+
+    # memmem is exported strong, so under sanitizers it would win the link over
+    # compiler-rt's weak `memmem` interceptor and bypass its range checks. Skip it
+    # there and let the interceptor wrap the system memmem, as before this PR.
+    if (NOT SANITIZE)
+        list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/memmem.cpp")
+    endif ()
 endif ()
 
 set(LIBC_NAMESPACE "__llvm_libc")
