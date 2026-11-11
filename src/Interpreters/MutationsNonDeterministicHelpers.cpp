@@ -65,9 +65,8 @@ public:
             {
                 /// NOTE It may be an aggregate function, so get(...) may throw.
                 /// However, an aggregate function can be used only in subquery and we do not go into subquery.
-                /// User-defined functions are not registered in `FunctionFactory`, resolve them as `ActionsVisitor` does.
-                /// The `deterministic` flag of an `EXECUTABLE` UDF is read from its configuration: a parametric one
-                /// cannot be instantiated without its parameters.
+                /// User-defined functions are not in `FunctionFactory`. An `EXECUTABLE` UDF's `deterministic` flag is read
+                /// from its configuration, because a parametric one cannot be instantiated without its parameters.
                 if (auto is_deterministic = UserDefinedExecutableFunctionFactory::tryGetIsDeterministic(function->name, data.context))
                 {
                     if (!*is_deterministic)

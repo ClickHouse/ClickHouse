@@ -143,8 +143,7 @@ getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chun
 }
 
 
-/// The source column of the current partition spec that an UPDATE assigns, if any: such an UPDATE may move a row to
-/// another partition.
+/// The partition source column that the UPDATE assigns, if any: such an UPDATE may move a row to another partition.
 static std::optional<String> getAssignedPartitionColumn(const MutationCommand & command, const std::optional<ChunkPartitioner> & chunk_partitioner)
 {
     if (!chunk_partitioner)

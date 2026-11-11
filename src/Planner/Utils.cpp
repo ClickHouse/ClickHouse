@@ -1028,19 +1028,8 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     return step;
 }
 
-/// AST-level subquery detector, the counterpart of containsSubqueryNode for the predicates the
-/// pushdown injects as shard-side filters (the view's row policy and view-keyed
-/// additional_table_filters), which are not part of the outer query tree. They are coordinator-side
-/// filters on the normal StorageView path; a subquery inside them would be evaluated per-shard once
-/// the optimization fires, with the same divergence risk described above, so suppress the
-/// optimization when present. Mirrors hasSubquery in StorageView.cpp.
-///
-/// Like containsSubqueryNode, this also treats a bare `IN some_table` / `IN some_table_function(...)`
-/// as a subquery. The expression parser produces an ASTFunction from the IN family whose right-hand
-/// side is an ASTIdentifier (the table name) or an ASTFunction naming a table function, never an
-/// ASTSubquery, so the plain ASTSubquery check above misses it, while the analyzer resolves that
-/// identifier as a table and reads it exactly the way a subquery would - on each shard once folded
-/// into the shipped query. Only the right-hand side of an IN is inspected.
+/// The parser keeps the right-hand side of `IN some_table` as an `ASTIdentifier` (an `ASTFunction` for a table
+/// function), never an `ASTSubquery`, but the analyzer reads that table exactly like a subquery.
 bool astContainsSubquery(const ASTPtr & ast)
 {
     if (!ast)
