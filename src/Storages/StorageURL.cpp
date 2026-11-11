@@ -3397,6 +3397,8 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
 static bool maskURLCredentials(String & url)
 {
     bool changed = maskURIPassword(&url, URI_AUTHORITY_TERMINATORS);
+    if (!changed)
+        changed = maskURIUserinfo(url); // A colon-free userinfo is itself the credential.
     changed |= maskPresignedURLParameters(url);
     String masked = maskSensitiveQueryParametersInURI(url);
     if (masked != url)

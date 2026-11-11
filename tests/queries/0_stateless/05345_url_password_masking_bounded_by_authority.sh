@@ -14,6 +14,10 @@ SHOW CREATE TABLE t_url_query SETTINGS format_display_secrets_in_show_and_select
 CREATE TABLE t_url_at (x UInt8) ENGINE = URL('https://user:SEKRIT@PW@localhost:11111/x', 'CSV');
 SHOW CREATE TABLE t_url_at SETTINGS format_display_secrets_in_show_and_select = 0;
 
+-- A userinfo without colon separated password is interpreted as password
+CREATE TABLE t_url_tok(x UInt8) ENGINE = URL('https://SEKRIT@PW@localhost:11111/x', 'CSV');
+SHOW CREATE TABLE t_url_tok SETTINGS format_display_secrets_in_show_and_select = 0;
+
 -- The same for the url of a dictionary source.
 CREATE DICTIONARY d_url_query (k UInt64, v String) PRIMARY KEY k
 SOURCE(HTTP(URL 'http://localhost:11111/x?email=a@b.com' FORMAT 'TSV')) LAYOUT(FLAT()) LIFETIME(0);
@@ -22,6 +26,10 @@ SHOW CREATE DICTIONARY d_url_query SETTINGS format_display_secrets_in_show_and_s
 CREATE DICTIONARY d_url_at (k UInt64, v String) PRIMARY KEY k
 SOURCE(HTTP(URL 'https://user:SEKRIT@PW@localhost:11111/x' FORMAT 'TSV')) LAYOUT(FLAT()) LIFETIME(0);
 SHOW CREATE DICTIONARY d_url_at SETTINGS format_display_secrets_in_show_and_select = 0;
+
+CREATE DICTIONARY d_url_tok (k UInt64, v String) PRIMARY KEY k
+SOURCE(HTTP(URL 'https://SEKRIT@PW@localhost:11111/x' FORMAT 'TSV')) LAYOUT(FLAT()) LIFETIME(0);
+SHOW CREATE DICTIONARY d_url_tok SETTINGS format_display_secrets_in_show_and_select = 0;
 SQL
 
 # A setting value can be any kind of URI, so its password is hidden up to the last '@' before the first '/'.
