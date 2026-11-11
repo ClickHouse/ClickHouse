@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-clickstack.svg",
   "item": "ClickStack",
   "pages": [
     "zh/clickstack/index",
@@ -112,6 +111,8 @@
                 {
                   "group": "9 月",
                   "pages": [
+                    "zh/clickstack/demo-days/2026/2026-09-24",
+                    "zh/clickstack/demo-days/2026/2026-09-17",
                     "zh/clickstack/demo-days/2026/2026-09-10",
                     "zh/clickstack/demo-days/2026/2026-09-04"
                   ]

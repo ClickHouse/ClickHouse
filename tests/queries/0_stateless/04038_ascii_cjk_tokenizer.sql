@@ -39,7 +39,6 @@ select tokensForLikePattern('你', 'asciiCJK');              -- single Unicode c
 select tokensForLikePattern('abc你好', 'asciiCJK');         -- ASCII then Unicode
 select tokensForLikePattern('你好%世界', 'asciiCJK');       -- Unicode token with wildcards
 
-set enable_analyzer = 1;
 set enable_full_text_index = 1;
 
 drop table if exists tab;

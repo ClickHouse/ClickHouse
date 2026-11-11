@@ -31,6 +31,8 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
+using ProfileEventsCallback = std::function<void(const Block & block)>;
+
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 
@@ -219,6 +221,9 @@ public:
     /// Set callback for profile info. It will be called on ProfileInfo packet.
     void setProfileInfoCallback(ProfileInfoCallback callback);
 
+    /// Set callback for profile events. It will be called on ProfileEvents packet.
+    void setProfileEventsCallback(ProfileEventsCallback callback);
+
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
     void setQueryId(const std::string& query_id_) { chassert(!sent_query); query_id = query_id_; }
@@ -242,11 +247,15 @@ public:
 
     IConnections & getConnections() { return *connections; }
 
+    /// The skip decision on its own; `needToSkipUnavailableShard` also reports it.
+    bool shouldSkipUnavailableShard() const;
     bool needToSkipUnavailableShard();
 
     /// Reports a skipped shard to `unavailable_shard_tracker` (if any), enforcing the
     /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio` limits.
-    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded.
+    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded, and
+    /// `ALL_CONNECTION_TRIES_FAILED` once every execution unit was skipped without returning data.
+    /// Because it throws, finish the skipped shard's fragment span first, or the skip is lost from it.
     void reportShardSkipped();
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
@@ -285,6 +294,7 @@ private:
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
+    ProfileEventsCallback profile_events_callback;
 
     /// Scalars needed to be sent to remote servers
     Scalars scalars;
@@ -333,6 +343,15 @@ private:
       */
     mutable std::mutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
+
+    /// Non-zero while a thread is inside `finish`, the state in which `cancel` has nothing to add:
+    /// `finish` reaches its drain only after `tryCancel` sent the Cancel packet, and on every earlier
+    /// return `cancelUnlocked` would find `finished`, `hasThrownException` or `was_cancelled` already
+    /// set. A counter because `work` and `onUpdatePorts` can enter `finish` on different threads.
+    /// Lock order is this mutex before `was_cancelled_mutex`; only the `cancel_in_finish_drain`
+    /// failpoint reverses it, and there the counter is non-zero so `cancel` returns without locking.
+    mutable std::mutex finish_gate_mutex;
+    size_t finish_in_progress TSA_GUARDED_BY(finish_gate_mutex) = 0;
 
     /// Whether this replica has sent its initial announcement. Until it does, the only packet it can
     /// owe us is that announcement - see `tryCancel`.
@@ -393,6 +412,10 @@ private:
     void sendExternalTables();
 
     void processReadTaskRequest();
+
+    /// Accounts the `ProfileEvents` packet of a remote server for the quotas over profile events and
+    /// passes it on to the client.
+    void processProfileEventsPacket(Block block);
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);

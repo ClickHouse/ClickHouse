@@ -1,0 +1,15 @@
+modify, update	1	42
+modify, update	2	6
+modify, update	3	7
+modify back	1	42	43
+modify back	2	6	7
+modify back	3	7	8
+restored	1	42
+restored	2	6
+restored	3	7
+nullable	1	a	0
+nullable	2	\N	1
+compress	1	abc
+compress	2	6
+materialize	1	d1
+materialize	2	d2

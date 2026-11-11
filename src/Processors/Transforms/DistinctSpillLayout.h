@@ -27,9 +27,14 @@ public:
     const SharedHeader & getSuppressionRunHeader() const { return suppression_run_header; }
     const SharedHeader & getMergedHeader() const { return merged_header; }
     const SortDescription & getKeySortDescription() const { return key_sort_description; }
-    const SortDescription & getRunSortDescription() const { return run_sort_description; }
+    const String & getFlagColumnName() const { return flag_column_name; }
     const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }
     bool preservesInputOrder() const { return arrival_number_column_pos.has_value(); }
+
+    /// Estimates the dense service columns added to ordinary input: fingerprints and arrival numbers.
+    /// Available before constructing the layout so hashing can reserve memory to start spilling.
+    static size_t estimateServiceColumnsMemory(
+        size_t num_rows, DistinctKeyRepresentation key_representation, bool preserve_input_order);
 
     /// Normalizes ordinary rows, adding fingerprints for generic keys and optional arrival numbers.
     Chunk prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const;
@@ -52,8 +57,7 @@ private:
     SharedHeader suppression_run_header;
     SharedHeader merged_header;
     SortDescription key_sort_description;
-    /// Run ordering gives suppression rows precedence; deduplication compares only the keys.
-    SortDescription run_sort_description;
+    String flag_column_name;
     SortDescription arrival_number_sort_description;
 };
 

@@ -30,7 +30,7 @@ namespace QueryPlanSerializationSetting
 using namespace DB;
 
 /// External `DISTINCT` thresholds are serialized only to peers whose plan version supports them.
-/// `QueryPlanSerializationSettings::readBinary` rejects unknown setting names, so older peers receive
+/// The reader of the step settings in an older peer rejects unknown setting names, so older peers receive
 /// neither threshold and use in-memory execution with its memory requirements.
 ///
 /// Step version 1 carries the input-order flag and is introduced at the same global version. Older
@@ -96,11 +96,11 @@ bool inputOrderFlagAfterRoundTrip(const DistinctStep & step, const SharedHeader 
     return dynamic_cast<const DistinctStep &>(*restored).preservesInputOrder();
 }
 
-/// Checks whether the binary settings stream contains the given setting name.
+/// Checks whether the settings stream contains the given setting name.
 bool wireCarries(const QueryPlanSerializationSettings & settings, std::string_view name)
 {
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.write(out);
     return out.str().contains(name);
 }
 
@@ -171,10 +171,10 @@ TEST(ExternalDistinctPlanSetting, MaxBlockSizeRoundTripsOnDeserialization)
         plan_settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 
         WriteBufferFromOwnString out;
-        plan_settings.writeChangedBinary(out);
+        plan_settings.write(out);
         ReadBufferFromString in(out.str());
         QueryPlanSerializationSettings restored_settings;
-        restored_settings.readBinary(in);
+        restored_settings.read(in);
 
         EXPECT_EQ(DistinctStep::Settings(restored_settings).max_block_size, max_block_size);
     }
@@ -243,4 +243,20 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotPartOfTheHashTableCacheKey)
     EXPECT_NE(
         serializeStep(with_flag, current_version, /*step_version=*/ 1, /*for_cache_key=*/ false),
         serializeStep(without_flag, current_version, /*step_version=*/ 1, /*for_cache_key=*/ false));
+}
+
+TEST(ExternalDistinctPlanSetting, SpillBlockByteTargetRoundTrips)
+{
+    for (const UInt64 bytes : {UInt64{0}, UInt64{1048576}})
+    {
+        DistinctStep::Settings original;
+        original.prefer_external_sort_block_bytes = bytes;
+        const auto settings = serializeDistinctStep(original, current_version);
+        WriteBufferFromOwnString out;
+        settings.write(out);
+        ReadBufferFromString in(out.str());
+        QueryPlanSerializationSettings restored;
+        restored.read(in);
+        EXPECT_EQ(DistinctStep::Settings(restored).prefer_external_sort_block_bytes, bytes);
+    }
 }

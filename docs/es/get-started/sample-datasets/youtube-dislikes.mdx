@@ -10,24 +10,26 @@ keywords: ['conjunto de datos de ejemplo', 'youtube', 'datos de muestra', 'anal�
 En noviembre de 2021, YouTube eliminó el recuento público de ***no me gusta*** de todos sus videos. Aunque los creadores siguen pudiendo ver la cantidad de no me gusta, los espectadores solo pueden ver cuántos ***me gusta*** ha recibido un video.
 
 <Warning>
-  El conjunto de datos contiene más de 4,55 mil millones de registros, así que ten cuidado al copiar y pegar los comandos siguientes, a menos que tus recursos puedan soportar ese volumen. Los siguientes comandos se ejecutaron en una instancia de **Production** de [ClickHouse Cloud](https://clickhouse.cloud).
+  El conjunto de datos contiene más de 4,55 mil millones de registros, así que ten cuidado al copiar y pegar los comandos siguientes, a menos que tus recursos puedan soportar ese volumen. Estos comandos se ejecutaron en un servicio de [ClickHouse Cloud](/es/products/cloud/getting-started/intro) con el tamaño adecuado.
 </Warning>
+
+<Tip>
+  Para probar estos comandos por tu cuenta, puedes registrarte en una [prueba gratuita de ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-youtube-dislikes) o configurar [ClickHouse autoalojado](/es/get-started/setup/install).
+</Tip>
 
 Los datos están en formato JSON y pueden descargarse desde [archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files). También hemos puesto estos mismos datos a disposición en S3 para que puedan descargarse de forma más eficiente en una instancia de ClickHouse Cloud.
 
 A continuación se indican los pasos para crear una tabla en ClickHouse Cloud e insertar los datos.
 
 <Note>
-  Los pasos siguientes también funcionarán sin problemas en una instalación local de ClickHouse. El único cambio sería usar la función `s3` en lugar de `s3cluster` (a menos que tengas un cluster configurado; en ese caso, cambia `default` por el nombre de tu cluster).
+  Los pasos siguientes también funcionan en una instalación local de ClickHouse.
 </Note>
 
-<div id="step-by-step-instructions">
-  ## Instrucciones paso a paso
-</div>
+## Instrucciones paso a paso {#step-by-step-instructions}
 
 <Steps>
   <Step title="Exploración de datos" id="data-exploration">
-    Veamos qué aspecto tienen los datos. La función de tabla `s3cluster` devuelve una tabla, así que podemos `DESCRIBE` el resultado:
+    Veamos qué aspecto tienen los datos. La función de tabla `s3` devuelve una tabla, así que podemos `DESCRIBE` el resultado:
 
     ```sql
     DESCRIBE s3(
@@ -241,13 +243,9 @@ A continuación se indican los pasos para crear una tabla en ClickHouse Cloud e 
   </Step>
 </Steps>
 
-<div id="questions">
-  ## Preguntas
-</div>
+## Preguntas {#questions}
 
-<div id="if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike">
-  ### Si alguien desactiva los comentarios, ¿disminuye la probabilidad de que alguien realmente haga clic en «me gusta» o «no me gusta»?
-</div>
+### Si alguien desactiva los comentarios, ¿disminuye la probabilidad de que alguien realmente haga clic en «me gusta» o «no me gusta»? {#if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike}
 
 Cuando los comentarios están desactivados, ¿es más probable que la gente marque «me gusta» o «no me gusta» para expresar lo que siente sobre un video?
 
@@ -302,9 +300,7 @@ ORDER BY
 
 Habilitar los comentarios parece estar relacionado con una mayor tasa de participación.
 
-<div id="how-does-the-number-of-videos-change-over-time---notable-events">
-  ### ¿Cómo evoluciona el número de videos a lo largo del tiempo? - eventos destacados
-</div>
+### ¿Cómo evoluciona el número de videos a lo largo del tiempo? - eventos destacados {#how-does-the-number-of-videos-change-over-time---notable-events}
 
 ```sql
 SELECT
@@ -342,9 +338,7 @@ ORDER BY month ASC;
 
 Se nota un aumento repentino de usuarios que suben contenido [en torno al covid](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty).
 
-<div id="more-subtitles-over-time-and-when">
-  ### Más subtítulos con el tiempo y cuándo
-</div>
+### Más subtítulos con el tiempo y cuándo {#more-subtitles-over-time-and-when}
 
 Con los avances en el reconocimiento de voz, es más fácil que nunca crear subtítulos para vídeo, y YouTube añadió los subtítulos automáticos a finales de 2009; ¿fue entonces cuando se produjo el salto?
 
@@ -381,9 +375,7 @@ ORDER BY month ASC;
 Los resultados muestran un pico en 2009. Al parecer, por aquel entonces YouTube estaba eliminando su función de subtítulos aportados por la comunidad, que permitía subir subtítulos para los videos de otras personas.
 Esto dio lugar a una campaña muy exitosa para que los creadores añadieran subtítulos a sus videos para espectadores con discapacidad auditiva y personas sordas.
 
-<div id="top-uploaders-over-time">
-  ### Principales usuarios que suben contenido a lo largo del tiempo
-</div>
+### Principales usuarios que suben contenido a lo largo del tiempo {#top-uploaders-over-time}
 
 ```sql
 WITH uploaders AS
@@ -426,9 +418,7 @@ ORDER BY
 │ 2008-09-01 │ WWE                        │     3717092 │   0.07872802579349912 │
 ```
 
-<div id="how-do-like-ratio-changes-as-views-go-up">
-  ### ¿Cómo cambia la proporción de “Me gusta” a medida que aumentan las visualizaciones?
-</div>
+### ¿Cómo cambia la proporción de “Me gusta” a medida que aumentan las visualizaciones? {#how-do-like-ratio-changes-as-views-go-up}
 
 ```sql
 SELECT
@@ -476,9 +466,7 @@ ORDER BY
 └───────────────────┴─────────────────────┴────────────┘
 ```
 
-<div id="how-are-views-distributed">
-  ### ¿Cómo se distribuyen las vistas?
-</div>
+### ¿Cómo se distribuyen las vistas? {#how-are-views-distributed}
 
 ```sql
 SELECT

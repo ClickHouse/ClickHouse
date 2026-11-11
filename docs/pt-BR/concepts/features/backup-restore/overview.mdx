@@ -15,9 +15,7 @@ import S3Settings from '/snippets/pt-BR/_s3_settings.mdx';
 > descrição mais detalhada de cada método de backup, consulte as páginas dos métodos específicos
 > na barra lateral.
 
-<div id="introduction">
-  ## Introdução
-</div>
+## Introdução {#introduction}
 
 Embora a [replicação](/pt-BR/reference/engines/table-engines/mergetree-family/replication) ofereça proteção contra falhas de hardware, ela não
 protege contra erros humanos: exclusão acidental de dados, exclusão da
@@ -69,9 +67,7 @@ Os backups podem:
 * ser protegidos por senha
 * incluir [tabelas de sistema, tabelas de log ou tabelas de gerenciamento de acesso](#system-backups)
 
-<div id="backup-types">
-  ## Tipos de backup
-</div>
+## Tipos de backup {#backup-types}
 
 Os backups podem ser completos ou incrementais. Os backups completos são uma cópia completa dos
 dados, enquanto os backups incrementais contêm apenas as alterações nos dados desde o último backup completo.
@@ -88,18 +84,14 @@ Dependendo das suas necessidades, você pode optar por usar:
 * **Backups incrementais** para bancos de dados maiores ou quando os backups precisam ser feitos com frequência e com bom custo-benefício.
 * **Ambos**, por exemplo, backups completos semanais e backups incrementais diários.
 
-<div id="synchronous-vs-asynchronous">
-  ## Backups síncronos vs. assíncronos
-</div>
+## Backups síncronos vs. assíncronos {#synchronous-vs-asynchronous}
 
 Os comandos `BACKUP` e `RESTORE` também podem ser marcados como `ASYNC`. Nesse caso, o
 comando de backup retorna imediatamente, e o processo de backup é executado em segundo plano.
 Se os comandos não forem marcados como `ASYNC`, o processo de backup será síncrono, e
 o comando ficará bloqueado até que o backup seja concluído.
 
-<div id="concurrent-vs-non-concurrent">
-  ## Backups concorrentes vs. não concorrentes
-</div>
+## Backups concorrentes vs. não concorrentes {#concurrent-vs-non-concurrent}
 
 Por padrão, o ClickHouse permite backups e restaurações concorrentes. Isso significa que você
 pode iniciar várias operações de backup ou restauração simultaneamente. No entanto,
@@ -123,9 +115,7 @@ O valor padrão de ambos é true, então, por padrão, backups/restaurações
 concorrentes são permitidos. Quando essas configurações são false em um cluster, apenas um único backup/restauração
 pode ser executado no cluster por vez.
 
-<div id="compressed-vs-uncompressed">
-  ## Backups compactados vs. não compactados
-</div>
+## Backups compactados vs. não compactados {#compressed-vs-uncompressed}
 
 Os backups do ClickHouse suportam compactação por meio das configurações `compression_method` e `compression_level`.
 
@@ -137,9 +127,7 @@ BACKUP TABLE test.table
   SETTINGS compression_method='lzma', compression_level=3
 ```
 
-<div id="using-named-collections">
-  ## Usando coleções nomeadas
-</div>
+## Usando coleções nomeadas {#using-named-collections}
 
 Coleções nomeadas permitem armazenar pares chave-valor (como credenciais do S3, endpoints e configurações) que podem ser reutilizados em operações de backup e restauração.
 Elas ajudam a:
@@ -151,9 +139,7 @@ Elas ajudam a:
 
 Consulte [&quot;coleções nomeadas&quot;](/pt-BR/concepts/features/configuration/server-config/named-collections) para mais detalhes.
 
-<div id="system-backups">
-  ## Backup de tabelas de sistema, de log ou de gerenciamento de acesso
-</div>
+## Backup de tabelas de sistema, de log ou de gerenciamento de acesso {#system-backups}
 
 As tabelas de sistema também podem ser incluídas nos seus fluxos de trabalho de backup e restauração, mas isso
 depende do seu caso de uso específico.
@@ -180,42 +166,118 @@ Essa funcionalidade só funciona para configurações gerenciadas por meio de co
 As configurações de acesso definidas em arquivos de configuração do servidor ClickHouse (por exemplo, `users.xml`)
 não são incluídas em backups e não podem ser restauradas por esse método.
 
-<div id="syntax">
-  ## Sintaxe geral
-</div>
+## Sintaxe geral {#syntax}
 
 <Syntax />
 
-<div id="command-summary">
-  ### Resumo dos comandos
-</div>
+### Resumo dos comandos {#command-summary}
 
 Cada um dos comandos acima é detalhado a seguir:
 
-| **Comando**                                                            | **Descrição**                                                                                                                                         |   |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | - |
-| `BACKUP`                                                               | Cria um backup dos objetos especificados                                                                                                              |   |
-| `RESTORE`                                                              | Restaura objetos de um backup                                                                                                                         |   |
-| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | Faz backup/restauração de uma tabela específica (pode ser renomeada)                                                                                  |   |
-| `[PARTITION[S] partition_expr [,...]]`                                 | Faz backup/restauração apenas de partições específicas da tabela                                                                                      |   |
-| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Faz backup/restauração de um objeto de Dicionário                                                                                                     |   |
-| `DATABASE database_name [AS database_name_in_backup]`                  | Faz backup/restauração de um banco de dados inteiro (pode ser renomeado)                                                                              |   |
-| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | Faz backup/restauração de uma tabela temporária (pode ser renomeada)                                                                                  |   |
-| `VIEW view_name [AS view_name_in_backup]`                              | Faz backup/restauração de uma view (pode ser renomeada)                                                                                               |   |
-| `[EXCEPT TABLES ...]`                                                  | Exclui tabelas específicas ao fazer backup de um banco de dados                                                                                       |   |
-| `ALL`                                                                  | Faz backup/restauração de tudo (todos os bancos de dados, tabelas etc.). Antes da versão 23.4 do ClickHouse, `ALL` se aplicava apenas ao comando `RESTORE`. |   |
-| `[EXCEPT {TABLES\|DATABASES}...]`                                      | Exclui tabelas ou bancos de dados específicos ao usar `ALL`                                                                                           |   |
-| `[ON CLUSTER 'cluster_name']`                                          | Executa o backup/restauração em todo o cluster do ClickHouse                                                                                          |   |
-| `TO\|FROM`                                                             | Direção: `TO` para o destino do backup, `FROM` para a origem da restauração                                                                           |   |
-| `File('<path>/<filename>')`                                            | Armazena no/restaura do sistema de arquivos local                                                                                                     |   |
-| `Disk('<disk_name>', '<path>/')`                                       | Armazena em/restaura de um disco configurado                                                                                                          |   |
-| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Armazena no/restaura do Amazon S3 ou de armazenamento compatível com S3                                                                               |   |
-| `[SETTINGS ...]`                                                       | Veja abaixo a lista completa de configurações                                                                                                         |   |
-| `[ASYNC]`                                                              | Faz com que a operação seja executada de forma assíncrona (retorna imediatamente com um ID que você pode monitorar)                                   |   |
+| **Comando**                                                            | **Descrição**                                                                                                                                                                                                                                                               |   |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | - |
+| `BACKUP`                                                               | Cria um backup dos objetos especificados                                                                                                                                                                                                                                    |   |
+| `RESTORE`                                                              | Restaura objetos de um backup                                                                                                                                                                                                                                               |   |
+| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | Faz backup/restauração de uma tabela específica (pode ser renomeada)                                                                                                                                                                                                        |   |
+| `[PARTITION[S] partition_expr [,...]]`                                 | Faz backup/restauração apenas de partições específicas da tabela                                                                                                                                                                                                            |   |
+| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Faz backup/restauração de um objeto de Dicionário                                                                                                                                                                                                                           |   |
+| `DATABASE database_name [AS database_name_in_backup]`                  | Faz backup/restauração de um banco de dados inteiro (pode ser renomeado)                                                                                                                                                                                                    |   |
+| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | Faz backup/restauração de uma tabela temporária (pode ser renomeada)                                                                                                                                                                                                        |   |
+| `VIEW view_name [AS view_name_in_backup]`                              | Faz backup/restauração de uma view (pode ser renomeada)                                                                                                                                                                                                                     |   |
+| `[EXCEPT TABLES ...]`                                                  | Exclui tabelas específicas ao fazer backup de um banco de dados                                                                                                                                                                                                             |   |
+| `[EXCEPT DATA FROM {TABLE\|TABLES} ...]`                               | **(Apenas BACKUP)** Faz backup da definição de uma tabela sem suas linhas. Difere de `EXCEPT TABLES`, que omite a tabela por completo. Aplica-se apenas ao elemento em que é especificado: consulte [Como fazer backup de uma tabela sem seus dados](#backup-without-data). |   |
+| `ALL`                                                                  | Faz backup/restauração de tudo (todos os bancos de dados, tabelas etc.). Antes da versão 23.4 do ClickHouse, `ALL` se aplicava apenas ao comando `RESTORE`.                                                                                                                 |   |
+| `[EXCEPT {TABLES\|DATABASES}...]`                                      | Exclui tabelas ou bancos de dados específicos ao usar `ALL`                                                                                                                                                                                                                 |   |
+| `[ON CLUSTER 'cluster_name']`                                          | Executa o backup/restauração em todo o cluster do ClickHouse                                                                                                                                                                                                                |   |
+| `TO\|FROM`                                                             | Direção: `TO` para o destino do backup, `FROM` para a origem da restauração                                                                                                                                                                                                 |   |
+| `File('<path>/<filename>')`                                            | Armazena no/restaura do sistema de arquivos local                                                                                                                                                                                                                           |   |
+| `Disk('<disk_name>', '<path>/')`                                       | Armazena em/restaura de um disco configurado                                                                                                                                                                                                                                |   |
+| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Armazena no/restaura do Amazon S3 ou de armazenamento compatível com S3                                                                                                                                                                                                     |   |
+| `[SETTINGS ...]`                                                       | Veja abaixo a lista completa de configurações                                                                                                                                                                                                                               |   |
+| `[ASYNC]`                                                              | Faz com que a operação seja executada de forma assíncrona (retorna imediatamente com um ID que você pode monitorar)                                                                                                                                                         |   |
 
-<div id="settings">
-  ### Configurações
-</div>
+### Fazer backup de uma tabela sem seus dados {#backup-without-data}
+
+`EXCEPT DATA FROM {TABLE|TABLES}` inclui no backup a definição de uma tabela, mas não suas linhas. Isso é útil
+para tabelas cujo conteúdo pode ser regenerado após uma restauração, como as tabelas de destino de visões
+materializadas.
+
+A cláusula determina o que `BACKUP` grava, mas não altera o que `RESTORE` pode fazer com o resultado. Se
+`RESTORE` puder recriar a tabela, a definição sem linhas será restaurada como uma tabela vazia. Isso não permite
+restaurar uma tabela que, de outra forma, não poderia ser restaurada: a possibilidade de recriar uma tabela
+a partir da definição no backup depende do motor, e alguns motores não permitem essa operação. Consulte
+[Motores que `RESTORE` não pode recriar](#engines-restore-cannot-recreate).
+
+A cláusula se aplica apenas ao elemento em que é especificada:
+
+* Em um elemento `DATABASE` ou `ALL`, ela pode indicar qualquer tabela incluída no backup por esse elemento:
+
+```sql
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
+```
+
+Nessa lista, coloque entre crases o nome de uma tabela ou banco de dados chamado `table`, `dictionary`, `view`, `database` ou `all`: após uma
+vírgula, um nome sem crases é interpretado como o início do próximo elemento.
+
+* Em um elemento que se refere a um único objeto (`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`), somente o objeto desse elemento está
+  no escopo; portanto, a cláusula deve especificar apenas esse objeto. Use um elemento e
+  uma cláusula para cada tabela:
+
+```sql
+-- Backs up both tables, without the data of `t1`
+BACKUP TABLE mydb.t1 EXCEPT DATA FROM TABLE mydb.t1, TABLE mydb.t2 TO Disk('backups', 'tables/')
+
+-- Rejected: the clause of the `mydb.t2` element names a different table
+BACKUP TABLE mydb.t1, TABLE mydb.t2 EXCEPT DATA FROM TABLE mydb.t1 TO Disk('backups', 'tables/')
+```
+
+Se uma tabela for especificada tanto em um elemento próprio quanto na cláusula `EXCEPT DATA FROM` de um elemento mais abrangente,
+seus dados **são** incluídos no backup: ao especificar uma tabela, o elemento também solicita seus dados. Isso segue o comportamento de `EXCEPT TABLES`,
+em que uma tabela especificada explicitamente é incluída no backup mesmo que um elemento mais abrangente a exclua.
+
+Os dados da tabela interna de uma visão materializada (ou das tabelas internas de uma tabela `TimeSeries`) são
+excluídos pelo nome do objeto externo; a cláusula não aceita nomes de tabelas internas.
+
+`EXCEPT DATA FROM {TABLE|TABLES}` só é válido para `BACKUP`. `RESTORE` rejeita essa cláusula, em vez de aceitá-la
+como uma operação sem efeito.
+
+#### Motores que `RESTORE` não consegue recriar {#engines-restore-cannot-recreate}
+
+Alguns motores não podem ser recriados por `RESTORE`, com ou sem `EXCEPT DATA FROM {TABLE|TABLES}`. Para
+essas tabelas, a cláusula ainda controla o tamanho do backup, mas não permite restaurá-las
+vazias — a tabela não é restaurada, pois `RESTORE` se recusa a criá-la.
+
+O caso a destacar é o de uma tabela `MaterializedPostgreSQL` independente. Assim que fosse criada, ela começaria
+a replicar dados da origem PostgreSQL ativa, misturando o snapshot do backup com o estado remoto atual. Por isso,
+`RESTORE` a rejeita na fábrica de armazenamento — antes que a tabela seja criada — com `NOT_IMPLEMENTED`. Essa é uma
+característica do motor e também se aplica a um backup completo comum.
+
+O procedimento aceito é restaurar com outro nome, em uma tabela `ReplacingMergeTree` criada
+previamente com a estrutura da tabela aninhada (incluindo as colunas `_sign` e `_version`):
+
+```sql
+-- Back up the definition without the rows: they are replicated from PostgreSQL and can be replicated again
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLE mydb.pg_table TO Disk('backups', 'mydb/')
+
+CREATE TABLE mydb.plain_target
+(
+    key Int32,
+    value Int32,
+    _sign Int8 MATERIALIZED 1,
+    _version UInt64 MATERIALIZED 1
+)
+ENGINE = ReplacingMergeTree(_version) ORDER BY key
+
+-- Succeeds, and leaves `mydb.plain_target` empty because the backup carries no rows for `mydb.pg_table`
+RESTORE TABLE mydb.pg_table AS mydb.plain_target FROM Disk('backups', 'mydb/')
+SETTINGS allow_different_table_def = 1
+```
+
+`allow_different_table_def` é necessário porque a definição armazenada no backup usa o
+motor `MaterializedPostgreSQL`, mas a restauração é feita intencionalmente em um `ReplacingMergeTree` comum.
+Sem `EXCEPT DATA FROM TABLE`, o mesmo `RESTORE` também restaura as linhas.
+
+### Configurações {#settings}
 
 **Configurações genéricas de backup e restauração**
 
@@ -229,9 +291,7 @@ Cada um dos comandos acima é detalhado a seguir:
 
 <AzureSettings />
 
-<div id="check-the-status-of-backups">
-  ## Administração e solução de problemas
-</div>
+## Administração e solução de problemas {#check-the-status-of-backups}
 
 O comando de backup retorna um `id` e um `status`, e esse `id` pode ser usado para
 consultar o status do backup. Isso é muito útil para verificar o andamento de backups

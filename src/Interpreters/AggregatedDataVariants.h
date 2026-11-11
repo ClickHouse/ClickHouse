@@ -9,6 +9,8 @@
 #include <boost/noncopyable.hpp>
 
 
+class MemoryTracker;
+
 namespace DB
 {
 
@@ -49,6 +51,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     using Arenas = std::vector<ArenaPtr>;
     Arenas aggregates_pools;
     Arena * aggregates_pool{};    /// The pool that is currently used for allocation.
+
+    /// Accounts for the whole state of this table, including memory that aggregate
+    /// states allocate outside the arenas. Attached by the aggregator on the first block.
+    std::unique_ptr<MemoryTracker> memory_tracker;
 
     /** Specialization for the case when there are no keys, and for keys not fitted into max_rows_to_group_by.
       */
@@ -497,14 +503,21 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
     size_t allocatedBytes() const;
+    /// Bytes that the keys and states took in the arenas. Unlike the arenas' allocated bytes,
+    /// which grow by whole chunks of doubling size, they follow every allocation.
+    size_t usedArenaBytes() const;
+    /// Tracked size of the state; without a tracker (merge-only aggregation) only arenas and
+    /// hash table are known.
+    size_t memoryUsage() const;
 
-    /// The adaptive bucket-parallel merge's per-bucket arenas, populated on the merge
-    /// destination when the merge sources are created. Deliberately outside
-    /// `aggregates_pools`: the output conversion captures that list wholesale into every
-    /// bucket's non-final and -State columns, while these slots are handed out per bucket and
-    /// reset as buckets retire (`Aggregator::retireAdaptiveMergedBucket`), so a converted
-    /// bucket's drained and merged states free early. States adopted from the producers'
-    /// mixed arenas stay in `aggregates_pools` and live until the variants die.
+    /// The adaptive bucket-parallel merge's arena slots, one per bucket, populated on the merge
+    /// destination (see `Aggregator::createAdaptiveMergeDestination`). A slot holds the arena of
+    /// the bucket's unit being merged, takes a fresh one for every unit and is reset when the
+    /// bucket retires (see `Aggregator::mergeAndConvertAdaptiveBucket`), so a converted unit's
+    /// drained and merged states free early. Deliberately outside `aggregates_pools`: the output
+    /// conversion captures that list wholesale into every bucket's non-final and -State columns,
+    /// while each conversion captures only the arena of its unit. States adopted from the
+    /// producers' mixed arenas stay in `aggregates_pools` and live until the variants die.
     Arenas adaptive_merge_bucket_arenas;
 
     /// Keys consumed and produced by the two-level bucket merges that have completed
@@ -517,9 +530,20 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isConvertibleToTwoLevel() const;
     static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
+    /// Replaces an empty two-level table with an empty single-level table of the same method: the reverse of
+    /// `convertToTwoLevel` for a table whose data was written to disk.
+    void resetToSingleLevel();
     bool isLowCardinality() const;
+    /// Serialized hash methods; `Aggregator` passes non-nullable `LowCardinality` key columns
+    /// to them without materializing full columns first.
+    bool isSerialized() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
     bool topKHeapEverRejected() const;
+    /// Whether the active method's top-K heap is inactive for the block about to be processed: it has
+    /// already frozen, or `Aggregator::executeImpl` will certainly freeze it before processing row 0 of
+    /// that block (see `TopKAggregationHeapBase::willBeInactive`). Conservative: when the shared-boundary
+    /// exchange may still keep the heap running, the heap is reported as active.
+    bool topKHeapInactive() const;
 
     /** Select the aggregation method based on the number and types of keys. */
     static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);

@@ -2,8 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <optional>
+#include <Access/AccessControl.h>
+#include <Access/Authentication.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/User.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -12,6 +16,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -27,10 +32,19 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTShowColumnsQuery.h>
+#include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParser.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/TokenIterator.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
@@ -59,6 +73,12 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsDialect dialect;
+    extern const SettingsBool implicit_select;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
 }
@@ -83,6 +103,7 @@ using Poco::Net::SSLManager;
 namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
@@ -91,6 +112,7 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int SYNTAX_ERROR;
+    extern const int TOO_MANY_COLUMNS;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
 
@@ -689,8 +711,12 @@ void MySQLHandler::run()
                     case COM_STMT_CLOSE:
                         comStmtClose(payload);
                         break;
+                    case COM_STMT_RESET:
+                        comStmtReset(payload);
+                        break;
                     default:
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.", command);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.",
+                            static_cast<int>(static_cast<unsigned char>(command)));
                 }
             }
             catch (const NetException & exc)
@@ -790,16 +816,19 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 {
     try
     {
-        const auto user_authentication_types = session->getAuthenticationTypesOrLogInFailure(user_name);
+        /// Logs a login failure and throws if there is no such user.
+        session->getAuthenticationTypesOrLogInFailure(user_name);
 
-        for (const auto user_authentication_type : user_authentication_types)
+        /// For compatibility with the JavaScript MySQL client, the `mysql_native_password` plugin (Native41) is used
+        /// when it can fully authenticate the user. Otherwise the `sha256_password` plugin is used: it transmits the
+        /// actual password string, which is then checked via the `BasicCredentials` path, the same as for the native
+        /// and HTTP protocols. See `Authentication::mysqlNative41CannotVerify`.
+        /// The user can be altered while the client is answering, so this choice is only a hint: `IAccessStorage::authenticateImpl`
+        /// re-checks it against the snapshot of the user it authenticates with and rejects Native41 credentials if needed.
+        const auto user = session->globalContext()->getAccessControl().read<User>(user_name);
+        if (std::ranges::any_of(user->authentication_methods, DB::Authentication::mysqlNative41CannotVerify))
         {
-            // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible
-            // (if password is specified using double SHA1). Otherwise, SHA256 plugin is used.
-            if (user_authentication_type == DB::AuthenticationType::SHA256_PASSWORD)
-            {
-                authPluginSSL();
-            }
+            authPluginSSL();
         }
 
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
@@ -842,16 +871,11 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
-        /// Report the same type, charset and flags as result-set metadata (`getColumnDefinition`) does
-        /// for this column, so `COM_FIELD_LIST` and a plain `SELECT` describe the column identically:
-        /// string columns as `utf8mb4_0900_ai_ci` strings (matching the handshake collation),
-        /// numeric and other non-string columns as `binary` with their native wire types.
-        ColumnDefinition type_definition = getColumnDefinition(column.name, column.type);
-        ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name,
-            type_definition.character_set, type_definition.column_length, type_definition.column_type,
-            type_definition.flags, type_definition.decimals, true
-        );
+        /// Describe the column with `getColumnDefinition`, as result-set metadata does,
+        /// so `COM_FIELD_LIST` and a plain `SELECT` of the column describe it identically.
+        ResultColumnOrigin origin{.database = database, .table = packet.table, .org_table = packet.table, .column = column.name};
+        ColumnDefinition column_definition = getColumnDefinition(column.name, column.type, &origin);
+        column_definition.is_comm_field_list_response = true;
         packet_endpoint->sendPacket(column_definition);
     }
     packet_endpoint->sendPacket(OKPacket(0xfe, client_capabilities, 0, 0, 0));
@@ -874,35 +898,8 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
     }
     else
     {
-        String replacement_query;
-        bool should_replace = false;
+        std::optional<String> replacement_query = getReplacementQuery(query);
         bool with_output = false;
-
-        // Queries replacements
-        for (auto const & [query_to_replace, replacement_fn] : queries_replacements)
-        {
-            if (checkShouldReplaceQuery(query, query_to_replace))
-            {
-                should_replace = true;
-                replacement_query = replacement_fn(query);
-                break;
-            }
-        }
-
-        // Settings replacements
-        if (!should_replace)
-        {
-            for (auto const & [mysql_setting, clickhouse_setting] : settings_replacements)
-            {
-                const auto replacement_query_opt = setSettingReplacementQuery(query, mysql_setting, clickhouse_setting);
-                if (replacement_query_opt.has_value())
-                {
-                    should_replace = true;
-                    replacement_query = replacement_query_opt.value();
-                    break;
-                }
-            }
-        }
 
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
@@ -931,7 +928,11 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         format_settings.mysql_wire.sequence_id = &sequence_id;
         format_settings.mysql_wire.binary_protocol = binary_protocol;
 
-        auto set_result_details = [&with_output](const QueryResultDetails & details)
+        /// Filled by `set_result_details`, which is called before the output format writes the column definitions.
+        ResultColumnOrigins result_column_origins;
+        format_settings.mysql_wire.result_column_origins = &result_column_origins;
+
+        auto set_result_details = [&with_output, &result_column_origins](const QueryResultDetails & details)
         {
             if (details.format)
             {
@@ -940,15 +941,19 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
                 with_output = true;
             }
+
+            result_column_origins = details.result_column_origins;
         };
 
-        if (should_replace)
+        QueryFlags query_flags{.collect_result_column_origins = true};
+
+        if (replacement_query)
         {
-            ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
+            ReadBufferFromString replacement(*replacement_query);
+            executeQuery(replacement, *out, query_context, set_result_details, query_flags, format_settings);
         }
         else
-            executeQuery(payload, *out, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(payload, *out, query_context, set_result_details, query_flags, format_settings);
 
 
         if (!with_output)
@@ -956,16 +961,95 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
     }
 }
 
+std::optional<String> MySQLHandler::getReplacementQuery(const String & query) const
+{
+    for (const auto & [query_to_replace, replacement_fn] : queries_replacements)
+        if (checkShouldReplaceQuery(query, query_to_replace))
+            return replacement_fn(query);
+
+    for (const auto & [mysql_setting, clickhouse_setting] : settings_replacements)
+        if (auto replacement_query = setSettingReplacementQuery(query, mysql_setting, clickhouse_setting))
+            return replacement_query;
+
+    return {};
+}
+
+Block MySQLHandler::describePreparedStatement(const String & statement, ResultColumnOrigins & result_column_origins)
+{
+    /// Answered with an OK packet by `comQuery`.
+    if (isFederatedServerSetupSetCommand(statement))
+        return {};
+
+    std::optional<String> replacement_query = getReplacementQuery(statement);
+    const String & query = replacement_query ? *replacement_query : statement;
+
+    auto query_context = session->makeQueryContext();
+    query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
+    QueryScope query_scope = QueryScope::create(query_context);
+
+    const auto & settings = query_context->getSettingsRef();
+
+    /// Only queries in the ClickHouse dialect can be analyzed here; for others the result is described at execution.
+    if (settings[Setting::dialect] != Dialect::clickhouse)
+        return {};
+
+    /// Only read-only queries returning a result set are described, as mutations must not be executed here.
+    const char * begin = query.data();
+    const char * end = begin + query.size();
+    ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+    ASTPtr ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+    const bool returns_result_set = ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectIntersectExceptQuery>()
+        || ast->as<ASTShowTablesQuery>() || ast->as<ASTShowColumnsQuery>() || ast->as<ASTShowIndexesQuery>() || ast->as<ASTDescribeQuery>()
+        || ast->as<ASTShowCreateTableQuery>() || ast->as<ASTShowCreateViewQuery>() || ast->as<ASTShowCreateDatabaseQuery>()
+        || ast->as<ASTShowCreateDictionaryQuery>() || ast->as<ASTExistsTableQuery>() || ast->as<ASTExistsViewQuery>()
+        || ast->as<ASTExistsDatabaseQuery>() || ast->as<ASTExistsDictionaryQuery>();
+    if (!returns_result_set)
+        return {};
+
+    /// Build the query the same way its execution does (with the settings, the access checks, the limits and an entry
+    /// in the process list), but don't run it: only the header of its result is needed here.
+    QueryResultDetails result_details;
+    BlockIO io = executeQuery(query, query_context, QueryFlags{.collect_result_column_origins = true}, QueryProcessingStage::Complete, &result_details).second;
+    Block header = io.pipeline.getHeader();
+    result_column_origins = std::move(result_details.result_column_origins);
+
+    /// The pipeline is reset before `onFinish`, so nothing is written into the query result cache.
+    io.resetPipeline(/*cancel=*/ true);
+    io.onFinish();
+    return header;
+}
+
 void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 {
     String statement;
     readStringUntilEOF(statement, payload);
 
+    /// Like MySQL, describe the result columns in the response, so clients know the shape of the result before executing the statement.
+    ResultColumnOrigins result_column_origins;
+    Block header = describePreparedStatement(statement, result_column_origins);
+    if (header.columns() > std::numeric_limits<uint16_t>::max())
+        throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "The prepared statement returns {} columns, while the MySQL protocol supports at most {}",
+            header.columns(), std::numeric_limits<uint16_t>::max());
+
     auto statement_id_opt = emplacePreparedStatement(std::move(statement));
-    if (statement_id_opt.has_value())
-        packet_endpoint->sendPacket(PreparedStatementResponseOK(statement_id_opt.value(), 0, 0, 0));
-    else
+    if (!statement_id_opt.has_value())
+    {
         packet_endpoint->sendPacket(ERRPacket());
+        return;
+    }
+
+    packet_endpoint->sendPacket(PreparedStatementResponseOK(statement_id_opt.value(), static_cast<uint16_t>(header.columns()), 0, 0));
+
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        const auto & column = header.getByPosition(i);
+        const ResultColumnOrigin * origin = result_column_origins.size() == header.columns() ? &result_column_origins[i] : nullptr;
+        packet_endpoint->sendPacket(getColumnDefinition(column.name, column.type, origin));
+    }
+
+    if (header.columns() && !(client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
+        packet_endpoint->sendPacket(EOFPacket(0, 0));
 }
 
 void MySQLHandler::comStmtExecute(ReadBuffer & payload)
@@ -989,6 +1073,23 @@ void MySQLHandler::comStmtClose(ReadBuffer & payload)
     // No response packet is sent back to the client.
     erasePreparedStatement(statement_id);
 };
+
+void MySQLHandler::comStmtReset(ReadBuffer & payload)
+{
+    uint32_t statement_id = 0;
+    payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
+
+    // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_reset.html
+    // Resets the data sent with `COM_STMT_SEND_LONG_DATA` and closes the cursor of the statement.
+    // Neither is supported, so there is nothing to reset, but the statement must exist.
+    {
+        std::lock_guard<std::mutex> lock(prepared_statements_mutex);
+        if (!prepared_statements.contains(statement_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown prepared statement with id {}", statement_id);
+    }
+
+    packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, 0, 0, 0));
+}
 
 std::optional<UInt32> MySQLHandler::emplacePreparedStatement(String statement)
 {

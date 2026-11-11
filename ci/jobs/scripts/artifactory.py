@@ -81,7 +81,6 @@ class R2MountPoint:
 
     def init(self):
         print(f"Mount bucket [{self.bucket_name}] to [{self.MOUNT_POINT}]")
-        _CLEAN_LOG_FILE_CMD = f"tail -n 1000 {self.LOG_FILE} > {self.LOG_FILE}_tmp && mv {self.LOG_FILE}_tmp {self.LOG_FILE} ||:"
         _MKDIR_CMD = f"mkdir -p {self.MOUNT_POINT}"
         _MKDIR_FOR_CACHE = f"mkdir -p {self.cache_dir}"
         _UNMOUNT_CMD = (
@@ -89,7 +88,6 @@ class R2MountPoint:
         )
 
         _TEST_MOUNT_CMD = f"mount | grep -q {self.MOUNT_POINT}"
-        Shell.check(_CLEAN_LOG_FILE_CMD, verbose=True)
         Shell.check(_UNMOUNT_CMD, verbose=True)
         Shell.check(_MKDIR_CMD, verbose=True)
         Shell.check(_MKDIR_FOR_CACHE, verbose=True)
