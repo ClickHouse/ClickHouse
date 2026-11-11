@@ -577,32 +577,50 @@ timedatectl status | grep 'NTP service: active'
 
         log(f"macOS provisioning version change: '{previous}' -> '{current}'")
 
-        # Fetch and rewrite the CloudWatch agent config in Python rather than
-        # piping through `jq` from bash — on a freshly bootstrapped macOS host
-        # `jq` is not yet installed (it lands later in the user-mode `brew
-        # install` block), so the privileged block cannot depend on it.
-        ssm = boto3.client("ssm", region_name="us-east-1")
-        cw_config = json.loads(
-            ssm.get_parameter(Name="AmazonCloudWatch-github-runners")["Parameter"]["Value"]
-        )
-
-        def _retarget_macos_log_path(node):
-            if isinstance(node, dict):
-                if node.get("file_path") == "/var/log/cloud-init-output.log":
-                    node["file_path"] = config.log_file
-                for v in node.values():
-                    _retarget_macos_log_path(v)
-            elif isinstance(node, list):
-                for v in node:
-                    _retarget_macos_log_path(v)
-
-        _retarget_macos_log_path(cw_config)
+        cw_config = {
+            "agent": {"metrics_collection_interval": 60, "run_as_user": "root"},
+            "metrics": {
+                "append_dimensions": {
+                    "AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+                    "InstanceId": "${aws:InstanceId}",
+                    "InstanceType": "${aws:InstanceType}",
+                },
+                "metrics_collected": {
+                    "cpu": {
+                        "measurement": ["cpu_usage_idle", "cpu_usage_iowait", "cpu_usage_user", "cpu_usage_system"],
+                        "metrics_collection_interval": 60,
+                        "totalcpu": False,
+                    },
+                    "disk": {
+                        "measurement": ["free", "disk_used", "used_percent", "inodes_free"],
+                        "ignore_file_system_types": ["devtmpfs", "squashfs", "tmpfs", "overlay", "vfat"],
+                        "drop_device": True,
+                        "metrics_collection_interval": 60,
+                        "resources": ["*"],
+                    },
+                    "mem": {"measurement": ["mem_used_percent"], "metrics_collection_interval": 60},
+                },
+            },
+            "logs": {
+                "logs_collected": {
+                    "files": {
+                        "collect_list": [
+                            {
+                                "file_path": config.log_file,
+                                "log_group_name": "runners/cloud-init-output",
+                                "log_stream_name": "{instance_id}",
+                                "retention_in_days": 30,
+                            }
+                        ]
+                    }
+                },
+                "log_stream_name": "runner-{instance_id}",
+                "force_flush_interval": 1,
+            },
+        }
         Path("/tmp/amazon-cloudwatch-agent.json").write_text(json.dumps(cw_config))
 
-        # Privileged steps (disable bluetooth, install CloudWatch agent into
-        # `/opt/aws/`, drop the SSM-fetched config under `/opt/aws/...`) run
-        # as root. CloudWatch is brought up first so it captures the brew
-        # install spam that follows.
+        # Privileged steps run as root; CloudWatch starts first so it captures the brew install output.
         run_bash(
             r"""
 # Disable greedy system service
