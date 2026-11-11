@@ -50,6 +50,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <functional>
+#include <numeric>
 #include <unordered_set>
 
 namespace DB
@@ -366,6 +367,9 @@ String getInsertDataSchemaMismatchDescription(
     bool format_allows_missing_named_columns = true;
     bool format_read_rows_ahead_to_detect_header = false;
     bool format_validates_schema_as_metadata_by_exact_name = false;
+    /// The row-based schema readers infer the types from the rows of the (text or binary) data itself,
+    /// so the captured bytes bound the work of decoding the sample for them.
+    bool format_has_row_based_schema_reader = true;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -413,6 +417,7 @@ String getInsertDataSchemaMismatchDescription(
         format_allows_missing_named_columns = schema_reader->allowsMissingNamedColumns();
         format_read_rows_ahead_to_detect_header = schema_reader->readRowsAheadToDetectHeaderAndFoundNone();
         format_validates_schema_as_metadata_by_exact_name = schema_reader->validatesSchemaAsMetadataByExactName();
+        format_has_row_based_schema_reader = dynamic_cast<const IIRowSchemaReader *>(schema_reader.get()) != nullptr;
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -642,94 +647,164 @@ String getInsertDataSchemaMismatchDescription(
     /// by following its path (the nested elements of a structured column are checked the same way as a
     /// top-level value). Best-effort like the second inference above: if the sample cannot be parsed, the
     /// answer stays unknown and the caller treats the column as compatible.
-    bool sample_values_scanned = false;
-    Columns sample_columns;
-    size_t sample_rows = 0;
+    ///
+    /// Only the columns the evidence is needed for are decoded where the format can read a subset of
+    /// the columns (the columnar formats, which select the requested columns by name): a compressed
+    /// file can hold a large value in a column the failed insert never read, and decoding it only to
+    /// explain the error would cost far more than the insert itself. The decoded sample is also bounded
+    /// in size; when the bound is exceeded the answer stays unknown.
+    struct SampledColumn
+    {
+        ColumnPtr column;
+        size_t rows = 0;
+    };
+    /// The row-based formats are excluded: their sample is bounded by the captured bytes anyway, and
+    /// some of them reject a field that is missing from the requested header.
+    const bool sample_reads_subset_of_columns = !format_has_row_based_schema_reader && [&]
+    {
+        try
+        {
+            return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Best-effort: decode the whole sample like for the other formats; it is Ok to ignore the exception.
+            return false;
+        }
+    }();
+    const size_t max_sample_decoded_bytes = std::max<size_t>(data.size() * 4, 1 << 20);
+    VectorWithMemoryTracking<std::optional<SampledColumn>> sampled_columns_cache(inferred.size());
+    bool whole_sample_scanned = false;
+
+    /// Parse the sample for the inferred columns `indices` and store the result in `sampled_columns_cache`.
+    auto scan_sample = [&](const VectorWithMemoryTracking<size_t> & indices)
+    {
+        for (size_t index : indices)
+            sampled_columns_cache[index].emplace();
+
+        MutableColumns columns;
+        size_t rows = 0;
+        try
+        {
+            Block header;
+            for (size_t index : indices)
+            {
+                const auto & column = *std::next(inferred.begin(), index);
+                /// With `schema_inference_make_columns_nullable = 0` a JSON `null` is inferred as a
+                /// plain `String`, and `input_format_null_as_default` would replay it as an empty
+                /// string, indistinguishable from a real `""` token. Parse the sample into `Nullable`
+                /// types so that a `null` stays a `NULL` and is recognized as an inference placeholder.
+                DataTypePtr type = column.type;
+                if (format_reads_typed_json_value_tokens)
+                    if (auto nullable_type = makeNullableRecursively(type, format_settings))
+                        type = nullable_type;
+                header.insert(ColumnWithTypeAndName(type, column.name));
+            }
+            columns = header.cloneEmptyColumns();
+
+            /// The insertion table is cleared for the same reason as in the schema inference above.
+            auto parse_context = Context::createCopy(context);
+            parse_context->setInsertionTable(StorageID::createEmpty());
+
+            /// Parse the sample with a single thread. `ParallelParsingInputFormat` parses whole
+            /// segments ahead of the reader, so a malformed later row can make the pipeline throw
+            /// before the rows this scan is interested in are handed out — which rows survive then
+            /// depends on the thread scheduling, making the diagnostic nondeterministic. The sample
+            /// is bounded by the schema-inference row limit, so there is nothing to parallelize.
+            parse_context->setSetting("input_format_parallel_parsing", false);
+            parse_context->setSetting("max_parsing_threads", 1);
+
+            auto buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
+            /// Make the input format return no more than the schema-inference sample in its
+            /// first block. Limiting only the copy-out loop below is too late: a row input
+            /// format can parse a whole `DEFAULT_BLOCK_SIZE` block before `executor.pull`
+            /// returns it, including a later malformed row that schema inference did not see.
+            const size_t max_sample_block_size = format_settings.max_rows_to_read_for_schema_inference;
+            /// The columns that are not requested are skipped rather than reported as unknown.
+            FormatSettings sample_format_settings = format_settings;
+            if (sample_reads_subset_of_columns)
+                sample_format_settings.skip_unknown_fields = true;
+            auto input = parse_context->getInputFormat(format_name, *buffer, header, max_sample_block_size, sample_format_settings);
+            QueryPipeline pipeline(std::move(input));
+            PullingPipelineExecutor executor(pipeline);
+
+            /// Inspect only the rows schema inference looked at (already clamped above to the rows
+            /// the parser had reached), so a value in a row the parser never got to cannot
+            /// contaminate the diagnosis of an earlier failure.
+            Block block;
+            while (rows < format_settings.max_rows_to_read_for_schema_inference && executor.pull(block))
+            {
+                const size_t rows_to_scan = std::min<size_t>(
+                    block.rows(), format_settings.max_rows_to_read_for_schema_inference - rows);
+                size_t decoded_bytes = 0;
+                for (size_t i = 0; i < block.columns() && i < columns.size(); ++i)
+                {
+                    columns[i]->insertRangeFrom(*block.getByPosition(i).column, 0, rows_to_scan);
+                    decoded_bytes += columns[i]->allocatedBytes();
+                }
+                rows += rows_to_scan;
+                if (decoded_bytes > max_sample_decoded_bytes)
+                {
+                    rows = 0;
+                    break;
+                }
+            }
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Best-effort: the rows read before the failure (e.g. a row truncated by the sampling
+            /// byte bound) are still valid evidence, and without any the answer simply stays
+            /// unknown, so it is Ok to ignore the exception here.
+        }
+
+        /// A failure in the middle of a block can leave the columns with different sizes; keep the
+        /// rows that are present in all of them.
+        if (columns.size() == indices.size())
+            for (const auto & column : columns)
+                rows = std::min(rows, column->size());
+        else
+            rows = 0;
+
+        if (rows)
+            for (size_t i = 0; i < indices.size(); ++i)
+                sampled_columns_cache[indices[i]] = SampledColumn{std::move(columns[i]), rows};
+    };
+
+    /// The sampled values of the inferred column `column_index`, parsed lazily, or `nullopt` when the
+    /// sample is unavailable.
+    auto get_sampled_column = [&](size_t column_index) -> std::optional<SampledColumn>
+    {
+        if (column_index >= sampled_columns_cache.size())
+            return std::nullopt;
+        if (!sampled_columns_cache[column_index])
+        {
+            if (sample_reads_subset_of_columns)
+            {
+                scan_sample({column_index});
+            }
+            else if (!whole_sample_scanned)
+            {
+                whole_sample_scanned = true;
+                VectorWithMemoryTracking<size_t> all_indices(inferred.size());
+                std::iota(all_indices.begin(), all_indices.end(), 0);
+                scan_sample(all_indices);
+            }
+        }
+        const auto & sampled = sampled_columns_cache[column_index];
+        if (!sampled || !sampled->rows)
+            return std::nullopt;
+        return sampled;
+    };
+
     auto sampled_values_hold_only_bool_literals
         = [&](size_t column_index, const VectorWithMemoryTracking<SampledValueStep> & path) -> std::optional<bool>
     {
-        if (!sample_values_scanned)
-        {
-            sample_values_scanned = true;
-
-            MutableColumns columns;
-            try
-            {
-                Block header;
-                for (const auto & column : inferred)
-                {
-                    /// With `schema_inference_make_columns_nullable = 0` a JSON `null` is inferred as a
-                    /// plain `String`, and `input_format_null_as_default` would replay it as an empty
-                    /// string, indistinguishable from a real `""` token. Parse the sample into `Nullable`
-                    /// types so that a `null` stays a `NULL` and is recognized as an inference placeholder.
-                    DataTypePtr type = column.type;
-                    if (format_reads_typed_json_value_tokens)
-                        if (auto nullable_type = makeNullableRecursively(type, format_settings))
-                            type = nullable_type;
-                    header.insert(ColumnWithTypeAndName(type, column.name));
-                }
-                columns = header.cloneEmptyColumns();
-
-                /// The insertion table is cleared for the same reason as in the schema inference above.
-                auto parse_context = Context::createCopy(context);
-                parse_context->setInsertionTable(StorageID::createEmpty());
-
-                /// Parse the sample with a single thread. `ParallelParsingInputFormat` parses whole
-                /// segments ahead of the reader, so a malformed later row can make the pipeline throw
-                /// before the rows this scan is interested in are handed out — which rows survive then
-                /// depends on the thread scheduling, making the diagnostic nondeterministic. The sample
-                /// is bounded by the schema-inference row limit, so there is nothing to parallelize.
-                parse_context->setSetting("input_format_parallel_parsing", false);
-                parse_context->setSetting("max_parsing_threads", 1);
-
-                auto buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
-                /// Make the input format return no more than the schema-inference sample in its
-                /// first block. Limiting only the copy-out loop below is too late: a row input
-                /// format can parse a whole `DEFAULT_BLOCK_SIZE` block before `executor.pull`
-                /// returns it, including a later malformed row that schema inference did not see.
-                const size_t max_sample_block_size = format_settings.max_rows_to_read_for_schema_inference;
-                auto input = parse_context->getInputFormat(format_name, *buffer, header, max_sample_block_size, format_settings);
-                QueryPipeline pipeline(std::move(input));
-                PullingPipelineExecutor executor(pipeline);
-
-                /// Inspect only the rows schema inference looked at (already clamped above to the rows
-                /// the parser had reached), so a value in a row the parser never got to cannot
-                /// contaminate the diagnosis of an earlier failure.
-                Block block;
-                while (sample_rows < format_settings.max_rows_to_read_for_schema_inference && executor.pull(block))
-                {
-                    const size_t rows_to_scan = std::min<size_t>(
-                        block.rows(), format_settings.max_rows_to_read_for_schema_inference - sample_rows);
-                    for (size_t i = 0; i < block.columns() && i < columns.size(); ++i)
-                        columns[i]->insertRangeFrom(*block.getByPosition(i).column, 0, rows_to_scan);
-                    sample_rows += rows_to_scan;
-                }
-            }
-            catch (...) // NOLINT(bugprone-empty-catch)
-            {
-                /// Best-effort: the rows read before the failure (e.g. a row truncated by the sampling
-                /// byte bound) are still valid evidence, and without any the answer simply stays
-                /// unknown, so it is Ok to ignore the exception here.
-            }
-
-            /// A failure in the middle of a block can leave the columns with different sizes; keep the
-            /// rows that are present in all of them.
-            if (columns.size() == inferred.size())
-                for (const auto & column : columns)
-                    sample_rows = std::min(sample_rows, column->size());
-            else
-                sample_rows = 0;
-
-            if (sample_rows)
-                for (auto & column : columns)
-                    sample_columns.push_back(std::move(column));
-        }
-
-        if (!sample_rows || column_index >= sample_columns.size())
+        auto sampled = get_sampled_column(column_index);
+        if (!sampled)
             return std::nullopt;
 
-        const auto & column = *sample_columns[column_index];
-        for (size_t row = 0; row < sample_rows; ++row)
+        const auto & column = *sampled->column;
+        for (size_t row = 0; row < sampled->rows; ++row)
             if (!sampledValueHoldsOnlyBoolLiterals(column[row], path, 0))
                 return false;
         return true;
@@ -745,14 +820,12 @@ String getInsertDataSchemaMismatchDescription(
               const VectorWithMemoryTracking<SampledValueStep> & path,
               const std::function<bool(const String &)> & predicate) -> std::optional<bool>
     {
-        /// Reuse the lazy sample parser above; the boolean result is irrelevant here.
-        static_cast<void>(sampled_values_hold_only_bool_literals(column_index, path));
-
-        if (!sample_rows || column_index >= sample_columns.size())
+        auto sampled = get_sampled_column(column_index);
+        if (!sampled)
             return std::nullopt;
 
-        const auto & column = *sample_columns[column_index];
-        for (size_t row = 0; row < sample_rows; ++row)
+        const auto & column = *sampled->column;
+        for (size_t row = 0; row < sampled->rows; ++row)
             if (!sampledStringValuesSatisfy(column[row], path, 0, predicate))
                 return false;
         return true;
@@ -788,14 +861,12 @@ String getInsertDataSchemaMismatchDescription(
     auto sampled_values_are_arrays_of_size
         = [&](size_t column_index, const VectorWithMemoryTracking<SampledValueStep> & path, size_t size) -> std::optional<bool>
     {
-        /// Reuse the lazy sample parser above; the boolean result is irrelevant here.
-        static_cast<void>(sampled_values_hold_only_bool_literals(column_index, path));
-
-        if (!sample_rows || column_index >= sample_columns.size())
+        auto sampled = get_sampled_column(column_index);
+        if (!sampled)
             return std::nullopt;
 
-        const auto & column = *sample_columns[column_index];
-        for (size_t row = 0; row < sample_rows; ++row)
+        const auto & column = *sampled->column;
+        for (size_t row = 0; row < sampled->rows; ++row)
             if (!sampledValueIsArrayOfSize(column[row], path, 0, size))
                 return false;
         return true;
@@ -906,8 +977,11 @@ String getInsertDataSchemaMismatchDescription(
         /// under `input_format_native_allow_types_conversion` — accept an unsigned integer column there
         /// (a signed or floating-point one fails the `CAST`), and `ORC` accepts an `Int32` column through
         /// its explicit `Int32` -> `IPv4` path (`format_numeric_into_ipv4`), so such a numeric value
-        /// is valid there and flagging it would be a false positive (`UUID` and `IPv6` still require
-        /// binary data of the exact size in those formats, so they stay a mismatch). `FixedString` also rejects a bare number, but only in the typed-token
+        /// is valid there and flagging it would be a false positive. Those cast-on-read formats also
+        /// convert a `UInt128` source column into `IPv6` (`convertFromUInt128toIPv6`), so an inferred
+        /// `UInt128` is valid for an `IPv6` destination there; any other numeric type still fails the
+        /// `CAST` into `IPv6`, and `UUID` always requires binary data of the exact size, so those stay
+        /// a mismatch. `FixedString` also rejects a bare number, but only in the typed-token
         /// JSON formats (`SerializationFixedString::deserializeTextJSON` requires a quoted string,
         /// regardless of the `input_format_json_read_numbers_as_strings` setting, which covers only the
         /// plain `String` destination) and in the binary formats that store typed values (`MsgPack`
@@ -923,7 +997,9 @@ String getInsertDataSchemaMismatchDescription(
         /// (while `DateTime` / `DateTime64` read it as a Unix timestamp and `Decimal` / `Time` / `Time64`
         /// read the number itself, so those stay compatible).
         if (inferred_is_numeric
-            && (which_expected.isUUID() || which_expected.isIPv6()
+            && (which_expected.isUUID()
+                || (which_expected.isIPv6()
+                    && !(format_numeric_into_ipv4 == NumericValueIntoIPv4Column::UnsignedIntegerOnly && which_inferred.isUInt128()))
                 || (which_expected.isIPv4()
                     && !(format_numeric_into_ipv4 == NumericValueIntoIPv4Column::AnyNumeric
                          || (format_numeric_into_ipv4 == NumericValueIntoIPv4Column::Int32Only && which_inferred.isInt32())
@@ -1411,7 +1487,30 @@ String getInsertDataSchemaMismatchDescription(
                     return sampled_string_values_are_valid_text_for(*evidence.column_index, evidence.path, expected_unwrapped)
                         .value_or(true);
                 }
-                return format_casts_string_source_columns;
+                if (format_casts_string_source_columns)
+                    return true;
+                /// The flat-text formats (`TSV`, `CSV`, ...) read a `Bool` with the text deserializers of
+                /// `SerializationBool`, which accept the word forms (`yes`, `on`, `enabled`, ... under
+                /// `allow_special_bool_values`, and the custom `bool_true_representation` /
+                /// `bool_false_representation`) that schema inference keeps as `String`. So an inferred
+                /// `String` alone is no evidence of a mismatch there: only a sampled value that is not a
+                /// valid `Bool` text is one, and when the values cannot be located in the sample the
+                /// comparison is inconclusive. The typed-token JSON formats reject any string token for a
+                /// `Bool` column, and the formats that store typed values reject a string value, so they
+                /// keep the stricter rule. A value that the numbers-from-strings inference pass types as a
+                /// number is a quoted numeric (e.g. the `CSV` field `"1"`: an unquoted `1` would have been
+                /// inferred as a number in the first place), which the flat-text `Bool` deserializers do
+                /// not unquote, so it stays a mismatch as well.
+                const bool confirmed_quoted_numeric = numbers_inference_available && evidence.numbers_inferred_type
+                    && !type_is_confirmed_text(evidence.numbers_inferred_type);
+                if (!format_reads_typed_json_value_tokens && !format_stores_typed_numeric_values && !confirmed_quoted_numeric)
+                {
+                    if (!evidence.column_index)
+                        return true;
+                    return sampled_string_values_are_valid_text_for(*evidence.column_index, evidence.path, expected_unwrapped)
+                        .value_or(true);
+                }
+                return false;
             }
 
             /// The same exemption applies to the nested destinations: the whole-text formats re-parse the
