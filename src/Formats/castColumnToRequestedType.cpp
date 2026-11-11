@@ -98,9 +98,8 @@ DataTypePtr alignStructFieldNamesCaseInsensitive(const DataTypePtr & from, const
         if (!from_tuple)
             return from;
 
-        /// Without names on both sides, elements are matched by position (e.g. a struct with empty or repeated field
-        /// names, read as an unnamed tuple), so descend the same way: named structs nested inside still need their
-        /// names aligned. The source keeps its own names, or the lack of them.
+        /// Without names on both sides, elements are matched by position, so descend the same way: named structs
+        /// nested inside still need their names aligned.
         if (!from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames())
         {
             const auto & from_elems = from_tuple->getElements();
