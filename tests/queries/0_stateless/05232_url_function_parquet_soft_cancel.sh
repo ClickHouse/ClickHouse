@@ -175,7 +175,7 @@ else
 fi
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read was interrupted by a cancellation after which the query returns its partial result%'") != 0 ]]; then
+if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read was interrupted by a cancellation after which the query returns its partial result%'") != 0 ]]; then
     echo "the interrupted background read was discarded"
 else
     echo "FAIL: the interrupted background read was not discarded"
