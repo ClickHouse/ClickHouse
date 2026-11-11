@@ -28,6 +28,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
 #include <Columns/MaskOperations.h>
 
 #include <atomic>
@@ -1097,6 +1098,22 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
             using ContainerType = std::decay_t<decltype(containers.front())>;
             using AttributeValueType = typename ContainerType::mapped_type;
 
+            /// For a numeric column of the attribute type, read the values directly instead of a virtual `get`
+            /// into a `Field` per row.
+            const PaddedPODArray<AttributeValueType> * typed_values = nullptr;
+            const NullMap * null_map = nullptr;
+            if constexpr (std::is_arithmetic_v<AttributeValueType>)
+            {
+                const IColumn * values_column = &attribute_column;
+                if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(values_column))
+                {
+                    values_column = &nullable_column->getNestedColumn();
+                    null_map = &nullable_column->getNullMapData();
+                }
+                if (const auto * vector_column = typeid_cast<const ColumnVector<AttributeValueType> *>(values_column))
+                    typed_values = &vector_column->getData();
+            }
+
             for (size_t key_index = 0; key_index < keys_size; ++key_index)
             {
                 auto key = keys_extractor.extractCurrentKey();
@@ -1113,6 +1130,21 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
 
                 if constexpr (std::is_same_v<KeyType, std::string_view>)
                     key = copyStringInArena(*string_arenas[shard], key);
+
+                if constexpr (std::is_arithmetic_v<AttributeValueType>)
+                {
+                    if (typed_values && (!null_map || attribute_is_nullable))
+                    {
+                        if (null_map && (*null_map)[key_index])
+                            (*attribute.is_nullable_sets)[shard].insert(key);
+                        else
+                            container.insert({key, (*typed_values)[key_index]});
+
+                        ++new_element_count;
+                        keys_extractor.rollbackCurrentKey();
+                        continue;
+                    }
+                }
 
                 attribute_column.get(key_index, column_value_to_insert);
 
