@@ -952,7 +952,8 @@ public:
 
     /// The rejection part of `delayInsertOrThrowIfNeeded` as a callable that a sink registers as its
     /// pre-write check (see `SinkToStorage::getPreWriteCheck`). It does not keep the table alive: once
-    /// it is gone, there is no write to check any more. It does not keep the context alive either, only
+    /// it is gone, the check is run against the instance of the table that replaced it (`DETACH` / `ATTACH`),
+    /// and if there is none, there is no write to check any more. It does not keep the context alive either, only
     /// the limits of the query (see `getTooManyPartsLimits`): a `Buffer` keeps the pending decision of a
     /// query (see `InsertStartGates`) after the query and its sinks are gone, until it flushes the rows of
     /// the query, and the check must still use the limits of that query.

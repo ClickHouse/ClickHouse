@@ -9250,13 +9250,22 @@ std::function<void()> MergeTreeData::makeTooManyPartsCheck(const ContextPtr & qu
     /// Only the limits are retained, not the context: a `Buffer` may keep the check until a much later flush,
     /// and the context would pin the query-scoped state (external tables, etc.) until then.
     const auto limits = getTooManyPartsLimits(query_context);
-    return [this, weak_table, limits]
+    return [weak_table, storage_id = getStorageID(), limits]
     {
+        /// The storage may have been replaced by the time the check runs: a `Buffer` keeps the check until its flush,
+        /// and `DETACH` / `ATTACH` of the table in between creates another instance with the same `UUID`. The flush
+        /// writes into the current instance then, so check it, not skip the check. If the table does not exist
+        /// anymore, the nested INSERT fails without writing anything.
         auto table = weak_table.lock();
         if (!table)
+            table = DatabaseCatalog::instance().tryGetTable(storage_id, Context::getGlobalContextInstance());
+        if (!table)
+            return;
+        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+        if (!merge_tree)
             return;
         /// Only the throw thresholds are used without `allow_delay`, the delay ones fall back to the table settings.
-        delayInsertOrThrowIfNeededImpl(nullptr, InsertQueryLimits{.parts_to_throw_insert = limits.parts_to_throw_insert,
+        merge_tree->delayInsertOrThrowIfNeededImpl(nullptr, InsertQueryLimits{.parts_to_throw_insert = limits.parts_to_throw_insert,
             .dead_blobs_to_throw_insert = limits.dead_blobs_to_throw_insert}, /*allow_throw=*/ true, /*allow_delay=*/ false);
     };
 }
