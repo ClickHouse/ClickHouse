@@ -373,7 +373,7 @@ export const PageWrapper = ({ children }) => {
         />
 
         <HeroCard
-          title="당사 솔루션"
+          title="당사 제품"
           galaxyEvent="docs.home.solutions"
           description="ClickHouse 솔루션을 알아보고 싶습니다"
           href={localizeHref("/products/cloud/getting-started/intro")}
@@ -384,7 +384,7 @@ export const PageWrapper = ({ children }) => {
       }
           links={[
           { label: "ClickHouse Cloud", href: localizeHref("/products/cloud/getting-started/cloud-get-started") },
-          { label: "ClickStack", href: localizeHref("/clickstack") },
+          { label: "ClickHouse Observability", href: localizeHref("/clickstack") },
           { label: "ClickHouse Managed Postgres", href: localizeHref("/products/managed-postgres/overview") },
           { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
           { label: "chDB", href: localizeHref("/chdb") },
@@ -401,7 +401,7 @@ export const PageWrapper = ({ children }) => {
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
         <HeroCard title="실시간 분석" galaxyEvent="docs.home.real-time-analytics" description="대규모 환경에서도 즉각적인 인사이트와 대시보드를 제공합니다. 수십억 개의 행을 실시간으로 분석하고 밀리초 단위로 결과를 확인할 수 있습니다." href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="관측성" galaxyEvent="docs.home.observability" description="ClickHouse 기반의 오픈 소스 관측성 스택인 ClickStack을 사용해 대규모 로그, 메트릭, 트레이스를 저장하고 쿼리할 수 있습니다." href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="관측성" galaxyEvent="docs.home.observability" description="ClickHouse 기반의 오픈 소스 관측성 스택인 ClickHouse Observability를 사용해 대규모 로그, 메트릭, 트레이스를 저장하고 쿼리할 수 있습니다." href={localizeHref("/clickstack/overview")} showArrow />
 
         <HeroCard title="데이터 웨어하우징" galaxyEvent="docs.home.data-warehousing" description="인사이트와 앱을 위해 데이터를 즉시 분석하고 탐색할 수 있습니다. 무거운 워크로드를 오프로드해 더 빠르게 확장할 수 있습니다." href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
@@ -444,7 +444,7 @@ export const PageWrapper = ({ children }) => {
           </div>
 
           <div className="flex flex-col gap-4">
-            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="ClickHouse 기반의 올인원 관측성 스택으로, logs, 메트릭, traces, 세션 리플레이, 오류에 대해 매우 빠른 쿼리와 강력한 집계 기능을 제공합니다." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="ClickHouse 기반의 올인원 관측성 스택으로, logs, 메트릭, traces, 세션 리플레이, 오류에 대해 매우 빠른 쿼리와 강력한 집계 기능을 제공합니다." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
 
             <HeroCard filename="thumbnail-postgres-light.svg" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="ClickHouse와 네이티브로 통합된 빠르고 확장 가능하며 엔터프라이즈급 Postgres 서비스입니다. 트랜잭션에는 Postgres를, analytics에는 ClickHouse를 손쉽게 함께 사용할 수 있습니다." href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
           </div>

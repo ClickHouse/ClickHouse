@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 # Test Arrow format serialization/deserialization for complex types:
 # Arrays (with edge cases), Maps, Tuples, Variants,
