@@ -690,7 +690,7 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
     return CancellationCode::CancelSent;
 }
 
-void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns)
+void QueryStatus::throwProperExceptionIfNeeded(UInt64 max_execution_time_us)
 {
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
@@ -698,14 +698,10 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
         {
             if (cancel_reason == CancelReason::TIMEOUT && !cancellation_exception)
             {
-                String additional_error_part;
-                if (elapsed_ns)
-                    additional_error_part = fmt::format("elapsed {:.3f} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
-
                 Exception exception(
                     ErrorCodes::TIMEOUT_EXCEEDED,
-                    "Timeout exceeded: {}maximum: {:.3f} ms",
-                    additional_error_part,
+                    "Timeout exceeded: elapsed {:.3f} ms, maximum: {:.3f} ms",
+                    static_cast<double>(watch.elapsedNanoseconds()) / 1000000ULL,
                     static_cast<double>(max_execution_time_us) / 1000);
                 cancellation_exception_origin = exception.origin();
                 cancellation_exception = std::make_exception_ptr(std::move(exception));
@@ -721,7 +717,7 @@ void QueryStatus::addPipelineExecutor(IExecutor * e)
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
     UInt64 max_exec_time = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
-    throwProperExceptionIfNeeded(max_exec_time, 0);
+    throwProperExceptionIfNeeded(max_exec_time);
 
     std::lock_guard lock(executors_mutex);
     chassert(!executors.contains(e));
@@ -752,7 +748,7 @@ bool QueryStatus::checkTimeLimit()
 bool QueryStatus::checkTimeLimit(OverflowMode mode)
 {
     auto elapsed_ns = watch.elapsed();
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), elapsed_ns);
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds());
 
     return limits.checkTimeLimit(elapsed_ns, mode);
 }
@@ -772,17 +768,25 @@ void QueryStatus::throwIfKilled()
 {
     if (!is_killed.load())
         return;
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), 0);
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds());
 }
 
 bool QueryStatus::isStoredCancellationException(const std::exception_ptr & exception) const
 {
-    std::lock_guard lock(cancel_mutex);
-    if (!is_killed || !cancellation_exception || !exception)
-        return false;
+    UInt64 stored_origin;
+    {
+        std::lock_guard lock(cancel_mutex);
+        if (!is_killed || !cancellation_exception || !exception)
+            return false;
 
-    if (cancellation_exception == exception)
-        return true;
+        if (cancellation_exception == exception)
+            return true;
+
+        stored_origin = cancellation_exception_origin;
+    }
+
+    if (stored_origin == 0)
+        return false;
 
     try
     {
@@ -790,7 +794,7 @@ bool QueryStatus::isStoredCancellationException(const std::exception_ptr & excep
     }
     catch (const Poco::Exception & e)
     {
-        return cancellation_exception_origin != 0 && e.origin() == cancellation_exception_origin;
+        return e.origin() == stored_origin;
     }
     catch (...)
     {

@@ -5,6 +5,8 @@
 
 #include <Common/Exception.h>
 #include <Common/Scheduler/MemoryReservation.h>
+#include <Common/Stopwatch.h>
+#include <Common/re2.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
@@ -24,11 +26,10 @@ namespace DB::ErrorCodes
 namespace
 {
 
-QueryStatusPtr makeQueryStatus(const String & query_id)
+QueryStatusPtr makeQueryStatus(const String & query_id, const Settings & settings = {}, UInt64 watch_start_ns = 0)
 {
     ClientInfo client_info;
     client_info.current_query_id = query_id;
-    Settings settings;
     return std::make_shared<QueryStatus>(
         getContext().context,
         "SELECT 1",
@@ -41,7 +42,7 @@ QueryStatusPtr makeQueryStatus(const String & query_id)
         /*thread_group_*/ nullptr,
         IAST::QueryKind::Select,
         settings,
-        /*watch_start_nanoseconds*/ 0,
+        watch_start_ns,
         /*is_internal*/ false);
 }
 
@@ -151,7 +152,7 @@ TEST(QueryStatusCancellationException, BranchesWithoutAStoredExceptionAreUnchang
         EXPECT_EQ(e.code(), ErrorCodes::QUERY_WAS_CANCELLED);
     }
 
-    /// A timeout reports the elapsed time instead of the stored exception, even when one is set.
+    /// A timeout takes precedence over the exception supplied by the caller.
     auto timed_out = makeQueryStatus("gtest_cancellation_exception_timeout");
     timed_out->cancelQuery(CancelReason::TIMEOUT, makeCancellationException());
     try
@@ -162,5 +163,44 @@ TEST(QueryStatusCancellationException, BranchesWithoutAStoredExceptionAreUnchang
     catch (Exception & e)
     {
         EXPECT_EQ(e.code(), ErrorCodes::TIMEOUT_EXCEEDED);
+    }
+}
+
+TEST(QueryStatusCancellationException, CachedTimeoutIncludesElapsedTimeForEitherFirstCaller)
+{
+    Settings settings;
+    settings.set("max_execution_time", 1);
+    const RE2 message_pattern(R"(Timeout exceeded: elapsed ([0-9]+\.[0-9]{3}) ms, maximum: 1000\.000 ms)");
+
+    for (bool worker_first : {true, false})
+    {
+        SCOPED_TRACE(worker_first ? "throwIfKilled first" : "checkTimeLimit first");
+        const auto start_ns = clock_gettime_ns(CLOCK_MONOTONIC) - 2'000'000'000ULL;
+        auto query = makeQueryStatus("gtest_cached_timeout", settings, start_ns);
+        query->cancelQuery(CancelReason::TIMEOUT);
+
+        std::string first_message;
+        for (bool use_worker_path : {worker_first, !worker_first})
+        {
+            try
+            {
+                if (use_worker_path)
+                    query->throwIfKilled();
+                else
+                    query->checkTimeLimit();
+                FAIL() << "Expected a query timeout";
+            }
+            catch (const Exception & e)
+            {
+                ASSERT_EQ(e.code(), ErrorCodes::TIMEOUT_EXCEEDED);
+                double elapsed_ms = 0;
+                ASSERT_TRUE(RE2::FullMatch(e.message(), message_pattern, &elapsed_ms)) << e.message();
+                EXPECT_GE(elapsed_ms, 2000.0);
+                if (first_message.empty())
+                    first_message = e.message();
+                else
+                    EXPECT_EQ(e.message(), first_message);
+            }
+        }
     }
 }
