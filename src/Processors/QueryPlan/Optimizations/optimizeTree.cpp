@@ -118,6 +118,8 @@ static String describeProjectionRejections(const std::unordered_map<String, Stri
 
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
+    lowerArrayJoinFunctions(root, nodes, makeExtraSettings(optimization_settings));
+
     if (!optimization_settings.optimize_plan)
         return;
 
@@ -553,6 +555,9 @@ void optimizeTreeSecondPass(
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
             skipDeduplicationAfterSetOperationJoin(frame_node);
         });
+
+    /// the conversion makes the pre-join expressions, also without plan optimizations
+    lowerArrayJoinFunctions(root, nodes, extra_settings);
 
     /// The runtime filters were pushed down while the joins were logical, so merge what the conversion
     /// added around the joins, as that push-down did when the joins were converted before it. With the
@@ -1023,6 +1028,11 @@ void optimizeTreeSecondPass(
     traverseQueryPlan(stack, root, [&](auto & frame_node) { disableSpreadingSmallReadUnderFullSorting(frame_node); });
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
+
+    /// Run after every optimization that works with `SortingStep`, so that it only changes how the sorting is executed.
+    /// Keep `SortingStep` while building distributed fragments; replace it only when optimizing a local executable plan.
+    if (optimization_settings.use_shuffle_for_order_by_rand && !optimization_settings.make_distributed_plan)
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { useShuffleForOrderByRand(frame_node); });
 
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
     /// distributed fragments, or parallel replicas. This placement makes the pass a pure
