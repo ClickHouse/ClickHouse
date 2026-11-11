@@ -114,6 +114,8 @@ struct ProjectionPartData
     std::unique_ptr<ProjectionPartData> materialized;
     /// some stored column has values of different sizes
     bool variable_width = false;
+    /// the writer counts more bytes for a block than its rows give, as the indexes and the dictionary of `LowCardinality`
+    bool block_over_rows = false;
     /// a merge sizes the granules by what the part does not record: the memory it builds some states in, or the bytes of the parts it merges
     bool merge_history_unknown = false;
     /// an order-dependent state that is not of a fixed size can keep other values in another order of the rows, as `any` does
@@ -146,6 +148,9 @@ void appendRowSizes(ProjectionPartData & out, const Block & block, bool merged)
     {
         if (!elem.column)
             continue;
+        auto check_low_cardinality = [&](const IColumn & column) { out.block_over_rows |= column.lowCardinality(); };
+        check_low_cardinality(*elem.column);
+        elem.column->forEachSubcolumnRecursively(check_low_cardinality);
         /// the writer sizes a state as it serializes it, see `ColumnAggregateFunction::serializedSizeEstimate`
         if (const auto * states = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
         {
@@ -1185,8 +1190,8 @@ bool buildScenarios(
         {
             const auto [narrowest, widest] = std::minmax_element(part_data.row_bytes.begin(), part_data.row_bytes.end());
             uneven_rows = *narrowest != *widest;
-            widest_fits = UInt64{*widest} * mt_settings[MergeTreeSetting::index_granularity]
-                <= mt_settings[MergeTreeSetting::index_granularity_bytes];
+            widest_fits = !part_data.block_over_rows
+                && UInt64{*widest} * mt_settings[MergeTreeSetting::index_granularity] <= mt_settings[MergeTreeSetting::index_granularity_bytes];
         }
         out.merge_history_parts += part_data.merge_history_unknown || part_data.order_dependent_states;
         /// no row passes the filter of the projection, so the writer writes no projection part
