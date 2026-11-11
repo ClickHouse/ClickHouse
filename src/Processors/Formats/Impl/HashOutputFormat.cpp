@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/HashOutputFormat.h>
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Columns/canonicalizeNegativeZero.h>
 #include <Common/Arena.h>
@@ -40,9 +41,21 @@ void HashOutputFormat::consume(Chunk chunk)
     /// `LowCardinality`, whose dictionary can hold a negative zero as well, and `canonicalizeNegativeZero`
     /// does not look into it, so the check is done on the column without `LowCardinality`.
     Columns value_columns(num_columns);
+    const Block & header = getPort(PortKind::Main).getHeader();
     for (size_t j = 0; j < num_columns; ++j)
     {
         full_columns[j] = columns[j]->convertToFullIfWrapped();
+
+        /// Removing `LowCardinality` materializes every value of the column, so it is done only when
+        /// a negative zero can be there: never for a type without floating point values, such as
+        /// `LowCardinality(String)`, and for a top-level `LowCardinality` column only when its
+        /// dictionary has a negative zero.
+        if (!mayContainNegativeZero(*header.getByPosition(j).type))
+            continue;
+        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(full_columns[j].get());
+            low_cardinality && !canonicalizeNegativeZero(*low_cardinality->getDictionary().getNestedColumn()))
+            continue;
+
         value_columns[j] = recursiveRemoveLowCardinality(full_columns[j]);
         canonical_columns[j] = canonicalizeNegativeZero(*value_columns[j]);
     }
