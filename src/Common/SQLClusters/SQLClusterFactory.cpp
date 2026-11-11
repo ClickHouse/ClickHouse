@@ -725,9 +725,9 @@ void SQLClusterFactory::updateFunc()
         }
         catch (...)
         {
-            /// A shared definition may be valid on the server that wrote it but not materializable here
-            /// (e.g. `secure = 1` without `port` when this server has no `tcp_port_secure`). Keep the current
-            /// snapshot: the loaded version is not advanced, so the reload is retried on the next update.
+            /// A shared definition that `CREATE CLUSTER` or `ALTER CLUSTER` would not produce, e.g. one edited
+            /// by hand in Keeper, may not be materializable here. Keep the current snapshot: the loaded
+            /// version is not advanced, so the reload is retried on the next update.
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
     }
