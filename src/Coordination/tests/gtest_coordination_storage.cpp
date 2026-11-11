@@ -1737,7 +1737,7 @@ TEST_P(CoordinationTest, TestListWithStatOrDataWatches)
     /// Returns the watch notifications the request produced.
     const auto run = [&](const ZooKeeperRequestPtr & request, int64_t session_id)
     {
-        storage.preprocessRequest(request, session_id, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, session_id, 0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
         Events events;
         for (const auto & response_for_session : storage.processRequest(request, session_id, zxid))
         {
