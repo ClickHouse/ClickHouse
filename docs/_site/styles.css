@@ -1832,13 +1832,25 @@ button.rounded-xl {
    black, then invert() sets an exact grey — identical in every browser. The four
    colourful brand icons (clickhouse, cloud-oss, language-picker, mcp) are not
    part of this grey family and are excluded. The ClickHouse Observability
-   mark is the ClickHouse logo, so it is excluded too and keeps its own fill. */
+   mark is the ClickHouse logo, so it is excluded too; light mode inverts it
+   below instead of flattening it to grey. */
 img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-clickhouse-observability"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.31); /* rgb(79,79,79) — matches the SVGs' light value */
 }
 .dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-clickhouse-observability"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]),
 :is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-clickhouse-observability"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.78); /* rgb(199,199,199) — matches the SVGs' dark value */
+}
+
+/* Observability ships as white artwork, so invert it on a light sidebar.
+   It is excluded from the grey filter above, which would otherwise override
+   this. ClickStack ships as dark ink, so invert that one in dark mode. */
+html:not(.dark) img[src*="icon-clickhouse-observability.svg"] {
+    filter: invert(1);
+}
+.dark img[src*="clickstack-icon-dark.svg"],
+:is(.dark) img[src*="clickstack-icon-dark.svg"] {
+    filter: invert(1);
 }
 
 /* ClickPipes categories grid - 4 columns on desktop, 2 on mobile */
