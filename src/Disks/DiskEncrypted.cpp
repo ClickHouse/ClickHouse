@@ -424,15 +424,6 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes, const ReservationConstraints
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
 }
 
-ReservationPtr DiskEncrypted::reserveAndGetUnreservedSpace(
-    UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space)
-{
-    auto reservation = delegate->reserveAndGetUnreservedSpace(bytes, constraints, unreserved_space);
-    if (!reservation)
-        return {};
-    return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
-}
-
 
 void DiskEncrypted::copyDirectoryContent(
     const String & from_dir,

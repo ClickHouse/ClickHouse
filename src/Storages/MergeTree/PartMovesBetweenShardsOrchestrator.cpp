@@ -23,7 +23,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NO_SUCH_DATA_PART;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -479,14 +478,6 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
             auto part = storage.getActiveContainingPart(entry.part_name);
-            /// The pin blocks only merges and DROP PART, so the part can be removed, e.g. by TRUNCATE or DROP PARTITION.
-            if (!part)
-                throw Exception(
-                    ErrorCodes::NO_SUCH_DATA_PART,
-                    "Part {} is not active on replica {}, it cannot be attached on shard {}",
-                    entry.part_name,
-                    storage.replica_name,
-                    entry.to_shard);
 
             /// Allocating block number in other replicas zookeeper path
             /// TODO Maybe we can do better.

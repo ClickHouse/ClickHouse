@@ -94,7 +94,6 @@ void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry);
-void registerShuffleStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerRollupStep(QueryPlanStepRegistry & registry);
@@ -114,7 +113,6 @@ void registerNegativeOffsetStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerExtremesStep(QueryPlanStepRegistry & registry);
-void registerBypassExtremesSteps(QueryPlanStepRegistry & registry);
 void registerJoinStep(QueryPlanStepRegistry & registry);
 void registerShuffleSendStep(QueryPlanStepRegistry & registry);
 void registerShuffleReceiveStep(QueryPlanStepRegistry & registry);
@@ -134,8 +132,6 @@ void registerObjectFilterStep(QueryPlanStepRegistry & registry);
 
 
 void registerReadFromStorageStep(QueryPlanStepRegistry & registry);
-void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry);
-void registerReadFromSystemNumbersStep(QueryPlanStepRegistry & registry);
 
 
 void QueryPlanStepRegistry::registerPlanSteps()
@@ -147,7 +143,6 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerIntersectOrExceptStep(registry);
     registerDistinctStep(registry);
     registerSortingStep(registry);
-    registerShuffleStep(registry);
     registerAggregatingStep(registry);
     registerMergingAggregatedStep(registry);
     registerRollupStep(registry);
@@ -167,7 +162,6 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerFilterStep(registry);
     registerTotalsHavingStep(registry);
     registerExtremesStep(registry);
-    registerBypassExtremesSteps(registry);
     registerJoinStep(registry);
 
     registerShuffleSendStep(registry);
@@ -180,8 +174,6 @@ void QueryPlanStepRegistry::registerPlanSteps()
 
     registerReadNothingStep(registry);
     registerReadFromTableStep(registry);
-    registerReadFromSystemOneStep(registry);
-    registerReadFromSystemNumbersStep(registry);
     registerReadFromTableFunctionStep(registry);
     registerBuildRuntimeFilterStep(registry);
     registerMergeRuntimeFiltersStep(registry);

@@ -24,16 +24,12 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Access/AccessRights.h>
-#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/StorageID.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
-#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -51,7 +47,6 @@
 #include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
@@ -112,7 +107,6 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     default_desc = other.default_desc;
     comment = other.comment;
     codec = other.codec ? other.codec->clone() : nullptr;
-    subcolumn_codecs = other.subcolumn_codecs;
     settings = other.settings;
     ttl = other.ttl ? other.ttl->clone() : nullptr;
     statistics = other.statistics;
@@ -133,8 +127,6 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) ///
     codec = other.codec ? other.codec->clone() : nullptr;
     other.codec.reset();
 
-    subcolumn_codecs = std::move(other.subcolumn_codecs);
-
     settings = std::move(other.settings);
 
     ttl = other.ttl ? other.ttl->clone() : nullptr;
@@ -154,7 +146,6 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && default_desc == other.default_desc
         && statistics == other.statistics
         && ast_to_str(codec) == ast_to_str(other.codec)
-        && subcolumn_codecs == other.subcolumn_codecs
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
@@ -171,7 +162,7 @@ static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
     return buf.str();
 }
 
-void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment, bool include_codec) const
+void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const
 {
     /// NOTE: Serialization format is insane.
 
@@ -195,7 +186,7 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(ast, state), buf);
     }
 
-    if (codec && include_codec)
+    if (codec)
     {
         writeChar('\t', buf);
         writeEscapedString(formatASTStateAware(*codec, state), buf);
@@ -390,6 +381,12 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
     return std::make_pair(begin, end);
 }
 
+namespace
+{
+
+/// If the column carries a `Quantized(...)` codec, attach the serialization that writes the quantized companion stream
+/// and exposes the `<column>.quantized` subcolumn. The customization is attached to this column's own (freshly parsed,
+/// non-shared) type instance, so it does not affect any other column of the same type.
 void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 {
     auto params = tryExtractQuantizedCodecParams(column.codec);
@@ -410,6 +407,8 @@ void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 
     auto custom_serialization = std::make_shared<SerializationQuantizedVector>(column.type->getDefaultSerialization(), *params);
     column.type->setCustomization(std::make_unique<DataTypeCustomDesc>(nullptr, std::move(custom_serialization)));
+}
+
 }
 
 void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata)
@@ -874,74 +873,6 @@ Names ColumnsDescription::getNamesOfPhysical() const
     return ret;
 }
 
-Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
-    const Names & column_names, const ContextPtr & context, const StorageID & table_id) const
-{
-    Names result;
-    result.reserve(column_names.size());
-    NameSet seen;
-    std::shared_ptr<const AccessRights> access_rights;
-    String database;
-    for (const auto & name : column_names)
-    {
-        /// Map `name` to the storage column that identifier resolution actually reads from, so the
-        /// access check authorizes that column and nothing else. `tryGetColumnOrSubcolumn` enables
-        /// dynamic subcolumns (via `GetColumnsOptions::withSubcolumns`), so besides regular
-        /// subcolumns it also resolves `Dynamic` / `JSON` / dynamic `Map` paths (e.g. `json.a.b` or
-        /// `d.\`Tuple(a UInt64)\`.a`): they are resolved by the same type-aware, first-matching-prefix
-        /// logic as `ColumnsDescription::tryGetDynamicSubcolumn` and the analyzer's
-        /// `TableExpressionData::tryGetSubcolumnInfo`, and `getNameInStorage` returns their parent
-        /// column. A real column (including one whose name legitimately contains a dot) resolves to
-        /// itself.
-        ///
-        /// We must NOT fall back to the longest *existing* dotted prefix here: it is not type-aware
-        /// and can disagree with identifier resolution. When a shorter dynamic column and a longer
-        /// dotted real column coexist (e.g. `json JSON` and `\`json.a\` JSON`), `json.a.b` resolves
-        /// through `json`, so authorizing `json.a` instead would let a grant on `json.a` alone read
-        /// `json`. Names that resolve to nothing (virtual or unknown columns) are left unchanged,
-        /// which fails closed for the access check.
-        String name_to_check = name;
-        if (auto column = tryGetColumnOrSubcolumn(GetColumnsOptions::All, name); column && column->isSubcolumn())
-        {
-            /// A subcolumn inherits the grants of its column, like a column inherits the grants of its table. A grant or
-            /// revoke that names the subcolumn itself (e.g. ``GRANT SELECT(`json.a`)`` or ``REVOKE SELECT(`t.a`)``) takes
-            /// precedence, so the subcolumn name is checked as is when such an entry changes what the name inherits.
-            if (!access_rights)
-            {
-                access_rights = context->getAccess()->getAccessRightsWithImplicit();
-                database = table_id.hasDatabase() ? table_id.getDatabaseName() : context->getCurrentDatabase();
-            }
-            const auto & table = table_id.getTableName();
-            const bool has_explicit_entry = access_rights->isGranted(AccessType::SELECT, database, table, name)
-                != access_rights->isGrantedInherited(AccessType::SELECT, database, table, name);
-            if (!has_explicit_entry)
-                name_to_check = column->getNameInStorage();
-        }
-
-        if (seen.insert(name_to_check).second)
-            result.push_back(std::move(name_to_check));
-    }
-
-    return result;
-}
-
-Names ColumnsDescription::getSubcolumnsWithExplicitGrant(
-    const AccessRights & access_rights,
-    const AccessFlags & flags,
-    const String & database,
-    const String & table,
-    const String & column_name) const
-{
-    Names result;
-    for (auto & name : access_rights.getColumnsWithExplicitGrantAndPrefix(flags, database, table, column_name + '.'))
-    {
-        auto subcolumn = tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-        if (subcolumn && subcolumn->isSubcolumn() && subcolumn->getNameInStorage() == column_name)
-            result.push_back(std::move(name));
-    }
-    return result;
-}
-
 std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
@@ -993,14 +924,6 @@ std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescripti
             return ColumnDescription{jt->name, jt->type};
     }
 
-    return {};
-}
-
-std::optional<NameAndTypePair> ColumnsDescription::tryGetSubcolumn(const String & subcolumn_name) const
-{
-    auto column = tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), subcolumn_name);
-    if (column && column->isSubcolumn())
-        return column;
     return {};
 }
 
@@ -1115,7 +1038,7 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
 {
     const auto it = columns.get<1>().find(column_name);
 
-    return it != columns.get<1>().end() && (it->codec != nullptr || !it->subcolumn_codecs.empty());
+    return it != columns.get<1>().end() && it->codec != nullptr;
 }
 
 bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & column_name) const
@@ -1180,7 +1103,7 @@ void ColumnsDescription::resetColumnTTLs()
 }
 
 
-String ColumnsDescription::toString(bool include_comments, bool include_codecs) const
+String ColumnsDescription::toString(bool include_comments) const
 {
     WriteBufferFromOwnString buf;
     IAST::FormatState ast_format_state;
@@ -1190,22 +1113,7 @@ String ColumnsDescription::toString(bool include_comments, bool include_codecs) 
     writeCString(" columns:\n", buf);
 
     for (const ColumnDescription & column : columns)
-        column.writeText(buf, ast_format_state, include_comments, include_codecs);
-
-    if (!include_codecs)
-        return buf.str();
-
-    /// Subcolumn codecs are written after the columns, in the form of `CREATE TABLE`.
-    for (const ColumnDescription & column : columns)
-    {
-        for (const auto & [subcolumn_name, codec] : column.subcolumn_codecs)
-        {
-            ASTCodecDeclaration declaration(column.name + "." + subcolumn_name, codec);
-            writeCString("CODEC ", buf);
-            writeEscapedString(formatASTStateAware(declaration, ast_format_state), buf);
-            writeChar('\n', buf);
-        }
-    }
+        column.writeText(buf, ast_format_state, include_comments);
 
     return buf.str();
 }
@@ -1228,31 +1136,7 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
         result.add(column);
     }
 
-    while (!buf.eof())
-    {
-        String line;
-        readEscapedStringUntilEOL(line, buf);
-        buf.ignore(1); /// ignore new line
-
-        ParserCodecDeclaration parser;
-        ASTPtr ast = parseQuery(
-            parser, line, "codec declaration parser", /* max_query_size = */ 0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        const auto & declaration = ast->as<ASTCodecDeclaration &>();
-
-        auto subcolumn = result.tryGetSubcolumn(declaration.name);
-        if (!subcolumn)
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                "Cannot parse codec declaration: {} is not a subcolumn", backQuote(declaration.name));
-
-        auto codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-            declaration.getCodec(), subcolumn->type, CodecValidationSettings::trusted());
-        result.modify(subcolumn->getNameInStorage(), [&](ColumnDescription & column)
-        {
-            column.subcolumn_codecs.set(subcolumn->getSubcolumnName(), codec);
-        });
-    }
-
+    assertEOF(buf);
     return result;
 }
 
