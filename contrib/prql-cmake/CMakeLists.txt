@@ -21,7 +21,7 @@ if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DAR
     AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
     # Use ld.lld for partial linking — it's a cross-linker that handles all ELF architectures,
     # unlike the host ld which may not support the target architecture.
-    find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+    ch_find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     if (_LLD_FOR_STRIP)
         set(_prql_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_prql.a")
         add_custom_target(strip_prql_symbols
