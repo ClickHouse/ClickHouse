@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 
 #include <Columns/ColumnConst.h>
@@ -20,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -110,23 +112,23 @@ size_t deserializeOffsets(
     offsets.reserve(offsets.size()
         + static_cast<size_t>(static_cast<double>(limit) * (1.0 - ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION)));
 
-    bool first = true;
+    /// The row of the next value: the column's current size before the first value of this read
+    /// (it can have some defaults after its last offset), otherwise the row after the previous value.
+    size_t start_of_group = start;
     size_t total_rows = num_trailing_defaults;
     if (has_value_after_defaults)
     {
         offsets.push_back(start + num_trailing_defaults);
-        first = false;
+        start_of_group = start + num_trailing_defaults + 1;
 
         has_value_after_defaults = false;
         num_trailing_defaults = 0;
         ++total_rows;
     }
 
-    size_t group_size = 0;
-    while (!istr.eof())
+    /// A group is the defaults before a value, or the defaults at the end of a granule. Returns true when the read is done.
+    auto add_group = [&](size_t group_size) ALWAYS_INLINE
     {
-        readVarUInt(group_size, istr);
-
         bool end_of_granule = group_size & END_OF_GRANULE_FLAG;
         group_size &= ~END_OF_GRANULE_FLAG;
 
@@ -139,7 +141,7 @@ size_t deserializeOffsets(
             /// we have to add current non-default value at further reads.
             state.num_trailing_defaults = next_total_rows - limit;
             state.has_value_after_defaults = !end_of_granule;
-            return limit;
+            return true;
         }
 
         if (unlikely(end_of_granule))
@@ -149,20 +151,42 @@ size_t deserializeOffsets(
         }
         else
         {
-            /// If we add value to column for first time in current read,
-            /// start from column's current size, because it can have some defaults after last offset,
-            /// otherwise just start from previous offset.
-            /// After the first push `first` is false and `offsets` is non-empty, so the
-            /// `!offsets.empty()` guard from the original is redundant and dropped here.
-            size_t start_of_group = first ? start : offsets.back() + 1;
             offsets.push_back(start_of_group + group_size);
-            first = false;
+            start_of_group += group_size + 1;
 
             num_trailing_defaults = 0;
             ++next_total_rows;
         }
 
         total_rows = next_total_rows;
+        return false;
+    };
+
+    while (!istr.eof())
+    {
+        /// Fast path: decode from a local pointer while a whole VarUInt is in the buffer.
+        const char * pos = istr.position();
+        const char * const buffer_end = istr.buffer().end();
+        while (buffer_end - pos >= static_cast<ssize_t>(VAR_UINT_MAX_SIZE))
+        {
+            UInt64 group_size = 0;
+            pos = readVarUInt(group_size, pos, VAR_UINT_MAX_SIZE);
+            if (add_group(group_size))
+            {
+                istr.position() = const_cast<char *>(pos);
+                return limit;
+            }
+        }
+        istr.position() = const_cast<char *>(pos);
+
+        /// The last bytes of the buffer: a VarUInt here can continue in the next buffer.
+        if (istr.eof())
+            break;
+
+        UInt64 group_size = 0;
+        readVarUInt(group_size, istr);
+        if (add_group(group_size))
+            return limit;
     }
 
     state.num_trailing_defaults = num_trailing_defaults;
@@ -318,7 +342,9 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
     column.getIndicesOfNonDefaultRows(offsets_data, offset, limit);
 
     settings.path.push_back(Substream::SparseOffsets);
-    if (auto * stream = settings.getter(settings.path))
+    auto * stream = settings.getter(settings.path);
+    /// An empty range writes nothing, not even the end of granule marker: it only completes a granule.
+    if (stream && offset < size)
     {
         size_t end = limit && offset + limit < size ? offset + limit : size;
         serializeOffsets(offsets_data, *stream, offset, end);
@@ -405,7 +431,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     if (offsets_column.size() + 1 != values_column->size())
     {
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
             "Inconsistent sizes of values and offsets in SerializationSparse. Offsets size: {}, values size: {}",
             offsets_column.size(),
             values_column->size());

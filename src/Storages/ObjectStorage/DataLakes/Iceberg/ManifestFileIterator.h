@@ -106,8 +106,7 @@ public:
         std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
-        Int32 table_snapshot_schema_id_,
-        const std::atomic<bool> * stop_flag = nullptr);
+        Int32 table_snapshot_schema_id_);
 
     ManifestFileEntriesHandle getFilesWithoutDeletedHandle() const;
 
@@ -146,8 +145,7 @@ private:
         size_t partition_spec_fields_count,
         size_t total_rows,
         std::shared_ptr<const ActionsDAG> filter_dag,
-        Int32 table_snapshot_schema_id,
-        const std::atomic<bool> * stop_flag);
+        Int32 table_snapshot_schema_id);
 
     ProcessedManifestFileEntryPtr processRow(size_t row_index);
 
@@ -169,8 +167,6 @@ private:
 
     /// Iteration state
     const size_t total_rows;
-    /// When set and observed true, `next` gives up between rows and returns nullptr as on EOF.
-    const std::atomic<bool> * const stop_flag;
     std::atomic<size_t> current_row_index{0};
     std::atomic<bool> fully_initialized{false};
     std::atomic<size_t> active_fetchers{0};
@@ -199,6 +195,15 @@ using ManifestIteratorPtr = std::shared_ptr<ManifestFileIterator>;
 std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
     const ProcessedManifestFileEntry & entry,
     const std::unordered_map<Int32, DB::DataTypePtr> & column_types,
+    const IcebergPathFromMetadata & path_to_manifest_file);
+
+/// Lower and upper bound of the column with field id `column_id` in a data file, exactly as its manifest declares them,
+/// decoded as `column_type`, the column's type in the schema with which the file was written. nullopt for a delete file
+/// or when the bounds are missing or do not decode.
+std::optional<std::pair<DB::Field, DB::Field>> getDataFileColumnBounds(
+    const ProcessedManifestFileEntry & entry,
+    Int32 column_id,
+    const DB::DataTypePtr & column_type,
     const IcebergPathFromMetadata & path_to_manifest_file);
 }
 

@@ -3,8 +3,6 @@
 -- See issue: https://github.com/ClickHouse/ClickHouse/issues/85313
 -- See PR: https://github.com/ClickHouse/ClickHouse/pull/87630
 
-SET allow_experimental_analyzer = 1;
-
 -- Setup test tables
 DROP TABLE IF EXISTS test_replace_main;
 DROP TABLE IF EXISTS test_replace_merge;
