@@ -911,8 +911,9 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       replicas run different versions (docs/guides/oss/update.mdx): the upgraded server redoes a merge or mutation that
 #       the other replica committed under the previous release, uncompressed part files such as `statistics.packed` change
 #       format between releases, and the replica then fetches the part. Filtered only when it is the sole mismatch, so
-#       divergent column data (`uncompressed hash of compressed files`), a different number of files and the KILL MUTATION
-#       `different columns hash` case still fail this job.
+#       divergent data of the part's own columns (`uncompressed hash of compressed files`), a different number of files
+#       and the KILL MUTATION `different columns hash` case still fail this job. Each projection is one uncompressed
+#       `<name>.proj` entry of the parent part's checksums, so divergent projection data is not detected here.
 # `rdk:FAIL` + `Connect to` + `Connection refused` is a librdkafka broker connection error when the Kafka
 #       broker is unavailable during upgrade (several tests point at a deliberately unreachable broker). Filtered
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
