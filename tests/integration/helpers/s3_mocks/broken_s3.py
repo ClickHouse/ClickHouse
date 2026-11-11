@@ -85,6 +85,9 @@ class MockControl:
     def setup_at_complete_multi_part_upload(self, **kwargs):
         self.setup_action("at_complete_multi_part_upload", **kwargs)
 
+    def setup_at_abort_multi_part_upload(self, **kwargs):
+        self.setup_action("at_abort_multi_part_upload", **kwargs)
+
     def setup_fake_puts(self, part_length):
         self._apply(
             f"http://localhost:{self._port}/mock_settings/fake_puts?when_length_bigger={part_length}"
@@ -486,6 +489,7 @@ class _ServerRuntime:
         self.at_object_get = None
         self.at_object_get_by_key = {}
         self.at_complete_multi_part_upload = None
+        self.at_abort_multi_part_upload = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -508,6 +512,7 @@ class _ServerRuntime:
             self.fake_multipart_upload = None
             self.at_create_multi_part_upload = None
             self.at_complete_multi_part_upload = None
+            self.at_abort_multi_part_upload = None
             self.at_listing = None
             self.at_object_get = None
             self.at_object_get_by_key = {}
@@ -730,6 +735,17 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             )
             return self._ok()
 
+        if path[1] == "at_abort_multi_part_upload":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.at_abort_multi_part_upload = (
+                _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
+            )
+            self.log_message(
+                "set at_abort_multi_part_upload %s",
+                _runtime.at_abort_multi_part_upload,
+            )
+            return self._ok()
+
         if path[1] == "at_listing":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.at_listing = _ServerRuntime.CountAfter.from_cgi_params(
@@ -878,6 +894,19 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.redirect()
 
     def do_DELETE(self):
+        parts = urllib.parse.urlsplit(self.path)
+        params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+        upload_id = params.get("uploadId", [None])[0]
+        if upload_id is not None and _runtime.at_abort_multi_part_upload is not None:
+            if _runtime.at_abort_multi_part_upload.has_effect():
+                self.log_message(
+                    "delete at_abort_multi_part_upload %s, %s, %s",
+                    _runtime.at_abort_multi_part_upload,
+                    upload_id,
+                    parts,
+                )
+                return _runtime.at_abort_multi_part_upload.inject_error(self)
+
         self.redirect()
 
 
