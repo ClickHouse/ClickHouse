@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionInfo.h>
 #include <Compression/CompressedWriteBuffer.h>
 
 
@@ -17,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int TOO_LARGE_SIZE_COMPRESSED;
 }
 
 void CompressedWriteBuffer::nextImpl()
@@ -56,6 +58,11 @@ void CompressedWriteBuffer::nextImpl()
     if (uncompressed_codec && static_cast<UInt64>(compressed_size) * 8 > static_cast<UInt64>(decompressed_size) * 7)
         compressed_size = uncompressed_codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr);
 
+    if (compressed_size > DBMS_MAX_COMPRESSED_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED,
+            "Cannot write a compressed block: {} bytes compress to {} bytes, the maximum is {}",
+            decompressed_size, compressed_size, DBMS_MAX_COMPRESSED_SIZE);
+
     CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_ptr, compressed_size);
 
     writeBinaryLittleEndian(checksum.low64, out);
@@ -77,13 +84,19 @@ void CompressedWriteBuffer::finalizeImpl()
     BufferWithOwnMemory<WriteBuffer>::finalizeImpl();
 }
 
+/// A reader rejects a block whose decompressed size is above DBMS_MAX_DECOMPRESSED_SIZE.
+static size_t maxBlockSize(size_t buf_size)
+{
+    return std::min<size_t>(buf_size, DBMS_MAX_DECOMPRESSED_SIZE);
+}
+
 CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size, bool use_adaptive_buffer_size_, size_t adaptive_buffer_initial_size)
-    : BufferWithOwnMemory<WriteBuffer>(adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, buf_size))
+    : BufferWithOwnMemory<WriteBuffer>(adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, maxBlockSize(buf_size)))
     , out(out_)
     , codec(std::move(codec_))
 {
-    enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, buf_size);
+    enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, maxBlockSize(buf_size));
     if (!codec)
         codec = CompressionCodecFactory::instance().getDefaultCodec();
     codec_state = codec->createCompressionState();

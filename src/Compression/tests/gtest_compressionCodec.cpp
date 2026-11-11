@@ -2239,7 +2239,7 @@ TEST(GetCompressionCodecForFileTest, ThrowsOnCorruptSizeEvenWithoutSkip)
 
 TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeAboveLimit)
 {
-    /// size_compressed (2 GiB) is above DBMS_MAX_COMPRESSED_SIZE (1 GiB): must throw TOO_LARGE_SIZE_COMPRESSED.
+    /// size_compressed (2 GiB) is above DBMS_MAX_COMPRESSED_SIZE (512 MiB): must throw TOO_LARGE_SIZE_COMPRESSED.
     constexpr unsigned char block[] = {
         0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
         0x82, /// LZ4 method byte

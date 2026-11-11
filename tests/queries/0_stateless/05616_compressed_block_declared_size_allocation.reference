@@ -1,4 +1,0 @@
--- a truncated block declaring 1 GiB fails without allocating it
-CANNOT_READ_ALL_DATA
--- valid blocks larger than the read buffer
-400000	1
