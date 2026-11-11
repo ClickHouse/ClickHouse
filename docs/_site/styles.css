@@ -3443,7 +3443,7 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div {
-    grid-column: 1 / 4;
+    grid-column: 1 / 3;
     grid-row: 1;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6)::before,
