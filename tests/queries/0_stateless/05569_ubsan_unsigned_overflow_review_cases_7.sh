@@ -24,5 +24,5 @@ INSERT INTO t SELECT number FROM numbers(100);
 SELECT sum(x) FROM t
 SETTINGS use_reader_executor = 0, use_page_cache_for_local_disks = 1, local_filesystem_read_method = 'pread',
     page_cache_block_size = 18446744073709551615, page_cache_lookahead_blocks = 1,
-    use_uncompressed_cache = 0, use_columns_cache = 0;" 2>&1 | grep -o -m1 -E '^4950$|INVALID_SETTING_VALUE'
+    use_uncompressed_cache = 0, use_columns_cache = 0, use_statistics_for_sum_avg_aggregation = 0;" 2>&1 | grep -o -m1 -E '^4950$|INVALID_SETTING_VALUE'
 rm "${CONFIG_FILE}"
