@@ -84,6 +84,32 @@ MutableColumns initializeResultColumns(const VectorWithMemoryTracking<GeneralWin
     return columns;
 }
 
+Int64 evaluateFunctions(
+    VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general_functions,
+    VectorWithMemoryTracking<AggregateWindowFunctionSlot> & aggregate_functions,
+    const WindowBounds & bounds, SlidingArguments & arguments, MutableColumns & results)
+{
+    Int64 first_row = std::numeric_limits<Int64>::max();
+
+    for (auto & slot : general_functions)
+        first_row = std::min(first_row, slot.function->evaluate(slot.state.data(), bounds, arguments.view(slot.function_index), *results[slot.function_index]));
+
+    for (auto & slot : aggregate_functions)
+        first_row = std::min(first_row, slot.function->evaluate(bounds, arguments.view(slot.function_index), *results[slot.function_index]));
+
+    return first_row;
+}
+
+Chunk packBlock(const SlidingBlock & block, MutableColumns results)
+{
+    Columns columns = block.input_columns;
+    columns.insert(columns.end(), std::make_move_iterator(results.begin()), std::make_move_iterator(results.end()));
+
+    Chunk chunk;
+    chunk.setColumns(std::move(columns), block.rows_count);
+    return chunk;
+}
+
 bool isRowReady(const WindowFunctionRequirements & required, const Frame & frame, const Peers & peers, const Partition & partition)
 {
     return (!required.frame_start || frame.bounds().start_visible)

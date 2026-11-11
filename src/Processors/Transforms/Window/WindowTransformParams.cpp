@@ -6,6 +6,8 @@
 
 #include <Interpreters/convertFieldToType.h>
 
+#include <WindowFunctions/IGeneralWindowFunction.h>
+
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/assert_cast.h>
@@ -250,9 +252,8 @@ WindowTransformParams WindowTransformParams::create(
     auto partition_by_indices = findPositions(header, window_description.partition_by);
     auto order_by_indices = findPositions(header, window_description.order_by);
     auto should_materialize = markColumnsToMaterialize(header, window_description.partition_by, window_description.order_by, functions);
-    auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
-    auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, window_description.order_by, order_by_indices);
-    auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
+    auto range_offset_comparator = chooseRangeOffsetComparator(header, window_description.frame, window_description.order_by, order_by_indices);
+    auto description = prepareDescriptionForExecution(header, window_description, order_by_indices);
     auto requirements = collectRequirements(description, functions);
     auto needs_peer_group_indexes = needsPeerGroupIndexes(description, requirements);
 

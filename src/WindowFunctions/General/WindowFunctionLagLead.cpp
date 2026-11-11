@@ -64,18 +64,7 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
-    }
-
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        if (in_frame)
-            return {};
-
-        WindowFrame frame;
-        frame.type = WindowFrame::FrameType::ROWS;
-        frame.end_type = WindowFrame::BoundaryType::Unbounded;
-        return frame;
+        return WindowFunctionRequirements{.frame_start = in_frame, .frame_end = in_frame, .partition_end = !in_frame};
     }
 
     Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
