@@ -573,12 +573,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
                 LOG_DEBUG(log, "Constant value {} is not stored as a value of column type {}", value_string, column_type->getName());
                 return {};
             }
-            /// A member such as `2.0` converts here to the `UInt8` 2, but the set of `IN` drops it, so it matches nothing,
-            /// not even a BSON number 2 that the reader keeps as it is in a `Bool` column. Neither encoding is written.
-            if (isOutsideBoolDomain(converted, column_type))
-                continue;
-            if (isBoolNumberComparison(element_type, column_type))
+            /// A member such as `2.0` converts here to the `UInt8` 2, but the set of `IN` drops it, so it matches no row,
+            /// not even a BSON number 2 that the reader keeps as it is in a `Bool` column. `$in` keeps its own encoding,
+            /// which only returns more rows, but `$nin` must not exclude such a document.
+            const bool outside_bool_domain = isOutsideBoolDomain(converted, column_type);
+            if (isBoolNumberComparison(element_type, column_type) && (func_name == "$in" || !outside_bool_domain))
                 other_encodings.emplace_back(elements[i], element_type);
+            if (outside_bool_domain)
+                continue;
             converted_elements.push_back(std::move(converted));
         }
 

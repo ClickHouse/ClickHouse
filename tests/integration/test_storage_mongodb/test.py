@@ -1093,6 +1093,7 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                 "flag = 2.0": "1\n",
                 "flag != 2.0": "4\n",
                 "flag IN (2.0)": "0\n",
+                "flag IN (1, 2.0)": "3\n",
                 "flag NOT IN (2.0)": "5\n",
                 "flag NOT IN (toFloat32(2))": "5\n",
                 "flag NOT IN (0, toFloat32(2))": "3\n",
