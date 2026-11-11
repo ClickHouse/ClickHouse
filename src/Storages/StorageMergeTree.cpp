@@ -2734,6 +2734,9 @@ void StorageMergeTree::evaluateSizesOfMutations()
                 mutations_to_evaluate.emplace_back(version, entry.commands);
     }
 
+    if (mutations_to_evaluate.empty())
+        return;
+
     const auto background_context = getContext()->getBackgroundContext();
     for (const auto & [version, commands] : mutations_to_evaluate)
     {
