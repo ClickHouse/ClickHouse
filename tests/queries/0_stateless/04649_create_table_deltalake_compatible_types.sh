@@ -18,7 +18,7 @@ rm -rf "$TABLE_PATH"
 
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 DROP TABLE IF EXISTS t_dl_compat;
 CREATE TABLE t_dl_compat (
@@ -53,7 +53,7 @@ echo "commit-json: contains mapped Delta types"
 # The table must be readable (empty), proving the compatible-type mapping does not break read-back.
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 SELECT count() FROM t_dl_compat;
 DROP TABLE t_dl_compat;

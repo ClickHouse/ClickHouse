@@ -1,0 +1,17 @@
+compact	Compact	['v']
+compact	1
+compact	Compact	['v']
+compact	1	0
+wide	Wide	['v']
+wide	1
+wide	Wide	['v']
+wide	1
+wide	1	0
+replicated	Compact	['v']
+replicated	1
+replicated	Compact	['v']
+replicated	1	0
+two columns	Compact	['v','x']
+two columns	0
+two columns	Compact	['x']
+two columns	10	0

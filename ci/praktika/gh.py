@@ -85,6 +85,9 @@ class GH:
         url: str
         context: str
 
+    PUSH_MAX_COMMITS = 50  # bound of the push walk; the merge queue merges at most 5 entries at once
+    COMMIT_FILES_LIMIT = 3000  # GitHub lists at most 3000 files of a commit, over all pages
+
     @classmethod
     def get_changed_file_statuses(cls, strict=False) -> Optional[Dict[str, str]]:
         """Changed path -> status, fetched once from GitHub file metadata.
@@ -132,15 +135,29 @@ class GH:
                     "capped commits API for changed-file detection."
                 )
 
+        before = info.env.PUSH_BEFORE_SHA if info.is_push_event and pr_number <= 0 else ""
         if pr_number > 0:
             command = f"gh api repos/{repo_name}/pulls/{pr_number}/files --paginate"
             cache_key = f"pr:{repo_name}:{pr_number}"
         else:
             command = f"gh api repos/{repo_name}/commits/{sha}"
-            cache_key = f"commit:{repo_name}:{sha}"
+            if before:
+                cache_key = f"commit:{repo_name}:{before}..{sha}"
+            else:
+                cache_key = f"commit:{repo_name}:{sha}"
 
         if cache_key in cls._changed_file_statuses_cache:
             return dict(cls._changed_file_statuses_cache[cache_key])
+
+        if before:
+            res = cls._get_push_file_statuses(repo_name, sha, before)
+            if res is None and strict:
+                raise RuntimeError(
+                    f"Failed to get the changed files of the push {before}..{sha}"
+                )
+            if res is not None:
+                cls._changed_file_statuses_cache[cache_key] = dict(res)
+            return res
 
         # The GitHub API call is an idempotent read that occasionally fails with
         # a transient error (rate limiting, a 5xx, or a GraphQL "Something went
@@ -192,6 +209,39 @@ class GH:
         return res
 
     @classmethod
+    def _get_push_file_statuses(cls, repo_name, sha, before) -> Optional[Dict[str, str]]:
+        """The changed files of a push are those of every commit it added (the merge queue
+        fast-forwards the branch over several merges at once): walk first parents from `sha`
+        down to `before`, reading all pages of each commit's files. `None` when they cannot
+        all be known, since a partial list would filter out jobs the missing files affect."""
+        if not re.fullmatch(r"[0-9a-f]{40}", before) or not before.strip("0"):
+            # an all-zero `before` is a created branch: all of it is new
+            print(f"WARNING: the push has no previous head [{before}], the changed files are unknown")
+            return None
+        statuses = {}
+        commit = sha
+        for _ in range(cls.PUSH_MAX_COMMITS):
+            output = cls.get_output_with_retries(
+                f"gh api repos/{repo_name}/commits/{commit} --paginate"
+            )
+            try:
+                pages = cls._json_loads_paginated(output)
+                files = [file_obj for page in pages for file_obj in page["files"]]
+                parent = pages[0]["parents"][0]["sha"]
+                commit_statuses = cls._statuses_from_files(files)
+            except (KeyError, IndexError, TypeError, ValueError):
+                break
+            if len(files) >= cls.COMMIT_FILES_LIMIT:
+                break
+            for path, status in commit_statuses.items():
+                statuses.setdefault(path, status)
+            if parent == before:
+                return statuses
+            commit = parent
+        print(f"WARNING: failed to read all files of the push {before}..{sha}, the changed files are unknown")
+        return None
+
+    @classmethod
     def get_changed_files(cls, strict=False) -> Optional[List[str]]:
         statuses = cls.get_changed_file_statuses(strict=strict)
         return cls.changed_files_from_statuses(statuses)
@@ -236,7 +286,10 @@ class GH:
             files = cls._json_loads_paginated(output)
         else:
             files = json.loads(output).get("files", [])
+        return cls._statuses_from_files(files)
 
+    @classmethod
+    def _statuses_from_files(cls, files) -> Dict[str, str]:
         statuses = {}
         rename_sources = []
         for file_obj in files:
@@ -562,7 +615,7 @@ class GH:
             shutil.rmtree(temp_root, ignore_errors=True)
 
     @classmethod
-    def do_command_with_retries(cls, command, verbose=False):
+    def do_command_with_retries(cls, command, verbose=False, strict=False):
         res = False
         retry_count = 0
         out, err = "", ""
@@ -585,13 +638,19 @@ class GH:
                 time.sleep(delay)
 
         if not res:
-            print(
-                f"ERROR: Failed to execute gh command [{command}] out:[{out}] err:[{err}] after [{retry_count}] attempts"
+            # Field order matters: this message can reach a public report page, so the
+            # fields naming the cause come before the API-controlled output.
+            message = (
+                f"Failed to execute gh command [{command}] "
+                f"after [{retry_count}] attempts err:[{_elide(err)}] out:[{_elide(out)}]"
             )
+            print(f"ERROR: {message}")
+            if strict:
+                raise RuntimeError(message)
         return res
 
     @classmethod
-    def get_output_with_retries(cls, command, verbose=False, strict=False):
+    def get_output_with_retries(cls, command, verbose=False, strict=False, retries=None):
         """Run a read-style ``gh`` command and return its stdout.
 
         Mirrors :meth:`do_command_with_retries` but returns the captured
@@ -606,13 +665,19 @@ class GH:
         ``strict=True`` raises instead, so a caller can report why the
         read failed rather than be handed an empty string that is
         indistinguishable from an empty result.
+
+        ``command`` may be a string or an argv list; a list is joined with
+        ``shlex.join`` (the command runs through the shell).
         """
+        if not isinstance(command, str):
+            command = shlex.join(command)
+        limit = Settings.MAX_RETRIES_GH if retries is None else retries
         retry_count = 0
         # Counted where the subprocess is invoked, so a non-retryable class that breaks out
         # of the loop still reports the attempt it made. retry_count counts retries taken.
         attempts = 0
         out, err, ret_code = "", "", -1
-        while retry_count < Settings.MAX_RETRIES_GH:
+        while retry_count < limit:
             attempts += 1
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
             if ret_code == 0:
@@ -664,6 +729,39 @@ class GH:
             else:
                 result.append(page)
         return result
+
+    @classmethod
+    def api(
+        cls,
+        endpoint,
+        method="GET",
+        fields=None,
+        jq=None,
+        paginate=False,
+        strict=False,
+        retries=None,
+        verbose=False,
+    ):
+        """Run a REST ``gh api`` call with retries and return its stdout.
+
+        ``method`` is always passed as ``-X`` so ``fields`` stay query params on a
+        ``GET`` (``gh api`` switches to ``POST`` as soon as a field is present).
+        ``fields`` are sent as ``-f`` string params (no typed or ``@file`` forms).
+        Returns trimmed stdout ("" for a no-body response such as DELETE);
+        ``strict=True`` raises on persistent failure instead of returning "".
+        ``retries=1`` disables retrying, e.g. for a best-effort call whose
+        expected failure (a 404) is not transient.
+        """
+        argv = ["gh", "api", "-X", method, endpoint]
+        for key, value in (fields or {}).items():
+            argv += ["-f", f"{key}={value}"]
+        if jq:
+            argv += ["--jq", jq]
+        if paginate:
+            argv.append("--paginate")
+        return cls.get_output_with_retries(
+            argv, verbose=verbose, strict=strict, retries=retries
+        )
 
     @classmethod
     def _gh_graphql_json(cls, query, variables, verbose=False):
@@ -1833,8 +1931,13 @@ class GH:
                 else:
                     return 2
 
+            # A skipped job that explains itself in a comment is listed too, so
+            # that a job skipped for a transient reason is not silently green.
             subresults = [
-                r for r in result.results if (r.is_completed() and not r.is_ok())
+                r
+                for r in result.results
+                if r.is_completed()
+                and (not r.is_ok() or (r.is_skipped() and r.ext.get("comment")))
             ]
             subresults = sorted(subresults, key=get_status_priority)
 

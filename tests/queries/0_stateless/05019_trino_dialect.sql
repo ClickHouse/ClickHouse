@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: the DDL worker re-parses the DDL with the session `dialect`, which cannot parse the added `UUID`
+
 SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 
@@ -63,6 +66,7 @@ SELECT map_concat(map(ARRAY['a'], ARRAY[1]), map(ARRAY['a', 'b'], ARRAY[10, 20])
 SELECT element_at(map(ARRAY['a'], ARRAY[1]), 'a'), element_at(map(ARRAY['a'], ARRAY[1]), 'b') IS NULL;
 SELECT map_filter(map(ARRAY['a', 'b'], ARRAY[1, 2]), (k, v) -> v > 1);
 SELECT map_entries(map(ARRAY['a'], ARRAY[1])), map_from_entries(ARRAY[ROW('a', 1)]);
+SELECT map_entries(map(ARRAY['a'], ARRAY[1]))[1].key, map_entries(map(ARRAY['a'], ARRAY[1]))[1].value;
 SELECT transform_values(map(ARRAY['a'], ARRAY[1]), (k, v) -> v * 10);
 
 SELECT '-- date and time';

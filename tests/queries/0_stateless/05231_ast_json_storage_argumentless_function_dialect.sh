@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: the DDL worker re-parses the DDL with the session `dialect`
 # The `clickhouse_json` dialect builds storage metadata from a restored AST, which `formatQueryFromJSON`
 # (05230) never reaches. Without the boundary screen the server does not fail these payloads, it dies on
 # them (`Assertion 'px != 0' failed` in `checkFunctionIsInOrGlobalInOperator` for the `in` family, in
@@ -31,6 +33,8 @@ send() {
         grep -oEm1 "for key '[a-z_]+' has no 'arguments' list"
 }
 
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS mvk"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tkd"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tk"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tk2"
 
@@ -71,12 +75,15 @@ send "$(payload "UPDATE tk SET a = 1 WHERE a IN (1)" "$ARGS_A_1")"
 # That visitor also walks a restored `select` slot before analysis, in three readers: a view definition
 # (`InterpreterCreateQuery`), `MODIFY QUERY` (`InterpreterAlterQuery`), and an `INSERT ... SELECT` whose
 # destination is `Distributed` (`StorageDistributed::distributedWrite`, which the default
-# `parallel_distributed_insert_select = 2` selects). One payload per reader.
+# `parallel_distributed_insert_select = 2` selects). One payload per reader. `ASTSelectQuery::readJSON`
+# screens its own slots first, so the reported key is the inner one the function actually sits in.
 ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW mvk ENGINE = MergeTree ORDER BY a AS SELECT a FROM tk"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE tkd AS tk ENGINE = Distributed(test_shard_localhost, currentDatabase(), tk)"
 send "$(payload "CREATE VIEW vk AS SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
 send "$(payload "ALTER TABLE mvk MODIFY QUERY SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
 send "$(payload "INSERT INTO tkd SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE mvk"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE tkd"
 
 # The mutation predicate of `ALTER ... UPDATE`/`DELETE` reaches it too, through
 # `replaceNonDeterministicToScalars`, which `InterpreterAlterQuery` runs when
@@ -84,10 +91,9 @@ send "$(payload "INSERT INTO tkd SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
 send "$(payload "ALTER TABLE tk (DELETE WHERE a IN (1))" "$ARGS_A_1")"
 
 # A table function is the other node the parser always gives an `arguments` list, even with no arguments
-# at all, and the four slots holding one pass it to a table function that reads that list. Query analysis
-# rebuilds the list from the query tree, so the two slots inside a `SELECT` need a route that runs the
-# table function before it: `EXPLAIN AST optimize = 1` builds the pre-analyzer interpreter for each
-# `SELECT` it walks, and `EXPLAIN TABLE OVERRIDE` executes its own table function directly.
+# at all, and the four slots holding one pass it to a table function that reads that list. The two slots
+# inside a `SELECT` are reached through `EXPLAIN AST optimize = 1`, which analyzes each `SELECT` it
+# walks, and `EXPLAIN TABLE OVERRIDE` executes its own table function directly.
 EMPTY_ARGS=',"arguments":{"type":"ExpressionList"}'
 send "$(payload "INSERT INTO FUNCTION numbers() SELECT 1" "$EMPTY_ARGS")"
 send "$(payload "CREATE TABLE tkn AS numbers()" "$EMPTY_ARGS")"

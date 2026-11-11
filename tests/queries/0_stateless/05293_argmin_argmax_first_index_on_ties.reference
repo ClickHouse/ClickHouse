@@ -1,0 +1,13 @@
+UInt8	2	1
+Int32	2	1
+Int64	2	1
+Float32	2	1
+Float64	2	1
+Decimal64	2	1
+DateTime64	2	1
+Float64 with NaN	2	1
+Float64 all NaN	0	0
+Float64 signed zero	5
+Int64 large	20000	20002
+Float64 large	20000	20002
+Int64 If	2	1

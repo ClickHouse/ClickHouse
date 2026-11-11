@@ -28,7 +28,8 @@
 #include <Common/StringUtils.h>
 #include <Common/exp10_i32.h>
 
-#include <Formats/FormatSettings.h>
+#include <Core/Defines.h>
+#include <Core/Names.h>
 
 #include <IO/IsTriviallySerializable.h>
 #include <IO/ReadBuffer.h>
@@ -40,6 +41,9 @@ static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
 namespace DB
 {
+
+struct CSVFormatSettings;
+struct JSONFormatSettings;
 
 template <typename Allocator>
 struct Memory;
@@ -192,8 +196,12 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
+/// The element count is read from `buf` and the vector is resized to it before the elements are
+/// read, so where the count comes from an untrusted peer, pass a `max_size` that the data can
+/// plausibly have instead of relying on the default. A `String` element is resized to its declared
+/// size before its value arrives in the same way, so `max_element_size` bounds it as well.
 template <StdVector V>
-void readVectorBinary(V & v, ReadBuffer & buf, size_t max_size = DEFAULT_MAX_STRING_SIZE)
+void readVectorBinary(V & v, ReadBuffer & buf, size_t max_size = DEFAULT_MAX_STRING_SIZE, size_t max_element_size = DEFAULT_MAX_STRING_SIZE)
 {
     using T = typename V::value_type;
 
@@ -209,6 +217,9 @@ void readVectorBinary(V & v, ReadBuffer & buf, size_t max_size = DEFAULT_MAX_STR
     /// std::vector<bool> is bit-packed and has no contiguous element storage, so it cannot use the bulk path.
     if constexpr (is_trivially_serializable<T> && !std::is_same_v<T, bool>)
         readNBytes(reinterpret_cast<char *>(v.data()), size * sizeof(T), buf);
+    else if constexpr (std::is_same_v<T, String>)
+        for (size_t i = 0; i < size; ++i)
+            readStringBinary(v[i], buf, max_element_size);
     else
         for (size_t i = 0; i < size; ++i)
             readBinary(v[i], buf);
@@ -407,7 +418,7 @@ void readDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 bool tryReadDoubleQuotedString(String & s, ReadBuffer & buf);
 bool tryReadDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
-void readJSONString(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+void readJSONString(String & s, ReadBuffer & buf, const JSONFormatSettings & settings);
 
 void readBackQuotedString(String & s, ReadBuffer & buf);
 bool tryReadBackQuotedString(String & s, ReadBuffer & buf);
@@ -427,6 +438,7 @@ void readStringUntilAmpersand(String & s, ReadBuffer & buf);
 void readStringUntilEquals(String & s, ReadBuffer & buf);
 void readStringUntilColon(String & s, ReadBuffer & buf);
 
+void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf);
 
 /** Read string in CSV format.
   * Parsing rules:
@@ -441,17 +453,17 @@ void readStringUntilColon(String & s, ReadBuffer & buf);
   * - if string is in quotes, then it will be read until closing quote,
   *   but sequences of two consecutive quotes are parsed as single quote inside string;
   */
-void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+void readCSVString(String & s, ReadBuffer & buf, const CSVFormatSettings & settings);
 
 /// Differ from readCSVString in that it doesn't remove quotes around field if any.
-void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+void readCSVField(String & s, ReadBuffer & buf, const CSVFormatSettings & settings);
 
 /// Read string in CSV format until the first occurrence of first_delimiter or second_delimiter.
 /// Similar to readCSVString if string is in quotes, we read only data in quotes.
-String readCSVStringWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter);
+String readCSVStringWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const CSVFormatSettings & settings, const String & first_delimiter, const String & second_delimiter);
 
 /// Same as above but includes quotes in the result if any.
-String readCSVFieldWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter);
+String readCSVFieldWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const CSVFormatSettings & settings, const String & first_delimiter, const String & second_delimiter);
 
 /// Read and append result to array of characters.
 template <typename Vector>
@@ -476,14 +488,14 @@ template <typename Vector>
 void readStringUntilEOFInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector, bool include_quotes = false, bool allow_throw = true>
-void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+void readCSVStringInto(Vector & s, ReadBuffer & buf, const CSVFormatSettings & settings);
 
 /// ReturnType is either bool or void. If bool, the function will return false instead of throwing an exception.
 template <typename Vector, typename ReturnType = void>
-ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const JSONFormatSettings & settings);
 
 template <typename Vector>
-bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
+bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf, const JSONFormatSettings & settings)
 {
     return readJSONStringInto<Vector, bool>(s, buf, settings);
 }
@@ -1010,7 +1022,6 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             return ReturnType(true);
         }
-        /// Why not `readIntTextUnsafe`? Because that reader cannot check for overflow.
         if constexpr (throw_exception)
             readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
         else if (!readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf))
@@ -1885,8 +1896,8 @@ inline bool tryReadCSV(T & x, ReadBuffer & buf)
     return readCSVSimple<T, bool>(x, buf);
 }
 
-inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
-inline bool tryReadCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings)
+inline void readCSV(String & x, ReadBuffer & buf, const CSVFormatSettings & settings) { readCSVString(x, buf, settings); }
+inline bool tryReadCSV(String & x, ReadBuffer & buf, const CSVFormatSettings & settings)
 {
     x.clear();
     readCSVStringInto<String, false, false>(x, buf, settings);
@@ -2005,8 +2016,8 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
-bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
+void skipJSONField(ReadBuffer & buf, std::string_view name_of_field, const JSONFormatSettings & settings);
+bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const JSONFormatSettings & settings);
 
 
 /** Read serialized exception.
@@ -2227,8 +2238,8 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf);
 void readQuotedField(String & s, ReadBuffer & buf);
 bool tryReadQuotedField(String & s, ReadBuffer & buf);
 
-void readJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
-bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+void readJSONField(String & s, ReadBuffer & buf, const JSONFormatSettings & settings);
+bool tryReadJSONField(String & s, ReadBuffer & buf, const JSONFormatSettings & settings);
 
 void readTSVField(String & s, ReadBuffer & buf);
 void readTSVFieldCRLF(String & s, ReadBuffer & buf);

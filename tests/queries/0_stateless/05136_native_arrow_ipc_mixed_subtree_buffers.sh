@@ -25,7 +25,7 @@ import pyarrow.ipc as ipc
 
 out = Path(sys.argv[1])
 local = shlex.split(os.environ["CLICKHOUSE_LOCAL"]) + [
-    "--path", str(out / "local"), "--max_threads=1", "--allow_experimental_nullable_tuple_type=1",
+    "--path", str(out / "local"), "--max_threads=1", "--enable_nullable_tuple_type=1",
     "--output_format_json_named_tuples_as_objects=1", "--output_format_json_quote_64bit_integers=0",
     "--output_format_json_quote_decimals=0", "--session_timezone=UTC",
 ]

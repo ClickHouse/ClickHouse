@@ -11,6 +11,8 @@
 = non-deterministic folded lambda is not moved =
 0
 0
+= condition over a float sorting key column is not moved =
+0
 = filter with now is still moved =
 1
 = join runtime filter on the sorting key is still moved =

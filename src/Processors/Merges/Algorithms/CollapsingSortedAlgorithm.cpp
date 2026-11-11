@@ -137,23 +137,30 @@ std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
     if (keeps_a_selected_row && count_positive <= count_negative && !only_positive_sign)
     {
         insertBufferedInvalidSignRowsBefore(first_negative_pos);
-        insertRow(first_negative_row);
 
-        if (out_row_sources_buf)
-            current_row_sources[first_negative_pos].setSkipFlag(false);
+        if (!isRowFiltered(first_negative_row))
+        {
+            insertRow(first_negative_row);
+
+            if (out_row_sources_buf)
+                current_row_sources[first_negative_pos].setSkipFlag(false);
+        }
     }
 
     if (keeps_a_selected_row && count_positive >= count_negative)
     {
         insertBufferedInvalidSignRowsBefore(last_positive_pos);
 
-        if (merged_data->hasEnoughRows())
-            res = merged_data->pull();
+        if (!isRowFiltered(last_positive_row))
+        {
+            if (merged_data->hasEnoughRows())
+                res = merged_data->pull();
 
-        insertRow(last_positive_row);
+            insertRow(last_positive_row);
 
-        if (out_row_sources_buf)
-            current_row_sources[last_positive_pos].setSkipFlag(false);
+            if (out_row_sources_buf)
+                current_row_sources[last_positive_pos].setSkipFlag(false);
+        }
     }
 
     if (keeps_a_selected_row
@@ -265,18 +272,22 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             /// Do not return it for SELECT ... FINAL.
             if (!only_positive_sign)
             {
+                /// Rows read, not emitted: `insertRows` tells a group that produced nothing from
+                /// one that was never there, and only the latter may leave its row sources unwritten.
                 ++count_invalid;
 
-                /// Buffer only what a vertical merge could have to reorder: its gather stage pairs
-                /// the Nth unskipped row source with the Nth merged row. A horizontal merge has no
-                /// such pairing, and nothing precedes the key's first selected row.
-                if (!out_row_sources_buf || (count_positive == 0 && count_negative == 0))
-                    insertRow(current_row);
-                else
-                    bufferInvalidSignRow(current_row, current_pos);
+                if (!isRowFiltered(current_row))
+                {
+                    /// Buffer only what a vertical merge could have to reorder: its gather stage
+                    /// pairs the Nth unskipped row source with the Nth merged row.
+                    if (!out_row_sources_buf || (count_positive == 0 && count_negative == 0))
+                        insertRow(current_row);
+                    else
+                        bufferInvalidSignRow(current_row, current_pos);
 
-                if (out_row_sources_buf)
-                    current_row_sources[current_pos].setSkipFlag(false);
+                    if (out_row_sources_buf)
+                        current_row_sources[current_pos].setSkipFlag(false);
+                }
             }
 
             if (count_invalid_sign < MAX_ERROR_MESSAGES)

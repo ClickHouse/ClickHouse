@@ -7,13 +7,9 @@ description: '自社のクラウドインフラストラクチャにClickHouse�
 doc_type: 'reference'
 ---
 
-<div id="aws-iam-roles">
-  ## AWS IAMロール
-</div>
+## AWS IAMロール {#aws-iam-roles}
 
-<div id="bootstrap-iam-role">
-  ### Bootstrap IAM ロール
-</div>
+### Bootstrap IAM ロール {#bootstrap-iam-role}
 
 Bootstrap IAM ロールには、次の権限があります。
 
@@ -22,9 +18,7 @@ Bootstrap IAM ロールには、次の権限があります。
 * **IAM の操作 (例: `iam:CreatePolicy`)&#x20;**: コントローラーが追加のロールを作成するために必要です (詳細は次のセクションを参照してください) 。
 * **EKS の操作**: 名前が `clickhouse-cloud` プレフィックスで始まるリソースに限定されます。
 
-<div id="additional-iam-roles-created-by-the-controller">
-  ### コントローラーによって追加で作成される IAM ロール
-</div>
+### コントローラーによって追加で作成される IAM ロール {#additional-iam-roles-created-by-the-controller}
 
 CloudFormation で作成される `ClickHouseManagementRole` に加えて、コントローラーはいくつかの追加のロールも作成します。
 
@@ -42,18 +36,17 @@ CloudFormation で作成される `ClickHouseManagementRole` に加えて、コ�
   * BYOC サービスのドメイン向けに TLS 証明書を発行します。
 * **Cluster Autoscaler**
   * 必要に応じてノードグループのサイズを調整します。
+* **監視用ストレージ (Thanos)**
+  * クラスター内の Prometheus および Thanos のワークロードが引き受けます。
+  * 長期メトリクス保持の書き込みと読み取りを行い、対象はお客様自身のアカウント内の監視用バケットに限定されます。
 
 **K8s-control-plane** と **k8s-worker** のロールは、AWS EKS サービスが引き受けることを想定しています。
 
 最後に、**`data-plane-mgmt`** は、`ClickHouseCluster` や Istio の Virtual Service/Gateway など、必要なカスタムリソースを ClickHouse Cloud のコントロールプレーンコンポーネントがリコンサイルできるようにします。
 
-<div id="gcp-service-accounts">
-  ## GCP のサービスアカウント
-</div>
+## GCP のサービスアカウント {#gcp-service-accounts}
 
-<div id="bootstrap-service-account">
-  ### Bootstrap サービス アカウント
-</div>
+### Bootstrap サービス アカウント {#bootstrap-service-account}
 
 Bootstrap サービス アカウントには、プロジェクト スコープのカスタム ロールとして、次の権限が付与されます。
 
@@ -63,9 +56,7 @@ Bootstrap サービス アカウントには、プロジェクト スコープ�
 * **Storage**: ClickHouse のバックアップ、共有状態、監視データに使用される Cloud ストレージ バケットの管理に使用されます。
 * **IAM Role**: プロジェクト内のサービス アカウントとカスタム ロールを管理します。このロールでは、サービス アカウント キーの作成、組織ポリシーのバインド、または他のプロジェクト内のリソースの操作は許可されません。
 
-<div id="additional-service-accounts-created-by-the-controller">
-  ### コントローラーによって追加で作成されるサービスアカウント
-</div>
+### コントローラーによって追加で作成されるサービスアカウント {#additional-service-accounts-created-by-the-controller}
 
 オンボーディングの一環として Terraform 経由で作成される `clickhouse-management` サービスアカウントに加え、最初の BYOC サービスをプロビジョニングすると、ClickHouse のコントロールプレーン (`clickhouse-management` として認証) が、クラスター内の特定のワークロード向けにプロジェクト内へ追加のサービスアカウントを作成します。これらはそれぞれ、単一の用途に限定された最小限の権限セットで作成されます。
 
@@ -74,18 +65,16 @@ Bootstrap サービス アカウントには、プロジェクト スコープ�
   * キューブレット、ノードローカル agent、Cloud Operations collector が logs とメトリクスを送信するために使用されるほか、イメージ取得サブシステムがコンテナー イメージをダウンロードする際にも使用されます。
 * **Billing scraper identity**
   * standalone scraper ワークロードが billing テレメトリーを収集するために使用されます。
-* **Monitoring identity**
+* **監視 identity**
   * クラスター内で稼働する monitoring stack の対象 identity です。このデプロイメント専用の GCS bucket にある長期メトリクス ストレージの読み書きに使用されます。
 * **ClickHouse runtime management identity**
   * ClickHouse の runtime データプレーン管理コントローラーが使用します。これは、Private Service Connect endpoint の管理、bucket ライフサイクルの調整、サービスアカウントのローテーションなどの day-2 operations を処理します。
 
-<div id="azure-roles-and-identities">
-  ## Azure のロールと ID
-</div>
+サービスおよびバックアップの status イベントを ClickHouse Cloud にパブリッシュする state exporter は、意図的にこのリストに含まれていません。GCP では、そのパブリッシュ用 identity は ClickHouse 所有のプロジェクト内にある ClickHouse 所有のサービスアカウントであり、お客様のプロジェクト内に作成されるものではありません。お客様のプロジェクト内に作成されるのは、クラスター内の `state-exporter` サービスアカウントがそれを借用 (impersonate) できるようにする Workload Identity の binding です。鍵情報は一切関与せず、Pub/Sub にパブリッシュする identity はお客様のプロジェクト内で一切の権限を持ちません。
 
-<div id="onboarding-service-principal">
-  ### オンボーディング用サービス プリンシパル
-</div>
+## Azure のロールと ID {#azure-roles-and-identities}
+
+### オンボーディング用サービス プリンシパル {#onboarding-service-principal}
 
 [Azure 用 Terraform モジュール](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)によるオンボーディングでは、クロステナント認証に関する Azure のガイダンスに従って、テナント内にマルチテナント アプリケーションをエンタープライズ アプリケーション (サービス プリンシパル) としてプロビジョニングします。サービス プリンシパルには、ターゲット サブスクリプションをスコープとする最小権限のカスタム ロールが割り当てられ、次の権限が付与されます。
 
@@ -95,14 +84,21 @@ Bootstrap サービス アカウントには、プロジェクト スコープ�
 * **ID**: サブスクリプション内のユーザー割り当てマネージド ID と、そのフェデレーション ID 資格情報を管理します。
 * **認可**: カスタム ロール定義とロールの割り当てを管理します。すべての権限はターゲット サブスクリプションに限定されるため、このロールは他のサブスクリプションやテナントのリソースにアクセスできません。
 
-<div id="additional-managed-identities-created-by-the-controller">
-  ### コントローラーが作成する追加のマネージド identity
-</div>
+### コントローラーが作成する追加のマネージド ID {#additional-managed-identities-created-by-the-controller}
 
-BYOC サービスをプロビジョニングすると、ClickHouse のコントロールプレーンによって、お客様のサブスクリプション内にユーザー割り当てマネージド identity が作成されます。各 identity は、権限を限定し、単一の目的にのみ使用する特定の Kubernetes サービスアカウント (Workload identity) にフェデレーションされます。
+BYOC サービスをプロビジョニングすると、ClickHouse のコントロールプレーンによって、お客様のサブスクリプション内にユーザー割り当てマネージド ID が作成されます。各 identity は、権限を限定し、単一の目的にのみ使用する特定の Kubernetes サービスアカウント (Workload identity) にフェデレーションされます。
 
 * **サービスごとの identity**
   * 各 ClickHouse サービスが、テーブルデータとバックアップ用のストレージアカウントにアクセスする際に使用します。アクセスには、そのストレージアカウントをスコープとするカスタム ブロブ ストレージロールを使用します。
   * サービスをバックアップから復元する際には、ソースサービスのバックアップコンテナーに対する読み取り専用アクセスも追加で付与されます。
 * **共有インフラストラクチャ identity**
   * プライベートリンク サービスの管理など、Day 2 運用において ClickHouse のruntimeデータプレーン管理コントローラーが使用します。
+* **監視 identity**
+  * 監視ストレージへのアクセスをスコープとするカスタムロールを介して、お客様のクラスター内の Thanos ワークロードにフェデレーションされます。
+  * お客様自身のサブスクリプション内で、長期メトリクス保持の書き込みと読み取りを行います。
+
+GCP と同様に、state exporter はこの一覧に意図的に含まれていません。そのパブリッシュ用 identity は、ClickHouse が所有するサブスクリプション内にある ClickHouse 所有のユーザー割り当てマネージド ID です。お客様側に作成されるのは、クラスター内の `state-exporter` サービスアカウントがその identity のトークンを取得できるようにするフェデレーション ID 認証情報のみであり、シークレットのやり取りは発生しません。Service Bus にパブリッシュする identity は、お客様のサブスクリプション内でいかなる権限も保持しません。
+
+<Note>
+  これは AWS とは異なります。AWS では、パブリッシュ用のロールがお客様自身のアカウント内に作成され、キューにアクセスするために ClickHouse 側のロールを assume します。GCP と Azure では、パブリッシュ用の identity は完全に ClickHouse 側に存在し、お客様のクラスターはそこにフェデレーションするだけであるため、このフローについてお客様が監査すべき追加のアカウント内権限はありません。この egress 自体は [ネットワーク境界](/ja/products/bring-your-own-cloud/reference/network-security#outbound-connections) に一覧化されています。
+</Note>

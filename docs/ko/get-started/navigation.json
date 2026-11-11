@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-get-started.svg",
   "item": "Get started",
   "pages": [
     {
@@ -30,8 +29,7 @@
               "group": "실시간 분석",
               "pages": [
                 "ko/get-started/quickstarts/create-your-first-materialized-view",
-                "ko/get-started/quickstarts/create-your-first-projection",
-                "ko/get-started/quickstarts/tutorial"
+                "ko/get-started/quickstarts/create-your-first-projection"
               ]
             },
             {

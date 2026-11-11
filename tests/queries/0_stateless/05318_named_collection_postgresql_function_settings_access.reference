@@ -1,0 +1,8 @@
+Replacing a stored setting without the secrets privilege
+secrets privilege required
+Adding a setting that the collection does not store
+check passed
+Replacing a stored setting with the secrets privilege
+check passed
+Replacing a stored setting that is not overridable
+override not allowed

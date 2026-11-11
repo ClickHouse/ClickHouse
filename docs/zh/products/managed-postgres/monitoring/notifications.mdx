@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/notifications
 sidebarTitle: '通知'
 title: 'ClickHouse Managed Postgres 通知'
 description: 'ClickHouse Managed Postgres 服务的 Cloud Console 通知'
-keywords: ['managed postgres', '通知', '告警', '存储', '磁盘使用情况']
+keywords: ['managed postgres', '通知', '告警', '存储', '磁盘使用情况', '副本延迟', '复制']
 doc_type: '指南'
 ---
 
@@ -19,17 +19,14 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 通知进行自定义。该部分仅会显示在拥有 Managed Postgres
 服务的组织中。
 
-<div id="supported-notifications">
-  ## 支持的通知
-</div>
+## 支持的通知 {#supported-notifications}
 
-| 通知时机                    | 特定告警条件                                             | 默认通知渠道  | 处理措施                                                         |
-| ----------------------- | -------------------------------------------------- | ------- | ------------------------------------------------------------ |
-| Postgres 存储使用量超过 85% 阈值 | Managed Postgres 服务的存储使用量达到容量的 85% 时。每个日历日仅触发一次通知。 | UI、电子邮件 | 使用量达到 90% 时，存储会自动扩缩容 (切换期间会有短暂服务中断) 。除非自动扩缩容已达上限，否则无需采取任何操作。 |
+| 通知时机                    | 特定告警条件                                             | 默认通知渠道  | 处理措施                                                                                                       |
+| ----------------------- | -------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| Postgres 存储使用量超过 85% 阈值 | Managed Postgres 服务的存储使用量达到容量的 85% 时。每个日历日仅触发一次通知。 | UI、电子邮件 | 使用量达到 90% 时，存储会自动扩缩容 (切换期间会有短暂服务中断) 。除非自动扩缩容已达上限，否则无需采取任何操作。                                               |
+| Postgres 副本延迟超过 5 分钟阈值  | 高可用备用实例或只读副本上的复制延迟持续超过 5 分钟时。每个日历日仅触发一次通知。         | UI、电子邮件 | 对于备用实例，在其追上进度之前，故障转移就绪度会下降；对于只读副本，读取可能返回过期数据。写入负载下降后，延迟通常会自行消除。如果延迟持续增大，请在监控仪表板上检查该副本的 CPU、内存和磁盘情况，或联系支持团队。 |
 
-<div id="related">
-  ## 相关页面
-</div>
+## 相关页面 {#related}
 
 * [Cloud 通知](/zh/products/cloud/features/monitoring/notifications) — 通知渠道、严重性级别以及
   如何自定义发送方式

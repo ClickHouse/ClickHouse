@@ -149,9 +149,9 @@ void TabSeparatedFormatReader::skipHeaderRow()
 }
 
 template <bool is_header_row>
-std::vector<String> TabSeparatedFormatReader::readRowImpl()
+VectorWithMemoryTracking<String> TabSeparatedFormatReader::readRowImpl()
 {
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     do
     {
         fields.push_back(readFieldIntoString<is_header_row>());
@@ -163,12 +163,14 @@ std::vector<String> TabSeparatedFormatReader::readRowImpl()
 }
 
 bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type,
-    const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
+    const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/, size_t /*column_index*/)
 {
-    const bool at_delimiter = !is_last_file_column && !buf->eof() && *buf->position() == '\t';
-    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r'));
+    /// A field is empty if it is followed by the field delimiter or the end of the row.
+    /// The row can end before the last file column with `input_format_tsv_allow_variable_number_of_columns`.
+    const bool is_empty_field = buf->eof() || *buf->position() == '\t' || *buf->position() == '\n'
+        || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r');
 
-    if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
+    if (format_settings.tsv.empty_as_default && is_empty_field)
     {
         column.insertDefault();
         return false;
@@ -385,7 +387,7 @@ TabSeparatedSchemaReader::TabSeparatedSchemaReader(
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};
@@ -425,6 +427,18 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
         if (is_raw)
             registerWithNamesAndTypes("Raw", register_func);
     }
+
+    /// `TSV` and `TSVRaw` (and `Raw`) are interchangeable spellings of `TabSeparated` and
+    /// `TabSeparatedRaw`, and the `tsv` extension below is registered only for the canonical
+    /// spellings.
+    factory.registerFormatAlias("TSV", "TabSeparated");
+    factory.registerFormatAlias("TSVRaw", "TabSeparatedRaw");
+    factory.registerFormatAlias("Raw", "TabSeparatedRaw");
+
+    /// `TabSeparated` and `TSV` are registered as independent formats, and the `tsv` extension
+    /// infers as `TSV`. Files of the raw flavour of the format carry the `tsv` extension too.
+    factory.registerFileExtension("tsv", "TabSeparated", /*used_for_format_inference=*/ false);
+    factory.registerFileExtension("tsv", "TabSeparatedRaw", /*used_for_format_inference=*/ false);
 
     factory.setDocumentation("Raw", Documentation{
         .description = "An alias for the `TabSeparatedRaw` format. See the `TabSeparatedRaw` entry for the full documentation.",

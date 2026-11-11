@@ -51,7 +51,7 @@ for mode in ("dense", "sparse"):
             checks.append((f"OK {fmt} {mode} {'nullable' if nullable else 'non-nullable'}", expected))
 
 result = subprocess.run(local + [
-    "--path", f"{out}/local", "--max_threads=1", "--allow_experimental_nullable_tuple_type=0",
+    "--path", f"{out}/local", "--max_threads=1", "--enable_nullable_tuple_type=0",
     "--multiquery", "--query", "\n".join(queries),
 ], text=True, capture_output=True)
 assert result.returncode == 0 and not result.stderr, (result.returncode, result.stderr)

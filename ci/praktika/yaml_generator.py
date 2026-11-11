@@ -83,7 +83,7 @@ on:
   workflow_dispatch:{DISPATCH_INPUTS_BLOCK}
 
 concurrency:
-  group: ${{{{{{{{ github.workflow }}}}}}}}
+  group: ${{{{{{{{ github.workflow }}}}}}}}{CONCURRENCY_QUEUE}
 
 env:
   PYTHONUNBUFFERED: 1
@@ -103,7 +103,7 @@ jobs:
 
 name: {NAME}
 concurrency:
-  group: {CONCURRENCY_GROUP}
+  group: {CONCURRENCY_GROUP}{CONCURRENCY_QUEUE}
 on:
   workflow_dispatch:{DISPATCH_INPUTS_BLOCK}{WORKFLOW_CALL}
 
@@ -167,7 +167,7 @@ jobs:
         TEMPLATE_JOB_0 = """
   {JOB_NAME_NORMALIZED}:
     runs-on: [{RUNS_ON}]
-    needs: [{NEEDS}]{IF_EXPRESSION}
+    needs:{NEEDS}{IF_EXPRESSION}
     name: "{JOB_NAME_GH}"{TIMEOUT_MINUTES}
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
@@ -320,8 +320,14 @@ class PullRequestPushYamlGen:
         job_items = []
         for i, job in enumerate(self.workflow_config.jobs):
             job_name_normalized = Utils.normalize_string(job.name)
-            needs = ", ".join(
-                sorted(map(Utils.normalize_string, _all_needs(job.name)))
+            normalized_needs = sorted(
+                map(Utils.normalize_string, _all_needs(job.name))
+            )
+            # Keep an empty sequence compact, but render dependencies one per line.
+            needs = (
+                "\n" + "\n".join(f"    - {need}" for need in normalized_needs)
+                if normalized_needs
+                else " []"
             )
             job_name = job.name
             uploads_github = []
@@ -598,6 +604,11 @@ class PullRequestPushYamlGen:
 
         template_1 = base_template.strip().format(
             NAME=self.workflow_config.name,
+            CONCURRENCY_QUEUE=(
+                "\n  queue: max"
+                if self.workflow_config.config.enable_concurrency_queue
+                else ""
+            ),
             JOBS="{}" * len(job_items),
             ENV_CHECKOUT_REFERENCE=ENV_CHECKOUT_REFERENCE,
             **format_kwargs,

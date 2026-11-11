@@ -7,6 +7,9 @@ al_d_outer	Alias
 al_f	Alias
 al_g	Alias
 al_h	Alias
+al_i	Alias
+al_j	Alias
+al_k	Alias
 mem_c	Memory
 mem_g	Memory
 mt_a	MergeTree
@@ -14,6 +17,10 @@ mt_d	MergeTree
 mt_e	MergeTree
 mt_h	MergeTree
 rmt_b	ReplicatedMergeTree
+-- fixture lazy targets
+log_k	TableProxy
+mt_i	TableProxy
+rmt_j	TableProxy
 -- arms
 A_alias_to_mergetree blocked=0 rows_after=0
 B_alias_to_replicated_mergetree blocked=0 rows_after=0
@@ -22,4 +29,7 @@ D_alias_chain_to_mergetree blocked=0 rows_after=0
 E_direct_mergetree blocked=0 rows_after=0
 G_direct_reader_of_memory_target blocked=1 rows_after=300
 H_direct_reader_of_mergetree_target blocked=0 rows_after=0
+I_alias_to_lazy_mergetree blocked=0 rows_after=0
+J_alias_to_lazy_replicated_mergetree blocked=0 rows_after=0
+K_direct_reader_of_lazy_log_target blocked=1 rows_after=300
 F_dangling_alias err=UNKNOWN_TABLE

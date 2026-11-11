@@ -99,8 +99,8 @@ def test_crash_log_synchronous(started_node):
             started_node.query("SELECT COUNT(*) FROM system.crash_log")
             == f"{crashes_count}\n"
         ), started_node.query(
-            "SELECT event_time_microseconds, signal, signal_description, query "
-            "FROM system.crash_log ORDER BY event_time_microseconds FORMAT Vertical"
+            "SELECT event_time, timestamp_ns, signal, signal_description, query "
+            "FROM system.crash_log ORDER BY timestamp_ns FORMAT Vertical"
         )
 
         # A frame in the main executable is stored as its file offset, which is what keeps the row
