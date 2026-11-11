@@ -128,6 +128,13 @@ String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code)
     return std::to_string(static_cast<std::underlying_type_t<Aws::Http::HttpResponseCode>>(response_code));
 }
 
+String encodeRequestPath(const String & path)
+{
+    String encoded;
+    Poco::URI::encode(path, "?#:;+@&=%", encoded); /// Poco::URI::RESERVED_QUERY_PARAM without '/' plus percent sign.
+    return encoded;
+}
+
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     std::function<ProxyConfiguration()> per_request_configuration_,
     const String & force_region_,
@@ -605,10 +612,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
               * Therefore we shall encode some symbols "manually" to fit the signatures.
               */
 
-            std::string path_and_query;
+            std::string path_and_query = encodeRequestPath(target_uri.getPath());
             const std::string & query = target_uri.getRawQuery();
-            const std::string reserved = "?#:;+@&=%"; /// Poco::URI::RESERVED_QUERY_PARAM without '/' plus percent sign.
-            Poco::URI::encode(target_uri.getPath(), reserved, path_and_query);
 
             if (!query.empty())
             {
@@ -903,6 +908,7 @@ PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration
     , google_adc_client_id(client_configuration.google_adc_client_id)
     , google_adc_client_secret(client_configuration.google_adc_client_secret)
     , google_adc_refresh_token(client_configuration.google_adc_refresh_token)
+    , google_service_account_key(client_configuration.google_service_account_key)
 {
     const bool has_client_id = !google_adc_client_id.empty();
     const bool has_client_secret = !google_adc_client_secret.empty();
@@ -915,6 +921,11 @@ PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration
                 "GCP OAuth ADC credentials must be specified together: "
                 "google_adc_client_id, google_adc_client_secret, and google_adc_refresh_token "
                 "must all be set or all be empty");
+
+        if (!google_service_account_key.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "GCP OAuth credentials are ambiguous: specify either the ADC triple or google_service_account_key, not both");
     }
 }
 
@@ -951,6 +962,9 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
 
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return requestBearerTokenFromADC();
+
+    if (!google_service_account_key.empty())
+        return requestBearerTokenFromServiceAccountKey();
 
     chassert(!request_token_path.empty());
     chassert(!metadata_service.empty());
@@ -1011,6 +1025,21 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFr
     auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
     auto result = fetchGCPOAuthToken(
         google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, getCredentialAcquisitionTimeouts(timeouts), group);
+    return
+    {
+        .token = std::move(result.access_token),
+        .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(result.expires_in * 9 / 10)
+    };
+}
+
+PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFromServiceAccountKey() const
+{
+    auto [assertion, token_endpoint] = makeGCPServiceAccountAssertion(google_service_account_key, GCP_CLOUD_PLATFORM_OAUTH_SCOPE);
+    /// The token endpoint comes from the user-provided key, validate it against the allowed hosts.
+    remote_host_filter.checkURL(Poco::URI(token_endpoint));
+
+    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
+    auto result = fetchGCPOAuthTokenWithJWTAssertion(assertion, token_endpoint, getCredentialAcquisitionTimeouts(timeouts), group);
     return
     {
         .token = std::move(result.access_token),
