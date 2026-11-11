@@ -492,6 +492,14 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
     return supports_prewhere;
 }
 
+StorageMetadataHandle StorageObjectStorage::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+{
+    auto metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    if (!query_context)
+        return metadata;
+    return configuration->adaptMetadataForQuery(metadata, query_context);
+}
+
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
@@ -621,7 +629,7 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     if (hive_partitioning_sample_path_resolved)
         return;
 
-    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = IStorage::getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
 
     /// Errors thrown below stay unresolved on purpose, so they are reported until they go away.
@@ -667,7 +675,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (!state)
         return;
 
-    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = IStorage::getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
     /// Always pin the current snapshot version to prevent logical races between query
     /// analysis (which picks the schema) and query execution (which iterates files).
@@ -688,7 +696,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
         configuration->partition_strategy_type));
 
     std::lock_guard lock(settings_changes_mutex);
-    auto latest_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto latest_metadata = IStorage::getInMemoryMetadataPtr(query_context, false);
     metadata_with_virtuals.settings_changes = latest_metadata->settings_changes;
     setInMemoryMetadata(metadata_with_virtuals);
 }
@@ -876,7 +884,7 @@ void StorageObjectStorage::read(
             }
 
             storage_snapshot = std::make_shared<StorageSnapshot>(
-                *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)));
+                *this, configuration->adaptMetadataForQuery(std::make_shared<StorageInMemoryMetadata>(std::move(pinned)), local_context));
         }
     }
 
@@ -1399,7 +1407,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = IStorage::getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
@@ -1462,7 +1470,7 @@ void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_met
             throw;
         }
         std::lock_guard lock(settings_changes_mutex);
-        auto latest_metadata_snapshot = getInMemoryMetadataPtr(context, false);
+        auto latest_metadata_snapshot = IStorage::getInMemoryMetadataPtr(context, false);
         auto latest_metadata = *latest_metadata_snapshot;
         latest_metadata.settings_changes = new_metadata.settings_changes;
         setInMemoryMetadata(latest_metadata);

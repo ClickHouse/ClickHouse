@@ -104,6 +104,8 @@ public:
     /// to keep the columns stored in the in-memory metadata in sync with the datalake.
     virtual bool shouldReloadSchemaForConsistency(ContextPtr) const { return false; }
 
+    virtual StorageMetadataPtr adaptMetadataForQuery(const StorageMetadataPtr & metadata, ContextPtr) const { return metadata; }
+
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.

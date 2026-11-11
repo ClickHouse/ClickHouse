@@ -95,6 +95,8 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
+
 private:
     void updateConfigurationIfNeeded(ContextPtr context) override;
 

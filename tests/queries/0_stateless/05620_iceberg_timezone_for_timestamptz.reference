@@ -13,9 +13,18 @@ ts	Nullable(DateTime64(6, \'Europe/Berlin\'))
 local	Nullable(DateTime64(6))
 arr	Array(Nullable(DateTime64(6, \'Europe/Berlin\')))
 Nullable(DateTime64(6, \'Europe/Berlin\'))
-2
-2
-0
+-- the time zone of a query does not stick to the table
+Nullable(DateTime64(6, \'UTC\'))
 -- session time zone
 Nullable(DateTime64(6, \'Asia/Tokyo\'))	2024-01-02 08:30:00.000000
 Nullable(DateTime64(6, \'Asia/Tokyo\'))	2024-01-02 08:30:00.000000
+-- filters
+[1,2]	[1,2]	[1,2]	[1,2]
+[1,2]	[1,2]	[1,2]	[1,2]
+[]
+-- filters on data files written with an older schema
+[1,2]	[1,2]	[1,2]	[1,2]
+[1,2]	[1,2]	[1,2]	[1,2]
+[]
+-- DROP PARTITION of an identity partition
+2	2024-01-02 00:30:00.000000

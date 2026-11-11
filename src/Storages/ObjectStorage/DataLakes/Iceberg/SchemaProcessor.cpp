@@ -662,7 +662,10 @@ void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
 {
     iceberg_table_schemas_by_ids.erase(schema_id);
     clickhouse_table_schemas_by_ids.erase(schema_id);
-    std::erase_if(transform_dags_by_ids, [schema_id](const auto & item) { return item.first.first == schema_id || item.first.second == schema_id; });
+    std::erase_if(timezone_table_schemas_by_ids, [schema_id](const auto & item) { return item.first.first == schema_id; });
+    std::erase_if(
+        transform_dags_by_ids,
+        [schema_id](const auto & item) { return std::get<0>(item.first) == schema_id || std::get<1>(item.first) == schema_id; });
     std::erase_if(clickhouse_types_by_source_ids, [schema_id](const auto & item) { return item.first.first == schema_id; });
     std::erase_if(clickhouse_ids_by_source_names, [schema_id](const auto & item) { return item.first.first == schema_id; });
 }
@@ -800,24 +803,22 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
     current_schema_id = std::nullopt;
 }
 
-NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_version, Int32 source_id) const
+NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_version, Int32 source_id, const String & timezone) const
 {
-    SharedLockGuard lock(mutex);
-
-    auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
-    if (it == clickhouse_types_by_source_ids.end())
+    auto field = tryGetFieldCharacteristics(schema_version, source_id, timezone);
+    if (!field)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field with source id {} in schema version {} is unknown", source_id, schema_version);
-    return it->second;
+    return *field;
 }
 
-std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const
+std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id, const String & timezone) const
 {
     SharedLockGuard lock(mutex);
 
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
         return {};
-    return it->second;
+    return NameAndTypePair{it->second.name, setTimezoneForTimestamptz(it->second.type, timezone)};
 }
 
 std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_id, const std::string & name) const
@@ -830,7 +831,8 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_i
     return it->second;
 }
 
-NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const
+NamesAndTypesList
+IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids, const String & timezone) const
 {
     SharedLockGuard lock(mutex);
 
@@ -839,7 +841,7 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     {
         auto it = clickhouse_types_by_source_ids.find({schema_id, source_id});
         if (it != clickhouse_types_by_source_ids.end())
-            fields.push_back(it->second);
+            fields.emplace_back(it->second.name, setTimezoneForTimestamptz(it->second.type, timezone));
     }
     return fields;
 }
@@ -1083,8 +1085,14 @@ Poco::Dynamic::Var IcebergSchemaProcessor::getTypeWithOldPrimitives(
 
 // Ids are passed only for error logging purposes
 std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
-    const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id)
+    const Poco::JSON::Object::Ptr & old_schema,
+    const Poco::JSON::Object::Ptr & new_schema,
+    Int32 old_id,
+    Int32 new_id,
+    const String & timezone)
 {
+    auto get_field_type = [&](const Poco::JSON::Object::Ptr & object, const String & type_key, bool is_required)
+    { return setTimezoneForTimestamptz(getFieldType(object, type_key, is_required), timezone); };
     std::unordered_map<size_t, std::pair<Poco::JSON::Object::Ptr, const ActionsDAG::Node *>> old_schema_entries;
     auto old_schema_fields = old_schema->get(f_fields).extract<Poco::JSON::Array::Ptr>();
     std::shared_ptr<ActionsDAG> dag = std::make_shared<ActionsDAG>();
@@ -1095,7 +1103,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         size_t id = field->getValue<size_t>(f_id);
         auto name = field->getValue<String>(f_name);
         bool required = field->getValue<bool>(f_required);
-        old_schema_entries[id] = {field, &dag->addInput(name, getFieldType(field, f_type, required))};
+        old_schema_entries[id] = {field, &dag->addInput(name, get_field_type(field, f_type, required))};
     }
     auto new_schema_fields = new_schema->get(f_fields).extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i != new_schema_fields->size(); ++i)
@@ -1104,7 +1112,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         size_t id = field->getValue<size_t>(f_id);
         auto name = field->getValue<String>(f_name);
         bool required = field->getValue<bool>(f_required);
-        auto type = getFieldType(field, f_type, required);
+        auto type = get_field_type(field, f_type, required);
         auto old_node_it = old_schema_entries.find(id);
         if (old_node_it != old_schema_entries.end())
         {
@@ -1123,11 +1131,11 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                         old_id,
                         new_id);
                 }
-                auto old_type = getFieldType(old_json, "type", required);
+                auto old_type = get_field_type(old_json, "type", required);
                 /// EvolutionFunctionStruct does not convert primitives, so promoted nested ones are cast afterwards.
                 Poco::JSON::Object::Ptr evolved_field = new Poco::JSON::Object(*field);
                 evolved_field->set(f_type, getTypeWithOldPrimitives(old_json, field, f_type));
-                auto evolved_type = getFieldType(evolved_field, f_type, required);
+                auto evolved_type = get_field_type(evolved_field, f_type, required);
                 auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{evolved_type}, DataTypes{old_type}, old_json, field);
                 const auto * node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
                 if (!evolved_type->equals(*type))
@@ -1170,7 +1178,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 }
                 else if (allowPrimitiveTypeConversion(old_type, new_type))
                 {
-                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name, nullptr);
+                    node = &dag->addCast(*old_node, get_field_type(field, f_type, required), name, nullptr);
                 }
                 outputs.push_back(node);
             }
@@ -1198,13 +1206,13 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
     return dag;
 }
 
-std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id)
+std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id, const String & timezone)
 {
     if (old_id == new_id)
         return nullptr;
 
     std::lock_guard lock(mutex);
-    auto required_transform_dag_it = transform_dags_by_ids.find({old_id, new_id});
+    auto required_transform_dag_it = transform_dags_by_ids.find({old_id, new_id, timezone});
     if (required_transform_dag_it != transform_dags_by_ids.end())
         return required_transform_dag_it->second;
 
@@ -1216,8 +1224,8 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
     if (new_schema_it == iceberg_table_schemas_by_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
 
-    return transform_dags_by_ids[{old_id, new_id}]
-        = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id);
+    return transform_dags_by_ids[{old_id, new_id, timezone}]
+        = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id, timezone);
 }
 
 Poco::JSON::Object::Ptr IcebergSchemaProcessor::getIcebergTableSchemaById(Int32 id) const
@@ -1270,19 +1278,84 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 sna
 }
 
 
-std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSchemaById(Int32 id)
+std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSchemaById(Int32 id, const String & timezone)
 {
-    SharedLockGuard lock(mutex);
+    std::shared_ptr<NamesAndTypesList> schema;
+    {
+        SharedLockGuard lock(mutex);
 
-    auto it = clickhouse_table_schemas_by_ids.find(id);
-    if (it == clickhouse_table_schemas_by_ids.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
-    if (it->second->empty())
-        throw Exception(
-            ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED,
-            "Iceberg schema with schema-id {} has no fields, which is not supported: a table must have at least one column",
-            id);
-    return it->second;
+        auto it = clickhouse_table_schemas_by_ids.find(id);
+        if (it == clickhouse_table_schemas_by_ids.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
+        if (it->second->empty())
+            throw Exception(
+                ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED,
+                "Iceberg schema with schema-id {} has no fields, which is not supported: a table must have at least one column",
+                id);
+        if (timezone == "UTC")
+            return it->second;
+        if (auto timezone_it = timezone_table_schemas_by_ids.find({id, timezone}); timezone_it != timezone_table_schemas_by_ids.end())
+            return timezone_it->second;
+        schema = it->second;
+    }
+
+    auto result = std::make_shared<NamesAndTypesList>(setTimezoneForTimestamptz(*schema, timezone));
+    std::lock_guard lock(mutex);
+    return timezone_table_schemas_by_ids.try_emplace({id, timezone}, std::move(result)).first->second;
+}
+
+DataTypePtr IcebergSchemaProcessor::setTimezoneForTimestamptz(const DataTypePtr & type, const String & timezone)
+{
+    if (timezone == "UTC")
+        return type;
+    if (const auto * datetime = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+    {
+        if (datetime->hasExplicitTimeZone() && datetime->getTimeZone().getTimeZone() == "UTC")
+            return std::make_shared<DataTypeDateTime64>(datetime->getScale(), timezone);
+        return type;
+    }
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto nested = setTimezoneForTimestamptz(nullable->getNestedType(), timezone);
+        return nested == nullable->getNestedType() ? type : makeNullable(nested);
+    }
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto nested = setTimezoneForTimestamptz(array->getNestedType(), timezone);
+        return nested == array->getNestedType() ? type : std::make_shared<DataTypeArray>(nested);
+    }
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto key = setTimezoneForTimestamptz(map->getKeyType(), timezone);
+        auto value = setTimezoneForTimestamptz(map->getValueType(), timezone);
+        return key == map->getKeyType() && value == map->getValueType() ? type : std::make_shared<DataTypeMap>(key, value);
+    }
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        bool changed = false;
+        for (const auto & element : tuple->getElements())
+        {
+            elements.push_back(setTimezoneForTimestamptz(element, timezone));
+            changed |= elements.back() != element;
+        }
+        if (!changed)
+            return type;
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+    return type;
+}
+
+NamesAndTypesList IcebergSchemaProcessor::setTimezoneForTimestamptz(const NamesAndTypesList & columns, const String & timezone)
+{
+    if (timezone == "UTC")
+        return columns;
+    NamesAndTypesList result;
+    for (const auto & column : columns)
+        result.emplace_back(column.name, setTimezoneForTimestamptz(column.type, timezone));
+    return result;
 }
 
 bool IcebergSchemaProcessor::hasClickHouseTableSchemaById(Int32 id) const

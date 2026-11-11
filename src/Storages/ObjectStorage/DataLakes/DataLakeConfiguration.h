@@ -358,6 +358,13 @@ public:
         return getMetadata()->shouldReloadSchemaForConsistency(context);
     }
 
+    StorageMetadataPtr adaptMetadataForQuery(const StorageMetadataPtr & metadata, ContextPtr context) const override
+    {
+        if (auto lake_metadata = tryGetMetadata())
+            return lake_metadata->adaptMetadataForQuery(metadata, context);
+        return metadata;
+    }
+
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata() override
     {
         return getMetadata();

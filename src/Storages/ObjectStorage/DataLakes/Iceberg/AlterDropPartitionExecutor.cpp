@@ -197,7 +197,7 @@ DataTypes resolvePartitionTypes(
         source_ids.emplace_back(field_source_id);
     }
 
-    auto names_and_types = schema_processor.tryGetFieldsCharacteristics(schema_id, source_ids);
+    auto names_and_types = schema_processor.tryGetFieldsCharacteristics(schema_id, source_ids, getTimezoneForTimestamptz(context));
     if (names_and_types.size() != source_ids.size())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

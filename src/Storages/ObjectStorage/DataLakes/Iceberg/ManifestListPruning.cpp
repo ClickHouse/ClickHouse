@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 #include <base/unaligned.h>
 #include <Common/FieldAccurateComparison.h>
@@ -109,7 +110,13 @@ ManifestListPruner::ManifestListPruner(
     std::vector<Int32> used_columns_in_filter;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns_in_filter;
     auto transformed_dag = renameFilterDagColumnsToFieldIds(
-        schema_processor_, current_schema_id_, partition_schema_id_, filter_dag, used_columns_in_filter, row_lineage_columns_in_filter);
+        schema_processor_,
+        current_schema_id_,
+        partition_schema_id_,
+        filter_dag,
+        used_columns_in_filter,
+        row_lineage_columns_in_filter,
+        getTimezoneForTimestamptz(context));
 
     for (UInt32 i = 0; i < partition_specs->size(); ++i)
     {
@@ -125,8 +132,6 @@ ManifestListPruner::ManifestListPruner(
         if (!partition_key.key_description.has_value() || partition_key.key_description->data_types.size() != fields->size())
             continue;
 
-        partition_key.key_description.emplace(
-            getKeyWithFilterColumnTypes(*partition_key.key_description, *transformed_dag, /* nullable */ false, context));
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         DB::KeyCondition condition(
             inverted_dag,

@@ -175,7 +175,8 @@ namespace
 NamesAndTypesList getTableSchema(const DataLake::ICatalog & catalog, const DataLake::TableMetadata & table_metadata, const ContextPtr & context)
 {
     if (catalog.getTableEngineName(table_metadata) == "Iceberg")
-        return Iceberg::setTimezoneForTimestamptz(table_metadata.getSchema(), context);
+        return Iceberg::IcebergSchemaProcessor::setTimezoneForTimestamptz(
+            table_metadata.getSchema(), Iceberg::getTimezoneForTimestamptz(context));
     return table_metadata.getSchema();
 }
 
@@ -1324,7 +1325,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto storage_type = table_engine_args.storage_type;
     const bool static_credentials_applied = table_engine_args.static_credentials_applied;
 
-    const auto columns = ColumnsDescription(getTableSchema(*catalog, table_metadata, context_));
+    const auto columns = ColumnsDescription(table_metadata.getSchema());
 
     const bool catalog_manages_provider_chain = catalogManagesProviderChain(*catalog);
 
