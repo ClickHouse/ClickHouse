@@ -161,49 +161,6 @@ ColumnPtr replaceNegativeZeros(const IColumn & column)
     return nullptr;
 }
 
-bool containsFloatingPointZero(const IColumn & column)
-{
-    if (const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(&column))
-        return std::ranges::any_of(column_float64->getData(), [](Float64 x) { return x == 0; });
-
-    if (const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(&column))
-        return std::ranges::any_of(column_float32->getData(), [](Float32 x) { return x == 0; });
-
-    if (const auto * column_bfloat16 = typeid_cast<const ColumnBFloat16 *>(&column))
-        return std::ranges::any_of(column_bfloat16->getData(), [](BFloat16 x) { return x == BFloat16(0.0f); });
-
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-        return containsFloatingPointZero(nullable->getNestedColumn());
-
-    if (const auto * array = typeid_cast<const ColumnArray *>(&column))
-        return containsFloatingPointZero(array->getData());
-
-    if (const auto * map = typeid_cast<const ColumnMap *>(&column))
-        return containsFloatingPointZero(map->getNestedColumn());
-
-    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
-    {
-        for (size_t i = 0; i < tuple->tupleSize(); ++i)
-            if (containsFloatingPointZero(tuple->getColumn(i)))
-                return true;
-        return false;
-    }
-
-    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
-        return containsFloatingPointZero(*low_cardinality->getDictionary().getNestedNotNullableColumn());
-
-    if (const auto * sparse = typeid_cast<const ColumnSparse *>(&column))
-        return containsFloatingPointZero(sparse->getValuesColumn());
-
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(&column))
-        return containsFloatingPointZero(column_const->getDataColumn());
-
-    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(&column))
-        return containsFloatingPointZero(*replicated->getNestedColumn());
-
-    return false;
-}
-
 ColumnPtr replaceNegativeZeros(const ColumnPtr & column)
 {
     if (auto res = replaceNegativeZeros(*column))

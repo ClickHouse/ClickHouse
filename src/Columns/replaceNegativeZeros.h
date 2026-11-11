@@ -27,8 +27,4 @@ ColumnPtr replaceNegativeZeros(const ColumnPtr & column);
 /// which has to outlive the usage of `key_columns`.
 void replaceNegativeZeros(ColumnRawPtrs & key_columns, Columns & holder);
 
-/// Whether the column contains a floating point zero of either sign, at any of the places listed above.
-/// It can report a zero that is not referenced by any row, e.g. an unused value of a `LowCardinality` dictionary.
-bool containsFloatingPointZero(const IColumn & column);
-
 }

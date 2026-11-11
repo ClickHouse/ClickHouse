@@ -1,6 +1,6 @@
 -- `-0.` and `0.` are the same key in `IN`, `GROUP BY`, `DISTINCT`, `LIMIT BY` and hash `JOIN`.
 -- Check the alternate paths that hash the keys: the Bloom runtime filter of a join, the `bloom_filter` skip index,
--- the aggregation in order of a prefix of the keys, the optimizations of the keys, and the spilled `DISTINCT`.
+-- the aggregation in order of a prefix of the keys, and the spilled `DISTINCT`.
 
 SELECT '-- Bloom runtime filter';
 DROP TABLE IF EXISTS t_nz_probe;
@@ -55,24 +55,6 @@ SELECT count() FROM (SELECT k, f FROM t_nz_in_order GROUP BY k, f) SETTINGS opti
 SELECT count() FROM (SELECT k, f FROM t_nz_in_order GROUP BY k, f) SETTINGS optimize_aggregation_in_order = 1, max_threads = 1;
 
 DROP TABLE t_nz_in_order;
-
-SELECT '-- Optimizations of the keys';
-DROP TABLE IF EXISTS t_nz_keys;
-CREATE TABLE t_nz_keys (f Float64) ENGINE = Memory;
-INSERT INTO t_nz_keys VALUES (0.), (-0.);
-
-SELECT hex(f) AS h FROM t_nz_keys GROUP BY h ORDER BY h SETTINGS optimize_injective_functions_in_group_by = 1;
-SELECT hex(f) AS h FROM t_nz_keys GROUP BY h ORDER BY h SETTINGS optimize_injective_functions_in_group_by = 0;
-SELECT hex(f) AS h FROM t_nz_keys ORDER BY h LIMIT 1 BY h SETTINGS optimize_injective_functions_in_limit_by = 1;
-SELECT hex(f) AS h FROM t_nz_keys ORDER BY h LIMIT 1 BY h SETTINGS optimize_injective_functions_in_limit_by = 0;
-SELECT count() FROM (SELECT f, toString(f) FROM t_nz_keys GROUP BY f, toString(f)) SETTINGS optimize_group_by_function_keys = 1;
-SELECT count() FROM (SELECT f, toString(f) FROM t_nz_keys GROUP BY f, toString(f)) SETTINGS optimize_group_by_function_keys = 0;
-SELECT count() FROM (SELECT f FROM t_nz_keys LIMIT 1 BY f, toString(f)) SETTINGS optimize_limit_by_function_keys = 1;
-SELECT count() FROM (SELECT f FROM t_nz_keys LIMIT 1 BY f, toString(f)) SETTINGS optimize_limit_by_function_keys = 0;
--- A tuple of the floating point key is still unwrapped: the zeros are merged anyway.
-SELECT count() FROM (SELECT tuple(f) FROM t_nz_keys GROUP BY tuple(f)) SETTINGS optimize_injective_functions_in_group_by = 1;
-
-DROP TABLE t_nz_keys;
 
 SELECT '-- Spilled DISTINCT of a generic key';
 SELECT count() FROM

@@ -5,7 +5,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/replaceNegativeZeros.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -707,8 +706,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         /// `IN` matches `-0.` and `0.` as equal (the set holds only `0.`), but the index stores the hash of
         /// the original representation, so a granule with only `-0.` would be skipped. Do not use the index then.
-        if (containsFloatingPointZero(*converted_column))
-            return false;
+        for (size_t i = 0; i < row_size; ++i)
+            if (anyFieldSatisfies((*converted_column)[i], isFloatZeroField))
+                return false;
 
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
