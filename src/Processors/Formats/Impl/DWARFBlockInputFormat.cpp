@@ -2,13 +2,12 @@
 #include <Common/CurrentThread.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <llvm/DebugInfo/DWARF/DWARFFormValue.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugRnglists.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugRangeList.h>
 #include <llvm/BinaryFormat/Dwarf.h>
 
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -100,10 +99,10 @@ static NamesAndTypesList getHeaderForDWARF()
     return NamesAndTypesList(cols.begin(), cols.end());
 }
 
-static const UnorderedMapWithMemoryTracking<std::string, size_t> & getColumnNameToIdx()
+static const std::unordered_map<std::string, size_t> & getColumnNameToIdx()
 {
     static std::once_flag once;
-    static UnorderedMapWithMemoryTracking<std::string, size_t> name_to_idx;
+    static std::unordered_map<std::string, size_t> name_to_idx;
     std::call_once(once, [&] {
         size_t i = 0;
         for (const auto & c : getHeaderForDWARF())

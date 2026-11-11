@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/SerializationCustomSimpleText.h>
-#include <Formats/FormatSettings.h>
 
 #include <Columns/IColumn.h>
 #include <Formats/ParseError.h>

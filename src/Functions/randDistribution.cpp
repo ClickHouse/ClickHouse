@@ -23,9 +23,11 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace Setting
@@ -353,16 +355,24 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const String return_type = typename Distribution::ReturnType{}.getName();
-        String args;
+        auto desired = Distribution::getNumberOfArguments();
+        if (arguments.size() != desired && arguments.size() != desired + 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Wrong number of arguments for function {}. Should be {} or {}",
+                            getName(), desired, desired + 1);
+
         for (size_t i = 0; i < Distribution::getNumberOfArguments(); ++i)
         {
-            if (i) args += ", ";
-            args += "Float | NativeUInt";
+            const auto & type = arguments[i];
+            WhichDataType which(type);
+            if (!which.isFloat() && !which.isNativeUInt())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}, expected Float64 or integer", type->getName(), getName());
         }
-        return "(" + args + ", [Any]) -> " + return_type;
+
+        return std::make_shared<typename Distribution::ReturnType>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override

@@ -16,7 +16,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Examples/clickhouse_examples.h>
 

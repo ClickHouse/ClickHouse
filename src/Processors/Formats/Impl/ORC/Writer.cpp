@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/ORC/Writer.h>
 #include <Processors/Formats/Impl/ORC/RLE.h>
-#include <Processors/Formats/Impl/ORC/Timezone.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -24,12 +23,12 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <algorithm>
 #include <bit>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -52,7 +51,7 @@ struct WriterContext
     size_t block_size = 0;
     bool enable_index = false;
     double dictionary_key_size_threshold = 0;
-    std::optional<TimezoneOffset> timezone_offset;
+    const DateLUTImpl * timezone = nullptr;
     bool timezone_is_utc = true;
     /// 2015-01-01 00:00:00 in the time zone of the writer, as seconds since the epoch.
     Int64 epoch_offset = 0;
@@ -145,7 +144,7 @@ public:
     /// Encodes the deferred data of the stripe.
     virtual void finalizeStripe() {}
 
-    virtual void writeIndex(VectorWithMemoryTracking<StreamData> & streams)
+    virtual void writeIndex(std::vector<StreamData> & streams)
     {
         Proto::RowIndex index;
         for (const auto & entry : entries)
@@ -160,7 +159,7 @@ public:
         streams.push_back({Proto::StreamKind::ROW_INDEX, static_cast<UInt32>(column_id), compressWhole(context, index.serialize())});
     }
 
-    virtual void flush(VectorWithMemoryTracking<StreamData> & streams)
+    virtual void flush(std::vector<StreamData> & streams)
     {
         present_encoder.flush();
         present_stream.finish();
@@ -168,17 +167,17 @@ public:
             streams.push_back({Proto::StreamKind::PRESENT, static_cast<UInt32>(column_id), present_stream.getOutput()});
     }
 
-    virtual void getColumnEncodings(VectorWithMemoryTracking<Proto::ColumnEncoding> & encodings) const
+    virtual void getColumnEncodings(std::vector<Proto::ColumnEncoding> & encodings) const
     {
         encodings.push_back({Proto::ColumnEncodingKind::DIRECT, 0, {}});
     }
 
-    virtual void getStripeStatistics(VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const
+    virtual void getStripeStatistics(std::vector<Proto::ColumnStatistics> & stats) const
     {
         stats.push_back(stripe_statistics.toProto());
     }
 
-    virtual void getFileStatistics(VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const
+    virtual void getFileStatistics(std::vector<Proto::ColumnStatistics> & stats) const
     {
         stats.push_back(file_statistics.toProto());
     }
@@ -209,7 +208,7 @@ public:
 
 protected:
     /// Appends the positions of the data streams, in the order the reader seeks them.
-    virtual void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) = 0;
+    virtual void recordDataPositions(std::vector<UInt64> & positions) = 0;
     /// Clears the data streams for a new stripe.
     virtual void resetStreams() = 0;
 
@@ -231,8 +230,8 @@ protected:
 
     struct Entry
     {
-        VectorWithMemoryTracking<UInt64> present_positions;
-        VectorWithMemoryTracking<UInt64> data_positions;
+        std::vector<UInt64> present_positions;
+        std::vector<UInt64> data_positions;
         Proto::ColumnStatistics statistics;
     };
 
@@ -244,7 +243,7 @@ protected:
     StatisticsBuilder index_statistics;
     StatisticsBuilder stripe_statistics;
     StatisticsBuilder file_statistics;
-    VectorWithMemoryTracking<Entry> entries;
+    std::vector<Entry> entries;
 
 private:
     void recordPositions()
@@ -253,8 +252,8 @@ private:
         recordDataPositions(current_data_positions);
     }
 
-    VectorWithMemoryTracking<UInt64> current_present_positions;
-    VectorWithMemoryTracking<UInt64> current_data_positions;
+    std::vector<UInt64> current_present_positions;
+    std::vector<UInt64> current_data_positions;
 };
 
 namespace
@@ -334,14 +333,14 @@ public:
             child->finalizeStripe();
     }
 
-    void writeIndex(VectorWithMemoryTracking<StreamData> & streams) override
+    void writeIndex(std::vector<StreamData> & streams) override
     {
         ColumnWriter::writeIndex(streams);
         for (auto & child : children)
             child->writeIndex(streams);
     }
 
-    void flush(VectorWithMemoryTracking<StreamData> & streams) override
+    void flush(std::vector<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         flushOwnStreams(streams);
@@ -349,21 +348,21 @@ public:
             child->flush(streams);
     }
 
-    void getColumnEncodings(VectorWithMemoryTracking<Proto::ColumnEncoding> & encodings) const override
+    void getColumnEncodings(std::vector<Proto::ColumnEncoding> & encodings) const override
     {
         getOwnColumnEncoding(encodings);
         for (const auto & child : children)
             child->getColumnEncodings(encodings);
     }
 
-    void getStripeStatistics(VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const override
+    void getStripeStatistics(std::vector<Proto::ColumnStatistics> & stats) const override
     {
         ColumnWriter::getStripeStatistics(stats);
         for (const auto & child : children)
             child->getStripeStatistics(stats);
     }
 
-    void getFileStatistics(VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const override
+    void getFileStatistics(std::vector<Proto::ColumnStatistics> & stats) const override
     {
         ColumnWriter::getFileStatistics(stats);
         for (const auto & child : children)
@@ -393,14 +392,14 @@ public:
     }
 
 protected:
-    virtual void flushOwnStreams(VectorWithMemoryTracking<StreamData> &) {}
-    virtual void getOwnColumnEncoding(VectorWithMemoryTracking<Proto::ColumnEncoding> & encodings) const
+    virtual void flushOwnStreams(std::vector<StreamData> &) {}
+    virtual void getOwnColumnEncoding(std::vector<Proto::ColumnEncoding> & encodings) const
     {
         encodings.push_back({Proto::ColumnEncodingKind::DIRECT, 0, {}});
     }
     virtual size_t estimateOwnSize() const { return 0; }
 
-    VectorWithMemoryTracking<std::unique_ptr<ColumnWriter>> children;
+    std::vector<std::unique_ptr<ColumnWriter>> children;
 };
 
 class StructColumnWriter final : public CompoundColumnWriter
@@ -439,7 +438,7 @@ public:
     }
 
 protected:
-    void recordDataPositions(VectorWithMemoryTracking<UInt64> &) override {}
+    void recordDataPositions(std::vector<UInt64> &) override {}
     void resetStreams() override {}
 };
 
@@ -498,7 +497,7 @@ public:
     }
 
 protected:
-    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override
+    void recordDataPositions(std::vector<UInt64> & positions) override
     {
         length_encoder.recordPosition(positions);
     }
@@ -508,14 +507,14 @@ protected:
         length_stream.reset();
     }
 
-    void flushOwnStreams(VectorWithMemoryTracking<StreamData> & streams) override
+    void flushOwnStreams(std::vector<StreamData> & streams) override
     {
         length_encoder.flush();
         length_stream.finish();
         streams.push_back({Proto::StreamKind::LENGTH, static_cast<UInt32>(column_id), length_stream.getOutput()});
     }
 
-    void getOwnColumnEncoding(VectorWithMemoryTracking<Proto::ColumnEncoding> & encodings) const override
+    void getOwnColumnEncoding(std::vector<Proto::ColumnEncoding> & encodings) const override
     {
         encodings.push_back({Proto::ColumnEncodingKind::DIRECT_V2, 0, {}});
     }
@@ -560,8 +559,8 @@ public:
 
         ColumnWriter::add(column, union_nulls, offset, num_values, parent_null_map);
 
-        VectorWithMemoryTracking<Int64> child_offset(children.size(), -1);
-        VectorWithMemoryTracking<UInt64> child_length(children.size(), 0);
+        std::vector<Int64> child_offset(children.size(), -1);
+        std::vector<UInt64> child_length(children.size(), 0);
         size_t count = 0;
         for (size_t i = 0; i < num_values; ++i)
         {
@@ -589,7 +588,7 @@ public:
     }
 
 protected:
-    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override
+    void recordDataPositions(std::vector<UInt64> & positions) override
     {
         tag_encoder.recordPosition(positions);
     }
@@ -599,7 +598,7 @@ protected:
         tag_stream.reset();
     }
 
-    void flushOwnStreams(VectorWithMemoryTracking<StreamData> & streams) override
+    void flushOwnStreams(std::vector<StreamData> & streams) override
     {
         tag_encoder.flush();
         tag_stream.finish();
@@ -620,7 +619,7 @@ class PrimitiveColumnWriter : public ColumnWriter
 public:
     using ColumnWriter::ColumnWriter;
 
-    void getColumnEncodings(VectorWithMemoryTracking<Proto::ColumnEncoding> & encodings) const override
+    void getColumnEncodings(std::vector<Proto::ColumnEncoding> & encodings) const override
     {
         encodings.push_back({encoding_kind, dictionary_size, {}});
     }
@@ -655,7 +654,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(VectorWithMemoryTracking<StreamData> & streams) override
+    void flush(std::vector<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         encoder.flush();
@@ -666,7 +665,7 @@ public:
     size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
-    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
+    void recordDataPositions(std::vector<UInt64> & positions) override { encoder.recordPosition(positions); }
     void resetStreams() override { data_stream.reset(); }
 
 private:
@@ -700,7 +699,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(VectorWithMemoryTracking<StreamData> & streams) override
+    void flush(std::vector<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         encoder.flush();
@@ -711,7 +710,7 @@ public:
     size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
-    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
+    void recordDataPositions(std::vector<UInt64> & positions) override { encoder.recordPosition(positions); }
     void resetStreams() override { data_stream.reset(); }
 
 private:
@@ -759,7 +758,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(VectorWithMemoryTracking<StreamData> & streams) override
+    void flush(std::vector<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         encoder.flush();
@@ -770,7 +769,7 @@ public:
     size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
-    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
+    void recordDataPositions(std::vector<UInt64> & positions) override { encoder.recordPosition(positions); }
     void resetStreams() override { data_stream.reset(); }
 
 private:
@@ -816,7 +815,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(VectorWithMemoryTracking<StreamData> & streams) override
+    void flush(std::vector<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         data_stream.finish();
@@ -826,7 +825,7 @@ public:
     size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
-    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { data_stream.recordPosition(positions); }
+    void recordDataPositions(std::vector<UInt64> & positions) override { data_stream.recordPosition(positions); }
     void resetStreams() override { data_stream.reset(); }
 
 private:
@@ -913,7 +912,7 @@ public:
             encodeDirect();
     }
 
-    void flush(VectorWithMemoryTracking<StreamData> & streams) override
+    void flush(std::vector<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         if (*use_dictionary)
@@ -943,7 +942,7 @@ public:
     }
 
 protected:
-    void recordDataPositions(VectorWithMemoryTracking<UInt64> &) override
+    void recordDataPositions(std::vector<UInt64> &) override
     {
         /// The positions are known only after the encoding, at the end of the stripe.
         group_starts.push_back(value_ends.size());
@@ -971,7 +970,7 @@ private:
     /// stripe without the row index), as in the reference implementation.
     void decideDictionary()
     {
-        UnorderedSetWithMemoryTracking<std::string_view> distinct;
+        std::unordered_set<std::string_view> distinct;
         for (size_t i = 0; i < value_ends.size(); ++i)
             distinct.insert(getValue(i));
         /// Compare as doubles: the threshold is user-provided and the product may not fit in `size_t`.
@@ -1004,8 +1003,8 @@ private:
         encoding_kind = Proto::ColumnEncodingKind::DICTIONARY_V2;
 
         /// The dictionary is sorted, as in the reference implementation.
-        UnorderedMapWithMemoryTracking<std::string_view, UInt32> index_of;
-        VectorWithMemoryTracking<std::string_view> keys;
+        std::unordered_map<std::string_view, UInt32> index_of;
+        std::vector<std::string_view> keys;
         for (size_t i = 0; i < value_ends.size(); ++i)
         {
             auto value = getValue(i);
@@ -1046,9 +1045,9 @@ private:
     IntRleEncoderV2 index_encoder;
 
     std::string blob;
-    VectorWithMemoryTracking<UInt64> value_ends;
+    std::vector<UInt64> value_ends;
     /// The index of the first value of each row group.
-    VectorWithMemoryTracking<UInt64> group_starts;
+    std::vector<UInt64> group_starts;
 };
 
 class TimestampColumnWriter final : public PrimitiveColumnWriter
@@ -1105,7 +1104,7 @@ public:
             Int64 utc_seconds = secs;
             Int64 millis = 0;
             Int64 encoded_seconds = 0;
-            if ((!is_utc && common::addOverflow(secs, (*context.timezone_offset)(secs), utc_seconds))
+            if ((!is_utc && common::addOverflow(secs, static_cast<Int64>(context.timezone->timezoneOffset(secs)), utc_seconds))
                 || common::mulOverflow(utc_seconds, Int64{1000}, millis)
                 || common::addOverflow(millis, nano_millis, millis)
                 || common::subOverflow(secs + (secs < 0 && nano > 999999), epoch_offset, encoded_seconds))
@@ -1119,7 +1118,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(VectorWithMemoryTracking<StreamData> & streams) override
+    void flush(std::vector<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         seconds_encoder.flush();
@@ -1136,7 +1135,7 @@ public:
     }
 
 protected:
-    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override
+    void recordDataPositions(std::vector<UInt64> & positions) override
     {
         seconds_encoder.recordPosition(positions);
         nanos_encoder.recordPosition(positions);
@@ -1227,7 +1226,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(VectorWithMemoryTracking<StreamData> & streams) override
+    void flush(std::vector<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         value_stream.finish();
@@ -1243,7 +1242,7 @@ public:
     }
 
 protected:
-    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override
+    void recordDataPositions(std::vector<UInt64> & positions) override
     {
         value_stream.recordPosition(positions);
         scale_encoder.recordPosition(positions);
@@ -1328,7 +1327,7 @@ Writer::Writer(const Type & schema_, const DataTypes & column_types, OutputStrea
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The ORC compression block size must be positive and less than 8 MiB, got {}", options.compression_block_size);
 
-    schema = Type::buildSelectedType(schema_, VectorWithMemoryTracking<bool>(schema_.getMaximumColumnId() + 1, true));
+    schema = Type::buildSelectedType(schema_, std::vector<bool>(schema_.getMaximumColumnId() + 1, true));
     schema->assignIds(0);
 
     compressor = createCompressor(options.compression);
@@ -1338,10 +1337,10 @@ Writer::Writer(const Type & schema_, const DataTypes & column_types, OutputStrea
     context->block_size = options.compression_block_size;
     context->enable_index = options.row_index_stride > 0;
     context->dictionary_key_size_threshold = options.dictionary_key_size_threshold;
-    context->timezone_offset.emplace(DateLUT::instance(options.timezone_name));
+    context->timezone = &DateLUT::instance(options.timezone_name);
     context->timezone_is_utc = options.timezone_name == "GMT" || options.timezone_name == "UTC";
     static constexpr Int64 UTC_2015_01_01 = 1420070400;
-    context->epoch_offset = UTC_2015_01_01 - (*context->timezone_offset)(UTC_2015_01_01);
+    context->epoch_offset = UTC_2015_01_01 - context->timezone->timezoneOffset(UTC_2015_01_01);
 
     if (schema->getKind() != STRUCT)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The root type of ORC file must be a struct");
@@ -1407,8 +1406,8 @@ void Writer::writeStripe()
 
     column_writer->finalizeStripe();
 
-    VectorWithMemoryTracking<StreamData> index_streams;
-    VectorWithMemoryTracking<StreamData> data_streams;
+    std::vector<StreamData> index_streams;
+    std::vector<StreamData> data_streams;
     if (context->enable_index)
         column_writer->writeIndex(index_streams);
     column_writer->flush(data_streams);
