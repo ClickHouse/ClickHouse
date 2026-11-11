@@ -199,9 +199,6 @@ struct AmacFindPolicy
         }
         const size_t hash = map.hash(key);
         ring.key[s] = key;
-        ring.row[s] = static_cast<UInt16>(i);
-        if constexpr (store_hash)
-            ring.hash[s] = hash;
         size_t bucket_no = 0;
         if constexpr (!one_bucket)
         {
@@ -213,6 +210,9 @@ struct AmacFindPolicy
         const Bucket & bucket = bucketAt(bucket_no);
         const Cell * cell = bucket.cells + (hash & bucket.mask);
         ring.cell[s] = cell;
+        ring.row[s] = static_cast<UInt16>(i);
+        if constexpr (store_hash)
+            ring.hash[s] = hash;
         prefetchCell(cell);
         return true;
     }
