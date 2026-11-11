@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDynamic.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
@@ -281,6 +282,8 @@ SELECT d::Nullable(Float64) FROM test;
 │                            0 │
 └──────────────────────────────┘
 ```
+
+A type that cannot be converted to the destination type causes an error only if the column contains values of this type.
 
 ### Converting a Variant column to Dynamic column {#converting-a-variant-column-to-dynamic-column}
 

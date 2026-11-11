@@ -29,6 +29,16 @@ def _is_commit_sha(value):
     return bool(_COMMIT_SHA_RE.fullmatch(value or ""))
 
 
+def new_stateless_test_files(statuses):
+    # A renamed test is not new.
+    return [
+        path
+        for path, status in statuses.items()
+        if status in (GH.FileStatus.ADDED, GH.FileStatus.COPIED)
+        and Path(path).parent == Path("tests/queries/0_stateless")
+    ]
+
+
 # How many first-parent master commits to record in `master_track_commits_sha`,
 # and how many `/commits` pages the walk that reconstructs them may fetch. One
 # page (100 entries) covers 100 first-parent commits only when master holds no
@@ -206,7 +216,6 @@ PRODUCT_CODE_PATHS = (
     "src/",
     "base/",
     "programs/",
-    "rust/",
     "cmake/",
     "CMakeLists.txt",
     "PreLoad.cmake",
@@ -272,16 +281,24 @@ if __name__ == "__main__":
     # store changed files
     # Fail-close for PR and merge-queue runs: the merge-queue flaky check
     # selects tests from this list, so an empty fallback would silently skip
-    # it. Do not fail for master/release CI workflows.
-    changed_files = (
-        GH.get_changed_files(strict=bool(info.pr_number) or info.is_merge_queue_event)
-        or []
+    # it. Do not fail for master/release CI workflows. For a push, unknown
+    # changed files stay `None`, so no job is filtered by them.
+    changed_files = GH.get_changed_files(
+        strict=bool(info.pr_number) or info.is_merge_queue_event
     )
+    if changed_files is None and not info.is_push_event:
+        changed_files = []
     info.store_kv_data("changed_files", changed_files)
+    if info.pr_number > 0:
+        info.store_kv_data(
+            "new_stateless_test_files",
+            new_stateless_test_files(GH.get_changed_file_statuses()),
+        )
 
-    # The merge-queue flaky check also reruns the tests that `master` changed
-    # after the PR's last CI run. Computed here, because only this job has the
-    # commit history.
+    # The merge-queue flaky check (stateless) and targeted integration check also
+    # rerun the tests that `master` changed after the PR's last CI run. Computed
+    # here, because only this job has the commit history. Fail-close: those jobs
+    # require this key.
     if info.is_merge_queue_event:
         info.store_kv_data(
             "merge_queue_drift_tests",

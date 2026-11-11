@@ -1,3 +1,4 @@
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -12,6 +13,7 @@
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
+#include <cstring>
 #include <stdexcept>
 
 namespace DB
@@ -21,6 +23,8 @@ namespace Setting
     extern const SettingsUInt64 input_format_max_rows_to_read_for_schema_inference;
     extern const SettingsUInt64 input_format_max_bytes_to_read_for_schema_inference;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsUInt64 input_format_allow_errors_num;
+    extern const SettingsFloat input_format_allow_errors_ratio;
 }
 
 namespace ErrorCodes
@@ -53,6 +57,14 @@ static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndType
         res.emplace_back(name, it->second);
     }
     return res;
+}
+
+/// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
+static void removeColumnsWithEmptyNames(NamesAndTypesList & names_and_types)
+{
+    names_and_types.erase(
+        std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
+        names_and_types.end());
 }
 
 static bool isRetryableSchemaInferenceError(int code)
@@ -171,7 +183,15 @@ try
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema from cache was returned, but format name is unknown");
 
                     if (mode == SchemaInferenceMode::DEFAULT)
-                        return {*iterator_data.cached_columns, *format_name};
+                    {
+                        /// The schema is cached before the columns with empty names are removed from it.
+                        if (!iterator_data.cached_columns->has(""))
+                            return {*iterator_data.cached_columns, *format_name};
+
+                        auto cached_names_and_types = iterator_data.cached_columns->getAll();
+                        removeColumnsWithEmptyNames(cached_names_and_types);
+                        return {ColumnsDescription(cached_names_and_types), *format_name};
+                    }
 
                     schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFilePath());
                     continue;
@@ -374,8 +394,18 @@ try
                 /// one according to the inferred schema.
                 if (!format_name)
                 {
+                    /// These text formats accept almost any bytes, so binary data (e.g. the `.dbf` table of a shapefile)
+                    /// would be detected as one of them with meaningless columns. Text has no zero bytes: if the start
+                    /// of the data has one, don't try them. Only a prefix is checked: a memory-mapped file is one buffer
+                    /// with all of its data.
+                    static constexpr size_t max_bytes_to_check_for_zero_byte = DBMS_DEFAULT_BUFFER_SIZE;
+                    ReadBuffer & detection_buf = support_buf_recreation ? *iterator_data.buf : *peekable_buf;
+                    bool has_zero_byte = !detection_buf.eof()
+                        && memchr(detection_buf.position(), 0, std::min(detection_buf.available(), max_bytes_to_check_for_zero_byte)) != nullptr;
+
+                    static const std::vector<String> no_formats;
                     std::unordered_map<String, NamesAndTypesList> format_to_schema;
-                    const auto & formats_set_to_detect = getSimilarFormatsSetForDetection();
+                    const auto & formats_set_to_detect = has_zero_byte ? no_formats : getSimilarFormatsSetForDetection();
                     for (size_t i = 0; i != formats_set_to_detect.size(); ++i)
                     {
                         try
@@ -539,10 +569,7 @@ try
                 names_and_types = *ordered_list;
         }
 
-        /// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
-        names_and_types.erase(
-            std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
-            names_and_types.end());
+        removeColumnsWithEmptyNames(names_and_types);
 
         return {ColumnsDescription(names_and_types), *format_name};
     }
@@ -606,6 +633,15 @@ SchemaCache::Keys getKeysForSchemaCache(
         std::back_inserter(cache_keys),
         [&](const auto & source) { return makeSchemaCacheKey(source, format, additional_format_info, schema_inference_mode); });
     return cache_keys;
+}
+
+bool canUseNumRowsFromSchemaCache(const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+{
+    if (format_settings)
+        return format_settings->input_allow_errors_num == 0 && format_settings->input_allow_errors_ratio == 0;
+
+    const auto & settings = context->getSettingsRef();
+    return settings[Setting::input_format_allow_errors_num] == 0 && settings[Setting::input_format_allow_errors_ratio] == 0;
 }
 
 }
