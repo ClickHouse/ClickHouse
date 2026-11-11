@@ -31,6 +31,7 @@
 #include <boost/locale/date_time_facet.hpp>
 
 #include <charconv>
+#include <cstdlib>
 #include <ranges>
 #include <string_view>
 
@@ -46,6 +47,11 @@
 
 #if defined(OS_LINUX)
 #    include <netinet/tcp.h>
+#endif
+
+#if defined(OS_DARWIN)
+#    include <sys/sysctl.h>
+#    include <mach/mach.h>
 #endif
 
 
@@ -126,10 +132,13 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
     return {};
 }
 
-void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+std::optional<std::string> AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
-    if (auto path = getCgroupsV2PathContainingFile(filename))
+    out.reset();
+    auto path = getCgroupsV2PathContainingFile(filename);
+    if (path)
         openFileIfExists((path.value() + "/" + filename).c_str(), out);
+    return out ? path : std::nullopt;
 };
 
 #endif
@@ -157,7 +166,7 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
-    openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
@@ -178,7 +187,10 @@ AsynchronousMetrics::AsynchronousMetrics(
             "Will use cgroup reader from '{}' (cgroups version: {})",
             cgroup_path,
             (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
-        cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+        if (version == ICgroupsReader::CgroupsVersion::V2)
+            openCgroupv2MemoryFiles(cgroup_path);
+        else
+            cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
     }
     catch (...)
     {
@@ -212,6 +224,33 @@ AsynchronousMetrics::AsynchronousMetrics(
 }
 
 #if defined(OS_LINUX)
+void AsynchronousMetrics::openCgroupv2MemoryFiles(const std::optional<std::string> & dir) TSA_REQUIRES(data_mutex)
+{
+    cgroupmem_limit_in_bytes.reset();
+    cgroupmem_reader.reset();
+    cgroupmem_dir.reset();
+    if (!dir)
+        return;
+
+    openFileIfExists((*dir + "/memory.max").c_str(), cgroupmem_limit_in_bytes);
+    try
+    {
+        cgroupmem_reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, *dir);
+    }
+    catch (...)
+    {
+        if (cgroupmem_failed_dir != dir)
+            tryLogCurrentException(log, "cgroups are not available");
+        cgroupmem_failed_dir = dir;
+    }
+
+    if (cgroupmem_limit_in_bytes && cgroupmem_reader)
+    {
+        cgroupmem_dir = dir;
+        cgroupmem_failed_dir.reset();
+    }
+}
+
 void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
 {
     LOG_TRACE(log, "Scanning /sys/class/thermal");
@@ -709,6 +748,55 @@ std::optional<Value> saveJemallocProf(AsynchronousMetricValues & values,
         fmt::format("prof.{}", metric_name),
         fmt::format("jemalloc.prof.{}", metric_name));
 }
+
+}
+#endif
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+
+/// The host memory metrics are reported both from `/proc/meminfo` and from the Mach VM statistics,
+/// so their documentation is shared: `system.documentation` requires one description per metric name.
+#define OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION \
+    "The amount of free memory on the host system, in bytes." \
+    " This does not include the memory used by the OS page cache memory, in bytes." \
+    " The page cache memory is also available for usage by programs, so the value of this metric can be confusing." \
+    " See the `OSMemoryAvailable` metric instead." \
+    " For convenience we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable." \
+    " See also https://www.linuxatemyram.com/." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+
+#define OS_MEMORY_AVAILABLE_DOCUMENTATION \
+    "The amount of memory available to be used by programs, in bytes. This is very similar to the `OSMemoryFreePlusCached` metric." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+
+#define OS_MEMORY_CACHED_DOCUMENTATION \
+    "The amount of memory used by the OS page cache, in bytes. Typically, almost all available memory is used by the OS page cache - high values of this metric are normal and expected." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+
+#define OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION \
+    "The amount of free memory plus OS page cache memory on the host system, in bytes. This memory is available to be used by programs. The value should be very similar to `OSMemoryAvailable`." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+
+namespace
+{
+
+#define LOAD_AVERAGE_DOCUMENTATION \
+    " The load represents the number of threads across all the processes (the scheduling entities of the OS kernel)," \
+    " that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time." \
+    " This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores," \
+    " if the system is overloaded, and many processes are ready to run but waiting for CPU or IO."
+
+void saveLoadAverageMetrics(AsynchronousMetricValues & values, Float64 loadavg1, Float64 loadavg5, Float64 loadavg15)
+{
+    values["LoadAverage1"] = { loadavg1,
+        "The whole system load, averaged with exponential smoothing over 1 minute." LOAD_AVERAGE_DOCUMENTATION };
+    values["LoadAverage5"] = { loadavg5,
+        "The whole system load, averaged with exponential smoothing over 5 minutes." LOAD_AVERAGE_DOCUMENTATION };
+    values["LoadAverage15"] = { loadavg15,
+        "The whole system load, averaged with exponential smoothing over 15 minutes." LOAD_AVERAGE_DOCUMENTATION };
+}
+
+#undef LOAD_AVERAGE_DOCUMENTATION
 
 }
 #endif
@@ -1358,7 +1446,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#if HAS_MEMORY_STATISTICS_OS
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
 #endif
 
@@ -1554,7 +1642,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#if HAS_MEMORY_STATISTICS_OS
     {
         MemoryStatisticsOS::Data & data = memory_statistics_data;
 
@@ -1580,13 +1668,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "When userspace page cache is disabled, this value equals MemoryResident."
         };
 
-#if !defined(OS_FREEBSD) && !defined(OS_SUNOS)
+#if !defined(OS_FREEBSD) && !defined(OS_SUNOS) && !defined(OS_DARWIN)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
             " ClickHouse does not use shared memory, but some memory can be labeled by OS as shared for its own reasons."
             " This metric does not make a lot of sense to watch, and it exists only for completeness reasons."};
 #endif
-#if !defined(OS_SUNOS)
+#if !defined(OS_SUNOS) && !defined(OS_DARWIN)
         new_values["MemoryCode"] = { data.code,
             "The amount of virtual memory mapped for the pages of machine code of the server process, in bytes." };
         new_values["MemoryDataAndStack"] = { data.data_and_stack,
@@ -1603,7 +1691,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         struct rusage rusage{};
         if (!getrusage(RUSAGE_SELF, &rusage))
         {
-            new_values["MemoryResidentMax"] = { rusage.ru_maxrss * 1024 /* KiB -> bytes */,
+#if defined(OS_DARWIN)
+            /// Unlike other platforms, on macOS `ru_maxrss` is in bytes, not in KiB.
+            UInt64 max_resident_bytes = rusage.ru_maxrss;
+#else
+            UInt64 max_resident_bytes = rusage.ru_maxrss * 1024 /* KiB -> bytes */;
+#endif
+            new_values["MemoryResidentMax"] = { max_resident_bytes,
                 "Maximum amount of physical memory used by the server process, in bytes." };
         }
         else
@@ -1639,18 +1733,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             assertChar('/', *loadavg);
             readText(threads_total, *loadavg);
 
-#define LOAD_AVERAGE_DOCUMENTATION \
-    " The load represents the number of threads across all the processes (the scheduling entities of the OS kernel)," \
-    " that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time." \
-    " This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores," \
-    " if the system is overloaded, and many processes are ready to run but waiting for CPU or IO."
-
-            new_values["LoadAverage1"] = { loadavg1,
-                "The whole system load, averaged with exponential smoothing over 1 minute." LOAD_AVERAGE_DOCUMENTATION };
-            new_values["LoadAverage5"] = { loadavg5,
-                "The whole system load, averaged with exponential smoothing over 5 minutes." LOAD_AVERAGE_DOCUMENTATION };
-            new_values["LoadAverage15"] = { loadavg15,
-                "The whole system load, averaged with exponential smoothing over 15 minutes." LOAD_AVERAGE_DOCUMENTATION };
+            saveLoadAverageMetrics(new_values, loadavg1, loadavg5, loadavg15);
             new_values["OSThreadsRunnable"] = { threads_runnable,
                 "The total number of 'runnable' threads, as the OS kernel scheduler seeing it." };
             new_values["OSThreadsTotal"] = { threads_total,
@@ -1687,6 +1770,19 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 
     Float64 max_cpu_cgroups = 0;
+    /// `cpu.max` exists only while the `cpu` controller is enabled in the parent cgroup, so the nearest one can
+    /// move at runtime, and a descriptor to a removed one fails with ENODEV.
+    try
+    {
+        if (getCgroupsV2PathContainingFile("cpu.max") != cgroupcpu_max_dir)
+            cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        cgroupcpu_max.reset();
+        cgroupcpu_max_dir.reset();
+    }
     if (cgroupcpu_max)
     {
         try
@@ -1719,6 +1815,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            cgroupcpu_max.reset();
+            cgroupcpu_max_dir.reset();
         }
     }
     else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
@@ -1943,6 +2041,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    /// The nearest `memory.max` and `memory.stat` move when the parent toggles the `memory` controller; removed ones give ENODEV.
+    try
+    {
+        if (auto dir = getCgroupsV2PathContainingFile("memory.current"); dir != cgroupmem_dir)
+            openCgroupv2MemoryFiles(dir);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (cgroupmem_dir)
+            openCgroupv2MemoryFiles({});
+    }
     if (cgroupmem_limit_in_bytes && cgroupmem_reader)
     {
         try
@@ -1951,10 +2061,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             uint64_t limit = 0;
             tryReadText(limit, *cgroupmem_limit_in_bytes);
 
-            uint64_t usage = cgroupmem_reader->readMemoryUsage();
+            /// The best-effort combined read keeps the pre-existing metrics below published even
+            /// if the inactive-file fields of `memory.stat` cannot be parsed; in that case only
+            /// `CGroupMemoryInactiveFile` is skipped for this update cycle.
+            auto stats = cgroupmem_reader->readMemoryUsageAndOptionalInactiveFile();
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
-            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes. "
+            new_values["CGroupMemoryUsed"] = { stats.usage, "The amount of memory used in cgroup, in bytes. "
                 "On cgroup v2 this is anon + sock + non-reclaimable kernel memory; on cgroup v1 this is RSS. "
                 "In both cases the kernel OS page cache (file-backed cache) is excluded." };
 
@@ -1962,8 +2075,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             if (context && context->getPageCache())
                 userspace_page_cache_bytes = context->getPageCache()->sizeInBytes();
 
-            UInt64 cgroup_usage_without_page_cache = (usage > userspace_page_cache_bytes)
-                                                   ? (usage - userspace_page_cache_bytes)
+            UInt64 cgroup_usage_without_page_cache = (stats.usage > userspace_page_cache_bytes)
+                                                   ? (stats.usage - userspace_page_cache_bytes)
                                                    : 0;
 
             new_values["CGroupMemoryUsedWithoutPageCache"] = {
@@ -1972,10 +2085,27 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 "This is CGroupMemoryUsed minus the userspace page cache size. "
                 "When userspace page cache is disabled, this value equals CGroupMemoryUsed."
             };
+
+            /// The metric is published only when the kernel actually exposes the statistic
+            /// (`inactive_file` on cgroup v2, `total_inactive_file` on cgroup v1): an absent key
+            /// is not a zero, so it must not be reported as one.
+            if (stats.inactive_file)
+                new_values["CGroupMemoryInactiveFile"] = { *stats.inactive_file,
+                    "The amount of memory used for inactive, file-backed page cache in the same cgroup that CGroupMemoryUsed is read from, in bytes. "
+                    "This is reclaimable memory: the kernel can drop it under memory pressure. "
+                    "Kubernetes and cAdvisor compute the working set size (WSS) by subtracting this value from the raw cgroup memory usage "
+                    "(memory.current on cgroup v2, memory.usage_in_bytes on cgroup v1). "
+                    "Note that CGroupMemoryUsed is not that raw usage, because it already excludes the file-backed page cache. "
+                    "The value matches the one used by kubelet for the container on cgroup v2, and on cgroup v1 when the server runs in a container "
+                    "where the memory controller mount is the container's own cgroup. On cgroup v1 the value is read from the memory controller mount root, "
+                    "so on a host where the server runs in a nested v1 cgroup it covers the whole hierarchy under that root rather than the server's own cgroup. "
+                    "The metric is absent when the kernel does not expose the statistic in memory.stat." };
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            if (cgroupmem_dir)
+                openCgroupv2MemoryFiles({});
         }
     }
     if (meminfo)
@@ -2026,19 +2156,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 else if (name == "MemFree:")
                 {
                     free_plus_cached_bytes += bytes;
-                    new_values["OSMemoryFreeWithoutCached"] = { bytes,
-                        "The amount of free memory on the host system, in bytes."
-                        " This does not include the memory used by the OS page cache memory, in bytes."
-                        " The page cache memory is also available for usage by programs, so the value of this metric can be confusing."
-                        " See the `OSMemoryAvailable` metric instead."
-                        " For convenience we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable."
-                        " See also https://www.linuxatemyram.com/."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["OSMemoryFreeWithoutCached"] = { bytes, OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION };
                 }
                 else if (name == "MemAvailable:")
                 {
-                    new_values["OSMemoryAvailable"] = { bytes, "The amount of memory available to be used by programs, in bytes. This is very similar to the `OSMemoryFreePlusCached` metric."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["OSMemoryAvailable"] = { bytes, OS_MEMORY_AVAILABLE_DOCUMENTATION };
                 }
                 else if (name == "Buffers:")
                 {
@@ -2048,8 +2170,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 else if (name == "Cached:")
                 {
                     free_plus_cached_bytes += bytes;
-                    new_values["OSMemoryCached"] = { bytes, "The amount of memory used by the OS page cache, in bytes. Typically, almost all available memory is used by the OS page cache - high values of this metric are normal and expected."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["OSMemoryCached"] = { bytes, OS_MEMORY_CACHED_DOCUMENTATION };
                 }
                 else if (name == "SwapCached:")
                 {
@@ -2060,8 +2181,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 skipToNextLineOrEOF(*meminfo);
             }
 
-            new_values["OSMemoryFreePlusCached"] = { free_plus_cached_bytes, "The amount of free memory plus OS page cache memory on the host system, in bytes. This memory is available to be used by programs. The value should be very similar to `OSMemoryAvailable`."
-                " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+            new_values["OSMemoryFreePlusCached"] = { free_plus_cached_bytes, OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION };
         }
         catch (...)
         {
@@ -2821,6 +2941,87 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+    }
+#endif
+
+#if defined(OS_DARWIN)
+    {
+        UInt64 memory_total = 0;
+        size_t len = sizeof(memory_total);
+        int mib[2] = {CTL_HW, HW_MEMSIZE};
+        if (0 == sysctl(mib, 2, &memory_total, &len, nullptr, 0))
+            new_values["OSMemoryTotal"] = { memory_total, "The total amount of memory on the host system, in bytes." };
+        else
+            LOG_ERROR(log, "Cannot obtain the total amount of memory via sysctl: {}", errnoToString(errno));
+    }
+
+    {
+        mach_port_t host_port = mach_host_self();
+
+        vm_size_t page_size = 0;
+        vm_statistics64_data_t vm_stats;
+        mach_msg_type_number_t info_count = HOST_VM_INFO64_COUNT;
+
+        kern_return_t res = host_page_size(host_port, &page_size);
+        if (res == KERN_SUCCESS)
+            res = host_statistics64(host_port, HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&vm_stats), &info_count);
+
+        if (res == KERN_SUCCESS)
+        {
+            /// External pages are file-backed, i.e. the equivalent of the Linux page cache.
+            UInt64 cached_bytes = static_cast<UInt64>(vm_stats.external_page_count) * page_size;
+            new_values["OSMemoryCached"] = { cached_bytes, OS_MEMORY_CACHED_DOCUMENTATION };
+
+            /// Speculative pages are file-backed readahead, i.e. a part of the page cache, but the kernel counts them inside
+            /// `free_count` (the `vm_stat` utility subtracts them from "Pages free" in the same way). `free_count` and
+            /// `speculative_count` are filled from two separate unlocked reads of the same kernel counter, so a concurrently
+            /// growing speculative list can make the latter the bigger one. Both are 32 bit, so the subtraction would not go
+            /// negative but wrap around into tens of terabytes.
+            if (vm_stats.speculative_count <= vm_stats.free_count)
+            {
+                UInt64 free_without_cached_bytes = static_cast<UInt64>(vm_stats.free_count - vm_stats.speculative_count) * page_size;
+                /// Purgeable pages are not file-backed, but the kernel is also free to reclaim them at any moment.
+                UInt64 available_bytes = free_without_cached_bytes + cached_bytes + static_cast<UInt64>(vm_stats.purgeable_count) * page_size;
+
+                new_values["OSMemoryFreeWithoutCached"] = { free_without_cached_bytes, OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION };
+                new_values["OSMemoryFreePlusCached"] = { free_without_cached_bytes + cached_bytes, OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION };
+                new_values["OSMemoryAvailable"] = { available_bytes, OS_MEMORY_AVAILABLE_DOCUMENTATION };
+            }
+            else
+                LOG_WARNING(log, "Inconsistent snapshot from host_statistics64: {} speculative pages for {} free pages",
+                    vm_stats.speculative_count, vm_stats.free_count);
+        }
+        else
+            LOG_ERROR(log, "Cannot obtain memory statistics via host_statistics64: {}", mach_error_string(res));
+
+        processor_set_name_t pset = PROCESSOR_SET_NULL;
+        res = processor_set_default(host_port, &pset);
+        if (res == KERN_SUCCESS)
+        {
+            processor_set_load_info_data_t load_info;
+            mach_msg_type_number_t load_info_count = PROCESSOR_SET_LOAD_INFO_COUNT;
+            res = processor_set_statistics(pset, PROCESSOR_SET_LOAD_INFO,
+                reinterpret_cast<processor_set_info_t>(&load_info), &load_info_count);
+            mach_port_deallocate(mach_task_self(), pset);
+
+            if (res == KERN_SUCCESS)
+                new_values["OSThreadsTotal"] = { static_cast<UInt64>(load_info.thread_count),
+                    "The total number of threads, as the OS kernel scheduler seeing it." };
+            else
+                LOG_ERROR(log, "Cannot obtain the number of threads via processor_set_statistics: {}", mach_error_string(res));
+        }
+        else
+            LOG_ERROR(log, "Cannot obtain the default processor set via processor_set_default: {}", mach_error_string(res));
+
+        mach_port_deallocate(mach_task_self(), host_port);
+    }
+
+    {
+        double loadavg_values[3] = {};
+        if (3 == getloadavg(loadavg_values, 3))
+            saveLoadAverageMetrics(new_values, loadavg_values[0], loadavg_values[1], loadavg_values[2]);
+        else
+            LOG_ERROR(log, "Cannot obtain the load average via getloadavg");
     }
 #endif
 

@@ -18,9 +18,10 @@ ObjectStorageQueueFilenameParser::ObjectStorageQueueFilenameParser(
         partition_pattern = std::make_unique<re2::RE2>(partition_regex);
         if (!partition_pattern->ok())
         {
-            error_message = fmt::format("Failed to compile partition_regex: {}", partition_pattern->error());
+            auto message = PreformattedMessage::create("Failed to compile partition_regex: {}", partition_pattern->error());
+            error_message = message.text;
             partition_pattern.reset();
-            LOG_ERROR(log, "{}", error_message);
+            LOG_ERROR(log, message);
         }
     }
 }
