@@ -68,7 +68,8 @@ String maskedQuotedString(String value)
 
 }
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
+URI::URI(
+    const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style, bool validate_bucket_name)
 {
     /// Case when AWS Private Link Interface is being used
     /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
@@ -181,7 +182,8 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     }
     }
 
-    validateBucket(bucket, uri);
+    if (validate_bucket_name)
+        validateBucket(bucket, uri);
     validateKey(key, uri);
 }
 
@@ -265,6 +267,27 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
+            maskedQuotedString(bucket),
+            !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
+}
+
+void URI::validateGCSBucket(const String & bucket, const Poco::URI & uri)
+{
+    /// https://cloud.google.com/storage/docs/buckets#naming
+    bool valid = bucket.length() >= 3 && bucket.length() <= 222 && (bucket.length() <= 63 || bucket.contains('.'));
+    for (size_t begin = 0; valid && begin <= bucket.length();)
+    {
+        size_t end = bucket.find('.', begin);
+        if (end == String::npos)
+            end = bucket.length();
+        valid = end - begin <= 63;
+        begin = end + 1;
+    }
+
+    if (!valid)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bucket name length is out of bounds in GCS URI: {}{}",
             maskedQuotedString(bucket),
             !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
 }

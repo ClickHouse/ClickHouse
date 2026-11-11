@@ -87,7 +87,8 @@ struct S3StorageParsedArguments : private StorageParsedArguments
     /// Set by the native GCS configuration (`StorageGCSConfiguration`): a URL on the virtual-hosted form
     /// of the default GCS host, `https://<bucket>.storage.googleapis.com/<key>`, takes the bucket from the
     /// host and the key from the whole path. The generic `S3::URI` parser does not know this host and would
-    /// take the first path component as the bucket (and validate it as one).
+    /// take the first path component as the bucket (and validate it as one). The host is compared case-insensitively,
+    /// and the bucket is validated by the GCS naming rules rather than the S3 ones.
     bool recognize_gcs_virtual_hosted_urls = false;
 
     S3::URI parseURI(const String & url_str, const Settings & settings) const;

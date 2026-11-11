@@ -38,6 +38,9 @@ public:
     /// `IcebergPathResolver` instead.
     bool supportsFullyQualifiedPaths() const override { return false; }
 
+    /// GCS bucket names follow other rules than S3 ones: a dotted name may have up to 222 characters.
+    void validateNamespace(const String & name) const override { S3::URI::validateGCSBucket(name, {}); }
+
     ObjectStoragePtr createObjectStorage(
         ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 

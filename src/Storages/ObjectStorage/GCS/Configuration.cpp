@@ -81,7 +81,14 @@ void StorageGCSConfiguration::fromDisk(const String & disk_name, ASTs & args, Co
     /// verbatim: reading `url.key` back from the parsed URI would address a different object.
     String encoded_key;
     Poco::URI::encode(key, "?#", encoded_key);
-    url = S3::URI(fmt::format("{}/{}/{}", endpoint, disk_settings->bucket, encoded_key));
+    /// The bucket follows the GCS naming rules (a dotted name may be longer than an S3 one).
+    url = S3::URI(
+        fmt::format("{}/{}/{}", endpoint, disk_settings->bucket, encoded_key),
+        /* allow_archive_path_syntax */ false,
+        /* keep_presigned_query_parameters */ true,
+        S3UriStyle::PATH,
+        /* validate_bucket_name */ false);
+    S3::URI::validateGCSBucket(url.bucket, url.uri);
     url.key = key;
 
     /// The native backend takes nothing from here, but the S3 code path this configuration inherits
