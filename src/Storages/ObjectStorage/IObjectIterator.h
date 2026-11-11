@@ -105,8 +105,8 @@ struct IObjectIterator
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
 
-    /// The JOIN runtime filters every row of the read passes, set before the first `next`. An iterator
-    /// may skip the objects that cannot contain any of their keys once the filters are built.
+    /// The predicate of the JOIN runtime filters every row of the read passes, set before the first `next`.
+    /// An iterator may skip the objects that cannot contain any of their keys once it is built.
     virtual void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> /*predicate*/) {}
 };
 

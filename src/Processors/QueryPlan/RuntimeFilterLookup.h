@@ -472,7 +472,7 @@ struct RuntimeFilterIndexAnalysisDescriptor
 };
 using RuntimeFilterIndexAnalysisDescriptors = std::vector<RuntimeFilterIndexAnalysisDescriptor>;
 
-/// The `buildRuntimeRangePredicate` of the JOIN runtime filters every row of a read passes, built once all of them are.
+/// The `buildRuntimeRangePredicate` DAG of the JOIN runtime filters every row of a read passes, built once all of them are.
 /// Shared by everything that prunes the read by them: the data files of an Iceberg table and the Parquet row groups.
 class RuntimeFilterPruningPredicate
 {

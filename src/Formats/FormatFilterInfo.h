@@ -182,8 +182,8 @@ struct FormatFilterInfo
     /// so applying it partially or not at all is always correct.
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 
-    /// Once these filters are built, the format may skip the row groups whose statistics cannot contain
-    /// a key of them. Only supported by the Parquet format.
+    /// Once all its filters are built, the format may skip the row groups whose statistics cannot contain
+    /// a key of them. Only the Parquet format uses it.
     std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
 
     /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
