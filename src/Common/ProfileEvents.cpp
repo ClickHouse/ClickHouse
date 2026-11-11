@@ -549,6 +549,7 @@
     M(IcebergTrivialCountOptimizationApplied, "Trivial count optimization applied while reading from Iceberg", ValueType::Number) \
     M(IcebergVersionHintUsed, "Number of times version-hint.text has been used.", ValueType::Number) \
     M(IcebergMinMaxIndexPrunedFiles, "Number of skipped files by using MinMax index in Iceberg", ValueType::Number) \
+    M(IcebergRuntimeFilterPrunedFiles, "Number of Iceberg data files skipped because their manifest bounds cannot contain a key of a JOIN runtime filter", ValueType::Number) \
     M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
     M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
     M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
@@ -1303,6 +1304,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperWatchTriggeredNodeDeleted, "Number of watch triggers by `DELETE` operation", ValueType::Number) \
     M(KeeperWatchTriggeredNodeDataChanged, "Number of watch triggers by change operations", ValueType::Number) \
     M(KeeperWatchTriggeredNodeChildrenChanged, "Number of watch triggers by children change operations", ValueType::Number) \
+    M(KeeperRejectedCommittedLogRollback, "Number of times Keeper refused a request that would have rolled back already-committed log entries", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \
@@ -1339,6 +1341,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ObjectStorageListedObjects, "Total objects returned by object storage listing API before any filtering.", ValueType::Number) \
     M(ObjectStorageGlobFilteredObjects, "Objects that did not match the glob or regex pattern and were skipped during listing.", ValueType::Number) \
+    M(ObjectStorageHiddenFilteredObjects, "Objects with a hidden path segment (starting with '_' or '.') below the non-glob prefix that were skipped during listing.", ValueType::Number) \
     M(ObjectStoragePredicateFilteredObjects, "Objects removed by virtual column predicate filtering on _path/_file.", ValueType::Number) \
     M(ObjectStorageReadObjects, "Objects actually opened for reading by the object storage source.", ValueType::Number) \
     M(ObjectStorageMetadataFetchedForRead, "Number of object metadata requests (e.g. S3 HEAD) issued to read objects (by the object storage source, its file iterators, and schema inference), because the size and ETag of the object were not known from listing or table metadata.", ValueType::Number) \
