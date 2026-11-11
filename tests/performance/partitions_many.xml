@@ -1,0 +1,44 @@
+<!--
+    Index analysis at scale, on a copy of `hits_100m_single` (100 M rows).
+    `parts_many`: 5000 partitions of one part, written by two insert blocks of 2500 partitions each, so the layout is
+    deterministic (one block of 100 M rows exceeds 12 GB of memory). Queries: key analysis over 5000 parts with a read;
+    partition pruning (eight single-partition probes per statement); the per-partition aggregation
+    (`allow_aggregate_partitions_independently` 1 against 0); a full scan of the many small parts.
+    The setup checks the layout and the result of every query against `hits_100m_single`.
+    Per server and invocation: 100 M rows; about 1.6 GB written by the setup, no table data by the queries; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="60">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+</settings>
+
+<create_query>
+    CREATE TABLE parts_many (UserID UInt64, CounterID UInt32, EventDate Date, EventTime DateTime, WatchID UInt64, RegionID UInt32)
+    ENGINE = MergeTree PARTITION BY intHash32(UserID) % 5000 ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
+</create_query>
+
+<fill_query>INSERT INTO parts_many SELECT UserID, CounterID, EventDate, EventTime, WatchID, RegionID FROM hits_100m_single WHERE intHash32(UserID) % 2 = 0 SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 1000000000, min_insert_block_size_bytes = 0, max_insert_block_size = 1000000000, max_partitions_per_insert_block = 0</fill_query>
+<fill_query>INSERT INTO parts_many SELECT UserID, CounterID, EventDate, EventTime, WatchID, RegionID FROM hits_100m_single WHERE intHash32(UserID) % 2 = 1 SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 1000000000, min_insert_block_size_bytes = 0, max_insert_block_size = 1000000000, max_partitions_per_insert_block = 0</fill_query>
+
+<fill_query>SELECT throwIf((count(), uniqExact(partition), sum(rows)) != (5000, 5000, 100000000)) FROM system.parts WHERE database = 'default' AND table = 'parts_many' AND active</fill_query>
+<fill_query>SELECT throwIf((count(), sum(RegionID)) != (SELECT count(), sum(RegionID) FROM hits_100m_single WHERE CounterID = 1629)) FROM parts_many WHERE CounterID = 1629</fill_query>
+<fill_query>
+    SELECT throwIf(arraySort(groupArray(c)) != (SELECT arraySort(groupArray(c)) FROM (SELECT count() AS c FROM hits_100m_single WHERE intHash32(UserID) % 5000 BETWEEN 1 AND 8 GROUP BY intHash32(UserID) % 5000)))
+    FROM (SELECT count() AS c FROM parts_many WHERE intHash32(UserID) % 5000 = 1 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 2 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 3 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 4 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 5 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 6 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 7 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 8)
+</fill_query>
+<fill_query>SELECT throwIf((count(), sum(cityHash64(p, c, u))) != (SELECT count(), sum(cityHash64(p, c, u)) FROM (SELECT intHash32(UserID) % 5000 AS p, count() AS c, uniq(CounterID) AS u FROM hits_100m_single GROUP BY p))) FROM (SELECT intHash32(UserID) % 5000 AS p, count() AS c, uniq(CounterID) AS u FROM parts_many GROUP BY p) SETTINGS allow_aggregate_partitions_independently = 1, force_aggregate_partitions_independently = 1</fill_query>
+<fill_query>SELECT throwIf((count(), sum(cityHash64(p, c, u))) != (SELECT count(), sum(cityHash64(p, c, u)) FROM (SELECT intHash32(UserID) % 5000 AS p, count() AS c, uniq(CounterID) AS u FROM hits_100m_single GROUP BY p))) FROM (SELECT intHash32(UserID) % 5000 AS p, count() AS c, uniq(CounterID) AS u FROM parts_many GROUP BY p) SETTINGS allow_aggregate_partitions_independently = 0</fill_query>
+<fill_query>SELECT throwIf((sum(RegionID), sum(WatchID), max(EventTime), sum(CounterID)) != (SELECT sum(RegionID), sum(WatchID), max(EventTime), sum(CounterID) FROM hits_100m_single)) FROM parts_many</fill_query>
+
+<query>SELECT count(), sum(RegionID) FROM parts_many WHERE CounterID = 1629 FORMAT Null</query>
+<query>SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 1 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 2 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 3 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 4 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 5 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 6 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 7 UNION ALL SELECT count() FROM parts_many WHERE intHash32(UserID) % 5000 = 8 FORMAT Null</query>
+<query>SELECT intHash32(UserID) % 5000 AS p, count(), uniq(CounterID) FROM parts_many GROUP BY p FORMAT Null SETTINGS allow_aggregate_partitions_independently = 1, force_aggregate_partitions_independently = 1</query>
+<query>SELECT intHash32(UserID) % 5000 AS p, count(), uniq(CounterID) FROM parts_many GROUP BY p FORMAT Null SETTINGS allow_aggregate_partitions_independently = 0</query>
+<query>SELECT sum(RegionID), sum(WatchID), max(EventTime), sum(CounterID) FROM parts_many FORMAT Null</query>
+
+<drop_query>DROP TABLE IF EXISTS parts_many SYNC</drop_query>
+
+</test>

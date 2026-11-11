@@ -7,7 +7,6 @@
 -- squashing to `min_joined_block_size_rows` / `min_joined_block_size_bytes` every join applies to its
 -- right input is worth here; turning it off is how these queries produce a finely blocked store.
 
-SET enable_analyzer = 1;
 -- No algorithm is enabled, so every kind below is answered by the operator, `INNER` included.
 SET join_algorithm = '';
 SET query_plan_join_swap_table = 'false';
