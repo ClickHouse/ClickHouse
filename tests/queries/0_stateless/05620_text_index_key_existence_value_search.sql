@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS tab_both;
 DROP TABLE IF EXISTS tab_keys_post;
 DROP TABLE IF EXISTS tab_both_post;
 DROP TABLE IF EXISTS tab_both_post_nullable;
+DROP TABLE IF EXISTS tab_keys_nullable;
 DROP TABLE IF EXISTS tab_json_paths;
 DROP TABLE IF EXISTS tab_json_both;
 DROP TABLE IF EXISTS tab_fixed;
@@ -70,6 +71,13 @@ SELECT groupArray(id) FROM (SELECT id FROM tab_both_post_nullable WHERE isNotNul
 SELECT groupArray(id) FROM (SELECT id FROM tab_both_post_nullable WHERE hasAnyTokens(m['k'], 'hello') = 0 ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_both_post_nullable WHERE hasAnyTokens(m['k'], 'hello') = 0 ORDER BY id SETTINGS use_skip_indexes = 0);
 
+SELECT '-- mapKeys, Nullable values, a tokenizer argument';
+CREATE TABLE tab_keys_nullable (id UInt32, expected UInt8, m Map(String, Nullable(String)), INDEX ik mapKeys(m) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_keys_nullable SELECT number + 1, number = 1, multiIf(number = 0, map('j', 'ok'), number = 1, map('k', 'hello'), map('x', 'other')) FROM numbers(12);
+SELECT groupArray(id) FROM (SELECT id FROM tab_keys_nullable WHERE (m['k'] = 'hello' OR m['j'] = 'ok') AND hasAnyTokens(m['k'], 'hello', 'splitByNonAlpha') = expected ORDER BY id SETTINGS optimize_move_to_prewhere = 0);
+SELECT groupArray(id) FROM (SELECT id FROM tab_keys_nullable WHERE (m['k'] = 'hello' OR m['j'] = 'ok') AND hasAnyTokens(m['k'], 'hello', 'splitByNonAlpha') = expected ORDER BY id SETTINGS optimize_move_to_prewhere = 0, use_skip_indexes = 0);
+
 SELECT '-- JSONAllPaths';
 CREATE TABLE tab_json_paths (id UInt32, d JSON, INDEX ip JSONAllPaths(d) TYPE text(tokenizer = array))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
@@ -99,6 +107,7 @@ DROP TABLE tab_both;
 DROP TABLE tab_keys_post;
 DROP TABLE tab_both_post;
 DROP TABLE tab_both_post_nullable;
+DROP TABLE tab_keys_nullable;
 DROP TABLE tab_json_paths;
 DROP TABLE tab_json_both;
 DROP TABLE tab_fixed;

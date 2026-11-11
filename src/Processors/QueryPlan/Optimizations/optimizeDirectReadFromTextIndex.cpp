@@ -662,10 +662,12 @@ private:
                 continue;
 
             /// The search query is built from the canonicalized subtree, but the rewrites below apply to
-            /// the original node, so check that node as well. A key-existence query does not use the tokenizer argument.
+            /// the original node, so check that node as well. A key-existence query does not use the tokenizer argument:
+            /// it is kept for the missing-key check in `processTextIndexFunction`, but adds no hint.
             const auto function_name = function_node.function_base->getName();
+            const bool can_answer = text_index_condition.canAnswerFunctionNode(function_node);
             const bool ignores_tokenizer_argument = needApplyTokenizer(function_name) && search_query->getFunctionName() != function_name;
-            if (!ignores_tokenizer_argument && !text_index_condition.canAnswerFunctionNode(function_node))
+            if (!can_answer && !ignores_tokenizer_argument)
                 continue;
 
             SelectedCondition condition
@@ -679,6 +681,7 @@ private:
             /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise, or if
             /// the query has no virtual column, just inject the tokenizer/preprocessor/postprocessor, same as None mode.
             if (direct_read_from_text_index
+                && can_answer
                 && info.index
                 && !drops_nullable
                 && search_query->getDirectReadMode() != TextIndexDirectReadMode::None)
