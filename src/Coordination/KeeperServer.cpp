@@ -710,12 +710,13 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// still as safeguard it's better to have some redundant capacity here
     asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
     asio_opts.streaming_mode_ = coordination_settings[CoordinationSetting::nuraft_streaming_mode];
-    /// A follower can reject `AppendEntries` while catching up and still serve local reads.
+    /// A follower can serve local reads while catching up through `AppendEntries` or a snapshot transfer.
     /// Equal request and response terms are enough to prove that the request came from the current leader.
     asio_opts.write_resp_meta_ = [this](const nuraft::asio_service_meta_cb_params & callback_params)
     {
         if (
-            callback_params.msg_type_ != nuraft::msg_type::append_entries_request
+            (callback_params.msg_type_ != nuraft::msg_type::append_entries_request
+             && callback_params.msg_type_ != nuraft::msg_type::install_snapshot_request)
             || !callback_params.resp_
             || callback_params.resp_->get_term() != callback_params.term_)
             return std::string{};
@@ -725,7 +726,8 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     asio_opts.read_resp_meta_ = [this](const nuraft::asio_service_meta_cb_params & callback_params, const std::string & metadata)
     {
         if (
-            callback_params.msg_type_ == nuraft::msg_type::append_entries_request
+            (callback_params.msg_type_ == nuraft::msg_type::append_entries_request
+             || callback_params.msg_type_ == nuraft::msg_type::install_snapshot_request)
             && callback_params.resp_
             && callback_params.resp_->get_term() == callback_params.term_)
             applySessionTouches(metadata);

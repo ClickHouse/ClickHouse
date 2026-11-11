@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 import uuid
@@ -6,6 +7,8 @@ import pytest
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+from helpers.test_tools import wait_condition
 
 
 SESSION_TIMEOUT_SECONDS = 4
@@ -102,6 +105,14 @@ def stop_reading(stop, thread):
     assert not thread.is_alive(), "Read request did not finish"
 
 
+def get_log_info(node):
+    response = keeper_utils.send_4lw_cmd(cluster, node, "lgif")
+    return {
+        name: int(value)
+        for name, value in (line.split() for line in response.splitlines())
+    }
+
+
 def test_local_reads_on_follower_touch_session_on_leader():
     follower = keeper_utils.get_any_follower(cluster, NODES)
     client = create_client(follower)
@@ -153,3 +164,68 @@ def test_local_reads_keep_session_alive_during_leader_change():
             thread.join(timeout=5)
         client.stop()
         client.close()
+
+
+def test_local_reads_keep_session_alive_during_snapshot_transfer():
+    leader = wait_for_leader(NODES)
+    follower = next(node for node in reversed(NODES) if node != leader)
+    writer = create_client(leader, SERVER_MAX_SESSION_TIMEOUT_SECONDS)
+    client = None
+    stop = thread = errors = None
+    prefix = f"/session_touch_snapshot_{uuid.uuid4().hex}"
+    path = f"{prefix}/session"
+
+    try:
+        writer.create(prefix)
+        for index in range(4):
+            writer.create(f"{prefix}/data{index}", os.urandom(256 * 1024))
+
+        client = create_client(follower, SERVER_MAX_SESSION_TIMEOUT_SECONDS)
+        client.create(path, b"alive", ephemeral=True)
+        client.sync(path)
+        initial_session_id = client.client_id[0]
+        follower_index = get_log_info(follower)["last_log_idx"]
+
+        with PartitionManager() as delayed:
+            # A 1 MiB snapshot in 4 KiB chunks takes at least 25 seconds with
+            # a 100 ms response delay, exceeding the 12-second session timeout.
+            delayed.add_network_delay(follower, 100)
+            with PartitionManager() as partition:
+                for peer in NODES:
+                    if peer != follower:
+                        partition.partition_instances(follower, peer, port=9234)
+
+                # Compact past the follower's log so catch-up requires a snapshot.
+                writer.set(prefix, b"before_snapshot")
+                writer.set(prefix, b"snapshot")
+                snapshot_index = int(keeper_utils.send_4lw_cmd(cluster, leader, "csnp"))
+                assert snapshot_index > follower_index + 1
+                wait_condition(
+                    lambda: get_log_info(leader)["first_log_idx"],
+                    lambda index: index > follower_index + 1,
+                    max_attempts=100,
+                )
+
+            stop, thread, errors = start_reading(client, path)
+
+            def snapshot_installed():
+                assert_session_is_alive(client, initial_session_id, errors)
+                assert writer.exists(path), "Active session lost its ephemeral node"
+                return get_log_info(follower)["last_snapshot_idx"] >= snapshot_index
+
+            wait_condition(snapshot_installed, bool, max_attempts=600, delay=0.2)
+            stop_reading(stop, thread)
+            assert_session_is_alive(client, initial_session_id, errors)
+            assert client.get(path)[0] == b"alive"
+            assert writer.get(path)[0] == b"alive"
+    finally:
+        if stop is not None:
+            stop.set()
+            thread.join(timeout=5)
+        if client is not None:
+            client.stop()
+            client.close()
+        if writer.exists(prefix):
+            writer.delete(prefix, recursive=True)
+        writer.stop()
+        writer.close()

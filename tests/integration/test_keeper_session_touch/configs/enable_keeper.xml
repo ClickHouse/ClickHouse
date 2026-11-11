@@ -13,6 +13,8 @@
             <dead_session_check_period_ms>200</dead_session_check_period_ms>
             <raft_logs_level>trace</raft_logs_level>
             <quorum_reads>false</quorum_reads>
+            <reserved_log_items>1</reserved_log_items>
+            <snapshot_transfer_chunk_size>4096</snapshot_transfer_chunk_size>
         </coordination_settings>
         <raft_configuration>
             <server>
