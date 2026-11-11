@@ -371,6 +371,7 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
         return read_bytes;
     };
 
+    bool continue_past_bound = false;
     if (long_conn && long_conn->servesObject(object.remote_path)
         && long_conn->canServeAt(object_offset, min_bytes_for_seek))
     {
@@ -382,11 +383,13 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
             countBytesFromSource(file_base - gap, skipped);
             stats.add(Stats::LongConnectionBytes, skipped);
         }
-        /// Serve only up to the bound (short window); avoids draining and re-reading the tail.
         const size_t serve = std::min(want, long_conn->read_until - object_offset);
         fill(serve, from_long_conn);
         if (long_conn->atBound())
             long_conn.reset();
+        /// The GET ended at its bound before the slice did: read the rest below with a new request. A fetch into an
+        /// append-only cache cell starts at the committed front of the cell, so the served byte can be past the bound.
+        continue_past_bound = got_total == serve && serve < want;
     }
     else
     {
@@ -414,6 +417,9 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
 
     countBytesFromSource(file_base, got_total);
     fetch_tracker.recordReadRange(file_base, got_total);
+    /// The held GET is gone, so this opens a new one, which covers the whole rest, or reads it one-shot.
+    if (continue_past_bound)
+        chain.append(readObjectSlice(object, object_offset + got_total, want - got_total, file_base + got_total, sizes));
     return chain;
 }
 

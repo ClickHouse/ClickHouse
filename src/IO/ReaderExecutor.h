@@ -172,8 +172,8 @@ private:
         bool atBound() const { return current_position >= read_until; }
         bool isComplete(bool at_eof) const { return at_eof || atBound(); }
         bool consumedAnyBytes() const { return current_position > opened_at; }
-        /// Forward, within `bridgeable_gap`, and still below the bound. A window crossing the bound
-        /// is served short (up to `read_until`), not rejected.
+        /// Forward, within `bridgeable_gap`, and still below the bound. A slice crossing the bound
+        /// is read up to `read_until`, and the rest by a new request.
         bool canServeAt(size_t off, size_t bridgeable_gap) const
         {
             return off >= current_position && off - current_position <= bridgeable_gap && off < read_until;

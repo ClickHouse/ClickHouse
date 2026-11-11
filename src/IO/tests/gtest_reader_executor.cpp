@@ -1730,6 +1730,42 @@ TEST_F(ReaderExecutorTest, FetchReadsThroughNarrowRequestMapHole)
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesOutsideRequestMap), 512u) << "only the hole lies outside the map";
 }
 
+TEST_F(ReaderExecutorTest, HeldConnectionEndingBeforeServedByteIsContinued)
+{
+    /// A fetch into an append-only cache cell starts at its committed front, here before the served byte. The held
+    /// GET, bounded by the first run, ends before that byte: the rest of the fetch is read past its bound.
+    constexpr size_t kib = 1024;
+    constexpr size_t size = 1024 * kib;
+    StoredObjects objects{makeFile("a.bin", size)};
+    auto state = std::make_shared<MockCacheState>(size);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(
+        /*block_size=*/size, state, /*bypass=*/false, /*incremental=*/true));   /// one cold incremental cell
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = 256 * kib, .min_bytes_for_seek = 64 * kib, .block_size = 128 * kib,
+        .max_tail_for_drain = 1024 * kib, .long_connection_limit = limit, .cache_chain = std::move(chain)});
+    ByteRangeSet map;
+    map.add({0, 512 * kib});
+    map.add({768 * kib, 256 * kib});
+    ex.setRequestMap(map);
+
+    /// Fetches [0, 256K) through a GET held up to 512K; the cell commits up to 256K.
+    ex.setReadUntil(128 * kib);
+    EXPECT_EQ(drain(ex).size(), 128 * kib);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 1u);
+
+    ex.setReadUntil(size);
+    ex.seek(768 * kib);
+    auto second = drain(ex);
+    ASSERT_EQ(second.size(), 256 * kib);
+    for (size_t i = 0; i < second.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(second[i]), patternByte(768 * kib + i)) << "at " << (768 * kib + i);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), size) << "a byte of the backfill was read twice";
+}
+
 TEST_F(ReaderExecutorTest, ReadOutsideRequestMapIsServed)
 {
     /// A read where the map says nothing is served, one block per fetch.
