@@ -387,8 +387,8 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
         fill(serve, from_long_conn);
         if (long_conn->atBound())
             long_conn.reset();
-        /// The GET ended at its bound before the slice did: read the rest below with a new request. A fetch into an
-        /// append-only cache cell starts at the committed front of the cell, so the served byte can be past the bound.
+        /// The GET ended at its bound before the slice did: read the rest below with a new request. A fetch into a
+        /// filesystem cache miss segment starts at its committed front, so the served byte can be past the bound.
         continue_past_bound = got_total == serve && serve < want;
     }
     else
@@ -514,7 +514,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, s
     else if (const auto * wr = std::get_if<ReadPlan::ServeFromWriter>(&run))
         out = wr->writer->read(ByteRange{pos, serve_len(wr->range.end())});
     else if (const auto * f = std::get_if<ReadPlan::Fetch>(&run))
-        out = fetchFillServe(pos, extendFetchThroughAppendOnlyCell(f->range, pos + sizes.window_bytes), max_serve, sizes);
+        out = fetchFillServe(pos, extendFetchThroughMissSegment(f->range, pos + sizes.window_bytes), max_serve, sizes);
     /// std::monostate: offset outside the resolved range -> serve nothing.
 
     /// Eagerly drop what we served, freeing its pins and memory hold now (`out` owns its bytes).
@@ -523,15 +523,15 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, s
     return out;
 }
 
-ByteRange ReaderExecutor::extendFetchThroughAppendOnlyCell(ByteRange fetch, size_t limit) const
+ByteRange ReaderExecutor::extendFetchThroughMissSegment(ByteRange fetch, size_t limit) const
 {
     const size_t end = fetch.end();
     if (!request_map || end >= limit)
         return fetch;
-    const std::optional<size_t> cell_end = read_plan.appendOnlyCellEnd(end);
-    if (!cell_end)
+    const std::optional<size_t> segment_end = read_plan.missSegmentEndFor(end);
+    if (!segment_end)
         return fetch;
-    const size_t until = std::min(*cell_end, limit);
+    const size_t until = std::min(*segment_end, limit);
     const ByteRangeSet later = request_map->intersect(ByteRange{toLogical(end), until - end});
     if (later.empty())
         return fetch;

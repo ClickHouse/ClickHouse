@@ -1732,8 +1732,8 @@ TEST_F(ReaderExecutorTest, FetchReadsThroughNarrowRequestMapHole)
 
 TEST_F(ReaderExecutorTest, HeldConnectionEndingBeforeServedByteIsContinued)
 {
-    /// A fetch into an append-only cache cell starts at its committed front, here before the served byte. The held
-    /// GET, bounded by the first run, ends before that byte: the rest of the fetch is read past its bound.
+    /// A fetch into a filesystem cache miss segment starts at its committed front, here before the served byte.
+    /// The held GET, bounded by the first run, ends before that byte: the rest of the fetch is read past its bound.
     constexpr size_t kib = 1024;
     constexpr size_t size = 1024 * kib;
     StoredObjects objects{makeFile("a.bin", size)};
