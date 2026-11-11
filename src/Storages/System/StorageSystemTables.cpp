@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/RenderedCreateQuery.h>
 #include <Disks/IStoragePolicy.h>
+#include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -300,6 +301,17 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
         },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
+        {"stopped_actions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Sorted names of non-expired action locks registered for this table in the local server's memory by `SYSTEM STOP` or `SYSTEM PAUSE` commands. "
+            "Global commands are included when they register a lock for this table. "
+            "Possible values are `merges`, `ttl_merges`, `moves`, `fetches`, `replicated_sends`, `replication_queue`, `distributed_sends`, "
+            "`pull_replication_log`, `cleanup`, and `streaming_consumption`. "
+            "A lock is reported for the table whose background activity it blocks, so a command issued through an `Alias`, or through a materialized view that has an implicit inner table, appears on the table it forwards to. A view created with a `TO` clause owns no blocker, so nothing is reported for it. "
+            "The refresh state of a refreshable materialized view is reported by `system.view_refreshes`, not here. "
+            "An empty array does not guarantee that background work is running: operations without a registered lock, "
+            "internal blockers, volume policies, and persistent Keeper state are not reported. "
+            "The registry is local to the server and is not persisted across restarts."
+        },
     };
 
     description.setAliases({
@@ -388,6 +400,19 @@ protected:
                 skipping_indices_types.push_back(type);
         }
         columns[res_index++]->insert(skipping_indices_types);
+    }
+
+    void fillStoppedActions(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
+    {
+        Array stopped_actions;
+        if (table)
+        {
+            const auto actions = context->getActionLocksManager()->getStoppedActions(table);
+            stopped_actions.reserve(actions.size());
+            for (const auto & action : actions)
+                stopped_actions.emplace_back(action);
+        }
+        columns[res_index++]->insert(stopped_actions);
     }
 
     void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
@@ -609,6 +634,9 @@ protected:
                                 }
                                 ++res_index;
                             }
+                            // stopped_actions
+                            else if (src_index == 43 && columns_mask[src_index])
+                                fillStoppedActions(res_columns, can_expose_metadata ? table.second : nullptr, res_index);
                             /// Fill the rest columns with defaults
                             else if (columns_mask[src_index])
                                 res_columns[res_index++]->insertDefault();
@@ -1094,6 +1122,9 @@ protected:
                     else
                         res_columns[res_index++]->insertDefault();
                 }
+
+                if (columns_mask[src_index++])
+                    fillStoppedActions(res_columns, can_expose_metadata ? table : nullptr, res_index);
             }
         }
         UInt64 num_rows = res_columns.at(0)->size();

@@ -656,6 +656,13 @@ Contains metadata of each table that the server knows about.
 
 [Temporary tables](/reference/statements/create/table/temporary-table) are visible in the `system.tables` only in those session where they have been created. They are shown with the empty `database` field and with the `is_temporary` flag switched on.
 
+.columns_notes
+To list the tables whose merges are stopped:
+
+```sql
+SELECT database, name FROM system.tables WHERE has(stopped_actions, 'merges');
+```
+
 .examples
 ```sql
 SELECT * FROM system.tables LIMIT 2 FORMAT Vertical;
