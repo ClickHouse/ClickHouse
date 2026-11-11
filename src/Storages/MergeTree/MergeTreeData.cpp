@@ -7425,7 +7425,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
         /// A part can carry a column under a name the table does not know, because a rename this part
         /// has not applied yet is recorded in the mutations, not in the part. Resolve those names, so a
-        /// pending rename is not mistaken for a column the table has lost.
+        /// pending rename is not mistaken for a column the table has lost. Pending `CLEAR COLUMN`
+        /// and `DROP COLUMN` also determine which stored columns survive.
         IMutationsSnapshot::Params params
         {
             .metadata_version = old_metadata.getMetadataVersion(),
@@ -7472,6 +7473,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 }
 
                 if (!dropped_columns.contains(name_in_table)
+                    && !alter_conversions->isColumnDropped(column.name, share_nested_offsets)
                     && (new_metadata.columns.hasPhysical(name_after_alter(name_in_table)) || old_metadata.virtuals.has(name_in_table)))
                 {
                     at_least_one_physical_column_rest = true;
