@@ -30,6 +30,7 @@ using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+struct BackupFileInfosAndEntries;
 class BackupConcurrencyCounters;
 using DataRestoreTasks = std::vector<std::function<void()>>;
 struct ReadSettings;
