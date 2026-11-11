@@ -5,6 +5,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/PODArray.h>
 
 #include <algorithm>
 #include <array>
@@ -72,11 +73,14 @@ struct AmacFindPolicy
     using KeyHolder = std::remove_reference_t<decltype(std::declval<KeyGetter &>().getKeyHolder(0uz, std::declval<Arena &>()))>;
     using StoredKey = std::decay_t<decltype(keyHolderGetKey(std::declval<KeyHolder &>()))>;
     static_assert(std::is_trivially_copyable_v<StoredKey>);
+    /// `HashMethodKeysFixed` packs the key columns of a row into one key: row by row, unless it packed the whole block into
+    /// `prepared_keys` when it was built. For such a getter `run` gives the policy the keys of the chunk in `packed_keys`,
+    /// so that `start` loads a key and calls nothing.
+    static constexpr bool packs_keys = detail::PacksKeysIntoBlob<KeyGetter>;
 
     /** The state of the ring. A slot is inactive when its `cell` is null, so a value-initialized ring has no active slot and
       * `row` needs no reserved value. A slot does not store the offset of its cell: `hit` computes it from the cell pointer.
-      * The key is stored in the slot, because `getKeyHolder` would pack a wide fixed key from the key columns again on
-      * every visit.
+      * The key is stored in the slot, so that a visit does not fetch it through the row again (`keyHolderAt`).
       */
     struct RingBase
     {
@@ -122,6 +126,7 @@ struct AmacFindPolicy
     const UInt32 * list = nullptr; /// a row list: the block rows of the chunk
     size_t position_base = 0;      /// the position of the chunk's first row in `FindKeysArgs::rows`
     const UInt8 * skip_data = nullptr; /// indexed by the block row, not by the chunk; null on the fast path
+    const StoredKey * packed_keys = nullptr; /// with `packs_keys`: `[i]` is the key of the chunk's row `i`
     Arena & pool;
     OnRow on_row;
 
@@ -158,6 +163,14 @@ struct AmacFindPolicy
             return first + i;
     }
 
+    ALWAYS_INLINE decltype(auto) keyHolderAt(size_t i [[maybe_unused]], size_t ind [[maybe_unused]])
+    {
+        if constexpr (packs_keys)
+            return packed_keys[i];
+        else
+            return key_getter.getKeyHolder(ind, pool);
+    }
+
     ALWAYS_INLINE void miss(const Ring & ring, size_t s)
     {
         const size_t i = ring.row[s];
@@ -186,7 +199,7 @@ struct AmacFindPolicy
                 return false;
             }
         }
-        auto && key_holder = key_getter.getKeyHolder(ind, pool);
+        auto && key_holder = keyHolderAt(i, ind);
         const auto & key = keyHolderGetKey(key_holder);
         if (unlikely(Cell::isZero(key, no_state)))
         {
@@ -320,19 +333,44 @@ struct AmacLookup
         decltype(auto) key_getter = keyGetterOf<KeyGetter, is_asof_join, keep_key_getter>(args);
 
         const size_t size = args.rows.size;
+        [[maybe_unused]] const auto row_of = [&](size_t i) -> size_t { return row_list ? args.rows.rows[i] : args.rows.first + i; };
         const UInt8 * skip_data = nullptr;
         IColumn::Filter skip_buffer;
         if constexpr (!fast_path)
         {
-            const auto row_of = [&](size_t i) -> size_t { return row_list ? args.rows.rows[i] : args.rows.first + i; };
             if (size)
                 skip_data = args.keys.buildRowSkipData(skip_buffer, row_of(0), row_of(size - 1) + 1 - row_of(0));
         }
         Arena pool;
+        /// The getter was built for the columns of the whole block, so its prepared keys are indexed by the block row.
+        [[maybe_unused]] const bool keys_are_prepared = [&]
+        {
+            if constexpr (Policy::packs_keys)
+                return !row_list && !key_getter.prepared_keys.empty();
+            else
+                return false;
+        }();
+        [[maybe_unused]] PODArray<typename Policy::StoredKey> packed;
 
         for (size_t chunk_begin = 0; chunk_begin < size; chunk_begin += Policy::chunk_rows_max)
         {
             const size_t chunk_rows = std::min(Policy::chunk_rows_max, size - chunk_begin);
+            const typename Policy::StoredKey * packed_keys = nullptr;
+            if constexpr (Policy::packs_keys)
+            {
+                if (keys_are_prepared)
+                    packed_keys = key_getter.prepared_keys.data() + row_of(chunk_begin);
+                else
+                {
+                    packed.resize(chunk_rows);
+                    for (size_t j = 0; j < chunk_rows; ++j)
+                    {
+                        auto key_holder = key_getter.getKeyHolder(row_of(chunk_begin + j), pool);
+                        packed[j] = keyHolderGetKey(key_holder);
+                    }
+                    packed_keys = packed.data();
+                }
+            }
             Policy policy{
                 .key_getter = key_getter,
                 .map = map,
@@ -342,6 +380,7 @@ struct AmacLookup
                 .list = row_list ? args.rows.rows + chunk_begin : nullptr,
                 .position_base = chunk_begin,
                 .skip_data = skip_data,
+                .packed_keys = packed_keys,
                 .pool = pool,
                 .on_row = on_row};
             /// Inlined, so that what `on_row` captured by reference stays in registers, like the fields of the frame-local policy.

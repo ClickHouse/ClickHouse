@@ -27,6 +27,8 @@ CREATE TABLE results (name String, prefetch UInt8, layout String, rows UInt64, c
 -- any left row with the key, so its checksum reads only the key of the left row.
 -- `any_join_distinct_right_table_keys` selects the old `ANY` join. Without `enable_join_key_only_hash_tables` the cells of a
 -- `LEFT ANTI` join hold rows.
+-- Several key columns of fixed size are packed into one key: a whole block at once for `two key columns` (8 and 4 bytes),
+-- and row by row for a key wider than 16 bytes (three `UInt64` columns) or with a column of 3 bytes.
 {% set pairs = 'count(), sum(cityHash64(l.x, r.v))' -%}
 {% set left_row_and_key = 'count(), sum(cityHash64(l.x, r.k))' -%}
 {% set left_row_and_k2 = 'count(), sum(cityHash64(l.x, r.k2))' -%}
@@ -54,6 +56,8 @@ CREATE TABLE results (name String, prefetch UInt8, layout String, rows UInt64, c
     ('string key, left any', left_row_and_key, 'l ANY LEFT JOIN r ON l.s = r.s'),
     ('fixed string key', pairs, 'l INNER JOIN r ON l.f = r.f'),
     ('two key columns', pairs, 'l LEFT JOIN r ON l.k = r.k AND l.k2 = r.k2'),
+    ('three key columns', pairs, 'l LEFT JOIN r ON l.k = r.k AND l.k + 1 = r.k + 1 AND l.k + 2 = r.k + 2'),
+    ('key columns of 3 bytes and 1 byte', pairs, 'l INNER JOIN r ON toFixedString(reinterpretAsString(l.k), 3) = toFixedString(reinterpretAsString(r.k), 3) AND toUInt8(l.k2) = toUInt8(r.k2)'),
     ('nullable key', pairs, '(SELECT if(x % 11 = 0, NULL, k) AS k, x FROM l) AS l LEFT JOIN r ON l.k = r.k'),
     ('condition on the left table', pairs, 'l LEFT JOIN r ON l.k = r.k AND l.t != 3'),
     ('or', pairs, 'l INNER JOIN r ON l.k = r.k OR l.x = r.v'),
