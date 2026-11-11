@@ -232,7 +232,7 @@ On versions before 26.2, the insert setting is named `allow_experimental_insert_
 Creating tables through a catalog requires ClickHouse 26.8 or later. Versions 26.4 through 26.7 write the table files before registering the namespace, which SeaweedFS rejects unless the namespace already exists in the catalog; versions before 26.4 appear to succeed, but the table files are written to object storage without being registered in the catalog.
 </Note>
 
-When ClickHouse commits an insert, the SeaweedFS catalog repairs metadata the writer does not yet produce: it fills in missing field IDs in manifests, rewrites bucket-relative file paths as absolute locations, and stamps a default name mapping on the table. Strict readers such as PyIceberg and Spark can then read the rows ClickHouse wrote. This requires SeaweedFS 4.42 or later.
+SeaweedFS 4.42 or later adds or corrects metadata when ClickHouse commits an insert, allowing PyIceberg and Spark to read the inserted data. This includes filling in missing field IDs, converting bucket-relative file paths to absolute locations, and adding a default column name mapping.
 
 ## Loading data from your Data Lake into ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
 
