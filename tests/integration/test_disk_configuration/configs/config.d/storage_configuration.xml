@@ -51,6 +51,11 @@
                 <type>local</type>
                 <path>/var/lib/clickhouse/disks/local_under_encrypted2/</path>
             </local_under_encrypted2>
+            <!-- `reload_encrypted_store_prefix` over this disk is added to `reload_policy` by a configuration reload. -->
+            <reload_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/reload_local/</path>
+            </reload_local>
             <encrypted_other_prefix>
                 <type>encrypted</type>
                 <disk>local_under_encrypted2</disk>
@@ -83,6 +88,13 @@
                     </s3>
                 </volumes>
             </hybrid>
+            <reload_policy>
+                <volumes>
+                    <main>
+                        <disk>reload_local</disk>
+                    </main>
+                </volumes>
+            </reload_policy>
             <object_storage_different_buckets>
                 <volumes>
                     <root>

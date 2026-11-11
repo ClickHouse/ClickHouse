@@ -657,6 +657,8 @@ struct ContextSharedPart : boost::noncopyable
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
+    /// Serializes the reloads of the storage configuration. Locked before `storage_policies_mutex`.
+    std::mutex storage_configuration_update_mutex;
     /// Protects the ZooKeeper client and its connection attempt. Not held while connecting, except by config reload.
     mutable std::timed_mutex zookeeper_mutex;
 
@@ -8739,30 +8741,68 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::
 void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     {
-        std::lock_guard lock(shared->storage_policies_mutex);
-        Strings disks_to_reinit;
-        if (shared->merge_tree_disk_selector)
-            shared->merge_tree_disk_selector
-                = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
+        /// Serializes reloads, so that the storage policies validated below are still the latest ones when they are published.
+        std::lock_guard update_lock(shared->storage_configuration_update_mutex);
 
-        if (shared->merge_tree_storage_policy_selector)
+        StoragePolicySelectorPtr old_policy_selector;
+        StoragePolicySelectorPtr new_policy_selector;
+        Strings disks_to_reinit;
         {
+            std::lock_guard lock(shared->storage_policies_mutex);
+            if (shared->merge_tree_disk_selector)
+                shared->merge_tree_disk_selector
+                    = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
+
+            if (shared->merge_tree_storage_policy_selector)
+            {
+                old_policy_selector = shared->merge_tree_storage_policy_selector;
+                try
+                {
+                    new_policy_selector = old_policy_selector->updateFromConfig(
+                        config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
+                }
+                catch (Exception & e)
+                {
+                    LOG_ERROR(
+                        shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
+                }
+            }
+        }
+
+        if (new_policy_selector)
+        {
+            /// The tables are checked without `storage_policies_mutex`, because a table looks up its storage policy under it.
+            /// A table keeps using the published storage policies, so a rejected configuration must not be published.
             try
             {
-                shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
-                    config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
+                DatabaseCatalog::instance().checkTablesWithReloadedStoragePolicies(*new_policy_selector);
             }
             catch (Exception & e)
             {
                 LOG_ERROR(
                     shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
+                new_policy_selector.reset();
             }
         }
 
-        if (!disks_to_reinit.empty())
+        if (new_policy_selector)
         {
-            LOG_INFO(shared->log, "Initializing disks: ({}) for all tables", fmt::join(disks_to_reinit, ", "));
-            DatabaseCatalog::instance().triggerReloadDisksTask(disks_to_reinit);
+            std::lock_guard lock(shared->storage_policies_mutex);
+            chassert(shared->merge_tree_storage_policy_selector == old_policy_selector);
+
+            /// The temporary storage policies of tables with the `disk` setting are added to the published selector in place,
+            /// so one may have been added since the reloaded policies were made from it.
+            for (const auto & [name, policy] : old_policy_selector->getPoliciesMap())
+                if (!new_policy_selector->tryGet(name))
+                    const_cast<StoragePolicySelector *>(new_policy_selector.get())->add(policy);
+
+            shared->merge_tree_storage_policy_selector = new_policy_selector;
+
+            if (!disks_to_reinit.empty())
+            {
+                LOG_INFO(shared->log, "Initializing disks: ({}) for all tables", fmt::join(disks_to_reinit, ", "));
+                DatabaseCatalog::instance().triggerReloadDisksTask(disks_to_reinit);
+            }
         }
     }
 

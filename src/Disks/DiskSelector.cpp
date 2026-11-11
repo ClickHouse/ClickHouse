@@ -64,7 +64,12 @@ struct StorageNamespace
 /// Any other path is a prefix of object keys, where repeated separators and `..` are significant bytes
 /// that address different objects, so it is kept as is.
 /// A trailing separator is dropped in both cases, so that a root with and without one compare equal.
-String normalizeDiskPath(const String & path, bool is_local)
+///
+/// The directory of a broken disk is not canonicalized: it may be inaccessible, and canonicalizing it would throw
+/// and stop the server from starting, while a broken disk is meant to be skipped (see `IDisk::startup` and
+/// `MergeTreeData::loadDataParts`). Its path is only collapsed lexically, which still finds two disks with one
+/// directory. A symlink to it is checked at the next start, as no parts are loaded from the disk until then.
+String normalizeDiskPath(const String & path, bool is_local, bool is_broken)
 {
     if (!is_local)
     {
@@ -73,7 +78,9 @@ String normalizeDiskPath(const String & path, bool is_local)
         return path;
     }
 
-    auto normalized = std::filesystem::weakly_canonical(std::filesystem::path(path)).lexically_normal();
+    auto normalized = is_broken
+        ? std::filesystem::path(path).lexically_normal()
+        : std::filesystem::weakly_canonical(std::filesystem::path(path)).lexically_normal();
     if (!normalized.has_filename() && normalized.has_relative_path())
         normalized = normalized.parent_path();
 
@@ -97,7 +104,7 @@ std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk, const 
     if (data_source.type == DataSourceType::RAM)
         return {};
 
-    const auto path = normalizeDiskPath(joinDiskPath(disk, relative_path), data_source.isPathLocal());
+    const auto path = normalizeDiskPath(joinDiskPath(disk, relative_path), data_source.isPathLocal(), disk->isBroken());
 
     /// `DiskBackup` reports `ObjectStorage` with `ObjectStorageType::None` and has no object storage behind it,
     /// so its identity is its description and its path.
@@ -127,7 +134,7 @@ std::optional<String> getLocalListingDirectory(const DiskPtr & disk, const Strin
     if (data_source.type == DataSourceType::RAM || !data_source.isPathLocal())
         return {};
 
-    return normalizeDiskPath(joinDiskPath(disk, relative_path), /*is_local=*/ true);
+    return normalizeDiskPath(joinDiskPath(disk, relative_path), /*is_local=*/ true, disk->isBroken());
 }
 
 /// Returns the disk below the `encrypted` layers of `disk` and the path in it that `relative_path` on `disk` maps to.

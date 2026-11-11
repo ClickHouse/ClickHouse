@@ -268,6 +268,40 @@ def test_encrypted_path_prefix_of_table_path(start_cluster):
     node.query("DROP TABLE encrypted_beside_wrapped_disk SYNC")
 
 
+def test_table_path_alias_on_reload(start_cluster):
+    node = cluster.instances["node1"]
+    reload_config_path = "/etc/clickhouse-server/config.d/table_path_alias_on_reload.xml"
+
+    # The disk added by the reload is not in the policy while the reload is rejected, and it sees the
+    # directory of the table, so the orphaned parts check would refuse to attach the table.
+    node.query(
+        "CREATE TABLE table_path_alias_on_reload (x UInt64) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS storage_policy = 'reload_policy', search_orphaned_parts_disks = 'none'"
+    )
+    node.query("INSERT INTO table_path_alias_on_reload VALUES (1)")
+
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "configs/table_path_alias_on_reload.xml"),
+        reload_config_path,
+    )
+    # The roots of the disks differ, so the policy itself is valid, but the reloaded policy would make the
+    # table read its parts through both disks. The reload is not applied, and the table keeps working.
+    try:
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.wait_for_log_line("While checking table .*table_path_alias_on_reload")
+        assert (
+            node.query("SELECT count() FROM system.storage_policies WHERE policy_name = 'reload_policy'")
+            == "1\n"
+        )
+        node.query("DETACH TABLE table_path_alias_on_reload SYNC")
+        node.query("ATTACH TABLE table_path_alias_on_reload")
+        assert node.query("SELECT x FROM table_path_alias_on_reload") == "1\n"
+    finally:
+        node.exec_in_container(["rm", "-f", reload_config_path])
+        node.query("SYSTEM RELOAD CONFIG")
+        node.query("DROP TABLE IF EXISTS table_path_alias_on_reload SYNC")
+
+
 def test_merge_tree_custom_disk_setting(start_cluster):
     TABLE_NAME = "test_merge_tree_custom_disk_setting"
     node1 = cluster.instances["node1"]
