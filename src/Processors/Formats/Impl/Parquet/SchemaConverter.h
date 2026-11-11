@@ -138,13 +138,23 @@ private:
         }
     };
 
+    /// Every leaf under an array, in schema order, so the leaves of a subtree are a contiguous range.
+    struct LeafInArray
+    {
+        size_t schema_idx = 0;
+        size_t column_idx = 0;
+        VectorWithMemoryTracking<LevelInfo> levels;
+    };
+    VectorWithMemoryTracking<LeafInArray> leaves_in_arrays;
+
     /// A tuple inside an array that is not requested as a whole. A requested subcolumn of an element
     /// it does not have (`arr.missing`) takes the array sizes from it.
     struct TupleInArray
     {
         String name;
         size_t schema_idx = 0;
-        size_t first_primitive_column_idx = 0;
+        size_t leaves_start = 0;
+        size_t leaves_end = 0;
         VectorWithMemoryTracking<LevelInfo> levels;
     };
     VectorWithMemoryTracking<TupleInArray> tuples_in_arrays;
@@ -164,16 +174,13 @@ private:
     bool processSubtreeDynamic(TraversalNode & node);
 
     /// The sizes of an array are stored only in the leaves under it. Adds a primitive column with
-    /// PrimitiveColumnInfo::levels_only_arrays set and no output, for a leaf in the `num_subtrees`
-    /// subtrees starting at `first_schema_idx` that are under the arrays of `base_levels`.
-    /// Returns its index in primitive_columns, or nullopt if the subtrees have no leaf.
-    std::optional<size_t> addLevelsOnlyPrimitive(
-        size_t first_schema_idx, size_t first_primitive_column_idx, size_t num_subtrees,
-        const VectorWithMemoryTracking<LevelInfo> & base_levels, const String & name);
+    /// PrimitiveColumnInfo::levels_only_arrays = `arrays` and no output, for one of the leaves
+    /// leaves_in_arrays[leaves_start, leaves_end). Returns its index in primitive_columns, or nullopt if no leaf is read.
+    std::optional<size_t> addLevelsOnlyPrimitive(size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name);
 
-    /// Outputs the requested columns `arr.missing` that matched no schema element, where `arr` is in
-    /// tuples_in_arrays, as arrays of defaults sized like `arr`.
-    void addMissingElementsOfTuplesInArrays();
+    /// If the requested column at `pos` is `arr.missing`, where `arr` is in tuples_in_arrays and has
+    /// no element `missing`, outputs it as arrays of defaults sized like `arr` and returns true.
+    bool addMissingElementOfTupleInArray(size_t pos);
 
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,

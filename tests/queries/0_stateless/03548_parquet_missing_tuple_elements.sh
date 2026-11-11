@@ -35,36 +35,12 @@ $CHL -q "select 'tuple in element, all elements missing:', * from file('$struct_
 $CHL -q "select 'tuple in element, missing with dot:', * from file('$struct_file', Parquet, '\`s.t.b\` Array(String)')"
 $CHL -q "select 'tuple in element with dot, all elements missing:', * from file('$struct_file', Parquet, '\`s.t\` Array(Tuple(b String))')"
 
-# The leaf read for the array sizes is not decoded with its logical type: a NULL `GEOMETRY` (`Geometry`
-# cannot be Nullable), and an `INT96` timestamp and a `DATE` out of the range of `DateTime64(9)` and `Date32`.
-geo_file=${CLICKHOUSE_TEST_UNIQUE_NAME}_geo.parquet
-python3 - "$geo_file" <<'PY'
-import sys
-
-import pyarrow as pa
-import pyarrow.parquet as pq
-
-
-# Makes Arrow write the `GEOMETRY` logical type.
-class WKB(pa.ExtensionType):
-    def __init__(self):
-        super().__init__(pa.binary(), "geoarrow.wkb")
-
-    def __arrow_ext_serialize__(self):
-        return b"{}"
-
-    @classmethod
-    def __arrow_ext_deserialize__(cls, storage_type, serialized):
-        return WKB()
-
-
-geometry = pa.ExtensionArray.from_storage(WKB(), pa.array([None], pa.binary()))
-element = pa.StructArray.from_arrays([geometry], fields=[pa.field("g", WKB())])
-x = pa.ListArray.from_arrays(pa.array([0, 1], pa.int32()), element, type=pa.list_(pa.field("element", element.type, nullable=False)))
-pq.write_table(pa.table({"x": x}), sys.argv[1])
-PY
-$CHL -q "select 'geometry leaf, all elements missing:', * from file('$geo_file', Parquet, 'x Array(Tuple(z Nullable(Int32)))') settings input_format_null_as_default = 0"
-$CHL -q "select 'geometry leaf, missing with dot:', * from file('$geo_file', Parquet, '\`x.z\` Array(Nullable(Int32))') settings input_format_null_as_default = 0"
+# The leaf read for the array sizes is not decoded with its logical type, and may be NULL: an `INT96`
+# timestamp and a `DATE` out of the range of `DateTime64(9)` and `Date32`, and a NULL in a `Nullable` leaf.
+null_file=${CLICKHOUSE_TEST_UNIQUE_NAME}_null.parquet
+$CHL -q "insert into function file('$null_file', Parquet) select [tuple(NULL), tuple(1)]::Array(Tuple(a Nullable(Int32))) as x"
+$CHL -q "select 'NULL in the leaf, all elements missing:', * from file('$null_file', Parquet, 'x Array(Tuple(z Int32))') settings input_format_null_as_default = 0"
+$CHL -q "select 'NULL in the leaf, missing with dot:', * from file('$null_file', Parquet, '\`x.z\` Array(Int32)') settings input_format_null_as_default = 0"
 range_file=${CLICKHOUSE_TEST_UNIQUE_NAME}_range.parquet
 python3 - "$range_file" <<'PY'
 import datetime
@@ -163,4 +139,4 @@ $CHL -q "insert into function file('$cost_file', Parquet) select [(number, repea
 $CHL --print-profile-events -q "select * from file('$cost_file', Parquet, '\`x.id\` Array(UInt64), \`x.z\` Array(String)') format Null" 2>&1 \
     | grep -o 'ParquetDecompressedBytes: [0-9]*' | awk '{ bytes += $2 } END { print "decompressed some but less than 100000 bytes:", (bytes > 0 && bytes < 100000) }'
 
-rm -r $file $nested_file $struct_file $geo_file $range_file $iceberg_dir $case_file $cost_file
+rm -r $file $nested_file $struct_file $null_file $range_file $iceberg_dir $case_file $cost_file
