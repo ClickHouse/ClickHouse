@@ -1,0 +1,7 @@
+LEFT	1	10	ten
+LEFT	2	0	zero
+FULL	0	3	zero
+FULL	1	1	\N
+FULL	2	0	\N
+LEFT, CD-A	1	10	ten
+LEFT, CD-A	2	0	zero

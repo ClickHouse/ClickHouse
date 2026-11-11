@@ -20,6 +20,13 @@ public:
 
     Status prepare() override;
 
+    /// The source of the lazy branch of lazy materialization reads the rows already selected by the main branch,
+    /// and a partial result still needs them, so such a source must not stop on `CancelReason::PartialResult`.
+    void keepReadingOnPartialResult() { keep_reading_on_partial_result = true; }
+
+    void cancel(CancelReason reason) noexcept override;
+    using ISource::cancel;
+
 #if defined(OS_LINUX)
     int schedule() override;
 #endif
@@ -33,6 +40,7 @@ private:
     MergeTreeSelectProcessorPtr processor;
     /// Formatted once: `tryGenerate` is called for every block, and the span is usually not recorded.
     const std::string span_name;
+    bool keep_reading_on_partial_result = false;
 
 #if defined(OS_LINUX)
     struct AsyncReadingState;

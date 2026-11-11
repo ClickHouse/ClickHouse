@@ -71,7 +71,7 @@ for limit in 8 32; do
     # The second branch leaves a worker available while `input` waits for the next block.
     # shellcheck disable=SC2086
     timeout --kill-after=5 120 $CLICKHOUSE_CLIENT --query_id "$query_id" --workload "$workload" \
-        --enable_analyzer 1 --enable_parallel_replicas 0 --optimize_trivial_group_by_limit_query 1 \
+        --enable_parallel_replicas 0 --optimize_trivial_group_by_limit_query 1 \
         --enable_group_by_top_k_optimization 0 --enable_adaptive_aggregator 0 --enable_adaptive_memory_spill_scheduler 0 \
         --max_threads 2 --min_bytes_to_spill 2Mi --max_block_size 16384 \
         --max_bytes_before_external_group_by 0 --max_bytes_ratio_before_external_group_by 0 \

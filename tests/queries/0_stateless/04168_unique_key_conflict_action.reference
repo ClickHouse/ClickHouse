@@ -1,3 +1,15 @@
+ignore_rows	1	a
+ignore_rows	2	b
+ignore_rows	3	c
+ignore_rows	4	d
+reattached_rows	1	a
+reattached_rows	2	b
+reattached_rows	3	c
+reattached_rows	4	d
+overwritten_rows	1	a_over
+overwritten_rows	2	b
+overwritten_rows	3	c
+overwritten_rows	4	d
 conflict	probe_1	part all_1_1_0 (row 0)
 conflict	probe_3	part all_2_2_0 (row 1)
 conflict	reattached_1	part all_1_1_0 (row 0)
