@@ -60,6 +60,20 @@ for _ in $(seq 1 60); do
 done
 echo "QueryPreempted: ${preempted:-missing}"
 
+echo 'queued INSERT SELECT reports accepted_bytes (wait 0, wait 1, then the same from input):'
+for wait in 0 1; do
+    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=$wait" \
+        -d "INSERT INTO t_async_summary SELECT number + 100 FROM numbers(3)" 2>&1 \
+        | grep "X-ClickHouse-Summary" | grep -v "Access-Control-Expose-Headers" | grep -c '"accepted_bytes":"[1-9][0-9]*"'
+done
+for wait in 0 1; do
+    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=$wait&query=INSERT%20INTO%20t_async_summary%20SELECT%20x%20FROM%20input(%27x%20UInt64%27)%20FORMAT%20JSONEachRow" \
+        --data-binary '{"x":200} {"x":201} {"x":202}' 2>&1 \
+        | grep "X-ClickHouse-Summary" | grep -v "Access-Control-Expose-Headers" | grep -c '"accepted_bytes":"[1-9][0-9]*"'
+done
+
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH ASYNC INSERT QUEUE t_async_summary"
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS asynchronous_insert_log"
+${CLICKHOUSE_CLIENT} --query "SELECT 'queued as blocks', count() FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 't_async_summary' AND data_kind = 'Preprocessed' AND status = 'Ok'"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'total_rows', count() FROM t_async_summary"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_async_summary"

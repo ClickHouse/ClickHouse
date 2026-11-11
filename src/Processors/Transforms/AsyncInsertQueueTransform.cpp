@@ -295,6 +295,14 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
             async_insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(name));
         auto result = queue->pushQueryWithBlock(async_query, std::move(block), context);
 
+        /// Report the queued size in `X-ClickHouse-Summary`, as an insert with inlined data does.
+        if (auto progress_callback = context->getProgressCallback())
+        {
+            Progress accepted_progress;
+            accepted_progress.accepted_bytes = result.accepted_bytes;
+            progress_callback(accepted_progress);
+        }
+
         /// The queue owns the block, and the flush relocks the table under a fresh query id, so it
         /// cannot join the reader group of this query: a share lock kept across the wait below lets an
         /// exclusive locker queue between the two, and neither side moves. `InsertDependenciesBuilder`

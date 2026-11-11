@@ -13,4 +13,10 @@ empty fire-and-forget must not emit a counterless progress header:
 low-priority fire-and-forget still reports accepted_bytes and is not preempted after enqueue:
 1
 QueryPreempted: 0
-total_rows	14
+queued INSERT SELECT reports accepted_bytes (wait 0, wait 1, then the same from input):
+1
+1
+1
+1
+queued as blocks	4
+total_rows	26
