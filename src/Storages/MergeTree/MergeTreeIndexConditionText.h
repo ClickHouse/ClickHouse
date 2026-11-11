@@ -250,7 +250,7 @@ private:
 
     /// A row without the key reads the map value type's default, for which `mapValues` stores no term.
     /// True when the predicate the plan runs on such a row may hold.
-    bool absentMapValueMatches(const String & function_name, const VectorWithMemoryTracking<String> & tokens) const;
+    bool absentMapValueMatches(const String & function_name, const VectorWithMemoryTracking<String> & tokens, const DataTypePtr & element_type) const;
 
     /// Returns true if the node represents `arrayElement(map_col, 'key')`
     /// and there is a text index built on `mapValues(map_col)`.

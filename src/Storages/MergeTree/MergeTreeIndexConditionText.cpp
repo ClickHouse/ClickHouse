@@ -1316,7 +1316,7 @@ static bool isMapValueDefault(std::string_view value, const Block & header)
     return value.empty() || (isFixedString(value_type) && value.find_first_not_of('\0') == std::string_view::npos);
 }
 
-bool MergeTreeIndexConditionText::absentMapValueMatches(const String & function_name, const VectorWithMemoryTracking<String> & tokens) const
+bool MergeTreeIndexConditionText::absentMapValueMatches(const String & function_name, const VectorWithMemoryTracking<String> & tokens, const DataTypePtr & element_type) const
 {
     const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(0).type.get());
     if (!array_type)
@@ -1325,6 +1325,11 @@ bool MergeTreeIndexConditionText::absentMapValueMatches(const String & function_
     String default_value;
     if (has_preprocessor)
     {
+        /// A NULL key reads NULL rather than the default, and the preprocessor may turn NULL into a match.
+        if ((!element_type || isNullableOrLowCardinalityNullable(element_type))
+            && !isNullableOrLowCardinalityNullable(array_type->getNestedType()))
+            return true;
+
         /// A default the guard cannot preprocess leaves such rows to the predicate.
         if (!preprocessed_absent_map_value)
             return true;
@@ -1580,7 +1585,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 search_tokens = postprocessor->processTokens(std::move(search_tokens));
         }
 
-        const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, search_tokens);
+        const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, search_tokens, index_column_type);
         const auto read_mode = keeps_absent_key_rows ? TextIndexDirectReadMode::None : direct_read_mode;
 
         if (function_name == "hasAnyTokens")
@@ -1707,7 +1712,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             tokens.push_back("");
         }
 
-        const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, tokens);
+        const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, tokens, index_column_type);
         out.function = keeps_absent_key_rows ? RPNElement::FUNCTION_UNKNOWN : RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
             function_name, TextSearchMode::All, keeps_absent_key_rows ? TextIndexDirectReadMode::None : direct_read_mode, std::move(tokens)));
@@ -1799,7 +1804,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 std::sort(unique_tokens.begin(), unique_tokens.end());
             }
 
-            const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, unique_tokens);
+            const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, unique_tokens, index_column_type);
             auto query = std::make_shared<TextSearchQuery>(
                 function_name,
                 TextSearchMode::Phrase,
@@ -1818,7 +1823,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// in Hint mode any false positives are resolved by the row-level filter.
         /// An all-dropped phrase yields empty tokens, i.e. a query that matches nothing (consistent with hasAllTokens).
         auto tokens = stringToTokens(value_field, /*compact=*/ true);
-        const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, tokens);
+        const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, tokens, index_column_type);
         const auto read_mode = keeps_absent_key_rows ? TextIndexDirectReadMode::None : direct_read_mode;
 
         out.function = keeps_absent_key_rows ? RPNElement::FUNCTION_UNKNOWN : RPNElement::FUNCTION_HAS_ALL_TOKENS;

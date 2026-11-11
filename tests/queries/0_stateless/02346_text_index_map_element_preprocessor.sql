@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS tab_nullable;
 DROP TABLE IF EXISTS tab_sep;
 DROP TABLE IF EXISTS tab_post_empty;
 DROP TABLE IF EXISTS tab_post_empty_str;
+DROP TABLE IF EXISTS tab_null_key;
 
 CREATE TABLE tab_substr (id UInt32, m Map(String, String),
     INDEX tix mapValues(m) TYPE text(tokenizer = splitByNonAlpha, preprocessor = substringIndex(mapValues(m), '\n', 1)))
@@ -188,6 +189,24 @@ SELECT 'post empty', 'no index',
     (SELECT groupArray(id) FROM (SELECT id FROM tab_post_empty_str WHERE hasToken(s, '') ORDER BY id))
 SETTINGS use_skip_indexes = 0;
 
+-- A NULL key reads NULL, which the preprocessor may turn into a match.
+CREATE TABLE tab_null_key (id UInt32, m Map(String, String), k Nullable(String),
+    INDEX tix mapValues(m) TYPE text(tokenizer = splitByNonAlpha, preprocessor = ifNull(mapValues(m), 'missing')))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_null_key VALUES (1, map('a', 'x'), NULL), (2, map('a', 'missing'), 'a');
+
+SELECT 'null key',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_null_key WHERE hasToken(m[k], 'missing') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_null_key WHERE hasAnyTokens(m[k], 'missing') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_null_key WHERE hasAllTokens(m[k], 'missing') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_null_key WHERE hasPhrase(m[k], 'missing') ORDER BY id));
+SELECT 'null key', 'no index',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_null_key WHERE hasToken(m[k], 'missing') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_null_key WHERE hasAnyTokens(m[k], 'missing') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_null_key WHERE hasAllTokens(m[k], 'missing') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_null_key WHERE hasPhrase(m[k], 'missing') ORDER BY id))
+SETTINGS use_skip_indexes = 0;
+
 DROP TABLE tab_substr;
 DROP TABLE tab_fixed;
 DROP TABLE tab_lower;
@@ -200,3 +219,4 @@ DROP TABLE tab_nullable;
 DROP TABLE tab_sep;
 DROP TABLE tab_post_empty;
 DROP TABLE tab_post_empty_str;
+DROP TABLE tab_null_key;
