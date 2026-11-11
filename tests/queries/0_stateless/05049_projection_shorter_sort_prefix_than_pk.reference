@@ -17,6 +17,7 @@ Aggregating
             Output: source_id, date, have_reply, id, content, metadata
             Prewhere filter
             Prewhere filter column:  tuple(source_id, date, have_reply, id) <= (\'A\', 20468, 0, \'150000\') AND source_id = \'A\'
+            Virtual row conversions
             Indexes:
               Min-Max
                 Condition: true
