@@ -495,7 +495,7 @@ public:
             std::swap(current_node->step, parent_node->step);
             parent_node->step->updateInputHeader(current_node->step->getOutputHeader());
 
-            /// The hint comes from a LIMIT: ship it after a final DISTINCT, as on shards, so duplicates from different streams cannot fill it.
+            /// The hint comes from a LIMIT: ship it after a final DISTINCT, as on shards.
             if (const UInt64 limit_hint = distinct_step->getLimitHint())
             {
                 const auto & header = current_node->step->getOutputHeader();
