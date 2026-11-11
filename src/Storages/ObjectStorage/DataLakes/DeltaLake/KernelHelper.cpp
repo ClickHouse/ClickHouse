@@ -7,6 +7,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Access/ContextAccess.h>
+#include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
 #include <Common/FullyQualifiedObjectPath.h>
 #include <Common/SipHash.h>
@@ -91,7 +93,7 @@ private:
 
 }
 
-std::string IKernelHelper::resolveDataFilePath(const std::string & path) const
+std::string IKernelHelper::resolveDataFilePath(const std::string & path, const DB::ContextPtr &) const
 {
     return DB::resolvePathInsideTable(getDataPath(), DB::unescapeForFileName(path));
 }
@@ -130,18 +132,21 @@ public:
 
     /// The S3 object storage resolves a fully-qualified path to its own bucket and key. A `gs://` path names GCS,
     /// so only a GCS client takes it. Another bucket is refused: `remote_url_allow_hosts` and the credentials
-    /// were checked for the table's bucket only.
-    std::string resolveDataFilePath(const std::string & path) const override
+    /// were checked for the table's bucket only. The source grant was checked for the table's location only,
+    /// so a fully-qualified path needs it on the whole source.
+    std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const override
     {
         auto qualified = DB::trySplitFullyQualifiedObjectPath(path);
         if (!qualified)
-            return IKernelHelper::resolveDataFilePath(path);
+            return IKernelHelper::resolveDataFilePath(path, context);
 
         const bool is_own_scheme = qualified->scheme == "s3" || qualified->scheme == "s3a" || qualified->scheme == "s3n"
             || (is_gcs && (qualified->scheme == "gs" || qualified->scheme == "gcs"));
         if (!is_own_scheme || qualified->object_namespace != url.bucket)
             throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
                 "Data file `{}` of the Delta Lake table is not in the bucket `{}` of the table", path, url.bucket);
+        context->getAccess()->checkAccessWithFilter(
+            DB::AccessType::READ, DB::AccessTypeObjects::toStringSource(DB::AccessTypeObjects::Source::S3), /* filter */ "");
         return DB::unescapeForFileName(path);
     }
 
@@ -554,11 +559,12 @@ public:
 
     const std::string & getDataPath() const override { return path; }
 
-    /// The local object storage confines an absolute path to its root like any other key.
-    std::string resolveDataFilePath(const std::string & data_file_path) const override
+    /// The local object storage confines an absolute path to its root like any other key. The source grant was
+    /// checked for the table's location only, so an absolute path needs it on the whole source.
+    std::string resolveDataFilePath(const std::string & data_file_path, const DB::ContextPtr & context) const override
     {
         if (!data_file_path.starts_with("file:"))
-            return IKernelHelper::resolveDataFilePath(data_file_path);
+            return IKernelHelper::resolveDataFilePath(data_file_path, context);
 
         std::string_view file_path = std::string_view(data_file_path).substr(std::string_view("file:").size());
         /// `file:///abs`; an authority (`file://host/abs`) is not a local file.
@@ -567,6 +573,8 @@ public:
         if (!file_path.starts_with('/'))
             throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
                 "Data file `{}` of the Delta Lake table is not a local absolute path", data_file_path);
+        context->getAccess()->checkAccessWithFilter(
+            DB::AccessType::READ, DB::AccessTypeObjects::toStringSource(DB::AccessTypeObjects::Source::FILE), /* filter */ "");
         return DB::unescapeForFileName(std::string(file_path));
     }
 

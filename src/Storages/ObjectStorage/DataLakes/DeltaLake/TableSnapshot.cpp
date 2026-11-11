@@ -628,7 +628,7 @@ public:
 
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
-        std::string full_path = context->helper->resolveDataFilePath(KernelUtils::fromDeltaString(path));
+        std::string full_path = context->helper->resolveDataFilePath(KernelUtils::fromDeltaString(path), context->getContext());
         auto object = std::make_shared<DataObjectInfo>(std::move(full_path), size);
         object->data_lake_metadata.emplace();
         if (stats)

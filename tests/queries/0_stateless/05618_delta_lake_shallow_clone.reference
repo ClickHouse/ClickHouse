@@ -12,3 +12,11 @@ PATH_ACCESS_DENIED
 -- s3, another bucket
 is not in the bucket
 NOT_IMPLEMENTED
+-- s3, gs:// path on S3
+is not in the bucket
+NOT_IMPLEMENTED
+-- a user granted only the clone
+value
+necessary to have the grant READ ON FILE
+value
+necessary to have the grant READ ON S3

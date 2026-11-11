@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan
+# Tags: no-fasttest, no-msan, no-replicated-database
 # Tag no-fasttest: delta-kernel pulls in extra dependencies, and MinIO is not in fast test.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
+# Tag no-replicated-database: without enable_read_write_grants, replicated access storage drops grant filters
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/130550
 # A Delta Lake shallow clone references the data files and deletion vectors of its source table by absolute URI,
@@ -69,5 +70,27 @@ write_clone_log "$DIR/s3_foreign" "s3a://other-bucket/$S3_DIR/src/$PARQUET"
 upload "foreign/_delta_log/00000000000000000000.json" "$DIR/s3_foreign/_delta_log/00000000000000000000.json"
 $CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM deltaLake(s3_conn, filename = '$S3_DIR/foreign/')" 2>&1 \
     | grep -o -m1 -E 'is not in the bucket|NOT_IMPLEMENTED'
+
+echo '-- s3, gs:// path on S3'
+write_clone_log "$DIR/s3_gs" "gs://test/$S3_DIR/src/$PARQUET"
+upload "gs/_delta_log/00000000000000000000.json" "$DIR/s3_gs/_delta_log/00000000000000000000.json"
+$CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM deltaLake(s3_conn, filename = '$S3_DIR/gs/')" 2>&1 \
+    | grep -o -m1 -E 'is not in the bucket|NOT_IMPLEMENTED'
+
+echo '-- a user granted only the clone'
+user="u_05618_${CLICKHOUSE_DATABASE}"
+s3_clone="http://localhost:11111/test/$S3_DIR/clone/"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $user"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE USER $user;
+GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
+GRANT READ ON FILE('${USER_DIR}_clone.*') TO $user;
+GRANT READ ON S3('$s3_clone.*') TO $user;"
+for f in "deltaLakeLocal('${USER_DIR}_clone')" "deltaLake('$s3_clone', 'test', 'testtest')"; do
+    $CLICKHOUSE_CLIENT --user "$user" -q "DESCRIBE $f" | cut -f1
+    $CLICKHOUSE_CLIENT --user "$user" -q "SELECT sum(value) FROM $f" 2>&1 \
+        | grep -o -m1 -E 'necessary to have the grant READ ON (FILE|S3)'
+done
+$CLICKHOUSE_CLIENT -q "DROP USER $user"
 
 rm -rf "$DIR" "${USER_DIR}_src" "${USER_DIR}_clone" "${USER_DIR}_escape"
