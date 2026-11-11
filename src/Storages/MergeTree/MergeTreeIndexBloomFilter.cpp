@@ -16,10 +16,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -248,18 +250,30 @@ struct MapIndexInfo
     Field key_field;
 };
 
+/// Find the position of the index column by its name, ignoring a table column that merely has such a name.
+std::optional<size_t> findMapIndexPosition(const Block & header, const MapIndexPositions & map_index_positions, const String & name)
+{
+    if (auto position = header.findPositionByName(name); position && map_index_positions.contains(*position))
+        return position;
+    return std::nullopt;
+}
+
 /// Try to resolve a Map column against the bloom filter index header by the map column name
 /// and the key as a Field. `map_key_type` is the key type of the map column, when it is known
 /// independently of the index header. Returns std::nullopt if neither `mapKeys(<col>)` nor
 /// `mapValues(<col>)` is present in the index, or if the key is not representable in the key type.
 std::optional<MapIndexInfo> tryResolveMapIndexInfo(
-    const String & map_column_name, const Field & key_field, const DataTypePtr & map_key_type, const Block & header)
+    const String & map_column_name,
+    const Field & key_field,
+    const DataTypePtr & map_key_type,
+    const Block & header,
+    const MapIndexPositions & map_index_positions)
 {
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
 
-    auto keys_position = header.findPositionByName(map_keys_index_column_name);
-    auto values_position = header.findPositionByName(map_values_index_column_name);
+    auto keys_position = findMapIndexPosition(header, map_index_positions, map_keys_index_column_name);
+    auto values_position = findMapIndexPosition(header, map_index_positions, map_values_index_column_name);
 
     if (!keys_position && !values_position)
         return std::nullopt;
@@ -310,7 +324,10 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(
 /// against the bloom filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
 std::optional<MapIndexInfo> tryParseMapSubcolumn(
-    const String & column_name, const Block & header, const IsShadowingColumn & is_shadowing_column)
+    const String & column_name,
+    const Block & header,
+    const MapIndexPositions & map_index_positions,
+    const IsShadowingColumn & is_shadowing_column)
 {
     auto parsed = tryParseMapSubcolumnName(column_name, is_shadowing_column);
     if (!parsed)
@@ -318,13 +335,12 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
 
     auto & [map_column_name, serialized_key] = *parsed;
 
-    auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
-    if (!header.has(map_keys_index_column_name))
-        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header);
+    auto keys_position = findMapIndexPosition(header, map_index_positions, fmt::format("mapKeys({})", map_column_name));
+    if (!keys_position)
+        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header, map_index_positions);
 
     /// Deserialize the key from its text representation using the key type from the index header.
-    size_t keys_position = header.getPositionByName(map_keys_index_column_name);
-    const DataTypePtr & index_type = header.getByPosition(keys_position).type;
+    const DataTypePtr & index_type = header.getByPosition(*keys_position).type;
     const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
     const auto & key_type = array_type.getNestedType();
 
@@ -335,13 +351,16 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
     Field key_field;
     key_column->get(0, key_field);
 
-    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header);
+    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header, map_index_positions);
 }
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
 /// function call or a `map.key_<serialized_key>` subcolumn reference.
 std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
-    const RPNBuilderTreeNode & key_node, const Block & header, const IsShadowingColumn & is_shadowing_column)
+    const RPNBuilderTreeNode & key_node,
+    const Block & header,
+    const MapIndexPositions & map_index_positions,
+    const IsShadowingColumn & is_shadowing_column)
 {
     if (key_node.isFunction())
     {
@@ -363,13 +382,35 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
                 if (const auto * map_type = typeid_cast<const DataTypeMap *>(removeNullable(dag_node->result_type).get()))
                     map_key_type = map_type->getKeyType();
 
-            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, map_key_type, header);
+            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, map_key_type, header, map_index_positions);
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, is_shadowing_column);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, map_index_positions, is_shadowing_column);
 }
 
+}
+
+MapIndexPositions collectMapIndexPositions(const ExpressionActions & index_expression)
+{
+    MapIndexPositions result;
+
+    const auto & outputs = index_expression.getActionsDAG().getOutputs();
+    for (size_t position = 0; position < outputs.size(); ++position)
+    {
+        const auto * node = outputs[position];
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || node->children.size() != 1 || !node->function_base)
+            continue;
+
+        const auto & function_name = node->function_base->getName();
+        if ((function_name == "mapKeys" || function_name == "mapValues") && isMap(node->children.front()->result_type))
+            result.insert(position);
+    }
+
+    return result;
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
@@ -378,12 +419,14 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const Block & header_,
     size_t hash_functions_,
     IsShadowingColumn is_column_shadowing_map_subcolumn_,
-    JSONIndexArgumentTypes json_argument_types_)
+    JSONIndexArgumentTypes json_argument_types_,
+    MapIndexPositions map_index_positions_)
     : WithContext(context_)
     , header(header_)
     , hash_functions(hash_functions_)
     , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
     , json_argument_types(std::move(json_argument_types_))
+    , map_index_positions(std::move(map_index_positions_))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     if (!predicate)
@@ -781,7 +824,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, is_column_shadowing_map_subcolumn))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, map_index_positions, is_column_shadowing_map_subcolumn))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -1285,10 +1328,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (function_name == "mapContainsValue")
             map_keys_index_column_name = fmt::format("mapValues({})", key_column_name);
 
-        if (!header.has(map_keys_index_column_name))
+        auto map_index_position = findMapIndexPosition(header, map_index_positions, map_keys_index_column_name);
+        if (!map_index_position)
             return false;
 
-        size_t position = header.getPositionByName(map_keys_index_column_name);
+        size_t position = *map_index_position;
 
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
@@ -1361,7 +1405,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, is_column_shadowing_map_subcolumn))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, map_index_positions, is_column_shadowing_map_subcolumn))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1499,7 +1543,8 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, hash_functions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
+        collectMapIndexPositions(*index.expression));
 }
 
 static void assertIndexColumnsType(const Block & header)
