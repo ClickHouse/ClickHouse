@@ -61,47 +61,6 @@ def test_config_with_hosts(start_cluster):
 
 
 @pytest.mark.parametrize(
-    "query, secret, masked_url",
-    [
-        (
-            "SELECT * FROM url('http://leakuser:pw_userinfo_canary@host:123/', CSV, 'x UInt8')",
-            "pw_userinfo_canary",
-            "http://[HIDDEN]@host:123/",
-        ),
-        (
-            "SELECT * FROM url('http://host:123/f.csv?X-Amz-Signature=pw_presigned_canary', CSV, 'x UInt8')",
-            "pw_presigned_canary",
-            "http://host:123/f.csv?X-Amz-Signature=[HIDDEN]",
-        ),
-        (
-            "SELECT * FROM format(AvroConfluent, 'a UInt8', '\\x00\\x00\\x00\\x00\\x01') "
-            "SETTINGS format_avro_schema_registry_url = 'http://leakuser:pw_registry_canary@host:123/'",
-            "pw_registry_canary",
-            "http://[HIDDEN]@host:123/",
-        ),
-        (
-            "SELECT * FROM s3('http://host:123/bucket/k.csv?X-Amz-Signature=pw_s3_folded_canary', NOSIGN, CSV, 'x UInt8') "
-            "SETTINGS compatibility_s3_presigned_url_query_in_path = 1",
-            "pw_s3_folded_canary",
-            "http://host:123/bucket/k.csv?X-Amz-Signature=[HIDDEN]",
-        ),
-    ],
-    ids=["userinfo", "presigned", "avro_schema_registry", "s3_presigned_in_path"],
-)
-def test_rejected_url_credentials_masked(start_cluster, query, secret, masked_url):
-    error = node1.query_and_get_error(query)
-    # The client echoes the submitted query after the exception, so only the exception line is checked.
-    rejections = [
-        line
-        for line in error.splitlines()
-        if "is not allowed in configuration file" in line
-    ]
-    assert len(rejections) == 1, error
-    assert f'URL "{masked_url}"' in rejections[0], error
-    assert secret not in rejections[0], error
-
-
-@pytest.mark.parametrize(
     "query",
     [
         "CREATE TABLE azure_blocked_host (x UInt8) ENGINE = AzureBlobStorage("
@@ -120,6 +79,43 @@ def test_azure_host_filter_before_client_creation(start_cluster, query):
     assert "UNACCEPTABLE_URL" in error
     # The host check must run before even a container existence probe.
     assert node5.query(container_requests) == before
+
+
+def test_object_storage_queue_move_destination_host_filter(start_cluster):
+    # The source is on an allowed host (`host:80`), so only the move destination can be rejected. `node1` has no
+    # Keeper, so a rejection with "not allowed" must come from the settings validation, which runs before any
+    # Keeper access.
+    s3_queue = (
+        "CREATE TABLE s3queue_move_host (x UInt8) "
+        "ENGINE = S3Queue('http://host:80/bucket/data/', 'key', 'secret', 'CSV') "
+        "SETTINGS mode = 'unordered', after_processing = 'move', "
+        "after_processing_move_uri = '{}', "
+        "after_processing_move_access_key_id = 'key', after_processing_move_secret_access_key = 'secret'"
+    )
+    azure_queue = (
+        "CREATE TABLE azurequeue_move_host (x UInt8) "
+        "ENGINE = AzureQueue('http://host:80', 'container', '*', 'account', 'YQ==', 'CSV') "
+        "SETTINGS mode = 'unordered', after_processing = 'move', "
+        "after_processing_move_connection_string = "
+        "'DefaultEndpointsProtocol=http;AccountName=account;AccountKey=YQ==;BlobEndpoint=http://host:123/account;', "
+        "after_processing_move_container = 'dst'"
+    )
+
+    try:
+        error = node1.query_and_get_error(s3_queue.format("http://host:123/bucket/"))
+        assert "not allowed" in error, error
+
+        error = node1.query_and_get_error(
+            azure_queue, settings={"azure_sdk_max_retries": 0}
+        )
+        assert "not allowed" in error, error
+
+        # Control: an allowed destination passes the host check and only fails later, on the missing Keeper.
+        error = node1.query_and_get_error(s3_queue.format("http://host:80/bucket/"))
+        assert "not allowed" not in error, error
+    finally:
+        node1.query("DROP TABLE IF EXISTS s3queue_move_host SYNC")
+        node1.query("DROP TABLE IF EXISTS azurequeue_move_host SYNC")
 
 
 def test_config_with_only_primary_hosts(start_cluster):
@@ -508,3 +504,54 @@ def test_ai_functions_host_filter(start_cluster):
     finally:
         drop_ai_collections(node4)
         drop_ai_collections(node5)
+
+
+def test_hive_catalog_host_filter(start_cluster):
+    query = (
+        "CREATE DATABASE test_hive_host_filter ENGINE = DataLakeCatalog('thrift://localhost:1') "
+        "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'"
+    )
+    settings = {"allow_experimental_database_hms_catalog": 1}
+    try:
+        # Control first: `node4` declares no `remote_url_allow_hosts` at all, so its filter stays
+        # uninitialized and allows everything - the same statement gets past the check and fails at
+        # the network instead. Without this arm, a filter that rejected everything would also pass.
+        error = node4.query_and_get_error(query, settings=settings)
+        if "USE_HIVE" in error:
+            pytest.skip("ClickHouse was built without Hive support")
+        assert "UNACCEPTABLE_URL" not in error, error
+
+        # `node5` declares an empty `remote_url_allow_hosts`, which allows nothing.
+        error = node5.query_and_get_error(query, settings=settings)
+        assert "UNACCEPTABLE_URL" in error, error
+        # The check must run before the connect, so the refusal carries no connection error.
+        assert "Connection refused" not in error, error
+    finally:
+        node4.query("DROP DATABASE IF EXISTS test_hive_host_filter")
+        node5.query("DROP DATABASE IF EXISTS test_hive_host_filter")
+
+
+def test_hive_catalog_host_filter_rejects_nul(start_cluster):
+    def create(url):
+        return node1.query_and_get_error(
+            f"CREATE DATABASE test_hive_host_filter_nul ENGINE = DataLakeCatalog('{url}') "
+            "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'",
+            settings={"allow_experimental_database_hms_catalog": 1},
+        )
+
+    try:
+        # Control: the suffix rule in `config_with_hosts.xml` admits this host, so it gets past the
+        # filter and fails at name resolution instead.
+        error = create("thrift://hms.allowed.example:1")
+        if "USE_HIVE" in error:
+            pytest.skip("ClickHouse was built without Hive support")
+        assert "UNACCEPTABLE_URL" not in error, error
+
+        # The same rule matches the whole string including the NUL, but `getaddrinfo` would stop at the
+        # NUL and connect to 127.0.0.1. The host must be refused before any connection attempt.
+        error = create("thrift://127.0.0.1\\0.allowed.example:1")
+        assert "BAD_ARGUMENTS" in error, error
+        assert "Unexpected character" in error, error
+        assert "Connection refused" not in error, error
+    finally:
+        node1.query("DROP DATABASE IF EXISTS test_hive_host_filter_nul")

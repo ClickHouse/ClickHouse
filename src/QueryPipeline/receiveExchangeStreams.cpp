@@ -12,8 +12,7 @@ QueryPipelineBuilder receiveExchangeStreams(
     const String & exchange_id,
     const VectorWithMemoryTracking<ExchangeStreamId> & stream_ids,
     const BuildQueryPipelineSettings & settings,
-    bool spread_over_max_threads,
-    bool advisory)
+    bool spread_over_max_threads)
 {
     /// Ask for one deserializer up front: whether there is one decides what the sources output.
     auto first_deserializer = settings.exchange_lookup->createDeserializer(output_header, exchange_id);
@@ -21,7 +20,7 @@ QueryPipelineBuilder receiveExchangeStreams(
 
     Pipes pipes;
     for (const auto & stream_id : stream_ids)
-        pipes.emplace_back(Pipe(settings.exchange_lookup->createSource(output_header, stream_id, sources_output_packets, advisory)));
+        pipes.emplace_back(Pipe(settings.exchange_lookup->createSource(output_header, stream_id, sources_output_packets)));
 
     QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes)));

@@ -94,6 +94,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -484,6 +485,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
+    bool analyzer = context_->getSettingsRef()[Setting::allow_experimental_analyzer];
     if (table_id.hasUUID())
     {
         /// Shortcut for tables which have persistent UUID
@@ -513,7 +515,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-        else
+        /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
+        else if (analyzer)
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
@@ -842,12 +845,6 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
-
-    /// Re-check under the same lock as the rewrite: a concurrent `CREATE TABLE` in another database may
-    /// have added an edge to a table under the new name since the preflight check of the caller.
-    /// Nothing is modified yet, so the exception leaves the catalog intact.
-    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_name, new_name, tables_in_database);
-
     chassert(!databases.contains(new_name));
     auto it = databases.find(old_name);
     chassert(it != databases.end());
@@ -1435,6 +1432,16 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         metadata_disk_list.insert(std::move(db_disk));
     }
 
+    /// Startup may already have dropped tables, e.g. `SystemLog::prepareUnionTable` replaces union tables.
+    /// They are queued with their storage and their UUID mapping is still registered, so only drops of previous runs are loaded here.
+    auto is_drop_queued = [this](const DiskPtr & disk, const String & metadata_path)
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        return std::ranges::any_of(tables_marked_dropped, [&](const TableMarkedAsDropped & dropped)
+        {
+            return dropped.metadata_path == metadata_path && dropped.db_disk->getName() == disk->getName();
+        });
+    };
 
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
@@ -1475,6 +1482,12 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
             dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
             String full_path = path + sub_path_filename;
+            if (is_drop_queued(db_disk, full_path))
+            {
+                LOG_DEBUG(log, "Table {} was dropped during this startup and is already queued for removal", dropped_id.getNameForLogs());
+                continue;
+            }
+
             dropped_metadata.emplace(std::move(full_path), std::pair{std::move(dropped_id), db_disk});
         }
     }
@@ -1640,7 +1653,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
                 dropped_table = *it;
             }
         }
-        if (it_dropped_table == tables_marked_dropped.end() || !dynamic_cast<DatabaseOnDisk *>(database.get()))
+        if (it_dropped_table == tables_marked_dropped.end())
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
@@ -2213,50 +2226,6 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
         }
 
         restore_dependencies();
-    };
-
-    check(referential_dependencies);
-    check(loading_dependencies);
-}
-
-/// `RENAME DATABASE` re-keys every table of the database under the new name (see `updateDatabaseName`),
-/// which can merge a renamed table into a node that other tables already reference by the future name -
-/// the simplest case being a table `db.t = Alias(<new name>, t)` accepted at `CREATE` because the target
-/// database did not exist yet, and thus becoming a self-reference. Such a cycle in the server-wide
-/// dependency graph then makes every later DDL statement that adds a dependency edge fail with
-/// `INFINITE_LOOP`, anywhere on the server, and the database stops being listable after a restart.
-/// The check applies the rename to a copy of the graph and refuses the rename if it becomes cyclic, the
-/// same way `RENAME TABLE` and `EXCHANGE TABLES` do for a single table. The caller passes the exact set
-/// of tables it is about to re-key and holds the locks that keep that set stable until `updateDatabaseName`.
-/// This is a preflight check that lets the rename fail before anything is modified; `updateDatabaseName`
-/// repeats it in the same critical section as the rewrite, because DDL in other databases can add edges
-/// to the dependency graph in between.
-void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependencies(
-    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database)
-{
-    std::lock_guard lock{databases_mutex};
-    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_database_name, new_database_name, tables_in_database);
-}
-
-void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
-    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database) const
-{
-    auto check = [&](const TablesDependencyGraph & dependencies)
-    {
-        TablesDependencyGraph after_rename = dependencies;
-        for (const auto & table_name : tables_in_database)
-        {
-            auto old_dependencies = after_rename.removeDependencies(StorageID{old_database_name, table_name}, /* remove_isolated_tables= */ true);
-            after_rename.addDependencies(StorageID{new_database_name, table_name}, old_dependencies);
-        }
-
-        if (after_rename.hasCyclicDependencies())
-            throw Exception(
-                ErrorCodes::INFINITE_LOOP,
-                "Cannot rename database {} to {}, because it will lead to cyclic dependencies: {}",
-                backQuoteIfNeed(old_database_name),
-                backQuoteIfNeed(new_database_name),
-                after_rename.describeCyclicDependencies());
     };
 
     check(referential_dependencies);

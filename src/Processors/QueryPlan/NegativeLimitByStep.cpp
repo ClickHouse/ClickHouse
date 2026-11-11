@@ -97,7 +97,7 @@ void NegativeLimitByStep::serialize(Serialization & ctx) const
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        ctx.writeColumnName(column);
+        writeStringBinary(column, ctx.out);
 }
 
 QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)

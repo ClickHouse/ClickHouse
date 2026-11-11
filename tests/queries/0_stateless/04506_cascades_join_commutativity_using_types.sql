@@ -1,6 +1,7 @@
--- Tags: no-flaky-check
+-- Tags: no-darwin, no-flaky-check
 -- no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
 -- execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- `JoinCommutativity` swaps joins whose `USING` clause casts a mismatched key type to the
 -- supertype: `swapInputs` remaps the cast and the `join_use_nulls` wrappers to the new sides.
@@ -78,74 +79,74 @@ SELECT 'RIGHT ANTI', sum(explain LIKE '%swapped%') FROM (
 SELECT '-- 2. results match the plain plan, join_use_nulls = 0';
 SET join_use_nulls = 0;
 SELECT 'INNER swapped', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small INNER JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'INNER plain', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small INNER JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'LEFT ANY swapped', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small LEFT ANY JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'LEFT ANY plain', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small LEFT ANY JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'RIGHT ANY swapped', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small RIGHT ANY JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'RIGHT ANY plain', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small RIGHT ANY JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'LEFT SEMI swapped', count(), sum(k), sum(length(v)) FROM t_uc_small LEFT SEMI JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'LEFT SEMI plain', count(), sum(k), sum(length(v)) FROM t_uc_small LEFT SEMI JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'RIGHT SEMI swapped', count(), sum(k), sum(length(w)) FROM t_uc_small RIGHT SEMI JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'RIGHT SEMI plain', count(), sum(k), sum(length(w)) FROM t_uc_small RIGHT SEMI JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'LEFT ANTI swapped', count(), sum(k), sum(length(v)) FROM t_uc_small LEFT ANTI JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'LEFT ANTI plain', count(), sum(k), sum(length(v)) FROM t_uc_small LEFT ANTI JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'RIGHT ANTI swapped', count(), sum(k), sum(length(w)) FROM t_uc_small RIGHT ANTI JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'RIGHT ANTI plain', count(), sum(k), sum(length(w)) FROM t_uc_small RIGHT ANTI JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
 SELECT '-- 3. results match the plain plan, join_use_nulls = 1';
 SET join_use_nulls = 1;
 SELECT 'INNER swapped', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small INNER JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'INNER plain', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small INNER JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'LEFT ANY swapped', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small LEFT ANY JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'LEFT ANY plain', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small LEFT ANY JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'RIGHT ANY swapped', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small RIGHT ANY JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'RIGHT ANY plain', count(), sum(k), sum(length(v)), sum(length(w)) FROM t_uc_small RIGHT ANY JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'LEFT SEMI swapped', count(), sum(k), sum(length(v)) FROM t_uc_small LEFT SEMI JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'LEFT SEMI plain', count(), sum(k), sum(length(v)) FROM t_uc_small LEFT SEMI JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'RIGHT SEMI swapped', count(), sum(k), sum(length(w)) FROM t_uc_small RIGHT SEMI JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'RIGHT SEMI plain', count(), sum(k), sum(length(w)) FROM t_uc_small RIGHT SEMI JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'LEFT ANTI swapped', count(), sum(k), sum(length(v)) FROM t_uc_small LEFT ANTI JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'LEFT ANTI plain', count(), sum(k), sum(length(v)) FROM t_uc_small LEFT ANTI JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT 'RIGHT ANTI swapped', count(), sum(k), sum(length(w)) FROM t_uc_small RIGHT ANTI JOIN t_uc_big USING (k)
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT 'RIGHT ANTI plain', count(), sum(k), sum(length(w)) FROM t_uc_small RIGHT ANTI JOIN t_uc_big USING (k)
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
 SELECT '-- 4. the coerced key type; right-side columns become Nullable only with join_use_nulls';
 SET join_use_nulls = 1;
 SELECT toTypeName(k), toTypeName(w), k, v, w FROM t_uc_small LEFT ANY JOIN t_uc_big USING (k) ORDER BY k LIMIT 3
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT toTypeName(k), toTypeName(w), k, v, w FROM t_uc_small LEFT ANY JOIN t_uc_big USING (k) ORDER BY k LIMIT 3
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SET join_use_nulls = 0;
 SELECT toTypeName(k), toTypeName(w), k, v, w FROM t_uc_small LEFT ANY JOIN t_uc_big USING (k) ORDER BY k LIMIT 3
-  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
+  SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1;
 SELECT toTypeName(k), toTypeName(w), k, v, w FROM t_uc_small LEFT ANY JOIN t_uc_big USING (k) ORDER BY k LIMIT 3
   SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 

@@ -11,7 +11,7 @@ if (SANITIZE STREQUAL "thread")
     message (FATAL_ERROR "darwin-compatibility must not be linked into TSan builds")
 endif ()
 
-add_library(darwin-compatibility STATIC pthread_rwlock_shim.c libc_timezone_shim.c)
+add_library(darwin-compatibility STATIC pthread_rwlock_shim.c)
 
 # The shim must be force-loaded, and must be the ONLY link entry for this archive:
 # - Lazy archive scanning cannot be relied on: `Threads::Threads` puts -lpthread in the
@@ -34,4 +34,4 @@ target_link_libraries(global-libs INTERFACE
     darwin-compatibility-dep
     "-Wl,-force_load,${CMAKE_CURRENT_BINARY_DIR}/libdarwin-compatibility.a")
 
-message (STATUS "pthread_rwlock will be replaced, and calls into the libc time zone lock serialized, to work around a lost wakeup in Darwin psynch (FB24027930)")
+message (STATUS "pthread_rwlock will be replaced to work around a lost wakeup in Darwin psynch (FB24027930)")

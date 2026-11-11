@@ -66,7 +66,6 @@ class MutationCommands;
 class Context;
 struct JobAndPool;
 class MergeTreeTransaction;
-class UniqueKeyTxnManager;
 struct ZeroCopyLock;
 struct ZooKeeperRetriesInfo;
 
@@ -151,14 +150,8 @@ public:
     DataPartsAnyLock(const DataPartsAnyLock &) = delete;
     DataPartsAnyLock(DataPartsAnyLock &&) = delete;
 
-    DataPartsAnyLock(const DataPartsLock & lock [[clang::lifetimebound]]) noexcept // NOLINT(google-explicit-constructor)
-        : held_lock(&lock) {}
-    DataPartsAnyLock(const DataPartsSharedLock & lock [[clang::lifetimebound]]) noexcept // NOLINT(google-explicit-constructor)
-        : held_lock(&lock) {}
-
-private:
-    /// The lock this token was built from, never dereferenced: it is what makes the annotations above verifiable.
-    [[maybe_unused]] const void * held_lock;
+    DataPartsAnyLock(const DataPartsLock &) noexcept {} // NOLINT(google-explicit-constructor)
+    DataPartsAnyLock(const DataPartsSharedLock &) noexcept {} // NOLINT(google-explicit-constructor)
 };
 
 /// Data structure for *MergeTree engines.
@@ -559,6 +552,12 @@ public:
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr query_context,
+        QueryProcessingStage::Enum to_stage,
+        const StorageSnapshotPtr &,
+        SelectQueryInfo & info) const override;
+
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
@@ -605,8 +604,6 @@ public:
         {
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
-            /// The lowest metadata version of the patch parts the snapshot is applied with.
-            Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
             PartitionIdToMinBlockPtr min_part_data_versions = nullptr;
             PartitionIdToMaxBlockPtr max_mutation_versions = nullptr;
             bool need_data_mutations = false;
@@ -675,9 +672,10 @@ public:
         DataMutations,
         AlterMutations,
         MaskingPolicy,
-        UniqueKey,
     };
 
+    static ColumnDefaultnessStatsUnavailableReason
+    getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot);
     ColumnDefaultnessStatsUnavailableReason getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const;
     static const char * columnDefaultnessStatsUnavailableReasonToString(ColumnDefaultnessStatsUnavailableReason reason);
 
@@ -755,10 +753,8 @@ public:
 
     /// Returns sorted list of the parts with specified states
     /// out_states will contain snapshot of each part state
-    /// If `need_stop` is provided, it is checked periodically during the enumeration,
-    /// and if it returns true, the enumeration stops and returns what it has walked so far.
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
+    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
+    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states = nullptr) const;
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
 
@@ -776,9 +772,7 @@ public:
     DataPartsVector getPatchPartsVectorForPartition(const String & partition_id) const;
 
     /// Returns absolutely all parts (and snapshot of their states)
-    /// If `need_stop` is provided, it is checked periodically during the enumeration,
-    /// and if it returns true, the enumeration stops and returns what it has walked so far.
-    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
+    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
@@ -787,13 +781,12 @@ public:
     virtual MutationCounters getMutationCounters() const = 0;
 
     /// Same as above but only returns projection parts
-    ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
+    ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
         const DataPartStates & affordable_states,
-        MergeTreeData::DataPartStateVector * out_states,
-        const std::function<bool()> & need_stop = {}) const;
+        MergeTreeData::DataPartStateVector * out_states) const;
 
     void filterVisibleDataParts(DataPartsVector & maybe_visible_parts, CSN snapshot_version, TransactionID current_tid) const;
 
@@ -919,17 +912,6 @@ public:
     /// merge or mutation, so that a table that has crossed a limit can be brought back under it.
     /// 'drop_range' is empty for `ATTACH PARTITION FROM`, which does not remove anything.
     void throwIfTableSizeLimitsExceededForReplacement(
-        const DataPartsLock & parts_lock,
-        const MutableDataPartsVector & added_parts,
-        const std::optional<MergeTreePartInfo> & drop_range) const;
-
-    /// For a table created with `CREATE TEMPORARY TABLE`, throws if adding 'added_parts' and removing the active parts
-    /// covered by 'drop_range' would make the table exceed the `max_temporary_table_size_bytes_compressed` or
-    /// `max_temporary_table_size_bytes_uncompressed` settings of 'query_context'. Used by the operations that add
-    /// parts: `INSERT` (in `MergeTreeSink`), `ATTACH PART`, `ATTACH PARTITION FROM`, `REPLACE PARTITION FROM`,
-    /// `MOVE PARTITION TO TABLE`, `CREATE TEMPORARY TABLE ... CLONE AS` and `RESTORE`.
-    void throwIfTemporaryTableSizeLimitsExceededForReplacement(
-        const ContextPtr & query_context,
         const DataPartsLock & parts_lock,
         const MutableDataPartsVector & added_parts,
         const std::optional<MergeTreePartInfo> & drop_range) const;
@@ -1100,31 +1082,12 @@ public:
 
     size_t clearEmptyParts();
 
-    UniqueKeyTxnManager & uniqueKeyTxnManager() const;
-
-    /// Whether `part` holds the only copy of some other part's kills, in which case no removal
-    /// path may take it. The overload taking a lock is for a caller that already holds one.
-    bool isPinnedByDeleteBitmap(const IMergeTreeDataPart & part) const;
-    bool isPinnedByDeleteBitmap(const IMergeTreeDataPart & part, const DataPartsAnyLock & lock) const;
-
-    /// Announce a part's directory to the bitmap store, which indexes the sidecars in it.
-    void loadUniqueKeyBitmaps(const DataPartPtr & part);
-
-    /// Forget the bitmap-store bookkeeping of parts that have left the part set.
-    void dropUniqueKeyBitmaps(const DataPartsVector & parts);
-
     /// Moves to outdated state patch parts that do not need to be applied to regular parts.
     virtual size_t clearUnusedPatchParts();
 
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
-
-    /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove
-    /// recursively, so the files that the engine keeps there (besides the parts and the directories it removes by
-    /// name) would survive the drop and get loaded by the next table created on the same disk. Called for each
-    /// writable disk after the parts are removed, so that a failed drop can still be retried or undone with them.
-    virtual void removeOwnFilesInDiskRootOnDrop(const DiskPtr & /*disk*/) {}
 
     /// This flag is for hardening and assertions.
     bool all_data_dropped = false;
@@ -1150,9 +1113,6 @@ public:
     /// the half of checkAlterIsPossible that depends only on metadata and settings, without the
     /// transient guards. lets a caller ask whether a command is eligible at all
     void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
-
-    /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
-    static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
@@ -1419,7 +1379,6 @@ public:
     /// Reserves space for the part based on the distribution of "big parts" in the same partition.
     /// Parts with estimated size larger than `min_bytes_to_rebalance_partition_over_jbod` are
     /// considered as big. The priority is lower than TTL. If reservation fails, return nullptr.
-    /// `time_of_move` is the moment the move TTL rules are evaluated at; 0 means the local clock.
     ReservationPtr balancedReservation(
         const StorageMetadataPtr & metadata_snapshot,
         size_t part_size,
@@ -1429,8 +1388,7 @@ public:
         MergeTreeData::DataPartsVector covered_parts,
         std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
         const IMergeTreeDataPart::TTLInfos * ttl_infos,
-        bool is_insert = false,
-        time_t time_of_move = 0);
+        bool is_insert = false);
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
@@ -1491,24 +1449,14 @@ public:
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
 
     /// `metadata_snapshot` must come from the source part being covered
-    /// (via `getMetadataSnapshotForEmptyPart`) so patch parts get patch-part metadata.
+    /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
     /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
-    /// With `precommit_storage = false` the returned part's storage transaction is still open, so
-    /// the caller can add files to the part; it then owns the `precommitTransaction()` that seals it.
-    /// Metadata for an empty part that covers or replaces `source_part`. For a patch part it is the
-    /// synthetic patch-part metadata stamped with the metadata version of `source_part`: the synthetic
-    /// metadata alone carries version 0, and an empty patch at version 0 would drag the version of every
-    /// patch merged with it down to 0, so a pending `RENAME COLUMN` would be applied to the merged patch
-    /// on read again.
-    static StorageMetadataPtr getMetadataSnapshotForEmptyPart(const IMergeTreeDataPart & source_part);
-
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        std::optional<PatchPartIndex> patch_part_index,
-        bool precommit_storage = true) const;
+        std::optional<PatchPartIndex> patch_part_index) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1531,16 +1479,8 @@ public:
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
-    /// `use_index_expression` selects skip index expressions by result name; without it all of them are used.
-    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeIndices & indices,
-        const std::function<bool(const String &)> & use_index_expression = {}) const;
-    /// Returns nullptr when no expression is selected.
-    ExpressionActionsPtr getSkipIndicesExpression(
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeIndices & indices,
-        const std::function<bool(const String &)> & use_index_expression = {}) const;
+    ExpressionActionsPtr
+    getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
 
     struct PartCompressionCodec
     {
@@ -1727,7 +1667,6 @@ protected:
     friend class VersionMetadataOnKeeper; // for access to log
     friend class MutationsState; // for access to log
     friend class UniqueKeyDenseIndexOps; // for access to log + data_parts_by_info
-    friend class DeleteBitmapStore; // for access to outdated_data_parts_loading_finished
 
     bool require_part_metadata;
 
@@ -1754,10 +1693,7 @@ protected:
 
     void resetColumnSizes()
     {
-        std::lock_guard sizes_lock(columns_and_secondary_indices_sizes_mutex);
         column_sizes.clear();
-        secondary_index_sizes.clear();
-        primary_index_size = {};
         are_columns_and_secondary_indices_sizes_calculated = false;
     }
 
@@ -1802,12 +1738,6 @@ public:
     size_t getColumnsDescriptionsCacheSize() const;
 
 protected:
-    /// The table's unique-key write surface: partition locks, the delete-bitmap store, and the
-    /// commit protocol that uses them. Null on a table without a unique key, and constructed once
-    /// in the constructor rather than on first use -- every caller already sits behind
-    /// `hasUniqueKey()`, so there is nothing for a lazy path to protect.
-    std::unique_ptr<UniqueKeyTxnManager> unique_key_txn_manager;
-
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 
@@ -2102,11 +2032,6 @@ protected:
         const Strings & mutation_ids,
         const std::map<String, UInt64> & projections_duration_ms);
 
-    /// Writes a RemovePart event to system.part_log for each of the parts. Best-effort: a failed
-    /// write is logged, never thrown, so it cannot fail the removal or, in dropAllData(), replace
-    /// the exception the drop itself is reporting.
-    void writePartRemovalLog(const DataPartsVector & parts) const;
-
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
     /// mechanisms for parts locking
@@ -2131,7 +2056,7 @@ protected:
     MutableDataPartPtr loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const;
 
     /// Attaches restored parts to the storage.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
+    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
 
@@ -2245,13 +2170,6 @@ protected:
     std::atomic_bool outdated_data_parts_loading_finished = true;
     std::atomic_bool unexpected_data_parts_loading_finished = true;
 
-    bool isStorageWritable() const
-    {
-        return storage_is_writable.load(std::memory_order_relaxed);
-    }
-
-    std::atomic_bool storage_is_writable = false;
-
     void loadOutdatedDataParts(bool is_async);
     void startOutdatedAndUnexpectedDataPartsLoadingTask();
     void stopOutdatedAndUnexpectedDataPartsLoadingTask();
@@ -2264,14 +2182,7 @@ protected:
     /// not done under a single lock).
     std::mutex refresh_parts_mutex;
 
-    /// Protects the `refresh_stats_task` holder itself (it is reassigned by `startStatisticsCache`, which
-    /// can run concurrently with `stopStatisticsCache` when a table startup or an `ALTER` races with a
-    /// shutdown) and `refresh_stats_stopped`. The task callback reads the holder without this mutex: it
-    /// only runs while the task is active, and the holder is reassigned only after deactivating it.
-    std::mutex refresh_stats_task_mutex;
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
-    /// Set by `stopStatisticsCache`, after which `startStatisticsCache` does not arm the task anymore.
-    bool refresh_stats_stopped TSA_GUARDED_BY(refresh_stats_task_mutex) = false;
     /// Set before `refresh_stats_task` is deactivated, so that a running `refreshStatistics` returns between parts.
     std::atomic_bool refresh_stats_cancelled = false;
 
@@ -2279,9 +2190,6 @@ protected:
     ConditionSelectivityEstimatorPtr cached_estimator;
 
     void startStatisticsCache();
-    /// Deactivates the statistics refresh task and prevents any later `startStatisticsCache` from arming it.
-    /// Idempotent. Called on shutdown.
-    void stopStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
@@ -2383,25 +2291,6 @@ private:
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const;
 
     virtual void startBackgroundMovesIfNeeded() = 0;
-
-    /// Whether the started background workers may modify the table. `StorageMergeTree` keeps it unset
-    /// while the table is read-only, including while a settings `ALTER` of a read-only table is between
-    /// making `table_readonly = 0` visible in memory and committing it durably: the asynchronous
-    /// outdated and unexpected part loaders check it before touching the disk and between parts, and
-    /// the waits for them return at once while it is unset, exactly as for a read-only table, because
-    /// nothing is loading.
-    virtual bool areBackgroundWorkersEnabled() const { return true; }
-
-    /// Whether the table is still durably read-only. `StorageMergeTree` keeps it set while a settings
-    /// `ALTER` of a read-only table is between making `table_readonly = 0` visible in memory and
-    /// committing it durably. Foreground queries that modify data must keep seeing the table as
-    /// read-only in that window: a rolled-back commit restores `table_readonly = 1`, and an `INSERT`,
-    /// mutation, `TRUNCATE` or partition command that slipped through would have written to a table
-    /// that is durably read-only.
-    virtual bool isReadonlyCommitInFlight() const { return false; }
-
-    /// Re-arm period of an asynchronous part loader that woke up while the workers are disabled.
-    static constexpr size_t DISABLED_PARTS_LOADING_RETRY_MS = 1000;
 
     bool allow_nullable_key = false;
 

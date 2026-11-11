@@ -27,7 +27,7 @@ namespace Setting
 {
     /// There are way too many format settings to handle extern declarations manually.
 #define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    extern const Settings ## TYPE NAME;
+    extern Settings ## TYPE NAME;
 FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
@@ -54,6 +54,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
     extern const SettingsBool variant_throw_on_type_mismatch;
     extern const SettingsBool dynamic_throw_on_type_mismatch;
+    extern const SettingsBool json_extract_use_cast_string_to_date_time_mode;
     extern const SettingsBool allow_simdjson;
     extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
@@ -71,7 +72,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 function_base58_max_input_size;
     extern const SettingsBool validate_polygons;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
-    extern const SettingsBool short_circuit_function_evaluation_reorder_arguments;
     extern const SettingsBool short_circuit_function_evaluation_for_nulls;
     extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
     extern const SettingsTimezone session_timezone;
@@ -127,7 +127,7 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// how a JSON scalar is parsed into the result type and whether a duplicated or null typed path is skipped or
     /// throws, without changing the function name or the result type, so the DAG hash cannot tell two such
     /// predicates apart. (`cast_string_to_date_time_mode`, which `JSONOverloadResolver` latches into
-    /// `format_settings.date_time_input_format`, is already registered above. The JSONPath parser limits
+    /// `format_settings.date_time_input_format`, is already registered above, and so is `date_time_input_format`. The JSONPath parser limits
     /// `max_parser_depth` / `max_parser_backtracks` would not be needed for this family alone: the path is a
     /// constant, so exceeding them raises `TOO_DEEP_RECURSION` while it is parsed, before any mark is read. They
     /// are registered below for `formatQuery`, which parses a column value per row.)
@@ -142,6 +142,7 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::type_json_skip_null_typed_paths].value);
     hash.update(settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object].value);
     hash.update(settings[Setting::allow_simdjson].value);
+    hash.update(settings[Setting::json_extract_use_cast_string_to_date_time_mode].value);
     /// The conversion functions (`toString`, `toDateTime`, `toDecimal*`, `toIPv4`, `CAST`, ...) snapshot a whole
     /// `FormatSettings` and a few more settings in `FunctionConvertSettings` when they are built, and the text
     /// serializations they call for a `String` source or target read it: `toString(d)` of a `DateTime64(1)` column
@@ -211,9 +212,6 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// `NULL`; without them, it is evaluated on the values stored behind the `NULL`s and may throw on them. The
     /// DAG and the result type are identical in both modes.
     hash.update(static_cast<UInt64>(settings[Setting::short_circuit_function_evaluation].value));
-    /// Evaluating a cheap argument of `and` / `or` before a heavy one changes nothing but the rows the heavy one is
-    /// evaluated on, so like the setting above it decides whether the heavy one throws on the rows it would skip.
-    hash.update(settings[Setting::short_circuit_function_evaluation_reorder_arguments].value);
     hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls].value);
     hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls_threshold].value);
     /// `session_timezone` is not read by any function when it is built: `DateLUT::instance()` looks it up in the

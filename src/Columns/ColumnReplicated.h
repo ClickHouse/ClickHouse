@@ -75,7 +75,6 @@ public:
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;
-    bool supportsGetDataAt() const override { return nested_column->supportsGetDataAt(); }
 
     ColumnPtr convertToFullColumnIfReplicated() const override;
 
@@ -217,8 +216,7 @@ private:
     static std::atomic<UInt64> global_id_counter;
 };
 
-/// Elements of row i get index first_index + i.
-ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets, size_t first_index = 0);
+ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.
 bool isLazyReplicationUseful(const ColumnPtr & column);

@@ -163,7 +163,7 @@ std::vector<String> TabSeparatedFormatReader::readRowImpl()
 }
 
 bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type,
-    const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/, size_t /*column_index*/)
+    const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
 {
     const bool at_delimiter = !is_last_file_column && !buf->eof() && *buf->position() == '\t';
     const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r'));
@@ -425,18 +425,6 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
         if (is_raw)
             registerWithNamesAndTypes("Raw", register_func);
     }
-
-    /// `TSV` and `TSVRaw` (and `Raw`) are interchangeable spellings of `TabSeparated` and
-    /// `TabSeparatedRaw`, and the `tsv` extension below is registered only for the canonical
-    /// spellings.
-    factory.registerFormatAlias("TSV", "TabSeparated");
-    factory.registerFormatAlias("TSVRaw", "TabSeparatedRaw");
-    factory.registerFormatAlias("Raw", "TabSeparatedRaw");
-
-    /// `TabSeparated` and `TSV` are registered as independent formats, and the `tsv` extension
-    /// infers as `TSV`. Files of the raw flavour of the format carry the `tsv` extension too.
-    factory.registerFileExtension("tsv", "TabSeparated", /*used_for_format_inference=*/ false);
-    factory.registerFileExtension("tsv", "TabSeparatedRaw", /*used_for_format_inference=*/ false);
 
     factory.setDocumentation("Raw", Documentation{
         .description = "An alias for the `TabSeparatedRaw` format. See the `TabSeparatedRaw` entry for the full documentation.",

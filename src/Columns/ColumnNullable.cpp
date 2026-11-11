@@ -762,12 +762,6 @@ size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & pe
     if (range_size <= 1)
         return range_size;
 
-    /// Some nested column types (e.g. Tuple, Object, Array of non-fixed elements) do not implement getDataAt.
-    /// For them, return the upper-bound estimate from the base implementation - the same estimate
-    /// such columns produce when they are not wrapped in Nullable.
-    if (!nested_column->supportsGetDataAt())
-        return IColumn::estimateCardinalityInPermutedRange(permutation, equal_range);
-
     /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
     StringHashSet elements;
     bool has_null = false;
@@ -1066,6 +1060,11 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
+void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> *)
+{
+    getNestedColumn().fillFromRowRefsWithRowStore(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, &getNullMapData());
+}
+
 void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
 {
     getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
@@ -1220,10 +1219,4 @@ bool ColumnNullable::hasOnlyTypeDefaults() const
     return memoryIsByte(data.data(), 0, data.size(), 1);
 }
 
-ColumnPlanes ColumnNullable::getPlanes() const
-{
-    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapData().data());
-    planes.children = {&getNestedColumn()};
-    return planes;
-}
 }

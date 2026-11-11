@@ -44,11 +44,10 @@
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SessionLog.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -73,12 +72,10 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
 #include <Common/CoverageCollection.h>
@@ -118,10 +115,6 @@
 
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
-#endif
-
-#if USE_FILELOG
-#include <Storages/FileLog/StorageFileLog.h>
 #endif
 
 #if USE_JEMALLOC
@@ -255,35 +248,6 @@ void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 }
 
 
-/// The form of `SYSTEM DROP REPLICA` / `SYSTEM DROP DATABASE REPLICA` without a database or a table
-/// affects every database on the server that the command can target, so it requires `SYSTEM DROP REPLICA` for all of them.
-/// Instead of silently skipping the databases the user has no access to (and possibly doing nothing at all),
-/// check the permissions in advance and tell the user which databases they are missing the privilege for.
-/// When there is nothing to target at all, the server-wide command is still a privileged operation
-/// and must not succeed for a user without any privileges, so the global privilege is required in that case.
-void checkAccessForDropWholeReplica(const ContextPtr & context, const Strings & target_databases, std::string_view query_name)
-{
-    auto access = context->getAccess();
-    if (access->isGranted(AccessType::SYSTEM_DROP_REPLICA))
-        return;
-
-    if (target_databases.empty())
-        context->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
-
-    std::vector<String> databases_without_access;
-    for (const auto & database_name : target_databases)
-        if (!access->isGranted(AccessType::SYSTEM_DROP_REPLICA, database_name))
-            databases_without_access.emplace_back(database_name);
-
-    if (!databases_without_access.empty())
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "Access denied for {}. Not enough permissions to drop these databases: {}",
-            query_name,
-            fmt::join(databases_without_access, ", "));
-}
-
-
 AccessType getRequiredAccessType(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
@@ -390,7 +354,7 @@ static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
+        loader.reloadDictionary({query.getDatabase(), query.getTable()});
         return;
     }
 
@@ -401,7 +365,7 @@ static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.unloadDictionary({query.getDatabase(), query.getTable()}, context);
+        loader.unloadDictionary({query.getDatabase(), query.getTable()});
         return;
     }
 
@@ -522,11 +486,6 @@ BlockIO InterpreterSystemQuery::execute()
             prewarmPrimaryIndexCache();
             break;
         }
-        case Type::CLEAR_TIME_SERIES_CACHES:
-        {
-            clearTimeSeriesCaches();
-            break;
-        }
         case Type::CLEAR_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearMarkCache();
@@ -574,10 +533,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearUncompressedCache();
-            break;
-        case Type::CLEAR_COLUMNS_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_COLUMNS_CACHE);
-            system_context->clearColumnsCache();
             break;
         case Type::CLEAR_INDEX_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
@@ -950,7 +905,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RECONNECT_ZOOKEEPER:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RECONNECT_ZOOKEEPER);
-            getContext()->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command");
+            system_context->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command");
             break;
         }
         case Type::STOP_MERGES:
@@ -1118,9 +1073,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
             flushObjectStorageQueue(query);
             break;
-        case Type::RESET_FILELOG:
-            resetFileLog(query);
-            break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
             break;
@@ -1220,16 +1172,6 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
-        case Type::DISABLE_ALL_FAILPOINTS:
-        {
-            /// Outside the `USE_LIBFIU` guard below on purpose: this statement asks for a
-            /// server that injects nothing, which a build without libfiu already is. Failing
-            /// it would only make every caller - a test harness, above all - special-case a
-            /// build flag to ask for a state that already holds.
-            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            FailPointInjection::disableAllFailPoints();
-            break;
-        }
 #if USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         {
@@ -1250,7 +1192,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (!holder)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
             holder->alloc(query.untracked_memory_size);
-            LOG_DEBUG(log, "Total tracked memory is {}", ReadableSize(total_memory_tracker.get()));
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::FREE_MEMORY:
@@ -1260,7 +1202,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (!holder)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
             holder->free();
-            LOG_DEBUG(log, "Total tracked memory is {}", ReadableSize(total_memory_tracker.get()));
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::WAIT_FAILPOINT:
@@ -1308,10 +1250,6 @@ BlockIO InterpreterSystemQuery::execute()
             LOG_INFO(getLogger("InterpreterSystemQuery"),
                 "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
 #if WITH_COVERAGE_DEPTH
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-            /// The process writes its coverage to files, see `initCoverageFromEnvironment`.
-            if (!isCoverageFileSinkEnabled())
-#endif
             {
                 /// Register (or re-register) the flush callback so coverage data is
                 /// resolved and inserted into system.coverage_log when the previous
@@ -1748,10 +1686,28 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (query.is_drop_whole_replica)
     {
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-        Strings target_databases;
-        for (const auto & elem : databases)
-            target_databases.emplace_back(elem.first);
-        checkAccessForDropWholeReplica(getContext(), target_databases, "SYSTEM DROP REPLICA");
+        auto access = getContext()->getAccess();
+        bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
+
+        /// Instead of silently failing, check the permissions to delete all databases in advance.
+        /// Throw an exception to user if the user doesn't have enough privileges to drop the replica.
+        /// Include the databases that the user needs privileges for in the exception
+        std::vector<String> required_access;
+        for (auto & elem : databases)
+        {
+            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
+            {
+                required_access.emplace_back(elem.first);
+                LOG_INFO(log, "? Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
+            }
+        }
+
+        if (!required_access.empty())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Access denied for {}. Not enough permissions to drop these databases: {}",
+                "SYSTEM DROP REPLICA",
+                fmt::join(required_access, ", "));
 
         /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
@@ -1784,59 +1740,27 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
-                /// The loaded storage if there is one, otherwise the lazy stand-in.
-                const StoragePtr table = resolveStorageProxy(iterator->table());
-                const auto * lazy_stand_in = dynamic_cast<const StorageProxy *>(table.get());
-                String local_zookeeper_path;
-                String local_replica_name;
-                String local_zookeeper_name;
-                if (lazy_stand_in && lazy_stand_in->isLazyStandIn())
+                if (auto * storage_replicated = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip).get())
                 {
-                    /// A lazily loaded table that nothing has accessed yet holds no session in ZooKeeper, so the
-                    /// `is_active` check below would not catch it either. Skipping it is the destructive outcome,
-                    /// and loading every such table defeats `lazy_load_tables`, so resolve its path from the stored
-                    /// `CREATE TABLE` query the way loading the table would.
-                    ASTPtr create_ast = database->tryGetCreateTableQuery(iterator->name(), getContext());
-                    if (!create_ast)
-                        continue; /// Dropped meanwhile.
-                    create_ast = create_ast->clone();
-                    auto & create_query = create_ast->as<ASTCreateQuery &>();
-                    create_query.attach = true;
-                    auto znode_info = extractZnodeInfoFromReplicatedTableDef(
-                        create_query, table->getStorageID(), LoadingStrictnessLevel::ATTACH, getContext());
-                    if (!znode_info)
-                        continue;
-                    local_zookeeper_path = znode_info->path;
-                    local_replica_name = znode_info->replica_name;
-                    local_zookeeper_name = znode_info->zookeeper_name;
+                    /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
+                    /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
+                    /// past this guard against a query path canonicalized to "/a/replicas/...".
+                    const String local_replica_path
+                        = fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(
+                              storage_replicated->getZooKeeperPath(), /*check_starts_with_slash*/ false))
+                        / "replicas" / storage_replicated->getReplicaName();
+                    /// Match the keeper too: a table on a different keeper with the same path string is a
+                    /// different znode, so it must not block a drop targeting query.zk_name.
+                    if (local_replica_path == canonical_remote_replica_path
+                        && storage_replicated->getZooKeeperName() == query.zk_name)
+                        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
+                                        "There is a local table {}, which has the same table path in ZooKeeper. "
+                                        "Please check the path in query. "
+                                        "If you want to drop replica "
+                                        "of this table, use `DROP TABLE` "
+                                        "or `SYSTEM DROP REPLICA 'name' FROM TABLE db.table`",
+                                        storage_replicated->getStorageID().getNameForLogs());
                 }
-                else if (auto * storage_replicated = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip).get())
-                {
-                    local_zookeeper_path = storage_replicated->getZooKeeperPath();
-                    local_replica_name = storage_replicated->getReplicaName();
-                    local_zookeeper_name = storage_replicated->getZooKeeperName();
-                }
-                else
-                {
-                    continue;
-                }
-
-                /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
-                /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
-                /// past this guard against a query path canonicalized to "/a/replicas/...".
-                const String local_replica_path
-                    = fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(local_zookeeper_path, /*check_starts_with_slash*/ false))
-                    / "replicas" / local_replica_name;
-                /// Match the keeper too: a table on a different keeper with the same path string is a
-                /// different znode, so it must not block a drop targeting query.zk_name.
-                if (local_replica_path == canonical_remote_replica_path && local_zookeeper_name == query.zk_name)
-                    throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
-                                    "There is a local table {}, which has the same table path in ZooKeeper. "
-                                    "Please check the path in query. "
-                                    "If you want to drop replica "
-                                    "of this table, use `DROP TABLE` "
-                                    "or `SYSTEM DROP REPLICA 'name' FROM TABLE db.table`",
-                                    table->getStorageID().getNameForLogs());
             }
         }
 
@@ -2188,22 +2112,20 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     else if (query.is_drop_whole_replica)
     {
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto access = getContext()->getAccess();
+        bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
-        /// Only `Replicated` databases are affected by this command, so only they require the privilege:
-        /// a user must not be denied because of unrelated databases the command would never touch.
-        Strings target_databases;
-        for (const auto & elem : databases)
-            if (dynamic_cast<DatabaseReplicated *>(elem.second.get()))
-                target_databases.emplace_back(elem.first);
-        checkAccessForDropWholeReplica(getContext(), target_databases, "SYSTEM DROP DATABASE REPLICA");
-
-        /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
             auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get());
             if (!replicated)
                 continue;
+            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
+            {
+                LOG_INFO(log, "Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
+                continue;
+            }
 
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path, query.zk_name);
             if (query.with_tables)
@@ -2475,8 +2397,7 @@ void InterpreterSystemQuery::syncMerges()
 
         ActiveDataPartSet active_set;
         for (const auto & part : merge_tree.getDataPartsVectorForInternalUsage())
-            if (part->version->isVisibleByLatestSnapshot())
-                active_set.add(part->info, part->name);
+            active_set.add(part->info, part->name);
 
         if (ManualMergeSelector::isAllScheduledPartsCovered(table_id, active_set))
             return;
@@ -2638,7 +2559,7 @@ void InterpreterSystemQuery::syncTransactionLog()
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_TRANSACTION_LOG);
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-    TransactionManager::instance().sync();
+    TransactionLog::instance().sync();
 }
 
 
@@ -2676,27 +2597,6 @@ void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
             "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
 
     queue->waitForPathToBeProcessed(query.queue_path, context);
-}
-
-void InterpreterSystemQuery::resetFileLog([[maybe_unused]] ASTSystemQuery & query)
-{
-    getContext()->checkAccess(AccessType::SYSTEM_RESET_FILELOG, table_id);
-#if USE_FILELOG
-    auto file_log = castStorage<StorageFileLog>(DatabaseCatalog::instance().getTable(table_id, getContext()), DeferredTable::Load);
-    if (!file_log)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not a FileLog table", table_id.getNameForLogs());
-    std::optional<UInt64> offset = 0;
-    if (query.filelog_file)
-    {
-        if (query.filelog_offset)
-            offset = query.filelog_offset;
-        else if (query.filelog_to_end)
-            offset = std::nullopt;
-    }
-    file_log->resetReadPosition(query.filelog_file, offset);
-#else
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FileLog support");
-#endif
 }
 
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
@@ -2827,17 +2727,6 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
     }
 }
 
-void InterpreterSystemQuery::clearTimeSeriesCaches()
-{
-    if (table_id.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for CLEAR TIME SERIES CACHES command");
-
-    getContext()->checkAccess(AccessType::SYSTEM_DROP_TIME_SERIES_CACHES, table_id);
-
-    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    storagePtrToTimeSeries(table)->clearCaches();
-}
-
 void InterpreterSystemQuery::prewarmMarkCache()
 {
     if (table_id.empty())
@@ -2949,9 +2838,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
-            break;
-        case Type::CLEAR_COLUMNS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_COLUMNS_CACHE);
             break;
         case Type::CLEAR_UNCOMPRESSED_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
@@ -3187,9 +3073,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_REPLICA:
         case Type::DROP_DATABASE_REPLICA:
         {
-            /// For the whole-server form (no database and no table) this requires the global privilege.
-            /// This is intentional: the initiator does not know which databases exist on the other hosts of the cluster,
-            /// so it cannot narrow the check to the affected databases as `checkAccessForDropWholeReplica` does locally.
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase(), query.getTable());
             break;
         }
@@ -3246,11 +3129,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::CLEAR_TIME_SERIES_CACHES:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_DROP_TIME_SERIES_CACHES, query.getDatabase(), query.getTable());
-            break;
-        }
         case Type::SYNC_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, query.getDatabase());
@@ -3269,11 +3147,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_OBJECT_STORAGE_QUEUE, query.getDatabase(), query.getTable());
-            break;
-        }
-        case Type::RESET_FILELOG:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RESET_FILELOG, query.getDatabase(), query.getTable());
             break;
         }
         case Type::FLUSH_LOGS:
@@ -3380,7 +3253,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::DISABLE_ALL_FAILPOINTS:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::END: break;
