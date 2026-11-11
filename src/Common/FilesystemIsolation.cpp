@@ -737,6 +737,34 @@ std::vector<std::string> getNameServiceModules(const std::vector<std::string> & 
     }
     return modules;
 }
+
+/// The directories of the sockets of the services that the modules of the Name Service Switch for the services in
+/// `/etc/nsswitch.conf` connect to, which `DT_NEEDED` does not tell: `avahi-daemon` for `nss-mdns`, `sssd` for
+/// `sss`, `nslcd` for `ldap` of `nss-pam-ldapd`, and the services of the user database of `systemd` for `systemd`.
+/// The ones of `nss-resolve` and of `nscd` are among the system paths of the server. The directories rather than the
+/// sockets, because a service that restarts binds a new socket. A directory that does not exist is skipped.
+std::vector<std::string> getNameServiceSocketDirectories()
+{
+    std::vector<std::string> directories;
+    auto add = [&](const char * directory)
+    {
+        if (std::find(directories.begin(), directories.end(), directory) == directories.end())
+            directories.emplace_back(directory);
+    };
+    for (const auto & service : getNameServices())
+    {
+        /// `mdns`, `mdns4`, `mdns6` and their variants `_minimal`.
+        if (service.starts_with("mdns"))
+            add("/run/avahi-daemon");
+        else if (service == "sss")
+            add("/var/lib/sss/pipes");
+        else if (service == "ldap")
+            add("/run/nslcd");
+        else if (service == "systemd")
+            add("/run/systemd/userdb");
+    }
+    return directories;
+}
 #endif
 
 /// The files mapped into the process: its executable and, if it is not linked statically, the dynamic loader and
@@ -962,6 +990,8 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
         all_paths.push_back({"/etc/ld.so.cache", FilesystemIsolationPath::Access::ReadOnly, "the cache of the dynamic loader"});
         for (auto & module : getNameServiceModules(mapped_files))
             all_paths.push_back({std::move(module), FilesystemIsolationPath::Access::ReadOnly, "a module of the Name Service Switch or a library it needs"});
+        for (auto & directory : getNameServiceSocketDirectories())
+            all_paths.push_back({std::move(directory), FilesystemIsolationPath::Access::ReadOnly, "the sockets of a service of the Name Service Switch"});
 #endif
     }
     const std::vector<Mount> mounts = planMounts(all_paths, links);
