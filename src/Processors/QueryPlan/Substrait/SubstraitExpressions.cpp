@@ -350,16 +350,14 @@ std::expected<ConvertedLiteral, String> convertFieldToLiteral(
         return out;
     }
 
-    /// A throwaway registry. The value can adopt a different target type, and then the natural type must not declare anchors in the plan.
-    SubstraitPlanExtensions scratch_extensions;
-    auto natural_type = convertTypeToSubstrait(ch_type, scratch_extensions);
+    auto natural_type = convertTypeToSubstrait(ch_type, extensions);
     if (!natural_type)
         return std::unexpected(std::move(natural_type.error()));
     out.type = std::move(*natural_type);
 
     const bool nullable = isSubstraitTypeNullable(out.type);
     /// For `1` in `a + 1` over Int32 the source is "u!u8" (ClickHouse types `1` as UInt8) and the target is "i64".
-    const String source_short = substraitTypeShortName(out.type, scratch_extensions);
+    const String source_short = substraitTypeShortName(out.type, extensions);
     String target_short{desired_short_name};
     if (target_short.empty())
         target_short = source_short;

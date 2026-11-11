@@ -377,12 +377,12 @@ substrait::Plan SubstraitPlanSerializer::takePlan(const QueryPlan::Node & root)
     version->set_patch_number(SUBSTRAIT_VERSION_PATCH);
     version->set_producer("ClickHouse");
 
-    extensions.declareIn(plan);
-
     auto * root_rel = plan.add_relations()->mutable_root();
     root_rel->mutable_input()->Swap(&state.rel);
     for (const auto & column : state.schema.columns)
         root_rel->add_names(column.name);
+
+    extensions.declareUsedIn(plan);
 
     return plan;
 }

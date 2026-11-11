@@ -51,9 +51,9 @@ static constexpr std::string_view aggregate_generic = "extension:io.substrait:fu
 static constexpr std::string_view unsigned_integers = "extension:io.substrait:unsigned_integers";
 }
 
-/// The extension declarations of one plan, accumulated while the plan converts. Starts empty.
-/// The first use of a function or type assigns its anchor, so call sites can embed the number.
-/// declareIn then writes the collected declarations into the plan header. One instance per plan, shared by all converters.
+/// The extension functions and types of one plan, accumulated while the plan converts. Starts empty.
+/// Interning a function or type assigns its anchor, so call sites can embed the number.
+/// A converter may intern more than the plan ends up referencing. One instance per plan, shared by all converters.
 class SubstraitPlanExtensions
 {
 public:
@@ -66,14 +66,11 @@ public:
     /// Gives back the `type_name` that internType registered. An unknown anchor is our bug and throws.
     const String & typeNameByAnchor(UInt32 anchor) const;
 
-    /// Writes the header declarations that bind each URN, function, and type to its anchor.
-    void declareIn(substrait::Plan & plan) const;
+    /// Writes the header declarations of the functions, types that `plan` references and of their URNs.
+    void declareUsedIn(substrait::Plan & plan) const;
 
 private:
-    void registerUrn(std::string_view urn);
-
-    /// std::map so the same query always produces identical plan.
-    std::map<String, UInt32> urns;
+    /// Keyed by (URN, name). std::map so the same query always produces identical plan.
     std::map<std::pair<String, String>, UInt32> functions;
     std::map<std::pair<String, String>, UInt32> types;
 };
