@@ -1,4 +1,5 @@
 #include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Processors/DelayedPortsProcessor.h>
