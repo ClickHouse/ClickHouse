@@ -75,15 +75,14 @@ public:
     void tryCreateSymlink(const StoragePtr & table, bool if_data_path_exist = false);
     void tryRemoveSymlink(const String & table_name);
 
-    void waitDetachedTableNotInUse(const UUID & uuid, std::function<void()> throw_if_cancelled) override;
+    void waitDetachedTableNotInUse(const UUID & uuid) override;
     void checkDetachedTableNotInUse(const UUID & uuid) override;
     void setDetachedTableNotInUseForce(const UUID & uuid) override;
 
 protected:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, ContextPtr query_context) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                           const String & table_metadata_tmp_path, const String & table_metadata_path,
-                           const String & statement, ContextPtr query_context) override;
+                           const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context) override;
 
     void assertDetachedTableNotInUse(const UUID & uuid) TSA_REQUIRES(mutex);
     using DetachedTables = std::unordered_map<UUID, StoragePtr>;
@@ -95,8 +94,6 @@ protected:
     void tryCreateMetadataSymlink();
 
     virtual bool allowMoveTableToOtherDatabaseEngine(IDatabase & /*to_database*/) const { return false; }
-
-    virtual void onDatabaseRenamed() TSA_REQUIRES(mutex) {}
 
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;

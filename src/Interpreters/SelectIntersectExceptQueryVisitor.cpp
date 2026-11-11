@@ -1,6 +1,5 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/typeid_cast.h>
 #include <Core/SettingsEnums.h>
@@ -27,15 +26,7 @@ namespace ErrorCodes
 
 void SelectIntersectExceptQueryMatcher::visit(ASTPtr & ast, Data & data)
 {
-    /// Skip already-normalized union queries: `NormalizeSelectWithUnionQueryMatcher`
-    /// flattens inner `UNION ALL` / `UNION DISTINCT` children into the parent's
-    /// `list_of_selects` without updating `list_of_modes`, so on a normalized AST
-    /// `list_of_modes.size() + 1 == list_of_selects->children.size()` no longer
-    /// holds. A normalized AST also cannot contain `INTERSECT` or `EXCEPT` modes
-    /// (`NormalizeSelectWithUnionQueryMatcher` only sets `union_mode` to
-    /// `UNION_ALL` or `UNION_DISTINCT`), so this matcher has nothing to do.
-    /// Mirrors the early-return check in `NormalizeSelectWithUnionQueryMatcher::visit`.
-    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>(); select_union && !select_union->is_normalized)
+    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>())
         visit(*select_union, data);
 }
 
@@ -69,9 +60,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 mode = SelectUnionMode::EXCEPT_DISTINCT;
             else
                 throw Exception(ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
-                    "Expected ALL or DISTINCT after EXCEPT. Write `EXCEPT ALL` to keep duplicate rows or "
-                    "`EXCEPT DISTINCT` to remove them, or set `except_default_mode` to choose what a bare "
-                    "EXCEPT means");
+                    "Expected ALL or DISTINCT in EXCEPT query, because setting (except_default_mode) is empty");
         }
         else if (mode == SelectUnionMode::INTERSECT_DEFAULT)
         {
@@ -81,9 +70,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 mode = SelectUnionMode::INTERSECT_DISTINCT;
             else
                 throw Exception(ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
-                    "Expected ALL or DISTINCT after INTERSECT. Write `INTERSECT ALL` to keep duplicate rows "
-                    "or `INTERSECT DISTINCT` to remove them, or set `intersect_default_mode` to choose what "
-                    "a bare INTERSECT means");
+                    "Expected ALL or DISTINCT in INTERSECT query, because setting (intersect_default_mode) is empty");
         }
 
         switch (mode)
@@ -93,10 +80,6 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
             {
                 auto left = make_intrusive<ASTSelectWithUnionQuery>();
                 left->union_mode = mode == SelectUnionMode::EXCEPT_ALL ? SelectUnionMode::UNION_ALL : SelectUnionMode::UNION_DISTINCT;
-
-                /// The last operand on the left is followed by the right one, so its `SETTINGS` clause is not the
-                /// trailing clause of the query: keep it from applying to the whole left side.
-                ASTSelectIntersectExceptQuery::scopeNonTrailingSettings(children.back());
 
                 left->list_of_selects = make_intrusive<ASTExpressionList>();
                 left->children.push_back(left->list_of_selects);
@@ -171,16 +154,6 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
         selects.pop_back();
         children.emplace_back(std::move(right));
     }
-
-    /// Only the last operand ends the query. A `SETTINGS` clause ending an `INTERSECT` / `EXCEPT` that is followed by
-    /// other operands applies to the innermost such node it ends, as before the nesting: it must not be found by
-    /// `ASTSelectIntersectExceptQuery::getTrailingSettings` from an enclosing node, as from `A EXCEPT ALL B INTERSECT ALL C`
-    /// in `A EXCEPT ALL B INTERSECT ALL C SETTINGS x = 1 UNION ALL D`, or from the union that
-    /// `NormalizeSelectWithUnionQueryVisitor` may end with such an operand. A bare SELECT keeps its clause to itself
-    /// in the middle of a union, and `NormalizeSelectWithUnionQueryVisitor` takes care of it.
-    for (size_t i = 0; i + 1 < children.size(); ++i)
-        if (children[i]->as<ASTSelectIntersectExceptQuery>())
-            ASTSelectIntersectExceptQuery::scopeNonTrailingSettings(children[i]);
 
     ast.list_of_selects->children = std::move(children);
     ast.list_of_modes = std::move(modes);

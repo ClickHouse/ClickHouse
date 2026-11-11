@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -236,7 +235,7 @@ public:
             set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (this->data(rhs).value.empty())
             return;
@@ -417,7 +416,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (this->data(rhs).value.empty())
             return;
@@ -624,11 +623,9 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
 }
 
-void registerAggregateFunctionTopK(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
-    AggregateFunctionProperties weighted_properties = { .returns_default_when_only_null = false, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::AllExceptFirst };
 
     FunctionDocumentation::Description description_topK = R"(
 Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
@@ -639,9 +636,9 @@ This function does not provide a guaranteed result. In certain situations, error
 
 **See Also**
 
-- [topKWeighted](/reference/functions/aggregate-functions/topKWeighted)
-- [approx_top_k](/reference/functions/aggregate-functions/approxtopk)
-- [approx_top_sum](/reference/functions/aggregate-functions/approxtopsum)
+- [topKWeighted](../../../sql-reference/aggregate-functions/reference/topKWeighted.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
+- [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approx_top_sum.md)
     )";
     FunctionDocumentation::Syntax syntax_topK = R"(
 topK(N)(column)
@@ -662,7 +659,7 @@ topK(N, load_factor, 'counts')(column)
         "Usage example",
         R"(
 SELECT topK(3)(AirlineID) AS res
-FROM VALUES('AirlineID UInt32', (19393), (19393), (19393), (19393), (19790), (19790), (19790), (19805), (19805), (20304));
+FROM ontime;
         )",
         R"(
 ┌─res─────────────────┐
@@ -684,9 +681,9 @@ Additionally, the weight of the value is taken into account.
 
 **See Also**
 
-- [topK](/reference/functions/aggregate-functions/topK)
-- [approx_top_k](/reference/functions/aggregate-functions/approxtopk)
-- [approx_top_sum](/reference/functions/aggregate-functions/approxtopsum)
+- [topK](../../../sql-reference/aggregate-functions/reference/topK.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
+- [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approx_top_sum.md)
     )";
     FunctionDocumentation::Syntax syntax_topKWeighted = R"(
 topKWeighted(N)(column, weight)
@@ -711,9 +708,9 @@ SELECT topKWeighted(2)(k, w) FROM
 VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10));
         )",
         R"(
-┌─topKWeighted(2)(k, w)─┐
-│ ['z','x']             │
-└───────────────────────┘
+┌─topKWeighted(2)(k, w)──┐
+│ ['z','x']              │
+└────────────────────────┘
         )"
     },
     {
@@ -733,7 +730,7 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
     FunctionDocumentation::Category category_topKWeighted = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_topKWeighted = {description_topKWeighted, syntax_topKWeighted, arguments_topKWeighted, parameters_topKWeighted, returned_value_topKWeighted, examples_topKWeighted, introduced_in_topKWeighted, category_topKWeighted};
 
-    factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true, false>, documentation_topKWeighted, weighted_properties });
+    factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true, false>, documentation_topKWeighted, properties });
 
     FunctionDocumentation::Description description_approx_top_k = R"(
 Returns an array of the approximately most frequent values and their counts in the specified column.
@@ -762,7 +759,7 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
         )",
         R"(
 ┌─approx_top_k(2)(k)────┐
-│ [('y',3,0),('z',1,0)] │
+│ [('y',3,0),('x',1,0)] │
 └───────────────────────┘
         )"
     }
@@ -783,9 +780,9 @@ In certain situations, errors might occur and it might return frequent values th
 
 **See Also**
 
-- [topK](/reference/functions/aggregate-functions/topK)
-- [topKWeighted](/reference/functions/aggregate-functions/topKWeighted)
-- [approx_top_k](/reference/functions/aggregate-functions/approxtopk)
+- [topK](../../../sql-reference/aggregate-functions/reference/topK.md)
+- [topKWeighted](../../../sql-reference/aggregate-functions/reference/topKWeighted.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
     )";
     FunctionDocumentation::Syntax syntax_approx_top_sum = R"(
 approx_top_sum(N[, reserved])(column, weight)
@@ -817,7 +814,7 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
     FunctionDocumentation::Category category_approx_top_sum = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_approx_top_sum = {description_approx_top_sum, syntax_approx_top_sum, arguments_approx_top_sum, parameters_approx_top_sum, returned_value_approx_top_sum, examples_approx_top_sum, introduced_in_approx_top_sum, category_approx_top_sum};
 
-    factory.registerFunction("approx_top_sum", { createAggregateFunctionTopK<true, true>, documentation_approx_top_sum, weighted_properties }, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("approx_top_sum", { createAggregateFunctionTopK<true, true>, documentation_approx_top_sum, properties }, AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("approx_top_count", "approx_top_k", AggregateFunctionFactory::Case::Insensitive);
 }
 

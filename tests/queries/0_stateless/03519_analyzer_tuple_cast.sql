@@ -1,3 +1,4 @@
+set enable_analyzer=1;
 
 DROP TABLE IF EXISTS test, src;
 

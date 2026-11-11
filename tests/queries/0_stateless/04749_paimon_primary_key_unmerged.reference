@@ -1,5 +1,0 @@
-SELECT THROWS
-COUNT THROWS
-id	Int32					
-val	Nullable(String)					
-10

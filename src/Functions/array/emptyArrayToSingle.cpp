@@ -9,8 +9,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-#include <algorithm>
-
 
 namespace DB
 {
@@ -19,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -330,6 +329,15 @@ namespace
     }
 }
 
+DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+    if (!array_type)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array.", getName());
+
+    return arguments[0];
+}
+
 ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     if (auto res = FunctionEmptyArrayToSingleImpl::executeConst(arguments, result_type, input_rows_count))
@@ -340,24 +348,19 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
             arguments[0].column->getName(), getName());
 
-    const ColumnArray::Offsets & src_offsets = array->getOffsets();
-
-    /// No array is empty: the result is the argument itself.
-    if (src_offsets.empty() || (src_offsets[0] != 0 && std::adjacent_find(src_offsets.begin(), src_offsets.end()) == src_offsets.end()))
-        return arguments[0].column;
-
     MutableColumnPtr res_ptr = array->cloneEmpty();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
+    const ColumnArray::Offsets & src_offsets = array->getOffsets();
     IColumn & res_data = res.getData();
     ColumnArray::Offsets & res_offsets = res.getOffsets();
 
     const NullMap * src_null_map = nullptr;
     NullMap * res_null_map = nullptr;
 
-    const IColumn * inner_col = nullptr;
-    IColumn * inner_res_col = nullptr;
+    const IColumn * inner_col;
+    IColumn * inner_res_col;
 
     const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
     if (nullable_col)
@@ -406,7 +409,7 @@ INSERT INTO test VALUES ([], [], []);
 SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM test;
 )", R"(
 ┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
-│ [0]                   │ ['']                  │ ['1970-01-01 00:00:00'] │
+│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
 └───────────────────────┴───────────────────────┴─────────────────────────┘
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

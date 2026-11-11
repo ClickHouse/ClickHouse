@@ -31,13 +31,12 @@ Europe/Moscow	9017
 1
 1
 --- other consumers of the offset
-14	0
 +1400
 2025-06-14 22:00:00	2025-06-16 02:00:00
 2025-06-14 22:00:00.500	2025-06-16 02:00:00.500
 --- consumers that reduce the offset modulo a day must be unaffected
 12:00:00	12:00:00.500
-12:00:00	2025-06-15 00:00:00	12	2025-06-15
+1970-01-02 12:00:00	2025-06-15 00:00:00	12	2025-06-15
 --- daylight saving transitions keep their sub-day offset
 -18000	-14400	-18000
 --- inside and outside the lookup table window report the same offset
