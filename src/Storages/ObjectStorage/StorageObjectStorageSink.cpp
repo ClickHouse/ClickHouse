@@ -74,7 +74,10 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     auto write_settings = context->getWriteSettings();
     /// HDFS rejects conditional writes, so it keeps writing unconditionally.
     if (fail_if_exists && object_storage->getType() != ObjectStorageType::HDFS)
+    {
         write_settings.object_storage_write_if_none_match = "*";
+        write_settings.object_storage_write_if_none_match_best_effort = true;
+    }
 
     auto buffer = object_storage->writeObject(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);

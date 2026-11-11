@@ -1,0 +1,15 @@
+# workspace is required to vendor crates for all packages.
+[workspace]
+members = [
+    "../skim-cmake",
+    "../prql-cmake",
+    "../polyglot-cmake",
+    "../vortex-cmake",
+    "../pcodec-cmake",
+    "../lance-cmake",
+    "../wasmtime-cmake",
+]
+resolver = "2"
+
+[profile.release]
+panic = "unwind"

@@ -56,6 +56,9 @@ struct StorageObjectStorageQuerySettings
     size_t list_object_keys_size;
     bool throw_on_zero_files_match;
     bool ignore_non_existent_file;
+    /// Skip objects with a path segment starting with '_' or '.' below the non-glob prefix
+    /// when listing by glob. Tables with hive partition strategy skip them unconditionally.
+    bool skip_hidden_files;
 };
 
 
@@ -260,6 +263,9 @@ public:
     }
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    /// Request settings given as explicit arguments, which `update` keeps over the server config.
+    virtual std::map<String, String> getExplicitRequestSettings() const { return {}; }
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
 
     /// For a table created on top of a server disk: the config section of the disk that holds the

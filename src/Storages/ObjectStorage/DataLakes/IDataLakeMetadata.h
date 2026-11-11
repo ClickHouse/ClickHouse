@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 #include <optional>
+#include <IO/Progress.h>
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 

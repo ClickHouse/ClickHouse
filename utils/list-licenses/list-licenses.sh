@@ -44,10 +44,11 @@ find_license_candidates() {
 # Print the license file chosen among the "<depth>\t<path>" candidates on stdin
 choose_license_file() {
     LC_ALL=C sort | LC_ALL=C awk '
-        BEGIN { IGNORECASE=1; min_depth = 0 }
-        /LICENSE/ { if (!min_depth || $1 <= min_depth) { min_depth = $1; license = $2 } }
-        /COPY/    { if (!min_depth || $1 <= min_depth) { min_depth = $1; copying = $2 } }
-        /NOTICE/  { if (!min_depth || $1 <= min_depth) { min_depth = $1; notice = $2 } }
+        BEGIN { min_depth = 0 }
+        { name = toupper($2); sub(/.*\//, "", name) }
+        name ~ /LICENSE/ { if (!min_depth || $1 <= min_depth) { min_depth = $1; license = $2 } }
+        name ~ /COPY/    { if (!min_depth || $1 <= min_depth) { min_depth = $1; copying = $2 } }
+        name ~ /NOTICE/  { if (!min_depth || $1 <= min_depth) { min_depth = $1; notice = $2 } }
         END { if (license) { print license } else if (copying) { print copying } else { print notice } }'
 }
 
