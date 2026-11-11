@@ -649,8 +649,8 @@ class PackageDownloader:
     # The package/build-job/filename contract lives in `release_packages`, the
     # single source of truth shared with the `AutoReleases` gate
     # (`tests/ci/auto_release.py`), so the producer here and the checker there
-    # cannot drift. Re-export the two constants callers read off the class.
-    PACKAGES = release_packages.PACKAGES
+    # cannot drift. The package set depends on the release commit, see
+    # `release_packages.commit_packages`.
     PACKAGE_ARCHS = release_packages.PACKAGE_ARCHS
     MACOS_PACKAGE_TO_BIN_SUFFIX = {
         "amd": "macos",
@@ -663,7 +663,7 @@ class PackageDownloader:
         with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
         with_illumos = release_packages.commit_has_illumos_build(commit_sha)
         self.with_signed_macos = with_signed_macos
-        self.package_names = list(self.PACKAGES)
+        self.package_names = list(release_packages.commit_packages(commit_sha))
         self.release = release
         self.s3_commit_prefix = release_packages.s3_commit_prefix(release, commit_sha)
         self.version = version
@@ -690,7 +690,7 @@ class PackageDownloader:
             "tgz": self.tgz_package_files,
         }
         for repo_type, package_file, job_name in release_packages.iter_package_objects(
-            version
+            version, self.package_names
         ):
             files_by_repo_type[repo_type].append(package_file)
             self.file_to_job_name[package_file] = job_name

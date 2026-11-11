@@ -270,13 +270,7 @@ def build_and_push_image(
                     if ".deb" in url and "-dbg" not in url
                 ]
             else:
-                # For keeper/alpine tgz builds, only pass the keeper tgz.
-                # Excluding clickhouse-common-static.tgz avoids a large unnecessary download.
-                tgz_urls = [url for url in direct_urls[arch] if ".tgz" in url]
-                if "keeper" in image.name:
-                    urls = [url for url in tgz_urls if "clickhouse-keeper" in url]
-                else:
-                    urls = tgz_urls
+                urls = [url for url in direct_urls[arch] if ".tgz" in url]
         cmd_args = list(init_args)
         cmd_args.extend(
             buildx_args(
@@ -436,15 +430,11 @@ def main():
                     "clickhouse-common-static",
                 ]
             elif "clickhouse-keeper" in image_repo:
-                # Both packages are needed to cover all three keeper image variants:
-                #   distroless: installs from .deb via dpkg; clickhouse-common-static
-                #               provides the clickhouse multi-tool binary (clickhouse-keeper
-                #               is a symlink to it). clickhouse-keeper .deb is not published
-                #               separately, so the common-static .deb is the only source.
-                #   alpine/ubuntu: installs from .tgz; clickhouse-keeper provides the
-                #               standalone keeper binary and its symlinks. The common-static
-                #               .tgz is implicitly excluded because the url filter below
-                #               keeps only urls containing "clickhouse-keeper" in the name.
+                # Both packages are needed by all three keeper image variants:
+                # clickhouse-common-static provides the clickhouse binary, and
+                # clickhouse-keeper provides the config and the clickhouse-keeper
+                # symlinks to it. The distroless image installs the .deb packages,
+                # alpine and ubuntu install the .tgz packages.
                 PACKAGES = ["clickhouse-common-static", "clickhouse-keeper"]
             else:
                 assert False, "BUG"
