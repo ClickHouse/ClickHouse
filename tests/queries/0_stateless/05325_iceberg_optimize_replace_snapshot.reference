@@ -36,6 +36,14 @@ hint names the latest version: 1
 data files: 1, delete files: 0
 2	b
 3	c
+--- after a time-travel SELECT
+1	Int32
+2	Int32
+2	Int64
+3000000000	Int64
+--- after DROP PARTITION
+1	0
+[2]
 --- equality deletes are refused
 NOT_IMPLEMENTED
 equality deletes is not supported

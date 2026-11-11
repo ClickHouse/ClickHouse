@@ -139,6 +139,30 @@ ${CH} --allow_experimental_expire_snapshots=1 --query "ALTER TABLE t4 EXECUTE ex
 echo "data files: $(ls "${T4}/data" | grep -c -v 'deletes'), delete files: $(ls "${T4}/data" | grep -c 'deletes')"
 ${CH} --query "SELECT x, t FROM t4 ORDER BY x"
 
+echo '--- after a time-travel SELECT'
+# https://github.com/ClickHouse/ClickHouse/issues/123282
+T6="${BASE}/t6"
+${CH} --query "CREATE TABLE t6 (id Int32) ENGINE = IcebergLocal('${T6}/', 'Parquet')"
+${CH} --query "INSERT INTO t6 VALUES (1), (2)"
+S_FIRST=$(metadata_field "${T6}" current-snapshot-id)
+${CH} --query "ALTER TABLE t6 MODIFY COLUMN id Int64"
+${CH} --query "INSERT INTO t6 VALUES (3000000000)"
+${CH} --query "ALTER TABLE t6 DELETE WHERE id = 1"
+${CH} --query "SELECT id, toTypeName(id) FROM t6 ORDER BY id SETTINGS iceberg_snapshot_id = ${S_FIRST}"
+${OPTIMIZE} --query "OPTIMIZE TABLE t6" 2>&1
+${CH} --query "SELECT id, toTypeName(id) FROM icebergLocal('${T6}/', 'Parquet') ORDER BY id"
+
+echo '--- after DROP PARTITION'
+# https://github.com/ClickHouse/ClickHouse/issues/123909
+T7="${BASE}/t7"
+${CH} --query "CREATE TABLE t7 (id Int64, p String) ENGINE = IcebergLocal('${T7}/', 'Parquet') PARTITION BY p"
+${CH} --query "INSERT INTO t7 VALUES (1, 'a'), (2, 'a'), (3, 'b')"
+${CH} --query "ALTER TABLE t7 DELETE WHERE id = 1"
+${CH} --query "ALTER TABLE t7 DROP PARTITION 'b'"
+${OPTIMIZE} --query "OPTIMIZE TABLE t7" 2>&1
+live_files t7
+${CH} --query "SELECT arraySort(groupArray(id)) FROM t7"
+
 echo '--- equality deletes are refused'
 # The shared read-only fixture of 04613 (position and equality deletes; ClickHouse cannot write the latter).
 # Parallel replicas cannot read deletes, so they are off for this table.
@@ -155,5 +179,5 @@ ${EQ} --query "DROP TABLE t_eq"
 
 ${CH} --query "DROP TABLE t1_by_uuid"
 ${CH} --query "DROP TABLE t3_hinted"
-for t in t1 t2 t3 t4 t5; do ${CH} --query "DROP TABLE ${t}"; done
+for t in t1 t2 t3 t4 t5 t6 t7; do ${CH} --query "DROP TABLE ${t}"; done
 rm -rf "${BASE}"
