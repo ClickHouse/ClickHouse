@@ -13,14 +13,23 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # That rank is 0 when the aggregate can skip rows, as one of a `Nullable` argument or `uniqExactIf` can, and 1
 # otherwise.
 #
-# The source has 10000 keys of about 20 rows each, so with `LIMIT 1000` above a unit's group count only the
-# threshold drops groups. Its keys below 100 have only NULL values of `x`, so `count(x)` ranks them 0, and an
-# ascending order must settle on them, not on a count of 1. Each cell compares its top with the one of the
-# feature off, as a multiset of ranks and row by row against the full aggregation. The conversion cells then
-# check that fewer rows than groups reached the sort (`rows_before_limit_at_least`), as do the cells that count
-# first, and `Settled at 0` that its counter rose, in its own process. The first call runs under a throw-mode group
-# limit, which turns off the count bins that would drop most groups first. The limit needs every group
-# counted, so it turns the settlement off: the last query must fail, although its first units would settle it.
+# The source has 10000 keys of about 20 rows each, so `LIMIT 1000` is above a unit's group count, and a
+# unit's own top keeps all its groups. `x` is NULL for the keys below 100, `y` is 0 for the keys below 1000,
+# and `z` is NULL below 100 and `y` above. So `count(x)`, `uniqExact(z)` and `uniqExactIf(y, k >= 100)` rank
+# the keys below 100 as 0, and the latter two rank the keys from 100 to 999 as 1. Each cell compares its top
+# with the one of the feature off, as a multiset of ranks and row by row against the full aggregation. Every
+# query runs under a throw-mode group limit, which keeps the threshold and the settlement on, because the
+# merge checks the limit against the groups it builds.
+#
+# The cells of `sort_cells` also check that fewer than 9000 of the 10000 groups reached the sort
+# (`rows_before_limit_at_least`), as every group of an ascending order does without the threshold. A
+# descending order also has the count bins of the top-K pruning, which bound a group's rank by its rows.
+# Almost every key has a bin of its own here, so the bins bound a `count` exactly and drop every group below
+# a `count` floor before the floor does. So the floor cell ranks by `uniqExact(number % 10)`, which is at most
+# 10 while the bins hold about 20 rows per key: only the floor drops its groups, and about 4500 reach the
+# sort, against about 9900 without the floor. The cells of `result_cells` check their results only: a merge
+# settled at 1 would stop at the first ten groups ranked 0 or 1, most of which rank 1. `Settled at 0` checks
+# in a process of its own that the merge skipped units.
 # `max_threads_min_free_memory_per_thread = 0` keeps the threads whatever the free memory.
 
 source="SELECT toUInt64(intHash64(number) % 10000) AS k, number, if(k < 100, NULL, number) AS x, if(k < 1000, 0, number) AS y,
@@ -45,22 +54,29 @@ function exact()
         (SELECT count() FROM ($query) WHERE ($columns) NOT IN (SELECT k, $2 FROM ($source) GROUP BY k SETTINGS enable_adaptive_aggregator = 0)) = 0;"
 }
 
-output=$($CLICKHOUSE_LOCAL --query "$settings SET $limit;
-    $(exact 'Floor, count' 'count() AS c' 'c DESC LIMIT 1000') $(exact 'Floor, uniqExact' 'uniqExact(number) AS c' 'c DESC LIMIT 1000')
-    $(exact 'Ceiling, count' 'count() AS c' 'c ASC LIMIT 1000')
-    $(exact 'Floor, count among others' 'count() AS c, max(number) AS m' 'c DESC LIMIT 1000') $(exact 'Ceiling, count among others' 'count() AS c, max(number) AS m' 'c ASC LIMIT 1000')
-    $(top 'count() AS c' 'c DESC LIMIT 1000') FORMAT JSON; $(top 'uniqExact(number) AS c' 'c DESC LIMIT 1000') FORMAT JSON;
-    $(top 'count() AS c' 'c ASC LIMIT 1000') FORMAT JSON;
-    $(top 'count() AS c, max(number) AS m' 'c DESC LIMIT 1000') FORMAT JSON; $(top 'count() AS c, max(number) AS m' 'c ASC LIMIT 1000') FORMAT JSON;")
-paste <(head -n 5 <<< "$output") <(grep -oE '"rows_before_limit_at_least": [0-9]+' <<< "$output" | awk '{ print ($2 < 10000) }')
+# A cell is `label|aggregates|order`.
+sort_cells=(
+    'Floor, uniqExact|uniqExact(number % 10) AS c|c DESC LIMIT 1000'
+    'Ceiling, count|count() AS c|c ASC LIMIT 1000'
+    'Ceiling, count among others|count() AS c, max(number) AS m|c ASC LIMIT 1000')
+result_cells=(
+    'Smallest rank 0, uniqExact of Nullable|uniqExact(z) AS c|c ASC LIMIT 10'
+    'Smallest rank 0, uniqExactIf|uniqExactIf(y, k >= 100) AS c|c ASC LIMIT 10')
 
-function check()
-{
-    $CLICKHOUSE_LOCAL --query "$settings SET $2; $(exact "$1" "$3" "$4")
-        SELECT (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = '$5') > 0;" | paste -sd '\t'
-}
-
-check 'Settled at 0' 'max_threads = 4' 'count(x) AS c' 'c ASC LIMIT 10' AdaptiveAggregationPrunedUnits
+# One process runs every cell, then the queries of `sort_cells` again in `FORMAT JSON`, which reports the rows
+# that reached the sort.
+queries=""
+for cell in "${sort_cells[@]}" "${result_cells[@]}"; do
+    IFS='|' read -r label aggregates order <<< "$cell"
+    queries+="$(exact "$label" "$aggregates" "$order") "
+done
+for cell in "${sort_cells[@]}"; do
+    IFS='|' read -r _ aggregates order <<< "$cell"
+    queries+="$(top "$aggregates" "$order") FORMAT JSON; "
+done
+output=$($CLICKHOUSE_LOCAL --query "$settings $queries")
+paste <(head -n "${#sort_cells[@]}" <<< "$output") <(grep -oE '"rows_before_limit_at_least": [0-9]+' <<< "$output" | awk '{ print ($2 < 9000) }')
+sed -n "$((${#sort_cells[@]} + 1)),$((${#sort_cells[@]} + ${#result_cells[@]}))p" <<< "$output"
 
 $CLICKHOUSE_LOCAL --query "$settings $(exact 'Settled at 0' 'count(x) AS c' 'c ASC LIMIT 10')
     SELECT (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'AdaptiveAggregationPrunedUnits') > 0;" | paste -sd '\t'
