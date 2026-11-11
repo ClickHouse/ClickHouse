@@ -90,3 +90,7 @@ for condition in "s = repeat('b', 2000)" "s > repeat('a', 2000)" "s < repeat('b'
 do
     query "$DATA_DIR/long_string_statistics_groups.orc" "$condition"
 done
+
+echo "-- a repeated minimum replaces the previous one, also when it is long"
+# The file statistics have a minimum 'z' followed by the actual minimum, the stored value of 2000 bytes.
+${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('$DATA_DIR/duplicate_string_minimum.orc') WHERE s = repeat('b', 2000) SETTINGS input_format_orc_filter_push_down = 1"

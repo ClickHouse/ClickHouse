@@ -22,3 +22,5 @@ s = 'b': [], read 0 rows
 s = repeat('b', 2000): [1], read 1 rows
 s > repeat('a', 2000): [1,2], read 3 rows
 s < repeat('b', 2000): [0], read 2 rows
+-- a repeated minimum replaces the previous one, also when it is long
+1

@@ -311,11 +311,15 @@ StringStatistics parseStringStatistics(std::string_view data)
         switch (field)
         {
             /// Long values (written by old writers) are kept only as truncated bounds, to not hold copies of them.
+            /// A repeated field replaces the previous one, as in protobuf.
             case StringStatisticsField::MINIMUM:
             {
                 auto value = readBytesField(r, type);
                 if (value.size() > MAX_STRING_STATISTICS_SIZE)
+                {
+                    res.minimum.reset();
                     res.lower_bound = std::string(truncateStringLowerBound(value));
+                }
                 else
                     res.minimum = std::string(value);
                 return true;
@@ -324,7 +328,10 @@ StringStatistics parseStringStatistics(std::string_view data)
             {
                 auto value = readBytesField(r, type);
                 if (value.size() > MAX_STRING_STATISTICS_SIZE)
+                {
+                    res.maximum.reset();
                     res.upper_bound = truncateStringUpperBound(value);
+                }
                 else
                     res.maximum = std::string(value);
                 return true;
