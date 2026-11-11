@@ -297,6 +297,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
 
     virtual Pipe alterPartition(
+        ObjectStoragePtr /* object_storage */,
         const PartitionCommands & /* commands */,
         ContextPtr /* context */,
         std::shared_ptr<DataLake::ICatalog> /* catalog */,
