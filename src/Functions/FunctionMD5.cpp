@@ -24,7 +24,7 @@
 #    include <Common/Crypto/OpenSSLInitializer.h>
 #endif
 
-/// Not tied to USE_MULTITARGET_CODE: the AVX2 kernel below is compiled whenever the build target has
+/// Not tied to USE_X86_64_MULTITARGET_CODE: the AVX2 kernel below is compiled whenever the build target has
 /// AVX2, which is independent of whether multi-target dispatch is on.
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
@@ -943,7 +943,7 @@ public:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
 #endif
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionMD5Impl>();
