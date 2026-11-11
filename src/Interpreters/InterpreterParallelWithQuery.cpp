@@ -57,6 +57,10 @@ BlockIO InterpreterParallelWithQuery::execute()
         runner = std::make_unique<ThreadPoolCallbackRunnerLocal<void>>(*thread_pool, ThreadName::PARALLEL_WITH_QUERY);
     }
 
+    /// Signalled before executeSubqueries. Waiting for all of them would block a background query
+    /// on the subqueries which do their work inside IInterpreter::execute(), like DDL.
+    getContext()->onQueryExecutionStarted();
+
     /// Call the interpreters of all the subqueries - it may produce some pipelines which we combine together into
     /// one combined pipeline.
     executeSubqueries(subqueries);

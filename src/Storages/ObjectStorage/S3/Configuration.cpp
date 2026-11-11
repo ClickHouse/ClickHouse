@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool s3_ignore_file_doesnt_exist;
     extern const SettingsUInt64 s3_list_object_keys_size;
     extern const SettingsBool s3_skip_empty_files;
+    extern const SettingsBool s3_skip_hidden_files;
     extern const SettingsBool s3_truncate_on_insert;
     extern const SettingsBool s3_throw_on_zero_files_match;
     extern const SettingsBool s3_validate_request_settings;
@@ -111,6 +112,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
     "upload_checksum_algorithm",
+    "use_idempotency_id",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -167,6 +169,7 @@ StorageObjectStorageQuerySettings StorageS3Configuration::getQuerySettings(const
         .list_object_keys_size = settings[Setting::s3_list_object_keys_size],
         .throw_on_zero_files_match = settings[Setting::s3_throw_on_zero_files_match],
         .ignore_non_existent_file = settings[Setting::s3_ignore_file_doesnt_exist],
+        .skip_hidden_files = settings[Setting::s3_skip_hidden_files],
     };
 }
 
@@ -1187,7 +1190,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(std::move(parsed_arguments));
-    keys = {url.key};
+    setPaths({url.key});
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 }
@@ -1204,7 +1207,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
         String path = object_storage_disk->getObjectStorage()->getCommonKeyPrefix();
         fs::path root = path;
         setPathForRead(String(root / suffix));
-        keys = {String(root / suffix)};
+        setPaths({String(root / suffix)});
     }
 }
 
@@ -1213,7 +1216,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
-    keys = {url.key};
+    setPaths({url.key});
     chassert(s3_settings != nullptr);
     if (!biglake_adc_client_id.empty())
     {

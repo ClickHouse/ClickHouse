@@ -1,4 +1,5 @@
 #include <Processors/Port.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -90,6 +91,11 @@ void NegativeLimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Negative Offset", group_offset);
 }
 
+QueryPlanStepPtr NegativeLimitByStep::clone() const
+{
+    return std::make_unique<NegativeLimitByStep>(*this);
+}
+
 void NegativeLimitByStep::serialize(Serialization & ctx) const
 {
     writeVarUInt(group_length, ctx.out);
@@ -97,7 +103,7 @@ void NegativeLimitByStep::serialize(Serialization & ctx) const
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        writeStringBinary(column, ctx.out);
+        ctx.writeColumnName(column);
 }
 
 QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)

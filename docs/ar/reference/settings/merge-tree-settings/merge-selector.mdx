@@ -14,9 +14,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="merge_selector_algorithm">
-  ## merge_selector_algorithm
-</div>
+## merge_selector_algorithm {#merge_selector_algorithm}
 
 <ExperimentalBadge />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الخوارزمية المستخدمة لاختيار الأجزاء لإسناد عمليات الدمج
 
-<div id="merge_selector_base">
-  ## merge_selector_base
-</div>
+## merge_selector_base {#merge_selector_base}
 
 <SettingsInfoBlock type="Float" default_value="5" />
 
@@ -34,18 +30,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 المُخصَّصة (إعداد مخصّص لمستوى الخبراء، لا تغيّره إذا لم تكن تفهم
 ما الذي يفعله). يعمل مع محددات الدمج Simple وStochasticSimple
 
-<div id="merge_selector_blurry_base_scale_factor">
-  ## merge_selector_blurry_base_scale_factor
-</div>
+## merge_selector_blurry_base_scale_factor {#merge_selector_blurry_base_scale_factor}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 يتحكم في توقيت بدء عمل هذه الآلية بالنسبة إلى عدد الأجزاء في
 التقسيم. وكلما زادت قيمة المعامل، تأخرت الاستجابة أكثر.
 
-<div id="merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once">
-  ## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once
-</div>
+## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once {#merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,9 +47,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 وبذلك سيزداد عدد عمليات الدمج المتزامنة، مما قد يساعد في معالجة أخطاء TOO&#95;MANY&#95;PARTS،
 ولكن في الوقت نفسه سيؤدي ذلك إلى زيادة تضخيم الكتابة.
 
-<div id="merge_selector_enable_heuristic_to_remove_small_parts_at_right">
-  ## merge_selector_enable_heuristic_to_remove_small_parts_at_right
-</div>
+## merge_selector_enable_heuristic_to_remove_small_parts_at_right {#merge_selector_enable_heuristic_to_remove_small_parts_at_right}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -65,9 +55,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 الجانب الأيمن من النطاق إذا كان حجمها أقل من النسبة المحددة (0.01) من sum&#95;size.
 ينطبق ذلك على محددَي الدمج Simple وStochasticSimple
 
-<div id="merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent">
-  ## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent
-</div>
+## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent {#merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent}
 
 <ExperimentalBadge />
 
@@ -77,9 +65,17 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يتحكم في قيمة الأس المستخدمة في الصيغ التي تُنشئ منحنى الخفض. ويؤدي تقليل قيمة الأس إلى تقليل اتساع عمليات الدمج، مما يزيد من تضخيم الكتابة. والعكس صحيح.
 
-<div id="merge_selector_window_size">
-  ## merge_selector_window_size
-</div>
+## merge_selector_min_age_to_disable_right_tail_heuristic {#merge_selector_min_age_to_disable_right_tail_heuristic}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
+
+إذا كانت القيمة أكبر من الصفر وكان الإعداد `merge_selector_enable_heuristic_to_remove_small_parts_at_right` مفعّلًا،
+فإنها تعطّل تلك الآلية الاستدلالية في النطاقات التي لا يقل فيها عمر كل جزء بيانات عن هذا العدد من الثواني. القيمة `0` تعطّل هذا الفحص.
+يعمل هذا الإعداد مع محدِّدَي الدمج Simple وStochasticSimple.
+
+## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 

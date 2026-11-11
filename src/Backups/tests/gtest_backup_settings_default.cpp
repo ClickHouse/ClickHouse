@@ -61,6 +61,36 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryForwardsNoReset)
         << "the generated backup_uuid was discarded";
 }
 
+/// A named `fsync_backup_files` is sent even at its default, so that a host not knowing it rejects the query; a reset names it too.
+TEST(BackupSettingsDefault, BackupCopySettingsToQuerySendsAResetFsyncBackupFiles)
+{
+    const std::pair<const char *, bool> cases[] = {
+        {"fsync_backup_files = DEFAULT", true},
+        {"fsync_backup_files = 0, fsync_backup_files = DEFAULT", true},
+        {"deduplicate_files = 1", false},
+    };
+
+    for (const auto & [clause, expect_sent] : cases)
+    {
+        const String query = String("BACKUP TABLE t TO Disk('d', 'b') SETTINGS ") + clause;
+        ASTPtr holder;
+        ASTBackupQuery * backup_query = parseBackupQuery(holder, query);
+        ASSERT_NE(nullptr, backup_query) << "query: " << query;
+
+        BackupSettings settings = BackupSettings::fromBackupQuery(*backup_query);
+        EXPECT_TRUE(settings.fsync_backup_files) << "query: " << query;
+        settings.copySettingsToQuery(*backup_query);
+
+        const String text = backup_query->formatWithSecretsOneLine();
+        const Field * sent
+            = backup_query->settings ? backup_query->settings->as<const ASTSetQuery &>().changes.tryGet("fsync_backup_files") : nullptr;
+        EXPECT_EQ(expect_sent, sent != nullptr) << "query: " << query << ", per-host text: " << text;
+        if (sent)
+            EXPECT_TRUE(SettingFieldBool{*sent}.value) << "per-host text: " << text;
+        EXPECT_EQ(String::npos, text.find("DEFAULT")) << "per-host text: " << text;
+    }
+}
+
 /// The overrides a reset cancels are dropped, also under an alias (`insert_distributed_sync`); an unrelated override is the control.
 TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsTheOverridesOfAReset)
 {
@@ -171,6 +201,53 @@ TEST(BackupSettingsDefault, RestoreCopySettingsToQueryForwardsNoReset)
     ASSERT_NE(nullptr, uuid_change) << "the generated restore_uuid was not emitted";
     EXPECT_EQ(assigned_uuid, SettingFieldOptionalUUID{*uuid_change}.value)
         << "the generated restore_uuid was discarded";
+}
+
+/// Hosts older than this fix parse a creation mode only from a String or a UInt64, so the initiator must forward a String.
+TEST(BackupSettingsDefault, RestoreCopySettingsToQueryForwardsCreationModesAsStrings)
+{
+    const String queries[] = {
+        "RESTORE TABLE t FROM Disk('d', 'b') SETTINGS create_table = 'must-exist', create_database = 'create', "
+        "create_access = 'create', create_function = 'create', create_named_collection = 'create', "
+        "create_workloads_and_resources = 'create'",
+        "RESTORE TABLE t FROM Disk('d', 'b') SETTINGS create_table = false, create_database = true, "
+        "create_access = true, create_function = true, create_named_collection = true, "
+        "create_workloads_and_resources = true"};
+    const std::pair<const char *, const char *> expected[] = {
+        {"create_table", "must-exist"}, {"create_database", "create"}, {"create_access", "create"},
+        {"create_function", "create"}, {"create_named_collection", "create"}, {"create_workloads_and_resources", "create"}};
+
+    for (const auto & query : queries)
+    {
+        SCOPED_TRACE(query);
+        ASTPtr holder;
+        ASTBackupQuery * restore_query = parseBackupQuery(holder, query);
+        ASSERT_NE(nullptr, restore_query);
+
+        RestoreSettings settings = RestoreSettings::fromRestoreQuery(*restore_query);
+        settings.copySettingsToQuery(*restore_query);
+
+        ASSERT_NE(nullptr, restore_query->settings);
+        const auto & rebuilt = restore_query->settings->as<const ASTSetQuery &>();
+        for (const auto & [name, value] : expected)
+        {
+            const auto * change = rebuilt.changes.tryGet(name);
+            ASSERT_NE(nullptr, change) << name << " was not forwarded: " << restore_query->formatWithSecretsOneLine();
+            EXPECT_EQ(Field(String(value)), *change) << name << ": " << restore_query->formatWithSecretsOneLine();
+        }
+
+        const String forwarded = restore_query->formatWithSecretsOneLine();
+        ASTPtr reparsed_holder;
+        ASTBackupQuery * reparsed = parseBackupQuery(reparsed_holder, forwarded);
+        ASSERT_NE(nullptr, reparsed) << "forwarded: " << forwarded;
+        RestoreSettings received = RestoreSettings::fromRestoreQuery(*reparsed);
+        EXPECT_EQ(RestoreTableCreationMode::kMustExist, received.create_table);
+        EXPECT_EQ(RestoreDatabaseCreationMode::kCreate, received.create_database);
+        EXPECT_EQ(RestoreAccessCreationMode::kCreate, received.create_access);
+        EXPECT_EQ(RestoreUDFCreationMode::kCreate, received.create_function);
+        EXPECT_EQ(RestoreNamedCollectionCreationMode::kCreate, received.create_named_collection);
+        EXPECT_EQ(RestoreWorkloadsAndResourcesCreationMode::kCreate, received.create_workloads_and_resources);
+    }
 }
 
 /// `isAsync` decides whether the client waits and `fromBackupQuery` the effective `async`, so they must
