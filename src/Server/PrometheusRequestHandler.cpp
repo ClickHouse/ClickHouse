@@ -216,7 +216,7 @@ protected:
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class.
         static const NameSet reserved_param_names{"user", "password", "quota_key", "stacktrace", "role", "query_id", "database", "table"};
-        return ImplWithContext::isSettingLikeParameter(name) && !reserved_param_names.contains(name);
+        return Impl::isSettingLikeParameter(name) && !reserved_param_names.contains(name);
     }
 
     void makeContext(HTTPServerRequest & request)
