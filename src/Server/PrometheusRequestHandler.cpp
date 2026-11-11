@@ -802,11 +802,13 @@ PrometheusRequestHandler::PrometheusRequestHandler(
     const PrometheusRequestHandlerConfig & config_,
     const AsynchronousMetrics & async_metrics_,
     std::shared_ptr<PrometheusMetricsWriter> metrics_writer_,
+    bool for_keeper_,
     std::unordered_map<String, String> response_headers_)
     : server(server_)
     , config(config_)
     , async_metrics(async_metrics_)
     , metrics_writer(metrics_writer_)
+    , for_keeper(for_keeper_)
     , log(getLogger("PrometheusRequestHandler"))
 {
     response_headers = response_headers_;
@@ -865,27 +867,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         http_method = request.getMethod();
         chassert(!write_buffer_from_response); /// Nothing is written to the response yet.
 
-        if (request.has("traceparent"))
-        {
-            std::string opentelemetry_traceparent = request.get("traceparent");
-            std::string error;
-            if (!client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
-                LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
-            client_trace_context.tracestate = request.get("tracestate", "");
-        }
-
-        /// The user is not authenticated yet, so the global settings are used to decide whether to start a new trace.
-        auto global_context = server.context();
-        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("PrometheusRequestHandler",
-            client_trace_context,
-            global_context->getSettingsRef(),
-            global_context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-        thread_trace_context->root_span.addAttribute(
-            "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
-        thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
-        thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
-        thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
+        thread_trace_context = startTracing(request);
 
         /// Make keep-alive works.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -926,6 +908,35 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
         tryCallOnException();
     }
+}
+
+OpenTelemetry::TracingContextHolderPtr PrometheusRequestHandler::startTracing(const HTTPServerRequest & request)
+{
+    if (for_keeper)
+        return nullptr;
+
+    if (request.has("traceparent"))
+    {
+        std::string opentelemetry_traceparent = request.get("traceparent");
+        std::string error;
+        if (!client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
+        client_trace_context.tracestate = request.get("tracestate", "");
+    }
+
+    /// The user is not authenticated yet, so the global settings are used to decide whether to start a new trace.
+    auto global_context = server.context();
+    auto thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("PrometheusRequestHandler",
+        client_trace_context,
+        global_context->getSettingsRef(),
+        global_context->getOpenTelemetrySpanLog());
+    thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+    thread_trace_context->root_span.addAttribute(
+        "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
+    thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
+    thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
+    thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
+    return thread_trace_context;
 }
 
 WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)

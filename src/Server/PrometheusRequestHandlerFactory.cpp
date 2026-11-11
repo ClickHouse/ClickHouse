@@ -304,9 +304,9 @@ namespace
         if (!canBeHandled(config, for_keeper))
             return nullptr;
         auto metric_writer = createPrometheusMetricWriter(server_config, config, for_keeper);
-        auto creator = [&server, &async_metrics, config, metric_writer, headers_moved = std::move(headers)]() -> std::unique_ptr<PrometheusRequestHandler>
+        auto creator = [&server, &async_metrics, config, metric_writer, for_keeper, headers_moved = std::move(headers)]() -> std::unique_ptr<PrometheusRequestHandler>
         {
-            return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer, headers_moved);
+            return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer, for_keeper, headers_moved);
         };
         return std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
     }
