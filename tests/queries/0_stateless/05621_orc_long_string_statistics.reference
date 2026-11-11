@@ -1,0 +1,17 @@
+-- the writer keeps at most 1024 bytes of a string value in the statistics
+OK
+-- the pushdown uses the bounds written instead of long minimums and maximums
+s = repeat('b', 2000): [2], read 2 rows
+s = repeat('b', 1024): [1], read 3 rows
+s < repeat('b', 1024): [0], read 2 rows
+s > repeat('b', 2000): [3,4,5,6,7], read 6 rows
+s IN (repeat('a', 2000), 'c'): [0,7], read 2 rows
+s = concat(repeat('é', 1500), 'z'): [4], read 1 rows
+s = concat(repeat('b', 1020), unhex('F48FBFBF'), 'tail'): [5], read 1 rows
+s = concat(repeat('b', 1000), unhex(repeat('FF', 100))): [6], read 1 rows
+s = 'b': [], read 0 rows
+-- the reader keeps only the bounds of long statistics in existing files
+20968000
+s = repeat('b', 2000): [1], read 1 rows
+s > repeat('a', 2000): [1,2], read 3 rows
+s < repeat('b', 2000): [0], read 2 rows

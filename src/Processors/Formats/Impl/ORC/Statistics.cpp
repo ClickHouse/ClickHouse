@@ -1,6 +1,8 @@
 #include <Processors/Formats/Impl/ORC/Statistics.h>
 #include <Processors/Formats/Impl/ORC/SearchArgument.h>
 
+#include <Common/UTF8Helpers.h>
+
 #include <base/extended_types.h>
 
 #include <algorithm>
@@ -28,6 +30,63 @@ std::string decimalToString(Int128 value, Int32 scale)
     return Literal::Decimal{value, scale}.toString();
 }
 
+/// Increments the last character of a valid UTF-8 string, which keeps it valid. Returns false if the last
+/// character is not a valid UTF-8 sequence or is the largest code point.
+bool incrementLastUTF8Character(std::string & s)
+{
+    const auto * begin = reinterpret_cast<const UInt8 *>(s.data());
+    const UInt8 * last = begin + s.size() - 1;
+    UTF8::syncBackward(last, begin);
+    const size_t start = last - begin;
+    const size_t length = s.size() - start;
+    if (UTF8::seqLength(*last) != length)
+        return false;
+
+    /// Rejects the overlong encodings, which do not keep the order of the code points.
+    auto code_point = UTF8::convertUTF8ToCodePoint(s.data() + start, length);
+    if (!code_point || *code_point >= 0x10FFFF)
+        return false;
+
+    UInt32 next = *code_point + 1;
+    if (UTF8::isSurrogateCodePoint(next))
+        next = 0xE000;
+    char encoded[4];
+    const size_t encoded_size = UTF8::convertCodePointToUTF8(static_cast<int>(next), encoded, sizeof(encoded));
+    s.resize(start);
+    s.append(encoded, encoded_size);
+    return true;
+}
+
+}
+
+std::string_view truncateStringLowerBound(std::string_view value)
+{
+    if (value.size() <= MAX_STRING_STATISTICS_SIZE)
+        return value;
+    size_t length = MAX_STRING_STATISTICS_SIZE;
+    /// The first byte after the prefix must not continue a character, which takes at most 4 bytes.
+    for (size_t i = 0; i < 3 && length > 0 && UTF8::isContinuationOctet(static_cast<UInt8>(value[length])); ++i)
+        --length;
+    return value.substr(0, length);
+}
+
+std::optional<std::string> truncateStringUpperBound(std::string_view value)
+{
+    std::string result(truncateStringLowerBound(value));
+    /// Any string greater than the prefix and not starting with it is greater than all strings that start with it.
+    while (!result.empty())
+    {
+        if (incrementLastUTF8Character(result))
+            return result;
+        /// Not valid UTF-8: increment the last byte.
+        if (static_cast<UInt8>(result.back()) != 0xFF)
+        {
+            result.back() = static_cast<char>(static_cast<UInt8>(result.back()) + 1);
+            return result;
+        }
+        result.pop_back();
+    }
+    return std::nullopt;
 }
 
 void StatisticsBuilder::updateInteger(Int64 value)
@@ -61,20 +120,53 @@ void StatisticsBuilder::updateDouble(double value)
     double_sum += value;
 }
 
+void StatisticsBuilder::setStringMinimum(std::string_view value)
+{
+    string_minimum_is_bound = value.size() > MAX_STRING_STATISTICS_SIZE;
+    string_minimum = truncateStringLowerBound(value);
+}
+
+void StatisticsBuilder::setStringMaximum(std::string_view value)
+{
+    string_maximum_is_bound = value.size() > MAX_STRING_STATISTICS_SIZE;
+    if (!string_maximum_is_bound)
+    {
+        string_maximum = value;
+        return;
+    }
+    auto upper_bound = truncateStringUpperBound(value);
+    if (upper_bound)
+        string_maximum = std::move(*upper_bound);
+    else
+    {
+        string_maximum_is_unknown = true;
+        string_maximum.clear();
+    }
+}
+
 void StatisticsBuilder::updateString(std::string_view value)
 {
     if (!has_minimum)
     {
         has_minimum = true;
-        string_minimum = value;
-        string_maximum = value;
+        setStringMinimum(value);
+        setStringMaximum(value);
     }
     else
     {
+        /// The comparisons with the bounds keep them correct. A value equal to a bound makes it exact.
         if (value < std::string_view(string_minimum))
-            string_minimum = value;
-        if (value > std::string_view(string_maximum))
-            string_maximum = value;
+            setStringMinimum(value);
+        else if (string_minimum_is_bound && value == std::string_view(string_minimum))
+            string_minimum_is_bound = false;
+
+        if (!string_maximum_is_unknown)
+        {
+            if (value > std::string_view(string_maximum))
+                setStringMaximum(value);
+            else if (string_maximum_is_bound && value == std::string_view(string_maximum))
+                string_maximum_is_bound = false;
+        }
     }
     total_length += value.size();
 }
@@ -232,14 +324,33 @@ void StatisticsBuilder::merge(const StatisticsBuilder & other)
                 if (!has_minimum)
                 {
                     string_minimum = other.string_minimum;
+                    string_minimum_is_bound = other.string_minimum_is_bound;
                     string_maximum = other.string_maximum;
+                    string_maximum_is_bound = other.string_maximum_is_bound;
+                    string_maximum_is_unknown = other.string_maximum_is_unknown;
                 }
                 else
                 {
                     if (other.string_minimum < string_minimum)
+                    {
                         string_minimum = other.string_minimum;
-                    if (other.string_maximum > string_maximum)
+                        string_minimum_is_bound = other.string_minimum_is_bound;
+                    }
+                    else if (other.string_minimum == string_minimum)
+                        string_minimum_is_bound = string_minimum_is_bound && other.string_minimum_is_bound;
+
+                    if (string_maximum_is_unknown || other.string_maximum_is_unknown)
+                    {
+                        string_maximum_is_unknown = true;
+                        string_maximum.clear();
+                    }
+                    else if (other.string_maximum > string_maximum)
+                    {
                         string_maximum = other.string_maximum;
+                        string_maximum_is_bound = other.string_maximum_is_bound;
+                    }
+                    else if (other.string_maximum == string_maximum)
+                        string_maximum_is_bound = string_maximum_is_bound && other.string_maximum_is_bound;
                 }
                 has_minimum = true;
             }
@@ -402,8 +513,9 @@ Proto::ColumnStatistics StatisticsBuilder::toProto() const
             auto & stats = res.string_statistics.emplace();
             if (has_minimum)
             {
-                stats.minimum = string_minimum;
-                stats.maximum = string_maximum;
+                (string_minimum_is_bound ? stats.lower_bound : stats.minimum) = string_minimum;
+                if (!string_maximum_is_unknown)
+                    (string_maximum_is_bound ? stats.upper_bound : stats.maximum) = string_maximum;
             }
             stats.sum = static_cast<Int64>(total_length);
             break;

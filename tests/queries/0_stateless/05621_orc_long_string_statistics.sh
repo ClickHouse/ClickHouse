@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the fast test build has no ORC format
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+DATA_DIR="$CUR_DIR/data_orc"
+WORK_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_orc_long_string_statistics"
+mkdir -p "$WORK_DIR"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+echo "-- the writer keeps at most 1024 bytes of a string value in the statistics"
+${CLICKHOUSE_LOCAL} -q "SELECT repeat('x', 1000000) AS s INTO OUTFILE '$WORK_DIR/one.orc' TRUNCATE FORMAT ORC SETTINGS output_format_orc_compression_method = 'none'"
+size=$(stat -c %s "$WORK_DIR/one.orc")
+if [ "$size" -lt 1100000 ]; then echo "OK"; else echo "file size $size"; fi
+
+# Each value is a row group of its own, so the pushdown can skip each of them.
+${CLICKHOUSE_LOCAL} -q "
+    SELECT n, s FROM values('n UInt32, s String',
+        (0, repeat('a', 2000)),
+        (1, repeat('b', 1024)),
+        (2, repeat('b', 2000)),
+        (3, concat(repeat('b', 1023), 'é', 'tail')),
+        (4, concat(repeat('é', 1500), 'z')),
+        (5, concat(repeat('b', 1020), unhex('F48FBFBF'), 'tail')),
+        (6, concat(repeat('b', 1000), unhex(repeat('FF', 100)))),
+        (7, 'c'))
+    INTO OUTFILE '$WORK_DIR/groups.orc' TRUNCATE FORMAT ORC
+    SETTINGS output_format_orc_row_index_stride = 1, output_format_orc_compression_method = 'none'"
+
+# Prints the matching rows and how many rows the reader returned before the filter.
+query()
+{
+    local file=$1 condition=$2
+    local result
+    result=$(${CLICKHOUSE_LOCAL} --print-profile-events -q "
+        SELECT groupArray(n) FROM (SELECT n FROM file('$file', ORC) WHERE $condition ORDER BY n)
+        SETTINGS input_format_orc_filter_push_down = 1, input_format_orc_use_fast_decoder = 1" 2>"$WORK_DIR/events")
+    local expected
+    expected=$(${CLICKHOUSE_LOCAL} -q "
+        SELECT groupArray(n) FROM (SELECT n FROM file('$file', ORC) WHERE $condition ORDER BY n)
+        SETTINGS input_format_orc_filter_push_down = 0")
+    local rows
+    rows=$(grep -o 'SelectedRows: [0-9]*' "$WORK_DIR/events" | grep -o '[0-9]*$')
+    if [ "$result" != "$expected" ]; then echo "$condition: wrong result $result, expected $expected"; fi
+    echo "$condition: $result, read ${rows:-0} rows"
+}
+
+echo "-- the pushdown uses the bounds written instead of long minimums and maximums"
+for condition in \
+    "s = repeat('b', 2000)" \
+    "s = repeat('b', 1024)" \
+    "s < repeat('b', 1024)" \
+    "s > repeat('b', 2000)" \
+    "s IN (repeat('a', 2000), 'c')" \
+    "s = concat(repeat('é', 1500), 'z')" \
+    "s = concat(repeat('b', 1020), unhex('F48FBFBF'), 'tail')" \
+    "s = concat(repeat('b', 1000), unhex(repeat('FF', 100)))" \
+    "s = 'b'"
+do
+    query "$WORK_DIR/groups.orc" "$condition"
+done
+
+echo "-- the reader keeps only the bounds of long statistics in existing files"
+# The file was written before the statistics were truncated: each statistic holds the whole 20 MB value.
+${CLICKHOUSE_LOCAL} -q "SELECT length(s) FROM file('$DATA_DIR/long_string_statistics_20m.orc') SETTINGS max_memory_usage = '90M'"
+for condition in "s = repeat('b', 2000)" "s > repeat('a', 2000)" "s < repeat('b', 2000)"
+do
+    query "$DATA_DIR/long_string_statistics_groups.orc" "$condition"
+done

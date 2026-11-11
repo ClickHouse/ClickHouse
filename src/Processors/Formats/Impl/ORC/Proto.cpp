@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ORC/Proto.h>
+#include <Processors/Formats/Impl/ORC/Statistics.h>
 
 #include <Common/Exception.h>
 
@@ -292,6 +293,16 @@ DoubleStatistics parseDoubleStatistics(std::string_view data)
     return res;
 }
 
+/// The field numbers of the `StringStatistics` message in `orc_proto.proto`.
+namespace StringStatisticsField
+{
+    constexpr UInt32 MINIMUM = 1;
+    constexpr UInt32 MAXIMUM = 2;
+    constexpr UInt32 SUM = 3;
+    constexpr UInt32 LOWER_BOUND = 4;
+    constexpr UInt32 UPPER_BOUND = 5;
+}
+
 StringStatistics parseStringStatistics(std::string_view data)
 {
     StringStatistics res;
@@ -299,11 +310,33 @@ StringStatistics parseStringStatistics(std::string_view data)
     {
         switch (field)
         {
-            case 1: res.minimum = std::string(readBytesField(r, type)); return true;
-            case 2: res.maximum = std::string(readBytesField(r, type)); return true;
-            case 3: res.sum = readSignedVarintField(r, type); return true;
-            case 4: res.lower_bound = std::string(readBytesField(r, type)); return true;
-            case 5: res.upper_bound = std::string(readBytesField(r, type)); return true;
+            /// Long values (written by old writers) are kept only as truncated bounds, to not hold copies of them.
+            case StringStatisticsField::MINIMUM:
+            {
+                auto value = readBytesField(r, type);
+                if (value.size() > MAX_STRING_STATISTICS_SIZE)
+                    res.lower_bound = std::string(truncateStringLowerBound(value));
+                else
+                    res.minimum = std::string(value);
+                return true;
+            }
+            case StringStatisticsField::MAXIMUM:
+            {
+                auto value = readBytesField(r, type);
+                if (value.size() > MAX_STRING_STATISTICS_SIZE)
+                    res.upper_bound = truncateStringUpperBound(value);
+                else
+                    res.maximum = std::string(value);
+                return true;
+            }
+            case StringStatisticsField::SUM: res.sum = readSignedVarintField(r, type); return true;
+            case StringStatisticsField::LOWER_BOUND: res.lower_bound = std::string(truncateStringLowerBound(readBytesField(r, type))); return true;
+            case StringStatisticsField::UPPER_BOUND:
+            {
+                auto value = readBytesField(r, type);
+                res.upper_bound = value.size() > MAX_STRING_STATISTICS_SIZE ? truncateStringUpperBound(value) : std::string(value);
+                return true;
+            }
             default: return false;
         }
     });
@@ -533,11 +566,11 @@ std::string serializeStringStatistics(const StringStatistics & s)
 {
     std::string out;
     WireWriter w(out);
-    if (s.minimum) w.writeBytes(1, *s.minimum);
-    if (s.maximum) w.writeBytes(2, *s.maximum);
-    if (s.sum) w.writeSignedVarint(3, *s.sum);
-    if (s.lower_bound) w.writeBytes(4, *s.lower_bound);
-    if (s.upper_bound) w.writeBytes(5, *s.upper_bound);
+    if (s.minimum) w.writeBytes(StringStatisticsField::MINIMUM, *s.minimum);
+    if (s.maximum) w.writeBytes(StringStatisticsField::MAXIMUM, *s.maximum);
+    if (s.sum) w.writeSignedVarint(StringStatisticsField::SUM, *s.sum);
+    if (s.lower_bound) w.writeBytes(StringStatisticsField::LOWER_BOUND, *s.lower_bound);
+    if (s.upper_bound) w.writeBytes(StringStatisticsField::UPPER_BOUND, *s.upper_bound);
     return out;
 }
 
