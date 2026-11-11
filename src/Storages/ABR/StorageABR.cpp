@@ -461,7 +461,7 @@ StorageABR::SourceTable StorageABR::resolveSourceTable(UInt64 interval, const Re
     const String name = table.storage->getStorageID().getNameForLogs();
     const auto metadata = table.storage->getInMemoryMetadataPtr(context, false);
     const auto & partition_key = metadata->getPartitionKey();
-    const auto settings = dynamic_cast<const MergeTreeData &>(*table.storage).getSettings();
+    const auto settings = castStorage<MergeTreeData>(table.storage, DeferredTable::Load)->getSettings();
     const NamesAndTypesList minmax_columns
         = MergeTreeData::getMinMaxColumns(partition_key, settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
 
