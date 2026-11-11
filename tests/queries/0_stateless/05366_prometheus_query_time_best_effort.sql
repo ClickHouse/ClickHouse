@@ -42,6 +42,13 @@ SELECT timestamp FROM prometheusQuery('ts', '1', '9223372036854775808.5'); -- { 
 SELECT timestamp FROM prometheusQuery('ts', '1', '1.2.3'); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts', '1', '1.2.3e5'); -- { serverError BAD_ARGUMENTS }
 
+-- A number in scientific notation is Unix seconds too, and one that is too big is an error, not a date.
+SELECT toUnixTimestamp64Nano(timestamp) FROM prometheusQuery('ts', '1', '17e7');
+SELECT timestamp FROM prometheusQuery('ts', '1', '2023e6'); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts', '1', '2023E06'); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts', '1', '2023e10'); -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid('2023e6', '2023e6', 1, 1)(toDateTime64('2023-06-01 00:00:00', 9, 'UTC'), 1::Float64); -- { serverError BAD_ARGUMENTS }
+
 -- Like Prometheus, leading or trailing whitespace is an error, so a too-big number is never read as a date either.
 SELECT timeSeriesLastToGrid(' 9223372036854775808', ' 9223372036854775816', 1, 1)(toDateTime64(0, 3, 'UTC'), 1.0); -- { serverError BAD_ARGUMENTS }
 SELECT timeSeriesLastToGrid('\t9223372036854775808', '\t9223372036854775816', 1, 1)(toDateTime64(0, 3, 'UTC'), 1.0); -- { serverError BAD_ARGUMENTS }
