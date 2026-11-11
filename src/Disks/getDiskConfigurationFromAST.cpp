@@ -113,7 +113,6 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool type_is_object_storage = false;
     bool has_explicit_non_s3_object_storage_type = false;
     bool has_include = false;
-    bool has_substituted_value = false;
     bool has_indirect_auth_field = false;
     bool has_access_key_id = false;
     bool has_secret_access_key = false;
@@ -221,7 +220,6 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
 
         const bool indirect = is_indirect_value(value_str);
-        has_substituted_value |= indirect;
         if (indirect && is_s3_credential_or_auth_field(key))
             has_indirect_auth_field = true;
         if (indirect && is_gcs_credential_field(key))
@@ -295,7 +293,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_gcs_service_account_key = !value_str.empty() && !indirect;
         else if (key == "access_token")
             has_gcs_access_token = !value_str.empty() && !indirect;
-        else if (key == "_server_credentials_allowed")
+        else if (key == S3_SERVER_CREDENTIALS_MARKER)
             has_server_credentials_marker = !indirect && parseLiteralConfigBool(value_str) == true;
 
         if (key == "include")
@@ -432,7 +430,6 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     {
         info->has_include = has_include;
         info->has_indirect_backend_type = type_is_indirect;
-        info->has_substituted_value = has_substituted_value;
         info->ast_has_explicit_key_pair = has_explicit_credentials;
         info->ast_has_no_sign_request = has_no_sign_request;
         info->ast_has_use_environment_credentials_off = allowed_anonymous;
@@ -456,6 +453,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         info->may_persist_server_credentials_allowance = !is_loading_from_existing_metadata
             && (relies_on_server_credentials || gcs_relies_on_server_credentials || has_include || type_is_indirect)
             && !has_server_credentials_marker && !context->shouldRestrictUserQueryS3Credentials();
+        info->uses_server_credentials = relies_on_server_credentials || gcs_relies_on_server_credentials;
     }
 
     if (gcs_relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
@@ -482,7 +480,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             /// Force the disk anonymous once `include` is resolved (see forceAnonymousS3DiskConfig); we
             /// cannot rewrite the DOM here because DiskFromAST processes `include` after this returns.
             if (info)
+            {
                 info->load_anonymously = true;
+                info->uses_server_credentials = false;
+            }
         }
         else
             throw Exception(
@@ -984,28 +985,6 @@ bool hasAzureServerCredentialsMarker(const Poco::Util::AbstractConfiguration & c
     return config.getBool("." + String(AZURE_SERVER_CREDENTIALS_MARKER), false);
 }
 
-#if USE_AZURE_BLOB_STORAGE
-/// The connection of a disk created from user SQL, possibly behind wrappers, that authenticates with the server's own
-/// identity. A disk from the server configuration may use it, so the walk stops there.
-static std::shared_ptr<const AzureBlobStorage::ConnectionParams> getCustomDiskServerIdentity(DiskPtr disk)
-{
-    for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
-    {
-        auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(disk.get());
-        if (!object_storage_disk)
-            continue;
-
-        const auto object_storage = object_storage_disk->getObjectStorage();
-        if (object_storage->getType() != ObjectStorageType::Azure)
-            return nullptr;
-
-        auto params = object_storage->getAzureBlobStorageConnectionParams();
-        return params->usesServerManagedCredentials() && !params->forbid_implicit_credentials ? params : nullptr;
-    }
-    return nullptr;
-}
-#endif
-
 void validateResolvedAzureDiskCredentials(
     [[maybe_unused]] Poco::Util::AbstractConfiguration & config,
     [[maybe_unused]] ContextPtr context,
@@ -1016,23 +995,6 @@ void validateResolvedAzureDiskCredentials(
     /// A `system` table disk is server-internal infrastructure, exempt like an S3 one.
     const bool system_table_disk_allowed = for_system_database
         && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_allow_server_credentials_for_system_table_disks];
-
-    /// A wrapper such as `encrypted` or `cache` may name a disk another session created, which is reused as it is.
-    if (!is_loading_from_existing_metadata && !system_table_disk_allowed && context->shouldRestrictUserQueryS3Credentials())
-    {
-        const String wrapped_disk = config.getString(".disk", "");
-        const auto disks = context->getDisksMap();
-        if (auto it = disks.find(wrapped_disk); !wrapped_disk.empty() && it != disks.end())
-        {
-            if (const auto params = getCustomDiskServerIdentity(it->second))
-            {
-                auto restricted = *params;
-                restricted.forbid_implicit_credentials = true;
-                restricted.anonymous_fallback_for_server_credentials = false;
-                restricted.checkOrDropServerManagedCredentials();
-            }
-        }
-    }
 
     /// Only an Azure disk: the other disk types reject keys they do not know, e.g. a `cache` disk.
     const auto prefixes = getAzureDiskPrefixes(config);
@@ -1054,6 +1016,14 @@ void validateResolvedAzureDiskCredentials(
     for (const auto & prefix : prefixes)
         getAzureDiskConnectionParams(config, prefix, anonymous_fallback).checkOrDropServerManagedCredentials();
 #endif
+}
+
+bool diskUsesServerCredentials(const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info)
+{
+    if (info.uses_server_credentials || azureDiskUsesServerIdentity(config))
+        return true;
+    /// Every backend counts, because a multi-location disk writes to all of them.
+    return resolvedDiskConfigReliesOnServerCredentials(config, info);
 }
 
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)

@@ -38,8 +38,6 @@ struct DynamicS3DiskCredentialInfo
     /// substitutions are resolved. This prevents the conservative pre-resolution S3 check from rejecting a
     /// native GCS disk that has safe native credentials.
     bool has_indirect_backend_type = false;
-    /// A value is substituted later from `from_env` or `from_zk`, so it is still empty here.
-    bool has_substituted_value = false;
     /// The pre-resolution check exempted this disk from the restriction (e.g. a server-internal
     /// `system`-database disk, or a persisted `_server_credentials_allowed` marker), so the post-`include`
     /// re-check must not re-apply it.
@@ -53,6 +51,8 @@ struct DynamicS3DiskCredentialInfo
     /// even with an anonymous literal root, because the substitution can add a `locations.<name>` child that
     /// relies on server credentials.
     bool may_persist_server_credentials_allowance = false;
+    /// The disk is built with server-managed S3 or native GCS credentials.
+    bool uses_server_credentials = false;
     /// The safe credential forms the AST itself supplied with literal values; the resolved auth mode is
     /// validated against these.
     bool ast_has_explicit_key_pair = false;                 /// literal `access_key_id` + `secret_access_key`
@@ -127,6 +127,8 @@ void validateResolvedGCSDiskCredentials(
 /// store a grant that a later retargeting of that server-side value at `s3` or `gcs` would inherit for free.
 bool resolvedDiskConfigReliesOnServerCredentials(
     const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info);
+/// Persisted in the stored definition of a dynamic S3 disk created with `s3_allow_server_credentials_in_user_queries`.
+inline constexpr auto S3_SERVER_CREDENTIALS_MARKER = "_server_credentials_allowed";
 
 /// Persisted in the stored definition of a dynamic Azure disk created with `s3_allow_server_credentials_in_user_queries`.
 inline constexpr auto AZURE_SERVER_CREDENTIALS_MARKER = "_azure_server_credentials_allowed";
@@ -144,6 +146,10 @@ bool hasAzureServerCredentialsMarker(const Poco::Util::AbstractConfiguration & c
 /// `s3_allow_server_credentials_for_system_table_disks`, is exempt; the decision is written to the marker in `config`.
 void validateResolvedAzureDiskCredentials(
     Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
+
+/// Whether a resolved dynamic disk may use the server's own credentials on any of its backends (the root or any
+/// `locations.<name>` child). The disk a wrapper names is not checked here.
+bool diskUsesServerCredentials(const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info);
 
 /*
  * A reverse function.

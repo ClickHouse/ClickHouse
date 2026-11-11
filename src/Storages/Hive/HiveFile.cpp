@@ -165,7 +165,7 @@ bool HiveORCFile::useFileMinMaxIndex() const
 }
 
 
-std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const std::vector<ORC::Proto::ColumnStatistics> * statistics)
+std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const VectorWithMemoryTracking<ORC::Proto::ColumnStatistics> * statistics)
 {
     if (!statistics)
         return nullptr;
