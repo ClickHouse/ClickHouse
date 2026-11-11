@@ -8,7 +8,8 @@ INSERT INTO t_sparse_only_defaults (k, d) SELECT number, 0 FROM numbers(1050);
 SELECT column, serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_sparse_only_defaults' AND active AND column IN ('k', 'u', 's', 'n', 'd')
 ORDER BY column;
-SELECT sum(u) FROM t_sparse_only_defaults SETTINGS log_comment = '05616_sparse_column_only_defaults_wide_files', enable_parallel_replicas = 0;
+SELECT sum(u) FROM t_sparse_only_defaults SETTINGS log_comment = '05616_sparse_column_only_defaults_wide_files', enable_parallel_replicas = 0,
+    merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen'], ProfileEvents['ReadCompressedBytes'] FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05616_sparse_column_only_defaults_wide_files'
