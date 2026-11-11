@@ -7,6 +7,8 @@ SELECT hex(x) FROM (SELECT fuzzBits('aaaaaaaa', 1.) AS x FROM numbers(2)) ORDER 
 SELECT hex(x) FROM (SELECT fuzzBits(toFixedString('aaaaaaaa', 8), 1.) AS x FROM numbers(2)) ORDER BY 1;
 SELECT hex(x) FROM (SELECT fuzzBits(toNullable('aaaaaaaa'), 1.) AS x FROM numbers(2)) ORDER BY 1;
 SELECT hex(x) FROM (SELECT fuzzBits(toLowCardinality('aaaaaaaa'), 1.) AS x FROM numbers(2)) ORDER BY 1;
+SELECT DISTINCT hex(x) FROM (SELECT fuzzBits('aaaaaaaa', 1.) AS x FROM numbers(2));
+SELECT hex(x) FROM (SELECT fuzzBits('aaaaaaaa', 1.) AS x FROM numbers(2)) LIMIT 1 BY x;
 SELECT uniqExact(x) > 1 FROM (SELECT fuzzBits('aaaaaaaaaaaaaaaa', 0.4) AS x FROM numbers(100));
 
 -- A window partitioned by a fuzzed key: every row is its own partition.
