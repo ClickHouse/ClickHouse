@@ -983,10 +983,13 @@ void registerHiddenPreWriteChecksImpl(
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
-        /// `StorageMaterializedView::write` writes into the target table with the `SQL SECURITY` context of the view.
+        /// `StorageMaterializedView::write` writes into the target table with the `SQL SECURITY` context of the view,
+        /// passing the query, and so the columns it lists, through.
         auto view_metadata = storage->getInMemoryMetadataPtr(context, false);
         auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
-        registerHiddenPreWriteChecks(materialized_view->tryGetTargetTable(), view_context, gates, origin, depth + 1, result);
+        registerHiddenPreWriteChecks(
+            materialized_view->tryGetTargetTable(), view_context, gates, origin, depth + 1, result,
+            /* follow_dependent_views= */ true, insert_columns);
         return;
     }
     if (const auto * distributed = dynamic_cast<const StorageDistributed *>(storage.get()))
