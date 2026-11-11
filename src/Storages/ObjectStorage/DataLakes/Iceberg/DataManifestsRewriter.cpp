@@ -261,6 +261,8 @@ void DataManifestsRewriter::collect(
                     file.statistics.value_counts.emplace_back(field_id, *column_info.rows_count);
                 if (column_info.nulls_count.has_value())
                     file.statistics.null_value_counts.emplace_back(field_id, *column_info.nulls_count);
+                if (column_info.nans_count.has_value())
+                    file.statistics.nan_value_counts.emplace_back(field_id, *column_info.nans_count);
             }
             for (const auto & [field_id, bounds] : entry.value_bounds)
             {
