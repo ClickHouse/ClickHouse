@@ -266,6 +266,31 @@ private:
 
 }
 
+bool isValidDataTypeName(std::string_view name)
+{
+    if (name.empty()
+        || isNumericASCII(name[0])
+        || !std::all_of(name.begin(), name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
+        return false;
+
+    /// Keywords that IParserColumnDeclaration recognizes before the type name.
+    /// E.g. reject CREATE TABLE a (x `Null`) because in "x Null" the Null would be parsed as
+    /// column attribute rather than type name.
+    String n(name);
+    toUpperASCII(n);
+    return !(n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO"
+        || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC" || n == "SETTINGS" || n == "STATISTICS");
+}
+
+std::string_view getCanonicalNameOfDataTypeWithArguments(std::string_view name)
+{
+    if (equalsCaseInsensitive(name, "Array"))
+        return "Array";
+    if (equalsCaseInsensitive(name, "Map"))
+        return "Map";
+    return name;
+}
+
 bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     String type_name;
@@ -282,25 +307,10 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ///  * `Null` -> Null -> parses as keyword instead of type name
     ///  * `8` -> 8 -> parses as a numeric literal instead of a type name
     /// Here we check for these cases and reject.
-    if (type_name.empty()
-        || isNumericASCII(type_name[0])
-        || !std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
+    if (!isValidDataTypeName(type_name))
     {
         expected.add(pos, "type name");
         return false;
-    }
-    /// Keywords that IParserColumnDeclaration recognizes before the type name.
-    /// E.g. reject CREATE TABLE a (x `Null`) because in "x Null" the Null would be parsed as
-    /// column attribute rather than type name.
-    {
-        String n = type_name;
-        toUpperASCII(n);
-        if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC"
-            || n == "SETTINGS" || n == "STATISTICS")
-        {
-            expected.add(pos, "type name");
-            return false;
-        }
     }
 
     String type_name_upper = Poco::toUpper(type_name);
@@ -364,13 +374,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// The SQL standard, PostgreSQL and Trino spell the composite types case-insensitively,
     /// e.g. ARRAY(INTEGER), MAP(VARCHAR, BIGINT).
-    if (pos->type == TokenType::OpeningRoundBracket)
-    {
-        if (type_name_upper == "ARRAY")
-            type_name = "Array";
-        else if (type_name_upper == "MAP")
-            type_name = "Map";
-    }
+    if (pos->type == TokenType::OpeningRoundBracket && type_name_suffix.empty())
+        type_name = getCanonicalNameOfDataTypeWithArguments(type_name);
 
     /// skip trailing comma in types, e.g. Tuple(Int, String,)
     if (pos->type == TokenType::Comma)

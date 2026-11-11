@@ -1,0 +1,4 @@
+TestInt
+TestString
+TestInt	UInt64	\N	CREATE TYPE TestInt AS UInt64
+TestInt	UInt32	\N	CREATE TYPE TestInt AS UInt32

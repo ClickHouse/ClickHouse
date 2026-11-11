@@ -1,0 +1,10 @@
+BACKUP_CREATED
+--- before
+RestoreA_DB	CREATE TYPE RestoreA_DB(T) AS Array(T)
+RestoreB_DB	CREATE TYPE RestoreB_DB AS RestoreA_DB(UInt8)
+BAD_ARGUMENTS
+RESTORED
+--- replaced
+RestoreA_DB	CREATE TYPE RestoreA_DB(K, V) AS Map(K, V)
+RestoreB_DB	CREATE TYPE RestoreB_DB AS RestoreA_DB(String, UInt8)
+Map(String, UInt8)

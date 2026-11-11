@@ -1,0 +1,41 @@
+---
+description: 'System table containing information about user-defined types.'
+keywords: ['system table', 'user_defined_types']
+slug: /operations/system-tables/user_defined_types
+title: 'system.user_defined_types'
+doc_type: 'reference'
+---
+
+## Description {#description}
+
+Contains a list of all user-defined types created with
+[`CREATE TYPE`](/reference/statements/create/type).
+
+## Columns {#columns}
+
+- `name` ([String](/reference/data-types/string)) — Name of the user-defined type.
+- `base_type` ([String](/reference/data-types/string)) — The data type expression the user-defined type expands to.
+- `type_parameters` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — The formal parameters of a parameterized type, or `NULL` if the type has none.
+- `create_query` ([String](/reference/data-types/string)) — The `CREATE TYPE` query defining the type.
+
+Reading the table requires the `SHOW USER DEFINED TYPES` privilege, the same one that
+[`SHOW TYPES`](/reference/statements/show) and `SHOW TYPE` require.
+
+**Example**
+
+```sql
+CREATE TYPE KeyValue(K, V) AS Tuple(K, V);
+SELECT name, base_type, type_parameters FROM system.user_defined_types;
+```
+
+```text
+┌─name─────┬─base_type───┬─type_parameters─┐
+│ KeyValue │ Tuple(K, V) │ K, V            │
+└──────────┴─────────────┴─────────────────┘
+```
+
+**See also**
+
+- [`CREATE TYPE`](/reference/statements/create/type)
+- [`DROP TYPE`](/reference/statements/drop)
+- [`SHOW TYPES`](/reference/statements/show)
