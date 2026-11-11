@@ -14,6 +14,7 @@
 #include <Parsers/parseQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB

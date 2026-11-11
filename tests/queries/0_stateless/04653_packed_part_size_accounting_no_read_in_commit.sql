@@ -27,6 +27,13 @@
 DROP TABLE IF EXISTS packed_commit_cold SYNC;
 DROP TABLE IF EXISTS packed_commit_warm SYNC;
 
+-- `use_primary_key_cache = 0` keeps the primary index of the source part in memory. With the cache
+-- (and `prewarm_primary_key_cache`, both randomized) the index lives only in the shared, bounded
+-- `PrimaryIndexCache`. Evaluating the mutation predicate on the source part needs the index, so
+-- whenever concurrent tests evict the entry, `primary.idx` is opened again inside the `MutatePart`
+-- counter scope. That happens in one arm but not the other, and it cancels the single `FileOpen`
+-- that separates the cold arm from the warm control.
+
 -- Cold arm: the mutation's cloned part arrives with its sizes not yet computed.
 CREATE TABLE packed_commit_cold
 (
@@ -42,7 +49,8 @@ SETTINGS storage_policy = 's3_no_fake_transaction',
          packed_skip_index_max_bytes = '1M',
          index_granularity = 1024,
          min_bytes_for_full_part_storage = 1000000000,
-         columns_and_secondary_indices_sizes_lazy_calculation = 1;
+         columns_and_secondary_indices_sizes_lazy_calculation = 1,
+         use_primary_key_cache = 0;
 
 -- Warm control: identical except that the sizes are computed when the part is loaded, so the
 -- commit has no reason to read even before the fix.
@@ -60,7 +68,8 @@ SETTINGS storage_policy = 's3_no_fake_transaction',
          packed_skip_index_max_bytes = '1M',
          index_granularity = 1024,
          min_bytes_for_full_part_storage = 1000000000,
-         columns_and_secondary_indices_sizes_lazy_calculation = 0;
+         columns_and_secondary_indices_sizes_lazy_calculation = 0,
+         use_primary_key_cache = 0;
 
 -- String columns on purpose: `loadRowsCount` computes on-disk sizes for numeric columns in debug and
 -- sanitizer builds, which would warm the cloned part and hide the read.

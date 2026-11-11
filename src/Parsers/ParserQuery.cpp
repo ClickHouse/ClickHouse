@@ -16,7 +16,7 @@
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserDropTypeQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
-#include <Parsers/ParserHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ParserHypotheticalObjectQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQuery.h>
