@@ -19,54 +19,7 @@ s	8	524288
 [false,false,false,false,false,false,false]
 0	0	0	0	0	0	0
 0	0	0	0	0	0	0
---- strings encoded with DELTA_BYTE_ARRAY without size statistics: not cached
-[false]
-65536	33554432
-65536	33554432
---- short strings read as a wide FixedString: not cached
-[false]
-65536	7268979749752893985
-65536	7268979749752893985
---- the long strings of a row group in one chunk, with size statistics
-[true]
-262144	33554432
-262144	33554432
---- the non-null strings of a row group in one chunk, without size statistics
-[false]
-262144	33554432
-262144	33554432
---- a wide column missing in the file: not cached
-[true]
-2147450880	10104791784030208000
-2147450880	10104791784030208000
---- arrays of tuples of which all the requested elements are missing in the file: not cached
-[true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true]
-2147450880	14177275034280132608
-2147450880	14177275034280132608
---- a variant read as JSON: not cached
-[true,true]
-65536	720896
-65536	720896
---- GeoParquet strings decoded into a much larger geo type: not cached
-[true]
-65536	4194304
-65536	4194304
---- small dictionary pages of a column that PREWHERE does not need, in files read in parallel
-0	0
-0	0
---- chunks served from the cache, in files read in parallel
-524288	13188961511153836032
-524288	1072728111390244864
-8	524288
-524288	13188961511153836032
---- chunks of LowCardinality strings served from the cache, converted to strings
-65536	134217728	65536
-a	1	65536
-s	1	65536
-65536	8151857128318959616
-65536	10452236474157039616
---- chunks of JSON served from the cache, converted to text
-65536	67502080
-65536	67502080
-v	1	65536
-65536	67502080
+--- small dictionary pages of columns that PREWHERE does not need, each followed by large data pages
+[false,false,false,false,false,false,false,false]
+0	0	0	0	0	0	0
+0	0	0	0	0	0	0

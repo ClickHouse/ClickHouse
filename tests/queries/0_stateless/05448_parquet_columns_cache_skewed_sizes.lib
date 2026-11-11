@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2154
+
+# Common definitions of the tests of the columns cache of `Parquet` files with skewed sizes of values,
+# `05448_parquet_columns_cache_skewed_sizes` and the tests named after it. Sourced after `shell_config.sh`.
+
+FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
+FILE_PATH="${USER_FILES_PATH}/${FILE}"
+ENTRIES="SELECT column, count(), sum(rows) FROM system.columns_cache WHERE database = '' AND endsWith(part, '/${FILE}') GROUP BY column ORDER BY column"
+
+# Writes a `Parquet` file of dictionary-encoded strings without `size_statistics`, as older versions of PyArrow do.
+# The optional second argument replaces `created_by` in the metadata.
+function write_with_pyarrow()
+{
+    python3 - "${FILE_PATH}.tmp" "$1" <<'EOF'
+import sys
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+path, kind = sys.argv[1], sys.argv[2]
+if kind == 'skewed_dictionary':
+    # 65536 rows: each of 127 short values once, and a value of 512 bytes in all other rows.
+    values = pa.array([str(i) for i in range(127)] + ['x' * 512])
+    indices = pa.array(list(range(128)) + [127] * (65536 - 128), type=pa.int32())
+    table = pa.table({'s': pa.DictionaryArray.from_arrays(indices, values)})
+    pq.write_table(table, path, row_group_size=1000000, use_dictionary=True)
+elif kind == 'small_dictionaries':
+    # 384 rows: even numbers, and in each of six columns distinct values of 4 KiB in an uncompressed dictionary page
+    # of 1.5 MiB.
+    columns = {'id': pa.array([2 * i for i in range(384)], type=pa.uint64())}
+    for c in range(6):
+        columns[f's{c}'] = pa.array([str(i + c).rjust(4096, 'x') for i in range(384)])
+    pq.write_table(pa.table(columns), path, row_group_size=1000000, use_dictionary=[f's{c}' for c in range(6)],
+                   compression='NONE', dictionary_pagesize_limit=64 << 20)
+elif kind == 'adjacent_data_pages':
+    # 65536 rows: even numbers, an unselected column of 64 bytes per row, and in each of six columns distinct values of
+    # 44 bytes, of which a small dictionary page is followed by large data pages.
+    rows = 65536
+    columns = {'id': pa.array([2 * i for i in range(rows)], type=pa.uint64()),
+               'pad': pa.array([b'p' * 64] * rows, type=pa.binary())}
+    for c in range(6):
+        columns[f's{c}'] = pa.array([str(i * 6 + c).rjust(44, 'x') for i in range(rows)])
+    pq.write_table(pa.table(columns), path, row_group_size=1000000, use_dictionary=[f's{c}' for c in range(6)],
+                   compression='NONE', dictionary_pagesize_limit=1024)
+elif kind == 'parallel_files':
+    # 384 rows: even numbers, and distinct values of 4 KiB in an uncompressed dictionary page of 1.5 MiB.
+    ids = pa.array([2 * i for i in range(384)], type=pa.uint64())
+    values = pa.array([str(i).rjust(4096, 'x') for i in range(384)])
+    pq.write_table(pa.table({'id': ids, 's': values}), path, row_group_size=1000000, use_dictionary=['s'],
+                   compression='NONE', dictionary_pagesize_limit=64 << 20)
+elif kind == 'delta':
+    # 65536 rows: the same value of 512 bytes, of which `DELTA_BYTE_ARRAY` stores only the length of the shared prefix.
+    table = pa.table({'s': pa.array(['x' * 512] * 65536)})
+    pq.write_table(table, path, row_group_size=1000000, use_dictionary=False, column_encoding={'s': 'DELTA_BYTE_ARRAY'},
+                   compression='NONE')
+elif kind == 'short_strings':
+    # 65536 rows: strings of one byte.
+    table = pa.table({'s': pa.array([str(i % 10) for i in range(65536)])})
+    pq.write_table(table, path, row_group_size=1000000, use_dictionary=False, compression='NONE')
+else:
+    # 3072 rows: even numbers, and distinct values of 4 KiB in an uncompressed dictionary page of 12 MiB.
+    ids = pa.array([2 * i for i in range(3072)], type=pa.uint64())
+    values = pa.array([str(i).rjust(4096, 'x') for i in range(3072)])
+    pq.write_table(pa.table({'id': ids, 's': values}), path, row_group_size=1000000, use_dictionary=['s'],
+                   compression='NONE', dictionary_pagesize_limit=64 << 20)
+EOF
+    python3 "${CUR_DIR}/helpers/parquet_strip_size_statistics.py" "${FILE_PATH}.tmp" "${FILE_PATH}" ${2:+"$2"}
+    rm -f "${FILE_PATH}.tmp"
+    # Only a file that has not been modified for a few seconds is cached.
+    touch -d "1 minute ago" "${FILE_PATH}"
+}
+
+# Runs the query without the columns cache and with it, from the empty cache, then shows what the cache holds.
+function run_query()
+{
+    $CLICKHOUSE_CLIENT -q "
+        SELECT rg.columns.have_size_statistics FROM file('${FILE}', ParquetMetadata) ARRAY JOIN row_groups AS rg;
+        SYSTEM DROP COLUMNS CACHE;
+        $1, use_columns_cache = 0;
+        $1, use_columns_cache = 1;
+        ${ENTRIES}"
+}
