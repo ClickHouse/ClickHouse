@@ -45,6 +45,10 @@ public:
         if (!query->hasOrderBy())
             return;
 
+        /// A function of a key can be another key, which has a default value in subtotals.
+        if (query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets())
+            return;
+
         auto & order_by = query->getOrderBy();
         for (auto & elem : order_by.getNodes())
         {

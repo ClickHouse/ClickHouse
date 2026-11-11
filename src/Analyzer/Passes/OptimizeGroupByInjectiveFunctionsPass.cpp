@@ -53,6 +53,9 @@ public:
             || query->isGroupByWithGroupingSets() || query->isGroupByWithTotals())
             return;
 
+        if (hasGroupingFunction(*query))
+            return;
+
         bool allow_suspicious_types = getSettings()[Setting::allow_suspicious_types_in_group_by];
 
         auto & group_by = query->getGroupBy().getNodes();

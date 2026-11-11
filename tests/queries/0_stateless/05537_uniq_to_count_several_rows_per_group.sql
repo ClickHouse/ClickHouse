@@ -32,6 +32,14 @@ SELECT uniqExact(x, x) FROM (SELECT number % 3 AS x, number + 0 AS y FROM number
 SELECT (SELECT uniqExact(t.x) FROM (SELECT number % 3 AS x FROM numbers(6) GROUP BY 1) AS s) FROM (SELECT toUInt8(7) AS x) AS t SETTINGS allow_experimental_correlated_subqueries = 1;
 SELECT (SELECT uniqExact(t.x) FROM (SELECT number % 3 AS x FROM numbers(6) GROUP BY x) AS s) FROM (SELECT toUInt8(7) AS x) AS t SETTINGS allow_experimental_correlated_subqueries = 1;
 
+SELECT 'other functions';
+SELECT uniqCombined(15)(x) FROM (SELECT number % 3 AS x FROM numbers(6) GROUP BY 1);
+SELECT uniqCombined(15)(x) FROM (SELECT number % 3 AS x FROM numbers(6) GROUP BY x);
+SELECT uniqCombined(x) FROM (SELECT toNullable(number) AS x FROM numbers(0) GROUP BY 1);
+SELECT uniqCombined(x) FROM (SELECT toNullable(number) AS x FROM numbers(0) GROUP BY x);
+SELECT uniqExact(x) OVER (PARTITION BY arrayJoin([1, 1])) AS u FROM (SELECT number % 3 AS x FROM numbers(6) GROUP BY 1) LIMIT 1;
+SELECT uniqExact(x) OVER (PARTITION BY arrayJoin([1, 1])) AS u FROM (SELECT number % 3 AS x FROM numbers(6) GROUP BY x) LIMIT 1;
+
 SELECT 'distributed_group_by_no_merge';
 SELECT uniqExact(x) FROM (SELECT number % 3 AS x FROM remote('127.0.0.{2,3}', numbers(6)) GROUP BY 1 SETTINGS distributed_group_by_no_merge = 1);
 SELECT uniqExact(x) FROM (SELECT number % 3 AS x FROM remote('127.0.0.{2,3}', numbers(6)) GROUP BY x SETTINGS distributed_group_by_no_merge = 1);

@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/HashUtils.h>
@@ -22,7 +23,7 @@ public:
 
         if (query_node->hasOrderBy())
         {
-            QueryTreeNodeConstRawPtrWithHashSet unique_expressions_nodes_set;
+            QueryTreeNodePtrWithHashSet unique_expressions_nodes_set;
             QueryTreeNodes result_nodes;
 
             auto & query_order_by_nodes = query_node->getOrderBy().getNodes();
@@ -38,13 +39,18 @@ public:
                     continue;
                 }
 
-                const auto * expression = sort_node_typed.getExpression().get();
+                const auto & expression = sort_node_typed.getExpression();
 
                 /// Different values can be equal with a collation, so the following keys are not redundant after it.
-                const bool redundant = sort_node_typed.getCollator() ? unique_expressions_nodes_set.contains(expression)
-                                                                     : !unique_expressions_nodes_set.emplace(expression).second;
-                if (!redundant)
-                    result_nodes.push_back(sort_node);
+                auto previous = unique_expressions_nodes_set.find(expression);
+                const bool redundant = previous != unique_expressions_nodes_set.end()
+                    && areConstantsWrittenAlike(expression, previous->node);
+                if (redundant)
+                    continue;
+
+                if (!sort_node_typed.getCollator())
+                    unique_expressions_nodes_set.emplace(expression);
+                result_nodes.push_back(sort_node);
             }
 
             query_order_by_nodes = std::move(result_nodes);

@@ -2,19 +2,40 @@
 
 #include <algorithm>
 #include <queue>
+#include <unordered_set>
 #include <vector>
 
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/ValidationUtils.h>
+#include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool optimize_group_by_function_keys;
+    extern const SettingsUInt64 distributed_group_by_no_merge;
+}
 
 namespace
 {
@@ -24,6 +45,81 @@ struct NodeWithInfo
     QueryTreeNodePtr node;
     bool parents_are_only_deterministic = false;
 };
+
+bool isComparison(const String & name)
+{
+    return name == "equals" || name == "notEquals" || name == "less" || name == "greater" || name == "lessOrEquals"
+        || name == "greaterOrEquals";
+}
+
+bool hasPreimage(const QueryTreeNodePtr & node)
+{
+    const auto * function = node->as<FunctionNode>();
+    const auto function_base = function ? function->getFunction() : nullptr;
+    return function_base && function_base->hasInformationAboutPreimage();
+}
+
+bool hasComparisonWithPreimage(const QueryTreeNodePtr & node)
+{
+    checkStackSize();
+
+    const auto * function = node->as<FunctionNode>();
+    if (function && isComparison(function->getFunctionName()) && std::ranges::any_of(function->getArguments().getNodes(), hasPreimage))
+        return true;
+
+    return std::ranges::any_of(node->getChildren(), [](const auto & child) { return child && hasComparisonWithPreimage(child); });
+}
+
+bool isReplaceableFunction(const QueryTreeNodePtr & node)
+{
+    const auto * function = node->as<FunctionNode>();
+    if (!function)
+        return false;
+
+    /// `OptimizeDateOrDateTimeConverterWithPreimagePass`
+    if (hasPreimage(node))
+        return true;
+
+    /// `InverseDictionaryLookupPass`
+    const auto & name = function->getFunctionName();
+    if (name.starts_with("dictGet"))
+        return true;
+
+    /// `ComparisonTupleEliminationPass`, `LogicalExpressionOptimizerPass` and `ConvertOrLikeChainPass`
+    static const std::unordered_set<String> names = {
+        "tuple", "and", "or", "not", "xor", "in", "notIn", "nullIn", "notNullIn", "globalIn", "globalNotIn", "globalNullIn",
+        "globalNotNullIn", "like", "notLike", "ilike", "notILike", "match"};
+    return isComparison(name) || names.contains(name);
+}
+
+/// `IfConstantConditionPass` replaces `if` with a branch.
+bool isReplaceableFunctionOrBranch(const QueryTreeNodePtr & node)
+{
+    checkStackSize();
+
+    if (isReplaceableFunction(node))
+        return true;
+
+    const auto * function = node->as<FunctionNode>();
+    if (!function || (function->getFunctionName() != "if" && function->getFunctionName() != "multiIf"))
+        return false;
+
+    const auto & arguments = function->getArguments().getNodes();
+    auto is_condition = [&](size_t i) { return i % 2 == 0 && i + 1 < arguments.size(); };
+
+    bool has_constant_condition = false;
+    for (size_t i = 0; i < arguments.size(); ++i)
+        has_constant_condition |= is_condition(i) && arguments[i]->getNodeType() == QueryTreeNodeType::CONSTANT;
+
+    if (!has_constant_condition)
+        return false;
+
+    for (size_t i = 0; i < arguments.size(); ++i)
+        if (!is_condition(i) && isReplaceableFunctionOrBranch(arguments[i]))
+            return true;
+
+    return false;
+}
 
 bool keyArgumentTypesAreAllowed(const ColumnsWithTypeAndName & columns, bool allow_suspicious_types)
 {
@@ -40,6 +136,57 @@ bool keyArgumentTypesAreAllowed(const ColumnsWithTypeAndName & columns, bool all
     return true;
 }
 
+}
+
+bool isReplaceableWithArguments(const QueryTreeNodePtr & node)
+{
+    /// `OptimizeDateOrDateTimeConverterWithPreimagePass` does not visit the arguments of comparisons, so it replaces a comparison in a
+    /// key, but not in the same expression if that is compared.
+    return isReplaceableFunctionOrBranch(node) || hasComparisonWithPreimage(node);
+}
+
+bool hasReplaceableWithArguments(const QueryTreeNodePtr & node)
+{
+    checkStackSize();
+
+    /// `LikePerfectAffixRewritePass` and `ConvertOrLikeChainPass` replace `LIKE` with these.
+    if (const auto * function = node->as<FunctionNode>())
+    {
+        const auto & name = function->getFunctionName();
+        if (name == "startsWith" || name == "endsWith" || name.starts_with("multiSearchAny") || name == "multiMatchAny")
+            return true;
+    }
+
+    return isReplaceableFunction(node)
+        || std::ranges::any_of(node->getChildren(), [](const auto & child) { return child && hasReplaceableWithArguments(child); });
+}
+
+bool canRemoveGroupByKeysThatAreFunctionsOfOtherKeys(const QueryNode & query_node)
+{
+    const auto & settings = query_node.getContext()->getSettingsRef();
+    if (!settings[Setting::optimize_group_by_function_keys])
+        return false;
+
+    /// When group_by_use_nulls = 1 removing keys from GROUP BY can lead
+    /// to unexpected types in some functions.
+    /// See example in https://github.com/ClickHouse/ClickHouse/pull/61567#issuecomment-2018007887
+    if (settings[Setting::group_by_use_nulls])
+        return false;
+
+    if (!query_node.hasGroupBy())
+        return false;
+
+    /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
+    /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH
+    /// TOTALS row. In such a row the key is output as its column default. Dropping a key that is
+    /// a function of other keys makes the output projection recompute it from those keys' totals
+    /// defaults (e.g. toString(number) from number = 0 gives '0' instead of the required String
+    /// default ''), which changes the result. See #110715.
+    if (query_node.isGroupByWithCube() || query_node.isGroupByWithRollup()
+        || query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithTotals())
+        return false;
+
+    return !hasGroupingFunction(query_node);
 }
 
 bool isExpressionFunctionOfKeys(
@@ -71,7 +218,12 @@ bool isExpressionFunctionOfKeys(
         auto [candidate, parents_are_only_deterministic] = candidates.back();
         candidates.pop_back();
 
-        bool found = keys.contains(candidate);
+        auto key = keys.find(candidate);
+        bool found = key != keys.end();
+
+        /// The expression is calculated from this key after the aggregation.
+        if (found && !areConstantsWrittenAlike(candidate, key->node))
+            return false;
 
         /// A key reached through a non-deterministic function is not determined by the keys, so the
         /// expression is not a function of them (for example rand64(g) takes the key g but is random).
@@ -118,15 +270,20 @@ bool isExpressionFunctionOfKeys(
     return found_at_least_one_usage;
 }
 
-void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys, const QueryTreeNodes & aggregation_keys)
+void removeKeysThatAreFunctionsOfOtherKeys(
+    QueryTreeNodes & keys, const QueryTreeNodes & aggregation_keys, UsableGroupByKeys usable_keys)
 {
-    QueryTreeNodePtrWithHashSet key_set(keys.begin(), keys.end());
+    QueryTreeNodePtrWithHashSet key_set;
+    for (const auto & key : keys)
+        if (usable_keys != UsableGroupByKeys::BEFORE_REPLACEMENTS || !isReplaceableWithArguments(key))
+            key_set.insert(key);
 
     QueryTreeNodes new_keys;
     new_keys.reserve(keys.size());
     for (auto & key : keys)
     {
-        if (!isExpressionFunctionOfKeys(key, key_set, aggregation_keys))
+        const bool is_considered = usable_keys != UsableGroupByKeys::AFTER_REPLACEMENTS || hasReplaceableWithArguments(key);
+        if (!is_considered || !isExpressionFunctionOfKeys(key, key_set, aggregation_keys))
             new_keys.push_back(key);
     }
 
@@ -182,6 +339,42 @@ QueryTreeNodes unwrapInjectiveFunctionsInKeys(
     return new_keys;
 }
 
+bool isAggregateFunctionOfEqualValues(const FunctionNode & function)
+{
+    if (!function.isAggregateFunction())
+        return false;
+
+    /// Every aggregate here returns an actual element of its input column, so over a group where
+    /// the argument is a GROUP BY key (constant within the group) the result equals that key and
+    /// the aggregate can be dropped. Aliases (any_value / first_value -> any, last_value ->
+    /// anyLast, *RespectNulls -> *_respect_nulls) are normalized to these canonical names by name
+    /// resolution before this pass runs, so matching the canonical names covers them too.
+    /// The same holds for the non-interpolating exact quantiles (quantileExact, its alias
+    /// medianExact, quantileExactLow, quantileExactHigh), which return an element of the input
+    /// at some position, and for the idempotent groupBitAnd / groupBitOr (x & x = x | x = x).
+    /// The result type check below rejects any variant whose result type differs from the key.
+    /// singleValueOrNull is excluded: it returns NULL unless the group has exactly one distinct
+    /// value, so it is not value-preserving; groupBitXor is not idempotent; interpolating
+    /// quantiles may return a value that is not an element; argMin/argMax are two-argument.
+    static const std::unordered_set<String> names = {
+        "min", "max", "any", "anyLast", "anyHeavy", "any_respect_nulls", "anyLast_respect_nulls", "quantileExact", "quantileExactLow",
+        "quantileExactHigh", "groupBitAnd", "groupBitOr"};
+    if (!names.contains(function.getFunctionName()))
+        return false;
+
+    const auto & arguments = function.getArguments().getNodes();
+    if (arguments.size() != 1)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected a single argument of function '{}' but received {}",
+            function.getFunctionName(),
+            arguments.size());
+
+    /// Compare names, because types with a custom name, like `Bool`, are equal to the types without it.
+    return recursiveRemoveLowCardinality(function.getResultType())->getName()
+        == recursiveRemoveLowCardinality(arguments[0]->getResultType())->getName();
+}
+
 QueryTreeNodes getGroupByKeys(const QueryNode & query_node)
 {
     QueryTreeNodes keys;
@@ -208,6 +401,74 @@ bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTree
     if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isConvertedToNullable())
         return true;
     return std::ranges::any_of(group_by_keys, [&](const auto & key) { return compareGroupByKeys(node, key); });
+}
+
+bool canHaveSeveralRowsPerGroup(const QueryNode & query_node)
+{
+    /// The groups of different shards are not merged.
+    if (query_node.getContext()->getSettingsRef()[Setting::distributed_group_by_no_merge])
+        return true;
+
+    const auto & keys = query_node.getGroupBy().getNodes();
+    auto adds_rows = [&](const QueryTreeNodePtr & node)
+    {
+        return hasFunctionNode(node, "arrayJoin")
+            && std::ranges::none_of(keys, [&](const QueryTreeNodePtr & key) { return key->isEqual(*node); });
+    };
+
+    for (const auto & node : query_node.getOrderBy().getNodes())
+    {
+        const auto & sort_node = node->as<const SortNode &>();
+        if (sort_node.withFill() || adds_rows(sort_node.getExpression()))
+            return true;
+    }
+
+    if (query_node.hasHaving() && adds_rows(query_node.getHaving()))
+        return true;
+
+    if (query_node.hasQualify() && adds_rows(query_node.getQualify()))
+        return true;
+
+    return std::ranges::any_of(query_node.getLimitBy().getNodes(), adds_rows)
+        || std::ranges::any_of(query_node.getProjection().getNodes(), adds_rows);
+}
+
+bool areConstantsWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+{
+    checkStackSize();
+
+    if (lhs == rhs)
+        return true;
+
+    return std::ranges::equal(
+        lhs->getChildren(),
+        rhs->getChildren(),
+        [](const auto & lhs_child, const auto & rhs_child)
+        {
+            if (!lhs_child || !rhs_child)
+                return !lhs_child && !rhs_child;
+
+            const auto * lhs_constant = lhs_child->template as<ConstantNode>();
+            const auto * rhs_constant = rhs_child->template as<ConstantNode>();
+            if (!lhs_constant || !rhs_constant)
+                return areConstantsWrittenAlike(lhs_child, rhs_child);
+
+            if (!lhs_constant->hasSourceExpression() || !rhs_constant->hasSourceExpression())
+                return lhs_constant->hasSourceExpression() == rhs_constant->hasSourceExpression();
+
+            const auto & lhs_source = lhs_constant->getSourceExpression();
+            const auto & rhs_source = rhs_constant->getSourceExpression();
+            return lhs_source->isEqual(*rhs_source, {.compare_aliases = false}) && areConstantsWrittenAlike(lhs_source, rhs_source);
+        });
+}
+
+bool hasGroupingFunction(const QueryNode & query_node)
+{
+    /// The name after `GroupingFunctionsResolvePass`, if there are no subtotals.
+    return std::ranges::any_of(
+        query_node.getChildren(),
+        [&](const auto & clause)
+        { return clause && clause != query_node.getJoinTreeNode() && hasFunctionNode(clause, "__groupingOrdinary"); });
 }
 
 }

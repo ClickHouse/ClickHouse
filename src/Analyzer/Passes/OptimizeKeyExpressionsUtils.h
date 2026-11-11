@@ -3,10 +3,36 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <cstdint>
+
 namespace DB
 {
 
+class FunctionNode;
 class QueryNode;
+
+/** Which `GROUP BY` keys the other expressions can be calculated from.
+  *
+  * Some passes replace an expression over a function with an expression over the arguments of the function, for example
+  * `toYear(d) = 2024` with a condition on `d`. If `toYear(d)` is a key, `d` does not exist after the aggregation. So an
+  * expression over such a key can appear after the aggregation only when these passes are done.
+  */
+enum class UsableGroupByKeys : uint8_t
+{
+    /// All keys, for all expressions.
+    ALL,
+    /// Before these passes: the keys that they do not take apart.
+    BEFORE_REPLACEMENTS,
+    /// After these passes: all keys. Only for the expressions that have such functions, the others are done before.
+    AFTER_REPLACEMENTS,
+};
+
+/// Returns true if a pass can replace an expression over `node` with an expression over the arguments of `node`, or if `node` can be
+/// replaced differently in an expression and in `GROUP BY`.
+bool isReplaceableWithArguments(const QueryTreeNodePtr & node);
+
+/// Returns true if `node` or any part of it is replaceable, or can be the result of a replacement.
+bool hasReplaceableWithArguments(const QueryTreeNodePtr & node);
 
 /** Shared helpers for cleaning up the key list of `GROUP BY` and `LIMIT BY`. Both group rows by
   * the distinct combinations of their key values. A key is dropped or rewritten only when this
@@ -21,8 +47,12 @@ class QueryNode;
 bool isExpressionFunctionOfKeys(
     const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys, const QueryTreeNodes & aggregation_keys = {});
 
+/// Returns true if `GROUP BY` keys of `query_node` that are functions of other keys can be removed.
+bool canRemoveGroupByKeysThatAreFunctionsOfOtherKeys(const QueryNode & query_node);
+
 /// Removes, in place, every key that is a function of the other keys.
-void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys, const QueryTreeNodes & aggregation_keys = {});
+void removeKeysThatAreFunctionsOfOtherKeys(
+    QueryTreeNodes & keys, const QueryTreeNodes & aggregation_keys = {}, UsableGroupByKeys usable_keys = UsableGroupByKeys::ALL);
 
 /// Returns a new key list with injective functions replaced by their non-constant arguments. An
 /// injective function gives the same grouping as its arguments, so the result does not change. When
@@ -33,11 +63,24 @@ void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys, const QueryTre
 QueryTreeNodes unwrapInjectiveFunctionsInKeys(
     const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashIgnoreAliasesSet * keys_to_keep = nullptr);
 
+/// Returns true if `function` is an aggregate function that returns the value of its argument if this is the same for all rows.
+bool isAggregateFunctionOfEqualValues(const FunctionNode & function);
+
 /// The `GROUP BY` keys of `query_node`, of all grouping sets.
 QueryTreeNodes getGroupByKeys(const QueryNode & query_node);
 
 /// Returns true if `node`, in an expression computed after `GROUP BY`, is a key, read from the aggregation result.
 /// Under `group_by_use_nulls` the analyzer replaces a key there with a copy converted to `Nullable`, not equal to the key.
 bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys);
+
+/// Returns true if `query_node` can have several rows with the same values of `GROUP BY` keys. Subtotals are not considered.
+bool canHaveSeveralRowsPerGroup(const QueryNode & query_node);
+
+/// Equal expressions can have different names in the planner, because it names a folded constant by the expression that it is
+/// folded from: `x + 2` and `x + (1 + 1)`. Returns true if the constants in equal expressions are written in the same way.
+bool areConstantsWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs);
+
+/// Returns true if the query has the function `grouping`, whose arguments must be `GROUP BY` keys.
+bool hasGroupingFunction(const QueryNode & query_node);
 
 }

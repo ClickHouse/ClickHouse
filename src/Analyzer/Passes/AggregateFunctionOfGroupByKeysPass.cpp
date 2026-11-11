@@ -4,13 +4,13 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Analyzer/TrivialGroupByLimit.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
-
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/IFunctionAdaptors.h>
 
@@ -23,11 +23,6 @@ namespace Setting
     extern const SettingsBool optimize_aggregators_of_group_by_keys;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace
 {
 
@@ -36,13 +31,18 @@ class EliminateFunctionVisitor : public InDepthQueryTreeVisitorWithContext<Elimi
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<EliminateFunctionVisitor>;
-    using Base::Base;
+
+    EliminateFunctionVisitor(UsableGroupByKeys usable_keys_, ContextPtr context)
+        : Base(std::move(context))
+        , usable_keys(usable_keys_)
+    {}
 
     struct GroupByKeys
     {
         QueryTreeNodePtrWithHashSet keys;
-        /// Keys that are not in every grouping set, and their subexpressions. These keys have default values in the other sets,
-        /// also if they are functions of `keys`: neither `max(negate(x))` nor `negate(max(x))` may become the key `negate(x)`.
+        /// Keys that are not in every grouping set, and the subexpressions of all keys. Other keys have default values in the sets
+        /// without them, also if they are functions of `keys`: neither `max(negate(x))` nor `negate(max(x))` may become the key
+        /// `negate(x)`. And `max(x) + y` may not become the key `x + y` if `y` is such a key.
         QueryTreeNodePtrWithHashSet parts_of_other_keys;
     };
 
@@ -53,6 +53,10 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         bool is_filter_root = std::exchange(entering_filter_section, false);
+
+        if (isArrayJoinFunction(node))
+            ++array_join_depth;
+
         if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
             return;
 
@@ -93,6 +97,12 @@ public:
         else if (query_node->isGroupByWithTotals() || query_node->isGroupByWithCube() || query_node->isGroupByWithRollup())
         {
             /// Keep aggregator if group by is with totals/cube/rollup.
+            group_by_keys_stack.push_back({});
+        }
+        else if (usable_keys == UsableGroupByKeys::AFTER_REPLACEMENTS && getTrivialGroupByLimit(*query_node, getSettings()))
+        {
+            /// Without aggregate functions, `OptimizeTrivialGroupByLimitPass` would have limited the number of groups with settings that
+            /// also apply to aggregations in views. With them, the planner limits only the groups of this query. So keep them.
             group_by_keys_stack.push_back({});
         }
         else if (query_node->isGroupByWithGroupingSets() && getSettings()[Setting::group_by_use_nulls])
@@ -151,6 +161,14 @@ public:
             for (const auto & group_key : keys_of_some_sets)
                 nodes_to_visit.push_back(group_key.node);
 
+            if (!keys_of_some_sets.empty())
+            {
+                for (const auto & group_key : group_by_keys)
+                    for (const auto & child : group_key.node->getChildren())
+                        if (child)
+                            nodes_to_visit.push_back(child);
+            }
+
             while (!nodes_to_visit.empty())
             {
                 auto part = std::move(nodes_to_visit.back());
@@ -164,6 +182,19 @@ public:
                         nodes_to_visit.push_back(child);
             }
 
+            if (usable_keys == UsableGroupByKeys::BEFORE_REPLACEMENTS)
+            {
+                /// See above for the limit. Aggregate functions of columns are replaced nevertheless, it is cheaper without them.
+                const bool limits_groups = getTrivialGroupByLimit(*query_node, getSettings()).has_value();
+                std::erase_if(
+                    group_by_keys,
+                    [&](const auto & group_key)
+                    {
+                        return isReplaceableWithArguments(group_key.node)
+                            || (limits_groups && group_key.node->getNodeType() == QueryTreeNodeType::FUNCTION);
+                    });
+            }
+
             group_by_keys_stack.push_back({std::move(group_by_keys), std::move(parts_of_other_keys)});
         }
     }
@@ -171,6 +202,9 @@ public:
     /// Now we visit all nodes in QueryNode, we should remove group_by_keys from stack.
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (isArrayJoinFunction(node))
+            --array_join_depth;
+
         if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
             return;
 
@@ -196,7 +230,7 @@ public:
         if (!collecting_output_nodes && node_type == QueryTreeNodeType::FUNCTION)
         {
             auto * function_node = node->as<FunctionNode>();
-            if (aggregationCanBeEliminated(node, group_by_keys_stack.back()))
+            if (array_join_depth == 0 && aggregationCanBeEliminated(node, group_by_keys_stack.back()))
             {
                 /// min(LowCardinality(String)) is String: a filter keeps the bare key for the pushdown,
                 /// an output position casts it back to keep the observable type.
@@ -240,6 +274,12 @@ public:
     }
 
 private:
+
+    static bool isArrayJoinFunction(const QueryTreeNodePtr & node)
+    {
+        const auto * function_node = node->as<FunctionNode>();
+        return function_node && function_node->getFunctionName() == "arrayJoin";
+    }
 
     struct NodeWithInfo
     {
@@ -298,39 +338,12 @@ private:
         if (!function || !function->isAggregateFunction())
             return false;
 
-        /// Every aggregate here returns an actual element of its input column, so over a group where
-        /// the argument is a GROUP BY key (constant within the group) the result equals that key and
-        /// the aggregate can be dropped. Aliases (any_value / first_value -> any, last_value ->
-        /// anyLast, *RespectNulls -> *_respect_nulls) are normalized to these canonical names by name
-        /// resolution before this pass runs, so matching the canonical names covers them too.
-        /// The same holds for the non-interpolating exact quantiles (quantileExact, its alias
-        /// medianExact, quantileExactLow, quantileExactHigh), which return an element of the input
-        /// at some position, and for the idempotent groupBitAnd / groupBitOr (x & x = x | x = x).
-        /// The result type check below rejects any variant whose result type differs from the key.
-        /// singleValueOrNull is excluded: it returns NULL unless the group has exactly one distinct
-        /// value, so it is not value-preserving; groupBitXor is not idempotent; interpolating
-        /// quantiles may return a value that is not an element; argMin/argMax are two-argument.
-        const auto & function_name = function->getFunctionName();
-        if (!(function_name == "min"
-                || function_name == "max"
-                || function_name == "any"
-                || function_name == "anyLast"
-                || function_name == "anyHeavy"
-                || function_name == "any_respect_nulls"
-                || function_name == "anyLast_respect_nulls"
-                || function_name == "quantileExact"
-                || function_name == "quantileExactLow"
-                || function_name == "quantileExactHigh"
-                || function_name == "groupBitAnd"
-                || function_name == "groupBitOr"))
+        if (!isAggregateFunctionOfEqualValues(*function))
             return false;
 
         std::vector<NodeWithInfo> candidates;
         auto & function_arguments = function->getArguments().getNodes();
-        if (function_arguments.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a single argument of function '{}' but received {}", function->getFunctionName(), function_arguments.size());
-
-        if (!recursiveRemoveLowCardinality(function->getResultType())->equals(*recursiveRemoveLowCardinality(function_arguments[0]->getResultType())))
+        if (usable_keys == UsableGroupByKeys::AFTER_REPLACEMENTS && !hasReplaceableWithArguments(function_arguments[0]))
             return false;
 
         candidates.push_back({ function_arguments[0], true });
@@ -341,10 +354,16 @@ private:
             auto [candidate, parents_are_only_deterministic] = candidates.back();
             candidates.pop_back();
 
-            if (group_by_keys.parts_of_other_keys.contains(candidate))
+            /// Calculate the hash once.
+            const QueryTreeNodePtrWithHash candidate_with_hash(candidate);
+            if (group_by_keys.parts_of_other_keys.contains(candidate_with_hash))
                 return false;
 
-            bool found = group_by_keys.keys.contains(candidate);
+            auto key = group_by_keys.keys.find(candidate_with_hash);
+            bool found = key != group_by_keys.keys.end();
+
+            if (found && !areConstantsWrittenAlike(candidate, key->node))
+                return false;
 
             /// For example, `arrayJoin` of a key has several values in a group.
             if (found && !parents_are_only_deterministic)
@@ -384,7 +403,12 @@ private:
         return true;
     }
 
+    const UsableGroupByKeys usable_keys;
+
     GroupByKeysStack group_by_keys_stack;
+
+    /// Equal `arrayJoin` functions are the same one, so `arrayJoin(max(x))` may not become `arrayJoin(x)`.
+    size_t array_join_depth = 0;
 
     /// Root of the WHERE/PREWHERE/HAVING/QUALIFY section of the current query being visited, if any.
     const IQueryTreeNode * filter_root = nullptr;
@@ -402,7 +426,7 @@ private:
 
 void AggregateFunctionOfGroupByKeysPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    EliminateFunctionVisitor eliminator(context);
+    EliminateFunctionVisitor eliminator(usable_keys, context);
     eliminator.visit(query_tree_node);
     eliminator.collecting_output_nodes = false;
     eliminator.visit(query_tree_node);
