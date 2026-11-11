@@ -19,7 +19,7 @@ instance = cluster.add_instance(
 )
 # A node with a single message-broker worker, used to deterministically reproduce the REFRESH
 # pool-starvation path: with one worker, a streaming cycle that parks for the first delivery cannot
-# depend on another worker running the AMQP looping task.
+# depend on another worker for anything.
 single_worker_instance = cluster.add_instance(
     "single_worker_instance",
     main_configs=[
@@ -773,25 +773,24 @@ def test_refresh_survives_unready_dependencies(rabbitmq_cluster):
 
 def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
     # Regression for the MessageBrokerSchedulePool starvation of the REFRESH first-message wait.
-    # The blocked-REFRESH cycle waits for delivery from the AMQP looping task, which runs in the same
-    # pool; with a single worker it never gets CPU while the streaming task waits, so the source must
-    # drive the loop itself, otherwise the REFRESH permit is spent on a zero-row timeout and the
-    # backlog stays queued. Two consumers: each source must get its own drain budget rather than the
-    # first exhausting a shared one.
+    # The blocked-REFRESH cycle waits for a delivery while holding the sole pool worker, so the AMQP
+    # event loop must not need that worker (it runs on its own thread), otherwise the REFRESH permit
+    # is spent on a zero-row timeout and the backlog stays queued. Two consumers: each source must get
+    # its own drain budget rather than the first exhausting a shared one.
     node = single_worker_instance
     table = "rabbitmq_starve"
     exchange = "starve_exchange"
 
     # flush_interval_ms=0 means an unlimited cycle: one blocked REFRESH must drain the whole queued
     # backlog, not cut it off at a fixed wall-clock budget. This is deterministic (no whole-cycle cap
-    # to race) and regresses if the self-driving cycle ever reintroduces a finite whole-cycle deadline
+    # to race) and regresses if the one-shot cycle ever reintroduces a finite whole-cycle deadline
     # for flush=0 (a paced single-worker drain of a larger backlog would then be truncated mid-cycle).
-    # num_consumers=2: each source drives its own backlog.
+    # num_consumers=2: each source drains its own backlog.
     setup_consuming_table(
         table, exchange, node=node, flush_interval_ms=0, num_consumers=2
     )
-    # Stop before publishing so the backlog is only ever consumed by the self-driving REFRESH cycle,
-    # never by normal streaming (which cannot make progress with a single worker anyway).
+    # Stop before publishing so the backlog is only ever consumed by the one-shot REFRESH cycle,
+    # never by normal streaming.
     node.query(f"SYSTEM STOP test.{table}")
 
     publish(rabbitmq_cluster, exchange, 0, 20)
@@ -804,8 +803,8 @@ def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
     # Still stopped: no further consumption without another command.
     assert_dst_count_stable(table, 20, seconds=3, node=node)
 
-    # A second REFRESH must also run: the self-driving cycle must not leave the AMQP looping task
-    # holding the sole worker, or no later REFRESH could ever be scheduled again.
+    # A second REFRESH must also run: the cycle must leave the sole worker free afterwards, or no
+    # later REFRESH could ever be scheduled again.
     publish(rabbitmq_cluster, exchange, 20, 20)
     assert_dst_count_stable(table, 20, seconds=2, node=node)
     node.query(f"SYSTEM REFRESH test.{table}")

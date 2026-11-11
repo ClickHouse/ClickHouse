@@ -307,10 +307,10 @@ def test_idle_loop_shutdown_completes_promptly(started_cluster):
             FROM merge(system, '^text_log')
             WHERE
                 logger_name = 'StorageRabbitMQ (test_idle.rabbitmq_queue)' AND
-                message = 'Deactivating looping task'"""
+                message = 'Stopping event loop'"""
         ).strip()
     )
-    assert deactivate_count > 0, "Looping task was never deactivated — loop may not have been running"
+    assert deactivate_count > 0, "Event loop was never stopped — loop may not have been running"
 
     registry_shutdown_time = get_last_event_time(
         "StreamingStorageRegistry", "Will shutdown 1 queue storages"

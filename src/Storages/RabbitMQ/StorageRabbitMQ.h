@@ -81,7 +81,6 @@ public:
     const String & getFormatName() const { return format_name; }
 
     String getExchange() const { return exchange_name; }
-    void unbindExchange();
 
     RabbitMQConnection & getConnection() { return *connection; }
 
@@ -139,10 +138,7 @@ private:
 
     std::vector<String> queues;
 
-    std::once_flag flag; /// remove exchange only once
-    std::mutex task_mutex;
     BackgroundSchedulePoolTaskHolder streaming_task;
-    BackgroundSchedulePoolTaskHolder looping_task;
     BackgroundSchedulePoolTaskHolder init_task;
 
     uint64_t milliseconds_to_wait;
@@ -153,8 +149,6 @@ private:
     /// Counter for producers, needed for channel id.
     /// Needed to generate unique producer identifiers.
     std::atomic<size_t> producer_id = 1;
-    /// Allow to remove exchange only once.
-    std::atomic<bool> exchange_removed = false;
     /// For select query we must be aware of the end of streaming
     /// to be able to turn off the loop.
     std::atomic<size_t> readers_count = 0;
@@ -179,11 +173,8 @@ private:
 
     /// Functions working in the background
     void threadFunc();
-    void loopingFunc();
     void connectionFunc();
 
-    void startLoop();
-    void stopLoop();
     void stopLoopIfNoReaders();
 
     static Names parseSettings(String settings_list);
@@ -192,7 +183,6 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePoolTaskHolder & task, bool wait, bool stop_loop);
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
@@ -202,7 +192,7 @@ private:
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
     /// Return true on successful stream attempt.
-    bool streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker);
+    bool streamToViews(UInt64 cycle_epoch, bool one_shot);
     bool hasDependencies(const StorageID & table_id);
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);

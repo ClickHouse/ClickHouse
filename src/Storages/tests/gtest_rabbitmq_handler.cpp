@@ -7,10 +7,196 @@
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Common/logger_useful.h>
 
+#include <atomic>
 #include <chrono>
+#include <ctime>
+#include <future>
+#include <latch>
+#include <stdexcept>
 #include <thread>
 
 using namespace DB;
+
+/// run() executes on the loop thread while it runs, inline otherwise, and does not deadlock when called on it.
+TEST(RabbitMQHandler, RunExecutesOnLoopThread)
+{
+    UVLoop loop;
+    RabbitMQHandler handler(loop.getLoop(), getLogger("RabbitMQHandlerTest"));
+    const auto self = std::this_thread::get_id();
+    auto current_thread = [] { return std::this_thread::get_id(); };
+
+    EXPECT_FALSE(handler.loopRunning());
+    EXPECT_EQ(handler.run(current_thread), self);
+
+    handler.startLoop();
+    EXPECT_TRUE(handler.loopRunning());
+    const auto loop_thread = handler.run(current_thread);
+    EXPECT_NE(loop_thread, self);
+    EXPECT_EQ(handler.run([&] { return handler.run(current_thread); }), loop_thread);
+    EXPECT_THROW(handler.run([] { throw std::runtime_error("boom"); }), std::runtime_error);
+
+    handler.stopLoop();
+    EXPECT_FALSE(handler.loopRunning());
+    EXPECT_EQ(handler.run(current_thread), self);
+}
+
+/// An exception leaking from a callback ends the loop thread; run() then executes inline and startLoop() replaces it.
+TEST(RabbitMQHandler, CallbackExceptionDoesNotWedgeRun)
+{
+    UVLoop loop;
+    RabbitMQHandler handler(loop.getLoop(), getLogger("RabbitMQHandlerTest"));
+    const auto self = std::this_thread::get_id();
+    auto current_thread = [] { return std::this_thread::get_id(); };
+
+    handler.startLoop();
+    uv_timer_t thrower;
+    handler.run([&]
+    {
+        uv_timer_init(loop.getLoop(), &thrower);
+        uv_timer_start(&thrower, [](uv_timer_t *) { throw std::runtime_error("boom"); }, /* timeout_ms = */ 1, /* repeat = */ 0);
+    });
+
+    for (size_t i = 0; i < 500 && handler.loopRunning(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    EXPECT_FALSE(handler.loopRunning());
+
+    /// Dead thread: no hang, inline execution.
+    EXPECT_EQ(handler.run(current_thread), self);
+
+    handler.startLoop();
+    EXPECT_TRUE(handler.loopRunning());
+    EXPECT_NE(handler.run(current_thread), self);
+    handler.run([&] { uv_close(reinterpret_cast<uv_handle_t *>(&thrower), nullptr); });
+    handler.stopLoop();
+}
+
+/// Counts tasks and callbacks that run at the same time. AMQP-CPP is not thread safe, so there must be none.
+struct OverlapCheck
+{
+    std::atomic<int> inside{0};
+    std::atomic<bool> overlap{false};
+    std::atomic<size_t> calls{0};
+
+    void enter()
+    {
+        if (inside.fetch_add(1) != 0)
+            overlap = true;
+        ++calls;
+    }
+    void leave() { inside.fetch_sub(1); }
+};
+
+/// start / post / stop against a thread that calls run() continuously: no two tasks may overlap.
+TEST(RabbitMQHandler, StartPostStopRace)
+{
+    UVLoop loop;
+    RabbitMQHandler handler(loop.getLoop(), getLogger("RabbitMQHandlerTest"));
+
+    OverlapCheck check;
+    std::atomic<size_t> executed_by_poster{0};
+    auto task = [&]
+    {
+        check.enter();
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
+        check.leave();
+    };
+
+    std::atomic<bool> done{false};
+    std::thread poster([&]
+    {
+        while (!done)
+        {
+            handler.run(task);
+            ++executed_by_poster;
+            /// The mutexes are not fair: without a pause this thread would starve startLoop() and stopLoop().
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
+        }
+    });
+
+    for (size_t i = 0; i < 300 && !check.overlap; ++i)
+    {
+        handler.startLoop();
+        handler.run(task);
+        handler.stopLoop();
+        handler.run(task);
+    }
+
+    done = true;
+    poster.join();
+    EXPECT_FALSE(check.overlap) << "two tasks ran at the same time";
+    EXPECT_GE(check.calls, 600u);
+    EXPECT_GT(executed_by_poster, 0u) << "the competing thread never ran a task";
+}
+
+/// startLoop() must wait for an inline call (table setup, cleanup) to finish before the loop thread may
+/// dispatch libuv callbacks. A repeating timer stands in for socket events: it must not fire during the call.
+TEST(RabbitMQHandler, InlineCallBlocksLoopStart)
+{
+    UVLoop loop;
+    RabbitMQHandler handler(loop.getLoop(), getLogger("RabbitMQHandlerTest"));
+    OverlapCheck check;
+
+    uv_timer_t timer;
+    uv_timer_init(loop.getLoop(), &timer);
+    timer.data = &check;
+    auto on_timer = [](uv_timer_t * t)
+    {
+        auto * c = static_cast<OverlapCheck *>(t->data);
+        c->enter();
+        c->leave();
+    };
+    uv_timer_start(&timer, on_timer, /* timeout_ms = */ 1, /* repeat = */ 1);
+
+    std::latch inline_call_started(1);
+    std::thread caller([&]
+    {
+        handler.run([&]
+        {
+            check.enter();
+            inline_call_started.count_down();
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            check.leave();
+        });
+    });
+    inline_call_started.wait();
+    handler.startLoop();
+    caller.join();
+
+    const size_t calls_before = check.calls;
+    for (size_t i = 0; i < 500 && check.calls < calls_before + 5; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    EXPECT_GE(check.calls, calls_before + 5) << "the timer never fired on the loop thread";
+
+    handler.run([&] { uv_close(reinterpret_cast<uv_handle_t *>(&timer), nullptr); });
+    handler.stopLoop();
+    EXPECT_FALSE(check.overlap) << "a libuv callback ran during an inline call";
+}
+
+/// The loop thread blocks between events instead of spinning.
+TEST(RabbitMQHandler, IdleLoopThreadDoesNotSpin)
+{
+    UVLoop loop;
+    RabbitMQHandler handler(loop.getLoop(), getLogger("RabbitMQHandlerTest"));
+    handler.startLoop();
+
+    auto loop_thread_cpu_ms = [&]
+    {
+        return handler.run([]
+        {
+            timespec ts{};
+            clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+            return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+        });
+    };
+
+    const auto before = loop_thread_cpu_ms();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    const auto after = loop_thread_cpu_ms();
+    handler.stopLoop();
+
+    /// A spinning loop would burn ~500 ms here.
+    EXPECT_LT(after - before, 50);
+}
 
 /// Regression test for the dead-connection hang (issue #108496). When RabbitMQ closes the
 /// connection without a clean AMQP handshake, the broker callbacks that would call
@@ -78,6 +264,40 @@ TEST(RabbitMQHandler, BlockingLoopHonoursTimeoutAfterIdlePeriod)
     /// Only a lower bound is asserted: a loaded machine can overshoot the timeout, but it cannot
     /// make the wait end early.
     EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 400);
+}
+
+/// A stopLoop() wake-up still pending after the thread exits must not stop the next blocking wait.
+TEST(RabbitMQHandler, BlockingLoopAfterStopLoopHonoursTimeout)
+{
+    UVLoop loop;
+    RabbitMQHandler handler(loop.getLoop(), getLogger("RabbitMQHandlerTest"));
+    handler.startLoop();
+
+    std::promise<void> entered;
+    std::atomic<bool> release{false};
+    std::thread busy([&]
+    {
+        handler.run([&]
+        {
+            entered.set_value();
+            while (!release)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        });
+    });
+    entered.get_future().wait();
+    std::thread stopper([&] { handler.stopLoop(); });
+    /// Let stopLoop() send its wake-up while the task still occupies the loop thread.
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    release = true;
+    busy.join();
+    stopper.join();
+
+    auto started_at = std::chrono::steady_clock::now();
+    bool finished_naturally = handler.startBlockingLoopWithTimeout(/* timeout_ms = */ 300);
+    auto elapsed = std::chrono::steady_clock::now() - started_at;
+
+    EXPECT_FALSE(finished_naturally);
+    EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 250);
 }
 
 #endif

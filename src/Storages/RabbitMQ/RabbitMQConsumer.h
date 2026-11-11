@@ -59,7 +59,7 @@ public:
     };
 
     const MessageData & currentMessage() { return current; }
-    const String & getChannelID() const { return channel_id; }
+    String getChannelID() const;
     /// Messages read and not acked, also by earlier readers of this consumer, use up the prefetch window. Conservative:
     /// individually rejected messages and several queues per channel only make it true earlier.
     bool isWindowFull() const;
@@ -77,12 +77,16 @@ public:
     void stop();
     bool isConsumerStopped() const { return stopped.load(); }
 
+    /// Sent on the event loop thread; the call returns once the frame has been handed to AMQP-CPP.
     bool ackMessages(const CommitInfo & commit_info);
     bool nackMessages(const CommitInfo & commit_info, bool requeue = false);
 
     bool hasPendingMessages() { return !received.empty(); }
 
     void pushMessage(MessageData && message);
+    /// A delivery of the channel with `generation`: waits for space, then queues it unless that channel was replaced or
+    /// the consumer stopped meanwhile. Returns whether it was queued. Runs on the event loop thread; public for tests.
+    bool receive(UInt64 generation, MessageData && message);
 
     void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt, std::function<bool()> is_cancelled = {})
     {
@@ -110,6 +114,8 @@ private:
     bool isCurrentChannel(UInt64 generation) const { return generation == channel_generation; }
     bool isChannelUsable();
     void notifyReceivedSpace();
+    bool ackMessagesImpl(const CommitInfo & commit_info);
+    bool nackMessagesImpl(const CommitInfo & commit_info, bool requeue);
     void updateCommitInfo(CommitInfo record);
 
     /// Shared by value into the close() callbacks, mirroring RabbitMQProducer::finish, so that a
@@ -121,7 +127,7 @@ private:
     };
     std::shared_ptr<ChannelCloseState> close_state;
 
-    ChannelPtr consumer_channel;
+    ChannelPtr consumer_channel; /// Touched only on the event loop thread (see RabbitMQHandler::run).
     RabbitMQHandler & event_handler; /// Used concurrently, but is thread safe.
 
     const std::vector<String> queues;
@@ -163,7 +169,7 @@ private:
     /// Held by the channel callbacks while they touch the consumer state and by `updateChannel`
     /// while it replaces the generation and clears `received`. Recursive because AMQP-CPP calls the error
     /// callback of a failed `consume` right away, from `subscribe` inside the `onReady` callback.
-    std::recursive_mutex channel_mutex;
+    mutable std::recursive_mutex channel_mutex;
     /// Notified when `received` gets space, the channel is replaced, or the consumer is stopped.
     std::condition_variable_any received_space_cv;
 };

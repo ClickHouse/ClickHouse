@@ -1,6 +1,7 @@
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 
 #include <amqpcpp.h>
+#include <thread>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
@@ -9,6 +10,7 @@ namespace DB
 {
 
 static const auto CONNECT_SLEEP = 200;
+static const auto DISCONNECT_SLEEP = 10;
 static const auto RETRIES_MAX = 20;
 
 
@@ -17,6 +19,12 @@ RabbitMQConnection::RabbitMQConnection(const RabbitMQConfiguration & configurati
     , log(log_)
     , event_handler(loop.getLoop(), log)
 {
+}
+
+RabbitMQConnection::~RabbitMQConnection()
+{
+    /// `connection` is destroyed before `event_handler`, so the loop thread must be gone by then.
+    event_handler.stopLoop();
 }
 
 String RabbitMQConnection::connectionInfoForLog() const
@@ -48,11 +56,13 @@ bool RabbitMQConnection::reconnect()
     if (isConnectedImpl())
         return true;
 
-    disconnectImpl();
-
-    /// This will force immediate closure if not yet closed
-    if (!connection->closed())
-        connection->close(true);
+    /// Close at once, so each channel reports an error and its consumer replaces it. After a graceful close
+    /// (possible after the loop thread died) the consumers would keep their channels and receive nothing.
+    event_handler.run([this]
+    {
+        if (!connection->closed())
+            connection->close(true);
+    });
 
     LOG_DEBUG(log, "Trying to restore connection to {}", connectionInfoForLog());
     connectImpl();
@@ -62,8 +72,7 @@ bool RabbitMQConnection::reconnect()
 
 ChannelPtr RabbitMQConnection::createChannel()
 {
-    std::lock_guard lock(mutex);
-    return std::make_unique<AMQP::TcpChannel>(connection.get());
+    return event_handler.run([this] { return std::make_unique<AMQP::TcpChannel>(connection.get()); });
 }
 
 void RabbitMQConnection::disconnect(bool immediately)
@@ -75,57 +84,58 @@ void RabbitMQConnection::disconnect(bool immediately)
 void RabbitMQConnection::heartbeat()
 {
     std::lock_guard lock(mutex);
-    connection->heartbeat();
+    event_handler.run([this] { connection->heartbeat(); });
 }
 
-bool RabbitMQConnection::closed()
+bool RabbitMQConnection::isConnectedImpl()
 {
-    std::lock_guard lock(mutex);
-    return connection->closed();
-}
-
-bool RabbitMQConnection::isConnectedImpl() const
-{
-    return event_handler.connectionRunning() && connection->usable();
+    return event_handler.run([this] { return event_handler.connectionRunning() && connection->usable(); });
 }
 
 void RabbitMQConnection::connectImpl()
 {
-    if (configuration.connection_string.empty())
+    event_handler.run([this]
     {
-        LOG_DEBUG(log, "Connecting to: {}:{} (user: {})", configuration.host, configuration.port, configuration.username);
-        AMQP::Login login(configuration.username, configuration.password);
-        AMQP::Address address(configuration.host, configuration.port, login, configuration.vhost, configuration.secure);
-        connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
-    }
-    else
-    {
-        AMQP::Address address(configuration.connection_string);
-        connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
-    }
+        if (configuration.connection_string.empty())
+        {
+            LOG_DEBUG(log, "Connecting to: {}:{} (user: {})", configuration.host, configuration.port, configuration.username);
+            AMQP::Login login(configuration.username, configuration.password);
+            AMQP::Address address(configuration.host, configuration.port, login, configuration.vhost, configuration.secure);
+            connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
+        }
+        else
+        {
+            AMQP::Address address(configuration.connection_string);
+            connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
+        }
+    });
 
-    auto cnt_retries = 0;
-    while (true)
-    {
-        event_handler.iterateLoop();
-
-        if (connection->ready() || cnt_retries++ == RETRIES_MAX)
-            break;
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
-    }
+    waitFor([this] { return connection->ready(); }, CONNECT_SLEEP);
 }
 
 void RabbitMQConnection::disconnectImpl(bool immediately)
 {
-    connection->close(immediately);
+    event_handler.run([&] { connection->close(immediately); });
 
     /** Connection is not closed immediately (firstly, all pending operations are completed, and then
      *  an AMQP closing-handshake is  performed). But cannot open a new connection until previous one is properly closed
      */
-    size_t cnt_retries = 0;
-    while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
+    /// Driving the loop inline needs no pause between turns; a loop thread needs time to process the close.
+    waitFor([this] { return connection->closed(); }, event_handler.loopRunning() ? DISCONNECT_SLEEP : 0);
+}
+
+void RabbitMQConnection::waitFor(std::function<bool()> done, UInt64 sleep_ms)
+{
+    for (size_t attempt = 0;; ++attempt)
+    {
         event_handler.iterateLoop();
+
+        if (event_handler.run(done) || attempt == RETRIES_MAX)
+            return;
+
+        if (sleep_ms)
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+    }
 }
 
 }

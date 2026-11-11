@@ -94,13 +94,13 @@ static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_CONNECT_RABBITMQ;
     extern const int CANNOT_BIND_RABBITMQ_EXCHANGE;
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
-    extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
     extern const int QUERY_NOT_ALLOWED;
 }
@@ -302,10 +302,6 @@ StorageRabbitMQ::StorageRabbitMQ(
             throw;
     }
 
-    /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
-    looping_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "RabbitMQLoopingTask", [this]{ loopingFunc(); });
-    looping_task->deactivate();
-
     streaming_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "RabbitMQStreamingTask", [this]{ threadFunc(); });
     streaming_task->deactivate();
 
@@ -408,17 +404,6 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
 }
 
 
-void StorageRabbitMQ::loopingFunc()
-{
-    connection->getHandler().startLoop();
-}
-
-
-void StorageRabbitMQ::stopLoop()
-{
-    connection->getHandler().stopLoop();
-}
-
 void StorageRabbitMQ::stopLoopIfNoReaders()
 {
     /// Stop the loop if no select was started.
@@ -431,13 +416,6 @@ void StorageRabbitMQ::stopLoopIfNoReaders()
     if (readers_count)
         return;
     connection->getHandler().stopLoop();
-}
-
-void StorageRabbitMQ::startLoop()
-{
-    chassert(initialized);
-    connection->getHandler().updateLoopState(Loop::RUN);
-    looping_task->activateAndSchedule();
 }
 
 
@@ -473,28 +451,6 @@ void StorageRabbitMQ::connectionFunc()
     }
 
     init_task->scheduleAfter(RESCHEDULE_MS);
-}
-
-
-/* Need to deactivate this way because otherwise might get a deadlock when first deactivate streaming task in shutdown and then
- * inside streaming task try to deactivate any other task
- */
-void StorageRabbitMQ::deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop)
-{
-    if (stop_loop)
-        stopLoop();
-
-    std::unique_lock<std::mutex> lock(task_mutex, std::defer_lock);
-    if (lock.try_lock())
-    {
-        task->deactivate();
-        lock.unlock();
-    }
-    else if (wait) /// Wait only if deactivating from shutdown
-    {
-        lock.lock();
-        task->deactivate();
-    }
 }
 
 
@@ -839,67 +795,6 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
 }
 
 
-void StorageRabbitMQ::unbindExchange()
-{
-    /* This is needed because with RabbitMQ (without special adjustments) can't, for example, properly make mv if there was insert query
-     * on the same table before, and in another direction it will make redundant copies, but most likely nobody will do that.
-     * As publishing is done to exchange, publisher never knows to which queues the message will go, every application interested in
-     * consuming from certain exchange - declares its owns exchange-bound queues, messages go to all such exchange-bound queues, and as
-     * input streams are always created at startup, then they will also declare its own exchange bound queues, but they will not be visible
-     * externally - client declares its own exchange-bound queues, from which to consume, so this means that if not disconnecting this local
-     * queues, then messages will go both ways and in one of them they will remain not consumed. So need to disconnect local exchange
-     * bindings to remove redunadant message copies, but after that mv cannot work unless those bindings are recreated. Recreating them is
-     * not difficult but very ugly and as probably nobody will do such thing - bindings will not be recreated.
-     */
-    if (!exchange_removed.exchange(true))
-    {
-        try
-        {
-            streaming_task->deactivate();
-
-            stopLoop();
-            looping_task->deactivate();
-            /// State is shared by value into the callbacks (see AMQPSetupState) so that a late
-            /// dispatch after a timeout cannot touch freed stack memory or the destroyed channel.
-            auto state = std::make_shared<AMQPSetupState>();
-            auto rabbit_channel = connection->createChannel();
-            rabbit_channel->removeExchange(bridge_exchange)
-            .onSuccess([this, state]()
-            {
-                if (!state->abandoned)
-                    connection->getHandler().stopBlockingLoop();
-            })
-            .onError([this, state](const char * message)
-            {
-                if (state->abandoned)
-                    return;
-                connection->getHandler().stopBlockingLoop();
-                state->error = fmt::format("Unable to remove exchange. Reason: {}", std::string(message));
-            });
-
-            /// If the connection is dead the removeExchange callbacks never fire. Bound the wait so
-            /// MV detach / shutdown cannot block forever. The bridge exchange is declared autodelete,
-            /// so the broker reaps it once the dead connection drops - log and continue on timeout.
-            if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
-            {
-                /// Make any late-dispatched callback above a no-op before the channel/state go out of scope.
-                state->abandoned = true;
-                LOG_WARNING(log, "Timed out waiting for exchange unbind - RabbitMQ connection may be dead. "
-                                 "The bridge exchange will be auto-deleted by the broker.");
-            }
-            rabbit_channel->close();
-            if (!state->error.empty())
-                throw Exception(ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE, "{}", state->error);
-        }
-        catch (...)
-        {
-            exchange_removed = false;
-            throw;
-        }
-    }
-}
-
-
 void StorageRabbitMQ::read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -928,17 +823,15 @@ void StorageRabbitMQ::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
 
     std::lock_guard lock(loop_mutex);
+    /// shutdown() stops the loop thread under loop_mutex; a SELECT must not start it again afterwards.
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table {} is shutting down", getStorageID().getNameForLogs());
 
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
 
-    if (!connection->isConnected())
-    {
-        if (connection->getHandler().loopRunning())
-            deactivateTask(looping_task, false, true);
-        if (!connection->reconnect())
-            throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "No connection to {}", connection->connectionInfoForLog());
-    }
+    if (!connection->isConnected() && !connection->reconnect())
+        throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "No connection to {}", connection->connectionInfoForLog());
 
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -967,8 +860,7 @@ void StorageRabbitMQ::read(
         pipes.back().addTransform(std::move(converting_transform));
     }
 
-    if (!connection->getHandler().loopRunning() && connection->isConnected())
-        startLoop();
+    connection->getHandler().startLoop();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -1039,7 +931,7 @@ void StorageRabbitMQ::shutdown(bool is_drop)
         return;
 
     LOG_TRACE(log, "Deactivating init task");
-    deactivateTask(init_task, true, false);
+    init_task->deactivate();
 
     std::vector<std::weak_ptr<RabbitMQConsumer>> consumers_snapshot;
     {
@@ -1055,12 +947,15 @@ void StorageRabbitMQ::shutdown(bool is_drop)
         consumer->stop();
     }
 
-    /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
-    /// then wait for background event loop to finish.
+    /// The order is important: wait for streamToViews() to finish, then stop the event loop thread.
+    /// From here on every AMQP call runs inline on this thread.
     LOG_TRACE(log, "Deactivating streaming task");
-    deactivateTask(streaming_task, true, false);
-    LOG_TRACE(log, "Deactivating looping task");
-    deactivateTask(looping_task, true, true);
+    streaming_task->deactivate();
+    LOG_TRACE(log, "Stopping event loop");
+    {
+        std::lock_guard lock(loop_mutex);
+        connection->getHandler().stopLoop();
+    }
 
     if (getContext()->getMessageQueueDisableInsertion())
     {
@@ -1175,7 +1070,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
     connection->heartbeat();
     /// Run the event loop briefly so that any I/O error triggered by the heartbeat write on a
     /// dead socket is processed before we check isConnected(). Without this, the error event
-    /// only surfaces inside startBlockingLoop() — after the guard has already passed.
+    /// only surfaces inside startBlockingLoopWithTimeout() — after the guard has already passed.
     connection->getHandler().iterateLoop();
     if (!connection->isConnected())
     {
@@ -1324,12 +1219,11 @@ void StorageRabbitMQ::threadFunc()
 
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                    /// The claimed blocked-REFRESH permit is spent on this cycle: have the source drive the
-                    /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
-                    /// iteration is an ordinary cycle (the loop below breaks while blocked) and keeps the
-                    /// fast empty return, letting the looping task deliver.
-                    const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
-                    bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker);
+                    /// The claimed blocked-REFRESH permit is spent on this cycle: have the source wait for
+                    /// deliveries so the permit is not wasted (see RabbitMQSource). Every following iteration
+                    /// is an ordinary cycle (the loop below breaks while blocked) with the fast empty return.
+                    const bool one_shot = std::exchange(claimed_blocked_refresh, false);
+                    bool continue_reading = streamToViews(cycle_epoch, one_shot);
                     if (!continue_reading)
                         break;
 
@@ -1362,13 +1256,8 @@ void StorageRabbitMQ::threadFunc()
 
     try
     {
-        /// If there is no running select, stop the loop which was activated by previous select.
-        /// Also stop it when armed (loop_state == RUN) but not yet spinning while blocked: otherwise
-        /// a queued looping task can take the sole message-broker worker and spin forever, starving
-        /// later REFRESH/START. stopLoopIfNoReaders() keeps the direct-SELECT readers_count guard.
-        auto & handler = connection->getHandler();
-        if (handler.loopRunning() || (handler.getLoopState() == Loop::RUN && stream_control.isBlocked()))
-            stopLoopIfNoReaders();
+        /// Stop the loop started by this streaming round or by a previous select, unless a select is still reading.
+        stopLoopIfNoReaders();
     }
     catch (...)
     {
@@ -1390,7 +1279,7 @@ void StorageRabbitMQ::threadFunc()
     }
 }
 
-bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker)
+bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool one_shot)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1422,8 +1311,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
         auto source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, new_context, Names{}, block_size,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
-            reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
-            /* drive_loop_on_worker */drive_loop_on_worker);
+            reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch, one_shot);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1459,11 +1347,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
-    /// Pump deliveries via the background looping task. On the self-driving path the source also
-    /// drives the loop itself as a fallback for when a message-broker worker is starved; startup_mutex
-    /// serializes the two, so uv_run is never driven concurrently and the loop always makes progress.
-    if (!connection->getHandler().loopRunning())
-        startLoop();
+    connection->getHandler().startLoop();
 
     bool write_failed = false;
     try
@@ -1479,10 +1363,6 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
 
     LOG_TRACE(log, "Processed {} rows", rows.load());
 
-    /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
-     * error occurs or connection is lost while ack is being sent
-     */
-    deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
     bool any_aborted = false;
 
@@ -1540,15 +1420,8 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
                 LOG_TEST(log, "Will {} messages for channel {}", (source_aborted ? "requeue" : (write_failed ? "nack" : "ack")), source->getChannelID());
                 bool send_result = source_aborted ? source->sendNack(/*requeue=*/true)
                                                   : (write_failed ? source->sendNack(/*requeue=*/false) : source->sendAck());
-                if (send_result)
-                {
-                    /// Iterate loop to activate error callbacks if they happened
-                    connection->getHandler().iterateLoop();
-                    if (!connection->isConnected())
-                        break;
-                }
-
-                connection->getHandler().iterateLoop();
+                if (send_result && !connection->isConnected())
+                    break;
             }
         }
     }
@@ -1579,16 +1452,6 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
         return false;
     }
-
-    /// A self-driving blocked REFRESH cycle drove the loop itself and must not leave the background
-    /// looping task running: the table is stopped (no continuous streaming follows), and with a single
-    /// message-broker worker a lingering loop would monopolize it and block later REFRESH/START cycles.
-    if (!drive_loop_on_worker)
-    {
-        LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
-        startLoop();
-    }
-
 
     /// Reschedule.
     return true;
