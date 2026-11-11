@@ -212,8 +212,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         /// The limit depends on the local CPU count, so a definition read back from metadata may have been
         /// accepted on a bigger server. Validate only a freshly introduced one, so existing tables stay loadable.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        const bool is_fresh_definition = isFreshDefinition(args.mode);
 
         if (is_fresh_definition
             && !args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
@@ -299,7 +298,7 @@ void registerStorageKafka(StorageFactory & factory)
                 args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
         }
 
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        if (isFreshDefinition(args.mode)
             && !args.getLocalContext()->getSettingsRef()[Setting::allow_kafka_offsets_storage_in_keeper])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
@@ -319,11 +318,11 @@ void registerStorageKafka(StorageFactory & factory)
         // - with Atomic database only with ON CLUSTER queries, otherwise it is easy to misuse: each replica would have separate uuid generated.
         // - with Replicated database
         // - with attach queries, as those are used on server startup
-        const auto allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
+        const auto allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach; // STYLE_CHECK_ALLOW_ATTACH_FLAG
 
         auto context = args.getContext();
         // Unfold {database} and {table} macro on table creation, so table can be renamed.
-        if (args.mode < LoadingStrictnessLevel::ATTACH)
+        if (!expectsExistingState(args.mode))
         {
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive

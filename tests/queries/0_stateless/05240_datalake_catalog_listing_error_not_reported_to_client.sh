@@ -23,12 +23,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# `exact_header` is forbidden by tests/config/config.d/forbidden_headers.xml. ATTACH does not validate the
-# header, so the rejection happens when the catalog is first built, inside the table listing.
+# `exact_header` is forbidden by tests/config/config.d/forbidden_headers.xml. A new definition is rejected,
+# also by a full-definition ATTACH.
 ${CLICKHOUSE_CLIENT} --query "
     ATTACH DATABASE ${DB} ENGINE = DataLakeCatalog('http://localhost:18181/v1')
     SETTINGS catalog_type = 'rest', auth_header = 'exact_header: some_value', warehouse = 'demo'
-"
+" 2>&1 | grep -o -m1 'is forbidden'
+
+# A stored definition is not validated again, so the rejection happens when the catalog is first built,
+# inside the table listing. The stored definition is written and attached with the short ATTACH.
+echo "ATTACH DATABASE _ ENGINE = DataLakeCatalog('http://localhost:18181/v1') SETTINGS catalog_type = 'rest', auth_header = 'exact_header: some_value', warehouse = 'demo'" \
+    > "$(${CLICKHOUSE_CLIENT} --query "SELECT getServerSetting('path')")metadata/${DB}.sql"
+${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${DB}"
 
 ${CLICKHOUSE_CLIENT} --send_logs_level=warning --show_data_lake_catalogs_in_system_tables=0 \
     --query_id "${QUERY_ID}" \

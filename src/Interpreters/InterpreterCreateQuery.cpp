@@ -230,7 +230,7 @@ namespace
 size_t getNumberOfTablesToCreate(const ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
     /// On `ATTACH` the inner tables already exist and are attached by their own queries.
-    if (mode >= LoadingStrictnessLevel::ATTACH)
+    if (expectsExistingState(mode))
         return 1;
 
     size_t result = 1;
@@ -417,8 +417,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = DatabaseCatalog::getMetadataDirPath(database_name);
     }
 
+    /// `loadMetadata` replays a stored full definition.
+    const bool full_definition = create.attach && !create.attach_short_syntax && !is_metadata_replay;
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false, full_definition);
+
     if (create.storage->engine->name == "MaterializedPostgreSQL"
-        && !getContext()->getSettingsRef()[Setting::enable_database_materialized_postgresql] && !internal && !create.attach)
+        && !getContext()->getSettingsRef()[Setting::enable_database_materialized_postgresql] && !internal && isFreshDefinition(mode))
     {
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                         "MaterializedPostgreSQL is an experimental database engine. "
@@ -427,7 +431,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool need_write_metadata = !create.attach || !default_db_disk->existsFile(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
-    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
@@ -485,8 +488,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (!load_database_without_tables)
         {
+            /// The tables are loaded from stored metadata even when the database definition is fresh.
+            const auto tables_mode = mode == LoadingStrictnessLevel::ATTACH_FULL_DEFINITION ? LoadingStrictnessLevel::ATTACH : mode;
             /// We use global context here, because storages lifetime is bigger than query context lifetime
-            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
+            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, tables_mode};
             auto load_tasks = loader.loadTablesAsync();
             auto startup_tasks = loader.startupTablesAsync();
             /// First prioritize, schedule and wait all the load table tasks
@@ -711,7 +716,7 @@ namespace
 /// The gate guards only new declarations; tables that have them load, are restored, are altered and are refreshed without it.
 void checkSubcolumnCodecsAreEnabled(const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
 {
-    if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && !context->getParentTable()
+    if (isFreshDefinition(mode) && !is_restore_from_backup && !context->getParentTable()
         && !context->getSettingsRef()[Setting::enable_subcolumn_codecs])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
 }
@@ -724,7 +729,7 @@ void applyCodecDeclarations(
     LoadingStrictnessLevel mode,
     bool is_restore_from_backup)
 {
-    const bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
+    const bool skip_checks = !isFreshDefinition(mode);
     const CodecValidationSettings codec_validation_settings
         = skip_checks ? CodecValidationSettings::trusted() : CodecValidationSettings(context->getSettingsRef());
 
@@ -802,7 +807,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// the initiator does not normalize the query, and the transforms are wrongly skipped here too.
     const bool already_normalized_on_initiator = context_->isDDLOrOnClusterInternal();
 
-    bool make_columns_nullable = mode < LoadingStrictnessLevel::SECONDARY_CREATE
+    bool make_columns_nullable = mode == LoadingStrictnessLevel::CREATE
         && !already_normalized_on_initiator
         && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
@@ -838,7 +843,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// (for example, a default expression can contain dictGet() and that dictionary can access remote servers or
     /// require different users to authenticate).
     if (!default_expr_info.expr_list->children.empty()
-        && (default_expr_info.has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
+        && (default_expr_info.has_columns_with_default_without_type || isFreshDefinition(mode)))
     {
         /// Ordinary views never evaluate column defaults over an insert block, so a default over a
         /// virtual column is inert there and must not be rejected.
@@ -848,7 +853,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_, insert_time_default_columns);
     }
 
-    bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
+    bool skip_checks = !isFreshDefinition(mode);
     CodecValidationSettings codec_validation_settings = skip_checks ? CodecValidationSettings::trusted() : CodecValidationSettings(context_->getSettingsRef());
 
     ColumnsDescription res;
@@ -934,14 +939,14 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
+    if (mode == LoadingStrictnessLevel::CREATE && !already_normalized_on_initiator
         && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
 
-    if (mode <= LoadingStrictnessLevel::CREATE && !is_restore_from_backup && res.getInsertable().empty())
+    if (isFreshDefinition(mode) && !is_restore_from_backup && res.getInsertable().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     if (columns_list.codec_declarations)
@@ -1011,10 +1016,16 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
-/// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
-bool isOnlyReplicatedEngineAllowed(const ASTCreateQuery & create, const DatabasePtr & database, const ContextPtr & context)
+/// `ATTACH TABLE t` without a definition: it is read from the stored metadata.
+bool isShortAttachStub(const ASTCreateQuery & create)
 {
-    return !create.attach
+    return create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
+}
+
+/// Whether `database_replicated_allow_only_replicated_engine` restricts the table being defined.
+bool isOnlyReplicatedEngineAllowed(LoadingStrictnessLevel mode, const DatabasePtr & database, const ContextPtr & context)
+{
+    return (isFreshDefinition(mode) || mode == LoadingStrictnessLevel::SECONDARY_CREATE)
         && context->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine]
         && database && database->getEngineName() == "Replicated";
 }
@@ -1055,9 +1066,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// (`ATTACH TABLE t;`) and SECONDARY_CREATE (`DatabaseReplicated` internal queries, `RESTORE`) stay
     /// permissive so previously-validated metadata that persisted these forms still loads. Server startup
     /// does not reach this function (tables are loaded via `createTableFromAST`), so it is unaffected.
-    const bool is_fresh_create = mode <= LoadingStrictnessLevel::CREATE;
-    const bool is_full_user_attach = mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax;
-    if ((is_fresh_create || is_full_user_attach) && create.is_clone_as && create.as_table.empty())
+    if (isFreshDefinition(mode) && create.is_clone_as && create.as_table.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "CLONE AS requires a source table name, not a SELECT query or table function");
 
@@ -1073,7 +1082,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
-    if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
+    if (create.is_time_series_table && !expectsExistingState(mode))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
 
     TableProperties properties;
@@ -1123,7 +1132,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(
-                    projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
+                    projection_ast, properties.columns, nullptr, getContext(), mode);
                 properties.projections.add(std::move(projection));
             }
 
@@ -1319,7 +1328,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
 
         auto columns_from_select = as_select_sample->getNamesAndTypesList();
-        if (mode < LoadingStrictnessLevel::ATTACH)
+        if (!expectsExistingState(mode))
         {
             /// A fresh `...State(...)` result type already spells its state version out, but an
             /// inferred type can also come from an unversioned source (a `CREATE TABLE ... AS SELECT`
@@ -1344,7 +1353,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// reads the source, which would turn a deterministic rejection into a file or access error.
         /// The same check runs in `doCreateTable` for a definition with an explicit column list.
         if (!create.isTemporary()
-            && isOnlyReplicatedEngineAllowed(create, DatabaseCatalog::instance().tryGetDatabase(create.getDatabase()), getContext())
+            && isOnlyReplicatedEngineAllowed(mode, DatabaseCatalog::instance().tryGetDatabase(create.getDatabase()), getContext())
             && table_function->hasUnreplicatedTableDataOnDisk())
             throwUnreplicatedTableDataNotAllowed();
 
@@ -1380,7 +1389,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// the `AS src` / `CLONE AS src` copy of the constraints of another table, which may have been stored
     /// by a version without these checks. A replay of stored metadata is not screened, so such a table
     /// still attaches.
-    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    if (isFreshDefinition(mode))
     {
         properties.constraints.checkExpressionsPreserveRowCount();
         properties.constraints.checkNamesAreUnique();
@@ -1401,7 +1410,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
     create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
 
-    validateTableStructure(create, properties);
+    validateTableStructure(create, properties, mode);
 
     chassert(as_database_saved.empty() && as_table_saved.empty());
     std::swap(create.as_database, as_database_saved);
@@ -1413,7 +1422,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 }
 
 void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & create,
-                                                    const InterpreterCreateQuery::TableProperties & properties) const
+                                                    const InterpreterCreateQuery::TableProperties & properties,
+                                                    LoadingStrictnessLevel mode) const
 {
     /// Check for duplicates
     std::set<String> all_columns;
@@ -1427,7 +1437,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     /// A view stores no data of its own, so the gates on types chosen for storage do not apply to it;
     /// a materialized view's inner table is created by its own statement and validated there.
-    if (!create.attach && !create.isView())
+    if ((isFreshDefinition(mode) || mode == LoadingStrictnessLevel::SECONDARY_CREATE) && !create.isView())
     {
         DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
@@ -2121,12 +2131,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     auto database_name = create.database ? create.getDatabase() : current_database;
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
-    auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
+    const bool is_secondary = is_secondary_query || is_restore_from_backup;
+    /// A replay on a secondary replica or from stored metadata is not user input.
+    const bool full_definition = create.attach && !create.attach_short_syntax && !isShortAttachStub(create) && !is_secondary
+        && !getContext()->isRecoveryFromStoredMetadata();
+    auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary, full_definition);
 
-    /// A full-definition `ATTACH DICTIONARY` is user input as well, so it is gated like `CREATE DICTIONARY`.
-    /// A short `ATTACH` carries no layout here (the stored definition is read below), and a restore or a
-    /// replay on a secondary replica runs under `SECONDARY_CREATE`, so both stay exempt.
-    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    /// A replayed definition stays loadable with the setting off.
+    if (isFreshDefinition(mode))
         checkXGBoostLayoutIsAllowed(create, getContext());
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
@@ -2138,7 +2150,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
+    if (isShortAttachStub(create))
     {
         /// First, reject any user-supplied storage clauses or top-level fields that the
         /// short-ATTACH path below would silently drop by overwriting `create` with the
@@ -2312,12 +2324,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// refreshes through `InterpreterInsertQuery`, not `executeQuery`. Reject them in a view
         /// definition rather than shaping inconsistently — put them on the query that reads the view.
         ///
-        /// Only a fresh, user-initiated CREATE is rejected. `ATTACH` (metadata load on startup,
-        /// upgrade, restore) and secondary replays (Replicated database DDL, ON CLUSTER, restore
-        /// from backup) must keep loading definitions that were stored before this rule existed:
-        /// `limit` and `offset` are pre-existing setting names, so `SETTINGS limit = 10` can
-        /// legitimately occur in old view metadata.
-        if (mode <= LoadingStrictnessLevel::CREATE && hasConstructionSettings(*create.select))
+        /// Only a fresh definition is rejected. Replays (short `ATTACH`, metadata load on startup,
+        /// Replicated database DDL, ON CLUSTER, restore from backup) must keep loading definitions that
+        /// were stored before this rule existed: `limit` and `offset` are pre-existing setting names,
+        /// so `SETTINGS limit = 10` can legitimately occur in old view metadata.
+        if (isFreshDefinition(mode) && hasConstructionSettings(*create.select))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
                 "are not supported in a {} definition. Specify them on the query that reads the view instead.",
@@ -2332,7 +2343,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
         ApplyWithSubqueryVisitor::visit(
             *create.select,
-            isFreshTableDefinition(mode, create.attach_short_syntax) || is_fresh_secondary_create
+            isFreshDefinition(mode) || is_fresh_secondary_create
                 ? getContext()->getSettingsRef()[Setting::max_expanded_ast_elements].value
                 : 0);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
@@ -2369,7 +2380,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Only here is an engine inherited through `AS` known, and nothing is enqueued or created yet.
     /// A replay of a stored definition was checked when it was created.
-    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    if (isFreshDefinition(mode))
         checkExportAccess(create);
 
     /// The definition persisted below must not depend on the session setting, because reloads and
@@ -2416,7 +2427,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// and separates a view that had a UUID (about to lose it here) from one that never had one.
     const bool is_uuid_losing_restore = is_restore_from_backup && create.has_uuid;
     if (create.refresh_strategy && !create.refresh_strategy->isAppend()
-        && (isFreshTableDefinition(mode, create.attach_short_syntax) || is_uuid_losing_restore))
+        && (isFreshDefinition(mode) || is_uuid_losing_restore))
     {
         if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -2429,7 +2440,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
+    if (create.select && create.is_materialized_view && isFreshDefinition(mode))
     {
         // An MV with a flattened nested column in an inner table can never be filled
         if (create.is_materialized_view_with_inner_table())
@@ -2682,10 +2693,10 @@ void checkForUnsupportedColumns(
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
 
-    /// Re-check inferred column types only for a fresh, persisted table: the pre-construction check
-    /// does not see inferred columns, and ATTACH/RESTORE, temporary tables and views/dictionaries are
-    /// not subject to this check on load.
-    if (mode <= LoadingStrictnessLevel::CREATE && !is_temporary && !storage.isView() && !storage.isDictionary())
+    /// Re-check inferred column types only for a fresh definition of a persisted table: the pre-construction
+    /// check does not see inferred columns, and replays, temporary tables and views/dictionaries are not
+    /// subject to this check on load.
+    if (isFreshDefinition(mode) && !is_temporary && !storage.isView() && !storage.isDictionary())
         checkAllTypesAreAllowedInTable(metadata_snapshot->getColumns().getAll());
 
     if (!isReplayedTableDefinition(mode, create, context) && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns())
@@ -2732,7 +2743,8 @@ try
 }
 catch (...)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE)
+    /// Only a new table owns its data; an attached one keeps it.
+    if (mode == LoadingStrictnessLevel::CREATE)
     {
         try
         {
@@ -2844,9 +2856,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw;
         }
 
-        /// If this is an initial create, we also need to check the table name's length.
+        /// A fresh definition also gets its table name length checked.
         /// We are not checking this for secondary creates to avoid backward compatibility issues.
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        if (isFreshDefinition(mode))
             database->checkTableNameLength(create.getTable());
     }
 
@@ -2941,7 +2953,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
         database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
 
-    bool only_replicated_engine_allowed = isOnlyReplicatedEngineAllowed(create, database, getContext());
+    bool only_replicated_engine_allowed = isOnlyReplicatedEngineAllowed(mode, database, getContext());
 
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
@@ -3269,7 +3281,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             }
         }
 
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        if (isFreshDefinition(mode))
             database->checkTableNameLength(table_to_replace_name);
     }
 
@@ -4435,7 +4447,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
         if (definer_name != current_user_name)
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);
 
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        if (mode == LoadingStrictnessLevel::CREATE)
         {
             auto & access_control = context_->getAccessControl();
             const auto user = access_control.read<User>(definer_name);

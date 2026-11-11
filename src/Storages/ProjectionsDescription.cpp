@@ -447,8 +447,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
-    LoadingStrictnessLevel mode,
-    bool attach_short_syntax)
+    LoadingStrictnessLevel mode)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -504,7 +503,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     }
 
     /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
-    if (isFreshTableDefinition(mode, attach_short_syntax))
+    if (isFreshDefinition(mode))
     {
         /// `arrayJoin` is the one function that changes the number of rows, while a projection part is
         /// written alongside the parent part row by row: `ProjectionDataSink` rejects a block with more

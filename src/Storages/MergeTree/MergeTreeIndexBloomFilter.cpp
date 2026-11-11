@@ -1538,7 +1538,7 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
         std::move(metadata_snapshot), index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
 }
 
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
+void bloomFilterIndexValidator(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & /*settings*/)
 {
     assertIndexColumnsType(index.sample_block);
 
@@ -1548,7 +1548,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach, cons
     /// mutation of the table, and the natural recovery - `DROP INDEX` - is refused while one of those
     /// failed mutations is pending. Reject it here, like a nested array already is. Not on `ATTACH`:
     /// a table created before this check must still load, so that its index can be dropped.
-    if (!attach)
+    if (!is_stored_definition)
     {
         for (const auto & type : index.sample_block.getDataTypes())
         {
@@ -1560,7 +1560,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach, cons
 
     if (index.arguments && index.arguments->children.size() > 1)
     {
-        if (!attach) /// This is for backward compatibility.
+        if (!is_stored_definition) /// This is for backward compatibility.
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "BloomFilter index cannot have more than one parameter.");
     }
 
@@ -1568,7 +1568,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach, cons
     {
         auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
 
-        if (!attach && (argument.getType() != Field::Types::Float64 || argument.safeGet<Float64>() < 0 || argument.safeGet<Float64>() > 1))
+        if (!is_stored_definition && (argument.getType() != Field::Types::Float64 || argument.safeGet<Float64>() < 0 || argument.safeGet<Float64>() > 1))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The BloomFilter false positive must be a double number between 0 and 1.");
     }
 }

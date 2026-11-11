@@ -255,7 +255,7 @@ WhatIfCandidateResult evaluateIndex(
     {
         /// validate before get, same as CREATE: creators read their arguments unguarded
         const auto & merge_tree_settings = *data.getSettings();
-        MergeTreeIndexFactory::instance().validate(fresh_index_desc, /* attach = */ false, merge_tree_settings);
+        MergeTreeIndexFactory::instance().validate(fresh_index_desc, /* is_stored_definition = */ false, merge_tree_settings);
         index_helper = MergeTreeIndexFactory::instance().get(read_step->getStorageMetadata(), fresh_index_desc, merge_tree_settings);
     }
     catch (const Exception &)

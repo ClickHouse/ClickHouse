@@ -392,7 +392,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
+    /// A stored definition is not validated again.
+    const bool is_attach = !isFreshDefinition(mode);
     validateSettings(*queue_settings_, type, context_->getRemoteHostFilter(), is_attach, isLoadingFromExistingMetadata(mode));
 
     /// The object storage S3 client is built once here and reused by background threads, so the effective

@@ -251,7 +251,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     }
     catch (...)
     {
-        if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
+        if (!isLoadingFromExistingMetadata(mode))
             throw;
 
         /// It's server startup: do not prevent the server from starting if the backup is
@@ -831,7 +831,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         /// statements as internal ones, and a user's `ATTACH DATABASE ... ENGINE = Backup(...)` must neither
         /// skip the source authorization nor get its locator accepted in the form the secret masker cannot redact.
         const bool has_real_user = args.context->getAccess()->getUserID().has_value();
-        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        const bool is_internal_metadata_replay = args.is_metadata_replay && expectsExistingState(args.mode);
         const bool from_existing_metadata
             = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax || is_internal_metadata_replay;
 

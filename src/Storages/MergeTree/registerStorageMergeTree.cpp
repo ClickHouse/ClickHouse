@@ -291,7 +291,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         if (!ast_replica_name || ast_replica_name->value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must be a string literal{}", verbose_help_message);
 
-        if (!query.attach && is_replicated_database
+        if ((isFreshDefinition(mode) || mode == LoadingStrictnessLevel::SECONDARY_CREATE) && is_replicated_database
             && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 0)
         {
             /// Allow specifying engine arguments even with database_replicated_allow_replicated_engine_arguments=0 (not allowed) but only
@@ -308,7 +308,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
                     "specify them explicitly, enable setting "
                     "database_replicated_allow_replicated_engine_arguments.");
         }
-        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
+        if (!expectsExistingState(mode) && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
         {
             LOG_WARNING(
                 &Poco::Logger::get("registerStorageMergeTree"),
@@ -316,7 +316,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
                 "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
         }
 
-        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 2)
+        /// An existing table keeps its path.
+        if (!expectsExistingState(mode) && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 2)
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
                                                                      "with default arguments", ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
@@ -581,7 +582,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// In new syntax argument can be literal or identifier or array/tuple of identifiers.
         evaluateEngineArgs(engine_args, args.getLocalContext());
     }
-    else if (args.mode <= LoadingStrictnessLevel::CREATE && !local_settings[Setting::allow_deprecated_syntax_for_merge_tree])
+    else if (isFreshDefinition(args.mode) && !local_settings[Setting::allow_deprecated_syntax_for_merge_tree])
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
                                                    "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause. "
@@ -589,8 +590,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
-    /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
-    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    /// `LoadingStrictnessLevel::ATTACH`, so only the initial execution judges it: a secondary
+    /// refusing what the initiator committed would retry its queue entry forever.
     const bool is_ddl_replay = isSecondaryDDLReplay(args.getLocalContext());
 
     /// Extract zookeeper path and replica name from engine arguments.
@@ -601,8 +602,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// Only a freshly supplied definition is validated: a CREATE, or a full-definition ATTACH.
         /// Every other route re-derives a table that already exists and must keep loading. Such a
         /// replay can arrive at CREATE, so `mode` cannot tell it apart and the context carries it.
-        const bool validate_substitutions = (args.mode <= LoadingStrictnessLevel::CREATE
-                || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
+        const bool validate_substitutions = isFreshDefinition(args.mode)
             && !args.is_restore_from_backup
             && !args.getLocalContext()->isRecoveryFromStoredMetadata();
         zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
@@ -706,11 +706,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
-    /// A full-definition `ATTACH TABLE t UUID '...' (...)` is CREATE-like user input even though it
-    /// runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from metadata stored on this
-    /// server (short `ATTACH`, `ATTACH DATABASE`, restart) carry `attach_short_syntax`, and
-    /// `SECONDARY_CREATE` (`Replicated`-database DDL replay, `RESTORE`) also replays validated ones.
-    const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+    const bool is_fresh_definition = isFreshDefinition(args.mode);
 
     /// A definition re-derived from metadata stored in Keeper arrives as a plain `CREATE` with no
     /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
@@ -730,8 +726,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
     }
 
-    /// Like the check above, but a full-definition `ATTACH` is exempt too, so an existing table with such a column stays loadable.
-    if (args.mode <= LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
+    /// Like the check above: a replayed definition with such a column stays loadable.
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkLossyCodecOnLowCardinality(columns);
 
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
@@ -782,7 +778,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         metadata.sorting_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, metadata.virtuals, context, additional_columns);
 
-        if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
+        if (!local_settings[Setting::allow_suspicious_primary_key] && is_fresh_definition)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// If primary key explicitly defined, than get it from AST
@@ -810,10 +806,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->unique_key)
         {
-            /// Fresh definitions only; previously validated metadata loads with the setting off.
-            /// `isFreshTableDefinition` and not `mode <= CREATE`: a short-syntax ATTACH replaying
-            /// stored metadata is not a fresh definition, and gating it makes such a table
-            /// unattachable -- and therefore undroppable.
+            /// Fresh definitions only: gating a replayed one makes such a table unattachable,
+            /// and therefore undroppable.
             if (is_fresh_definition && !local_settings[Setting::enable_unique_key])
             {
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -963,7 +957,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// intentionally skipped because the disk configuration was already validated when the
         /// table was originally created.
         /// User-initiated `ATTACH TABLE` queries, with a definition or in the short form, use
-        /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
+        /// an `ATTACH` level and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE, /* stored_definition */ args.query.attach_short_syntax);
@@ -978,16 +972,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// After the constraints, so a forbidden `storage_policy` is reported as such and not as an unknown policy.
         if ((*storage_settings)[MergeTreeSetting::storage_policy].changed)
             args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
-
-        /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
-        /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
-        /// such as `index_granularity = 0` that the same `CREATE` refuses, and the table is created broken.
-        if (is_fresh_definition && args.mode > LoadingStrictnessLevel::CREATE)
-        {
-            context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
-            storage_settings->sanityCheck(
-                context->getMergeMutateExecutor()->getMaxTasksCount(), context->wasBackgroundPoolAutoLowered());
-        }
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
@@ -1052,7 +1036,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     || metadata.add_minmax_index_for_block_offset_column;
                 if (using_auto_minmax_index && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
-                    if (args.mode <= LoadingStrictnessLevel::CREATE)
+                    if (is_fresh_definition)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
 
                     /// Backward compatibility: older versions (before 25.12) stored implicit indices on disk
@@ -1104,12 +1088,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 try
                 {
                     auto projection = ProjectionDescription::getProjectionFromAST(
-                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax);
+                        projection_ast, columns, &metadata.partition_key, context, args.mode);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
                 {
-                    if (args.mode < LoadingStrictnessLevel::FORCE_ATTACH)
+                    if (!isLoadingFromExistingMetadata(args.mode))
                         throw;
                     /// Only the analyzed description, which query execution needs, is missing. The declaration itself
                     /// stays in the metadata, so a later rewrite of the CREATE query still contains it.
@@ -1171,7 +1155,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             KeyDescription::checkNoAlias(engine_args[arg_num].get(), "PRIMARY KEY");
         metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context, additional_columns);
 
-        if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
+        if (!local_settings[Setting::allow_suspicious_primary_key] && is_fresh_definition)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// In old syntax primary_key always equals to sorting key.
@@ -1204,7 +1188,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index granularity must be a positive integer{}", verbose_help_message);
         ++arg_num;
 
-        if (args.storage_def->ttl_table && args.mode <= LoadingStrictnessLevel::CREATE)
+        if (args.storage_def->ttl_table && is_fresh_definition)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
 
@@ -1216,7 +1200,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());
 
     DataTypes data_types = metadata.partition_key.data_types;
-    if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
+    if (is_fresh_definition && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
     {
         for (size_t i = 0; i < data_types.size(); ++i)
             if (isFloat(data_types[i]))
@@ -1224,9 +1208,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "Floating point partition key is not supported: {}", metadata.partition_key.column_names[i]);
     }
 
-    if (metadata.hasProjections() && args.mode == LoadingStrictnessLevel::CREATE)
+    if (metadata.hasProjections() && is_fresh_definition)
     {
-        /// Now let's handle the merge tree family. Note we only handle in the mode of CREATE due to backward compatibility.
+        /// Now let's handle the merge tree family. Note we only handle a fresh definition due to backward compatibility.
         /// Otherwise, it would fail to start in the case of existing projections with special mergetree.
         if (merging_params.mode != MergeTreeData::MergingParams::Mode::Ordinary
             && (*storage_settings)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)

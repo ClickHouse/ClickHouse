@@ -59,7 +59,7 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 bool isReplayedTableDefinition(
     LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
 {
-    return !isFreshTableDefinition(mode, query.attach_short_syntax) || isSecondaryDDLReplay(local_context)
+    return !isFreshDefinition(mode) || query.attach_short_syntax || isSecondaryDDLReplay(local_context)
         || local_context->isRecoveryFromStoredMetadata();
 }
 
@@ -424,9 +424,10 @@ AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsCh
 
 void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args)
 {
-    /// The condition matches the one in the interpreter (`!create.attach`), so it also covers `SECONDARY_CREATE`,
+    /// The condition matches the one in the interpreter, so it also covers `SECONDARY_CREATE`,
     /// which is used when other replicas of a `Replicated` database replay the query.
-    if (args.query.attach || !args.getLocalContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
+    if (!(isFreshDefinition(args.mode) || args.mode == LoadingStrictnessLevel::SECONDARY_CREATE)
+        || !args.getLocalContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
         return;
 
     auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);

@@ -550,11 +550,11 @@ MergeTreeIndices MergeTreeIndexFactory::getMany(StorageMetadataPtr metadata_snap
     return result;
 }
 
-void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const
+void MergeTreeIndexFactory::validate(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & settings) const
 {
     /// Do not allow constant and non-deterministic expressions.
-    /// Do not throw on attach for compatibility.
-    if (!attach)
+    /// Do not throw on a stored definition for compatibility.
+    if (!is_stored_definition)
     {
         if (index.expression->hasArrayJoin())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain array joins", index.name);
@@ -592,7 +592,7 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
             );
     }
 
-    it->second(index, attach, settings);
+    it->second(index, is_stored_definition, settings);
 }
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()

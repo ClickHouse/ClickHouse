@@ -378,7 +378,7 @@ void expandPaimonKeeperMacrosIfNeeded(
     /// unique keeper paths — especially after DROP + re-CREATE of the same table name.
     const auto allow_uuid_macro = args.table_id.hasUUID();
 
-    if (args.mode < LoadingStrictnessLevel::ATTACH)
+    if (!expectsExistingState(args.mode))
     {
         Macros::MacroExpansionInfo info;
         info.expand_special_macros_only = true;

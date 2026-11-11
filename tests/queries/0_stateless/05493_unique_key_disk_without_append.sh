@@ -18,7 +18,18 @@ CREATE TABLE t_enc (c0 Int32) ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SET
 CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'local_plain_rewritable' AS SELECT 1::Int32 AS c0; -- { serverError SUPPORT_IS_DISABLED }
 CREATE MATERIALIZED VIEW rmv REFRESH EVERY 1 HOUR APPEND ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'local_plain_rewritable' EMPTY AS SELECT 1::Int32 AS c0; -- { serverError SUPPORT_IS_DISABLED }
 
-ATTACH TABLE t_attached UUID '$UUID' (c0 Int32) ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'local_plain_rewritable';
+ATTACH TABLE t_attached UUID '$UUID' (c0 Int32) ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'local_plain_rewritable'; -- { serverError SUPPORT_IS_DISABLED }
+CREATE TABLE t_attached (c0 Int32) ENGINE = MergeTree ORDER BY c0 SETTINGS disk = 'local_plain_rewritable';
+"
+
+# A table stored with UNIQUE KEY on such a disk: the stored definition of a table without it is rewritten
+# to carry one, and the table is attached back with the short ATTACH.
+metadata_file=$($CLICKHOUSE_CLIENT -q "SELECT getServerSetting('path') || metadata_path FROM system.tables WHERE database = currentDatabase() AND name = 't_attached'")
+$CLICKHOUSE_CLIENT -q "DETACH TABLE t_attached"
+sed -i.bak 's/^ORDER BY c0$/ORDER BY c0 UNIQUE KEY (c0)/' "$metadata_file" && rm -f "$metadata_file.bak"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE t_attached"
+
+$CLICKHOUSE_CLIENT --enable_unique_key 1 -n -q "
 INSERT INTO t_attached VALUES (1); -- { serverError SUPPORT_IS_DISABLED }
 SELECT count() FROM t_attached;
 DROP TABLE t_attached SYNC;

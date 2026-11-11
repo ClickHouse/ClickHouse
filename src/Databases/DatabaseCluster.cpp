@@ -196,7 +196,7 @@ void registerDatabaseCluster(DatabaseFactory & factory)
         /// starting; every user query, including an explicit `ATTACH DATABASE`, is validated in full.
         /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run
         /// user statements as internal ones.
-        const bool is_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        const bool is_metadata_replay = args.is_metadata_replay && expectsExistingState(args.mode);
 
         if (!engine->arguments || engine->arguments->children.size() != 2)
             throw Exception(

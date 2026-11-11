@@ -201,7 +201,7 @@ TableZnodeInfo TableZnodeInfo::resolve(
 
     /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
     /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
-    bool allow_uuid_macro = is_on_cluster || is_replicated_database || query.attach || query.has_uuid;
+    bool allow_uuid_macro = is_on_cluster || is_replicated_database || query.attach || query.has_uuid; // STYLE_CHECK_ALLOW_ATTACH_FLAG
 
     TableZnodeInfo res;
     res.full_path = requested_path;
@@ -217,7 +217,7 @@ TableZnodeInfo TableZnodeInfo::resolve(
     };
 
     /// Unfold {database} and {table} macro on table creation, so table can be renamed.
-    if (mode < LoadingStrictnessLevel::ATTACH)
+    if (!expectsExistingState(mode))
     {
         /// Each output gets its own info: the expansion flags are not reset for a string without macros,
         /// so a shared one would attribute the path's substitutions to the replica name too.
@@ -293,7 +293,7 @@ TableZnodeInfo TableZnodeInfo::resolve(
         res.renaming_restrictions = RenamingRestrictions::ALLOW_PRESERVING_UUID;
 
     res.zookeeper_name = zkutil::extractZooKeeperName(res.full_path);
-    res.path = zkutil::extractZooKeeperPath(res.full_path, /* check_starts_with_slash */ mode <= LoadingStrictnessLevel::CREATE, getLogger(table_id.getNameForLogs()));
+    res.path = zkutil::extractZooKeeperPath(res.full_path, /* check_starts_with_slash */ isFreshDefinition(mode), getLogger(table_id.getNameForLogs()));
     res.path_prefix_for_drop = res.path;
 
     if (expanded_uuid_in_path)

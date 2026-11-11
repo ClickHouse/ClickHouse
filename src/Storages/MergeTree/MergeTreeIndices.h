@@ -407,8 +407,8 @@ class MergeTreeIndexFactory : private boost::noncopyable
 public:
     static MergeTreeIndexFactory & instance();
 
-    using Validator = std::function<void(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)>;
-    void validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const;
+    using Validator = std::function<void(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & settings)>;
+    void validate(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & settings) const;
 
     using Creator = std::function<MergeTreeIndexPtr(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)>;
     MergeTreeIndexPtr get(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const;
@@ -435,13 +435,13 @@ private:
 };
 
 MergeTreeIndexPtr minmaxIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void minmaxIndexValidator(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & settings);
 
 MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void setIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void setIndexValidator(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & settings);
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & settings);
 /// Every granule of a text bloom filter index eagerly allocates one filter per indexed column, so the total size of the filters
 /// (not only the size of a single filter) is limited. The check is done only for indexes being declared or changed, not on `ATTACH`
 /// and not for indexes inherited unchanged from `old_index`, so that tables created before the check still load and can be altered.
@@ -449,18 +449,18 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, 
 void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const IndexDescription * old_index);
 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void bloomFilterIndexValidator(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & settings);
 
 #if USE_USEARCH
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & settings);
 #endif
 
 MergeTreeIndexPtr ginIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void ginIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void ginIndexValidator(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & settings);
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void textIndexValidator(const IndexDescription & index, bool is_stored_definition, const MergeTreeSettings & settings);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 

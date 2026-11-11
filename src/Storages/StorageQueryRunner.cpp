@@ -921,7 +921,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
             if (settings[QueryRunnerSetting::shard].changed)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'shard' setting of the QueryRunner engine requires the 'cluster' setting");
         }
-        else if (args.mode <= LoadingStrictnessLevel::CREATE)
+        else if (isFreshDefinition(args.mode))
         {
             args.getLocalContext()->checkAccess(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::REMOTE));
             auto cluster = args.getContext()->getCluster(cluster_name);

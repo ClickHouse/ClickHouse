@@ -13,9 +13,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 
+echo '--- a new definition with a future version is rejected, also by a full-definition ATTACH ---'
+$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "ATTACH TABLE ts_future_version UUID '$uuid' (metric_name String) ENGINE = TimeSeries SETTINGS version = 999" 2>&1 | grep -o "INVALID_SETTING_VALUE" | head -1
+
 echo '--- a table with a future version can be attached, even if its definition uses a setting unknown to this server ---'
-# ATTACH TABLE with a full table definition emits a warning which would pollute stderr.
-$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "ATTACH TABLE ts_future_version UUID '$uuid' (metric_name String) ENGINE = TimeSeries SETTINGS version = 999, future_setting = 1"
+# The stored definition of a new table is rewritten to a future version and attached back with the short ATTACH.
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 -q "CREATE TABLE ts_future_version (metric_name String) ENGINE = TimeSeries"
+metadata_file=$($CLICKHOUSE_CLIENT -q "SELECT getServerSetting('path') || metadata_path FROM system.tables WHERE database = currentDatabase() AND name = 'ts_future_version'")
+$CLICKHOUSE_CLIENT -q "DETACH TABLE ts_future_version"
+sed -i.bak 's/^SETTINGS version = [0-9]*,/SETTINGS version = 999, future_setting = 1,/' "$metadata_file" && rm -f "$metadata_file.bak"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ts_future_version"
 $CLICKHOUSE_CLIENT -q "SELECT engine, position(create_table_query, 'version = 999, future_setting = 1') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_future_version'"
 
 echo '--- every PromQL entry point rejects it ---'

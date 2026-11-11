@@ -31,15 +31,26 @@ $CLICKHOUSE_CLIENT --query "SET send_logs_level = 'fatal'; ALTER TABLE t_alter A
 $CLICKHOUSE_CLIENT --query "SET send_logs_level = 'fatal'; CREATE INDEX i0 ON t_alter (90 % a) TYPE hypothesis;" 2>&1 | grep -oE "no longer supported|ILLEGAL_INDEX"
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_alter;"
 
-# Full-definition ATTACH keeps the compatibility bypass: it forwards attach = true, so a table
-# carrying a hypothesis index is NOT rejected and can still be recreated (the metadata shape
-# #89797 depends on). Atomic databases require an explicit UUID for full-definition ATTACH.
+# A full-definition ATTACH is validated like CREATE, so it is rejected too.
 uuid=$($CLICKHOUSE_CLIENT --query "SELECT generateUUIDv4()")
 $CLICKHOUSE_CLIENT --query "
     SET allow_suspicious_low_cardinality_types = 1, send_logs_level = 'fatal';
     ATTACH TABLE t_attach UUID '$uuid' (c0 LowCardinality(UInt128), INDEX i0 90 % c0 TYPE hypothesis, c1 Bool)
     ENGINE = MergeTree() PRIMARY KEY tuple();
+" 2>&1 | grep -oE "no longer supported|ILLEGAL_INDEX"
+
+# A table stored with a hypothesis index still loads: its stored definition is rewritten to carry one
+# and then attached back with the short ATTACH.
+$CLICKHOUSE_CLIENT --query "
+    SET allow_suspicious_low_cardinality_types = 1;
+    CREATE TABLE t_attach (c0 LowCardinality(UInt128), INDEX i0 90 % c0 TYPE minmax, c1 Bool)
+    ENGINE = MergeTree() PRIMARY KEY tuple();
 "
+metadata_file=$($CLICKHOUSE_CLIENT --query "
+    SELECT getServerSetting('path') || metadata_path FROM system.tables WHERE database = currentDatabase() AND name = 't_attach'")
+$CLICKHOUSE_CLIENT --query "DETACH TABLE t_attach"
+sed -i.bak 's/TYPE minmax/TYPE hypothesis/' "$metadata_file" && rm -f "$metadata_file.bak"
+$CLICKHOUSE_CLIENT --query "ATTACH TABLE t_attach"
 $CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.data_skipping_indices
     WHERE database = currentDatabase() AND table = 't_attach' AND type = 'hypothesis';

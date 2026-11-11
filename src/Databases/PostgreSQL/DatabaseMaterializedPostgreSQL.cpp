@@ -452,7 +452,7 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
     }
 
     const auto & create = query->as<ASTCreateQuery>();
-    if (!create->attach)
+    if (!create->attach) // STYLE_CHECK_ALLOW_ATTACH_FLAG
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
 
@@ -844,7 +844,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         /// was created must not turn its stored definition into a server that cannot boot.
         /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH`
         /// run user statements as internal ones, and those must stay fail-closed.
-        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        const bool is_internal_metadata_replay = args.is_metadata_replay && expectsExistingState(args.mode);
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
@@ -887,7 +887,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             postgresql_replica_settings->loadFromQuery(*engine_define);
 
         /// A definition stored by an older version, which did not check it, must still be loaded.
-        if (!is_internal_metadata_replay && isFreshTableDefinition(args.mode, args.create_query.attach_short_syntax))
+        if (!is_internal_metadata_replay && isFreshDefinition(args.mode))
             postgresql_replica_settings->checkConsistencyForFreshDefinition();
 
         auto connection_info = postgres::formatConnectionString(
@@ -900,7 +900,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.ssl);
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
-            args.context, args.metadata_path, args.uuid, args.create_query.attach,
+            args.context, args.metadata_path, args.uuid, args.create_query.attach, // STYLE_CHECK_ALLOW_ATTACH_FLAG
             args.database_name, configuration.database, connection_info,
             std::move(postgresql_replica_settings));
     };

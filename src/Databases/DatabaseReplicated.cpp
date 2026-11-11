@@ -783,7 +783,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
         }
 
         auto current_zookeeper = getZooKeeper();
-        if (mode < LoadingStrictnessLevel::ATTACH && !current_zookeeper->exists(zookeeper_path))
+        if (!expectsExistingState(mode) && !current_zookeeper->exists(zookeeper_path))
         {
             /// Create new database, multiple nodes can execute it concurrently
             createDatabaseNodesInZooKeeper(current_zookeeper);
@@ -793,7 +793,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
     }
     catch (...)
     {
-        if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
+        if (!isLoadingFromExistingMetadata(mode))
             throw;
 
         /// It's server startup, ignore error.
@@ -3237,7 +3237,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         ASTFunction * engine = engine_define->engine;
 
         /// Fill in default parameters
-        if (!args.create_query.attach)
+        if (!args.create_query.attach) // STYLE_CHECK_ALLOW_ATTACH_FLAG
         {
             if (!engine->arguments)
             {
@@ -3273,7 +3273,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         const bool is_on_cluster = args.context->isDDLOrOnClusterInternal();
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         /// and if UUID was explicitly passed in CREATE DATABASE (like for ATTACH)
-        bool allow_uuid_macro = is_on_cluster || args.create_query.attach || args.create_query.has_uuid;
+        bool allow_uuid_macro = is_on_cluster || args.create_query.attach || args.create_query.has_uuid; // STYLE_CHECK_ALLOW_ATTACH_FLAG
         if (allow_uuid_macro)
             info.table_id.uuid = args.uuid;
         zookeeper_path = args.context->getMacros()->expand(zookeeper_path, info);

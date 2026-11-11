@@ -474,7 +474,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReplicatedMergeTree doesn't work with 's3_with_keeper' disk type");
     }
 
-    initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
+    initializeDirectoriesAndFormatVersion(relative_data_path_, expectsExistingState(mode), date_column_name);
 
     /// We create and deactivate all tasks for consistency.
     /// They all will be scheduled and activated by the restarting thread.
@@ -526,7 +526,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
         catch (...)
         {
-            if (mode < LoadingStrictnessLevel::ATTACH)
+            if (!expectsExistingState(mode))
             {
                 dropIfEmpty();
                 throw;
@@ -539,11 +539,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     std::optional<std::unordered_set<std::string>> expected_parts_on_this_replica;
     bool skip_sanity_checks = false;
     /// It does not make sense for CREATE query
-    if (LoadingStrictnessLevel::ATTACH <= mode)
+    if (expectsExistingState(mode))
     {
         try
         {
-            if (LoadingStrictnessLevel::ATTACH == mode && current_zookeeper && current_zookeeper->exists(replica_path + "/is_active"))
+            if ((mode == LoadingStrictnessLevel::ATTACH || mode == LoadingStrictnessLevel::ATTACH_FULL_DEFINITION) && current_zookeeper && current_zookeeper->exists(replica_path + "/is_active"))
             {
                 throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "There already is an active replica with this replica path {}", replica_path);
             }
@@ -565,7 +565,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     "Skipping the limits on severity of changes to data parts and columns (flag {}/flags/force_restore_data).",
                     replica_path);
             }
-            else if (LoadingStrictnessLevel::FORCE_RESTORE <= mode)
+            else if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
             {
                 skip_sanity_checks = true;
 
@@ -593,7 +593,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     loadDataParts(skip_sanity_checks, expected_parts_on_this_replica);
     prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
 
-    if (LoadingStrictnessLevel::ATTACH <= mode)
+    if (expectsExistingState(mode))
     {
         /// Provide better initial value of merge_selecting_sleep_ms on server startup
         auto settings = getSettings();
@@ -611,7 +611,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     if (!current_zookeeper)
     {
-        if (mode < LoadingStrictnessLevel::ATTACH)
+        if (!expectsExistingState(mode))
         {
             dropIfEmpty();
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't create replicated table without ZooKeeper");
@@ -627,7 +627,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
     }
 
-    if (LoadingStrictnessLevel::ATTACH <= mode)
+    if (expectsExistingState(mode))
     {
         LOG_INFO(log, "Table will be in readonly mode until initialization is finished");
         attach_thread.emplace(*this);
