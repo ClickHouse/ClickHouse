@@ -2,6 +2,7 @@
 -- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
 SET force_primary_key_reverse_order = 0;
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (k UInt64, v String)
