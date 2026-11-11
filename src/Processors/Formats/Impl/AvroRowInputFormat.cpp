@@ -34,7 +34,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Interpreters/convertFieldToType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
@@ -1293,8 +1292,8 @@ AvroDeserializer::AvroDeserializer(
             const auto & column = header.getByPosition(i);
             if (!absent_columns.contains(column.name))
                 continue;
-            if (const Field * value = column_mapper->getIcebergInitialDefault(column.name))
-                absent_column_defaults[i] = convertFieldToTypeOrThrow(*value, *column.type);
+            if (auto value = column_mapper->getIcebergInitialDefault(column.name, column.type))
+                absent_column_defaults[i] = std::move(*value);
         }
     }
 

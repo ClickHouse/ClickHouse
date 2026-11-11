@@ -21,7 +21,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
@@ -100,10 +99,9 @@ std::optional<Field> SchemaConverter::getAbsentFieldDefault(const String & path,
 {
     if (!column_mapper)
         return {};
-    const Field * value = column_mapper->getIcebergInitialDefault(path);
-    if (!value || !isAbsentFromFile(path))
+    if (!column_mapper->getIcebergInitialDefault(path) || !isAbsentFromFile(path))
         return {};
-    return convertFieldToTypeOrThrow(*value, *type);
+    return column_mapper->getIcebergInitialDefault(path, type);
 }
 
 void SchemaConverter::checkHasColumns()

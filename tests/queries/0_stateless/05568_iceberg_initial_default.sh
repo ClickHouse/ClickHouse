@@ -82,6 +82,17 @@ elif mode == "readd_in_list":
     for struct in (by_name["t"]["type"]["fields"][0]["type"]["element"], by_name["l"]["type"]["element"]["fields"][0]["type"], u):
         struct["fields"] = [f for f in struct["fields"] if f["name"] != "j"]
         struct["fields"].append({"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9})
+elif mode == "struct_in_struct":
+    def xy():
+        return {"type": "struct", "fields": [{"id": new_id(), "name": "x", "required": False, "type": "int", "initial-default": 6},
+            {"id": new_id(), "name": "y", "required": False, "type": "int", "initial-default": 9}]}
+    struct = next(f for f in fields if f["name"] == "t")["type"]
+    struct["fields"].append({"id": new_id(), "name": "s", "required": False, "initial-default": {}, "type": xy()})
+    element = new_id()
+    element_type = xy()
+    x, y = (f["id"] for f in element_type["fields"])
+    struct["fields"].append({"id": new_id(), "name": "l", "required": False, "initial-default": [{str(x): 1, str(y): 2}, {str(x): 3}],
+        "type": {"type": "list", "element-id": element, "element": element_type, "element-required": False}})
 elif mode == "bad_long":
     fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
 elif mode == "bad_timestamp":
@@ -404,6 +415,25 @@ for format in Parquet ORC Avro; do
             SELECT 'readd in list', t, l, u FROM icebergLocal('${table}/');
             SELECT 'readd in list', t.s.j, l.s.j, u.a.j FROM icebergLocal('${table}/');
         "
+    fi
+
+    # A struct and a list of structs added to a struct: a read of some fields of the struct takes them from its default by name.
+    if [ "${format}" != Avro ]; then
+        table="${format}_struct_in_struct"
+        ${LOCAL} --allow_insert_into_iceberg=1 -q "
+            CREATE TABLE t (t Tuple(k Nullable(Int32))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t VALUES ((10));
+        "
+        add_fields "${table}" struct_in_struct
+        bind_to_current_schema "${table}"
+        for optimize in 1 0; do
+            ${LOCAL} -q "
+                SELECT 'struct in struct', ${optimize}, t FROM icebergLocal('${table}/');
+                SELECT 'struct in struct', ${optimize}, t.s.y FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = ${optimize};
+                SELECT 'struct in struct', ${optimize}, t.k, t.s.x FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = ${optimize};
+                SELECT 'struct in struct', ${optimize}, count() FROM icebergLocal('${table}/') WHERE t.s.y = 9 SETTINGS optimize_functions_to_subcolumns = ${optimize};
+            "
+        done
     fi
 
     # A top-level field whose name has a dot is not a field of the struct named by its prefix.

@@ -47,7 +47,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/setThreadName.h>
@@ -1511,8 +1510,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
             absent_columns.insert(column.name);
             if (!default_applies)
                 continue;
-            if (const Field * value = column_mapper->getIcebergInitialDefault(column.name))
-                absent_column_defaults.emplace(column.name, convertFieldToTypeOrThrow(*value, *column.type));
+            if (auto value = column_mapper->getIcebergInitialDefault(column.name, column.type))
+                absent_column_defaults.emplace(column.name, std::move(*value));
         }
     }
 
@@ -3251,13 +3250,15 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 if (element_is_read[pos])
                     continue;
                 const String element_name = tuple_type_hint->getNameByPosition(pos + 1);
-                const Field * value = column_mapper->getIcebergInitialDefault(mapper_path + "." + element_name);
+                const String element_path = mapper_path + "." + element_name;
                 const auto & element_field_id = element_field_ids[pos];
-                if (!value || !element_field_id
+                if (!column_mapper->getIcebergInitialDefault(element_path) || !element_field_id
                     || std::find(file_field_ids->begin(), file_field_ids->end(), *element_field_id) != file_field_ids->end())
                     continue;
+                /// The hint can have only the requested elements of a struct: the default is projected to it.
                 const auto & element_type = tuple_type_hint->getElement(pos);
-                auto element = element_type->createColumnConst(orc_column->numElements, convertFieldToTypeOrThrow(*value, *element_type));
+                auto value = column_mapper->getIcebergInitialDefault(element_path, element_type);
+                auto element = element_type->createColumnConst(orc_column->numElements, *value);
                 tuple_elements.emplace_back(element->convertToFullColumnIfConst());
                 tuple_types.emplace_back(element_type);
                 tuple_names.emplace_back(element_name);

@@ -147,7 +147,7 @@ public:
     static std::unordered_set<Int64> collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema);
 
     /// The effective `initial-default` of the fields (including nested ones) that have one, by the paths of `traverseSchema`.
-    static std::unordered_map<String, Field> collectIcebergInitialDefaults(Poco::JSON::Array::Ptr schema);
+    static std::unordered_map<String, ColumnMapper::IcebergInitialDefault> collectIcebergInitialDefaults(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;

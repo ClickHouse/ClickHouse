@@ -106,16 +106,26 @@ public:
     bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
     bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
 
-    /// Iceberg `initial-default` of fields, keyed like the storage encoding: the value of a field absent from a data file.
-    void setIcebergInitialDefaults(std::unordered_map<String, Field> && iceberg_initial_defaults_)
+    /// Iceberg `initial-default` of a field: the value of the field absent from a data file, of its type in the data lake schema.
+    struct IcebergInitialDefault
+    {
+        Field value;
+        DataTypePtr type;
+    };
+
+    /// Iceberg `initial-default` of fields, keyed like the storage encoding.
+    void setIcebergInitialDefaults(std::unordered_map<String, IcebergInitialDefault> && iceberg_initial_defaults_)
     {
         iceberg_initial_defaults = std::move(iceberg_initial_defaults_);
     }
     const Field * getIcebergInitialDefault(const String & path) const
     {
         auto it = iceberg_initial_defaults.find(path);
-        return it == iceberg_initial_defaults.end() ? nullptr : &it->second;
+        return it == iceberg_initial_defaults.end() ? nullptr : &it->second.value;
     }
+    /// The `initial-default` of `path` as a value of `type`, the type that a reader reads the field with. It can have only some of
+    /// the elements of a struct, at any depth (a read of some of its subcolumns): they are taken from the default by name.
+    std::optional<Field> getIcebergInitialDefault(const String & path, const DataTypePtr & type) const;
     void removeIcebergInitialDefault(const String & path) { iceberg_initial_defaults.erase(path); }
     bool hasIcebergInitialDefaults() const { return !iceberg_initial_defaults.empty(); }
     /// 0 if there are no defaults.
@@ -133,7 +143,7 @@ private:
     bool has_iceberg_required_info = false;
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
-    std::unordered_map<String, Field> iceberg_initial_defaults;
+    std::unordered_map<String, IcebergInitialDefault> iceberg_initial_defaults;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;

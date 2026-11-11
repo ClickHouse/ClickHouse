@@ -721,7 +721,10 @@ bool typeHasInitialDefault(const Poco::Dynamic::Var & type)
 /// Adds the effective `initial-default` of every field nested in `type` (of the ClickHouse type `data_type`) at
 /// `path`, with the paths of `traverseSchema`.
 void collectInitialDefaults(
-    const Poco::Dynamic::Var & type, const DataTypePtr & data_type, const String & path, std::unordered_map<String, Field> & result)
+    const Poco::Dynamic::Var & type,
+    const DataTypePtr & data_type,
+    const String & path,
+    std::unordered_map<String, ColumnMapper::IcebergInitialDefault> & result)
 {
     if (type.isString())
         return;
@@ -736,7 +739,7 @@ void collectInitialDefaults(
             auto field = fields->getObject(i);
             auto child_path = Nested::concatenateName(path, field->getValue<String>(f_name));
             if (auto value = getIcebergInitialDefault(field, element_types[i]))
-                result.emplace(child_path, std::move(*value));
+                result.emplace(child_path, ColumnMapper::IcebergInitialDefault{std::move(*value), element_types[i]});
             collectInitialDefaults(field->get(f_type), element_types[i], child_path, result);
         }
     }
@@ -1706,9 +1709,10 @@ std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimeFieldIds(Poc
     return result;
 }
 
-std::unordered_map<String, Field> IcebergSchemaProcessor::collectIcebergInitialDefaults(Poco::JSON::Array::Ptr schema)
+std::unordered_map<String, ColumnMapper::IcebergInitialDefault>
+IcebergSchemaProcessor::collectIcebergInitialDefaults(Poco::JSON::Array::Ptr schema)
 {
-    std::unordered_map<String, Field> result;
+    std::unordered_map<String, ColumnMapper::IcebergInitialDefault> result;
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
     for (UInt32 i = 0; i < schema->size(); ++i)
     {
@@ -1718,7 +1722,7 @@ std::unordered_map<String, Field> IcebergSchemaProcessor::collectIcebergInitialD
         auto name = field->getValue<String>(f_name);
         auto type = processor.getFieldType(field, f_type, field->getValue<bool>(f_required));
         if (auto value = getIcebergInitialDefault(field, type))
-            result.emplace(name, std::move(*value));
+            result.emplace(name, ColumnMapper::IcebergInitialDefault{std::move(*value), type});
         collectInitialDefaults(field->get(f_type), type, name, result);
     }
     return result;
