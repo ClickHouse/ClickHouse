@@ -519,6 +519,7 @@ static DataFileEntryLineage getEntryLineageForRewrite(const ParsedManifestFileEn
 
 static bool writeConsolidatedManifestFile(
     int metadata_version,
+    const String & metadata_file_path,
     Poco::JSON::Object::Ptr metadata_object,
     const String & base_catalog_metadata_location,
     const PersistentTableComponents & persistent_table_components,
@@ -814,10 +815,10 @@ static bool writeConsolidatedManifestFile(
     // Create file name generator for new metadata files
     FileNamesGenerator generator(
         path_resolver.getTableLocation(),
-        false,
+        /* use_uuid_in_metadata */ catalog != nullptr,
         compression_method,
         write_format);
-    generator.setVersion(metadata_version + 1);
+    generator.setBaseMetadataFile(metadata_version, metadata_file_path);
 
     MetadataGenerator metadata_generator(metadata_object);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
@@ -1544,6 +1545,7 @@ void compactIcebergManifests(
 
         if (writeConsolidatedManifestFile(
                 metadata_version,
+                metadata_file_path,
                 metadata_object,
                 base_catalog_metadata_location,
                 persistent_table_components,

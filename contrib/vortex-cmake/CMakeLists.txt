@@ -72,19 +72,11 @@ if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DAR
         list(LENGTH _vortex_ffi_symbols _vortex_ffi_symbol_count)
         message(STATUS "Vortex: keeping ${_vortex_ffi_symbol_count} FFI entry points when stripping")
 
-        set(_vortex_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_vortex.a")
-        add_custom_target(strip_vortex_symbols
-            COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-                "${_vortex_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
-                ${_vortex_ffi_symbols}
-            DEPENDS cargo-build__ch_rust_vortex
+        clickhouse_postprocess_rust_lib(_ch_rust_vortex
+            STEP strip_rust_symbols
+            SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
+            ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}" ${_vortex_ffi_symbols}
             COMMENT "Stripping internal symbols from Vortex library"
-            VERBATIM
         )
-        add_dependencies(_ch_rust_vortex strip_vortex_symbols)
-        # Ensure localize runs before strip (they both modify the same .a)
-        if (TARGET localize_rust_c__ch_rust_vortex)
-            add_dependencies(strip_vortex_symbols localize_rust_c__ch_rust_vortex)
-        endif()
     endif ()
 endif ()
