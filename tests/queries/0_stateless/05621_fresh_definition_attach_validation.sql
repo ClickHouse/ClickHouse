@@ -16,6 +16,8 @@ DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS dst;
+DROP TABLE IF EXISTS ts_ext;
+DROP TABLE IF EXISTS ts_base;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- UNIQUE KEY with a table TTL
@@ -103,9 +105,18 @@ INSERT INTO src VALUES (1);
 SELECT count() FROM dst;
 DROP TABLE mv;
 DROP TABLE dst;
+SET database_replicated_allow_explicit_uuid = 3;
+CREATE TABLE ts_base UUID '05621000-0000-0000-0000-000000000022' ENGINE = TimeSeries SETTINGS version = 9, recent_samples_ttl_seconds = 0, store_time_ranges = 0;
+ATTACH TABLE ts_ext UUID '05621000-0000-0000-0000-000000000023' ENGINE = TimeSeries SETTINGS version = 9, recent_samples_ttl_seconds = 0, store_time_ranges = 0
+    SAMPLES `.inner_id.samples.05621000-0000-0000-0000-000000000022`
+    TAGS `.inner_id.tags.05621000-0000-0000-0000-000000000022`
+    METRIC FAMILIES `.inner_id.metricfamilies.05621000-0000-0000-0000-000000000022`;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'ts_ext';
+DROP TABLE ts_ext;
+DROP TABLE ts_base;
 
 -- A short ATTACH of a valid table still works
-DETACH TABLE src;
+DETACH TABLE src PERMANENTLY;
 ATTACH TABLE src;
 SELECT count() FROM src;
 

@@ -58,7 +58,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageTimeSeries.h>
 #include <Storages/SubcolumnCodecs.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -727,7 +726,7 @@ bool hasInnerTables(const ASTCreateQuery & create)
     if (create.is_materialized_view)
         return create.is_materialized_view_with_inner_table();
     if (create.is_time_series_table)
-        return std::ranges::any_of(StorageTimeSeries::getTargetKinds(), [&](auto kind) { return !create.hasTargetTableID(kind); });
+        return countTimeSeriesInnerTables(create) != 0;
     return false;
 }
 
