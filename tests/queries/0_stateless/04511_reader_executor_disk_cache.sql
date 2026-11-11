@@ -15,6 +15,7 @@
 -- Tag no-random-detach: a DETACH/ATTACH between the cold and the warm read drops the populated
 -- filesystem cache, so the warm read goes back to the source.
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS t_re_disk_cache;
 
 -- Full (not Packed) part storage, so every stream of the part is its own object and therefore its own
