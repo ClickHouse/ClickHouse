@@ -57,7 +57,7 @@ with grpc.insecure_channel(f"localhost:{os.environ.get('CLICKHOUSE_PORT_GRPC', '
 
         def failed_to_send():
             query("SYSTEM FLUSH LOGS text_log")
-            return query(f"""SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND query_id = '{query_id}'
+            return query(f"""SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '{query_id}'
                 AND message LIKE '%Failed to send result to the client%'""") != "0"
         wait_until(failed_to_send)
 

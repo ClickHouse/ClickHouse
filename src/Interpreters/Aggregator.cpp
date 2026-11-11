@@ -3015,11 +3015,11 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     bool final,
     Int32 bucket,
     UntruncatedAggregationKeys * untruncated_keys,
-    size_t * full_group_count,
+    size_t * merged_group_count,
     bool keep_table_buffer) const
 {
-    if (full_group_count)
-        *full_group_count = method.data.impls[bucket].size();
+    if (merged_group_count)
+        *merged_group_count = method.data.impls[bucket].size();
 
     // Used in ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform (expects single chunk for each bucket_id).
     constexpr bool return_single_block = true;
@@ -3309,7 +3309,7 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count,
+    size_t * merged_group_count,
     std::atomic<int> * threshold_top_k_verdict) const
 {
     auto & merged_data = *variants[0];
@@ -3317,16 +3317,14 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     AggregatedChunk agg_chunk;
 
     /// The top-K threshold merge produces the bucket's k best groups directly, merging only the
-    /// groups that can rank among them. It is not used when:
+    /// groups that can rank among them, and counts only those for the group limit. It is not used when:
     /// - dataflow statistics are collected (`updater`): they must describe the merge of every group;
     /// - the only aggregate is `count` (`bucket_top_k`): the ordinary conversion selects it cheaper;
-    /// - a throw-mode group limit is enforced: it needs the bucket's full group count;
     /// - the HAVING pre-filter is enabled: only the ordinary conversion applies it.
-    const bool group_limit_needs_full_count = params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::THROW;
     if (final && params.threshold_top_k && (!params.bucket_top_k || params.aggregates_size > 1)
-        && params.having_prefilter_op == Params::HavingPrefilterOp::Disabled && !updater && !group_limit_needs_full_count)
-        if (auto threshold_chunk
-            = tryMergeAndConvertOneBucketToChunkThresholdTopK(variants, arena, bucket, is_cancelled, threshold_top_k_verdict))
+        && params.having_prefilter_op == Params::HavingPrefilterOp::Disabled && !updater)
+        if (auto threshold_chunk = tryMergeAndConvertOneBucketToChunkThresholdTopK(
+                variants, arena, bucket, is_cancelled, threshold_top_k_verdict, merged_group_count))
             return std::move(*threshold_chunk);
 
     /// Filled by a conversion that materializes only some of the bucket's groups - the Top-K one or
@@ -3344,7 +3342,7 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
             updater->recordAggregationStateSizes(merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
-        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, updater ? &untruncated_keys : nullptr, full_group_count); \
+        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, updater ? &untruncated_keys : nullptr, merged_group_count); \
         if (updater) \
         { \
             if (untruncated_keys.bytes) \
@@ -3428,7 +3426,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
-        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, untruncated_keys, /*full_group_count=*/nullptr, keep_table_buffer); \
+        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, untruncated_keys, /*merged_group_count=*/nullptr, keep_table_buffer); \
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
@@ -3484,7 +3482,7 @@ void Aggregator::writeToTemporaryFileImpl(
 
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
-        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*untruncated_keys=*/nullptr, /*full_group_count=*/nullptr);
+        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr);
         auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
@@ -4789,7 +4787,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*untruncated_keys=*/nullptr, /*full_group_count=*/nullptr));
+            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr));
         }
     };
 
