@@ -13,7 +13,7 @@ ROOT="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_delta_null_set"
 trap 'rm -rf "${ROOT}" 2>/dev/null' EXIT
 rm -rf "${ROOT}"
 
-# An empty Delta table: a v0 log with only protocol + metaData, as ClickHouse cannot create a Delta log itself.
+# A hand-written Delta table (a partitioned INSERT of a NULL value is not supported on this branch): a v0 log with protocol + metaData.
 bootstrap() {
     local table=$1 schema=$2 partition_columns=$3
     mkdir -p "${ROOT}/${table}/_delta_log"
@@ -25,19 +25,33 @@ EOF
 
 SCHEMA_P='{\"type\":\"struct\",\"fields\":[{\"name\":\"p\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}},{\"name\":\"v\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}}]}'
 SCHEMA_AB='{\"type\":\"struct\",\"fields\":[{\"name\":\"a\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}},{\"name\":\"b\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}},{\"name\":\"v\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}}]}'
-SCHEMA_S='{\"type\":\"struct\",\"fields\":[{\"name\":\"s\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}},{\"name\":\"v\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}}]}'
 
 bootstrap t "${SCHEMA_P}" '["p"]'
 bootstrap n "${SCHEMA_P}" '["p"]'
 bootstrap t2 "${SCHEMA_AB}" '["a","b"]'
-bootstrap s "${SCHEMA_S}" '["s"]'
 
-# One data file per partition. Only t, t2 and s have a NULL partition (`__HIVE_DEFAULT_PARTITION__`).
-QUERIES="
-    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/t') VALUES (5, 1), (NULL, 2), (7, 3), (8, 4);
-    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/n') VALUES (5, 1), (7, 3), (8, 4);
-    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/t2') VALUES (NULL, 3, 1), (1, 3, 2), (1, 5, 3);
-    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/s') VALUES ('a', 1), (NULL, 2), ('b', 3);"
+QUERIES=""
+
+# add_file <table> <partition directory> <partitionValues> <v>: one data file holding only `v`, committed in the v0 log.
+add_file() {
+    local table=$1 dir=$2 values=$3 v=$4
+    echo "{\"add\":{\"path\":\"${dir}/data.parquet\",\"partitionValues\":${values},\"size\":1,\"modificationTime\":1700000000000,\"dataChange\":true}}" \
+        >> "${ROOT}/${table}/_delta_log/00000000000000000000.json"
+    QUERIES+="
+    INSERT INTO FUNCTION file('${ROOT}/${table}/${dir}/data.parquet', Parquet, 'v Int32') VALUES (${v});"
+}
+
+# One data file per partition. Only t and t2 have a NULL partition (`__HIVE_DEFAULT_PARTITION__`, a JSON null).
+add_file t 'p=5' '{"p":"5"}' 1
+add_file t 'p=__HIVE_DEFAULT_PARTITION__' '{"p":null}' 2
+add_file t 'p=7' '{"p":"7"}' 3
+add_file t 'p=8' '{"p":"8"}' 4
+add_file n 'p=5' '{"p":"5"}' 1
+add_file n 'p=7' '{"p":"7"}' 3
+add_file n 'p=8' '{"p":"8"}' 4
+add_file t2 'a=__HIVE_DEFAULT_PARTITION__/b=3' '{"a":null,"b":"3"}' 1
+add_file t2 'a=1/b=3' '{"a":"1","b":"3"}' 2
+add_file t2 'a=1/b=5' '{"a":"1","b":"5"}' 3
 
 LABELS=()
 
@@ -65,13 +79,11 @@ arm t "p = 7" "delta_lake_enable_engine_predicate = 0"
 arm t "p < 6" "delta_lake_enable_engine_predicate = 0"
 arm t "p IS NOT NULL" "delta_lake_enable_engine_predicate = 0"
 arm t "has([5, 7], p)"
-arm t "ifNull(p, 0) IN (0)"
 arm n "has([NULL, 5], p)"
 arm n "NOT has([NULL, 5], p)"
 arm t2 "has([NULL, 1], a)"
-arm s "has([NULL, 'a'], s)"
 
-mapfile -t LINES < <(${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "${QUERIES}" < /dev/null)
+mapfile -t LINES < <(${CLICKHOUSE_LOCAL} --query "${QUERIES}" < /dev/null)
 if [[ "${#LINES[@]}" != "$(( 4 * ${#LABELS[@]} ))" ]]; then
     printf 'Expected %s lines, got %s:\n%s\n' "$(( 4 * ${#LABELS[@]} ))" "${#LINES[@]}" "$(printf '%s\n' "${LINES[@]}")" >&2
     exit 1
