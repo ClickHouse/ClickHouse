@@ -1,6 +1,7 @@
 #pragma once
 
 
+#include <Formats/ColumnNameMaps.h>
 #include <memory>
 #include <mutex>
 
@@ -126,7 +127,7 @@ public:
     /// or the legacy `schema` when there is no `schemas`.
     static void checkTableSchemas(const Poco::JSON::Object & metadata);
 
-    static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
+    static ColumnNameToFieldId traverseSchema(Poco::JSON::Array::Ptr schema);
 
     /// The largest field id in `schema`, nested ids included.
     static Int64 getMaxFieldId(Poco::JSON::Array::Ptr schema);
@@ -147,11 +148,7 @@ public:
 
     ColumnMapperPtr getColumnMapperById(Int32 id) const;
 
-    void updateLastColumnId(Int32 last_column_id_);
-
 private:
-    std::atomic<Int64> last_column_id{-1};
-
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
