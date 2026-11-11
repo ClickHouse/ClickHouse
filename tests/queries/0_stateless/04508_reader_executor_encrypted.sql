@@ -55,7 +55,7 @@ SYSTEM FLUSH LOGS query_log, text_log;
 
 SELECT count() > 0
 FROM system.text_log
-WHERE logger_name = 'ReadPipeline'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'ReadPipeline'
   AND message LIKE '%using ReaderExecutor%'
   AND query_id IN (
       SELECT query_id
