@@ -958,15 +958,15 @@ private:
 
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized per column on a first access.
-    mutable std::mutex incomplete_low_cardinality_dictionaries_mutex;
-    mutable NameSet incomplete_low_cardinality_dictionaries TSA_GUARDED_BY(incomplete_low_cardinality_dictionaries_mutex);
-
     mutable std::mutex estimates_mutex;
     mutable Estimates estimates TSA_GUARDED_BY(estimates_mutex);
     /// The columns whose statistics were already looked up, including the columns without statistics.
     mutable NameSet estimates_loaded_columns TSA_GUARDED_BY(estimates_mutex);
     /// The estimates of all columns are known.
     mutable bool estimates_complete TSA_GUARDED_BY(estimates_mutex) = false;
+    /// See `hasIncompleteLowCardinalityDictionaries`. Empty for almost every part, so it is allocated only when needed
+    /// and guarded by `estimates_mutex` to keep the size of the part small.
+    mutable std::unique_ptr<NameSet> incomplete_low_cardinality_dictionaries TSA_GUARDED_BY(estimates_mutex);
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
