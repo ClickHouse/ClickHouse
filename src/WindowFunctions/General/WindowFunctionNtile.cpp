@@ -51,7 +51,7 @@ public:
 
     [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.partition = true, .order_by = true};
+        return WindowFunctionRequirements{.partition_end = true, .order_by = true};
     }
 
     [[nodiscard]] size_t sizeOfState() const override { return sizeof(NtileState); }
