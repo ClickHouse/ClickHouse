@@ -4,6 +4,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 
 #include <memory>
@@ -963,6 +964,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     auto has_pending_definition_drop = [&]
     {
+        /// Only text indexes and projections with `_part_offset` are reused.
+        const auto & projections = global_ctx->metadata_snapshot->getProjections();
+        if (!AlterCommands::hasTextIndex(*global_ctx->metadata_snapshot)
+            && std::ranges::none_of(projections, [](const auto & projection) { return projection.with_parent_part_offset; }))
+            return false;
+
         for (const auto & [_, commands] : global_ctx->data->getUnfinishedMutationCommands())
             for (const auto & command : commands)
                 if (command.type == MutationCommand::DROP_INDEX || command.type == MutationCommand::DROP_PROJECTION)
