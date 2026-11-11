@@ -12,7 +12,7 @@ TABLE_PATH="${USER_FILES_PATH}/${T}/"
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${T}_mv; DROP TABLE IF EXISTS ${T}_src; DROP TABLE IF EXISTS ${T2}; DROP TABLE IF EXISTS ${T}"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${T}_s3; DROP TABLE IF EXISTS ${T}_mv; DROP TABLE IF EXISTS ${T}_src; DROP TABLE IF EXISTS ${T2}; DROP TABLE IF EXISTS ${T}"
     rm -rf "${TABLE_PATH}"
 }
 trap cleanup EXIT
@@ -72,3 +72,8 @@ echo "schema changed by another writer"
 ${CLIENT} --query "ALTER TABLE ${T2} RENAME COLUMN s TO s2"
 ${CLIENT} --query "INSERT INTO ${T} (k) VALUES (7)"
 ${CLIENT} --query "SELECT k, s2 FROM ${T} WHERE k = 7"
+
+echo "comment of a table that is not a data lake"
+${CLIENT} --query "CREATE TABLE ${T}_s3 (id UInt64) ENGINE = S3('http://localhost:1/no-such-bucket/*.parquet', 'test', 'testtest', 'Parquet')"
+${CLIENT} --query "ALTER TABLE ${T}_s3 MODIFY COMMENT 'updated'"
+${CLIENT} --query "SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = '${T}_s3'"

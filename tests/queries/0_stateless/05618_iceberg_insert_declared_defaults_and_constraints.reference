@@ -28,3 +28,5 @@ materialized view
 6	x	600
 schema changed by another writer
 7	
+comment of a table that is not a data lake
+updated
