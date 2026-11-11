@@ -1,5 +1,4 @@
 #include <Common/StringUtils.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>

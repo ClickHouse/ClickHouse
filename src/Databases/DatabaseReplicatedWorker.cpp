@@ -22,6 +22,7 @@
 #include <Parsers/ASTRenameQuery.h>
 
 #include <algorithm>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {

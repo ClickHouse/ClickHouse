@@ -608,7 +608,7 @@ int main(int argc_, char ** argv_)
     updatePHDRCache();
 
 #if !defined(USE_MUSL)
-    checkHarmfulEnvironmentVariables(argv_);
+    checkHarmfulEnvironment(argv_);
 #endif
 
     /// This is used for testing. For example,

@@ -1,5 +1,6 @@
 #include <base/pathToString.h>
 #include <Common/CurrentThread.h>
+#include <Formats/FormatSettings.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
