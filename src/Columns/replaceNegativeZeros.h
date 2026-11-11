@@ -14,7 +14,7 @@ namespace DB
   * These functions are applied to the key columns right before they are hashed. A column is quickly scanned
   * for the presence of negative zeros, and only if there are any, a copy is made with negative zeros replaced
   * by positive zeros. Floating point values are found at the top level and inside `Nullable`, `Array`, `Tuple`,
-  * `Map`, `LowCardinality`, `Sparse` and `Const` columns.
+  * `Map`, `LowCardinality`, `Sparse`, `Const` and `Replicated` columns.
   */
 
 /// Returns `nullptr` if the column contains no negative zeros, which is the common case.
@@ -26,5 +26,9 @@ ColumnPtr replaceNegativeZeros(const ColumnPtr & column);
 /// Replaces the key columns that contain negative zeros. The replacement columns are appended to `holder`,
 /// which has to outlive the usage of `key_columns`.
 void replaceNegativeZeros(ColumnRawPtrs & key_columns, Columns & holder);
+
+/// Whether the column contains a floating point zero of either sign, at any of the places listed above.
+/// It can report a zero that is not referenced by any row, e.g. an unused value of a `LowCardinality` dictionary.
+bool containsFloatingPointZero(const IColumn & column);
 
 }
