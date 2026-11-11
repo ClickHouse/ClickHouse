@@ -11,6 +11,7 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <Core/AccurateComparison.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -35,7 +36,7 @@
 
 #include "config.h"
 
-#if USE_MULTITARGET_CODE || defined(__SSSE3__)
+#if USE_X86_64_MULTITARGET_CODE || defined(__SSSE3__)
 #    include <immintrin.h>
 #endif
 
@@ -54,7 +55,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -336,7 +336,7 @@ void ColumnVector<T>::compareColumn(
         return;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         compareColumnImpl_x86_64_v4<T>(data, value, compare_results, direction, nan_direction_hint);
@@ -403,7 +403,7 @@ static size_t getEqualRangeEndAssumeSortedImpl(const T * d, size_t begin, size_t
     size_t window_end = std::min(begin + window, end);
 
     size_t hit = 0;
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         hit = findFirstNotEqualImpl_x86_64_v4<T>(d, begin, window_end, ref, nan_direction_hint);
     else
@@ -740,6 +740,21 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
         }
         return false;
     }
+
+    if constexpr (is_integer<T>)
+    {
+        /// NearestFieldType<T> is wider than T for narrow integers (e.g. Int64 for Int8),
+        /// so a plain static_cast<T> silently wraps out-of-range values (1944 -> -104 for Int8).
+        /// This corrupts data for narrow-integer Variant/Dynamic subcolumns: ColumnDynamic::insert
+        /// treats a successful tryInsert as "the value fit an existing variant" and never widens
+        /// it. Reject overflowing values so the caller can extend the Variant to a wider type.
+        T result{};
+        if (!accurate::convertNumeric<NearestFieldType<T>, T, /*strict=*/false>(value, result))
+            return false;
+        data.push_back(result);
+        return true;
+    }
+
     data.push_back(static_cast<T>(value));
     return true;
 }
@@ -753,11 +768,8 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
-    if (start + length > src_vec.data.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                        "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnVector<T>::insertRangeFrom method (data.size() = {}).",
-                        toString(start), toString(length), toString(src_vec.data.size()));
+    if (start > src_vec.data.size() || length > src_vec.data.size() - start)
+        throwInsertRangeFromOutOfBound("ColumnVector<T>", start, length, src_vec.data.size());
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -1244,7 +1256,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     const size_t window_size = static_cast<size_t>(sqrt(1 + size / offsets.back()));
     bool use_window = window_size > 16;
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         if (use_window)
             replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
@@ -1513,7 +1525,7 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     auto res = this->create(limit);
     typename Self::Container & res_data = res->getData();
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
     {
         /// VBMI optimization only applicable for (U)Int8 types

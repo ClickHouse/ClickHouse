@@ -7,7 +7,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int BUZZHOUSE;
+extern const int BUZZHOUSE_ORACLE;
 }
 }
 
@@ -1047,7 +1047,7 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-    ff->set_format(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : fc.out_formats));
+    ff->set_format(can_test_oracle_result ? rg.pickRandomly(QueryOracle::oracleFormats) : fc.pickFormat(rg, fc.out_formats));
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -1071,6 +1071,14 @@ void QueryOracle::generateExportQuery(
         /// Ensure deleted mask and patch parts are applied
         svs = svs ? svs : ins->mutable_setting_values();
         finishSettings(svs);
+        /// `iso` keeps the instant (UTC with `Z`): `simple` loses it in a DST fold, and no input format reads
+        /// back a short `unix_timestamp`. The import copies these settings, and only `best_effort` parses `iso`.
+        SetValue * sv = svs->add_other_values();
+        sv->set_property("date_time_output_format");
+        sv->set_value("'iso'");
+        sv = svs->add_other_values();
+        sv->set_property("date_time_input_format");
+        sv->set_value("'best_effort'");
     }
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -1513,7 +1521,13 @@ void QueryOracle::generateImportQuery(
     if (can_test_oracle_result)
     {
         /// Ensure deleted mask and patch parts are applied
-        finishSettings(nins->mutable_setting_values());
+        SettingValues * svs = nins->mutable_setting_values();
+        finishSettings(svs);
+        /// `SELECT ... FINAL` keeps all-zero `SummingMergeTree` rows that a merge on insert would drop,
+        /// so reload exactly the dumped rows.
+        SetValue * sv = svs->add_other_values();
+        sv->set_property("optimize_on_insert");
+        sv->set_value("0");
     }
 }
 
@@ -1728,6 +1742,14 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     SettingValues * svs = sel->mutable_setting_values();
 
     finishSettings(svs);
+    if (peer_query == PeerQuery::None)
+    {
+        /// `maybeUpdateOracleSelectQuery` may replace a table with a remote or table function call,
+        /// whose virtual columns (`_table`, `_path` etc.) differ, so keep them out of `SELECT *`.
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        sv->set_property("asterisk_include_virtual_columns");
+        sv->set_value("0");
+    }
     if (measure_performance)
     {
         /// Add tag to find query later on
@@ -1835,8 +1857,14 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
                                 /// Replace table with table function call
                                 const SQLTable & t = gen.tables.at(tkey);
 
+                                /// The table function's `structure` lists the columns in arbitrary order, which `SELECT *`
+                                /// would expose, so only swap a table whose structure has a single entry.
+                                gen.flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+                                const bool single_structure_entry = gen.remote_entries.size() <= 1;
+                                gen.remote_entries.clear();
+
                                 gen.setAllowNotDetermistic(false);
-                                if (t.isEngineReplaceable() && rg.nextSmallNumber() < 5)
+                                if (single_structure_entry && t.isEngineReplaceable() && rg.nextSmallNumber() < 5)
                                 {
                                     gen.setTableFunction(rg, TableFunctionUsage::EngineReplace, t, tf->mutable_tfunc());
                                 }
@@ -1992,6 +2020,10 @@ void QueryOracle::replaceQueryWithTablePeers(
             gen.columnPathRef(colRef, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         }
         gen.entries.clear();
+        /// Store exactly the `FINAL` rows: a merge on insert would drop all-zero `SummingMergeTree` rows
+        SetValue * sv = ins->mutable_setting_values()->mutable_set_value();
+        sv->set_property("optimize_on_insert");
+        sv->set_value("0");
         peer_queries.emplace_back(next2);
     }
 }
@@ -2042,7 +2074,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
             && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))
         {
             throw DB::Exception(
-                DB::ErrorCodes::BUZZHOUSE,
+                DB::ErrorCodes::BUZZHOUSE_ORACLE,
                 "{}: failed with different success results: {} vs {}",
                 oracle_name,
                 DB::ErrorCodes::getName(first_errcode),
@@ -2062,7 +2094,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
                 md5_hash2.hashFile((peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qcfile).generic_string(), second_digest);
                 if (first_digest != second_digest)
                 {
-                    throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different result sets", oracle_name);
+                    throw DB::Exception(DB::ErrorCodes::BUZZHOUSE_ORACLE, "{}: failed with different result sets", oracle_name);
                 }
             }
         }

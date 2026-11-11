@@ -1,0 +1,6 @@
+=== created ===
+created
+=== the default request limit rejects the same query text sent by a client ===
+Max query size exceeded
+=== invoked over HTTP with the default limit ===
+300000
