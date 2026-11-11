@@ -27,6 +27,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/ComparisonNames.h>
+#include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/if.h>
@@ -869,18 +870,45 @@ struct JoinPlanningContext
 /// so values that differ only in trailing zero bytes are equal (`toFixedString('a', 3) = 'a'`). The cast to the common
 /// type `String` drops the trailing zero bytes of the `FixedString` operand; the `String` operand needs the same
 /// normalization, otherwise the keys would order `'a'` before `'a\0\0'` where the operator sees a tie.
-static bool isFixedStringVsString(const DataTypePtr & left_type, const DataTypePtr & right_type)
+/// The same holds for the elements of tuples, see `hasAlignedStringVsFixedStringElement`: this trims every `String`
+/// it finds in `node`. A rebuilt tuple loses its element names, so the caller casts the result to the common type.
+static const ActionsDAG::Node * addTrimZeroBytes(ActionsDAG & dag, const ActionsDAG::Node * node, const DataTypePtr & other_type)
 {
-    auto left = removeLowCardinalityAndNullable(left_type);
-    auto right = removeLowCardinalityAndNullable(right_type);
-    return (isFixedString(left) && isString(right)) || (isString(left) && isFixedString(right));
-}
+    if (!hasAlignedStringVsFixedStringElement(node->result_type, other_type))
+        return node;
 
-static const ActionsDAG::Node * addTrimZeroBytes(ActionsDAG & dag, const ActionsDAG::NodeRawConstPtrs & nodes)
-{
-    auto string_type = std::make_shared<DataTypeString>();
-    const auto & zero_byte = dag.addColumn(string_type->createColumnConst(1, String(1, '\0')), string_type, "'\\0'_String");
-    return &dag.addFunction(FunctionFactory::instance().get("trimRight", nullptr), {nodes.at(0), &zero_byte}, {});
+    const auto & factory = FunctionFactory::instance();
+    if (!isTuple(removeNullable(node->result_type)))
+    {
+        auto string_type = std::make_shared<DataTypeString>();
+        const auto & zero_byte = dag.addColumn(string_type->createColumnConst(1, String(1, '\0')), string_type, "'\\0'_String");
+        return &dag.addFunction(factory.get("trimRight", nullptr), {node, &zero_byte}, {});
+    }
+
+    const bool is_nullable = node->result_type->isNullable();
+    const auto * tuple_node = is_nullable ? &dag.addFunction(factory.get("assumeNotNull", nullptr), {node}, {}) : node;
+
+    const auto other_tuple_type = removeLowCardinalityAndNullable(other_type);
+    const auto & other_elements = assert_cast<const DataTypeTuple &>(*other_tuple_type).getElements();
+    auto index_type = std::make_shared<DataTypeUInt64>();
+    ActionsDAG::NodeRawConstPtrs elements;
+    for (size_t i = 0; i < other_elements.size(); ++i)
+    {
+        const auto & index = dag.addColumn(index_type->createColumnConst(1, i + 1), index_type, fmt::format("{}_UInt64", i + 1));
+        const auto & element = dag.addFunction(factory.get("tupleElement", nullptr), {tuple_node, &index}, {});
+        elements.push_back(addTrimZeroBytes(dag, &element, other_elements[i]));
+    }
+
+    const auto * result = &dag.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>()), elements, {});
+    if (!is_nullable)
+        return result;
+
+    /// A NULL tuple stays NULL.
+    const auto & is_null = dag.addFunction(factory.get("isNull", nullptr), {node}, {});
+    return &dag.addFunction(
+        createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false, /*use_low_cardinality_optimisation=*/ false),
+        {&is_null, node, result},
+        {});
 }
 
 /** Convert the operands of an equality (or ASOF inequality) predicate in the JOIN ON section to a common type.
@@ -967,12 +995,16 @@ static void predicateOperandsToCommonType(
         return &dag.addCast(*arg, common_type, {}, nullptr);
     };
 
-    bool trim_zero_bytes = !cast_to_subtype && isFixedStringVsString(left_type, right_type);
+    /// The trim goes before the cast: it rebuilds a tuple without its element names, and the cast restores them.
+    auto trim_transform = [](const DataTypePtr & other_type)
+    {
+        return [&other_type](ActionsDAG & dag, auto && nodes) { return addTrimZeroBytes(dag, nodes.at(0), other_type); };
+    };
 
-    if (!left_type->equals(*common_type))
+    if (!cast_to_subtype && hasAlignedStringVsFixedStringElement(left_type, right_type))
+        left_node = JoinActionRef::transform({left_node}, trim_transform(right_type));
+    if (!left_node.getType()->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);
-    if (trim_zero_bytes && isString(removeLowCardinalityAndNullable(left_type)))
-        left_node = JoinActionRef::transform({left_node}, addTrimZeroBytes);
 
     auto transform_right_node = [&](auto && transform)
     {
@@ -1012,10 +1044,10 @@ static void predicateOperandsToCommonType(
     }
     else
     {
-        if (!right_type->equals(*common_type))
+        if (!cast_to_subtype && hasAlignedStringVsFixedStringElement(right_type, left_type))
+            transform_right_node(trim_transform(left_type));
+        if (!right_node.getType()->equals(*common_type))
             transform_right_node(cast_transform);
-        if (trim_zero_bytes && isString(removeLowCardinalityAndNullable(right_type)))
-            transform_right_node(addTrimZeroBytes);
     }
 }
 
@@ -2871,19 +2903,26 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
 
         bool is_key_pair = (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
 
-        /// The callers compare the extracted keys at their least supertype, so a `FixedString` vs `String` pair
-        /// has to leave here normalized: the `FixedString` side cast to the common type, the `String` side trimmed.
-        if (is_key_pair && isFixedStringVsString(lhs.getType(), rhs.getType()))
+        /// The callers compare the extracted keys at their least supertype, so `FixedString` vs `String` values, also as
+        /// tuple elements, leave here normalized: the `String` ones trimmed, the others by the cast to the common type.
+        const auto lhs_type = lhs.getType();
+        const auto rhs_type = rhs.getType();
+        const bool has_strings_to_trim = is_key_pair
+            && (hasAlignedStringVsFixedStringElement(lhs_type, rhs_type) || hasAlignedStringVsFixedStringElement(rhs_type, lhs_type));
+        /// Without a common type the join reports the mismatch itself.
+        if (auto common_type = has_strings_to_trim ? tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}) : nullptr)
         {
-            auto common_type = getLeastSupertype(DataTypes{lhs.getType(), rhs.getType()});
-            auto cast_transform = [&](ActionsDAG & dag, auto && nodes) { return &dag.addCast(*nodes.at(0), common_type, {}, nullptr); };
-            for (auto * operand : {&lhs, &rhs})
+            common_type = JoinCommon::compareBoolKeysAsUInt8(common_type, lhs_type, rhs_type);
+            auto normalize = [&](JoinActionRef & operand, const DataTypePtr & other_type)
             {
-                if (isFixedString(removeLowCardinalityAndNullable(operand->getType())))
-                    *operand = JoinActionRef::transform({*operand}, cast_transform);
-                else
-                    *operand = JoinActionRef::transform({*operand}, addTrimZeroBytes);
-            }
+                operand = JoinActionRef::transform({operand}, [&](ActionsDAG & dag, auto && nodes)
+                {
+                    const auto * node = addTrimZeroBytes(dag, nodes.at(0), other_type);
+                    return node->result_type->equals(*common_type) ? node : &dag.addCast(*node, common_type, {}, nullptr);
+                });
+            };
+            normalize(lhs, rhs_type);
+            normalize(rhs, lhs_type);
             expr = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(predicate_op));
         }
 

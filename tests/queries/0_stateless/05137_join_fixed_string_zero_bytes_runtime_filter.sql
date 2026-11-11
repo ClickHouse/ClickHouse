@@ -37,6 +37,13 @@ SELECT '-- multiple keys: LEFT ANTI JOIN builds a single filter on the key tuple
 SELECT count() FROM fs LEFT ANTI JOIN s ON fs.x = s.y AND fs.i = s.j + 1;
 SELECT count() FROM s LEFT ANTI JOIN fs ON s.y = fs.x AND s.j + 1 = fs.i;
 
+SELECT '-- tuple keys: oracle, inner and anti in both orientations';
+SELECT countIf((x, i) = (y, j + 1)) FROM fs, s;
+SELECT count() FROM fs JOIN s ON (fs.x, fs.i) = (s.y, s.j + 1);
+SELECT count() FROM s JOIN fs ON (s.y, s.j + 1) = (fs.x, fs.i);
+SELECT count() FROM fs LEFT ANTI JOIN s ON (fs.x, fs.i) = (s.y, s.j + 1);
+SELECT count() FROM s LEFT ANTI JOIN fs ON (s.y, s.j + 1) = (fs.x, fs.i);
+
 SELECT '-- Nullable and LowCardinality wrappers';
 SELECT count() FROM (SELECT toNullable(y) AS y FROM s) AS sn JOIN fs ON sn.y = fs.x;
 SELECT count() FROM (SELECT toLowCardinality(y) AS y FROM s) AS sl JOIN fs ON sl.y = fs.x;
@@ -46,6 +53,9 @@ SELECT count() FROM s JOIN (SELECT toLowCardinality(x) AS x FROM fs) AS fsl ON s
 SELECT '-- the runtime filter is built and applied on the normalized keys';
 SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' from \\w+\\.\\w+', '')
 FROM (EXPLAIN actions = 1 SELECT count() FROM s JOIN fs ON s.y = fs.x)
+WHERE explain LIKE '%Build runtime join filter on%' OR explain LIKE '%Filter column: RF%';
+SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' from \\w+\\.\\w+', '')
+FROM (EXPLAIN actions = 1 SELECT count() FROM s JOIN fs ON tuple(s.y) = tuple(fs.x))
 WHERE explain LIKE '%Build runtime join filter on%' OR explain LIKE '%Filter column: RF%';
 
 DROP TABLE fs;

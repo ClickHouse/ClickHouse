@@ -67,6 +67,44 @@ SELECT isNotDistinctFrom(toNullable(toFixedString('a', 3)), 'a\0\0'), isNotDisti
 SELECT countIf(isNotDistinctFrom(fsn.x, sn.y)) FROM (SELECT toNullable(x) AS x FROM fs UNION ALL SELECT NULL) AS fsn, (SELECT toNullable(y) AS y FROM s UNION ALL SELECT NULL) AS sn;
 SELECT count() FROM (SELECT toNullable(x) AS x FROM fs UNION ALL SELECT NULL) AS fsn JOIN (SELECT toNullable(y) AS y FROM s UNION ALL SELECT NULL) AS sn ON isNotDistinctFrom(fsn.x, sn.y) SETTINGS join_algorithm = 'hash';
 
+SELECT '-- tuples are compared element-wise, so their elements follow the same rule';
+-- With runtime filters the keys are normalized in another place, see 05137_join_fixed_string_zero_bytes_runtime_filter.
+SET enable_join_runtime_filters = 0;
+SELECT 'oracle', countIf(tuple(x) = tuple(y)), countIf((x, i) = (y, j + 1)), countIf((x, i) <=> (y, j + 1)), countIf(tuple(x) < tuple(y)) FROM fs, s;
+SELECT 'hash', count() FROM fs JOIN s ON tuple(fs.x) = tuple(s.y) SETTINGS join_algorithm = 'hash';
+SELECT 'two elements', count() FROM fs JOIN s ON (fs.x, fs.i) = (s.y, s.j + 1) SETTINGS join_algorithm = 'hash';
+SELECT 'full_sorting_merge', count() FROM fs JOIN s ON (fs.x, fs.i) = (s.y, s.j + 1) SETTINGS join_algorithm = 'full_sorting_merge';
+SELECT 'swapped sides', count() FROM s JOIN fs ON (s.y, s.j + 1) = (fs.x, fs.i) SETTINGS join_algorithm = 'hash';
+SELECT 'null-safe', count() FROM fs JOIN s ON (fs.x, fs.i) <=> (s.y, s.j + 1) SETTINGS join_algorithm = 'hash';
+SELECT 'ie_join <', count() FROM fs JOIN s ON tuple(fs.x) < tuple(s.y) AND fs.i > s.j SETTINGS join_algorithm = 'ie_join';
+SELECT 'anti', count() FROM fs LEFT ANTI JOIN s ON tuple(fs.x) = tuple(s.y) SETTINGS join_algorithm = 'hash';
+
+SELECT '-- nested tuples with a String element on each side';
+SELECT countIf((i, (x, p)) = (j + 1, (y, q))) FROM (SELECT *, 'a\0' AS p FROM fs) AS l, (SELECT *, toFixedString('a', 4) AS q FROM s) AS r;
+SELECT count() FROM (SELECT *, 'a\0' AS p FROM fs) AS l JOIN (SELECT *, toFixedString('a', 4) AS q FROM s) AS r ON (l.i, (l.x, l.p)) = (r.j + 1, (r.y, r.q)) SETTINGS join_algorithm = 'hash';
+
+SELECT '-- Nullable and LowCardinality elements';
+SELECT count() FROM fs JOIN (SELECT toNullable(y) AS y FROM s) AS sn ON tuple(fs.x) = tuple(sn.y) SETTINGS join_algorithm = 'hash';
+SELECT count() FROM fs JOIN (SELECT toLowCardinality(y) AS y FROM s) AS sl ON tuple(fs.x) = tuple(sl.y) SETTINGS join_algorithm = 'hash';
+SELECT count() FROM (SELECT toNullable(x) AS x FROM fs) AS fsn JOIN s ON tuple(fsn.x) = tuple(s.y) SETTINGS join_algorithm = 'hash';
+
+SELECT '-- named tuple columns in USING keep their element names';
+SELECT toTypeName(t), count() FROM (SELECT CAST((x, i), 'Tuple(a FixedString(3), b UInt8)') AS t FROM fs) AS l JOIN (SELECT CAST((y, j + 1), 'Tuple(a String, b UInt16)') AS t FROM s) AS r USING (t) GROUP BY ALL SETTINGS join_algorithm = 'hash';
+
+SELECT '-- Nullable(Tuple): the oracle, the join, and the left rows without a match, where a NULL key stays NULL';
+SELECT countIf(l.t = r.t) FROM (SELECT CAST(tuple(x), 'Nullable(Tuple(FixedString(3)))') AS t FROM fs UNION ALL SELECT NULL) AS l, (SELECT CAST(tuple(y), 'Nullable(Tuple(String))') AS t FROM s UNION ALL SELECT NULL) AS r;
+SELECT count() FROM (SELECT CAST(tuple(x), 'Nullable(Tuple(FixedString(3)))') AS t FROM fs UNION ALL SELECT NULL) AS l JOIN (SELECT CAST(tuple(y), 'Nullable(Tuple(String))') AS t FROM s UNION ALL SELECT NULL) AS r ON l.t = r.t SETTINGS join_algorithm = 'hash';
+SELECT count() FROM (SELECT CAST(tuple(x), 'Nullable(Tuple(FixedString(3)))') AS t FROM fs UNION ALL SELECT NULL) AS l LEFT ANTI JOIN (SELECT CAST(tuple(y), 'Nullable(Tuple(String))') AS t FROM s UNION ALL SELECT NULL) AS r ON l.t = r.t SETTINGS join_algorithm = 'hash';
+
+SELECT '-- Nullable(Tuple) with <=>: the oracle and the join, where NULL matches NULL';
+SELECT countIf(l.t <=> r.t) FROM (SELECT CAST(tuple(x), 'Nullable(Tuple(FixedString(3)))') AS t FROM fs UNION ALL SELECT NULL) AS l, (SELECT CAST(tuple(y), 'Nullable(Tuple(String))') AS t FROM s UNION ALL SELECT NULL) AS r;
+SELECT count() FROM (SELECT CAST(tuple(x), 'Nullable(Tuple(FixedString(3)))') AS t FROM fs UNION ALL SELECT NULL) AS l JOIN (SELECT CAST(tuple(y), 'Nullable(Tuple(String))') AS t FROM s UNION ALL SELECT NULL) AS r ON l.t <=> r.t SETTINGS join_algorithm = 'hash';
+
+SELECT '-- arrays are compared after the cast to the common type, by the operator and by the join';
+SELECT countIf([x] = [y]), countIf(tuple([x]) = tuple([y])) FROM fs, s;
+SELECT count() FROM fs JOIN s ON [fs.x] = [s.y] SETTINGS join_algorithm = 'hash';
+SELECT count() FROM fs JOIN s ON tuple([fs.x]) = tuple([s.y]) SETTINGS join_algorithm = 'hash';
+
 DROP TABLE fs;
 DROP TABLE s;
 DROP TABLE fs5;
