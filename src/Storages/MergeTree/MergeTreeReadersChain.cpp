@@ -479,6 +479,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             patched_rows);
 
         forgetPatchedRows(result, patched_rows);
+        forgetDefaultIntermediatesDependingOn(result, *range_reader.getReader(), patched_columns);
         return patched_columns;
     };
 
@@ -719,19 +720,33 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     const NamesAndTypesList & candidates,
     NamesAndTypesList & columns_to_evaluate)
 {
-    /// Evaluating each column separately, `evaluateDefaults` would evaluate anew the missing columns its expression
-    /// reads through, so that two columns reading the same `b DEFAULT a + rand()` would no longer agree in a row.
-    /// They are evaluated once, as columns of their own, and removed from the block afterwards.
+    /// The missing columns kept from the first evaluation (`ReadResult::default_intermediates`) are read as they are.
+    /// The other missing columns the expressions read through, the ones whose `DEFAULT` reads a patched column, would be
+    /// evaluated anew by `evaluateDefaults` for each column it is called for, so that two columns reading the same
+    /// `b DEFAULT a + rand()` would no longer agree in a row. They are evaluated once, as columns of their own, and removed
+    /// from the block afterwards.
     ///
     /// Such a missing column gets a new value here, so the other candidates that read it are evaluated again too,
-    /// even if they read no patched column: for `b DEFAULT rand64()`, `z DEFAULT a + b` and `y DEFAULT b`, evaluating
-    /// only `z` again after `a` is patched would leave `y` with the value of `b` the first evaluation gave. A missing
-    /// column has no value to keep from one read to the next anyway: its `DEFAULT` is evaluated on every read.
+    /// even if they read no patched column: for `b DEFAULT a + rand64()`, `z DEFAULT a + b` and `y DEFAULT b`, evaluating
+    /// only `z` again after `a` is patched would leave `y` with the value of `b` the first evaluation gave.
     /// A candidate added this way gets a new value too, so the candidates that read it, directly or not, are evaluated
     /// again as well: with `w DEFAULT y` also requested, `w` must take the new value of `y`. This repeats until
     /// no more candidates are added.
     /// A sort-key column is never added this way, even if it reads such a missing column: it keeps the value its `DEFAULT`
     /// gave, as the rows of the part are sorted by it (see `IMergeTreeReader::getDefaultsDependingOn`).
+    /// The unrequested missing columns that keep their values are inputs like the others: the expressions evaluated
+    /// again read the values the other columns were evaluated from, see `ReadResult::default_intermediates`.
+    /// The ones whose `DEFAULT` reads a patched column are not there any more, and are evaluated anew below.
+    NameSet retained_names;
+    for (const auto & column : result.default_intermediates)
+    {
+        if (!block.has(column.name))
+        {
+            block.insert(column);
+            retained_names.insert(column.name);
+        }
+    }
+
     NameSet candidate_names;
     for (const auto & candidate : candidates)
         candidate_names.insert(candidate.name);
@@ -953,11 +968,14 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
 
     for (const auto & column : intermediates)
         block.erase(column.name);
+
+    for (const auto & name : retained_names)
+        block.erase(name);
 }
 
 void MergeTreeReadersChain::forgetColumnsOverwrittenByStep(ReadResult & result, const MergeTreeRangeReader & range_reader)
 {
-    if (result.columns_filled_by_defaults.empty())
+    if (result.columns_filled_by_defaults.empty() && result.default_intermediates.empty())
         return;
 
     const auto * prewhere_info = range_reader.getPrewhereInfo();
@@ -966,14 +984,36 @@ void MergeTreeReadersChain::forgetColumnsOverwrittenByStep(ReadResult & result, 
 
     /// An on-fly `UPDATE z = ...` outputs `z` as a computed node under the column's name; the
     /// columns the step passes through are its `INPUT` nodes and keep the values they came with.
+    NameSet recomputed_columns;
     for (const auto * output : prewhere_info->actions->getActionsDAG().getOutputs())
     {
         if (output->type != ActionsDAG::ActionType::INPUT)
         {
+            recomputed_columns.insert(output->result_name);
             result.columns_filled_by_defaults.erase(output->result_name);
             if (result.rows_filled_by_defaults.has(output->result_name))
                 result.rows_filled_by_defaults.erase(output->result_name);
         }
+    }
+
+    forgetDefaultIntermediatesDependingOn(result, *range_reader.getReader(), recomputed_columns);
+}
+
+void MergeTreeReadersChain::forgetDefaultIntermediatesDependingOn(ReadResult & result, const IMergeTreeReader & reader, const NameSet & changed_columns)
+{
+    if (result.default_intermediates.empty() || changed_columns.empty())
+        return;
+
+    NameSet names;
+    for (const auto & column : result.default_intermediates)
+        names.insert(column.name);
+
+    /// The value of such a column is stale: it is evaluated anew when it is needed again.
+    auto stale = reader.getDefaultsDependingOn(names, changed_columns);
+    for (const auto & name : names)
+    {
+        if (stale.contains(name) || changed_columns.contains(name))
+            result.default_intermediates.erase(name);
     }
 }
 
@@ -1034,7 +1074,7 @@ void MergeTreeReadersChain::reevaluateDefaultsAfterPatches(ReadResult & result, 
 
 void MergeTreeReadersChain::evaluateMissingDefaults(
     MergeTreeRangeReader & range_reader,
-    const ReadResult & result,
+    ReadResult & result,
     const Block & previous_header,
     Columns & columns) const
 {
@@ -1047,8 +1087,17 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
     for (const auto & col : result.additional_columns)
         additional_columns.insert(col);
 
+    /// The defaults evaluated here read the same values of the unrequested missing columns as the ones evaluated
+    /// before them, and as the ones evaluated again after patches, see `ReadResult::default_intermediates`.
+    for (const auto & col : result.default_intermediates)
+    {
+        if (!additional_columns.has(col.name))
+            additional_columns.insert(col);
+    }
+
     addDummyColumnWithRowCount(additional_columns, result.num_rows);
-    range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns);
+    range_reader.getReader()->evaluateMissingDefaults(
+        additional_columns, columns, patch_readers.empty() ? nullptr : &result.default_intermediates);
 }
 
 void MergeTreeReadersChain::executePrewhereActions(
@@ -1361,6 +1410,8 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
         forgetPatchedRows(result, patched_additional_rows);
         patched_columns.insert(patched_additional_columns.begin(), patched_additional_columns.end());
     }
+
+    forgetDefaultIntermediatesDependingOn(result, *range_readers[reader_index].getReader(), patched_columns);
 
     /// The steps up to this one evaluated their `DEFAULT` columns before these patches were
     /// applied, so a `DEFAULT` that reads a column patched here was computed from a stale value.

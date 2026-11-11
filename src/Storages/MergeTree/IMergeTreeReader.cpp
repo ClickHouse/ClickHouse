@@ -787,7 +787,7 @@ void IMergeTreeReader::evaluateDefaults(Block & block, const NamesAndTypesList &
     }
 }
 
-void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const
+void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns, Block * intermediates) const
 {
     try
     {
@@ -827,6 +827,17 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         auto context_copy = createContextForDefaultExpressions();
         auto combined_columns = buildCombinedColumnsForDefaultExpressions();
 
+        /// Every missing column evaluated here is kept, not only the unrequested ones: a missing parent of requested
+        /// subcolumns, such as `b` of `b.x`, must give the same `b.x` to a `DEFAULT` evaluated again, and a column
+        /// requested by the query may be evaluated here only as an input of another one, e.g. of a sort-key column
+        /// filled before the patches, and then requested from the next evaluation, which must give the same value.
+        NameSet input_names;
+        if (intermediates)
+        {
+            for (const auto & column : additional_columns)
+                input_names.insert(column.name);
+        }
+
         auto dag = DB::evaluateMissingDefaults(
             additional_columns,
             full_requested_columns,
@@ -841,6 +852,18 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                 ExpressionActionsSettings(context_copy->getSettingsRef()));
             actions->execute(additional_columns);
         }
+
+        if (intermediates)
+        {
+            const auto & graph = getDefaultExpressionsGraph();
+            for (const auto & column : additional_columns)
+            {
+                if (column.column && !input_names.contains(column.name)
+                    && graph.missing_in_part.contains(column.name) && !intermediates->has(column.name))
+                    intermediates->insert(column);
+            }
+        }
+
         /// Move columns from block.
         it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)

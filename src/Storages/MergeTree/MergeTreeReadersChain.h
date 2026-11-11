@@ -74,7 +74,7 @@ private:
     /// Evaluates default expressions for columns that are absent in part.
     void evaluateMissingDefaults(
         MergeTreeRangeReader & range_reader,
-        const ReadResult & result,
+        ReadResult & result,
         const Block & previous_header,
         Columns & columns) const;
 
@@ -99,6 +99,10 @@ private:
     /// Removes the columns the step's action recomputes from `result.columns_filled_by_defaults`:
     /// their value is the action's, not their `DEFAULT`'s, and must not be evaluated again.
     static void forgetColumnsOverwrittenByStep(ReadResult & result, const MergeTreeRangeReader & range_reader);
+
+    /// Removes from `result.default_intermediates` the columns whose `DEFAULT` reads one of `changed_columns`,
+    /// directly or not, and `changed_columns` themselves: their values are stale.
+    static void forgetDefaultIntermediatesDependingOn(ReadResult & result, const IMergeTreeReader & reader, const NameSet & changed_columns);
 
     /// Takes the rows of `patched_rows` (see `applyPatches`) out of `result.rows_filled_by_defaults`:
     /// a patched row keeps its patched value. A column none of whose rows holds its `DEFAULT` any more

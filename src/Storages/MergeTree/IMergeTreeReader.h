@@ -81,7 +81,9 @@ public:
         Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
         const NameSet & previous_step_columns = {}) const;
     /// Evaluate defaulted columns if necessary.
-    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
+    /// If `intermediates` is passed, adds to it the columns the part does not store that were evaluated here
+    /// from their `DEFAULT`, including the ones a requested `DEFAULT` reads, unless it has them.
+    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns, Block * intermediates = nullptr) const;
 
     /// Evaluates the `DEFAULT` expressions of `columns_to_evaluate` (a subset of the requested
     /// columns, present in `block`) once more and replaces their values in `block`. The other

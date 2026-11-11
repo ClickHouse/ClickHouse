@@ -400,6 +400,14 @@ public:
         /// Only those rows are evaluated again; a column absent here holds its `DEFAULT` in every row.
         Block rows_filled_by_defaults;
 
+        /// The columns the part does not store that were evaluated from their `DEFAULT`, including the unrequested
+        /// ones a requested `DEFAULT` reads, e.g. `b` of `b DEFAULT rand64()` read by `z DEFAULT a + b` and by
+        /// a sort-key column `k DEFAULT b`. Kept only when patch parts are read: when `z` is evaluated again after
+        /// a patch to `a`, or `b` is evaluated by a later step, it reads or gets this value of `b` rather than
+        /// a new one, and so agrees with the columns that keep their values. A column leaves it when a column its `DEFAULT` reads is patched or
+        /// recomputed by a step. See `MergeTreeReadersChain::forgetDefaultIntermediatesDependingOn`.
+        Block default_intermediates;
+
         /// Track newly initiated granule ranges during startReadingChain. Does not contain the range started in previous read.
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;
