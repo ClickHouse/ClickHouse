@@ -1,0 +1,40 @@
+--- A an exact set of keys ---
+2	1415
+2	1415
+a_on	15
+a_off	0
+--- A2 the same through the iterator wrapper of a static filter ---
+2	1415
+2	1415
+a2_on	15
+a2_off	0
+--- A4 the same with 4 threads ---
+2	1415
+2	1415
+a4_on	1
+a4_off	0
+--- B the [min, max] range when the exact set is too large ---
+2	1415
+2	1415
+b_on	15
+b_off	0
+--- C a key under two casts prunes nothing ---
+7	5411
+7	5411
+c_on	0
+c_off	0
+--- D a Nullable key ---
+1	705
+1	705
+d_on	14
+d_off	0
+--- E a key under one cast ---
+2	1415
+2	1415
+e_on	15
+e_off	0
+--- H LEFT ANTI prunes nothing ---
+1598
+1598
+h_on	0
+h_off	0

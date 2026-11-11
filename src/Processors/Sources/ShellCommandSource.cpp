@@ -737,7 +737,8 @@ namespace
                                   "Executable generates stderr: {}", timeout_command_out.getStderr());
                 }
 
-                if (check_exit_code)
+                /// Do not wait for a command whose output was not read to the end: it may never exit while its pipes stay open.
+                if (check_exit_code && finished)
                 {
                     try
                     {
