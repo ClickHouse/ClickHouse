@@ -93,6 +93,8 @@ private:
 
     bool initialized = false;
     std::optional<size_t> last_right_offset;
+    /// (row_index, column_position) of a seek requested before the buffer exists, performed at the first data access.
+    std::optional<std::pair<size_t, size_t>> deferred_seek;
 
 protected:
     void init();
