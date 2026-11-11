@@ -308,6 +308,7 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
             SETTINGS
                 s3_max_single_part_upload_size=100,
                 s3_min_upload_part_size=100,
+                s3_max_inflight_parts_for_one_file=1,
                 s3_check_objects_after_upload=0
             """,
         query_id=insert_query_id,
@@ -315,6 +316,10 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
 
     assert "Code: 499" in error, error
     assert message in error, error
+
+    _, _, s3_errors = get_multipart_counters(node, insert_query_id)
+    # s3_retry_attempts + 1 attempts of the failing part, plus the failed abort of the fake upload
+    assert s3_errors == 5 + 1 + 1, s3_errors
 
 
 def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
@@ -387,6 +392,49 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         "DB::Exception: Poco::Exception. Code: 1000, e.code() = 32, I/O error: Broken pipe"
         in error
     ), error
+
+
+def test_early_error_response_at_upload_is_not_retried(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_at_part_upload(
+        count=1000,
+        after=0,
+        action="no_such_upload",
+        action_args=["1"],
+    )
+
+    insert_query_id = randomize_query_id("TEST_EARLY_ERROR_RESPONSE_AT_UPLOAD")
+    error = node.query_and_get_error(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_early_error_response_at_upload_is_not_retried',
+                'minio', '{minio_secret_key}',
+                'CSV', auto, 'none'
+            )
+        SELECT number, randomString(1000) FROM numbers(40000)
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=33554432,
+            s3_max_inflight_parts_for_one_file=1,
+            max_remote_write_network_bandwidth=1000000,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    assert "Code: 499" in error, error
+    assert "The specified upload does not exist" in error, error
+
+    create_multipart, upload_parts, s3_errors = get_multipart_counters(
+        node, insert_query_id
+    )
+    assert create_multipart == 1
+    assert upload_parts == 1
+    # the early 404 and the failed abort of the fake upload
+    assert s3_errors == 2, s3_errors
 
 
 @pytest.mark.parametrize("send_something", [True, False])
