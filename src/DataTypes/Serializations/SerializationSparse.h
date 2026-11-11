@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -33,6 +35,8 @@ public:
     static SerializationPtr create(const SerializationPtr & nested_);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return nested->supportsPooling(); }
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnSparse); }
 
     KindStack getKindStack() const override;
     MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
@@ -147,6 +151,8 @@ private:
 
 public:
     using Base = SerializationNumber<UInt8>;
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnUInt8); }
 
     static UInt128 getHash();
     static SerializationPtr create();

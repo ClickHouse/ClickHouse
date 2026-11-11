@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
@@ -27,6 +28,8 @@ private:
 public:
     static UInt128 getHash(const SerializationPtr & nested_, bool use_default_null_map_);
     static SerializationPtr create(const SerializationPtr & nested_, bool use_default_null_map_ = false);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnNullable); }
 
     /// Whether a resolved subcolumn is really the null map, which its name alone cannot tell.
     static bool isNullMapSubcolumn(const SubstreamPath & path);
