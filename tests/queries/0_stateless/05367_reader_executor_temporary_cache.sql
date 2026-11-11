@@ -19,10 +19,12 @@ SET use_reader_executor = 1, remote_filesystem_read_method = 'read', enable_file
 SET read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0, use_uncompressed_cache = 0, use_columns_cache = 0;
 SET max_threads = 1;
 
-SELECT count(), sum(k) FROM t_re_temporary_cache
+-- `sum(cityHash64(v))` reads the data: per-part statistics can answer `sum(k)` without it.
+
+SELECT count(), sum(cityHash64(v)) FROM t_re_temporary_cache
 SETTINGS log_comment = '05367_temporary', read_from_filesystem_cache_if_exists_otherwise_cache_temporarily = 1;
-SELECT count(), sum(k) FROM t_re_temporary_cache SETTINGS log_comment = '05367_after_temporary';
-SELECT count(), sum(k) FROM t_re_temporary_cache SETTINGS log_comment = '05367_warm';
+SELECT count(), sum(cityHash64(v)) FROM t_re_temporary_cache SETTINGS log_comment = '05367_after_temporary';
+SELECT count(), sum(cityHash64(v)) FROM t_re_temporary_cache SETTINGS log_comment = '05367_warm';
 
 SYSTEM FLUSH LOGS query_log;
 
