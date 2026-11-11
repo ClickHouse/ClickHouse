@@ -57,7 +57,7 @@ $CLIENT --query "
     INSERT INTO fresh VALUES (7);
     SELECT 'create', b FROM fresh;"
 
-# `OPTIMIZE` removes the replaced files of the table, and nothing outside its directories.
+# `OPTIMIZE` keeps the replaced files, which earlier snapshots still reference, and deletes nothing outside the table's directories.
 IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
 OPT="${PREFIX}/opt"
 $CLIENT --query "
@@ -77,12 +77,13 @@ $CLIENT --query "
 # The cloud build routes `OPTIMIZE` elsewhere and may refuse it, see 04815_iceberg_optimize_position_delete_row_count_113745.
 optimize_err=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE opt" 2>&1)
 if [[ "${IS_CLOUD}" = "1" ]]; then
-    printf 'old data files left\t0\n'
+    printf 'old data files kept\t1\n'
 elif [[ -n "${optimize_err}" ]]; then
     echo "OPTIMIZE failed: ${optimize_err}"
 else
     $CLIENT --query "
-        SELECT 'old data files left', count() FROM s3(s3_conn, filename = '${OPT}/data/*', format = 'One')
+        SELECT 'old data files kept', count() = (SELECT count() FROM old_data_files)
+        FROM s3(s3_conn, filename = '${OPT}/data/*', format = 'One')
         WHERE _file IN (SELECT _file FROM old_data_files)"
 fi
 $CLIENT --query "
