@@ -1,0 +1,9 @@
+parallel_distributed_insert_select=0 ACCESS_DENIED
+parallel_distributed_insert_select=1 ACCESS_DENIED
+parallel_distributed_insert_select=2 ACCESS_DENIED
+0
+1
+row policy on source ILLEGAL_PREWHERE
+additional_table_filters 1
+remote database proxy ACCESS_DENIED
+2
