@@ -15,6 +15,7 @@
 #include <Common/assert_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <algorithm>
 #include <cstring> // memcpy
 #include <limits>
@@ -1077,17 +1078,17 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
             memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
     }
 
-    auto res = ColumnArray::create(data->cloneEmpty());
-
     ssize_t nested_result_size_hint = 0;
     if (result_size_hint < 0)
         nested_result_size_hint = result_size_hint;
     else if (result_size_hint && result_size_hint < 1000000000 && data->size() < 1000000000)    /// Avoid overflow.
          nested_result_size_hint = result_size_hint * data->size() / size;
 
-    res->data = data->filter(nested_filt, nested_result_size_hint);
+    /// See the comment in `indexImpl` about building the nested result first.
+    ColumnPtr res_data = data->filter(nested_filt, nested_result_size_hint);
 
-    Offsets & res_offsets = res->getOffsets();
+    auto res_offsets_column = ColumnOffsets::create();
+    Offsets & res_offsets = res_offsets_column->getData();
     if (result_size_hint)
         res_offsets.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
 
@@ -1101,7 +1102,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
         }
     }
 
-    return res;
+    return ColumnArray::create(res_data, std::move(res_offsets_column));
 }
 
 ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
@@ -1335,10 +1336,8 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
     nested_indexes.reserve_exact(getOffsets().back());
 
-    auto res = ColumnArray::create(data->cloneEmpty());
-
-    Offsets & res_offsets = res->getOffsets();
-    res_offsets.resize_exact(limit);
+    auto res_offsets_column = ColumnOffsets::create(limit);
+    Offsets & res_offsets = res_offsets_column->getData();
     size_t current_offset = 0;
 
     for (size_t i = 0; i < limit; ++i)
@@ -1349,10 +1348,10 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
         res_offsets[i] = current_offset;
     }
 
-    if (current_offset != 0)
-        res->data = data->index(*nested_indexes_column, current_offset);
-
-    return res;
+    /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
+    /// `Dynamic` is as deep as the data, and every level of this recursion would hold one.
+    ColumnPtr res_data = current_offset != 0 ? data->index(*nested_indexes_column, current_offset) : data->cloneEmpty();
+    return ColumnArray::create(res_data, std::move(res_offsets_column));
 }
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
@@ -1532,28 +1531,40 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
     typename ColVecType::Container & res_data = typeid_cast<ColVecType &>(res_arr.getData()).getData();
     Offsets & res_offsets = res_arr.getOffsets();
 
-    res_data.reserve_exact(data->size() / col_size * replicate_offsets.back());
-    res_offsets.reserve_exact(replicate_offsets.back());
-
+    size_t res_data_size = 0;
     Offset prev_replicate_offset = 0;
     Offset prev_data_offset = 0;
-    Offset current_new_offset = 0;
+    for (size_t i = 0; i < col_size; ++i)
+    {
+        res_data_size += (replicate_offsets[i] - prev_replicate_offset) * (src_offsets[i] - prev_data_offset);
+        prev_replicate_offset = replicate_offsets[i];
+        prev_data_offset = src_offsets[i];
+    }
 
+    res_data.resize_exact(res_data_size);
+    res_offsets.resize_exact(replicate_offsets.back());
+
+    prev_replicate_offset = 0;
+    prev_data_offset = 0;
+    Offset current_new_offset = 0;
+    size_t res_row = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
         size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
         size_t value_size = src_offsets[i] - prev_data_offset;
+        size_t value_bytes = value_size * sizeof(T);
+        const T * src = &src_data[prev_data_offset];
 
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
+            /// memcpySmallAllowReadWriteOverflow15 is slower than memcpy for long values.
+            if (value_bytes <= 64)
+                memcpySmallAllowReadWriteOverflow15(&res_data[current_new_offset], src, value_bytes);
+            else
+                memcpy(&res_data[current_new_offset], src, value_bytes);
             current_new_offset += value_size;
-            res_offsets.push_back(current_new_offset);
-
-            if (value_size)
-            {
-                res_data.resize(res_data.size() + value_size);
-                memcpy(&res_data[res_data.size() - value_size], &src_data[prev_data_offset], value_size * sizeof(T));
-            }
+            res_offsets[res_row] = current_new_offset;
+            ++res_row;
         }
 
         prev_replicate_offset = replicate_offsets[i];

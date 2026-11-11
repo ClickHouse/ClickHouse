@@ -199,7 +199,7 @@ void registerStorageElasticsearch(StorageFactory & factory)
             return std::make_shared<StorageElasticsearch>(
                 args.table_id, std::move(configuration), args.columns, args.constraints, args.comment, std::move(settings));
         },
-        SecretArgumentsSpec{.positional_secret_slots = {3}, .secret_keys = {"password", "bearer_token", "api_key"}},
+        elasticsearchSecretArguments(),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -225,7 +225,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 [(
     name1 JSON
 )]
-ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
+ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...])
 [SETTINGS keep_alive = 60, page_size = 10000]
 ```
 
@@ -244,6 +244,7 @@ The column list is optional. When omitted, the table has a single column `docume
 - `url` — The base URL of the Elasticsearch cluster, for example `https://localhost:9200`. It must be an `http` or `https` URL without credentials, query string or fragment.
 - `index` — The index to read. It can also be an alias, a data stream, a comma-separated list, a wildcard pattern, or a date math expression such as `<logs-{now/d}>`, as accepted by the Elasticsearch point in time API. The value is the literal name and must not be URL-encoded. A pattern that matches no index is an error.
 - `user`, `password` — Optional credentials for HTTP basic authentication.
+- `query('...')` — An optional Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) object in JSON that selects the documents to read. It must follow the positional arguments. Default: `{"match_all": {}}`.
 
 The parameters can also be passed as a [named collection](/concepts/features/configuration/server-config/named-collections) with `key = value` overrides. See the [`elasticsearch` table function](/reference/functions/table-functions/elasticsearch#arguments) for the full list of keys and the description of the [authentication methods](/reference/functions/table-functions/elasticsearch#authentication).
 
@@ -281,8 +282,8 @@ Filter on the Elasticsearch side with a Query DSL object:
 ```sql
 CREATE TABLE errors_since_october
 ENGINE = Elasticsearch('https://localhost:9200', 'logs-*',
-                       api_key = '...',
-                       query = '{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}');
+                       query('{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}'),
+                       api_key = '...');
 ```
 
 Use absolute dates in the `query`: date math such as `now-1h` is evaluated anew for each page, so it can skip documents. See the [limitations of the `elasticsearch` table function](/reference/functions/table-functions/elasticsearch#limitations).

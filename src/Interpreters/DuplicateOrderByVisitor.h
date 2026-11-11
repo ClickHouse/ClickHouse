@@ -2,6 +2,7 @@
 
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST_fwd.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB

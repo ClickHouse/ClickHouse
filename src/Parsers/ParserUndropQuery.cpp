@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Core/UUID.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB

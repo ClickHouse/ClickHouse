@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
+#include <Analyzer/Utils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -33,11 +34,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Parsers/parseQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/Fragments/FragmentGraph.h>
+#include <Processors/QueryPlan/Fragments/FragmentGraphExplain.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -71,8 +76,8 @@
 #include <Common/formatReadable.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <Interpreters/HypotheticalObjectStore.h>
-#include <Storages/MergeTree/WhatIfEstimator.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
+#include <Storages/MergeTree/WhatIf/WhatIfEstimator.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -93,6 +98,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool explain_syntax_single_record;
+    extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool use_concurrency_control;
@@ -178,24 +184,23 @@ namespace
             if (TableFunctionFactory::instance().isTableFunctionName(func->name))
                 return;
 
-            String database_name = query_context->getCurrentDatabase();
-            String table_name = func->name;
-            if (func->isCompoundName())
+            auto is_parameterized_view = [](const StoragePtr & candidate)
             {
-                std::vector<std::string> parts;
-                splitInto<'.'>(parts, func->name);
-                if (parts.size() != 2)
-                    return;
-                database_name = parts[0];
-                table_name = parts[1];
+                const auto * view = candidate ? candidate->as<StorageView>() : nullptr;
+                return view && view->isParameterizedView();
+            };
+
+            auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(func->name, query_context);
+            StoragePtr storage;
+            if (!table_name.empty())
+                storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
+            /// A view whose own name has a dot: `` `v.x`(...) ``.
+            if (!is_parameterized_view(storage) && !func->isCompoundName() && table_name != func->name)
+            {
+                table_name = func->name;
+                storage = DatabaseCatalog::instance().tryGetTable({query_context->getCurrentDatabase(), table_name}, query_context);
             }
-
-            auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
-            if (!storage)
-                return;
-
-            const auto * storage_view = storage->as<StorageView>();
-            if (!storage_view || !storage_view->isParameterizedView())
+            if (!is_parameterized_view(storage))
                 return;
 
             auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
@@ -206,6 +211,11 @@ namespace
             /// `EXPLAIN SYNTAX` would fail for users that can query the view but not its inner
             /// tables. Leave the original parameterized call intact in that case.
             if (metadata->sql_security_type && metadata->sql_security_type != SQLSecurityType::INVOKER)
+                return;
+
+            /// The inlined body is the view definition, which needs `SHOW COLUMNS` on the view, as `SHOW CREATE` does.
+            const auto view_id = storage->getStorageID();
+            if (!query_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, view_id.getDatabaseName(), view_id.getTableName()))
                 return;
 
             auto view_query = metadata->getSelectQuery().inner_query->clone();
@@ -644,6 +654,8 @@ struct QueryPlanSettings
             {"json", json},
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
+            {"fragments", query_plan_options.fragments},
+            {"tree", query_plan_options.tree},
             {"keep_logical_steps", keep_logical_steps},
             {"input_headers", query_plan_options.input_headers},
             {"column_structure", query_plan_options.column_structure},
@@ -1114,7 +1126,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
                 ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
 
-                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ true);
+                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ false);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
@@ -1198,6 +1210,28 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast_settings, pretty_version);
 
+            if (settings.query_plan_options.tree)
+            {
+                if (settings.query_plan_options.fragments)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'fragments'");
+                if (settings.json)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'json'");
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'distributed'");
+                if (!settings.optimize)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'tree' requires option 'optimize'");
+            }
+
+            if (settings.query_plan_options.fragments)
+            {
+                if (settings.json)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'json'");
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'distributed'");
+                if (!settings.optimize)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'fragments' requires option 'optimize'");
+            }
+
             QueryPlan plan;
 
             ContextPtr context;
@@ -1218,8 +1252,38 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.keep_logical_steps = settings.keep_logical_steps;
                 optimization_settings.is_explain = true;
+                optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
+
+                if (settings.query_plan_options.fragments || settings.query_plan_options.tree)
+                {
+                    const size_t max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+                    const auto build_explain = [&](const FragmentGraph & graph)
+                    {
+                        if (settings.query_plan_options.tree)
+                            explainAsTree(graph, buf, settings.query_plan_options, max_step_description_length);
+                        else
+                            explainAsFragments(graph, buf, settings.query_plan_options, max_step_description_length);
+                    };
+                    if (plan.staysDistributed())
+                    {
+                        /// The distributed_plan_cut consumes the plan since `EXPLAIN` owns this plan and discards it after printing.
+                        /// `distributed_plan_cut` must outlive `graph`, whose fragments point to the plans of its stages.
+                        auto distributed_plan_cut = plan.cutIntoDistributedPlan(optimization_settings);
+                        auto query_plan_as_fragment_graph = buildFragmentGraph(distributed_plan_cut.distributed_plan);
+                        build_explain(query_plan_as_fragment_graph);
+                    }
+                    else
+                    {
+                        std::optional<String> fallback_reason;
+                        if (plan.didFallBackToLocal())
+                            fallback_reason = plan.getDistributedPlanFallbackReason();
+                        auto query_plan_as_fragment_graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
+                        build_explain(query_plan_as_fragment_graph);
+                    }
+                    break;
+                }
             }
 
             if (settings.json)
@@ -1266,6 +1330,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.is_explain = true;
+                optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
@@ -1304,6 +1369,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     /* no_destination */ false,
                     /* async_insert */ false,
                     is_initial_insert);
+                insert.setExplainOnly(true);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
                 // we do not need it anymore, it would not be executed
@@ -1334,7 +1400,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).
-            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+            auto optimization_settings = QueryPlanOptimizationSettings(context);
+            optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
+            auto builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
             plan.explainEstimate(res_columns);
             insert_buf = false;
@@ -1393,7 +1461,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// previously done here), so invalid settings are still rejected, just without re-parsing.
             /// EXPLAIN ANALYZE executes the inner SELECT, so quota and result limits must follow the same
             /// rules as running that SELECT directly; the inner interpreter resolves the effective
-            /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`).
+            /// ignore_quota / ignore_limits during planning (e.g. `system.one` is exempt from the quota).
             auto & analyzed = getAnalyzedInnerQuery();
 
             /// A query that fell back to local execution is a plain local query and is analyzable.
