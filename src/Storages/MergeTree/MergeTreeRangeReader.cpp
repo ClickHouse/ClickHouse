@@ -371,6 +371,7 @@ size_t MergeTreeRangeReader::Stream::finalize(MutableColumns & columns, Columns 
 void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows_, GranuleOffset granule_offset)
 {
     rows_per_granule.push_back(num_rows_);
+    raw_rows_per_granule.push_back(num_rows_);
     granule_offsets.push_back(std::move(granule_offset));
     total_rows_per_granule += num_rows_;
 }

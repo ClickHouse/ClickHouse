@@ -133,21 +133,19 @@ private:
     NameSet columns_consumed_by_chain_actions;
 
     /// PREWHERE granule ProfileEvents (GranulesReadByPrewhereReaders / GranulesSkippedByPrewhereReaders).
-    /// A granule can be split across several read blocks and a later PREWHERE step can drop a granule an
-    /// earlier one kept, so the counts are accumulated per part from the final result of every block and
-    /// flushed once, when the part's ranges are exhausted. `feedPrewhereGranuleMark` is fed every granule
-    /// in mark order; it keeps the trailing granule pending until the next mark (or the flush) confirms it
-    /// is complete, OR-ing the survivor flag of the pieces of a split granule.
+    /// Every granule PREWHERE reads is fed in mark order from the final result of each block.
+    /// `GranulesReadByPrewhereReaders` is incremented as soon as a granule is first seen, so a query that
+    /// stops early (e.g. a LIMIT) still counts the granules it read. The granule is kept pending until a
+    /// higher mark (or the end of the task) proves it was read in full; only then, if no row survived, is it
+    /// counted in `GranulesSkippedByPrewhereReaders` -- the unread remainder of a granule cut off by early
+    /// termination is never declared dropped. A granule split across blocks repeats with the same mark; its
+    /// survivor flags are OR-ed and it is counted once.
     void feedPrewhereGranuleMark(size_t mark, bool survived);
-    void finalizePrewhereGranule();
-    void flushPrewhereGranuleStats();
+    void finalizeCompletedPrewhereGranule();
 
     bool prewhere_granule_stats_enabled = false;
-    bool prewhere_granule_stats_flushed = false;
     std::optional<size_t> prewhere_pending_mark;
     bool prewhere_pending_mark_survived = false;
-    size_t prewhere_granules_read = 0;
-    size_t prewhere_granules_dropped = 0;
 
     bool is_initialized = false;
     LoggerPtr log = getMergeTreeReadersChainLogger();

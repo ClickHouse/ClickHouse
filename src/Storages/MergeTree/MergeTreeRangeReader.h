@@ -380,11 +380,13 @@ public:
         /// PREWHERE iff its entry here is 0.
         NumRows survivingRowsPerGranule() const;
 
-        /// Calls `callback(mark, surviving_rows)` once for every granule in this result, where `mark` is the
-        /// granule's mark number in the part and `surviving_rows` is `surviving_rows_per_granule[i]` for it.
-        /// The caller passes `survivingRowsPerGranule()`. Uses the same mark mapping as
-        /// `computeUnmatchedMarkRanges`. A granule split across read blocks appears in each block it spans,
-        /// so the caller must combine the pieces (see `MergeTreeReadersChain` PREWHERE granule stats).
+        /// Calls `callback(mark, surviving_rows)` once for every granule that PREWHERE actually read, where
+        /// `mark` is the granule's mark number in the part and `surviving_rows` is
+        /// `surviving_rows_per_granule[i]` for it. The caller passes `survivingRowsPerGranule()`. Granules
+        /// skipped before PREWHERE (`raw_rows_per_granule[i] == 0`: pruned by a skip index or the query
+        /// condition cache) are omitted. Uses the same mark mapping as `computeUnmatchedMarkRanges`. A
+        /// granule split across read blocks appears in each block it spans, so the caller must combine the
+        /// pieces (see `MergeTreeReadersChain` PREWHERE granule stats).
         template <typename Callback>
         void forEachGranuleMark(const NumRows & surviving_rows_per_granule, Callback && callback) const
         {
@@ -397,13 +399,17 @@ public:
 
             if (in_progress_start_mark.has_value())
                 for (size_t i = 0; i < i_start; ++i)
-                    callback(*in_progress_start_mark + i, surviving_rows_per_granule[i]);
+                    if (raw_rows_per_granule[i] != 0)
+                        callback(*in_progress_start_mark + i, surviving_rows_per_granule[i]);
 
             size_t range_idx = 0;
             for (size_t i = i_start; i < rows_per_granule.size(); ++i)
             {
                 while (range_idx + 1 < started_ranges.size() && started_ranges[range_idx + 1].num_granules_read_before_start <= i)
                     ++range_idx;
+
+                if (raw_rows_per_granule[i] == 0)
+                    continue;
 
                 const size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;
                 callback(started_ranges[range_idx].range.begin + offset, surviving_rows_per_granule[i]);
@@ -450,6 +456,11 @@ public:
         /// Granule i+2     8192                      3000       3000                   1000
         /// Granule i+3     1000 (last incomplete)    1000       1000                   1000
         NumRows rows_per_granule;
+        /// Rows physically read per granule by the reader, parallel to `rows_per_granule`, as passed to
+        /// `addGranule` and never reduced by filtering. It is 0 only for a mark that was skipped before
+        /// PREWHERE evaluated it (pruned by a skip index or the query condition cache via `canSkipMark`),
+        /// which `rows_per_granule` cannot distinguish from a granule PREWHERE read and fully dropped.
+        NumRows raw_rows_per_granule;
         /// Stores starting row offset and granule index for each granule.
         /// Used to generate _part_offset and _part_granule_offset columns.
         GranuleOffsets granule_offsets;

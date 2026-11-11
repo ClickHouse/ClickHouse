@@ -426,8 +426,8 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     applyPatchesAfterReader(read_result, range_readers.size() - 1);
 
     /// Account the granules this block read and dropped by PREWHERE. The result now reflects all PREWHERE
-    /// steps, so `rows_per_granule` holds the final survivor count of each granule. Feed them in mark order;
-    /// a granule split across blocks is reassembled by `feedPrewhereGranuleMark`.
+    /// steps, so `survivingRowsPerGranule` holds the final survivor count of each granule PREWHERE read.
+    /// Feed them in mark order; a granule split across blocks is reassembled by `feedPrewhereGranuleMark`.
     if (prewhere_granule_stats_enabled)
     {
         const auto surviving_rows_per_granule = read_result.survivingRowsPerGranule();
@@ -436,9 +436,10 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             feedPrewhereGranuleMark(mark, surviving_rows > 0);
         });
 
-        /// Nothing left to read for this part: the trailing granule is complete, so flush the final counts.
-        if (ranges.empty() && isCurrentRangeFinished())
-            flushPrewhereGranuleStats();
+        /// The whole part is read: the pending granule was read in full, so finalize it. On early
+        /// termination this is not reached, leaving the trailing granule counted as read but not dropped.
+        if (ranges.empty() && isCurrentRangeFinished() && prewhere_pending_mark)
+            finalizeCompletedPrewhereGranule();
     }
 
     return read_result;
@@ -455,34 +456,26 @@ void MergeTreeReadersChain::feedPrewhereGranuleMark(size_t mark, bool survived)
         return;
     }
 
+    /// A higher mark means the pending granule was read in full.
     if (prewhere_pending_mark)
-        finalizePrewhereGranule();
+        finalizeCompletedPrewhereGranule();
 
     prewhere_pending_mark = mark;
     prewhere_pending_mark_survived = survived;
+
+    /// Count the granule as read as soon as PREWHERE touches it, so an early-terminating query still
+    /// reports the granules it read; whether it is also dropped is decided once the granule is complete.
+    ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders);
 }
 
-void MergeTreeReadersChain::finalizePrewhereGranule()
+void MergeTreeReadersChain::finalizeCompletedPrewhereGranule()
 {
-    ++prewhere_granules_read;
+    /// The pending granule has been read in full. If no row survived, PREWHERE dropped it entirely.
     if (!prewhere_pending_mark_survived)
-        ++prewhere_granules_dropped;
+        ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders);
 
     prewhere_pending_mark.reset();
     prewhere_pending_mark_survived = false;
-}
-
-void MergeTreeReadersChain::flushPrewhereGranuleStats()
-{
-    if (prewhere_granule_stats_flushed)
-        return;
-
-    if (prewhere_pending_mark)
-        finalizePrewhereGranule();
-
-    ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders, prewhere_granules_read);
-    ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders, prewhere_granules_dropped);
-    prewhere_granule_stats_flushed = true;
 }
 
 void MergeTreeReadersChain::executeActionsBeforePrewhere(
