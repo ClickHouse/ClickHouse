@@ -8,6 +8,8 @@
 #include <Core/ConstantValue.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/hasNullable.h>
@@ -16,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/convertFieldToType.h>
 #include <numeric>
 
 #include <Common/FieldAccurateComparison.h>
@@ -259,6 +262,31 @@ const ActionsDAG::Node & addNamedFunction(ActionsDAG & dag, const String & fn_na
     return dag.addFunction(resolver, std::move(children), {});
 }
 
+/// Whether an SQL comparison of a `key_type` value with a `constant_type` value may have to bring one side
+/// to a different decimal scale. `DecimalComparison` throws `DECIMAL_OVERFLOW` when such a rescaling does
+/// not fit, e.g. for a `DateTime64(9)` key and a `UInt64` bound above `INT64_MAX`, while the scalar `Range`
+/// comparison handles any bound. The rescaled side may also be the key, so the overflow may depend on the data.
+bool comparisonMayRescaleDecimal(const DataTypePtr & key_type, const DataTypePtr & constant_type)
+{
+    const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key_type.get());
+    const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant_type.get());
+    if (key_tuple || constant_tuple)
+    {
+        if (!key_tuple || !constant_tuple)
+            return true;
+        const auto & key_elements = key_tuple->getElements();
+        const auto & constant_elements = constant_tuple->getElements();
+        if (key_elements.size() != constant_elements.size())
+            return true;
+        for (size_t i = 0; i < key_elements.size(); ++i)
+            if (comparisonMayRescaleDecimal(removeLowCardinality(key_elements[i]), removeLowCardinality(constant_elements[i])))
+                return true;
+        return false;
+    }
+
+    return tryGetDecimalScale(*key_type) != tryGetDecimalScale(*constant_type);
+}
+
 /// Emit the two UInt8 nodes (intersects, contains) for a direct comparison atom.
 std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>
 buildIntersectsAndContains(
@@ -287,10 +315,28 @@ buildIntersectsAndContains(
     if (!WhichDataType(key_type).isFloat() && KeyCondition::typeMayHideNaN(key_type))
         return {nullptr, nullptr};
 
+    const auto & comparison = *element.direct_comparison;
+    const ConstantValue * constant = comparison.constant.get();
+
+    /// Compare in the key type when it holds the constant exactly. Otherwise the comparison would rescale
+    /// either the constant, which may overflow, or the bounds, which may overflow depending on the data.
+    std::optional<ConstantValue> constant_of_key_type;
+    if (comparisonMayRescaleDecimal(key_type, removeLowCardinality(constant->getType())))
+    {
+        /// A strict conversion of an integer is exact: a whole number of seconds or units, Null on overflow.
+        /// `tryConvertFieldToTypeExact` would also require the round trip back to the integer type.
+        const auto & constant_type = constant->getType();
+        Field converted = isNativeInteger(constant_type)
+            ? tryConvertFieldToType(constant->getField(), *key_type, constant_type.get(), {}, /*strict=*/ true)
+            : tryConvertFieldToTypeExact(constant->getField(), *key_type, constant_type.get());
+        if (converted.isNull())
+            return {nullptr, nullptr};
+        constant = &constant_of_key_type.emplace(converted, key_type);
+    }
+
     const auto & min_node = *minmax_input_nodes[key_column].first;
     const auto & max_node = *minmax_input_nodes[key_column].second;
-    const auto & comparison = *element.direct_comparison;
-    const auto & literal = addLiteral(dag, *comparison.constant, fmt::format("__minmax_lit_{}", key_column));
+    const auto & literal = addLiteral(dag, *constant, fmt::format("__minmax_lit_{}", key_column));
 
     auto compare = [&](std::string_view name, const ActionsDAG::Node & value)
     {

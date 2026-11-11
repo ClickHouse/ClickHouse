@@ -71,7 +71,9 @@ WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
-SELECT 'datetime64 used bulk', ProfileEvents['IndexBulkFilteringEvaluatedGranules'] > 0
+-- A bound of a finer scale than the key would rescale the key bounds in the SQL comparison, which may overflow
+-- depending on the data, so bulk evaluation falls back as well.
+SELECT 'datetime64 fell back', ProfileEvents['IndexBulkFilteringEvaluatedGranules'] = 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND log_comment = '04771_datetime64_typed_bound'
