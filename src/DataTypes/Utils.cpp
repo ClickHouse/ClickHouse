@@ -307,7 +307,7 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
             if (which_to.isInt())
                 return true;
 
-            if (which_to.isUInt())
+            if (which_to.isUInt() && to.getName() != "Bool")
             {
                 auto has_negative = [](const auto & values)
                 {
