@@ -288,6 +288,15 @@ private:
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
+    /// Evaluates `MergeTreeMutationEntry::commands_size` of the mutations that do not have it for the current metadata.
+    /// Must be called without `currently_processing_in_background_mutex`: the evaluation analyzes the predicates of mutations,
+    /// and a subquery in a predicate can read this table, which takes this mutex.
+    void evaluateSizesOfMutations();
+
+    /// Whether the selected mutations pass the check of the size of their combined predicate that the mutate task does.
+    /// Caches the result in `MergeTreeMutationEntry::batch_fits`. Must be called without `currently_processing_in_background_mutex`.
+    bool checkSizeOfSelectedMutations(const MergeMutateSelectedEntry & entry, const StorageMetadataPtr & metadata_snapshot);
+
     /// Returns a lock for lightweight update according to the update_parallel_mode setting
     std::unique_ptr<PlainLightweightUpdateLock> getLockForLightweightUpdate(const MutationCommands & commands, const ContextPtr & local_context);
 

@@ -56,6 +56,7 @@
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/ValidationUtils.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -2918,7 +2919,40 @@ const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
 size_t evaluateMutationCommandsSize(
     const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
-    return prepareQueryAffectedAST(commands, storage, context)->size();
+    /// Build and resolve the predicate as `isStorageTouchedByMutations` does, and measure it as the analyzer does for
+    /// `max_expanded_ast_elements`. The resolved tree is larger than the AST: a function node has a list of parameters,
+    /// and a folded constant keeps its source expression.
+    auto analysis_context = Context::createCopy(context);
+    analysis_context->makeQueryContext();
+    analysis_context->setSetting("max_expanded_ast_elements", Field(std::numeric_limits<UInt64>::max()));
+
+    auto query_tree = buildQueryTree(prepareQueryAffectedAST(commands, storage, analysis_context), analysis_context);
+    auto & query_node = query_tree->as<QueryNode &>();
+
+    /// The caller selects mutations in the background and holds a lock of the table, so do not lock it again
+    /// and do not take a snapshot of its data parts. The caller must not hold the locks that a snapshot of a table takes:
+    /// a subquery in the predicate can read the same table.
+    auto metadata_handle = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    const StorageMetadataPtr metadata_snapshot = metadata_handle;
+    query_node.getJoinTreeNode() = std::make_shared<TableNode>(
+        storage, TableLockHolder{}, storage->getStorageSnapshotWithoutData(metadata_snapshot, analysis_context));
+
+    /// Scalar subqueries are not executed: in this mode the analyzer replaces them with constants of the same shape.
+    QueryAnalyzer(/*only_analyze=*/ true).resolve(query_tree, {}, analysis_context);
+
+    if (!query_node.hasWhere())
+        return 0;
+
+    std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
+    return calculateTreeSize(query_node.getWhere(), node_to_tree_size);
+}
+
+size_t evaluateMutationCommandsSizeInBatch(
+    const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
+{
+    /// The predicate of a batch is `or` of the predicates of its commands, so add this function to every mutation.
+    std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
+    return evaluateMutationCommandsSize(commands, storage, context) + calculateTreeSize(std::make_shared<FunctionNode>("or"), node_to_tree_size);
 }
 
 std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIfPossible(const Block & header) const

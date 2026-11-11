@@ -523,9 +523,7 @@ void assertNoArrayJoinOutside(const QueryTreeNodePtr & node,
     }
 }
 
-void validateTreeSize(const QueryTreeNodePtr & node,
-    size_t max_size,
-    std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size)
+size_t calculateTreeSize(const QueryTreeNodePtr & node, std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size)
 {
     size_t tree_size = 0;
     std::vector<std::pair<QueryTreeNodePtr, bool>> nodes_to_process;
@@ -579,7 +577,14 @@ void validateTreeSize(const QueryTreeNodePtr & node,
             nodes_to_process.emplace_back(constant_node->getSourceExpression(), false);
     }
 
-    if (tree_size > max_size)
+    return tree_size;
+}
+
+void validateTreeSize(const QueryTreeNodePtr & node,
+    size_t max_size,
+    std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size)
+{
+    if (calculateTreeSize(node, node_to_tree_size) > max_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Query tree is too big. Maximum: {}",
             max_size);

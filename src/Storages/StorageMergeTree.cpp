@@ -2445,7 +2445,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         return {};
     }
 
-    size_t max_ast_elements = getContext()->getSettingsRef()[Setting::max_expanded_ast_elements];
+    /// The mutate task runs with the background context (see `MutatePlainMergeTreeTask`), so it checks this limit.
+    const auto background_context = getContext()->getBackgroundContext();
+    size_t max_ast_elements = background_context->getSettingsRef()[Setting::max_expanded_ast_elements];
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
     if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
@@ -2610,10 +2612,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         if (auto patches_it = patch_versions_by_partition.find(part->info.getPartitionId()); patches_it != patch_versions_by_partition.end())
             patch_versions = &patches_it->second;
 
-        auto commands = std::make_shared<MutationCommands>();
-        Strings mutation_ids;
+        /// The mutations to apply to the part, a prefix of the queue from `mutations_begin_it`.
+        std::vector<decltype(mutations_begin_it)> batch;
         size_t current_ast_elements = 0;
-        auto last_mutation_to_apply = mutations_end_it;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
@@ -2629,71 +2630,48 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 break;
             }
 
-            size_t commands_size = 0;
-            MutationCommands commands_for_size_validation;
-            for (const auto & command : *it->second.commands)
-            {
-                if (command.type != MutationCommand::Type::DROP_COLUMN
-                    && command.type != MutationCommand::Type::DROP_INDEX
-                    && command.type != MutationCommand::Type::DROP_PROJECTION
-                    && command.type != MutationCommand::Type::DROP_STATISTICS
-                    && command.type != MutationCommand::Type::RENAME_COLUMN)
-                {
-                    commands_for_size_validation.push_back(command);
-                }
-                else
-                {
-                    commands_size += command.ast()->size();
-                }
-            }
-
-            if (!commands_for_size_validation.empty())
-            {
-                try
-                {
-                    auto fake_query_context = Context::createCopy(getContext());
-                    fake_query_context->makeQueryContext();
-                    fake_query_context->setCurrentQueryId("");
-                    commands_size += evaluateMutationCommandsSize(
-                        commands_for_size_validation, shared_from_this(), fake_query_context);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log);
-                    MergeTreeMutationEntry & entry = it->second;
-                    entry.latest_fail_time = time(nullptr);
-                    entry.latest_fail_reason = getCurrentExceptionMessage(false);
-                    entry.latest_fail_error_code_name = ErrorCodes::getName(getCurrentExceptionCode());
-                    /// NOTE we should not skip mutations, because exception may be retryable (e.g. MEMORY_LIMIT_EXCEEDED)
-                    break;
-                }
-            }
-
-            if (current_ast_elements + commands_size >= max_ast_elements)
+            /// The size is evaluated by `evaluateSizesOfMutations` before this mutex is taken: stop before a mutation without it.
+            const auto & commands_size = it->second.commands_size;
+            if (!commands_size || commands_size->first != metadata_snapshot->getMetadataVersion())
                 break;
 
-            const auto & single_mutation_commands = it->second.commands;
+            if (current_ast_elements + commands_size->second >= max_ast_elements)
+                break;
 
-            if (single_mutation_commands->containBarrierCommand())
+            if (it->second.commands->containBarrierCommand())
             {
-                if (commands->empty())
-                {
-                    commands->insert(commands->end(), single_mutation_commands->begin(), single_mutation_commands->end());
-                    mutation_ids.push_back(it->second.file_name);
-                    last_mutation_to_apply = it;
-                }
+                if (batch.empty())
+                    batch.push_back(it);
                 break;
             }
 
-            current_ast_elements += commands_size;
-            commands->insert(commands->end(), single_mutation_commands->begin(), single_mutation_commands->end());
-            mutation_ids.push_back(it->second.file_name);
-            last_mutation_to_apply = it;
+            current_ast_elements += commands_size->second;
+            batch.push_back(it);
 
             /// `MutateTask` removes a dropped (or cleared) column, index or projection from the result part after all
             /// other commands, so a later mutation that writes it again must not be squashed into the same task.
-            if (std::ranges::any_of(*single_mutation_commands, [](const MutationCommand & command) { return command.isDropOrRename(); }))
+            if (std::ranges::any_of(*it->second.commands, [](const MutationCommand & command) { return command.isDropOrRename(); }))
                 break;
+        }
+
+        /// Drop the last mutations while the batch is known to fail the check of the mutate task, see `checkSizeOfSelectedMutations`.
+        while (!batch.empty())
+        {
+            const auto & batch_fits = mutations_begin_it->second.batch_fits;
+            auto fits = batch_fits.find({batch.back()->first, metadata_snapshot->getMetadataVersion()});
+            if (fits == batch_fits.end() || fits->second)
+                break;
+            batch.pop_back();
+        }
+
+        auto commands = std::make_shared<MutationCommands>();
+        Strings mutation_ids;
+        auto last_mutation_to_apply = mutations_end_it;
+        for (const auto & it : batch)
+        {
+            commands->insert(commands->end(), it->second.commands->begin(), it->second.commands->end());
+            mutation_ids.push_back(it->second.file_name);
+            last_mutation_to_apply = it;
         }
 
         chassert(commands->empty() == (last_mutation_to_apply == mutations_end_it));
@@ -2739,6 +2717,102 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     }
 
     return {};
+}
+
+void StorageMergeTree::evaluateSizesOfMutations()
+{
+    auto metadata_handle = getInMemoryMetadataPtr(getContext(), false);
+    const StorageMetadataPtr metadata_snapshot = metadata_handle;
+    const Int32 metadata_version = metadata_snapshot->getMetadataVersion();
+
+    std::vector<std::pair<UInt64, std::shared_ptr<MutationCommands>>> mutations_to_evaluate;
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        /// Done mutations too: `is_done` can be set while a transaction hides parts that its rollback brings back.
+        for (const auto & [version, entry] : current_mutations_by_version)
+            if (!entry.commands_size || entry.commands_size->first != metadata_version)
+                mutations_to_evaluate.emplace_back(version, entry.commands);
+    }
+
+    if (mutations_to_evaluate.empty())
+        return;
+
+    const auto background_context = getContext()->getBackgroundContext();
+    for (const auto & [version, commands] : mutations_to_evaluate)
+    {
+        size_t commands_size = 0;
+        MutationCommands commands_for_size_validation;
+        for (const auto & command : *commands)
+        {
+            if (command.type != MutationCommand::Type::DROP_COLUMN
+                && command.type != MutationCommand::Type::DROP_INDEX
+                && command.type != MutationCommand::Type::DROP_PROJECTION
+                && command.type != MutationCommand::Type::DROP_STATISTICS
+                && command.type != MutationCommand::Type::RENAME_COLUMN)
+            {
+                commands_for_size_validation.push_back(command);
+            }
+            else
+            {
+                commands_size += command.ast()->size();
+            }
+        }
+
+        try
+        {
+            if (!commands_for_size_validation.empty())
+                commands_size += evaluateMutationCommandsSizeInBatch(commands_for_size_validation, shared_from_this(), background_context);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            std::lock_guard lock(currently_processing_in_background_mutex);
+            if (auto it = current_mutations_by_version.find(version); it != current_mutations_by_version.end())
+            {
+                MergeTreeMutationEntry & entry = it->second;
+                entry.latest_fail_time = time(nullptr);
+                entry.latest_fail_reason = getCurrentExceptionMessage(false);
+                entry.latest_fail_error_code_name = ErrorCodes::getName(getCurrentExceptionCode());
+            }
+            /// The selection stops before this mutation until its size is evaluated: the exception may be retryable (e.g. MEMORY_LIMIT_EXCEEDED).
+            continue;
+        }
+
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        if (auto it = current_mutations_by_version.find(version); it != current_mutations_by_version.end())
+            it->second.commands_size.emplace(metadata_version, commands_size);
+    }
+}
+
+bool StorageMergeTree::checkSizeOfSelectedMutations(const MergeMutateSelectedEntry & entry, const StorageMetadataPtr & metadata_snapshot)
+{
+    const UInt64 last_version = entry.future_part->part_info.mutation;
+    const Int32 metadata_version = metadata_snapshot->getMetadataVersion();
+    UInt64 first_version = 0;
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        auto first = current_mutations_by_version.upper_bound(entry.future_part->parts.front()->info.getDataVersion());
+        if (first == current_mutations_by_version.end())
+            return false;
+
+        const auto & batch_fits = first->second.batch_fits;
+        if (auto fits = batch_fits.find({last_version, metadata_version}); fits != batch_fits.end())
+            return fits->second;
+        first_version = first->first;
+    }
+
+    /// The check that `isStorageTouchedByMutations` does in the mutate task.
+    const auto background_context = getContext()->getBackgroundContext();
+    const size_t max_ast_elements = background_context->getSettingsRef()[Setting::max_expanded_ast_elements];
+    const bool fits = evaluateMutationCommandsSize(*entry.commands, shared_from_this(), background_context) <= max_ast_elements;
+    if (!fits)
+        LOG_INFO(log, "Mutations of part {} up to {} do not fit into max_expanded_ast_elements ({}) together, will apply fewer of them",
+            entry.future_part->parts.front()->name, last_version, max_ast_elements);
+
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    if (auto first = current_mutations_by_version.find(first_version); first != current_mutations_by_version.end())
+        first->second.batch_fits[{last_version, metadata_version}] = fits;
+    return fits;
 }
 
 std::pair<UInt32, Int64> StorageMergeTree::getMaxLevelMutationInBetween(const PartProperties & left, const PartProperties & right) const
@@ -2798,6 +2872,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
     }
 
+    evaluateSizesOfMutations();
+
     bool has_mutations = false;
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
@@ -2829,6 +2905,11 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         has_mutations = !current_mutations_by_version.empty();
     }
+
+    /// The selection adds up the sizes of single mutations: check their combined predicate as the mutate task does.
+    /// If it does not fit, the next selection applies fewer mutations.
+    if (mutate_entry && !checkSizeOfSelectedMutations(*mutate_entry, metadata_snapshot))
+        return false;
 
     auto is_cancelled = [&merges_blocker = merger_mutator.merges_blocker](const MergeMutateSelectedEntryPtr & entry)
     {
