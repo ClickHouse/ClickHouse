@@ -30,23 +30,14 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 /// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
 size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
-/// Transitive closure of `getColumnDependencies` over @updated_columns: a dependency that is not
-/// read-only is itself updated, so it pulls in its own dependencies. TTL targets are included.
-ColumnDependencies getAllColumnDependencies(
-    const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & updated_columns,
-    const StorageInMemoryMetadata::HasDependencyCallback & has_dependency);
-
 /// Return false if the data isn't going to be changed by mutations.
-/// `on_exception` runs when reading the part fails, before the reads still in flight are waited for.
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
-    std::function<void()> on_exception
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled
 );
 
 /// Build the WHERE-style filter for a mutation command. The parsed
@@ -132,24 +123,14 @@ public:
 
     void validate();
 
-    /// Throws if the mutation contains non-deterministic functions, subqueries or virtual columns on a
-    /// Replicated* storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
-    /// without constructing a full `MutationsInterpreter`. Functions and subqueries are checked first,
-    /// so they are reported even when the predicate is not analyzable.
+    /// Throws if the mutation contains non-deterministic functions or subqueries on a Replicated*
+    /// storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
+    /// without constructing a full `MutationsInterpreter`, which requires the predicate to be
+    /// analyzable.
     static void validateNonDeterministicMutationsForStorage(
         const StoragePtr & storage,
         const MutationCommands & commands,
         ContextPtr context);
-
-    /// Returns the name of a virtual column whose value may differ between replicas (`_table`, `_database`,
-    /// `_disk_name`, ...), if the `UPDATE` or `DELETE` commands read it, directly or through `ALIAS` columns,
-    /// or if a projection that the mutation may rebuild reads it. The mutation is checked against
-    /// `metadata_snapshot`, the metadata it will be executed with, or the current metadata of `storage` if it is null.
-    static std::optional<String> findNonDeterministicVirtualColumn(
-        const StoragePtr & storage,
-        const MutationCommands & commands,
-        ContextPtr context,
-        StorageMetadataHandle metadata_snapshot = nullptr);
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
@@ -207,7 +188,6 @@ public:
         bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
         bool hasProjection(const String & name) const;
         bool hasBrokenProjection(const String & name) const;
-        bool hasUnloadedProjection(const String & name) const;
         bool isCompactPart() const;
 
         void read(

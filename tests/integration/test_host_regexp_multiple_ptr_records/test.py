@@ -162,20 +162,3 @@ def test_reverse_dns_profile_events(started_cluster):
     assert after["DNSReverseError"] > before["DNSReverseError"]
     # `DNSError` is the total of all resolution failures, so a reverse failure moves it too.
     assert after["DNSError"] > before["DNSError"]
-
-
-def test_host_regexp_ptr_dns_port_unreachable(started_cluster):
-    server_ip = cluster.get_instance_ip("clickhouse-server")
-    client_ip = cluster.get_instance_ip("clickhouse-client")
-
-    # Nothing listens on port 53 of the client, so the reverse query gets ICMP port unreachable
-    # and the lookup must fail instead of spinning forever.
-    setup_ch_server(client_ip)
-
-    endpoint = build_endpoint_v4(server_ip)
-
-    assert "AUTHENTICATION_FAILED" in client.exec_in_container(
-        ["bash", "-c", f"curl --max-time 60 {endpoint}"]
-    )
-
-    ch_server.query("SYSTEM CLEAR DNS CACHE")

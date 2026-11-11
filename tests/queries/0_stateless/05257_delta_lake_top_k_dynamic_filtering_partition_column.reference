@@ -1,1 +1,2 @@
-OK
+allow_delta_kernel_rs = 0: OK
+allow_delta_kernel_rs = 1: OK

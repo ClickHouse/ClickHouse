@@ -53,19 +53,7 @@ Test template:
 </test>
 ```
 
-The drop queries also run when the test fails, and a test whose drop queries cannot be shown to have cleaned up stops the rest of its batch.
-
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
-
-### Disabling a query
-
-The performance history of a query is keyed by the test name and the query number (`query_index`, 0-based, after substitutions), so removing or reordering a query moves the history of every later query of the test. To stop running a query without that, mark it with `disabled="1"`:
-
-```xml
-<query disabled="1">SELECT [...]</query>
-```
-
-A disabled query keeps its number, and `perf.py --print-queries` still prints it, but it is never run, and the setup statements of a disabled `<query file=...>` are not run either. On a query with substitutions, the attribute applies to all of its expansions.
 
 ### Setup queries that cannot run on the reference server
 
@@ -115,82 +103,6 @@ Notes:
 * Profiler runs and server-side `ProfileEvents` are not collected for shell scripts (there is no single query to attribute them to); only the timing difference is reported.
 * `CLICKHOUSE_CURL` is `curl -q -sS --fail --max-time 120`. Unlike `tests/queries/shell_config.sh`, it adds `--fail` so that an HTTP 4xx/5xx response makes `curl` exit non-zero and the query fails — a benchmark must never time a server error response as a fast successful sample.
 * On timeout (`--max-query-seconds`, `--prewarm-max-query-seconds`) the whole process group of the script is killed, not just the immediate `bash`, so a script blocked inside a child such as `curl` or `$CLICKHOUSE_LOCAL` cannot keep running and pollute later measurements.
-
-### Long tests (nightly only)
-
-Tests tagged `long` are skipped in PR and master runs (`perf.py` skips them unless given `--long`). A nightly workflow runs them and labels its rows in the performance tables `workflow_name = 'NightlyExtendedPerformance'`; its schedule lives in that workflow (`ci/workflows/nightly_extended_performance.py`; rerun with `gh workflow run NightlyExtendedPerformance`). Examples: `calibration.xml` (the per-host yardstick), `tpch_sf100.xml`, `tpcds_sf100.xml`.
-
-How to write one:
-
-* `<test run_all_queries="1" max_query_seconds="N">`: `max_query_seconds` replaces `--max-query-seconds` and `--prewarm-max-query-seconds` for this test. The budget applies to each statement of a query; a query stops being repeated once its cumulative time per server reaches three budgets.
-* Put `<max_execution_time>0</max_execution_time>` into `<settings>`, otherwise long setup statements are cut by the server profile limit. Prewarm and timed runs still get the budget.
-* Load raw data with `fill_query` and finish every loaded MergeTree table as `tpch_sf100.xml` does: insert; `MODIFY SETTING lock_acquire_timeout_for_background_operations`; `OPTIMIZE ... FINAL` with `optimize_throw_if_noop = 1`; row and part counts; then content checks. `tpch_sf100.xml` also runs `MATERIALIZE STATISTICS` (`mutations_sync = 1`) before `SYSTEM STOP MERGES`, which blocks mutations too; for a test whose queries only read, the harness stops merges after the setup (`perf.py --stop-merges`).
-* Keep the tables in `default` (no `CREATE DATABASE`, no `USE`) and drop them with `DROP TABLE IF EXISTS <t> SYNC`, so the disk is free for the next test. (`USE` in existing tests is reconnect-safe: `clickhouse_driver` re-sends the database selected by `USE` when it reconnects.)
-* Job-local S3 (`<test requires_s3="1">`): write through the `perf_s3` named collection (each server has its own prefix, emptied after each such test in the nightly; a failed cleanup is an error and ends the batch); read the shared immutable data through `perf_s3_data` (`requires_s3_read_dataset="1"`: `tpch_ice10_s3`; `requires_s3_public_data="1"`: the prefixes in `s3_service.PUBLIC_PREFIXES` under their public keys). `iceberg_delete_data_on_drop` in `<settings>` has no effect: a drop uses the server's default profile.
-* Arrow Flight: the nightly servers listen on `arrowflight_port`; address the server itself as `arrowFlight('127.0.0.1:' || toString(getServerPort('arrowflight_port')), '<table in default>')`, the same text on both servers.
-* Iceberg REST catalog (`requires_s3_catalog="1"`): the job-local SeaweedFS serves it on `localhost:8181`; the harness seeds the immutable table bucket `perf-catalog` (namespace `many`, tables `t1`..`t200`, one row each, `id = n`). Such a test creates one `DataLakeCatalog` database as its only exception to the `default`-only rule and drops it with `DROP DATABASE ... SYNC`; the fixed ports are part of the test text.
-* Every timed statement with side effects (`ALTER`, `INSERT`, `OPTIMIZE`, `DELETE`, table recreation) is a shell query: `perf.py` profiles a query whose timing changed (every query with `profile_all_queries`) right after its runs, each statement cut at 10 s, and a cut mutation keeps running into the next query; shell queries are not profiled. A shell query gets its settings on the client command line (`--mutations_sync 2`, `--allow_insert_into_iceberg 1`, ...); the test's `<settings>` do not apply to it.
-* Reuse `tests/benchmarks/` with `<query file="../benchmarks/<name>/queries/query_NN.sql"/>` and `<settings file="../benchmarks/<name>/settings.json"/>`.
-* Skip a known-problem query with `disabled="1"` (see [Disabling a query](#disabling-a-query)) or keep a working query in its place (a fixed formulation, or a placeholder such as `SELECT 'Q35 skipped'`), and describe the original query, the reason and the issue link in the benchmark's README (e.g. `tests/benchmarks/tpc-ds/README.md`). A flaky query gets an issue and is removed.
-
-Run one test locally:
-
-```
-# Against two running servers.
-tests/performance/scripts/perf.py --long --host localhost localhost --port 9001 9002 --binary <old> <new> --http-port 8123 8124 tests/performance/tpch_sf100.xml
-# The whole harness as the nightly job runs it; the tested binary is ./ci/tmp/clickhouse or --ch-path <dir>.
-python3 ci/jobs/performance_tests.py --test-options "arm_release, master_head, nightly, 1/1" --reference-path <older clickhouse> --test tpch_sf100
-```
-
-With the `nightly` test option the harness sorts the test list, slices it round-robin over the `N/M` batches except the tests in `NIGHTLY_PERF_PLACEMENT` (`ci/defs/defs.py`; `"<test>.xml"` maps to `"N/4"`, a batch; to an extra job name matching `[a-z0-9_]+`, a job of its own; or to `"skip"`, run nowhere: the kill switch, effective the next night), prepends `calibration.xml` to every job, runs all queries with `perf.py --long`, and skips the performance dashboard and delta gates.
-
-Red and green. A timeout is `TIMEOUT_EXCEEDED` (for a shell query, its time limit); anything else is an error. The tested side is the new server, the reference side the old one.
-
-| | tested side, alone or with the reference | reference side only |
-|---|---|---|
-| prewarm error or timeout | red (`run-error` line) | `partial`, measured on the tested side |
-| timed-run timeout | red | with `--long`: censored row, both sides keep running; otherwise red |
-| timed-run error | red | red |
-
-A censored row records the time of the completed statements plus the budget. With `--long`, regressions and `partial` queries are visible but do not turn the job red, and:
-
-* A settings or setup failure on the reference side (a feature the older binary lacks) runs the test on the tested side only, reported as `partial`, without `do_not_check_in_pr`. A setup failure on the tested side is red.
-* Every test runs under `timeout -k 60` with a 4-hour budget. A non-zero exit always leaves an error record (`124`: budget expired, `137`: killed), so the job is red. A failed upload of the required results (raw runs, query metrics, test times) is red too.
-* Teardown: on exit, including `SIGTERM`, `perf.py` runs the drop queries on every server that ran setup and prints `teardown-complete` only if all of them succeeded (a missing table is accepted on a reference whose setup failed). Without that line the harness records `teardown incomplete, stopping the batch` and runs no further tests on that host; what was measured is still reported.
-* Changes reported by the nightly are unconfirmed: `confirm_changes` is skipped, and the repetition from night to night is the confirmation.
-
-To get the text of a reported `query_index` (0-based, after substitutions), check out the tests of that run and use `tests/performance/scripts/perf.py --print-queries tests/performance/<test>.xml --queries-to-run <query_index>`.
-
-#### Conditions changelog
-
-Nightly results are comparable only under the same conditions. Append a dated line whenever any of them changes:
-
-* YYYY-MM-DD (first scheduled night): instance type `r8g.4xlarge`, image `clickhouse/performance-comparison`, pool `arm-medium-storage`.
-* YYYY-MM-DD (first night with the new tests): 26 new `long` tests (Iceberg and data lakes, formats, Arrow Flight, vector index, JSON, engine, projections, skip indexes, analyzer, query shapes, encodings), `NIGHTLY_PERF_PLACEMENT` pins, Arrow Flight port and ticket flags on the nightly servers, S3 public-data and REST-catalog seeding, S3 cleanup after every S3 test.
-
-Each job log also carries the resolved docker image digest (printed by the praktika runner) and the host identity (kernel, OS, CPU, memory, instance).
-
-### Iceberg configuration
-
-The same tests also run with their MergeTree and `Memory` tables created as Iceberg tables, so that their queries measure the Iceberg read and write path: `perf.py --table-engine iceberg_local` (`IcebergLocal` under `user_files`) or `--table-engine iceberg_s3` (`IcebergS3` through the `perf_s3` named collection of the job-local S3 endpoint). `tests/performance/scripts/iceberg_engine.py` formats each `CREATE TABLE` of the setup with `clickhouse format --oneline` and rewrites a table of any MergeTree engine or of `Memory`:
-
-* the engine becomes `IcebergLocal` or `IcebergS3`, with the path `perf_iceberg/<test>/<table>/`; a `CREATE TABLE b AS a` of a rewritten `a` gets its own path;
-* the leading plain columns of `ORDER BY` stay as the Iceberg sort order; `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY`, `TTL`, `SETTINGS`, skip indexes, projections, constraints, codecs and column TTLs are dropped;
-* the column types Iceberg cannot store are widened: `UInt8`, `UInt16`, `Int8`, `Int16`, `Bool` to `Int32`, `UInt64` to `Int64`, `LowCardinality(T)` to `T`, `Enum`, `FixedString` and `IPv6` to `String`, `IPv4` to `UInt32`, 128- and 256-bit integers to `Decimal(38, 0)`, `DateTime64` to microseconds. The types of `CREATE TABLE ... AS SELECT` come from the `SELECT` and are not widened.
-
-The behavior of the other MergeTree engines is lost: a `ReplacingMergeTree` or `AggregatingMergeTree` table keeps every inserted row. A lightweight `UPDATE t SET ... WHERE ...` of a rewritten table, in the setup or measured, becomes the mutation `ALTER TABLE t UPDATE ... WHERE ...`: Iceberg tables support mutations but not lightweight updates. Other statements run as written, with `allow_insert_into_iceberg`, `allow_experimental_iceberg_compaction` (for `OPTIMIZE`) and `iceberg_delete_data_on_drop` set. A column that an Iceberg table cannot store even widened (`AggregateFunction`, `JSON`, `Dynamic`, `Variant`, `MATERIALIZED`, `ALIAS`) is an error.
-
-The configuration runs only the tests with a MergeTree or `Memory` table in a `create_query` (a test without one would repeat its MergeTree run; `perf.py --table-engine` skips it, and the nightly does not run `calibration.xml` in this configuration), except the `long` ones, those with `<test iceberg="0">`, and those in `tests/performance/iceberg_skip_list.txt` (one file name per line, with the reason after `#`). Add a test to the skip list when it cannot run on Iceberg tables (`FINAL`, `SAMPLE`, `_part`, assertions on the number of parts, a type that widening breaks); remove it once it can. A failure of a test that is not in the list is a real error of the configuration. A pull request that adds or changes a test the configuration selects runs the Iceberg jobs on that test only, so a new test that cannot run on Iceberg tables shows up in the pull request that adds it: add it to the skip list with the reason, or fix it.
-
-Where it runs: `Performance Comparison (arm_release, master_head, iceberg_local|iceberg_s3, N/3)` in pull requests that change the Iceberg, object storage or Parquet code or the harness (all the selected tests), or a performance test it selects (that test only; the `ci-performance` label does not change this), not as a gate yet, and every night in `NightlyExtendedPerformance` (`ci/workflows/nightly_extended_performance.py`, jobs `arm_release, master_head, nightly, iceberg_local|iceberg_s3, N/2`), every query of every test against the previous night's binary. The results are in the usual tables with `arch = 'arm_iceberg_local'` or `'arm_iceberg_s3'`, so that the history, the learned thresholds and the dashboard gate of the MergeTree runs do not read them; the configuration has no learned thresholds and no dashboard gate.
-
-Run one test locally against two running servers: `tests/performance/scripts/perf.py --table-engine iceberg_local --host localhost localhost --port 9001 9002 --binary <old> <new> --http-port 8123 8124 tests/performance/<test>.xml`.
-
-### Comparison of query results
-
-With `--result-digest`, `perf.py` compares the result of every SQL query between the servers, on its prewarm run, so the measured runs are not affected. It costs one more run of every `FORMAT Null` query per server, so CI does not pass it; use it when running `perf.py` by hand. A query whose result the server sends is digested on the client: the number of rows and the sum of a 64-bit hash of each row, so the order of rows does not matter, with floats rounded to 6 significant digits (parallel aggregation changes the last bits), `Bool` and an integral `Decimal` as integers. A `SELECT ... FORMAT Null`, whose rows the server does not send, is digested on the server by one more query, `SELECT count(), sum(cityHash64(toString(tuple(*)))) FROM (<query>)`; a query that cannot be a subquery is listed as `result-digest-skipped`. A result of more than 200000 rows is not compared.
-
-Every digest is a `result-digest` line in the raw output of the test, so digests can be compared across jobs too, e.g. a test in the Iceberg configuration with the same test on MergeTree. When the servers return different results, `perf.py` prints a `result-mismatch` line and the report lists the query in "Queries with Different Results". It is not an error: a pull request that fixes a result changes it. Not compared: the queries of a test whose setup generates data with `rand`, `now` and the like (the servers hold different data), and queries whose own result is not deterministic (`rand`, `any`, `groupArray`, `LIMIT`, `system` tables and the like).
 
 ### How to run performance test
 

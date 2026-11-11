@@ -18,9 +18,8 @@ namespace DB
   * column holding NULL — NOT as `ColumnPtr{}`.
   *
   * The purpose is to convert constants WITHOUT materializing a `Field`. Cases that can be done
-  * column-natively (currently: native and wide integers and floats to numeric, in every `strict` /
-  * `convert_inexact_floats` mode, `Decimal` targets, native integers to `Date`/`Date32`/`DateTime`, and
-  * `Date`/`Date32` <-> `DateTime`) read the value straight from the column; the rest still delegate to
+  * column-natively (currently: native numbers to native numbers, in every `strict` /
+  * `convert_inexact_floats` mode) read the value straight from the column; the rest still delegate to
   * `convertFieldToType` (same behavior, just not yet `Field`-free). The behavior is pinned by
   * `gtest_convert_column_to_type` against `convertFieldToType`, so more column-native fast paths can be
   * added without changing results.

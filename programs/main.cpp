@@ -13,8 +13,6 @@
 #include "config.h"
 #include "config_tools.h"
 
-#include <fcntl.h>
-#include <sys/resource.h>
 #include <unistd.h>
 
 #include <filesystem>
@@ -252,18 +250,10 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 /// We do allow `dlopen()` in case of OpenSSL FIPS build,
 /// because it requires a FIPS provider (i.e. fips.so), which is loaded dynamically.
 ///
-/// And in a build with the GPU engine, because CUDA has no other way to reach a device: there is
-/// no static driver library to link: even `libcudart_static.a` finds the driver by
-/// `dlopen("libcuda.so.1")`, and with the stub below in place it is told there is none and reports
-/// that the driver is too old. So `-DENABLE_GPU=1` gives up this protection for the whole binary,
-/// which is one more reason for that build to stay experimental.
-///
 /// Not on WebAssembly: Emscripten's libc unconditionally defines `dlerror` (its own code
 /// pulls it in), so the override would be a duplicate symbol at the link - and a sandbox
 /// cannot load libraries in the first place.
-///
-/// Keep this guard identical to the one in `programs/keeper/keeper_main.cpp`.
-#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || USE_GPU || defined(OS_WASM))
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || defined(OS_WASM))
 extern "C"
 {
     void * dlopen(const char *, int);
@@ -314,37 +304,6 @@ static __attribute__((constructor(0))) void init_je_malloc_message()
 #    endif
     };
 }
-#endif
-
-#if defined(OS_LINUX) && !defined(USE_MUSL) && !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
-/// Linux grows the descriptor table of a multithreaded process only after an RCU grace period, and threads that open
-/// files meanwhile wait. Grow it from `.preinit_array`, which glibc runs before any constructor, so before jemalloc
-/// starts its background thread. Sanitizer runtimes initialize from `.preinit_array` too and intercept these calls.
-static void reserveFileDescriptorTable(int, char **, char **)
-{
-    rlimit rlim{};
-    if (0 != getrlimit(RLIMIT_NOFILE, &rlim))
-        return;
-    rlim_t count = 4096;
-    if (rlim.rlim_cur != RLIM_INFINITY && rlim.rlim_cur < count)
-        count = rlim.rlim_cur;
-    /// The initial table has 64 entries.
-    if (count <= 64)
-        return;
-
-    int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
-    if (fd < 0)
-        return;
-    int high_fd = fcntl(fd, F_DUPFD_CLOEXEC, static_cast<int>(count - 1));
-    if (high_fd >= 0)
-    {
-        [[maybe_unused]] int high_err = close(high_fd);
-    }
-    [[maybe_unused]] int err = close(fd);
-}
-
-__attribute__((section(".preinit_array"), used))
-static void (* const reserve_file_descriptor_table)(int, char **, char **) = reserveFileDescriptorTable;
 #endif
 
 /// OpenSSL early initialization.

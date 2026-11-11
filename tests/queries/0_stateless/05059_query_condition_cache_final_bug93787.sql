@@ -7,6 +7,7 @@
 -- read must never reuse those marks: a row that loses the filter can still be the row that wins
 -- deduplication. See https://github.com/ClickHouse/ClickHouse/issues/93787
 
+SET enable_analyzer = 1; -- the query condition cache is analyzer-only
 SET async_insert = 0; -- the two versions must land in two separate parts
 
 DROP TABLE IF EXISTS tab;

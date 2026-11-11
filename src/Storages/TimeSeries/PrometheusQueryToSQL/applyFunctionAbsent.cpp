@@ -162,8 +162,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             }
 
             case StoreMethod::CONST_STRING:
-            case StoreMethod::SAMPLES:
-            case StoreMethod::TIMESTAMP_AND_VALUE:
+            case StoreMethod::RAW_DATA:
             {
                 /// Can't get in here because these store methods are incompatible with an instant vector.
                 throwUnexpectedStoreMethod(argument, context);
