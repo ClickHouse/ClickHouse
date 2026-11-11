@@ -24,7 +24,7 @@ cleanup
 ${CLICKHOUSE_CLIENT} -m -q "
     CREATE DATABASE \`${DB}\` ENGINE = Atomic SETTINGS lazy_load_tables = 1;
     CREATE TABLE \`${DB}\`.t (id UInt64) ENGINE = MergeTree ORDER BY id;
-    INSERT INTO \`${DB}\`.t SELECT number FROM numbers(10);
+    INSERT INTO \`${DB}\`.t SELECT number FROM numbers(1000);
     DETACH DATABASE \`${DB}\`;
     ATTACH DATABASE \`${DB}\`;
 "
@@ -35,11 +35,11 @@ state() {
 
 echo "cold: $(state)"
 
-# The reader loads the table through the proxy and holds it until it is killed. With `serialize_query_plan`,
-# the plan holding the proxy is replaced by a deserialized one that looks the table up anew, so the proxy
-# is legitimately released (and replaced) in between: keep it off so that the reader holds the proxy.
-${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_DATABASE}_reader" --max_block_size 1 --serialize_query_plan 0 -q "
-    SELECT sleepEachRow(1) FROM \`${DB}\`.t AS a, numbers(1000000) AS b FORMAT Null" >/dev/null 2>&1 &
+# The reader loads the table through the proxy and holds it until it is killed. It reads the table alone
+# in blocks of one row: a join may emit blocks of up to `max_joined_block_size_rows` rows, for which
+# `sleepEachRow` throws `TOO_SLOW`, and the reader would end and release the proxy too early.
+${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_DATABASE}_reader" --max_block_size 1 -q "
+    SELECT sleepEachRow(1) FROM \`${DB}\`.t FORMAT Null" >/dev/null 2>&1 &
 
 # Wait until the reader has loaded the table, i.e. the engine is known.
 for _ in {1..600}

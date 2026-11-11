@@ -27,6 +27,7 @@ ${CLICKHOUSE_CLIENT} -m -q "
     INSERT INTO \`${DB}\`.t VALUES (1);
     CREATE USER \`${USER}\` IDENTIFIED WITH no_password;
     GRANT CREATE TABLE, DROP TABLE, INSERT ON \`${DB}\`.t TO \`${USER}\`;
+    GRANT TABLE ENGINE ON Memory TO \`${USER}\`;
 "
 
 SETTINGS="--implicit_transaction 1 --throw_on_unsupported_query_inside_transaction 0"
