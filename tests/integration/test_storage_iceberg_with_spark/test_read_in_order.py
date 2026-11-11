@@ -483,22 +483,25 @@ def test_read_in_order_cloned_read(started_cluster_iceberg_with_spark):
 
     create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
-    # Six files over a threshold of one declines; aggregation in order under a high threshold accepts.
+    # Six files over a threshold of one decline; a correlated subquery executes the copies one after another.
     instance.query(
         f"CREATE VIEW {TABLE_NAME}_declined SQL SECURITY NONE AS SELECT id FROM {TABLE_NAME} ORDER BY id "
         f"SETTINGS max_threads=1, read_in_order_two_level_merge_threshold=1")
-    instance.query(
-        f"CREATE VIEW {TABLE_NAME}_accepted SQL SECURITY NONE AS SELECT id FROM {TABLE_NAME} GROUP BY id "
-        f"SETTINGS max_threads=1, optimize_aggregation_in_order=1, read_in_order_two_level_merge_threshold=100")
-    assert count_in_pipeline(
-        instance, f"SELECT id FROM {TABLE_NAME} GROUP BY id", "AggregatingInOrderTransform",
-        "max_threads=1, optimize_aggregation_in_order=1, read_in_order_two_level_merge_threshold=100") > 0
-    for view in [f"{TABLE_NAME}_declined", f"{TABLE_NAME}_accepted"]:
-        query = (
-            f"SELECT id FROM {view} AS o WHERE EXISTS (SELECT 1 FROM numbers(20) WHERE number = o.id) ORDER BY id "
-            f"SETTINGS correlated_subqueries_use_in_memory_buffer=0")
-        assert get_array_as_returned(instance.query(query)) == list(range(1, 13))
-        assert get_array_as_returned(instance.query(f"{query}, optimize_read_in_order=0")) == list(range(1, 13))
+    query = (
+        f"SELECT id FROM {TABLE_NAME}_declined AS o WHERE EXISTS (SELECT 1 FROM numbers(20) WHERE number = o.id) "
+        f"ORDER BY id SETTINGS correlated_subqueries_use_in_memory_buffer=0")
+    assert get_array_as_returned(instance.query(query)) == list(range(1, 13))
+    assert get_array_as_returned(instance.query(f"{query}, optimize_read_in_order=0")) == list(range(1, 13))
+
+    # A sealed view takes optimization settings from the outer query; a self-join runs both accepted copies at once.
+    instance.query(f"CREATE VIEW {TABLE_NAME}_accepted SQL SECURITY NONE AS SELECT id, count() AS c FROM {TABLE_NAME} GROUP BY id")
+    query = (
+        f"SELECT a.id, b.c FROM {TABLE_NAME}_accepted AS a INNER JOIN {TABLE_NAME}_accepted AS b ON a.id = b.id ORDER BY a.id "
+        f"SETTINGS join_algorithm='full_sorting_merge', max_threads=4")
+    copies = instance.query(f"EXPLAIN PIPELINE {query}, optimize_aggregation_in_order=1").split("(ReadFromSealedView)")[1:]
+    assert len(copies) == 2 and all("AggregatingInOrderTransform" in copy for copy in copies), copies
+    assert instance.query(f"{query}, optimize_aggregation_in_order=1") == instance.query(
+        f"{query}, optimize_read_in_order=0, optimize_aggregation_in_order=0")
 
 
 def test_read_in_order_several_row_groups(started_cluster_iceberg_with_spark):

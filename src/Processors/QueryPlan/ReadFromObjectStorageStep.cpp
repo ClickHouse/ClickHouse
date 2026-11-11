@@ -103,8 +103,8 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
 QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 {
     auto copy = std::make_unique<ReadFromObjectStorageStep>(*this);
-    /// Reading consumes the iterator, so a copy lists its own files (from the same table state, see `createIterator`).
     copy->iterator_wrapper.reset();
+    copy->read_in_order_files.clear();
     return copy;
 }
 
@@ -297,6 +297,9 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator();
+    if (read_in_order && read_in_order_files.empty())
+        while (auto object_info = iterator_wrapper->next(0))
+            read_in_order_files.push_back(object_info);
 
     Pipes pipes;
     auto context = getContext();
