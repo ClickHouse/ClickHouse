@@ -2746,6 +2746,40 @@ def test_azure_move_source_rewrite_buffered_copy(started_cluster):
     wait_until(lambda: not client.exists())
 
 
+def test_azure_delete_refused_by_a_lease_is_not_a_changed_source(started_cluster):
+    """A lease refuses the delete with 412, like a changed `ETag`, but the blob is the one that was read."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"azure_delete_leased_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    put_azure_file_content(started_cluster, source_key, b"1,2,3\n")
+    client = started_cluster.blob_service_client.get_blob_client(
+        started_cluster.azurite_container, source_key
+    )
+    lease = client.acquire_lease()
+    try:
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "unordered",
+            files_path,
+            engine_name="AzureQueue",
+            after_processing="delete",
+        )
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_until(
+            lambda: node.query(f"SELECT count() FROM {table_name}_dst") == "1\n"
+        )
+        # A changed source would be read again on every poll.
+        time.sleep(10)
+        assert node.query(f"SELECT count() FROM {table_name}_dst") == "1\n"
+        assert client.exists()
+    finally:
+        lease.release()
+
+
 def test_move_after_processing_many_objects(started_cluster):
     """Smoke test for the concurrent move path: every destination must hold its own source's bytes."""
     node = started_cluster.instances["instance"]

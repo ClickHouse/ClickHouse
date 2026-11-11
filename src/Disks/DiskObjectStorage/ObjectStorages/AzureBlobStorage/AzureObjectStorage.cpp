@@ -64,6 +64,12 @@ namespace ErrorCodes
 namespace
 {
 
+/// A failed `If-Match`. Azure answers 412 for other reasons too, such as a lease on the blob.
+bool isETagConditionNotMet(const Azure::Storage::StorageException & e)
+{
+    return e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed && e.ErrorCode == "ConditionNotMet";
+}
+
 class AzureIteratorAsync final : public IObjectStorageIteratorAsync
 {
 public:
@@ -465,7 +471,7 @@ void AzureObjectStorage::removeObjectImpl(
 
         /// A failed precondition means the blob is a different generation, not that it is missing,
         /// so it must not be swallowed by `if_exists`.
-        if (pinned_to_etag && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+        if (pinned_to_etag && isETagConditionNotMet(e))
         {
             if (blob_storage_log)
                 blob_storage_log->addEvent(
@@ -662,7 +668,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
 
                     /// The precondition did not hold: the blob is not the generation the caller
                     /// selected, and it stays in place. Reported as by `removeObjectImpl`.
-                    if (!object.etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+                    if (!object.etag.empty() && isETagConditionNotMet(e))
                     {
                         if (!changed_generation_error)
                             changed_generation_error = std::make_exception_ptr(Exception(
