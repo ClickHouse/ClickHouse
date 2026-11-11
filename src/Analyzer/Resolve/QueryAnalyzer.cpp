@@ -3290,7 +3290,33 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 apply_transformer_was_used = true;
 
                 if (defer_transformer_expressions)
+                {
+                    /** As for a deferred `REPLACE` below: the expression is not resolved, but the matchers inside it,
+                      * in the body of a lambda or in the parameters and arguments of a function, register their `REPLACE`
+                      * mappings in the other clauses now, as when it is resolved. The expanded copy is discarded.
+                      */
+                    const size_t saved_insertions_size = projection_nodes_before_matcher_insertions.size();
+                    auto expression_copy = expression_node->clone();
+                    if (auto * lambda_copy = expression_copy->as<LambdaNode>())
+                    {
+                        /// As in `resolveLambda`. A wrong number of arguments is reported by the second expansion.
+                        const auto & lambda_argument_names = lambda_copy->getArguments().getNames();
+                        if (lambda_argument_names.size() == 1)
+                        {
+                            auto & lambda_scope = createIdentifierResolveScope(expression_copy, /*parent_scope=*/&scope);
+                            QueryExpressionsAliasVisitor visitor(lambda_scope.aliases);
+                            visitor.visit(lambda_copy->getExpression());
+                            lambda_scope.expression_argument_name_to_node.emplace(lambda_argument_names.front(), node);
+                            expandMatchersInsideProjectionExpression(lambda_copy->getExpression(), lambda_scope);
+                        }
+                    }
+                    else
+                    {
+                        expandMatchersInsideProjectionExpression(expression_copy, scope);
+                    }
+                    rollbackProjectionNodesBeforeMatcher(saved_insertions_size);
                     continue;
+                }
 
                 apply_column_name_prefix = apply_transformer->getColumnNamePrefix();
 
@@ -8456,8 +8482,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           * item produces an unknown number of items, so the items following it are positioned only after it is expanded,
           * and it is resolved if a positional argument refers to it or to any following item.
           * A key that is an identifier may become a positional argument when a `REPLACE` transformer rewrites it
-          * into a constant, as `c` in `SELECT * REPLACE (1 AS c) ... GROUP BY c`. Such a key, as well as a negative
-          * position, which is counted from the end, may refer to any projection item.
+          * into a constant, as `c` in `SELECT * REPLACE (1 AS c) ... GROUP BY c`, and then it refers to the position
+          * given by the constant. A negative position, which is counted from the end, may refer to any projection item.
           */
         bool group_by_may_refer_to_any_projection_item = query_is_group_by_all;
         std::unordered_set<UInt64> group_by_positions;
@@ -8648,7 +8674,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 return column_names;
             };
 
-            std::unordered_set<std::string> replaced_column_names;
+            /** The replacement expressions of the columns that a `REPLACE` transformer may replace. They rewrite the identifiers
+              * of `GROUP BY` before the positional arguments are replaced, see `replaceNodesWithPositionalArguments`.
+              */
+            std::unordered_map<std::string, std::vector<const IQueryTreeNode *>> replaced_column_names;
             /// The unqualified matcher arguments of `count` and similar functions are removed by `resolveFunction`.
             std::unordered_set<const IQueryTreeNode *> dropped_matchers;
             struct NodeToProcess
@@ -8754,9 +8783,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                                         continue;
 
                                     const auto & replacement_expressions = replace_transformer->getReplacements().getNodes();
-                                    executed_transformer_expressions->insert(
-                                        replacement_expressions[replacement_it - replacements_names.begin()].get());
-                                    replaced_column_names.insert(column_name);
+                                    const auto * replacement_expression = replacement_expressions[replacement_it - replacements_names.begin()].get();
+                                    executed_transformer_expressions->insert(replacement_expression);
+                                    replaced_column_names[column_name].push_back(replacement_expression);
                                     transformer_was_used = true;
                                 }
                             }
@@ -8778,13 +8807,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                         }
                         else if (const auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
                         {
-                            for (const auto & replaced_column_name : replace_transformer->getReplacementsNames())
+                            const auto & replacements_names = replace_transformer->getReplacementsNames();
+                            const auto & replacement_expressions = replace_transformer->getReplacements().getNodes();
+                            for (size_t i = 0; i < replacements_names.size(); ++i)
                             {
+                                const auto & replaced_column_name = replacements_names[i];
                                 if (matcher_may_match_column(*matcher_node, is_inside_lambda, replaced_column_name)
                                     && matcher_may_produce_column(*matcher_node, is_inside_lambda, replaced_column_name)
                                     && std::ranges::none_of(preceding_except_transformers, [&](const auto * except)
                                         { return except->isColumnMatching(replaced_column_name); }))
-                                    replaced_column_names.insert(replaced_column_name);
+                                    replaced_column_names[replaced_column_name].push_back(replacement_expressions[i].get());
                             }
                         }
                     }
@@ -8829,6 +8861,50 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 }
             }
 
+            auto collect_positional_argument = [&](const ConstantNode & constant_node)
+            {
+                const auto & value = constant_node.getValue();
+                if (value.getType() == Field::Types::UInt64
+                    || (value.getType() == Field::Types::Int64 && value.safeGet<Int64>() >= 0))
+                {
+                    UInt64 position = value.getType() == Field::Types::UInt64 ? value.safeGet<UInt64>() : static_cast<UInt64>(value.safeGet<Int64>());
+                    group_by_positions.insert(position);
+                    max_group_by_position = std::max(max_group_by_position, position);
+                }
+                else if (value.getType() == Field::Types::Int64)
+                {
+                    group_by_may_refer_to_any_projection_item = true;
+                }
+            };
+
+            /** A key that is an identifier becomes a positional argument only if a `REPLACE` transformer rewrites it
+              * into a constant, as `c` in `SELECT * REPLACE (1 AS c) ... GROUP BY c`, possibly through another identifier
+              * that a following matcher replaces, as in `SELECT * REPLACE (d AS c), * REPLACE (1 AS d) ... GROUP BY c`.
+              * Other replacements, as `t.c` in `* REPLACE (t.c AS c)`, are not positional arguments.
+              */
+            auto collect_replaced_identifier = [&](const std::string & identifier_name)
+            {
+                std::unordered_set<std::string> visited_names;
+                std::vector<std::string> names_to_process{identifier_name};
+                while (!names_to_process.empty())
+                {
+                    auto name = std::move(names_to_process.back());
+                    names_to_process.pop_back();
+
+                    auto replaced_it = replaced_column_names.find(name);
+                    if (replaced_it == replaced_column_names.end() || !visited_names.insert(name).second)
+                        continue;
+
+                    for (const auto * replacement_expression : replaced_it->second)
+                    {
+                        if (const auto * constant_node = replacement_expression->as<ConstantNode>())
+                            collect_positional_argument(*constant_node);
+                        else if (const auto * identifier_node = replacement_expression->as<IdentifierNode>())
+                            names_to_process.push_back(identifier_node->getIdentifier().getFullName());
+                    }
+                }
+            };
+
             std::function<void(const QueryTreeNodePtr &)> collect_positional_arguments = [&](const QueryTreeNodePtr & node)
             {
                 if (const auto * list_node = node->as<ListNode>())
@@ -8838,23 +8914,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 }
                 else if (const auto * identifier_node = node->as<IdentifierNode>())
                 {
-                    if (replaced_column_names.contains(identifier_node->getIdentifier().getFullName()))
-                        group_by_may_refer_to_any_projection_item = true;
+                    collect_replaced_identifier(identifier_node->getIdentifier().getFullName());
                 }
                 else if (const auto * constant_node = node->as<ConstantNode>())
                 {
-                    const auto & value = constant_node->getValue();
-                    if (value.getType() == Field::Types::UInt64
-                        || (value.getType() == Field::Types::Int64 && value.safeGet<Int64>() >= 0))
-                    {
-                        UInt64 position = value.getType() == Field::Types::UInt64 ? value.safeGet<UInt64>() : static_cast<UInt64>(value.safeGet<Int64>());
-                        group_by_positions.insert(position);
-                        max_group_by_position = std::max(max_group_by_position, position);
-                    }
-                    else if (value.getType() == Field::Types::Int64)
-                    {
-                        group_by_may_refer_to_any_projection_item = true;
-                    }
+                    collect_positional_argument(*constant_node);
                 }
             };
             collect_positional_arguments(query_node_typed.getGroupByNode());
