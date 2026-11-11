@@ -12,87 +12,15 @@ import { Image } from "/snippets/components/Image.jsx";
 
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
-<Update label="Nov 9, 2026">
+<Update label="Nov 11, 2026">
 
-ClickHouse is expanding into transactional databases, observability, security, and AI engineering. This week's releases include general availability for ClickHouse Managed Postgres, Public Beta for ClickHouse Observability and Langfuse AI Gateway, and Private Preview for ClickHouse Security and Observability Apps.
+This week's Cloud updates include major platform additions and smoother operations across data, observability, security, and AI engineering:
 
-## Platform expansion {#2026-11-09-platform-expansion}
-
-### ClickHouse Managed Postgres is generally available {#clickhouse-managed-postgres-generally-available}
-
-[ClickHouse Managed Postgres](/products/managed-postgres/overview) is now generally available in ClickHouse Cloud. It combines a fully managed PostgreSQL service with native change data capture into ClickHouse and the `pg_clickhouse` extension for querying analytical data through PostgreSQL. The service includes high availability and automated backups.
-
-ClickHouse has also acquired Xata, accelerating the roadmap for instant database branching and cloning, elastic scale-to-zero environments, and isolated Postgres environments for developers and AI agents. See the [announcement](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion).
-
-## Observability {#2026-11-09-observability}
-
-### ClickHouse Observability is now in Public Beta {#clickhouse-observability-public-beta}
-
-[ClickHouse Observability](https://clickhouse.com/blog/announcing-clickhouse-observability) is a fully managed ClickHouse Cloud experience for sending, retaining, and investigating logs, metrics, and traces. Connect OpenTelemetry collectors or SDKs to a managed endpoint, then investigate in ClickStack or with agents through MCP tools and SQL.
-
-The initial Public Beta is available in AWS `us-east-2`, includes 30-day retention and one observability service per organization, and supports self-service onboarding in the Cloud console. PromQL, direct Grafana access, and an SLA are not included in the default beta experience.
-
-### ClickHouse Observability Apps is in Private Preview {#clickhouse-observability-apps-private-preview}
-
-ClickHouse Observability Apps lets teams describe a workflow and generate an interactive application over live telemetry. The agent creates queries, visualizations, screens, and interactions; users can refine the app through conversation, inspect its SQL and code, restore earlier versions, and share it with their team.
-
-Apps run inside the ClickStack UI. Generated queries are read-only and use the viewing user's database permissions. The Private Preview is available to selected design partners; generated queries and results should still be reviewed. Read more in [The observability UI as we know it is dead. So what comes next?](https://clickhouse.com/blog/observability-ui-is-dead-whats-next).
-
-## Security {#2026-11-09-security}
-
-### ClickHouse Security is in Private Preview {#clickhouse-security-private-preview}
-
-ClickHouse Security is an agentic SIEM built on RunReveal technology and integrated with ClickHouse Cloud. It combines security-data integrations, managed detections, and AI-powered investigations, with agents that can triage alerts, query the underlying logs, and record their findings in a case. See the [platform announcement](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion).
-
-### View monitoring is now a configurable role permission {#view-monitoring-configurable-role-permission}
-
-Organization admins can now choose whether each role can view in-console monitoring dashboards. The **View monitoring** permission remains enabled by default.
-
-## AI engineering {#2026-11-09-ai-engineering}
-
-### Langfuse AI Gateway is in Public Beta {#langfuse-ai-gateway-public-beta}
-
-Langfuse has introduced an open-source AI Gateway for tracing model usage, token consumption, performance, and costs. Routing model requests through the gateway lets organizations capture this information without changing application code. The Gateway is built in Rust and is available self-hosted or on Langfuse Cloud. See the [platform announcement](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion).
-
-</Update>
-
-<Update label="Nov 2, 2026">
-
-This week's updates include general availability for the MongoDB CDC connector in ClickPipes, new private service-to-service queries, a self-service Previews page in the Cloud console, and domain-based user onboarding with Approved domains.
-
-## ClickPipes {#2026-11-02-clickpipes}
-
-### MongoDB CDC connector for ClickPipes is generally available {#mongodb-cdc-clickpipes-generally-available}
-
-The MongoDB CDC connector is now generally available. It adds automatic parallel snapshotting for faster initial loads, structured ingestion that flattens top-level document fields into columns, resource-utilization and lag metrics, and stability fixes for data-type fidelity and delete handling.
-
-All ClickPipes CDC connectors are now generally available, and MongoDB CDC billing is now active. Manage pipes through the ClickPipes UI, OpenAPI, or Terraform. See the [MongoDB CDC documentation](/integrations/clickpipes/mongodb) and [announcement](https://clickhouse.com/blog/mongodb-cdc-connector-clickpipes-ga).
-
-## Security {#2026-11-02-security}
-
-### Private service-to-service queries within your organization {#private-service-to-service-queries-within-organization}
-
-`remoteSecure` can now connect services in the same organization, region, and cell over ClickHouse Cloud's private network, including when the target service uses PrivateLink or an IP allowlist. Authentication uses a certificate-based named collection, and access is controlled with standard `GRANT`s on the target service.
-
-This Private Preview is currently AWS-only and one-way. Read-only services can use `SELECT` but not `INSERT`, and setup requires help from ClickHouse.
-
-### Approved domains for automatic user onboarding {#approved-domains-automatic-user-onboarding}
-
-Organization admins can verify company email domains so new teammates are placed in the correct organization when they sign up. Add a domain in organization settings, verify it with a DNS TXT record, then choose default roles and whether users join automatically or receive an invitation. Approved domains is available in Public Preview.
-
-## Console / UI {#2026-11-02-console-ui}
-
-### New Previews page in the Cloud console {#new-previews-page-cloud-console}
-
-The new **Previews** page lets eligible organizations try upcoming features without a support ticket. Public Previews can be enabled and disabled at any time; Tables view, Health checks, and Approved domains are available now. Private Previews provide a waitlist for features such as On-demand compute and Schema advisor.
-
-</Update>
-
-<Update label="Oct 26, 2026">
-
-### Scoped permissions for Langfuse project API keys {#scoped-permissions-langfuse-project-api-keys}
-
-Langfuse project API keys can now be limited to **Full access**, **Viewer**, **Ingestion**, or **Scores ingestion**. This lets each service, environment, or CI runner use a key with only the access it needs. Configure permissions in **Project Settings → API Keys → Create new API keys → Permissions**. See the [Langfuse documentation](https://langfuse.com/docs/administration/rbac#api-key-permissions).
+- **Build:** [ClickHouse Managed Postgres](/products/managed-postgres/overview) is generally available, with native change data capture into ClickHouse and the `pg_clickhouse` extension. The [Xata acquisition](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) accelerates the roadmap for instant branching, cloning, and scale-to-zero environments.
+- **Observe:** [ClickHouse Observability](https://clickhouse.com/blog/announcing-clickhouse-observability) is in Public Beta. Send OpenTelemetry data to a managed endpoint and investigate logs, metrics, and traces in ClickStack or with agents. Observability Apps is in Private Preview, bringing prompt-driven, shareable applications over live telemetry.
+- **Secure:** ClickHouse Security is in Private Preview, combining security-data integrations, managed detections, and AI-powered investigations. Admins can also configure each role's access to in-console monitoring dashboards.
+- **Connect:** The MongoDB CDC connector for [ClickPipes](/integrations/clickpipes/mongodb) is generally available, adding parallel snapshotting, structured ingestion, and new monitoring metrics. Private Preview support for `remoteSecure` lets services in the same organization, region, and cell query each other over ClickHouse Cloud's private network. Approved domains and the new Previews page make onboarding and trying eligible features self-service.
+- **Build with AI:** Langfuse AI Gateway is in Public Beta for tracing model usage and costs, while Langfuse adds scoped project API keys and improved experiment comparisons. Read the [platform announcement](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) for details.
 
 </Update>
 
@@ -149,12 +77,6 @@ Mermaid diagrams open as full artifacts and can be exported to SVG or PNG; other
 ### Claude Sonnet 5.5 in ClickHouse Agents {#claude-sonnet-55-in-clickhouse-agents}
 
 Claude Sonnet 5.5 is now available in ClickHouse Agents and also powers the default ClickHouse Agent.
-
-## Integrations {#2026-10-19-integrations}
-
-### Langfuse Experiments compare scores across runs and spot regressions {#langfuse-experiments-compare-scores-runs-regressions}
-
-The Langfuse **Experiments** page now charts every score across experiment runs side by side, making trade-offs between quality, cost, and latency easier to see. Summary statistics compare a candidate run with its baseline and identify improvements and regressions. Teams running offline evaluations can find failing items without exporting results to a notebook. [Learn more](https://langfuse.com/changelog/2026-10-19-experiments).
 
 </Update>
 
