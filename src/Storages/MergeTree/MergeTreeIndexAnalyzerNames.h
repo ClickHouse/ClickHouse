@@ -58,7 +58,10 @@ class MergeTreeIndexMinMax;
   * column to subcolumn reads when the query uses the column in another way or reads with `FINAL`,
   * which the replay does not see. If the rewritten form reads subcolumns the filter does not read, it
   * is computed again without the subcolumn rewrites of their source columns, keeping the rewrites of
-  * the other columns.
+  * the other columns. Some rewrites of `FunctionToSubcolumnsPass` are applied only in a filter (e.g.
+  * `m['k']` to `m.key_k` in `m['k'] + length(toString(m))`), so the form computed with the key
+  * expressions in the filter of the dummy query is tried first, and is used if the filter reads the
+  * same subcolumns.
   *
   * `index_is_in_table` is false for a hypothetical index of `EXPLAIN WHATIF`: the query was analyzed
   * against `table_metadata` without the index, so the passes see only the keys and indexes of the

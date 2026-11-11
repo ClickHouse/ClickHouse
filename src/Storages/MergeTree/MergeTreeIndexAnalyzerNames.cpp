@@ -9,12 +9,15 @@
 #include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
@@ -138,10 +141,15 @@ bool foldedConstantsMatchKeyExpression(const QueryTreeNodePtr & node, const Acti
 /// Returns nullopt if the rewritten expressions are not proven to compute the stored key.
 /// `columns_without_subcolumns` are the source columns whose functions the query does not rewrite to
 /// subcolumn reads, see `getAlternativeExpression`.
+/// If `in_filter`, the key expressions are placed in the `WHERE` clause of the dummy query rather than
+/// in its projection: some rewrites are applied only in a filter (e.g. `FunctionToSubcolumnsPass`
+/// rewrites `m['k']` to `m.key_k` in `WHERE` even if the whole `m` is used as well, as in
+/// `m['k'] + length(toString(m))`).
 std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
     const ASTPtr & expression_list_ast,
     const ExpressionActionsPtr & expression,
     const Names & columns_without_subcolumns,
+    bool in_filter,
     const std::function<void(StorageInMemoryMetadata &)> & register_key,
     const ContextMutablePtr & context)
 {
@@ -173,11 +181,41 @@ std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
     /// `FunctionToSubcolumnsPass` does not rewrite the functions of a column to subcolumn reads when
     /// the query uses the whole column elsewhere. Add such a use of every column the query does not
     /// rewrite; these extra outputs are removed from the result.
-    auto projection_ast = expression_list_ast->clone();
-    for (const auto & column : columns_without_subcolumns)
-        projection_ast->children.push_back(make_intrusive<ASTIdentifier>(column));
+    /// In a filter, the key expressions are the arguments of `ignore`, which is not constant folded
+    /// and accepts any number of arguments of any types.
+    ASTPtr projection_ast;
+    if (in_filter)
+    {
+        if (!columns_without_subcolumns.empty())
+            return std::nullopt;
+        projection_ast = make_intrusive<ASTExpressionList>();
+        projection_ast->children.push_back(make_intrusive<ASTLiteral>(UInt64(1)));
+        auto filter_ast = makeASTFunction("ignore");
+        filter_ast->arguments->children = expression_list_ast->clone()->children;
+        query_node->getWhere() = buildQueryTree(filter_ast, context);
+    }
+    else
+    {
+        projection_ast = expression_list_ast->clone();
+        for (const auto & column : columns_without_subcolumns)
+            projection_ast->children.push_back(make_intrusive<ASTIdentifier>(column));
+    }
     query_node->getProjectionNode() = buildQueryTree(projection_ast, context);
     query_node->getJoinTreeNode() = table_expression;
+
+    /// The list of the (rewritten) key expressions in the query tree.
+    auto get_key_expressions_node = [&](const QueryTreeNodePtr & tree) -> QueryTreeNodePtr
+    {
+        auto & query = tree->as<QueryNode &>();
+        if (!in_filter)
+            return query.getProjectionNode();
+        if (!query.hasWhere())
+            return nullptr;
+        auto * filter_function = query.getWhere()->as<FunctionNode>();
+        if (!filter_function || filter_function->getFunctionName() != "ignore")
+            return nullptr;
+        return filter_function->getArgumentsNode();
+    };
 
     QueryTreeNodePtr query_tree = query_node;
     QueryTreePassManager query_tree_pass_manager(context);
@@ -189,11 +227,12 @@ std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
     for (const auto & pass : query_tree_pass_manager.getPasses())
     {
         pass->run(query_tree, context);
-        if (!foldedConstantsMatchKeyExpression(query_tree->as<QueryNode &>().getProjectionNode(), key_dag))
+        auto key_expressions_node = get_key_expressions_node(query_tree);
+        if (!key_expressions_node || !foldedConstantsMatchKeyExpression(key_expressions_node, key_dag))
             return std::nullopt;
     }
 
-    auto projection_node = query_tree->as<QueryNode &>().getProjectionNode();
+    auto projection_node = get_key_expressions_node(query_tree);
 
     GlobalPlannerContextPtr global_planner_context
         = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
@@ -262,12 +301,14 @@ AlternativeKeyExpressionPtr computeAlternativeExpression(
     const ExpressionActionsPtr & expression,
     const Names & column_names,
     const Names & columns_without_subcolumns,
+    bool in_filter,
     const std::function<void(StorageInMemoryMetadata &)> & register_key,
     const ContextPtr & context)
 {
     auto execution_context = Context::createCopy(context);
 
-    auto dag = buildRewrittenExpressionWithAnalyzer(expression_list_ast, expression, columns_without_subcolumns, register_key, execution_context);
+    auto dag = buildRewrittenExpressionWithAnalyzer(
+        expression_list_ast, expression, columns_without_subcolumns, in_filter, register_key, execution_context);
     if (!dag)
         return nullptr;
 
@@ -444,6 +485,64 @@ bool isOtherTableColumnPrefix(const String & prefix, const String & source_colum
     return true;
 }
 
+bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
+{
+    return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
+        && lhs.variant_element_name == rhs.variant_element_name
+        && lhs.object_path_name == rhs.object_path_name && lhs.bucket == rhs.bucket;
+}
+
+/// The path of substreams of `column` from its storage column; empty for a storage column itself.
+std::optional<ISerialization::SubstreamPath> getSubstreamPathInStorage(const NameAndTypePair & column)
+{
+    if (!column.isSubcolumn())
+        return ISerialization::SubstreamPath{};
+    auto info = column.getTypeInStorage()->tryGetSubcolumnInfo(column.getSubcolumnName());
+    if (!info)
+        return std::nullopt;
+    return info->substreams_path;
+}
+
+/// Whether the subcolumn input `subcolumn_name` of the alternative form is, in the real table, the same
+/// subcolumn the replay read it as: the subcolumn of the key's source column `source_column` (see
+/// `getSourceColumnOfSubcolumn`) along the same substreams, with the same type. Subcolumn names are
+/// flat, so another element of the same storage column can answer to the same name: for
+/// ``c Tuple(`a.key_k` Int32, a Map(String, Int32))`` and the key's source column `c.a`, the replay
+/// reads `c.a.key_k` as the key `k` of the `Map`, but in the table it is the `Tuple` element `a.key_k`.
+/// `FunctionToSubcolumnsPass` does not rewrite to such a subcolumn in the query (it checks the
+/// substreams the same way), so the name of the filter refers to the other subcolumn.
+bool subcolumnResolvesAsInReplay(
+    const String & subcolumn_name,
+    const String & source_column,
+    const ColumnsDescription & key_source_columns,
+    const ColumnsDescription & table_columns)
+{
+    if (source_column.empty())
+        return false;
+
+    const auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+
+    /// How the replay against the dummy storage with the key's source columns resolves the name.
+    auto replayed = key_source_columns.tryGetColumn(options, subcolumn_name);
+    if (!replayed || !replayed->isSubcolumn() || replayed->getNameInStorage() != source_column)
+        return false;
+    auto replayed_path = getSubstreamPathInStorage(*replayed);
+
+    auto source = table_columns.tryGetColumn(options, source_column);
+    auto resolved = table_columns.tryGetColumn(options, subcolumn_name);
+    if (!replayed_path || !source || !resolved || !resolved->isSubcolumn()
+        || resolved->getNameInStorage() != source->getNameInStorage() || !resolved->type->equals(*replayed->type))
+        return false;
+
+    auto source_path = getSubstreamPathInStorage(*source);
+    auto resolved_path = getSubstreamPathInStorage(*resolved);
+    if (!source_path || !resolved_path || resolved_path->size() != source_path->size() + replayed_path->size())
+        return false;
+
+    return std::equal(source_path->begin(), source_path->end(), resolved_path->begin(), isSameSubstream)
+        && std::equal(replayed_path->begin(), replayed_path->end(), resolved_path->begin() + source_path->size(), isSameSubstream);
+}
+
 /// The alternative form is computed against a storage with only the source columns of the key, so the
 /// rewrite passes do not see the other columns of the table, and the names of the alternative form can
 /// refer to other columns in the real table:
@@ -453,7 +552,8 @@ bool isOtherTableColumnPrefix(const String & prefix, const String & source_colum
 ///   of the table (e.g. `j.m.key_k` as a subcolumn of a `JSON` column `j` rather than of the key's
 ///   column `j.m`). So the subcolumn read is rejected if its name, or any prefix of it other than the
 ///   key's source column and the storage column that owns it, is a column of the table, see
-///   `isOtherTableColumnPrefix`.
+///   `isOtherTableColumnPrefix`. And the name must refer in the table to the same substream of the same
+///   storage column, with the same type, as in the replay, see `subcolumnResolvesAsInReplay`.
 /// - A rewritten (sub)expression can be named as another column of the table (e.g. a column named
 ///   `if(greater(v, 0), v, 0)` while the key is `multiIf(v > 0, v, 0)`), and the filter on that column
 ///   would be matched with the key by name. The name index analysis reconstructs for a node can differ
@@ -468,6 +568,7 @@ bool collidesWithOtherTableColumn(
     NameSet key_source_columns;
     for (const auto & column : expression->getRequiredColumns())
         key_source_columns.insert(column);
+    const ColumnsDescription key_source_columns_description(expression->getRequiredColumnsWithTypes());
 
     /// Check every name a filter expression can be matched by, not only the names of the nodes:
     /// the names index analysis reconstructs can differ from them (e.g. for lambdas).
@@ -486,6 +587,8 @@ bool collidesWithOtherTableColumn(
         const String source_column = getSourceColumnOfSubcolumn(node.result_name, key_source_columns);
 
         if (table_columns.has(node.result_name))
+            return true;
+        if (!subcolumnResolvesAsInReplay(node.result_name, source_column, key_source_columns_description, table_columns))
             return true;
         for (size_t pos = node.result_name.find('.'); pos != String::npos; pos = node.result_name.find('.', pos + 1))
         {
@@ -534,6 +637,8 @@ PredicateNames getPredicateNames(const ActionsDAG::Node * predicate)
 /// - the subcolumn's name, or a prefix of it other than the source column and its owning column, is a
 ///   column of the table:
 ///   `FunctionToSubcolumnsPass` does not rewrite to it then, see `collidesWithOtherTableColumn`;
+/// - the subcolumn's name refers to another subcolumn in the table than the one the replay read, see
+///   `subcolumnResolvesAsInReplay`;
 /// - the filter does not read the subcolumn (only checked if `predicate` is given);
 /// - the filter still has a function of the source column from the key (e.g. `arrayElement(m, 'k')`)
 ///   that the replay rewrote to a subcolumn read. `FunctionToSubcolumnsPass` decides for every column
@@ -552,6 +657,7 @@ std::optional<NameSet> getSourceColumnsOfSubcolumnsNotInQuery(
     NameSet key_source_columns;
     for (const auto & column : expression->getRequiredColumns())
         key_source_columns.insert(column);
+    const ColumnsDescription key_source_columns_description(expression->getRequiredColumnsWithTypes());
 
     const auto & alternative_dag = alternative_key.expression->getActionsDAG();
     NameSet alternative_node_names;
@@ -582,7 +688,9 @@ std::optional<NameSet> getSourceColumnsOfSubcolumnsNotInQuery(
 
         String source_column = getSourceColumnOfSubcolumn(node.result_name, key_source_columns);
 
-        bool shadowed = table_columns.has(node.result_name);
+        bool shadowed = table_columns.has(node.result_name)
+            || (!source_column.empty()
+                && !subcolumnResolvesAsInReplay(node.result_name, source_column, key_source_columns_description, table_columns));
         for (size_t pos = node.result_name.find('.'); !shadowed && pos != String::npos; pos = node.result_name.find('.', pos + 1))
         {
             shadowed = isOtherTableColumnPrefix(node.result_name.substr(0, pos), source_column, table_columns);
@@ -607,6 +715,7 @@ AlternativeKeyExpressionPtr getAlternativeExpressionImpl(
     const ExpressionActionsPtr & expression,
     const Names & column_names,
     const Names & columns_without_subcolumns,
+    bool in_filter,
     const std::function<void(StorageInMemoryMetadata &)> & register_key,
     const String & key_kind,
     const String & description_for_log,
@@ -636,14 +745,19 @@ AlternativeKeyExpressionPtr getAlternativeExpressionImpl(
             expression_list_ast,
             expression,
             column_names,
-            /// The columns that are not rewritten to subcolumn reads are part of the identity of the result.
-            columns_without_subcolumns.empty() ? key_kind
-                                               : fmt::format("{} without subcolumns of: {}", key_kind, fmt::join(columns_without_subcolumns, ", ")),
+            /// The columns that are not rewritten to subcolumn reads and the context of the key
+            /// expressions in the dummy query are part of the identity of the result.
+            fmt::format(
+                "{}{}{}",
+                key_kind,
+                in_filter ? " in filter" : "",
+                columns_without_subcolumns.empty() ? ""
+                                                   : fmt::format(" without subcolumns of: {}", fmt::join(columns_without_subcolumns, ", "))),
             context,
             [&]
             {
                 return computeAlternativeExpression(
-                    expression_list_ast, expression, column_names, columns_without_subcolumns, register_key, context);
+                    expression_list_ast, expression, column_names, columns_without_subcolumns, in_filter, register_key, context);
             });
         return alternative_key;
     }
@@ -677,13 +791,30 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     const ActionsDAG::Node * predicate,
     const ContextPtr & context)
 {
-    NameSet columns_without_subcolumns;
-    auto alternative_key = getAlternativeExpressionImpl(
-        expression_list_ast, expression, column_names, {}, register_key, key_kind, description_for_log, context);
-
     std::optional<PredicateNames> predicate_names;
     if (predicate && context->getSettingsRef()[Setting::optimize_functions_to_subcolumns])
         predicate_names = getPredicateNames(predicate);
+
+    /// First, the key expressions as a part of a filter, as the filter of the query is: this form has
+    /// the rewrites that are applied only in a filter. It is used if the filter has every subcolumn
+    /// rewrite of this form, see `getSourceColumnsOfSubcolumnsNotInQuery`.
+    if (predicate_names)
+    {
+        auto filter_key = getAlternativeExpressionImpl(
+            expression_list_ast, expression, column_names, {}, /*in_filter=*/ true, register_key, key_kind, description_for_log, context);
+        if (filter_key)
+        {
+            auto excluded = getSourceColumnsOfSubcolumnsNotInQuery(*filter_key, expression, table_columns, &*predicate_names, context);
+            if (excluded && excluded->empty() && !collidesWithOtherTableColumn(*filter_key, expression, table_columns))
+                return filter_key;
+        }
+    }
+
+    /// Otherwise, the key expressions as the projection of a query, where the subcolumn rewrites of
+    /// the source columns that the query does not apply can be suppressed one by one.
+    NameSet columns_without_subcolumns;
+    auto alternative_key = getAlternativeExpressionImpl(
+        expression_list_ast, expression, column_names, {}, /*in_filter=*/ false, register_key, key_kind, description_for_log, context);
 
     /// Every iteration adds at least one source column, so this terminates.
     while (alternative_key)
@@ -704,7 +835,8 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
         Names sorted_columns(columns_without_subcolumns.begin(), columns_without_subcolumns.end());
         std::sort(sorted_columns.begin(), sorted_columns.end());
         alternative_key = getAlternativeExpressionImpl(
-            expression_list_ast, expression, column_names, sorted_columns, register_key, key_kind, description_for_log, context);
+            expression_list_ast, expression, column_names, sorted_columns, /*in_filter=*/ false, register_key, key_kind,
+            description_for_log, context);
     }
 
     if (alternative_key && collidesWithOtherTableColumn(*alternative_key, expression, table_columns))
