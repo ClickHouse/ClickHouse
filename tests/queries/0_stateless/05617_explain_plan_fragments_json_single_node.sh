@@ -29,9 +29,11 @@ compare()
     shift
     echo "$label"
     # Only the lines that differ, without the line numbers, which follow the length of the plan.
-    local changed
-    changed=$(diff --unchanged-line-format= --old-line-format='< %L' --new-line-format='> %L' \
-        <(explain "$1" "$2" "$3") <(explain "$4" "$5" "$6"))
+    # Plain `diff` output filtered with `grep`: the GNU line format options are not available in BSD `diff` (macOS).
+    local old new changed
+    old=$(explain "$1" "$2" "$3")
+    new=$(explain "$4" "$5" "$6")
+    changed=$(diff <(echo "$old") <(echo "$new") | grep '^[<>]')
     if [ -z "$changed" ]; then echo "same document"; else echo "$changed"; fi
 }
 
