@@ -71,6 +71,7 @@ def test_mark_segment_size_communicated_correctly(
             "parallel_replicas_local_plan": local_plan,
             "query_id": query_id,
             "parallel_replicas_index_analysis_only_on_coordinator": index_analysis_only_on_coordinator,
+            "use_statistics_for_sum_avg_aggregation": 0,
         },
     )
 

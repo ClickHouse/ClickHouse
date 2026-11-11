@@ -1,0 +1,42 @@
+--- the definer and another user get the same rows
+a	1019999	x
+a	1019998	x
+a	1019997	x
+a	1019996	x
+a	1019995	x
+a	1019999	x
+a	1019998	x
+a	1019997	x
+a	1019996	x
+a	1019995	x
+--- the definer reads the view in order, another user reads it sealed
+0	1
+1
+--- so only the definer reads just the end of the table
+definer	1
+reader	0
+--- a secondary query of the definer reads the view sealed
+0
+0
+0
+0
+1
+1
+--- a row policy on the view keeps it sealed for the definer
+1
+--- the outer ORDER BY ... LIMIT is pushed into a view over a Distributed table read by its definer
+2
+--- a session of the definer limited by the GRANTS of its credential reads the view sealed
+full password: sealed 0
+token: sealed 1, plan hidden 1
+ACCESS_DENIED
+0
+0
+0
+0
+directly	1
+through a Distributed table	1
+--- a session of the definer with other roles reads the view sealed
+1
+--- analyzer_inline_views does not inline the view, which is still read in order
+0	1
