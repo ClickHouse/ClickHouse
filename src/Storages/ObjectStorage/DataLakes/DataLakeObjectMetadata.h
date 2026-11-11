@@ -1,8 +1,15 @@
 #pragma once
-#include <Interpreters/ActionsDAG.h>
+
+#include <base/types.h>
+
+#include <memory>
+#include <optional>
 
 namespace DB
 {
+
+class ActionsDAG;
+
 template <typename T, UInt8 small_set_size>
 class RoaringBitmapWithSmallSet;
 
