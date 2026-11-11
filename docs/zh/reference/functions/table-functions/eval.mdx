@@ -14,14 +14,20 @@ doc_type: 'reference'
 SET allow_experimental_eval_table_function = 1;
 ```
 
-## 语法 {#syntax}
+它还需要 analyzer ([`enable_analyzer`](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer)，默认启用) 。
+
+<div id="syntax">
+  ## 语法
+</div>
 
 ```sql
 eval(expression)
 eval(SELECT ...)
 ```
 
-## 参数 {#arguments}
+<div id="arguments">
+  ## 参数
+</div>
 
 * `expression` — 返回查询字符串的常量表达式。允许使用查询参数和标量子查询。
 * `SELECT ...` — 返回查询字符串的 `SELECT` 查询。这种形式是标量子查询的语法糖：`eval(SELECT ...)` 等同于 `eval((SELECT ...))`，因此该查询必须恰好返回一行一列。
@@ -35,13 +41,17 @@ eval(SELECT ...)
 
 如果该值为 `NULL`，`eval` 会抛出异常。
 
-## 返回值 {#returned-value}
+<div id="returned-value">
+  ## 返回值
+</div>
 
 将生成的 `SELECT` 查询结果以表的形式返回。
 
 输出 schema 会在分析 `eval` 表函数时确定，因此外层查询可以引用生成查询的实际列名和类型。
 
-## 示例 {#examples}
+<div id="examples">
+  ## 示例
+</div>
 
 计算一个常量表达式：
 
@@ -100,8 +110,11 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 └────────────┘
 ```
 
-## 限制 {#restrictions}
+<div id="restrictions">
+  ## 限制
+</div>
 
+* `eval` 仅在启用查询分析器 (`enable_analyzer = 1`) 时可用。
 * 生成的查询必须是单个 `SELECT` 查询，且不能包含 `INTO OUTFILE` 或 `FORMAT` 等输出选项。`eval` 不执行多条语句。
 * 生成的查询必须是自包含的：它会在自身的作用域内解析，不能引用外层查询的 `WITH` 别名或列。
 * 生成的查询不能再次使用 `eval` 表函数。
@@ -109,7 +122,9 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 * 该参数会在查询分析阶段求值一次，而不是对每一行或每个块求值一次。
 * 外层查询日志会记录包含 `eval` 的原始查询；生成的 `SELECT` 查询不会作为单独的用户查询被记录。
 
-## 相关内容 {#related}
+<div id="related">
+  ## 相关内容
+</div>
 
 * [`view` 表函数](/zh/reference/functions/table-functions/view)
 * `allow_experimental_eval_table_function` 设置

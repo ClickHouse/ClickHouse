@@ -278,7 +278,7 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {}, must "
-                    "be native integral type, Date/DateTime or Float", arguments.front()->getName(), name);
+                    "be native integral type, Date/DateTime or Float", arguments.front().get()->getName(), name);
 }
 
 }
@@ -350,7 +350,7 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, documentation});
 }
 
 }
