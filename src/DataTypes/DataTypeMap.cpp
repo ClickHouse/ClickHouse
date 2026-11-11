@@ -172,9 +172,12 @@ void DataTypeMap::updateHashImpl(SipHash & hash) const
     value_type->updateHash(hash);
 }
 
-DataTypePtr DataTypeMap::doCloneWithChildren(const DataTypes & new_children) const
+void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) const
 {
-    return std::make_shared<DataTypeMap>(new_children[0], new_children[1]);
+    callback(*key_type);
+    callback(*value_type);
+    key_type->forEachChild(callback);
+    value_type->forEachChild(callback);
 }
 
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,

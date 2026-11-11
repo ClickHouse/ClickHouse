@@ -1,6 +1,5 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
-#include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -9,12 +8,10 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
@@ -53,16 +50,17 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
-    configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Format settings come from the query context, so the session's settings apply, plus the SETTINGS clause.
+    // Use format settings from global server context + settings from
+    // the SETTINGS clause of the create query. Settings from current
+    // session and user are ignored.
     std::optional<FormatSettings> format_settings;
     if (args.storage_def->settings)
     {
         Settings settings = context->getSettingsCopy();
 
-        // Applying the changes validates the values, not the names.
+        // Apply changes from SETTINGS clause, with validation.
         settings.applyChanges(args.storage_def->settings->changes);
 
         format_settings = getFormatSettings(context, settings);
@@ -135,11 +133,9 @@ static void registerStorageAzure(StorageFactory & factory)
 {
     factory.registerStorage(AzureDefinition::storage_engine_name, [](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageAzureConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
-    azureTableEngineSecretArguments(),
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -547,7 +543,7 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `**` — Substitutes any number of any character include `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
@@ -760,11 +756,9 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },
-    s3TableEngineSecretArguments(),
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -805,11 +799,9 @@ static void registerStorageHDFS(StorageFactory & factory)
 {
     factory.registerStorage(HDFSDefinition::storage_engine_name, [=](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
-    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -895,7 +887,7 @@ Multiple path components can have globs. For being processed file should exists 
 
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
@@ -1145,7 +1137,6 @@ void registerStorageIceberg(StorageFactory & factory)
             }
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1277,32 +1268,6 @@ To read a table where the schema has changed after its creation with dynamic sch
 
 ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. To enable partition pruning, set `use_iceberg_partition_pruning = 1`. For more information about iceberg partition pruning address https://iceberg.apache.org/spec/#partitioning
 
-## `DROP PARTITION` {#drop-partition}
-
-`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is supported for local and object-storage Iceberg tables, and for tables in a `DataLakeCatalog` database with the `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables`, or `unity` (with `use_unity_catalog_v2 = 1`) catalog type.
-
-Enable `allow_insert_into_iceberg` to use this operation.
-
-The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. The operation also rejects affected manifests containing equality-delete files.
-
-The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
-
-```sql
-ALTER TABLE iceberg_table DROP PARTITION 2;
-ALTER TABLE iceberg_table DROP PARTITION (2, 5);
-```
-
-For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `icebergYear`, `icebergMonth`, `icebergDay`, and `icebergHour`; the `PARTITION BY` aliases `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum` are accepted and evaluated as these transforms. For a single-column partition the transform-expression form must be wrapped in `tuple(...)`:
-
-```sql
-ALTER TABLE iceberg_table DROP PARTITION 0;
-ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
-```
-
-The operation rejects explicitly set `iceberg_snapshot_id`, `iceberg_timestamp_ms`, or `iceberg_metadata_file_path` settings. It modifies the current table state, not a historical snapshot or an explicitly selected metadata version.
-
-The `DROP PARTITION ID '...'` and `DROP PARTITION ALL` forms are not supported. Dropping a partition that does not exist is a no-op. The operation does not physically delete the data files. Earlier snapshots retain access to the removed rows and remain available to time-travel queries until those snapshots expire and their files are cleaned up.
-
 ## Time travel {#time-travel}
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
@@ -1331,10 +1296,9 @@ ClickHouse supports reading Iceberg tables that use the following deletion metho
 
 - [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
 - [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
-Deletion vector support is read-only. ClickHouse does not write, update, or compact deletion vectors.
-`ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
+The following deletion method is **not supported**:
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
 ### Basic usage {#basic-usage}
 ```sql
@@ -1590,7 +1554,6 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1630,7 +1593,6 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1652,7 +1614,6 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1691,7 +1652,6 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1772,7 +1732,6 @@ void registerStoragePaimon(StorageFactory & factory)
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -1852,12 +1811,6 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 - Optional background refresh of metadata when configured.
 - Stable table UUID when using Atomic/Replicated databases, enabling `{uuid}` macros in Keeper paths.
 
-## Primary-key tables {#primary-key-tables}
-
-Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
-snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
-declares `primary-key` therefore throws.
-
 ## Settings {#settings}
 
 This engine uses the same settings as the corresponding object storage engines and adds Paimon-specific settings:
@@ -1923,57 +1876,6 @@ SELECT count()
 FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
-
-### Rewinding the warehouse {#rewinding-the-warehouse}
-
-The Keeper cursor at `paimon_keeper_path` records how far the stream has consumed, and incremental reads assume the warehouse only ever moves forward — Paimon snapshot ids increase monotonically and are never reused. Expiring old snapshots is fine: it removes a prefix and leaves the ids above it untouched.
-
-Moving the warehouse *backwards* breaks that assumption. Restoring the warehouse from an older backup, rolling it back with another engine, or dropping and recreating the Paimon table at the same path all rewind the snapshot ids, and the writer then reuses ids the cursor has already consumed.
-
-**Rewinding the warehouse requires resetting the cursor in the same operation.** ClickHouse cannot reconstruct which snapshots a consumer already received once ids are reused, so a cursor left behind after a rewind produces undefined delivery: snapshots at reused ids may be skipped.
-
-When the rewind leaves the cursor pointing past the warehouse's newest snapshot, the read fails with `INVALID_STATE` rather than reporting no new data, and the error names the recovery command. Nothing is read and the cursor is left untouched, so every subsequent poll fails identically until it is resolved:
-
-```
-clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<latest snapshot id>'"
-```
-
-Do not delete the `committed_snapshot` node to recover. An absent cursor means "never consumed", which makes the next read a full re-read of the whole table rather than a resume.
-
-Before resetting the cursor, pause all consumers sharing `paimon_keeper_path`, including refreshable materialized views, and wait for in-flight reads to finish.
-
-A read's commit is conditioned on the cursor it observed. If the cursor changes after that observation but before the commit, the read fails with `INVALID_STATE`, delivers nothing, and leaves the value you set in place. A read that has already committed can still deliver its batch after the cursor is reset; rewinding the cursor can then cause that batch to be delivered again.
-
-Do not delete or replace `processing_lock` manually. It is an ephemeral node owned by the ClickHouse Keeper session that is running the incremental read; its lifecycle is not an operator recovery interface.
-
-### When a snapshot cannot be read {#when-a-snapshot-cannot-be-read}
-
-Snapshots that Paimon expired are skipped automatically: expiration removes a prefix of the snapshot ids, so anything below the warehouse's earliest snapshot is known to be gone and the cursor moves past it.
-
-Any other failure to read a snapshot — a transient object storage error, a corrupted snapshot file — fails the query and leaves the cursor where it is. There is deliberately no setting to tolerate this. Skipping an unread snapshot means permanently dropping the data committed in it, and a standing "tolerate errors" switch would turn every future network blip into silent data loss. Because the cursor is untouched, a transient error needs no intervention at all: the next poll re-reads the same range and succeeds.
-
-If a snapshot is genuinely unreadable and the stream must move on, abandon it explicitly. The error message names the command, but note what it costs: the failing read delivered nothing, so moving the cursor to the unreadable snapshot abandons **every** snapshot still unconsumed up to and including it — not only the unreadable one.
-
-With a cursor at 1 and snapshots 2, 3 and 4 pending where 3 is unreadable:
-
-```bash
-# Abandons snapshots 2 and 3; the next read resumes at 4.
-clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
-```
-
-To keep the readable ones, drain up to the unreadable snapshot first. Each poll consumes one snapshot and advances the cursor, until it reaches the one that cannot be read:
-
-```sql
--- Delivers snapshot 2 and advances the cursor to 2; the next poll fails on 3 again.
-SELECT * FROM paimon_inc SETTINGS max_consume_snapshots = 1;
-```
-
-```bash
-# Now only snapshot 3 is abandoned.
-clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
-```
-
-Either way the decision is recorded as an explicit operator action rather than inferred from a setting.
 
 ## Paimon to MergeTree via Refreshable Materialized View {#paimon-to-mergetree-via-refresh-mv}
 
@@ -2066,7 +1968,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 
 | Paimon Data Type | ClickHouse Data Type |
 |-------|--------|
-|BOOLEAN     |Bool      |
+|BOOLEAN     |Int8      |
 |TINYINT     |Int8      |
 |SMALLINT     |Int16      |
 |INTEGER     |Int32      |
@@ -2139,7 +2041,6 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2187,7 +2088,6 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2213,7 +2113,6 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2260,7 +2159,6 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2317,7 +2215,6 @@ void registerStorageDeltaLake(StorageFactory & factory)
 
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2498,7 +2395,6 @@ The `DeltaLake` table engine and table function support data caching, the same a
 
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2537,7 +2433,6 @@ The `DeltaLake` table engine and table function support data caching, the same a
                 configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2575,7 +2470,6 @@ The `DeltaLake` table engine and table function support data caching, the same a
                 configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2601,7 +2495,6 @@ void registerStorageHudi(StorageFactory & factory)
             auto configuration = std::make_shared<StorageS3HudiConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
-        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = false,
             .supports_schema_inference = true,

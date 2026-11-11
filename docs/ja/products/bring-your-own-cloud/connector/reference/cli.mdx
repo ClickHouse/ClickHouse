@@ -1,99 +1,99 @@
 ---
 title: 'CLI リファレンス'
 sidebarTitle: 'CLI'
-description: 'clicklink clctl コマンドのリファレンス: init、preflight、サポートセッション、ゲートウェイの信頼設定、監査、アクセスの Provisioning、マネージドサービス、プラットフォーム承認'
+description: 'clicklink clctl コマンドのリファレンス: init、preflight、サポートセッション、ゲートウェイの信頼設定、監査、アクセスの Provisioning'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
 doc_type: 'reference'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+コネクタは `clicklink` という単一のバイナリとして提供され、実行するコマンドは `clicklink clctl` 配下にあります。このページでは、インストール時および日常的な運用で使用するコマンドについて説明します。各コマンドに `--help` を付けて実行すると、詳細なヘルプを確認できます。`troubleshoot` および `preflight` サブツリーのフラグは、`CLCTL_*` 環境変数 (各フラグのヘルプ出力に記載) または `~/.clicklink/clctl.yaml` でも指定できます。
 
-<PrivatePreviewBadge />
+<div id="init">
+  ## clicklink clctl init
+</div>
 
-コネクタは `clicklink` という単一のバイナリとして提供され、実行するコマンドは `clicklink clctl` 配下にあります。このページでは、インストール時および日常的な運用で使用するコマンドについて説明します。各コマンドに `--help` を付けて実行すると、詳細なヘルプを確認できます。
+登録トークン、保存済みの登録バンドル、または帯域外で署名された証明書を使用して、コネクタを初期化します。1 回の実行で、設定の準備、ClickHouse へのアクセスの Provisioning、mTLS クライアント証明書の取得、デプロイ (Helm チャートまたは systemd ユニット) 、ヘルスチェックを行います。再実行しても安全です。設定とクラスター UUID は保持され、認証情報はアトミックに上書きされます。また、`--force` を指定しない限り、既存のクライアント秘密鍵が再利用されます。手順全体については、[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)を参照してください。
 
-`troubleshoot`、`scraper`、`preflight`、`executor`、`instances create`、`platform` の各サブツリーのフラグ、およびグローバルな `--endpoint` と `--cluster` は、`CLCTL_*` 環境変数 (各フラグのヘルプ出力に記載) または `~/.clicklink/clctl.yaml` でも指定できます。グローバルな `-v` は、コマンドが実行する管理 API リクエストをログに記録し、`-vv` ではリクエストボディも記録されます。
+<div id="init-entry-points">
+  ### エントリポイント
+</div>
 
-`instances` および `commands` コマンドと `executor teardown` は、executor のローカル API を参照します。これを選択するグローバルフラグは 2 つあります: `--endpoint <url>` (デフォルトは `http://127.0.0.1:9999`、環境変数 `CLCTL_ENDPOINT`) と `--cluster <name>` (環境変数 `CLCTL_CLUSTER`) で、後者はコマンドが必要とする場合にマネージドクラスターを指定します。Kubernetes では、まず executor のデプロイメントに対して `kubectl port-forward` を開いてください。詳細は [managed services](/ja/products/bring-your-own-cloud/connector/managed-services#status) を参照してください。
+3 つのエントリポイントのうち、指定するのは必ず 1 つだけです。これらは相互排他的です。
 
-## clicklink clctl init {#init}
+| フラグ                    | 説明                                                                                                                                                                                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--enroll <url>`       | 標準フローです。組織のコネクタエンドポイント (`https://<subdomain>.<connector domain>`) を受け取り、1 回限りの登録トークンを使用します (端末ではエコーなしで入力を求められ、それ以外では stdin の最初の行から読み取られます) 。生成されたバンドルを `handoff.yaml` (モード 0600) に書き込み、`--handoff handoff.yaml` として続行します。トークンがコマンドライン、ディスク、ログに現れることはありません。 |
+| `--handoff <path>`     | 保存済みの登録バンドルからブートストラップします。`handoff.yaml` が存在する場合、再実行および復旧時にはこれを使用します。                                                                                                                                                                                       |
+| `--signed-cert <path>` | エアギャップフローのフェーズ 2 です。帯域外で署名されたクライアント証明書をインストールし、段階的なインストールを完了します。必要に応じて、`--chain <path>` で CA チェーンも同時に置き換えられます。                                                                                                                                             |
 
-登録トークン、保存済みの登録バンドル、または帯域外で署名された証明書を使用して、コネクタを初期化します。1 回の実行で、設定の準備、ClickHouse へのアクセスの Provisioning、mTLS クライアント証明書の取得、デプロイ (Helm チャートまたは systemd ユニット) 、ヘルスチェックを行います。`--managed` を指定すると、検出された EKS クラスターの executor も有効化し、executor のクラスター全体へのアクセスを付与します。再実行しても安全です。`init` は設定とクラスター UUID を保持し、認証情報をアトミックに上書きします。また、`--force` を指定しない限り、既存のクライアント秘密鍵が再利用されます。手順全体については[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)を、executor の動作については [managed services](/ja/products/bring-your-own-cloud/connector/managed-services) を参照してください。
+<div id="init-common-flags">
+  ### 共通フラグ
+</div>
 
-### エントリポイント {#init-entry-points}
+| フラグ                         | 説明                                                                                                                                                                     |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--target <shape>`          | デプロイメント形態: `systemd` (デフォルト。実行中の VM をブートストラップする) または `helm` (kubeconfig を使用してワークステーションから `clicklink-connector` チャートをステージングする) 。                                        |
+| `--instance <spec>`         | カンマ区切りの `key=value` ペア (`name`、`host`、`port`、`secure`、`database`、`namespace`、`cluster`) で指定する ClickHouse インスタンス。繰り返し指定できます。対話形式のインスタンス指定プロンプトをスキップします。                 |
+| `--operators <emails>`      | サポートセッションを開くことを許可する operator のメールアドレスをカンマ区切りで指定します。セッションゲートウェイを有効にし、プロンプトをスキップします。                                                                                     |
+| `--no-gateway`              | セッションゲートウェイを無効にします (OIDC 管理セッションなし) 。プロンプトをスキップします。VM では、ホスト上の root ユーザーがローカルセッションファイルを通じて引き続きセッションを管理できます。                                                            |
+| `--force`                   | 既存の設定またはオーバーレイを上書きし、クライアント秘密鍵を再生成します。また、有効期限内の自己署名証明書を置き換えることを確認します。`--force` を使用しても、クラスター UUID は保持されます。                                                               |
+| `--skip-provision`          | ステージングのみ: ロールごとの ClickHouse アクセスの Provisioning をスキップします (systemd ターゲットでは、unit の有効化と検証もスキップします) 。`clicklink clctl {scraper,troubleshoot} access provision` を別途実行してください。 |
+| `--ch-user-suffix <suffix>` | Provisioning される ClickHouse ユーザー名に付加する任意の接尾辞 (`pcm_scraper` は `pcm_scraper_<suffix>` になります) 。これにより、2 つ目のコネクタデプロイメントで、最初のデプロイメントのユーザーと競合することなくインスタンスを共有できます。            |
+| `--ch-admin-password-stdin` | SQL Provisioning で必要な場合に、ClickHouse 管理者パスワードを stdin から読み取ります。端末で実行した場合は、代わりにプロンプトが表示されます。                                                                              |
 
-エントリポイントは必ず 1 つだけ指定します。
-
-| フラグ                    | 説明                                                                                                                                                                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--enroll <url>`       | 標準フローです。コネクタエンドポイント (`https://<subdomain>.<connector-domain>`) を受け取り、1 回限りの登録トークンを使用します (端末ではエコーなしで入力を求められ、それ以外では stdin の最初の行から読み取られます) 。生成されたバンドルを `handoff.yaml` (モード 0600) に書き込み、`--handoff handoff.yaml` として続行します。トークンがコマンドライン、ディスク、ログに現れることはありません。 |
-| `--handoff <path>`     | 保存済みの登録バンドルからブートストラップします。`handoff.yaml` が存在する場合、再実行および復旧時にはこれを使用します。                                                                                                                                                                                    |
-| `--signed-cert <path>` | エアギャップフローのフェーズ 2 です。帯域外で署名されたクライアント証明書をインストールし、段階的なインストールを完了します。必要に応じて、`--chain <path>` で CA チェーンも同時に置き換えられます。                                                                                                                                          |
-
-### 共通フラグ {#init-common-flags}
-
-| フラグ                         | 説明                                                                                                                                                                                                                                                    |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--target <shape>`          | デプロイメント形態: `systemd`(デフォルト。実行中の VM をブートストラップします)または `helm`(kubeconfig を持つワークステーションから `clicklink-connector` チャートをステージングします)。                                                                                                                           |
-| `--instance <spec>`         | 自身で運用する ClickHouse インスタンスを、カンマ区切りの `key=value` ペア(`name`、`host`、`port`、`secure`、`database`、`namespace`、`cluster`)で指定します。繰り返し指定できます。対話的なインスタンス入力のプロンプトをスキップします。Kubernetes 上の managed モードでは拒否されます。そのようなインスタンスは、`--no-managed` でインストールした別のデプロイメントが監視します。 |
-| `--env <label>`             | 出力されるすべてのメトリクスに `scraper.labels.env` として付与される環境ラベル(デフォルトは `production`)。staging 環境へのインストールでは `staging` を指定します。                                                                                                                                        |
-| `--operators <emails>`      | サポートセッションを開始できるオペレーターのメールアドレスをカンマ区切りで指定します。セッションゲートウェイを有効にし、プロンプトをスキップします。                                                                                                                                                                            |
-| `--no-gateway`              | セッションゲートウェイを無効にします(OIDC で管理されるセッションは使用しません)。プロンプトをスキップします。VM の場合、ホスト上の root はローカルのセッションファイル経由で引き続きセッションを管理できます。                                                                                                                                       |
-| `--managed`                 | managed モードを有効にします。executor を実行し、ClickHouse Cloud がこのクラスター内の ClickHouse services のライフサイクルを管理します。プロンプトをスキップします。Amazon EKS クラスターが必要です。                                                                                                                  |
-| `--no-managed`              | managed モード(executor)を無効のままにします。プロンプトをスキップします。                                                                                                                                                                                                        |
-| `--force`                   | 既存の config またはオーバーレイを上書きし、クライアント秘密鍵を再生成します。あわせて、有効期限内の自動署名された証明書を置き換えることを承認します。クラスター UUID は `--force` を指定した場合でも保持されます。                                                                                                                              |
-| `--skip-provision`          | ステージングのみを実行します。ロールごとの ClickHouse アクセスの Provisioning(systemd ターゲットではユニットの有効化と検証も)をスキップします。`clicklink clctl {scraper,troubleshoot} access provision` を別途実行してください。`--target helm` の場合、executor への権限付与は引き続き適用されます。VM ではこれもスキップされます。                      |
-| `--ch-user-suffix <suffix>` | provisioned された ClickHouse のユーザー名に付ける任意の接尾辞(`pcm_scraper` は `pcm_scraper_<suffix>` になります)。これにより、2 つ目のコネクタのデプロイメントが、1 つ目のユーザーと衝突することなく同じインスタンスを共有できます。                                                                                                 |
-| `--ch-admin-password-stdin` | SQL の provisioning でパスワードが必要な場合に、ClickHouse admin のパスワードを stdin から読み取ります。端末で実行した場合は、代わりにプロンプトが表示されます。                                                                                                                                                 |
-
-### 署名フラグ (フェーズ 1 のみ) {#init-signing-flags}
+<div id="init-signing-flags">
+  ### 署名フラグ (フェーズ 1 のみ)
+</div>
 
 | フラグ                     | 説明                                                                                            |
 | ----------------------- | --------------------------------------------------------------------------------------------- |
 | `--no-auto-sign`        | ステージ 1 でのみ使用します。エアギャップ環境または帯域外の署名フロー向けに、登録エンドポイント経由の CSR 自動署名をスキップします。                        |
 | `--sign-endpoint <url>` | 登録用の署名エンドポイントをオーバーライドします (デフォルト: バンドルエンドポイントに `enroll` DNS ラベルを挿入して導出) 。HTTPS URL である必要があります。 |
 
-### Kubernetes 専用フラグ {#init-kubernetes-flags}
+<div id="init-kubernetes-flags">
+  ### Kubernetes 専用フラグ
+</div>
 
 `--target helm` でのみ有効です。
 
-| フラグ                         | 説明                                                                                                                                                                                           |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--target-namespace <ns>`   | チャートのインストール先および Secret の配置先となるネームスペース (デフォルトは `clicklink`。端末では入力を求められます) 。                                                                                                                   |
-| `--instance-namespace <ns>` | 対象の ClickHouse インスタンスのネームスペース。ネイティブ Service の検出とインスタンスに関する入力を初期化します。`--managed` と併用すると拒否されます。マネージドインストールでは既存のインスタンスを登録しないためです。                                                               |
-| `--storage-class <name>`    | トラブルシューターおよび executor の状態ボリューム用 StorageClass (デフォルトはクラスターのデフォルト StorageClass。クラスターで未設定の場合は入力を求められるか、指定が必須になります) 。                                                                       |
-| `--values <path>`           | ステージングされた values オーバーレイのパス (デフォルトは `clicklink-values.yaml`) 。                                                                                                                                |
-| `--chart <ref>`             | デプロイするチャート。`--chart-repo` で解決される名前、またはミラーリングインストール用の直接指定の `oci://`、URL、ローカル参照 (デフォルトは `clicklink-connector`) 。                                                                               |
-| `--chart-repo <url>`        | チャート名の解決に使用する Helm リポジトリ (デフォルトは `https://releases.clicklink.clickhouse.com/charts`) 。直接指定の `--chart` 参照では無視されます。                                                                            |
-| `--chart-version <ver>`     | デプロイするチャートのバージョン (デフォルトはこのバイナリのリリースバージョン) 。                                                                                                                                                  |
-| `--ch-pod <ref>`            | ポッド内での Provisioning 手順に使用する ClickHouse ポッド。名前または `k=v` ラベルセレクターとして指定します (デフォルトは、各インスタンスの Service を支える Running 状態のポッド) 。                                                                      |
-| `--api-private-ca`          | コネクタエンドポイントが登録バンドルの CA によって発行された証明書を提供する場合に指定します。マウントされた CA チェーンを指す `api.tls.caFile` をステージングし、この CA チェーンはシステムルートに追加されます。                                                                     |
-| `--egress-cidrs <cidrs>`    | チャートのデフォルト拒否 NetworkPolicy 用に、コネクタエンドポイントの CIDR をカンマ区切りで指定します。これらを `networkPolicy.allowEgressCIDRs` として設定し、有効な状態でステージングします (マネージドモードでは端末で入力を求められます) 。指定しない場合、ポリシーは無効な状態でステージングされ、後から有効化できます。 |
+| フラグ                         | 説明                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `--target-namespace <ns>`   | チャートのインストール先および Secret の配置先となるネームスペース (デフォルトは `clicklink`。端末では入力を求められます) 。                                         |
+| `--instance-namespace <ns>` | 対象の ClickHouse インスタンスのネームスペース。ネイティブ Service の検出とインスタンスに関する入力を初期化します。                                               |
+| `--storage-class <name>`    | トラブルシューティングツールの状態ボリューム用 StorageClass (デフォルトはクラスターのデフォルト StorageClass。クラスターで未設定の場合は入力を求められるか、指定が必須になります) 。          |
+| `--values <path>`           | ステージングされた values オーバーレイのパス (デフォルトは `clicklink-values.yaml`) 。                                                      |
+| `--chart <ref>`             | デプロイするチャート。`--chart-repo` で解決される名前、またはミラーリングインストール用の直接指定の `oci://`、URL、ローカル参照 (デフォルトは `clicklink-connector`) 。     |
+| `--chart-repo <url>`        | チャート名の解決に使用する Helm リポジトリ (デフォルトは `https://releases.clicklink.clickhouse.com/charts`) 。直接指定の `--chart` 参照では無視されます。  |
+| `--chart-version <ver>`     | デプロイするチャートのバージョン (デフォルトはこのバイナリのリリースバージョン) 。                                                                        |
+| `--ch-pod <ref>`            | ポッド内での Provisioning 手順に使用する ClickHouse ポッド。名前または `k=v` ラベルセレクターとして指定します (デフォルトは、各インスタンスの Service を支える Running 状態のポッド) 。  |
+| `--api-private-ca`          | API エンドポイントが登録バンドルの CA によって発行された証明書を提供する場合に指定します。システムルートではなく、マウントされた CA チェーンを指す `api.tls.caFile` をステージングします。 |
 
-### VM 専用フラグ {#init-vm-flags}
+<div id="init-vm-flags">
+  ### VM 専用フラグ
+</div>
 
 `--target systemd` を指定した場合にのみ有効です。
 
-| フラグ                     | 説明                                                                                                  |
-| ----------------------- | --------------------------------------------------------------------------------------------------- |
-| `--server <url>`        | アクセスバンドルが接続先とする Kubernetes API server の URL (デフォルト: このホストの kubeconfig。ない場合はプロンプトで入力) 。              |
-| `--ca-data <base64>`    | `--server` の Base64 エンコード済み `certificate-authority-data` (デフォルト: このホストの kubeconfig。ない場合はプロンプトで入力) 。 |
-| `--cluster-name <name>` | managed モードが操作対象とする EKS クラスターの名前 (デフォルト: このホストの kubeconfig にある単一の EKS クラスター。端末上ではプロンプトで入力) 。        |
-| `--no-instance`         | 空のインスタンスレジストリで開始し、インスタンスのプロンプトをスキップします。                                                             |
+| フラグ                  | 説明                                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| `--server <url>`     | アクセスバンドルが接続先とする Kubernetes API server の URL (デフォルト: このホストの kubeconfig。ない場合はプロンプトで入力) 。              |
+| `--ca-data <base64>` | `--server` の Base64 エンコード済み `certificate-authority-data` (デフォルト: このホストの kubeconfig。ない場合はプロンプトで入力) 。 |
 
-### フラグの競合 {#init-flag-conflicts}
+<div id="init-flag-conflicts">
+  ### フラグの競合
+</div>
 
 * `--handoff`、`--enroll`、`--signed-cert` は相互排他的です。必ずいずれか 1 つを指定してください。
-* Kubernetes 専用のフラグは、`--target helm` を指定しない限り拒否されます。`--target helm` では、`--server`、`--ca-data`、`--cluster-name`、`--no-instance` は拒否されます (Helm フローではワークステーションの kubeconfig を読み取り、クラスター内のインスタンスを検出します) 。
-* `--no-instance` と `--instance` は相互排他的です。
-* `--managed` と `--no-managed` は相互排他的です。また、`--cluster-name` は `--no-managed` と併用できません。`--target helm` では、`--instance` と `--instance-namespace` は `--managed` と併用できません。
-* `--no-auto-sign` と `--sign-endpoint` は互いに排他的です。また、これらと `--api-private-ca`、`--managed`、`--no-managed`、`--cluster-name` は、いずれも `--signed-cert` と併用できません。
+* Kubernetes 専用のフラグは、`--target helm` を指定しない限り拒否されます。`--target helm` では、`--server` と `--ca-data` は拒否されます (Helm フローではワークステーションの kubeconfig を読み取ります) 。
+* `--no-auto-sign` と `--sign-endpoint` は互いに排他的です。また、これらと `--api-private-ca` は、いずれも `--signed-cert` と併用できません。
 * `--operators` と `--no-gateway` は相互排他的です。
-* `--skip-provision` を指定すると、`--ch-pod`、`--ch-user-suffix`、`--server`、`--ca-data`、`--ch-admin-password-stdin` は拒否されます (Provisioning は実行されません) 。
+* `--skip-provision` を指定すると、`--ch-pod`、`--ch-user-suffix`、`--server`、`--ca-data`、`--ch-admin-password-stdin` は拒否されます (プロビジョニングは実行されません) 。
 
-## clicklink clctl preflight {#preflight}
+<div id="preflight">
+  ## clicklink clctl preflight
+</div>
 
-コネクタのチェック群を、config、files、network、clickhouse、systemd、access、disk、redaction のカテゴリ別に実行します。各チェックの結果は、pass、warn、fail、skip のいずれかで報告されます。終了コード 0 はすべてのチェックが成功したことを示します (警告はノンブロッキングです) 。終了コード 2 は、少なくとも 1 つが失敗したことを示します。
+コネクタのチェック群を、config、files、network、clickhouse、systemd、access、disk、redaction のカテゴリ別に実行します。各チェックの結果は、pass、warn、fail、skip のいずれかで報告されます。終了コード 0 はすべてのチェックが成功したことを示します (警告はノンブロッキングです) 。終了コード 2 は、1 つ以上のチェックが失敗したことを示します。
 
 このコマンドはデフォルトでローカルで実行されます。`--k8s-namespace` を指定すると、`kubectl exec` を使用してコネクタポッド内のバイナリを実行し、レポートはローカルで表示されます (ポッドでは systemd チェックは常にスキップされます) 。[リモートチャネルフラグ](#channel-flags)を指定すると、代わりにリモート VM 上にインストールされたバイナリを実行します。
 
@@ -110,29 +110,35 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 `--k8s-*` フラグとリモートチャネルフラグは相互排他的です。いずれか一方のターゲットを選択してください。
 
-## clicklink clctl troubleshoot session {#troubleshoot-session}
+<div id="troubleshoot-session">
+  ## clicklink clctl troubleshoot session
+</div>
 
-サポートセッション (トラブルシューターがコマンドを受け付ける時間制限付きの期間) を有効化、無効化、確認します。アクティブなセッションがない場合、WebSocket が接続されていても、デーモンはすべてのコマンドを拒否します。[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
+サポートセッション (トラブルシューターがコマンドを受け付ける時間制限付きの期間) を有効化、無効化、確認します。セッションがアクティブでない場合、WebSocket が接続されていても、デーモンはすべてのコマンドを拒否します。[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
 
 コマンドは、次の 2 つのモードのいずれかで動作します。
 
 * **ローカルファイル** (デフォルト) : トラブルシューターが実行されているホスト上のセッション状態ファイル (デフォルト: `/var/lib/clicklink/session.json`) の読み取りと書き込みを行います。
 * **ゲートウェイ**: `--gateway-url` を指定すると、OIDC ID トークンを取得し、ワークステーションからトラブルシューターのセッションゲートウェイを呼び出します。
 
-### 共通フラグ {#session-shared-flags}
+<div id="init-common-flags">
+  ### 共通フラグ
+</div>
 
-| フラグ                        | 説明                                                                                                                                           |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--session-file <path>`    | セッション状態ファイルのパス (デフォルトは `/var/lib/clicklink/session.json`) 。                                                                                  |
-| `--config <path>`          | コネクタ設定ファイル。このファイルの `troubleshooter` セクションからセッションファイルのパスを取得します。                                                                               |
-| `--gateway-url <url>`      | セッションゲートウェイのベースURL。設定すると、コマンドはOIDC Bearer tokenを取得し、ローカルの状態ファイルではなくゲートウェイを呼び出します。`--session-file` および `--config` とは併用できません。                  |
-| `--gateway-audience <aud>` | OIDC tokenに紐付けるaudience claim (デフォルトはゲートウェイ自体のデフォルトと同じ `clicklink-clctl`) 。ゲートウェイのaudienceを再設定した場合にのみ指定してください。                               |
-| `--gateway-issuer <url>`   | ゲートウェイが検証するOIDC issuer。空の場合はGoogle向けのフローが選択されます。Google以外のidentity providerに対してデバイスコードフローを実行するには、`--oidc-client-id` とともに設定します。                |
-| `--oidc-client-id <id>`    | デバイスコードフロー用のパブリックOIDC client ID。デバイスgrantを有効にしたうえで、`--gateway-issuer` に登録します。                                                                |
-| `--token-file <path>`      | 事前発行されたOIDC ID トークンを含むファイル。Bearer tokenとして使用され、他のtoken providerは使用されません。                                                                     |
-| `--gateway-ca <path>`      | ゲートウェイの証明書を検証するCA bundle (独自の証明書を使用) 。未設定の場合、コマンドは `gateway trust` でピン留めされた証明書を使用します。ピン留めされていない自己署名ゲートウェイはフェイルクローズします。 |
+| フラグ                        | 説明                                                                                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--session-file <path>`    | セッション状態ファイルのパス (デフォルトは `/var/lib/clicklink/session.json`) 。                                                                                     |
+| `--config <path>`          | コネクタ設定ファイル。このファイルの `troubleshooter` セクションからセッションファイルのパスを取得します。                                                                                  |
+| `--gateway-url <url>`      | セッションゲートウェイのベースURL。設定すると、コマンドはOIDC Bearer tokenを取得し、ローカルの状態ファイルではなくゲートウェイを呼び出します。`--session-file` および `--config` とは併用できません。                     |
+| `--gateway-audience <aud>` | OIDC tokenに紐付けるaudience claim (デフォルトはゲートウェイ自体のデフォルトと同じ `clicklink-clctl`) 。ゲートウェイのaudienceを再設定した場合にのみ指定してください。                                  |
+| `--gateway-issuer <url>`   | ゲートウェイが検証するOIDC issuer。空の場合はGoogle向けのフローが選択されます。Google以外のidentity providerに対してデバイスコードフローを実行するには、`--oidc-client-id` とともに設定します。                   |
+| `--oidc-client-id <id>`    | デバイスコードフロー用のパブリックOIDC client ID。デバイスgrantを有効にしたうえで、`--gateway-issuer` に登録します。                                                                   |
+| `--token-file <path>`      | 事前発行されたOIDC ID トークンを含むファイル。Bearer tokenとして使用され、他のtoken providerは使用されません。                                                                       |
+| `--gateway-ca <path>`      | ゲートウェイのcertificateを検証するCA bundle (独自のcertificateを使用) 。未設定の場合は、`gateway trust` でピン留めされたcertificateが使用されます。ピン留めされていない自己署名ゲートウェイは安全側に失敗します。 |
 
-### セッションを有効化 {#session-enable}
+<div id="session-enable">
+  ### セッションを有効化
+</div>
 
 | フラグ                | 説明                                                                                                        |
 | ------------------ | --------------------------------------------------------------------------------------------------------- |
@@ -142,11 +148,15 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 すでにセッションが有効な場合は、有効化できません。先に無効化するか、有効期限が切れるまで待ってください。
 
-### session disable {#session-disable}
+<div id="session-disable">
+  ### session disable
+</div>
 
 セッションを直ちに無効化します。アクティブなセッションがない場合は何も実行されません。
 
-### セッションのステータス {#session-status}
+<div id="session-status">
+  ### セッションのステータス
+</div>
 
 セッションがアクティブかどうか、有効化したユーザー、有効期限を表示します。`--output` (`-o`) では、`table` (デフォルト) または`json`を選択できます。
 
@@ -160,16 +170,18 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-## clicklink clctl troubleshoot gateway trust {#gateway-trust}
+<div id="gateway-trust">
+  ## clicklink clctl troubleshoot gateway trust
+</div>
 
 VM 上では、セッションゲートウェイ が自己署名 TLS 証明書を提供します。このコマンドは証明書の SHA-256 フィンガープリントを `~/.clicklink/clctl.yaml` に記録し、`session` コマンドで検証できるようにします。固定したフィンガープリントが一致しなくなった場合は、フェイルクローズします。信頼は、次の 2 つのいずれかの帯域外の方法で確立されます。
 
-* [リモートチャネルフラグ](#channel-flags)を使用する場合、コマンドはすでに認証済みのチャネル経由で VM から証明書を読み取り、固定します。
-* チャネルを使用しない場合は、コネクタが証明書の生成時にログに記録した SHA-256 値を `--gateway-fingerprint` で指定します。コマンドは、取得した証明書がこの値と一致した場合にのみ固定します。このフラグを省略すると、何も固定せずに提示されたフィンガープリントを表示します。
+* [リモートチャネルフラグ](#channel-flags)を使用する場合は、すでに認証済みのチャネル経由で VM から証明書を直接読み取り、固定します。
+* チャネルを使用しない場合は、コネクタが証明書の生成時にログに記録した SHA-256 値を `--gateway-fingerprint` で指定します。取得した証明書は、この値と一致した場合にのみ固定されます。このフラグを省略すると、何も固定せずに提示されたフィンガープリントを表示します。
 
 | フラグ                              | 説明                                                                                    |
 | -------------------------------- | ------------------------------------------------------------------------------------- |
-| `--gateway-url <url>`            | 信頼するゲートウェイのベース URL (必須) 。例: `https://<vm-host>:8443`。`https://` である必要があります。           |
+| `--gateway-url <url>`            | 信頼するゲートウェイのベース URL (必須) 。例: `https://<vm-host>:8443`。                                 |
 | `--gateway-fingerprint <sha256>` | コネクタログに記録された想定 SHA-256 フィンガープリント。固定前に検証されます。コロンおよび英字の大文字・小文字は無視されます。                  |
 | `--remote-cert-file <path>`      | チャネル経由で読み取る、VM 上のゲートウェイ証明書へのパス (デフォルトは `/var/lib/clicklink/gateway/tls/server.crt`) 。 |
 
@@ -181,9 +193,11 @@ clicklink clctl troubleshoot gateway trust \
 
 Kubernetes では、pinning は使用しません。CA 発行の証明書を使用するイングレス経由でゲートウェイを公開するか、ポートフォワードを使用してください。
 
-## clicklink clctl troubleshoot audit tail {#audit-tail}
+<div id="audit-tail">
+  ## clicklink clctl troubleshoot audit tail
+</div>
 
-トラブルシューターの監査ログの末尾のエントリを出力します。改行区切り JSON 形式で、デーモンが受け入れた、またはブロックしたコマンドごとに 1 つのエントリが含まれます。ログは読み取り専用で開かれます。
+トラブルシューターの監査ログの末尾のエントリを出力します。改行区切り JSON 形式で、デーモンが受け入れた、またはブロックしたコマンドごとに 1 つのエントリが含まれます。このコマンドはログを読み取り専用で開き、変更を加えることはありません。
 
 | フラグ                 | 説明                                                                  |
 | ------------------- | ------------------------------------------------------------------- |
@@ -197,32 +211,33 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-## アクセスの Provisioning {#access-provision}
+<div id="access-provision">
+  ## アクセスの Provisioning
+</div>
 
 `clicklink clctl scraper access provision` と `clicklink clctl troubleshoot access provision` は、コンポーネントごとのインスタンス単位のアクセスバンドル (読み取り専用の ClickHouse ユーザーとその権限、およびコンポーネントが使用する Kubernetes ServiceAccount、RBAC、トークン) を作成し、`--force` を指定するとローテーションします。`init` はインストール時にこれをインラインで実行します。スタンドアロンコマンドは、再実行およびローテーション用です。
 
-| フラグ                                                                  | 説明                                                                                                                                                             |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--instance <name>`                                                  | 設定内のインスタンス名 (必須) 。                                                                                                                                             |
-| `--server <url>`                                                     | Kubernetes API サーバーの URL (必須) 。                                                                                                                                |
-| `--ca-data <base64>`                                                 | 生成される kubeconfig 用の Base64 エンコード済みクラスター CA 証明書。                                                                                                                |
-| `--config <path>`                                                    | インスタンス情報の読み取り元となるコネクタ設定ファイル。                                                                                                                                   |
-| `--target <shape>`                                                   | `systemd` (デフォルト: リモートチャネル経由でバンドルを VM に送信するか、`--provider local` を指定してローカルで生成) または `helm` (チャート用にバンドルを Kubernetes Secret としてプッシュ) 。                             |
-| `--target-namespace <ns>`                                            | バンドル Secret の配置先ネームスペース (`--target helm` では必須) 。                                                                                                               |
-| `--instance-namespace <ns>`                                          | 対象の ClickHouse インスタンスのネームスペース。これを指定すると、コマンドは `--instance` のレジストリエントリを必要としません。                                                                                  |
-| `--force`                                                            | 既存のバンドルを上書きします。再実行および認証情報ローテーションに使用します。                                                                                                                        |
-| `--secret-name <name>`                                               | バンドル Secret 名を上書きします (デフォルトは `clicklink-connector-<component>-access-<instance>`) 。                                                                            |
-| `--output-dir <path>`                                                | (`--target helm` または `--provider local`) バンドルの出力先ルートディレクトリ (デフォルト: `helm` の場合は作業ディレクトリ内の `./<component>/`、`local` の場合はコンポーネントのアクセスディレクトリ) 。                    |
-| `--audit-log <path>`                                                 | Provisioning の監査ログ。NDJSON 形式で追記されます (デフォルトはバンドル出力ディレクトリと同じ場所の `clctl-audit.log`。`none` を指定すると無効化されます) 。                                                        |
-| `--ch-admin-user <name>`                                             | 権限の適用に使用する ClickHouse 管理ユーザー (デフォルトは `default`) 。                                                                                                              |
-| `--ch-admin-password-stdin`                                          | ClickHouse 管理ユーザーのパスワードを stdin から読み取ります。                                                                                                                       |
-| `--ch-user-suffix <suffix>`                                          | Provisioning する ClickHouse ユーザー名に付加する任意の接尾辞。                                                                                                                   |
+| フラグ                                                                  | 説明                                                                                                                                                       |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--instance <name>`                                                  | 設定内のインスタンス名 (必須) 。                                                                                                                                       |
+| `--server <url>`                                                     | Kubernetes API サーバーの URL (必須) 。                                                                                                                          |
+| `--ca-data <base64>`                                                 | 生成される kubeconfig 用の Base64 エンコード済みクラスター CA 証明書。                                                                                                          |
+| `--config <path>`                                                    | インスタンス情報の読み取り元となるコネクタ設定ファイル。                                                                                                                             |
+| `--target <shape>`                                                   | `systemd` (デフォルト: リモートチャネル経由でバンドルを VM に送信するか、`--provider local` を指定してローカルで生成) または `helm` (チャート用にバンドルを Kubernetes Secret としてプッシュ) 。                       |
+| `--target-namespace <ns>`                                            | バンドル Secret の配置先ネームスペース (`--target helm` では必須) 。                                                                                                         |
+| `--instance-namespace <ns>`                                          |  (`--target helm`) 対象の ClickHouse インスタンスのネームスペース。                                                                                                        |
+| `--force`                                                            | 既存のバンドルを上書きします。再実行および認証情報ローテーションに使用します。                                                                                                                  |
+| `--secret-name <name>`                                               | バンドル Secret 名を上書きします (デフォルトは `clicklink-connector-<component>-access-<instance>`) 。                                                                      |
+| `--output-dir <path>`                                                |  (`--target helm` または `--provider local`) バンドルの出力先ルートディレクトリ。                                                                                             |
+| `--ch-admin-user <name>`                                             | 権限の適用に使用する ClickHouse 管理ユーザー (デフォルトは `default`) 。                                                                                                        |
+| `--ch-admin-password-stdin`                                          | ClickHouse 管理ユーザーのパスワードを stdin から読み取ります。                                                                                                                 |
+| `--ch-user-suffix <suffix>`                                          | Provisioning する ClickHouse ユーザー名に付加する任意の接尾辞。                                                                                                                  |
 | `--ch-user-via <mode>`                                               | ClickHouse ユーザーの Provisioning 方法: `sql` (デフォルト。生成された権限を `--ch-admin-user` として適用) または `cr` (SQL を実行可能な管理者がいない Operator 管理インスタンス向けに、ユーザーをインスタンスのカスタムリソースに書き込み) 。 |
-| `--apply-ch-grants`                                                  | (`--target helm`) 生成された権限を手動で適用する代わりに、`kubectl exec` を使用してポッド内で適用します。                                                                                          |
-| `--ch-pod <ref>`, `--ch-pod-namespace <ns>`, `--ch-container <name>` | (`--apply-ch-grants` を指定した `--target helm` または `--ch-user-via cr`) exec の対象となる ClickHouse ポッドとコンテナーを指定します。                                                     |
-| `--token-duration <dur>`                                             | ServiceAccount トークンの有効期間 (デフォルトは `2160h`、90 日。EKS では最長 24 時間) 。                                                                                                |
-| `--skip-restart`                                                     | Provisioning 後のコンポーネントの再起動をスキップします。                                                                                                                            |
-| `--dry-run`                                                          | 実行計画を出力して終了します。Kubernetes、リモート、ClickHouse への書き込みは行いません。                                                                                                        |
+| `--apply-ch-grants`                                                  |  (`--target helm`) 生成された権限を手動で適用する代わりに、`kubectl exec` を使用してポッド内で適用します。                                                                                   |
+| `--ch-pod <ref>`, `--ch-pod-namespace <ns>`, `--ch-container <name>` |  (`--apply-ch-grants` を指定した `--target helm` または `--ch-user-via cr`) exec の対象となる ClickHouse ポッドとコンテナーを指定します。                                              |
+| `--token-duration <dur>`                                             | ServiceAccount トークンの有効期間 (デフォルトは `2160h`、90 日。EKS では最長 24 時間) 。                                                                                          |
+| `--skip-restart`                                                     | Provisioning 後のコンポーネントの再起動をスキップします。                                                                                                                           |
+| `--dry-run`                                                          | 実行計画を出力して終了します。Kubernetes、リモート、ClickHouse への書き込みは行いません。                                                                                                  |
 
 1 つのコンポーネントのインスタンス認証情報をローテーションします。
 
@@ -235,183 +250,15 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-## clicklink clctl executor access {#executor-access}
+<div id="channel-flags">
+  ## リモートチャネルフラグ
+</div>
 
-`init --managed` は、ご使用の認証情報で executor のクラスター全体の grant を適用します。適用できない場合、`init` はクラスター管理者権限を持つ kubeconfig から実行すべきコマンドを出力します。VM では `access apply` のみ (bundle はステージング済み) 、Kubernetes では `access grant` の後に `access apply` を実行します。[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding#install-and-enroll)を参照してください。
+`preflight`、`gateway trust`、`access provision` は、VM ターゲットへの接続方法を選択するための共通フラグセットを受け付けます。
 
-### executor access grant {#executor-access-grant}
-
-executor のクラスター全体のアクセス bundle を `<output-dir>/_cluster/` 配下に生成します。生成されるのは、ServiceAccount 1 つ、クラスター ロール と ClusterRoleBinding、および ServiceAccount を executor のネームスペース プレフィックス配下のネームスペースに限定する ValidatingAdmissionPolicy です。適用する前に、生成された RBAC を確認してください。
-
-| Flag                                   | Description                                                                                            |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `--cluster`                            | クラスター全体の bundle を生成します (この用途では必須。指定しない場合は `--instance` 向けの service 単位の bundle が生成されます) 。               |
-| `--config <path>`                      | コネクタの設定ファイル (環境変数 `CLCTL_EXECUTOR_CONFIG`) 。                                              |
-| `--sa-namespace <ns>`                  | executor の ServiceAccount のホーム ネームスペース (デフォルトは `clicklink-system`。Kubernetes インストールの場合はコネクタのネームスペース) 。 |
-| `--context <name>`                     | 管理対象クラスターの kubeconfig context。`prepare` と同様です。                                                         |
-| `--server <url>`, `--ca-data <base64>` | kubeconfig に埋め込む Kubernetes API server の URL と CA (デフォルト: kube context のもの) 。                          |
-| `--output-dir <path>`                  | 出力ルート (デフォルトは `/etc/clicklink/access/executor`。環境変数 `CLCTL_EXECUTOR_OUTPUT_DIR`) 。                     |
-| `--force`                              | 既存の bundle を上書きします。                                                                                    |
-| `--dry-run`                            | ファイルを書き込まずに plan を表示します。                                                                               |
-
-### executor access apply {#executor-access-apply}
-
-生成されたクラスター全体の bundle `grant` を適用します。対象は、ServiceAccount のホーム ネームスペース、ServiceAccount、クラスター ロールと ClusterRoleBinding、および admission ポリシーで、その後 ServiceAccount トークンを bundle に発行します。service の登録は行いません。
-
-| Flag                     | Description                                                                        |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| `--cluster`              | `<output-dir>/_cluster/` からクラスター全体の bundle を適用します (この用途では必須) 。                     |
-| `--config <path>`        | コネクタの設定ファイル (環境変数 `CLCTL_EXECUTOR_CONFIG`) 。                                       |
-| `--context <name>`       | `prepare` と同様に、管理対象クラスターの Kubeconfig context。                                      |
-| `--output-dir <path>`    | 出力ルート (デフォルトは `/etc/clicklink/access/executor`、環境変数 `CLCTL_EXECUTOR_OUTPUT_DIR`) 。 |
-| `--token-duration <dur>` | ServiceAccount トークンの有効期間 (デフォルトは `2160h`、90 日) 。                                   |
-| `--dry-run`              | 実行せずに、適用される内容を出力します。                                                               |
-
-```bash
-clicklink clctl executor access grant --cluster --sa-namespace <connector-namespace> --server <kubernetes-api-server-url> --output-dir <dir>
-clicklink clctl executor access apply --cluster --output-dir <dir>
-```
-
-## clicklink clctl executor prepare {#executor-prepare}
-
-managed service の作成に必要なユーザー側の準備をすべて整えます。処理は冪等な 1 回の実行にまとめられ、最初の失敗で停止します。service 名の選択または検証を行い、データ用バケットとバックアップ用バケットおよび IAM role の作成 (持ち込んだ role の場合は検証) を行います。VM 上では、さらに service のネームスペース向けに executor のアクセス bundle をレンダリングして適用します。Kubernetes 上では、executor は自身の Pod の ServiceAccount として動作するため bundle をスキップします。その後、`default` ユーザーの password を発行し (表示は一度きりです) 、[`instances create`](#instances-create) 用の作成ボディを書き出します。[managed services](/ja/products/bring-your-own-cloud/connector/managed-services#create-a-service) を参照してください。
-
-VM の場合はコネクタホスト上で実行します。Kubernetes インストールの場合は、AWS credentials と管理対象クラスターの kube コンテキストを備えた workstation 上で実行します。この workstation には、コネクタ設定のコピー (`--config`) 、executor のローカル API へのポートフォワード、および書き込み可能な `--output-dir` も必要です。
-
-| フラグ                                             | 説明                                                                                                                                                  |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--config <path>`                               | コネクタ設定ファイル (必須。環境変数 `CLCTL_EXECUTOR_CONFIG`) 。アクセス bundle はこれを元にレンダリングされ、kube コンテキストはその `executor.cluster` と一致している必要があります。                          |
-| `--instance <name>`                             | service 名 (環境変数 `CLCTL_EXECUTOR_INSTANCE`) 。デフォルト: 自動生成された名前。`<output-dir>/_prepare/<eks-cluster-name>.name` に記録され、次回の実行で引き継がれます。                   |
-| `--new-name`                                    | 前回の実行で記録された名前を無視し、新しい名前を選択します。                                                                                                                      |
-| `--context <name>`                              | 管理対象クラスターの kubeconfig context。名前、またはパターン (一致が 1 件ならそれが使われ、複数ある場合はプロンプトが表示されます) を指定します。環境変数 `CLCTL_CONTEXT`。デフォルト: コンテキストが 1 つだけならそれ、そうでなければ picker。 |
-| `--server <url>`、`--ca-data <base64>`           | executor の kubeconfig に埋め込む Kubernetes API server の URL と CA (デフォルト: kube コンテキストの値) 。                                                               |
-| `--data-bucket <name>`、`--backup-bucket <name>` | 検証または作成する bucket (デフォルトは `<cluster>-clickhouse-data-<rand>` と `<cluster>-clickhouse-backup-<rand>`) 。                                               |
-| `--role-name <name>`                            | IAM role 名 (デフォルト `CH-S3-<instance>-<region>-00-Role`) 。                                                                                            |
-| `--role-arn <arn>`                              | 独自の IAM role を持ち込みます。信頼関係と S3 の grants を検証し、IAM の作成や変更は一切行いません。                                                                                     |
-| `--restore-from <name>`                         | この service が backups の復元元とする service。IAM role には、その backup bucket への読み取りアクセスも付与されます。                                                                |
-| `--region <region>`                             | AWS region (デフォルト: kube コンテキストが指すクラスターの region) 。                                                                                                   |
-| `--token-duration <dur>`                        | ServiceAccount トークンの lifetime (デフォルト `2160h`、90 日) 。                                                                                                |
-| `--force`                                       | 既存のアクセス bundle を再利用せず、完全な bundle を再生成します。                                                                                                           |
-| `--output-dir <path>`                           | 出力ルート (デフォルト `/etc/clicklink/access/executor`。環境変数 `CLCTL_EXECUTOR_OUTPUT_DIR`) 。                                                                   |
-| `--output <fmt>`                                | `text` (デフォルト) または `json`。いずれにも password は含まれません。                                                                                                   |
-| `--dry-run`                                     | すべてのステップをドライランモードで実行します。作成も書き込みも行われません。                                                                                                             |
-
-## clicklink clctl executor teardown {#executor-teardown}
-
-ClickHouse Cloud 上で削除された service について、`prepare` が作成したリソースを削除します。対象は、IAM role、記録された名前、executor が保持する service のレコードで、VM 上ではさらに service の クラスター ロール と ClusterRoleBinding、ローカルの access bundle、registry エントリも含まれます。実行には executor が稼働中で、service が `terminated` (または `stale`) である必要があります。service のネームスペースに ClickHouse クラスター がまだ残っている場合、実行は拒否されます。`prepare` が作成した bucket は、そのデータと backups も含めて、削除を明示的に指定しない限り保持され、保持された bucket には `clicklink:retained-from=<name>` のタグが付け直されます。このコマンドは、削除を開始する前にすべての情報を読み取ります。[delete a service](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service) を参照してください。
-
-| Flag                                            | Description                                                                                                                         |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `--instance <name>`                             | Service name (環境変数 `CLCTL_EXECUTOR_INSTANCE`) 。                                                                                     |
-| `--config <path>`                               | コネクタの設定ファイル (環境変数 `CLCTL_EXECUTOR_CONFIG`) 。省略した場合は、コネクタ ホスト上の `/etc/clicklink/config.yaml` から読み取ります。`delete_instance_data` を提供します。 |
-| `--context <name>`                              | 管理対象クラスターの kubeconfig context (`prepare` と同様) 。                                                                                     |
-| `--delete-data`                                 | `delete_instance_data` が無効の場合でも service のデータを削除します。`--yes` が必要です。                                                                   |
-| `--delete-backups`                              | backup bucket とその中の backups を削除します (デフォルトでは保持) 。`--yes` が必要です。                                                                      |
-| `--yes`                                         | `--delete-data` と `--delete-backups` を確認します。指定しない場合、レコードのステップ後に実行が停止し、空にする対象の bucket 名が表示されます。                                      |
-| `--data-bucket <name>`、`--backup-bucket <name>` | executor のレコードにある bucket を上書きします (デフォルト: service の role にバインドされた bucket、またはそのためにタグ付けされた bucket) 。                                   |
-| `--role-name <name>`                            | IAM role 名 (デフォルト `CH-S3-<instance>-<region>-00-Role`) 。                                                                            |
-| `--region <region>`                             | AWS region (デフォルト: cluster の region) 。                                                                                              |
-| `--namespace-prefix <prefix>`                   | Service ネームスペースのプレフィックス (デフォルト `ns-`) 。読み込まれた config と一致している必要があります。                                                                |
-| `--output-dir <path>`                           | 出力ルート (デフォルト `/etc/clicklink/access/executor`) 。                                                                                    |
-| `--output <fmt>`                                | `text` (デフォルト) または `json`。                                                                                                          |
-| `--dry-run`                                     | 削除対象を表示し、何も削除せずに終了します。                                                                                                              |
-
-## clicklink clctl instances {#instances}
-
-### instances create {#instances-create}
-
-準備済みの create を、connector endpoint 経由で connector 自身の認証情報を用いて ClickHouse Cloud に送信します。作成は環境ごとに有効化されます。[サービスの作成](/ja/products/bring-your-own-cloud/connector/managed-services#create-a-service) を参照してください。ClickHouse Cloud が割り当てた呼称、state、および サービス name を用いた `watch:` のヒントを出力します。create のボディは、`prepare` が書き出したファイル、または `--deployed-name`、`--data-bucket`、`--backup-bucket`、`--irsa-role-arn` の4つのフラグの組み合わせから取得されます。同じ入力で再試行した場合は、最初の create が返されます。
-
-| Flag                                                                                                | Description                                                                                                                                                                           |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--from-prepare <path>`                                                                             | `executor prepare` が書き出した create ボディ (`<output-dir>/_prepare/<instance>.create.json`) 。`default` ユーザーのパスワードのハッシュを含みます。`--deployed-name` および `--default-user-password-file` とは併用できません。 |
-| `--deployed-name <name>`, `--data-bucket <name>`, `--backup-bucket <name>`, `--irsa-role-arn <arn>` | 準備済みの入力をフラグとして指定します。まとめて指定する必要があります。                                                                                                                                                  |
-| `--default-user-password-file <path>`                                                               | フラグで指定する場合に使用する、`default` ユーザーのパスワード (1行目) を保持するファイル。指定がない場合、コマンドはパスワードを生成して一度だけ表示します。その後の再試行ではこのファイルでパスワードを渡す必要があります。渡さない場合、サービス は最初のパスワードを保持したまま、新しいパスワードが表示されます。                   |
-| `--config <path>`                                                                                   | コネクタの設定ファイル (環境変数 `CLCTL_EXECUTOR_CONFIG`、存在する場合のデフォルトは `/etc/clicklink/config.yaml`) 。endpoint、その認証情報、および環境の identity を提供します。                                                        |
-| `--connector-namespace <ns>`                                                                        | Kubernetes のみ。このホストに connector の設定ファイルや認証情報ファイルがない場合に、ConfigMap と Secret でそれらを提供する connector のネームスペース (デフォルトは `clicklink`) 。クラスターからの読み取りはすべて通知されます。                                   |
-| `--connector-configmap <name>`                                                                      | 当該ネームスペース内で executor の `config.yaml` を保持する ConfigMap (デフォルトは `clicklink-connector-executor`) 。                                                                                        |
-| `--hmac-secret-name <name>`, `--mtls-secret-name <name>`                                            | ファイルが存在しない場合に API の認証情報とクライアント証明書を保持する Secret (デフォルトは `clicklink-hmac` および `clicklink-mtls`) 。証明書のペアはメモリ上に保持されます。                                                                     |
-| `--context <name>`                                                                                  | これらの読み取りに使用する Kube context (環境変数 `CLCTL_CONTEXT`) 。`executor` コマンドと同様に、パターンまたは対話的な picker を指定できます。                                                                                    |
-| `--idempotency-key <key>`                                                                           | 再試行時に最初の create を取得するために再利用されるキー (デフォルト: 環境と サービス name から導出) 。                                                                                                                        |
-| `--wait`                                                                                            | サービス が `running` になるまで executor のローカル API をポーリングします。当該名称の create が失敗した場合、または サービス が `terminating`、`terminated`、`stale` に遷移した場合は即座に失敗します。                                              |
-| `--wait-timeout <dur>`                                                                              | `--wait` が失敗するまでポーリングを継続する時間 (デフォルトは `30m`) 。                                                                                                                                         |
-
-### instances list {#instances-list}
-
-executor が認識しているすべてのサービスを JSON 形式で出力します。`--cluster <name>` を指定すると、マネージドクラスターでフィルタリングします。
-
-### instances get {#instances-get}
-
-1 つの service を、作成時に指定された storage とともに JSON 形式で出力します。`--name <name>` は必須で、クラスターの指定も必須です。`--cluster` を渡すか、`CLCTL_CLUSTER` を設定するか、`~/.clicklink/clctl.yaml` に記述してください。
-
-以下の 3 つのサブコマンドは、ClickHouse Cloud を介さずに executor のローカル API へ直接コマンドを送信します。実行は、account team から依頼された場合のみにしてください。いずれも `--name <name>` とクラスターの指定 (`--cluster`、`CLCTL_CLUSTER`、または `~/.clicklink/clctl.yaml`) が必要で、実行したコマンドを JSON 形式で出力します。その `id` を [`commands get`](#commands-get) に渡すと進捗を追跡できます。失敗したコマンドの `result` には、その error が格納されます。
-
-### instances scale {#instances-scale}
-
-`ScalingOverride` を使用して、1 つのサービスのサーバーレプリカ数を設定します。`--server-replicas <n>` は必須で、0 より大きい値を指定する必要があります。executor は、オーバーライドを適用した時点でコマンドを running として報告し、レプリカが ready になった時点で completed として報告します。
-
-### instances patch {#instances-patch}
-
-1 つのサービスをその場で変更します。指定できるパッチは `--create-nlb` のみで、これを指定しない場合、コマンドは `nothing to patch` を返して処理を拒否します。このオプションは内部 NLB を Kubernetes の `Service` としてプロビジョニングし (AWS のみ) 、クラスター外部のスクレイパーからサーバーへ到達できるようにします。エグゼキューターは次回の同期時に、ロードバランサーからスクレイパーのホストをバックフィルします。
-
-### instances delete {#instances-delete}
-
-クラスターから 1 つの service を削除します。service を停止し、operator による順序付けされた shutdown の完了を待機します。その後、ワークロードをアンインストールし、`ns-<name>` ネームスペースと scraper の artifacts を削除し、ネームスペースが消えるのを待ってから、service を `terminated` としてマークします。service の bucket と IAM role は残り、[`executor teardown`](#executor-teardown) がお客様の認証情報を使用して削除します。完了済みの削除を再試行しても no-op となります。通常は ClickHouse Cloud 上で service を削除します。[delete a service](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service) を参照してください。
-
-## clicklink clctl コマンド {#commands}
-
-### commands list {#commands-list}
-
-executor が記録したコマンドを、新しいものから順に JSON で出力します。失敗したコマンドの `result` にはそのエラーが格納されます。承認待ちのプラットフォーム同期の場合は、実行すべき `platform approve` コマンドがそこに正確に示されます。
-
-| フラグ                 | 説明                                                  |
-| ------------------- | --------------------------------------------------- |
-| `--status <status>` | フィルタ: `pending`、`running`、`completed`、`failed`。     |
-| `--action <action>` | アクションでフィルタします。例: `create_instance`、`sync_platform`。 |
-| `--cluster <name>`  | マネージドクラスターでフィルタします。                                 |
-
-### commands get {#commands-get}
-
-`clicklink clctl commands get <id>` は、1 つのコマンドを stage と結果とともに出力します。
-
-## clicklink clctl platform approve {#platform-approve}
-
-プラットフォーム変更 1 件を、自分のクラスター認証情報で承認します。executor がステージングしたバンドルを読み取ってハッシュを計算し、その中のすべての chart を executor とまったく同じようにレンダリングします。選択した kube context を使って権限側の半分を適用し、必要に応じて executor の `pcm-platform` identity を作成したうえで、そのトークンを発行します。connector endpoint へのリクエストは一切行いません。権限側の半分にあたるのは、ネームスペース、CustomResourceDefinition、ServiceAccount、クラスター ロールとその bindings、ロールとその bindings、webhook および admission の設定、PriorityClass、StorageClass です。executor が適用するのはワークロード側の半分のみで、しかもそのトークンが有効な間に限られます。[プラットフォームの更新](/ja/products/bring-your-own-cloud/connector/platform-updates)を参照してください。
-
-ClickHouse の registry に直接アクセスする場合は、コネクタの EC2 VM 上で承認を実行してください。CLI はそのインスタンス プロファイルを使い、kubeconfig の認証情報とは独立に、読み取り専用の pull ロールを引き受けます。その他の ECR chart registry では、環境上の AWS 認証情報が使われます。[registry の認証情報](/ja/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)を参照してください。
-
-| フラグ                       | 説明                                                                                                                                              |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--config <path>`         | コネクタの設定ファイル(環境変数 `CLCTL_EXECUTOR_CONFIG`)。ネームスペースのプレフィックスを指定します。workstation 上では、コネクタ設定のコピーになります。                                                |
-| `--context <name>`        | cluster-admin 権限を持つ管理対象クラスターの kubeconfig context。名前またはパターンを指定します(環境変数 `CLCTL_CONTEXT`)。デフォルト: context が 1 つだけならそれを使用し、そうでなければ picker を表示します。    |
-| `--ttl <dur>`             | プラットフォーム トークンの lifetime(デフォルト `2h`)。executor がこれを更新することはありません。                                                                                  |
-| `--output-dir <path>`     | アクセス ルート: ステージングされたバンドルをここから読み取り、その配下の `_platform` にトークンを書き込みます(デフォルト `/etc/clicklink/access/executor`、環境変数 `CLCTL_EXECUTOR_OUTPUT_DIR`)。       |
-| `--secret-namespace <ns>` | Kubernetes インストールの場合: executor のローカル API からステージングされたバンドルを読み取り、`<output-dir>/_platform` ではなく、このネームスペース(コネクタのネームスペース)に Secret としてトークン バンドルを配置します。 |
-| `--secret-name <name>`    | `--secret-namespace` で使う Secret 名(デフォルト `clicklink-platform-bundle`)。chart の `executor.platformBundleSecret` と一致している必要があります。                    |
-| `--endpoint <url>`        | Kubernetes インストールの場合: `kubectl port-forward` 経由で到達する executor のローカル API(デフォルト `http://127.0.0.1:9999`、環境変数 `CLCTL_ENDPOINT`)。                   |
-| `--bundle <path>`         | override: 別経路で受け渡されたレンダリング済みのプラットフォーム manifest を、ステージングされたバンドルの代わりに読み取ります。通常は指定しません。                                                            |
-| `--dry-run`               | 適用やトークン発行を行わずに、権限側の半分をレンダリングして一覧表示します。                                                                                                          |
-
-## clicklink clctl platform reset {#platform-reset}
-
-サービスが存在しないテストクラスター向け: プラットフォームのリリースを依存関係の逆順でアンインストールし、executor のプラットフォームトークンバンドルを削除することで、初回インストールを再度実行できるようにします。変更を加える前に、このコネクタが所有するネームスペース内の ClickHouse クラスターを一覧表示し、1つでも存在する場合は処理を中止します。CustomResourceDefinition、RBAC、StorageClass は残ります。次回のプラットフォーム同期の前に、再度 `platform approve` を実行してください。
-
-| フラグ                                               | 説明                                                                                                          |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `--bundle <path>`                                 | レンダリング済みのプラットフォームマニフェストへのパス(必須。空クラスターチェックの後に読み込まれます)。                                                       |
-| `--config <path>`                                 | コネクタ設定ファイル(環境変数 `CLCTL_EXECUTOR_CONFIG`)。                                                                   |
-| `--context <name>`                                | cluster-admin 権限を持つ、管理対象クラスターの kubeconfig context。                                                           |
-| `--output-dir <path>`                             | `_platform` バンドルの削除対象となるアクセスルート(デフォルトは `/etc/clicklink/access/executor`)。                                   |
-| `--secret-namespace <ns>`, `--secret-name <name>` | Kubernetes へのインストール時: 代わりにコネクタのネームスペース内にあるプラットフォームバンドルの Secret を削除します(デフォルト名は `clicklink-platform-bundle`)。 |
-| `--dry-run`                                       | サービスの有無を確認し、クラスターを変更せずにリセットのプランを出力します。                                                                      |
-
-## リモートチャネルフラグ {#channel-flags}
-
-`preflight`、`gateway trust`、`access provision` は、VM ターゲットへの接続方法を選択するためのフラグセットを共有します。
-
-| フラグ                                                                                         | 説明                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--provider <name>`                                                                         | 実行チャネル。リモート VM には `ssh`、`aws` (SSM) 、または `gcp` (IAP) を、ターゲット VM 自体で実行する場合は `local` を指定します。未設定の場合はプロバイダー固有のフラグから推論され、いずれも設定されていない場合のデフォルトは `aws` です。`local` が推論されることはないため、VM 自体で実行する場合は常に `--provider local` を指定してください。 |
-| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | SSH 接続情報 (`--provider ssh`) 。ユーザー、ポート、秘密鍵は SSH 設定の値がデフォルトで使用されます。                                                                                                                                                      |
-| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | SSM (`--provider aws`) 用の EC2 インスタンス、リージョン (デフォルトは `us-east-1`) 、共有設定プロファイル。                                                                                                                                           |
-| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | IAP トンネリング (`--provider gcp`) 用のプロジェクト、ゾーン、インスタンス。                                                                                                                                                                     |
+| フラグ                                                                                         | 説明                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--provider <name>`                                                                         | 実行チャネル。リモート VM には `ssh`、`aws` (SSM) 、または `gcp` (IAP) を、ターゲット VM 自体で実行する場合は `local` を指定します。明示的に設定しない場合は、プロバイダー固有のフラグから推論されます。`local` が推論されることはありません。 |
+| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | SSH 接続情報 (`--provider ssh`) 。ユーザー、ポート、秘密鍵は SSH 設定の値がデフォルトで使用されます。                                                                                   |
+| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | SSM (`--provider aws`) 用の EC2 インスタンス、リージョン、共有設定プロファイル。                                                                                              |
+| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | IAP トンネリング (`--provider gcp`) 用のプロジェクト、ゾーン、インスタンス。                                                                                                  |

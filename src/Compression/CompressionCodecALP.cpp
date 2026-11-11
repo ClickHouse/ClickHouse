@@ -8,7 +8,6 @@
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
@@ -1509,15 +1508,12 @@ void registerCodecALP(CompressionCodecFactory & factory)
             if (!variant_ident)
                 throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "ALP codec variant must be an identifier: AUTO, STD or RD");
 
-            /// The variant is a keyword and is matched case-insensitively, like the codec name itself. A codec-valued
-            /// setting such as `default_compression_codec = 'ALP(std)'` used to be upper-cased before parsing, so every
-            /// spelling was accepted there; keep accepting them now that the setting is parsed as written.
             const String variant_str = variant_ident->shortName();
-            if (equalsCaseInsensitive(variant_str, "AUTO"))
+            if (variant_str == "AUTO")
                 variant = CompressionCodecALP::Variant::AUTO;
-            else if (equalsCaseInsensitive(variant_str, "STD"))
+            else if (variant_str == "STD")
                 variant = CompressionCodecALP::Variant::STD;
-            else if (equalsCaseInsensitive(variant_str, "RD"))
+            else if (variant_str == "RD")
                 variant = CompressionCodecALP::Variant::RD;
             else
                 throw Exception(

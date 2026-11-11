@@ -20,11 +20,10 @@ std::string partName(size_t index)
     return "all_" + std::to_string(index) + "_" + std::to_string(index) + "_0";
 }
 
-PartsRange makePartsRange(const std::vector<size_t> & sizes, const std::vector<time_t> & ages)
+PartsRange makePartsRange(const std::vector<size_t> & sizes, time_t age)
 {
-    EXPECT_EQ(sizes.size(), ages.size());
     PartsRange parts_range;
-    for (size_t i = 0; i < std::min(sizes.size(), ages.size()); ++i)
+    for (size_t i = 0; i < sizes.size(); ++i)
     {
         std::string part_name = partName(i);
         parts_range.push_back(PartProperties
@@ -32,17 +31,12 @@ PartsRange makePartsRange(const std::vector<size_t> & sizes, const std::vector<t
             .name = part_name,
             .info = MergeTreePartInfo::fromPartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING),
             .size = sizes[i],
-            .age = ages[i],
+            .age = age,
             .rows = 100,
         });
     }
 
     return parts_range;
-}
-
-PartsRange makePartsRange(const std::vector<size_t> & sizes, time_t age)
-{
-    return makePartsRange(sizes, std::vector<time_t>(sizes.size(), age));
 }
 
 /// The names makePartsRange assigns, so a test can assert *which* parts were selected: a range
@@ -54,22 +48,6 @@ std::vector<std::string> partNames(const PartsRange & range)
     for (const auto & part : range)
         names.push_back(part.name);
     return names;
-}
-
-/// Two large parts followed by a small one: the right-tail heuristic trims the small part
-/// unless it is disabled for this range.
-PartsRanges selectRightTailRange(SimpleMergeSelector::Settings settings, const std::vector<time_t> & ages)
-{
-    settings.base = 2.0;
-    settings.enable_heuristic_to_align_parts = false;
-    /// Isolate the right-tail heuristic; this one also needs `partitions_stats`.
-    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
-
-    SimpleMergeSelector selector(settings);
-    auto parts_range = makePartsRange({10 * MiB, 10 * MiB, 1024}, ages);
-    std::vector<MergeConstraint> constraints{{100 * MiB, 1000}};
-
-    return selector.select({parts_range}, constraints, nullptr);
 }
 
 PartitionsStatistics makeStatistics(const PartsRange & parts_range, time_t partition_min_age)
@@ -234,68 +212,4 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAgeWaivesMinPartsToMergeAtOnce)
 
     ASSERT_EQ(selected.size(), 1);
     ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(1), partName(2)}));
-}
-
-TEST(SimpleMergeSelector, RemovesSmallPartsAtRightByDefault)
-{
-    auto selected = selectRightTailRange(SimpleMergeSelector::Settings{}, {100, 100, 100});
-
-    ASSERT_EQ(selected.size(), 1);
-    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
-}
-
-TEST(SimpleMergeSelector, DoesNotRemoveSmallPartsAtRightWhenAllPartsAreOldEnough)
-{
-    SimpleMergeSelector::Settings settings;
-    settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
-
-    auto selected = selectRightTailRange(settings, {100, 100, 100});
-
-    ASSERT_EQ(selected.size(), 1);
-    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
-}
-
-TEST(SimpleMergeSelector, RemovesSmallPartsAtRightWhenAllPartsAreTooYoung)
-{
-    SimpleMergeSelector::Settings settings;
-    settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
-
-    auto selected = selectRightTailRange(settings, {10, 10, 10});
-
-    ASSERT_EQ(selected.size(), 1);
-    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
-}
-
-TEST(SimpleMergeSelector, RemovesSmallPartsAtRightWhenSomePartsAreTooYoung)
-{
-    SimpleMergeSelector::Settings settings;
-    settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
-
-    auto selected = selectRightTailRange(settings, {100, 10, 100});
-
-    ASSERT_EQ(selected.size(), 1);
-    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
-}
-
-TEST(SimpleMergeSelector, DoesNotRemoveSmallPartsAtRightAtAgeThreshold)
-{
-    SimpleMergeSelector::Settings settings;
-    settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
-
-    auto selected = selectRightTailRange(settings, {60, 60, 60});
-
-    ASSERT_EQ(selected.size(), 1);
-    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
-}
-
-TEST(SimpleMergeSelector, DoesNotRemoveSmallPartsAtRightWhenHeuristicDisabled)
-{
-    SimpleMergeSelector::Settings settings;
-    settings.enable_heuristic_to_remove_small_parts_at_right = false;
-    settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
-
-    auto selected = selectRightTailRange(settings, {10, 10, 10});
-
-    ASSERT_EQ(selected.size(), 1);
-    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
 }

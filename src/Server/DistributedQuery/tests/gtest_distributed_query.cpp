@@ -49,7 +49,7 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <base/defines.h>
 
-#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -606,7 +606,7 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
         builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
         builder.setSinks([&](const SharedHeader & sink_header, Pipe::StreamType) -> ProcessorPtr
         {
-            return exchange_lookup->createSink(sink_header, stream_id);
+            return exchange_lookup->createSink(sink_header, stream_id, /*input_is_serialized=*/ false);
         });
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         CompletedPipelineExecutor executor(pipeline);

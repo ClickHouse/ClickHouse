@@ -28,10 +28,11 @@ All functions are sharing a common infrastructure that provides:
 
 - **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 - **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/reference/settings/session-settings/ai-function#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+- **Concurrent requests**: Requests are issued from a server-wide thread pool, several at a time (controlled by [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## Configuration {#configuration}
 
-AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) vs the embedding functions (`aiEmbed`, `aiSimilarity`), which require different endpoints and usually use different models.
+AI functions require the `AI FUNCTIONS` grant (see [Access control](#access-control)) and reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) vs the embedding functions (`aiEmbed`, `aiSimilarity`), which require different endpoints and usually use different models.
 
 Example statement to create a named collection with provider credentials, one with a chat endpoint and another with an embedding endpoint:
 ```sql
@@ -48,6 +49,35 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### Access control {#access-control}
+
+Calling an AI function requires two privileges:
+
+- the function's privilege: either the per-function privilege (e.g. `aiGenerate`) or the `AI FUNCTIONS` group, see [`GRANT`](/reference/statements/grant#ai-functions);
+- the `NAMED COLLECTION` privilege on the selected credentials.
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+AI functions are executed only in queries run by a user. They are rejected in mutations (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) and in the keys, TTL, skip indexes and projections of a table, which are executed in the background, and `Buffer` flushes throw an exception when they evaluate an AI function. `DEFAULT` and `MATERIALIZED` columns are evaluated by the insert; when such a column is added with `ALTER TABLE`, the existing parts compute it in the background, where AI functions are not executed.
+
+To fill a column of existing rows, use a lightweight [`UPDATE`](/reference/statements/update), which is executed by the query and writes only the updated column:
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+For a table that does not meet the [lightweight update requirements](/reference/statements/update#lightweight-update-requirements), use `INSERT ... SELECT`, for example one partition at a time:
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### Named collection parameters {#named-collection-parameters}
@@ -114,6 +144,24 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 All AI-related settings are listed in [Settings](/reference/settings/session-settings) under the `ai_function_` prefix.
 
+### Server configuration {#server-configuration}
+
+The server setting `ai_function_allow_sql_named_collections` (default `true`) controls which named collections AI functions accept. When set to `false`, AI functions accept only named collections defined in the server configuration file, and using a collection created with `CREATE NAMED COLLECTION` throws an exception. This applies both to the `credentials` parameter and to the default-credentials settings. Changing the setting requires a server restart.
+
+```xml
+<clickhouse>
+    <ai_function_allow_sql_named_collections>false</ai_function_allow_sql_named_collections>
+    <named_collections>
+        <ai_text_credentials>
+            <provider>openai</provider>
+            <endpoint>https://api.openai.com/v1/chat/completions</endpoint>
+            <model>gpt-4o-mini</model>
+            <api_key>sk-...</api_key>
+        </ai_text_credentials>
+    </named_collections>
+</clickhouse>
+```
+
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 
 The `endpoint` URL in an AI named collection is an outbound destination the server connects to under its own identity, potentially carrying (if specified) the named collection's `api_key` in the request headers. By default, ClickHouse permits any host. To restrict functions to a specific set of providers, configure [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) in the server config, e.g.:
@@ -137,6 +185,35 @@ The transport is determined solely by the scheme of the `endpoint` URL. There is
 By default, AI functions reject an `endpoint` that would send data in cleartext to a remote host: any non-HTTPS endpoint whose host is not loopback raises an exception. Loopback hosts (`localhost`, `127.0.0.0/8`, `::1`) are exempt, so a local `http://localhost` model server works out of the box. To allow a plaintext `http://` endpoint on a remote host, set [`ai_function_allow_insecure_endpoint`](/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) to `1`. This check is independent of [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): that setting is a host allowlist and does not inspect the URL scheme, so an `http://` endpoint pointed at an allowed host still passes it.
 
 Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
+
+### Throughput {#throughput}
+
+The AI functions differ from most traditional ClickHouse functions in that their throughput is almost entirely bound by the remote endpoint they send requests to rather than local CPU or I/O. Because of this they benefit significantly from increased concurrency above the standard `max_threads` used throughout ClickHouse. For this reason the requests are issued from a dedicated server-wide thread pool. Its size (`ai_function_max_thread_pool_size`, a server setting) caps how many AI provider requests the whole server has in flight at once, across every query.
+
+[`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) bounds each query thread's share of that pool, so a query running on several threads (at most `max_threads`) can have up to that many requests in flight per thread. To stop queries from raising it, put a ceiling on the setting with a [settings profile constraint](/concepts/features/configuration/settings/constraints-on-settings). The ceiling is still per thread, so a query can have up to the ceiling times its number of threads in flight. For example:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+The default is `8`. A value above `1` loosens two guarantees:
+
+- A request's token usage is only known once its response arrives, so [`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) and [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) may overshoot by one request's worth per request in flight, rather than by one request's worth in total.
+- A wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, as many requests as the concurrency allows.
+
+[`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
+
+<Note>
+For a materialized view, the settings must go on the `INSERT` that feeds the view's source table, not on the `CREATE MATERIALIZED VIEW` statement: the quotas are read from the top-level query, and a `SETTINGS` clause in a view definition is ignored.
+</Note>
 
 ## Supported providers {#supported-providers}
 

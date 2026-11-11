@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, shard, no-fasttest
+# Tags: no-parallel, shard
 # Tag no-parallel: uses a global failpoint, which concurrent instances would share - one query
 #   would consume another's arming, and the injected cancel would land in an unrelated query.
 # Tag shard: uses a two-shards Distributed table.

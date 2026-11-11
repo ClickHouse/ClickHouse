@@ -8,7 +8,6 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -30,7 +29,6 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
@@ -148,12 +146,7 @@ bool constifyFilterColumnAfterPushDown(ActionsDAG & expression, const String & f
 }
 }
 
-static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(
-    QueryPlan::Node * parent_node,
-    bool step_changes_the_number_of_rows,
-    const Names & available_inputs,
-    bool allow_index_hints,
-    size_t child_idx = 0)
+static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
     checkChildrenSize(child_node, child_idx + 1);
@@ -176,7 +169,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(
         original_filter_const_column = filter->getOutputHeader()->getByName(filter_column_name).column;
 
     auto result = expression.splitActionsForFilterPushDown(
-        filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions, allow_index_hints);
+        filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions);
     if (result)
     {
         if (is_filter_column_const_before && !result->is_filter_const_after_push_down)
@@ -273,10 +266,9 @@ static size_t tryAddNewFilterStep(
     bool step_changes_the_number_of_rows,
     QueryPlan::Nodes & nodes,
     const Names & allowed_inputs,
-    bool allow_index_hints = true,
     size_t child_idx = 0)
 {
-    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, allow_index_hints, child_idx))
+    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, child_idx))
         return addNewFilterStepOrThrow(parent_node, nodes, std::move(*split_filter), child_idx);
     return 0;
 }
@@ -760,7 +752,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// algorithm joins on, so a bit-sensitive predicate disagrees between the two sides. The supertype is what the JOIN
             /// compares in, and a nested float is no different. A `Dynamic` or `JSON` supertype describes neither the runtime
             /// contents nor the representation, and a predicate can read either, so both are declined outright.
-            if (anyInTypeTree(*supertype, [](const IDataType & type) { return isFloat(type) || isDynamic(type) || isObject(type); }))
+            bool supertype_is_unsafe = false;
+            auto check_type = [&](const IDataType & type)
+            { supertype_is_unsafe |= isFloat(type) || isDynamic(type) || isObject(type); };
+            check_type(*supertype);
+            supertype->forEachChild(check_type);
+            if (supertype_is_unsafe)
                 return;
 
             /// The pushed-down filter computes this key and the JOIN computes it again, so the key must return
@@ -1011,9 +1008,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.left_stream_filter_removes_filter = true;
         }
 
-        /// Copy the name: the DAG is moved into the new FilterStep below, whose constructor may fold and
-        /// prune the very node this name belongs to, leaving a reference dangling.
-        const String result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
+        const auto & result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(
             parent_node,
             nodes,
@@ -1048,9 +1043,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.right_stream_filter_removes_filter = true;
         }
 
-        /// Copy the name: the DAG is moved into the new FilterStep below, whose constructor may fold and
-        /// prune the very node this name belongs to, leaving a reference dangling.
-        const String result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
+        const auto & result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(
             parent_node,
             nodes,
@@ -1217,30 +1210,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty())
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*allow_index_hints=*/false))
-            return updated_steps;
-    }
-
-    if (const auto * window = typeid_cast<WindowStep *>(child.get()))
-    {
-        /// A predicate on the PARTITION BY columns of a window is safe to apply before the
-        /// window: it only removes whole partitions, and dropping a partition never changes
-        /// any window value on a surviving row (regardless of the window function or frame).
-        /// Predicates on the window result stay above. Same reasoning as for aggregation keys.
-        Names partition_keys;
-        for (const auto & sort_column : window->getWindowDescription().partition_by)
-            partition_keys.push_back(sort_column.column_name);
-
-        if (partition_keys.empty())
-            return 0;
-
-        /// Pass true (as for aggregation), which disables pushing non-deterministic conjuncts.
-        /// A predicate must be deterministic in the partition key, not merely reference only it:
-        /// a non-deterministic conjunct such as `rand64(key) % 2 = 0` removes arbitrary rows
-        /// inside a surviving partition before the window runs, which can change which row
-        /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
-        /// rows in the partition, so non-deterministic filters are not safe to move below it.
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys, /*allow_index_hints=*/false))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
             return updated_steps;
     }
 
@@ -1264,7 +1234,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*allow_index_hints=*/false))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
             return updated_steps;
     }
 
@@ -1324,7 +1294,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///        select number as x, number % 4 as y from numbers(10)
         ///    ) group by y with totals) where y != 2`
         /// Optimization will replace totals row `y, sum(x)` from `(0, 45)` to `(0, 37)`.
-        /// It is expected to be OK, because the AST-level push-down that preceded this optimization did the same.
+        /// It is expected to ok, cause AST optimization `enable_optimize_predicate_expression = 1` also brakes it.
         if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, keys))
             return updated_steps;
     }

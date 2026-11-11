@@ -21,7 +21,6 @@ protected:
     ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
 
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
-    bool isNullPropagating(const DataTypePtr & result_type) const final { return function->isNullPropagating(result_type); }
     bool useDefaultImplementationForNothing() const final { return function->useDefaultImplementationForNothing(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
@@ -49,8 +48,6 @@ public:
             : function(std::move(function_)), arguments(std::move(arguments_)), result_type(std::move(result_type_)) {}
 
     String getName() const override { return function->getName(); }
-
-    void updateHash(SipHash & hash) const override { function->updateHash(hash); }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }
@@ -91,6 +88,8 @@ public:
 
 
     bool isVolumeReducing() const override { return function->isVolumeReducing(); }
+
+    bool isExpensive() const override { return function->isExpensive(); }
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
@@ -142,6 +141,7 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
     bool isInjective(const ColumnsWithTypeAndName & columns) const override { return function->isInjective(columns); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
+    bool isExpensive() const override { return function->isExpensive(); }
 
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }

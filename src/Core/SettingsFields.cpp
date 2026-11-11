@@ -589,21 +589,86 @@ void SettingFieldURI::readBinary(ReadBuffer & in)
 {
     String str;
     readStringBinaryGrowing(str, in);
-    *this = parseURI(str);
+    *this = Poco::URI{str};
 }
 
-Poco::URI SettingFieldURI::parseURI(const String & str)
+
+static bool isTriBoolKeyword(const Field & f, std::string_view keyword)
 {
-    try
-    {
-        return Poco::URI{str};
-    }
-    catch (const Poco::SyntaxException & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse URI: {}", e.displayText());
-    }
+    return f.getType() == Field::Types::String && f.safeGet<String>() == keyword;
 }
 
+template <typename Keyword>
+SettingFieldTriBool<Keyword>::SettingFieldTriBool(const Field & f) : is_keyword(isTriBoolKeyword(f, keyword))
+{
+    if (!is_keyword)
+        base = SettingFieldBool(f);
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword> & SettingFieldTriBool<Keyword>::operator=(const Field & f)
+{
+    changed = true;
+    is_keyword = isTriBoolKeyword(f, keyword);
+    if (!is_keyword)
+        base = f;
+    return *this;
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword>::operator Field() const
+{
+    return is_keyword ? Field(String(keyword)) : Field(base);
+}
+
+template <typename Keyword>
+String SettingFieldTriBool<Keyword>::toString() const
+{
+    return is_keyword ? String(keyword) : base.toString();
+}
+
+template <typename Keyword>
+void SettingFieldTriBool<Keyword>::parseFromString(const String & str)
+{
+    changed = true;
+    is_keyword = (str == keyword);
+    if (!is_keyword)
+        base.parseFromString(str);
+}
+
+template <typename Keyword>
+void SettingFieldTriBool<Keyword>::writeBinary(WriteBuffer & out) const
+{
+    if (is_keyword)
+        writeStringBinary(keyword, out);
+    else
+        base.writeBinary(out);
+}
+
+template <typename Keyword>
+void SettingFieldTriBool<Keyword>::readBinary(ReadBuffer & in)
+{
+    changed = true;
+
+    /// A Bool is a varint 0/1 (see `SettingFieldNumber`); the keyword string starts with its length, which is longer.
+    UInt64 x = 0;
+    readVarUInt(x, in);
+    is_keyword = x > 1;
+    if (!is_keyword)
+    {
+        base = SettingFieldBool(x != 0);
+        return;
+    }
+
+    if (x != keyword.size())
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse a bool or '{}' from the binary value of a setting", keyword);
+    String str(x, '\0');
+    in.readStrict(str.data(), x);
+    if (str != keyword)
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse a bool or '{}' from the binary value '{}' of a setting", keyword, str);
+}
+
+template struct SettingFieldTriBool<SettingFieldKeywordForce>;
 
 void SettingFieldEnumHelpers::writeBinary(std::string_view str, WriteBuffer & out)
 {
@@ -702,62 +767,6 @@ void SettingFieldNonZeroUInt64::readBinary(ReadBuffer & in)
 }
 
 void SettingFieldNonZeroUInt64::checkValueNonZero() const
-{
-    if (value == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value has to be greater than 0");
-}
-
-SettingFieldNonZeroUInt32::SettingFieldNonZeroUInt32(UInt32 x) : SettingFieldUInt32(x)
-{
-    checkValueNonZero();
-}
-
-SettingFieldNonZeroUInt32::SettingFieldNonZeroUInt32(const DB::Field & f) : SettingFieldUInt32(static_cast<UInt32>(0))
-{
-    *this = f;
-    changed = false;
-}
-
-SettingFieldNonZeroUInt32 & SettingFieldNonZeroUInt32::operator=(UInt32 x)
-{
-    SettingFieldUInt32::operator=(x);
-    checkValueNonZero();
-    return *this;
-}
-
-SettingFieldNonZeroUInt32 & SettingFieldNonZeroUInt32::operator=(const DB::Field & f)
-{
-    if (f.getType() == Field::Types::String)
-    {
-        parseFromString(f.safeGet<String>());
-    }
-    else
-    {
-        SettingFieldUInt32::operator=(f);
-        checkValueNonZero();
-    }
-
-    return *this;
-}
-
-void SettingFieldNonZeroUInt32::parseFromString(const String & str)
-{
-    const UInt64 wide_value = parseWithSizeSuffix<UInt64>(str);
-    if (wide_value > std::numeric_limits<UInt32>::max())
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "A setting's value {} is out of range of UInt32 type", wide_value);
-    *this = static_cast<UInt32>(wide_value);
-}
-
-void SettingFieldNonZeroUInt32::readBinary(ReadBuffer & in)
-{
-    UInt64 wide_value = 0;
-    readVarUInt(wide_value, in);
-    if (wide_value > std::numeric_limits<UInt32>::max())
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "A setting's value {} is out of range of UInt32 type", wide_value);
-    *this = static_cast<UInt32>(wide_value);
-}
-
-void SettingFieldNonZeroUInt32::checkValueNonZero() const
 {
     if (value == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value has to be greater than 0");

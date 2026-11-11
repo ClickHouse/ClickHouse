@@ -14,8 +14,6 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
@@ -152,11 +150,7 @@ void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
-    {
-        /// Table data belongs to the server, not to the query releasing it.
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join->shrinkStoredBlocksToFit(dummy, true);
-    }
+    join->shrinkStoredBlocksToFit(dummy, true);
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -177,10 +171,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    {
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
-    }
+    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -217,7 +208,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         Block block;
         while (executor.pull(block))
         {
-            new_data->addBlockToJoin(block, block.rows(), JoinBuildContext::serial());
+            new_data->addBlockToJoin(block, true);
             if (persistent)
                 backup_stream.write(block);
         }
@@ -226,11 +217,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// Now acquire exclusive lock and modify storage.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    {
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join = std::move(new_data);
-    }
-    setCurrentQueryMemoryDriftExpected();
+    join = std::move(new_data);
     increment = 1;
 
     if (persistent)
@@ -354,7 +341,7 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     if (!holder)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join->addBlockToJoin(block_to_insert, block_to_insert.rows(), JoinBuildContext::serial());
+    join->addBlockToJoin(block_to_insert, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const
@@ -553,7 +540,6 @@ void registerStorageJoin(StorageFactory & factory)
     factory.registerStorage(
         "Join",
         creator_fn,
-        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = has_builtin_fn,

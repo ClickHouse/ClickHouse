@@ -65,6 +65,22 @@ bool shouldShowAddress(const void * addr)
 
     return show_addresses.load(std::memory_order_relaxed);
 }
+
+/// A fault address above the first page is shown only as an offset inside a loaded object:
+/// the runtime address of the heap, a stack or JIT code must not be published.
+std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr)
+{
+    if (!shouldShowAddress(addr))
+        return {};
+
+    if (reinterpret_cast<uintptr_t>(addr) < 4096)
+        return StackTrace::ResolvedAddress{.address = addr, .object = {}, .kind = StackTrace::AddressKind::Unsupported};
+
+    auto resolved = StackTrace::resolveAddress(addr);
+    if (!resolved.address)
+        return {};
+    return resolved;
+}
 }
 
 StackTrace::StackTrace()
@@ -77,11 +93,6 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
-bool StackTrace::showAddresses()
-{
-    return show_addresses.load(std::memory_order_relaxed);
-}
-
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
@@ -90,7 +101,11 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
     {
         using namespace std::string_literals;
 
-        std::string address = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
+        std::string address;
+        if (info.si_addr == nullptr)
+            address = "NULL pointer";
+        else if (const auto resolved = resolveFaultAddress(info.si_addr))
+            address = resolved->object.empty() ? fmt::format("{}", resolved->address) : fmt::format("{} in {}", resolved->address, resolved->object);
         std::string access = getFaultMemoryAccessType(sig, context);
         if (access.empty())
             access = "<not available>";
@@ -99,11 +114,6 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
 
     if (sig == SIGTSTP)
         return "This is a signal used for debugging purposes by the user.";
-
-#if defined(si_syscall)
-    if (sig == SIGSYS)
-        return fmt::format("System call number: {}. {}", info.si_syscall, message);
-#endif
 
     return message;
 }
@@ -117,10 +127,12 @@ std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
     if (info.si_addr == nullptr)
         return 0;
 
-    if (shouldShowAddress(info.si_addr))
-        return reinterpret_cast<UInt64>(info.si_addr);
+    /// An offset inside another object cannot be told apart from one inside the executable.
+    const auto resolved = resolveFaultAddress(info.si_addr);
+    if (!resolved || resolved->kind == StackTrace::AddressKind::OtherObject)
+        return std::nullopt;
 
-    return std::nullopt;
+    return reinterpret_cast<UInt64>(resolved->address);
 }
 
 std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
@@ -296,23 +308,6 @@ std::string getSignalCodeDescription(int sig, int si_code)
                     return fmt::format("Unknown si_code: {}", si_code);
             }
         }
-        case SIGSYS:
-        {
-            switch (si_code)
-            {
-#if defined(SYS_SECCOMP)
-                case SYS_SECCOMP:
-                    return "The system call is not allowed by the seccomp policy that the server applied to itself. "
-                           "See the `seccomp` server setting.";
-#endif
-#if defined(SYS_USER_DISPATCH)
-                case SYS_USER_DISPATCH:
-                    return "The system call was redirected by syscall user dispatch.";
-#endif
-                default:
-                    return fmt::format("Unknown si_code: {}", si_code);
-            }
-        }
         default:
             return "";
     }
@@ -367,40 +362,19 @@ resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_ad
 }
 #endif
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-namespace
-{
-StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
-{
-    const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
-
-    if (!object)
-        return {virtual_addr, {}, StackTrace::AddressKind::UnknownMapping};
-    if (object == symbol_index.thisObject())
-        return {reinterpret_cast<const void *>(address), {}, StackTrace::AddressKind::MainObject};
-    return {reinterpret_cast<const void *>(address), object->name, StackTrace::AddressKind::OtherObject};
-}
-}
-#endif
-
 StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
+
+    if (!object)
+        return {nullptr, {}, AddressKind::UnknownMapping};
+    if (object == symbol_index.thisObject())
+        return {reinterpret_cast<const void *>(address), {}, AddressKind::MainObject};
+    return {reinterpret_cast<const void *>(address), object->name, AddressKind::OtherObject};
 #else
     return {virtual_addr, {}, AddressKind::Unsupported};
-#endif
-}
-
-std::optional<StackTrace::ResolvedAddress> StackTrace::tryResolveAddress(const void * virtual_addr)
-{
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-    const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized();
-    if (!symbol_index)
-        return std::nullopt;
-    return ::resolveAddress(*symbol_index, virtual_addr);
-#else
-    return ResolvedAddress{virtual_addr, {}, AddressKind::Unsupported};
 #endif
 }
 
@@ -861,7 +835,8 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         else
             out << "?";
 
-        if (shouldShowAddress(frame.physical_addr))
+        /// Without an object, `physical_addr` is the runtime address (e.g. JIT code).
+        if (frame.object && shouldShowAddress(frame.physical_addr))
         {
             out << " @ ";
             DB::writePointerHex(frame.physical_addr, out);

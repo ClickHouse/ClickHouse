@@ -7,6 +7,7 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/es/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -252,11 +253,13 @@ No necesitas configurar nada para usar este autenticador. Se aprovisiona automá
   ## Habilitar la autenticación con JWT para su servicio
 </div>
 
+<BetaBadge />
+
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="Autenticación con JWT con un proveedor de identidad personalizado" />
 
-Además del autenticador JWT predefinido, puede configurar su servicio de ClickHouse Cloud para que acepte JWT emitidos por su propio proveedor de identidad (por ejemplo, Microsoft Entra u Okta). Esta función está disponible en el plan Enterprise para servicios que ejecutan ClickHouse versión 26.4 o posterior. Puede configurarla usted mismo desde la consola de Cloud en **Configuración → Seguridad → Autenticación con JWT**; consulte [Configuración de la autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) para obtener instrucciones paso a paso. Cada proveedor se define mediante lo siguiente:
+Además del autenticador JWT predefinido, puede configurar su servicio de ClickHouse Cloud para que acepte JWT emitidos por su propio proveedor de identidad (por ejemplo, Microsoft Entra u Okta). Esta función beta está disponible en el plan Enterprise para servicios que ejecutan ClickHouse versión 26.4 o posterior. Puede configurarla usted mismo desde la consola de Cloud en **Configuración → Seguridad → Autenticación con JWT**; consulte [Configuración de la autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) para obtener instrucciones paso a paso. Cada proveedor se define mediante lo siguiente:
 
 | Parámetro                 | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -8,11 +8,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
-#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
-#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
-#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
@@ -189,20 +186,18 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
-    auto secret_arguments = s3TableEngineSecretArguments();
-    secret_arguments.secret_settings = S3Queue::SETTINGS_TO_HIDE;
     factory.registerStorage(
         "S3Queue",
         [](const StorageFactory::Arguments & args)
         {
             return createQueueStorage<StorageS3Configuration>(args);
         },
-        std::move(secret_arguments),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .get_export_access_fn = getS3QueueMoveDestinationAccess,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -395,6 +390,8 @@ Default value: empty string.
 ### `after_processing_move_uri` {#after_processing_move_uri}
 
 URI of S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
+
+Setting it is the same data flow as `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>`, so it requires the `WRITE` grant on the `S3` source. A grant limited by a URL filter is not enough, because the move writes keys that are built from `after_processing_move_prefix` and the source keys, not from the URI. `ALTER TABLE ... MODIFY SETTING` also requires `SELECT` on the table. The destination must be allowed by `remote_url_allow_hosts`. The move always parses the URI with automatic style detection, as the `s3` table function does with the default `s3_uri_style`, so the `uri_style` server setting and the `s3_uri_style` query setting do not apply to it.
 
 Possible values:
 
@@ -642,7 +639,7 @@ For more information about virtual columns see [here](/reference/engines/table-e
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `**` — Substitutes any number of any characters include `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
@@ -705,7 +702,7 @@ rows_processed:        5068534
 status:                Processed
 processing_start_time: 2023-10-13 13:09:48
 processing_end_time:   2023-10-13 13:10:31
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueuePullMicroseconds':273776,'LogTest':17}
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':2480,'S3QueueSetFileProcessedMicroseconds':9985,'S3QueuePullMicroseconds':273776,'LogTest':17}
 exception:
 ```
 
@@ -781,7 +778,7 @@ rows_processed:        5112621
 status:                Processed
 processing_start_time: 2023-10-13 13:09:48
 processing_end_time:   2023-10-13 13:10:12
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueuePullMicroseconds':5841972,'LogTest':17}
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':1934,'S3QueueSetFileProcessedMicroseconds':17063,'S3QueuePullMicroseconds':5841972,'LogTest':17}
 exception:
 ```
 )DOCS_MD",
@@ -794,20 +791,18 @@ exception:
 void registerStorageAzureQueue(StorageFactory & factory);
 void registerStorageAzureQueue(StorageFactory & factory)
 {
-    auto secret_arguments = azureTableEngineSecretArguments();
-    secret_arguments.secret_settings = AzureQueue::SETTINGS_TO_HIDE;
     factory.registerStorage(
         "AzureQueue",
         [](const StorageFactory::Arguments & args)
         {
             return createQueueStorage<StorageAzureConfiguration>(args);
         },
-        std::move(secret_arguments),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .get_export_access_fn = getAzureQueueMoveDestinationAccess,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -854,6 +849,8 @@ Below are the settings only compatible with AzureQueue and not applicable for S3
 
 Connection string for Azure Blob Storage to move successfully processed files to, if the destination is another Azure container.
 
+Setting it requires the `WRITE` grant on the `AZURE` source. A grant limited by a URL filter is not enough, because a move has no single blob path and writes keys that are built from `after_processing_move_prefix` and the source keys. `ALTER TABLE ... MODIFY SETTING` also requires `SELECT` on the table. The destination must be allowed by `remote_url_allow_hosts`.
+
 Possible values:
 
 - String.
@@ -863,6 +860,8 @@ Default value: empty string.
 ### `after_processing_move_container` {#after_processing_move_container}
 
 Container name to move successfully processed files to, if the destination is another Azure container.
+
+Changing it redirects the move to another container of the same account, so it needs the same grants as `after_processing_move_connection_string`: the `WRITE` grant on the `AZURE` source without a URL filter, and `SELECT` on the table for `ALTER TABLE ... MODIFY SETTING`.
 
 Possible values:
 

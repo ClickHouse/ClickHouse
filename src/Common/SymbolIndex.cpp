@@ -7,7 +7,6 @@
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
-#include <atomic>
 #include <optional>
 
 #include <filesystem>
@@ -799,11 +798,6 @@ String SymbolIndex::getBuildIDHex() const
     return build_id_hex;
 }
 
-namespace
-{
-    std::atomic<const SymbolIndex *> initialized_instance{nullptr};
-}
-
 const SymbolIndex & SymbolIndex::instance()
 {
     /// To avoid recursive initialization of SymbolIndex we need to block debug
@@ -822,15 +816,7 @@ const SymbolIndex & SymbolIndex::instance()
     ///
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
     static SymbolIndex instance;
-    /// Published only after the constructor has finished, which is what lets `instanceIfInitialized`
-    /// hand out the object without touching the static's guard.
-    initialized_instance.store(&instance, std::memory_order_release);
     return instance;
-}
-
-const SymbolIndex * SymbolIndex::instanceIfInitialized()
-{
-    return initialized_instance.load(std::memory_order_acquire);
 }
 
 }

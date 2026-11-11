@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/HiddenSecret.h>
 #include <Common/maskURIPassword.h>
 
 #include <functional>
@@ -32,7 +31,7 @@ inline bool maskURLCredentials(String & value)
     /// parser can read still reaches a log.
     if (findURIAuthority(value) == String::npos && value.contains('@'))
     {
-        value = HIDDEN_SECRET;
+        value = "[HIDDEN]";
         return true;
     }
 

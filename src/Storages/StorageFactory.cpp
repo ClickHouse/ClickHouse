@@ -1,21 +1,16 @@
 #include <Storages/StorageFactory.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLTask.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
-#include <Common/Jemalloc.h>
-#include <Common/JemallocMergeTreeArena.h>
+#include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
-
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
 
 namespace DB
 {
@@ -33,7 +28,6 @@ namespace ErrorCodes
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int BAD_ARGUMENTS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
-    extern const int UNKNOWN_SETTING;
 }
 
 
@@ -43,48 +37,6 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
     for (const auto & elem : names_and_types)
         if (elem.type->cannotBeStoredInTables())
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} of column '{}' cannot be used in tables", elem.type->getName(), elem.name);
-}
-
-
-bool isReplayedTableDefinition(
-    LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
-{
-    return !isFreshTableDefinition(mode, query.attach_short_syntax) || isSecondaryDDLReplay(local_context)
-        || local_context->isRecoveryFromStoredMetadata();
-}
-
-
-void checkStorageSettingNames(const StorageFactory::Arguments & args)
-{
-    if (!args.storage_def || !args.storage_def->settings)
-        return;
-
-    const auto local_context = args.getLocalContext();
-
-    if (isReplayedTableDefinition(args.mode, args.query, local_context))
-        return;
-
-    /// A name that is neither a setting of this engine nor a query setting of this context is no setting at
-    /// all: it is the complement of what `InterpreterSetQuery::applySettingsFromQuery` moves to the query
-    /// context, which counts a custom setting the context holds as a query setting.
-    const auto & features = StorageFactory::instance().getStorageFeatures(args.engine_name);
-    chassert(features.has_builtin_setting_fn != nullptr);
-    const Settings & query_settings = local_context->getSettingsRef();
-    auto check = [&](std::string_view name)
-    {
-        if (!features.has_builtin_setting_fn(name) && !query_settings.has(name))
-            throw Exception(
-                ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", name, args.engine_name);
-    };
-
-    for (const auto & change : args.storage_def->settings->changes)
-        check(change.name);
-    /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and is serialized back into the stored definition.
-    for (const auto & name : args.storage_def->settings->default_settings)
-        check(name);
-    /// `param_x = ...` lands in `query_parameters` with the prefix stripped, and only a standalone `SET` reads that payload.
-    for (const auto & parameter : args.storage_def->settings->query_parameters)
-        check(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
 }
 
 
@@ -105,13 +57,12 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 }
 
 
-void StorageFactory::registerStorage(
-    const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, StorageFeatures features, Documentation documentation)
+void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features, Documentation documentation)
 {
     if (features.supports_settings && !features.has_builtin_setting_fn)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "StorageFactory: Storage '{}' supports settings but has_builtin_setting_fn is not provided", name);
-    if (!storages.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation), std::move(secret_arguments)}).second)
+    if (!storages.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageFactory: the storage '{}' is not unique", name);
 }
 
@@ -232,14 +183,7 @@ StoragePtr StorageFactory::get(
                     "UNIQUE KEY clause",
                     [](StorageFeatures features) { return features.supports_unique_key; });
 
-            if (storage_def->ttl_table)
-                check_feature(
-                    "TTL clause",
-                    [](StorageFeatures features) { return features.supports_ttl; });
-
-            /// Older servers could store a column `TTL` inherited from the source table (see #121335).
-            /// Accept it in a replayed definition, so such tables can still load; the `TTL` is ignored.
-            if (!columns.getColumnTTLs().empty() && !isReplayedTableDefinition(mode, query, local_context))
+            if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
                 check_feature(
                     "TTL clause",
                     [](StorageFeatures features) { return features.supports_ttl; });
@@ -282,13 +226,7 @@ StoragePtr StorageFactory::get(
 
     chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
-    /// The storage object and its metadata outlive the query, so route them to the table-lifetime arena instead
-    /// of fragmenting the per-CPU query arenas. Settled on query end, see `MemoryTracker::settleDriftOnQueryEnd`.
-    StoragePtr res;
-    {
-        ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        res = storages.at(name).creator_fn(arguments);
-    }
+    auto res = storages.at(name).creator_fn(arguments);
     if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query
@@ -328,6 +266,39 @@ const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const
     if (it == storages.end())
         throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", storage_name);
     return it->second.features;
+}
+
+AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & create) const
+{
+    AccessRightsElements res;
+    auto add = [&](const ASTStorage & storage)
+    {
+        if (!storage.engine || !storage.settings)
+            return;
+        auto it = storages.find(storage.engine->name);
+        if (it != storages.end() && it->second.features.get_export_access_fn)
+            res.append_range(it->second.features.get_export_access_fn(storage.settings->changes));
+    };
+
+    if (create.storage)
+        add(*create.storage);
+    if (create.targets)
+    {
+        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
+            add(*inner_engine);
+    }
+    return res;
+}
+
+AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsChanges & changes) const
+{
+    AccessRightsElements res;
+    for (const auto & [_, creator] : storages)
+    {
+        if (creator.features.get_export_access_fn)
+            res.append_range(creator.features.get_export_access_fn(changes));
+    }
+    return res;
 }
 
 }

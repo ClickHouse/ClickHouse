@@ -2,9 +2,7 @@
 
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Storages/TableZnodeInfo.h>
 
-#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -74,16 +72,6 @@ public:
 
     StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex) override;
 
-    /// Remembers the detached storage for the liveness guard below.
-    StoragePtr detachTable(ContextPtr context, const String & name) override;
-
-    /// The detached-table liveness guard for tables without a UUID, keyed by table name. `ATTACH ... AS REPLICATED`
-    /// deletes transaction metadata files from disk, which must not happen while the previous storage instance of
-    /// the same table is still alive: its parts remember those files and check them on destruction.
-    /// `DatabaseAtomic` keeps its own UUID-keyed bookkeeping (`checkDetachedTableNotInUse`) and never fills this one.
-    void waitDetachedTableByNameNotInUse(const String & table_name, std::function<void()> throw_if_cancelled);
-    void checkDetachedTableByNameNotInUse(const String & table_name);
-
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,
@@ -98,26 +86,11 @@ public:
 
     DiskPtr getDisk() const override { return metadata_disk_ptr; }
 
-    /// `ordinary_znode_info` is the result of `checkReplicaPathIsSafe` for a conversion to a replicated engine
-    /// of a table of an `Ordinary` database, and null otherwise. Such a table stores the path as a literal and
-    /// the replica name with {database} and {table} unfolded, the way a `CREATE` stores them, so that a later
-    /// `RENAME TABLE` neither moves the table to another znode nor is refused because of those macros.
-    static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated, const TableZnodeInfo * ordinary_znode_info);
+    static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
     /// Rejects a conversion to a replicated engine whose Keeper path would not be a safe one.
     /// Contacts nothing and mutates nothing, so a caller can run it before its own side effects.
-    /// Returns the resolved path, split into the Keeper cluster name and the raw path inside it.
-    /// `stores_path_literally` is set for a table of an `Ordinary` database: its metadata keeps the fully
-    /// expanded path instead of the template, so the path must also survive being read back as a literal.
-    static TableZnodeInfo checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr context, bool stores_path_literally);
-
-    /// Whether the table would have `table_readonly = 1` as a `ReplicatedMergeTree`: from its stored
-    /// definition, or, if that does not set it, from the server's `merge_tree` / `replicated_merge_tree`
-    /// defaults. A converted table keeps the settings of the table it was converted from, and
-    /// `table_readonly` is not supported for `ReplicatedMergeTree`, so both conversion entrypoints
-    /// (the `convert_to_replicated` flag and `ATTACH TABLE ... AS REPLICATED`) have to refuse such a
-    /// table before their side effects.
-    static bool isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context);
+    static void checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr context);
 
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.
@@ -132,20 +105,6 @@ protected:
         ContextPtr query_context);
 
     Strings permanently_detached_tables TSA_GUARDED_BY(mutex);
-
-    /// Weak references: tracking must never extend the lifetime of a detached storage.
-    /// A name may have several live detached instances at once: a plain `ATTACH TABLE` of an `Ordinary` table
-    /// (no UUID) does not wait for the previous instance, so `DETACH` -> `ATTACH` -> `DETACH` leaves two of them.
-    /// Every instance is kept until it expires, so that none of them is forgotten while its parts are alive.
-    std::unordered_multimap<String, std::weak_ptr<IStorage>> detached_tables_by_name TSA_GUARDED_BY(mutex);
-    /// Forgets the storages that are gone or were renamed away. Every strong reference the sweep takes is
-    /// handed to `keep_alive`, so that the caller lets it go only after releasing `mutex`: had the sweep been the
-    /// last owner of a storage, the storage would otherwise be destroyed under the database mutex, which
-    /// `DatabaseAtomic::cleanupDetachedTables` avoids for the same reason (that destruction can deadlock).
-    void forgetExpiredDetachedTablesByName(std::vector<StoragePtr> & keep_alive) TSA_REQUIRES(mutex);
-    /// Forgets the storages that are gone or were renamed away, then tells whether `table_name` is still in use.
-    /// `keep_alive` has the same contract as above.
-    bool isDetachedTableByNameInUse(const String & table_name, std::vector<StoragePtr> & keep_alive) TSA_REQUIRES(mutex);
 
     std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
     std::unordered_map<String, LoadTaskPtr> startup_table TSA_GUARDED_BY(mutex);

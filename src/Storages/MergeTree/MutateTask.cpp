@@ -26,7 +26,6 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -58,7 +57,6 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
-#include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -137,7 +135,6 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -586,6 +583,7 @@ static void splitAndModifyMutationCommands(
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
+    bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
@@ -602,6 +600,7 @@ static void splitAndModifyMutationCommands(
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
+        NameSet ignored_columns;
         NameSet extra_columns_for_indices_and_projections;
         auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
@@ -663,6 +662,14 @@ static void splitAndModifyMutationCommands(
                         mutated_columns.emplace(child->as<ASTAssignment &>().column_name);
                 }
 
+                if (command.type == MutationCommand::Type::MATERIALIZE_TTL && suitable_for_ttl_optimization)
+                {
+                    for (const auto & col : part_columns)
+                    {
+                        if (!mutated_columns.contains(col.name))
+                            ignored_columns.emplace(col.name);
+                    }
+                }
                 if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
                 {
                     const auto & all_indices = metadata_snapshot->getSecondaryIndices();
@@ -855,7 +862,7 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name))
+                if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name) && !ignored_columns.contains(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
@@ -864,10 +871,8 @@ static void splitAndModifyMutationCommands(
                     auto part_metadata_version = part->getMetadataVersion();
                     auto table_metadata_version = metadata_snapshot->getMetadataVersion();
 
-                    /// `ATTACH`/`REPLACE PARTITION FROM` and `MOVE PARTITION TO TABLE` stamp the destination's
-                    /// version on a part that keeps the source's columns and require matching structures, so
-                    /// an equal version with the column absent means it is in no schema at all.
-                    if (part_metadata_version <= table_metadata_version)
+                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
+                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
                     {
                         LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
                                          "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
@@ -882,12 +887,13 @@ static void splitAndModifyMutationCommands(
                                         part->name, part_metadata_version, column.name,
                                         part->storage.getStorageID().getNameForLogs(), table_metadata_version);
 
-                    /// The part is ahead of a table that has no metadata version to reason with, so there is
-                    /// nothing else to go on: the column is on disk, the table does not have it, and reads and
-                    /// merges already ignore it. Reading it would add a `READ_COLUMN` command below, whose
-                    /// identifier the mutation then resolves against the table and fails with
-                    /// `UNKNOWN_IDENTIFIER` - for every mutation of that part, so the mutation queue stays
-                    /// wedged until the part is merged or dropped. Skip the column and let the rewrite drop it.
+                    /// Without a metadata version to reason with there is nothing else to go on: the column
+                    /// is on disk, the table does not have it, and reads and merges already ignore it. This is
+                    /// what a partition that was detached before `DROP COLUMN` and re-attached after it looks
+                    /// like. Reading it would add a `READ_COLUMN` command below, whose identifier the mutation
+                    /// then resolves against the table and fails with `UNKNOWN_IDENTIFIER` - for every mutation
+                    /// of that part, so the mutation queue stays wedged until the part is merged or dropped.
+                    /// Skip the column here as well and let the rewrite drop it.
                     LOG_WARNING(log, "Ignoring column {} from part {} because there is no such column in table {}. "
                                      "Assuming the column was dropped", column.name, part->name,
                                 part->storage.getStorageID().getNameForLogs());
@@ -1058,6 +1064,28 @@ static void addRenamedColumnToColumnsSubstreams(
         new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
 }
 
+static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet & storage_columns_set)
+{
+    if (storage_columns_set.contains(RowExistsColumn::name))
+        return false;
+
+    if (command.type == MutationCommand::READ_COLUMN)
+        return command.read_for_patch && command.column_name == RowExistsColumn::name;
+
+    if (command.type == MutationCommand::UPDATE)
+    {
+        auto alter = command.ast();
+        if (!alter || !alter->update_assignments)
+            return false;
+        return std::ranges::any_of(alter->update_assignments->children, [](const ASTPtr & child)
+        {
+            return child->as<ASTAssignment &>().column_name == RowExistsColumn::name;
+        });
+    }
+
+    return false;
+}
+
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
@@ -1080,7 +1108,9 @@ getColumnsForNewDataPart(
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
+    bool deleted_mask_updated = false;
     bool affects_all_columns = false;
+    bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -1089,6 +1119,9 @@ getColumnsForNewDataPart(
     for (const auto & command : all_commands)
     {
         affects_all_columns |= command.affectsAllColumns();
+
+        if (supports_lightweight_deletes)
+            deleted_mask_updated |= isDeletedMaskUpdated(command, storage_columns_set);
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
@@ -1146,7 +1179,7 @@ getColumnsForNewDataPart(
 
         bool need_column = false;
         if (name == RowExistsColumn::name)
-            need_column = updated_header.has(name) || (part_columns.has(name) && !affects_all_columns);
+            need_column = deleted_mask_updated || (part_columns.has(name) && !affects_all_columns);
         else if (name == BlockNumberColumn::name || name == BlockOffsetColumn::name)
             need_column = part_columns.has(name) || updated_header.has(name);
         else
@@ -1331,10 +1364,9 @@ getColumnsForNewDataPart(
                 continue;
             }
 
-            /// `NameAndTypePair` holds the type in storage in a separate field that assigning `type` does not update.
             auto updated_type = updated_header.getByName(it->name).type;
             if (updated_type != it->type)
-                *it = NameAndTypePair{it->name, updated_type};
+                it->type = updated_type;
 
             if (fill_columns_substreams)
             {
@@ -1367,7 +1399,7 @@ getColumnsForNewDataPart(
                         /// so the new part must record the type in storage - see the same-named
                         /// case below.
                         if (!rewrites_all_columns)
-                            *it = NameAndTypePair{it->name, source_col->second};
+                            it->type = source_col->second;
 
                         if (fill_columns_substreams)
                             addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *source_part->getColumnPosition(source_col->first));
@@ -1419,7 +1451,7 @@ getColumnsForNewDataPart(
                         /// A full rewrite produces this column at the type in storage, the same
                         /// way it does for the two cases around this one.
                         if (!rewrites_all_columns)
-                            *it = NameAndTypePair{it->name, maybe_name_and_type->type};
+                            it->type = maybe_name_and_type->type;
 
                         if (fill_columns_substreams)
                             addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, renamed_from, *source_part->getColumnPosition(renamed_from));
@@ -1439,7 +1471,7 @@ getColumnsForNewDataPart(
                         /// the pipeline, so it would hand, say, a `ColumnNullable` to
                         /// `SerializationString` and throw `Bad cast` before writing anything.
                         if (!rewrites_all_columns)
-                            *it = NameAndTypePair{it->name, source_col->second};
+                            it->type = source_col->second;
 
                         if (fill_columns_substreams)
                         {
@@ -1543,15 +1575,6 @@ static std::unordered_map<String, size_t> getStreamCounts(
             }
             continue;
         }
-
-        /// Only a column the part physically holds has streams to count. The name of an absent
-        /// column must not be looked up in the part's serializations: a column named like a
-        /// subcolumn of another column (`a.size0` next to an `Array` column `a`) resolves to that
-        /// subcolumn's serialization, and the streams enumerated from it are the other column's.
-        /// Counting them here would mark the array's offsets as rewritten by the mutation and
-        /// skip hardlinking them, leaving the new part without them.
-        if (!data_part->getColumns().contains(column_name))
-            continue;
 
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
@@ -1685,21 +1708,6 @@ static NameToNameVector collectFilesForRenames(
     NameToNameVector rename_vector;
     NameSet collected_names;
 
-    /// The serialization of a column the source part physically holds, or nothing when the part does
-    /// not hold it. The name must not be looked up in the part's serializations in the latter case: a
-    /// column named like a subcolumn of another column (`a.size0` next to an `Array` column `a`)
-    /// resolves to that subcolumn's serialization when the column itself is not stored in the part
-    /// (it is there only as a missing-column marker), and the streams enumerated from it are the
-    /// other column's - removing or renaming them would take the array's offsets away and leave the
-    /// part unreadable.
-    const auto & source_part_columns = source_part->getColumns();
-    auto try_get_serialization_of_stored_column = [&](const String & column_name) -> SerializationPtr
-    {
-        if (!source_part_columns.contains(column_name))
-            return nullptr;
-        return source_part->tryGetSerialization(column_name);
-    };
-
     auto add_rename = [&rename_vector, &collected_names] (const std::string & file_rename_from, const std::string & file_rename_to)
     {
         if (collected_names.emplace(file_rename_from).second)
@@ -1802,7 +1810,7 @@ static NameToNameVector collectFilesForRenames(
                     }
                 };
 
-                if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
+                if (auto serialization = source_part->tryGetSerialization(command.column_name))
                     serialization->enumerateStreams(callback);
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
@@ -1865,7 +1873,7 @@ static NameToNameVector collectFilesForRenames(
                         }
                     };
 
-                    if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
+                    if (auto serialization = source_part->tryGetSerialization(command.column_name))
                         serialization->enumerateStreams(callback);
                 }
             }
@@ -1902,7 +1910,6 @@ static void processStatisticsChanges(
     const ColumnsStatistics & stats_to_recalc,
     const MutationCommands & commands_for_renames,
     const IMergeTreeDataPart & source_part,
-    const NamesAndTypesList & new_part_columns,
     StorageMetadataPtr metadata_snapshot)
 {
     auto storage_settings = source_part.storage.getSettings();
@@ -1953,10 +1960,6 @@ static void processStatisticsChanges(
         for (const auto & [stat_name, stat] : stats_to_recalc)
             all_statistics[stat_name] = stat->cloneEmpty();
     }
-
-    /// A statistic is keyed by a column name, and both statistics loaders resolve a persisted entry
-    /// against the part's own column list, so one for a column this part does not store is unreadable.
-    std::erase_if(all_statistics, [&](const auto & entry) { return !new_part_columns.contains(entry.first); });
 
     /// Remove old statistics files.
     if (isFullPartStorage(source_part.getDataPartStorage()))
@@ -2254,13 +2257,6 @@ struct MutationContext
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
     std::set<MergeTreeIndexPtr> indices_to_drop;
-    /// The expressions of `indices_to_recalc` and `text_indices_to_recalc`, materialized into the
-    /// block so that the writer reuses them instead of evaluating them itself. Held here rather
-    /// than appended where they are collected, because they have to be evaluated on the block the
-    /// TTL has already worked on - a column TTL resets its column, and a `MATERIALIZED` column
-    /// derived from it is recomputed, so an expression evaluated before that describes the old
-    /// values while the part stores the new ones.
-    ASTPtr indices_recalc_expr_list;
     /// True iff at least one index that currently lives inside the source part's skp_idx.packed
     /// is being recomputed or dropped. When set, the mutation rebuilds the archive (writer side)
     /// and stops hardlinking the source's archive (see collectFilesToSkip).
@@ -2302,7 +2298,8 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId()) || (*mutate_entry)->is_cancelled)
+        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
+            || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
         }
@@ -2873,23 +2870,6 @@ static bool hasAnyIndexFileOnDisk(
     return false;
 }
 
-/// Materializes the skip index expressions collected for this mutation into the block. Must run
-/// after the TTL transforms: the writer reuses whatever expression column it finds in the block, so
-/// evaluating it earlier writes an index that describes the pre-TTL values of a column the TTL reset
-/// or of a `MATERIALIZED` column recomputed from one - the index then prunes granules that do match.
-static void addIndicesRecalculationTransform(QueryPipelineBuilder & builder, const MutationContextPtr & ctx)
-{
-    if (!ctx->indices_recalc_expr_list)
-        return;
-
-    auto syntax_result
-        = TreeRewriter(ctx->context).analyze(ctx->indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
-    auto expression = ExpressionAnalyzer(ctx->indices_recalc_expr_list, syntax_result, ctx->context).getActions(false);
-
-    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), expression));
-    builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
-}
-
 class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
@@ -3129,6 +3109,19 @@ private:
 
         auto builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->mutating_pipeline_builder));
 
+        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
+        {
+            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            if (!extracting_subcolumns_dag.getNodes().empty())
+                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
+
+            builder->addTransform(std::make_shared<ExpressionTransform>(
+                builder->getSharedHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
+
+            builder->addTransform(std::make_shared<MaterializingTransform>(builder->getSharedHeader()));
+        }
+
         PreparedSets::Subqueries subqueries;
 
         if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
@@ -3155,23 +3148,6 @@ private:
 
         if (!subqueries.empty())
             builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
-
-        /// The primary key and the skip indices are calculated after the TTL transforms, because TTL rewrites the data:
-        /// `TTL ... GROUP BY ... SET` assigns new values to the columns of the aggregated rows, and a column TTL resets
-        /// the expired values to the defaults. Calculating the index expressions before that would write indices
-        /// describing the data of the source part instead of the data of the new part.
-        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
-        {
-            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
-            if (!extracting_subcolumns_dag.getNodes().empty())
-                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
-
-            builder->addTransform(std::make_shared<ExpressionTransform>(
-                builder->getSharedHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
-
-            builder->addTransform(std::make_shared<MaterializingTransform>(builder->getSharedHeader()));
-        }
 
         bool affects_all_columns = false;
 
@@ -3213,7 +3189,6 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
-            new_part_columns,
             ctx->metadata_snapshot);
 
         /// This task rewrites every column, so all statistics objects were created empty from the
@@ -3339,7 +3314,6 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
-            ctx->new_data_part->getColumns(),
             ctx->metadata_snapshot);
 
         /// This task rewrites only some of the columns and carries the rest over from the source
@@ -3598,8 +3572,6 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
-            addIndicesRecalculationTransform(*builder, ctx);
-
             /// Some columns may be present in the interpreter output only for
             /// projection/index recalculation (e.g. CLEAR COLUMN provides a default
             /// value so that dependent projections are rebuilt correctly). Such columns
@@ -3702,15 +3674,6 @@ private:
                 const auto projection_file = projection.getDirectoryName();
                 if (ctx->files_to_skip.contains(projection_file)
                     && !ctx->new_data_part->getProjectionParts().contains(projection.name))
-                    ctx->new_data_part->checksums.files.erase(projection_file);
-            }
-
-            /// The same for a declaration that could not be analyzed: `prepare` left its directory out of this
-            /// part and nothing can rebuild it, so its inherited entry is always an orphan.
-            for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
-            {
-                const auto projection_file = projection_name + ".proj";
-                if (ctx->files_to_skip.contains(projection_file))
                     ctx->new_data_part->checksums.files.erase(projection_file);
             }
 
@@ -3893,22 +3856,6 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
-
-    /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
-    /// Same condition as `checkOperationIsNotCanceled`.
-    auto mutation_cancelled = [merges_blocker = ctx->merges_blocker,
-        partition_id = ctx->future_part->part_info.getPartitionId(),
-        mutate_entry = ctx->mutate_entry]
-    {
-        return merges_blocker->isCancelledForPartition(partition_id) || (*mutate_entry)->is_cancelled;
-    };
-    (*ctx->mutate_entry)->thread_group->setQueryCancellationPredicates(
-        mutation_cancelled,
-        [mutation_cancelled]
-        {
-            if (mutation_cancelled())
-                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
-        });
 }
 
 
@@ -4251,8 +4198,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
             && !ctx->indices_to_recalc.empty();
 
+        /// An unsupported archive cannot be updated, so it would keep granules of the old data.
         bool archive_dirty = !ctx->dropped_skip_index_archive_file_names.empty()
-            || (source_has_archive && writer_can_open_archive);
+            || (source_has_archive && writer_can_open_archive)
+            || source_disk_storage->hasUnsupportedSkipIndicesPackedArchive();
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
                 if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
@@ -4297,12 +4246,17 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
     if ((!ctx->indices_to_recalc.empty() || !ctx->text_indices_to_recalc.empty()) && builder.initialized())
     {
+        auto indices_recalc_syntax
+            = TreeRewriter(ctx->context).analyze(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
+        auto indices_recalc_expr = ExpressionAnalyzer(indices_recalc_expr_list, indices_recalc_syntax, ctx->context).getActions(false);
+
         /// We can update only one column, but some skip idx expression may depend on several
         /// columns (c1 + c2 * c3). It works because this stream was created with help of
         /// MutationsInterpreter which knows about skip indices and stream 'in' already has
         /// all required columns.
         /// TODO move this logic to single place.
-        ctx->indices_recalc_expr_list = indices_recalc_expr_list;
+        builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), indices_recalc_expr));
+        builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
     }
 }
 }
@@ -4536,6 +4490,7 @@ bool MutateTask::prepare()
         ctx->commands_for_part,
         ctx->for_interpreter,
         ctx->for_file_renames,
+        suitable_for_ttl_optimization,
         ctx->log);
 
     if (commands_for_execution != &ctx->commands_for_part)
@@ -4549,6 +4504,7 @@ bool MutateTask::prepare()
             *commands_for_execution,
             ctx->for_interpreter,
             unused_file_renames,
+            suitable_for_ttl_optimization,
             ctx->log);
     }
 
@@ -4623,14 +4579,8 @@ bool MutateTask::prepare()
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
 
-    /// Keep the source granularity properties while the part type survives the mutation (e.g. a
-    /// legacy part with non-adaptive granularity must stay non-adaptive). When the mutation
-    /// changes the part type, the new part must keep the granularity info of its own type, set by
-    /// the part constructor: the mark type encodes the part type in the marks file extension, and
-    /// a `Wide` part written with the source's `Compact` extension (e.g. per-column `.cmrk4`
-    /// files) is detected as `Compact` on the next load from disk and breaks.
-    if (ctx->new_data_part->getType() == ctx->source_part->getType())
-        ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
+    /// It shouldn't be changed by mutation.
+    ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
@@ -4640,13 +4590,6 @@ bool MutateTask::prepare()
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns);
-
-    /// A part cannot be left with no columns: it could not be loaded or read.
-    if (new_columns.empty())
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-            "Cannot mutate part {}: none of its columns ({}) would remain, because the table does not have them "
-            "or the mutation removes them. Empty parts are not allowed",
-            ctx->source_part->name, fmt::join(ctx->source_part->getColumns().getNames(), ", "));
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     if (!new_columns_substreams.empty())
@@ -4748,15 +4691,6 @@ bool MutateTask::prepare()
         /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
-
-        /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
-        /// whether its data still matches the rows this mutation rewrites. Leave it out of the new part when a
-        /// writer runs; without one no row changes. `MutateSomePartColumnsTask::finalize` drops its stale entry.
-        if (ctx->mutating_pipeline_builder.initialized())
-        {
-            for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
-                ctx->files_to_skip.insert(projection_name + ".proj");
-        }
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,

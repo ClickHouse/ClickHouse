@@ -499,7 +499,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::Azure:
         {
             return std::make_shared<DeltaLake::AzureKernelHelper>(
-                *object_storage->getAzureBlobStorageConnectionParams(),
+                object_storage->getAzureBlobStorageConnectionParams(),
                 configuration->getRawPath().path);
         }
 #endif

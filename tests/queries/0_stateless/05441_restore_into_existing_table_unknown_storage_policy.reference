@@ -1,0 +1,4 @@
+restore into an existing table whose policy this host does not configure
+3	6
+creating the table still reports the unknown policy
+1

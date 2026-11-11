@@ -46,9 +46,9 @@ struct IExchangeLookup : boost::noncopyable
 {
     virtual ~IExchangeLookup() = default;
 
-    /// The sink of one stream. Its input is the output of the processors of `createSerializer`: the
-    /// packets they make, or the data chunks as they are when there are no such processors.
-    virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) = 0;
+    /// `input_is_serialized`: the sink's input chunks are the packets made by the processors of
+    /// `createSerializer`, which is only true for an exchange kind that returns such processors.
+    virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) = 0;
     /// `output_is_serialized`: the source hands out the packets of the exchange as they are, one per
     /// chunk, for the processors of `createDeserializer` to turn into data; only an exchange kind that
     /// returns such processors accepts true.

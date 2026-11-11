@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -17,6 +16,10 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
 #include <Common/SettingsChanges.h>
@@ -54,6 +57,15 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
     {
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
             visitChildren(describe_query->table_expression);
+        else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
+        {
+            if (create_user_query->names)
+            {
+                ASTPtr names = create_user_query->names;
+                visitChildren(names);
+            }
+            visitChildren(ast);
+        }
         else if (dynamic_cast<ASTCreateHandlerQuery *>(ast.get()))
         {
             /// The handler's query (the AS clause) is the parameterizable interface of the handler;
@@ -94,6 +106,24 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             else
                 visitChildren(ast);
         }
+        else if (auto * create_row_policy_query = dynamic_cast<ASTCreateRowPolicyQuery *>(ast.get()))
+        {
+            /// The filters are not children, see ASTCreateRowPolicyQuery::filters.
+            for (auto & [_, filter] : create_row_policy_query->filters)
+            {
+                if (filter)
+                    visit(filter);
+            }
+            visitChildren(ast);
+        }
+        else if (auto * create_masking_policy_query = dynamic_cast<ASTCreateMaskingPolicyQuery *>(ast.get()))
+        {
+            if (create_masking_policy_query->update_assignments)
+                visit(create_masking_policy_query->update_assignments);
+            if (create_masking_policy_query->where_condition)
+                visit(create_masking_policy_query->where_condition);
+            visitChildren(ast);
+        }
         else
             visitChildren(ast);
     }
@@ -133,7 +163,15 @@ bool needCastFromString(const DataTypePtr & type)
     if (type->getCustomSerialization())
         return true;
 
-    return anyInTypeTree(*type, [](const IDataType & t) { return isVariant(t) || isDynamic(t) || isObject(t); });
+    bool result = false;
+    auto check = [&](const IDataType & t)
+    {
+        result |= isVariant(t) || isDynamic(t) || isObject(t);
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
 }
 
 /// Build an AST literal for a query parameter, optionally wrapping it in a CAST.
