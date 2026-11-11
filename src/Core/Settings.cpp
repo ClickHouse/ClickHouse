@@ -6654,12 +6654,13 @@ The check applies only to `MergeTree`-family tables. Other engines, such as `Mem
 `Log`, `StripeLog`, `KeeperMap` and `EmbeddedRocksDB`, ignore this setting.
 )", 0) \
     DECLARE(Bool, allow_combining_rename_column_with_other_alter_commands, true, R"(
-Allows an `ALTER TABLE` query on a `MergeTree`-family table to combine `RENAME COLUMN` with commands of other kinds.
+Allows an `ALTER TABLE` query on a `MergeTree`-family table to combine `RENAME COLUMN` with other commands, including other
+`RENAME COLUMN` commands.
 
-When disabled, such a query is rejected with `BAD_ARGUMENTS`, so that a rename, which is executed as a mutation of its own,
-never shares its mutation entry with other changes. Several `RENAME COLUMN` commands in one query are always allowed.
+When disabled, a query with `RENAME COLUMN` must consist of that single command, otherwise it is rejected with `BAD_ARGUMENTS`,
+so that a rename, which is executed as a mutation of its own, never shares its mutation entry with other changes.
 )", 0, \
-        {"26.11", true, true, "New setting to forbid combining `RENAME COLUMN` with commands of other kinds in a single `ALTER` query of a `MergeTree`-family table."}) \
+        {"26.11", true, true, "New setting to forbid combining `RENAME COLUMN` with other commands in a single `ALTER` query of a `MergeTree`-family table."}) \
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries
 )", 0, \

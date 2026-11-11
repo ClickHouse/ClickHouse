@@ -6091,12 +6091,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// A rename is a barrier mutation, which must not share its mutation entry with any other command.
     if (!settings[Setting::allow_combining_rename_column_with_other_alter_commands])
     {
+        auto is_effective = [](const AlterCommand & command) { return !command.ignore; };
         auto is_rename = [](const AlterCommand & command) { return !command.ignore && command.type == AlterCommand::RENAME_COLUMN; };
-        auto is_other = [](const AlterCommand & command) { return !command.ignore && command.type != AlterCommand::RENAME_COLUMN; };
-        if (std::ranges::any_of(commands, is_rename) && std::ranges::any_of(commands, is_other))
+        if (std::ranges::any_of(commands, is_rename) && std::ranges::count_if(commands, is_effective) > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "RENAME COLUMN cannot be combined with other commands in a single ALTER query. "
-                "Enable the setting `allow_combining_rename_column_with_other_alter_commands` to allow it");
+                "RENAME COLUMN must be the only command of an ALTER query. "
+                "Enable the setting `allow_combining_rename_column_with_other_alter_commands` to combine it with other commands");
     }
 
     if (!settings[Setting::allow_non_metadata_alters])
