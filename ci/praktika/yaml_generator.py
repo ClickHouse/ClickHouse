@@ -34,7 +34,7 @@ name: {NAME}
 
 on:
   {EVENT}:
-    branches: [{BRANCHES}]
+    branches: [{BRANCHES}]{EVENT_TYPES}
 
 {CONCURRENCY}env:
   # Force the stdout and stderr streams to be unbuffered
@@ -492,6 +492,12 @@ class PullRequestPushYamlGen:
                 ),
             }
             if self.workflow_config.event in (Workflow.Event.PULL_REQUEST,):
+                # The default types without `ready_for_review`: a draft runs only part
+                # of the CI (see `filter_job.py`), so marking it ready must start the
+                # workflow again.
+                format_kwargs["EVENT_TYPES"] = (
+                    "\n    types: [opened, synchronize, reopened, ready_for_review]"
+                )
                 ENV_CHECKOUT_REFERENCE = (
                     YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PR
                 )
@@ -504,6 +510,7 @@ class PullRequestPushYamlGen:
                 )
                 # github.event.pull_request is null on a push.
                 format_kwargs["CONCURRENCY"] = ""
+                format_kwargs["EVENT_TYPES"] = ""
         elif self.workflow_config.event in (Workflow.Event.SCHEDULE,):
             base_template = YamlGenerator.Templates.TEMPLATE_SCHEDULE
             format_kwargs = {
