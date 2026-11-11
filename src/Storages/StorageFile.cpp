@@ -701,8 +701,12 @@ ReadSettings getUserFilesDiskReadSettings(ReadSettings settings)
     /// path without a generation, and a rewrite (possibly by another server sharing the disk) does
     /// not invalidate them, so a read could return stale bytes. Disable all of them.
     settings.disableCaches();
-    if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)
-        settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    /// The other local read methods (`pread`, `pread_threadpool`, `io_uring`, ...) share descriptors
+    /// through `OpenedFileCache`, keyed by the path alone, so after the file is replaced under the
+    /// same name, a new read could reuse the descriptor of the old inode held by a concurrent
+    /// reader. `mmap` has a similar cache. Open a fresh descriptor for every read instead, as the
+    /// reader of a plain `user_files_path` does.
+    settings.local_fs_settings.method = LocalFSReadMethod::read;
     return settings;
 }
 
