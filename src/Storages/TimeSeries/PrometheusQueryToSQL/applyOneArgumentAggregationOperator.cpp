@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+#include <algorithm>
 #include <unordered_map>
 
 
@@ -145,6 +146,42 @@ namespace
 
         return &it->second;
     }
+
+    /// Prometheus averages an instant `topk` or `bottomk` result in the order of its values, not of its tags.
+    /// Returns the sort key for that order, or nullptr if `operator_node` is not `avg` over such a result.
+    ASTPtr tryMakeValueOrderKey(const PrometheusQueryTree::AggregationOperator * operator_node, const SQLQueryPiece & argument)
+    {
+        if (operator_node->operator_name != "avg" || argument.start_time != argument.end_time)
+            return nullptr;
+
+        const auto * child = operator_node->getArguments().at(0);
+        if (child->node_type != PrometheusQueryTree::NodeType::AggregationOperator)
+            return nullptr;
+
+        const auto * inner = static_cast<const PrometheusQueryTree::AggregationOperator *>(child);
+        bool is_topk = inner->operator_name == "topk";
+        if ((!is_topk && inner->operator_name != "bottomk") || inner->without)
+            return nullptr;
+
+        /// The values are ordered only within a group of `topk`, so each group of `avg` must be inside one of them.
+        const auto & labels = operator_node->labels;
+        for (const auto & label : inner->labels)
+        {
+            if (!operator_node->by || std::find(labels.begin(), labels.end(), label) == labels.end())
+                return nullptr;
+        }
+
+        if (!is_topk)
+            return make_intrusive<ASTIdentifier>(ColumnNames::Values);
+
+        return makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                makeASTFunction("negate", make_intrusive<ASTIdentifier>("x"))),
+            make_intrusive<ASTIdentifier>(ColumnNames::Values));
+    }
 }
 
 
@@ -154,20 +191,20 @@ bool isOneArgumentAggregationOperator(std::string_view operator_name)
 }
 
 
-OneArgumentAggregationTransform getOneArgumentAggregationTransform(std::string_view operator_name)
+ASTPtr makeOneArgumentAggregationAST(const PrometheusQueryTree::AggregationOperator * operator_node, const SQLQueryPiece & argument)
 {
-    const auto * impl_info = getImplInfo(operator_name);
-    return impl_info ? impl_info->transform_ast : nullptr;
+    if (auto sort_key = tryMakeValueOrderKey(operator_node, argument))
+        return makeASTFunction("timeSeriesAvgOverGroup", std::move(sort_key), make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+    const auto * impl_info = getImplInfo(operator_node->operator_name);
+    chassert(impl_info);
+    return impl_info->transform_ast(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 }
 
 
 SQLQueryPiece applyOneArgumentAggregationOperator(
     const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    const auto & operator_name = operator_node->operator_name;
-    const auto * impl_info = getImplInfo(operator_name);
-    chassert(impl_info);
-
     checkArgumentTypes(operator_node, arguments, context);
 
     auto & argument = arguments[0];
@@ -196,7 +233,7 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
         builder.select_list.push_back(std::move(new_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-        builder.select_list.push_back(impl_info->transform_ast(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        builder.select_list.push_back(makeOneArgumentAggregationAST(operator_node, res));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (operator_node->by || operator_node->without)

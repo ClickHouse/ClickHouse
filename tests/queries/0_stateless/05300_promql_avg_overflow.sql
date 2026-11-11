@@ -21,6 +21,12 @@ SELECT timeSeriesAvgOverGroup(k, v) FROM values('k Nullable(UInt8), v Array(Floa
 SELECT timeSeriesAvgOverGroup(k, [x]) FROM values('k Nullable(Int8), x Float64', (NULL, -1e308), (2, 9.988465674311579e307), (1, 1e308), (3, -9.988465674311579e307));
 SELECT finalizeAggregation(CAST(unhex(hex(timeSeriesAvgOverGroupState(k, v))), 'AggregateFunction(timeSeriesAvgOverGroup, Nullable(UInt8), Array(Float64))'))
 FROM values('k Nullable(UInt8), v Array(Float64)', (NULL, [1e308]), (1, [2]), (2, [4]));
+-- A NULL key is kept under a combinator too, and so is a literal NULL key.
+SELECT timeSeriesAvgOverGroupIf(k, v, 1) FROM values('k Nullable(UInt8), v Array(Float64)', (NULL, [1e308]), (1, [2]), (2, [4]));
+SELECT finalizeAggregation(CAST(unhex(hex(timeSeriesAvgOverGroupIfState(k, v, 1))), 'AggregateFunction(timeSeriesAvgOverGroupIf, Nullable(UInt8), Array(Float64), UInt8)'))
+FROM values('k Nullable(UInt8), v Array(Float64)', (NULL, [1e308]), (1, [2]), (2, [4]));
+SELECT timeSeriesAvgOverGroup(NULL, [1.]);
+SELECT timeSeriesAvgOverGroup(NULL, v) FROM values('v Array(Float64)', ([1e308]), ([2]), ([4]));
 SELECT timeSeriesAvgOverGroup(k) FROM values('k UInt8', 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT timeSeriesAvgOverGroup(k, x) FROM values('k UInt8, x Float64', (1, 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT timeSeriesAvgOverGroup(k, [toFloat32(1)]) FROM values('k UInt8', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -89,6 +95,15 @@ SELECT tags, value FROM prometheusQuery('prometheus', 'avg by (test) (data)', 60
 SELECT tags, value FROM prometheusQuery('prometheus', 'avg by (test) (data)', 60) ORDER BY tags SETTINGS max_threads = 8, max_block_size = 3;
 -- A fused pair of aggregations over the same argument.
 SELECT tags, value FROM prometheusQuery('prometheus', 'avg by (test) (data) - max by (test) (data)', 60) ORDER BY tags;
+
+-- Prometheus averages an instant `topk` or `bottomk` result in the order of the values: `order2` goes in descending order
+-- and gives the result of `order`, and `order` in ascending order gives the result of `order2`.
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg(topk(4, data{test="order2"}))', 60);
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg(bottomk(4, data{test="order"}))', 60);
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg by (test) (topk by (test) (4, data{test=~"order|order2"}))', 60) ORDER BY tags;
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg(topk(4, data{test="order2"})) / count(topk(4, data{test="order2"}))', 60);
+-- A range query keeps the order of the tags.
+SELECT * FROM prometheusQueryRange('prometheus', 'avg(topk(4, data{test="order2"}))', 60, 120, 60);
 
 -- Two series over a range: the sum overflows at the second and third steps only.
 INSERT INTO prometheus (metric_name, tags, samples) VALUES

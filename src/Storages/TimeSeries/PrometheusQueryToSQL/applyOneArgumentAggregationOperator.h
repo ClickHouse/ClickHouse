@@ -15,8 +15,8 @@ using OneArgumentAggregationTransform = ASTPtr (*)(ASTPtr && values);
 /// i.e. one of these: "sum", "min", "max", "avg", "count", "stddev", "stdvar", "group".
 bool isOneArgumentAggregationOperator(std::string_view operator_name);
 
-/// Returns nullptr if `operator_name` is not a one-argument aggregation operator.
-OneArgumentAggregationTransform getOneArgumentAggregationTransform(std::string_view operator_name);
+/// Builds the aggregate expression of a one-argument aggregation operator over the `values` column of its argument.
+ASTPtr makeOneArgumentAggregationAST(const PrometheusQueryTree::AggregationOperator * operator_node, const SQLQueryPiece & argument);
 
 /// Applies a one-argument aggregation operator.
 SQLQueryPiece applyOneArgumentAggregationOperator(

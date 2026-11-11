@@ -136,13 +136,6 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    /// A NULL key sorts last instead of making the default adapter skip the row.
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr &, const DataTypes & types, const Array &, const AggregateFunctionProperties &) const override
-    {
-        return std::make_shared<AggregateFunctionTimeSeriesAvgOverGroup>(types);
-    }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & array = assert_cast<const ColumnArray &>(*columns[1]);
@@ -395,7 +388,9 @@ FROM values('series Int8, value Float64', (4, -1e308), (1, 1e308), (3, -9.988465
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("timeSeriesAvgOverGroup", {createAggregateFunctionTimeSeriesAvgOverGroup, documentation});
+    /// The function sorts NULL keys last by itself, so neither it nor its combinators get the adapter that skips NULL rows.
+    factory.registerFunction(
+        "timeSeriesAvgOverGroup", {createAggregateFunctionTimeSeriesAvgOverGroup, documentation, {.is_window_function = true}});
 }
 
 }
