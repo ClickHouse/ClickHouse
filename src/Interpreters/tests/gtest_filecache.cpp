@@ -4630,8 +4630,8 @@ TEST_F(FileCacheTest, TemporarySegmentRemovedAtLastReleaseUnlessUsed)
 
 TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
 {
-    /// In the temporary-cache mode a segment that the reader filled from its start leaves the cache once the
-    /// reader passes it, unless another reader still holds it. A finished read of another reader does not keep it.
+    /// In the temporary-cache mode a segment that the reader created leaves the cache at its last release,
+    /// unless a reader or writer outside the mode used it.
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
     FileCacheSettings settings;
@@ -4651,44 +4651,51 @@ TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
     DiskCacheProvider temporary(cache, temporary_settings);
     DiskCacheProvider regular(cache, FilesystemCacheSettings{});
 
-    /// Fills the segment through a temporary writer and returns the writer's drop action.
-    auto fill = [&](const StoredObject & object)
+    /// Fills `[0, size)` of the object through a temporary writer and returns its cells.
+    auto fill = [&](const StoredObject & object, size_t size)
     {
         auto cells = temporary.resolve(object, 0, ByteRange{0, data.size()});
         CacheWriter & writer = *cells.back().writer;
         auto role = writer.takeFillRole();
-        writer.write(bytesAt(0, data), role);
-        role.reset();
-        return writer.takeDropAfterPass();
+        EXPECT_EQ(writer.write(bytesAt(0, data.substr(0, size)), role), size);
+        return cells;
     };
+    /// Takes no holder: releasing one can be the last release.
     auto cached = [&](const StoredObject & object)
     {
-        /// `get` returns a detached placeholder when nothing is cached.
-        auto holder = cache->get(FileCacheKey::fromPath(object.remote_path), 0, data.size(), 0, FileCache::getCommonOrigin().user_id);
-        return !holder->front().isDetached();
+        return !cache->tryGetFileSegmentInfos(FileCacheKey::fromPath(object.remote_path), FileCache::getCommonOrigin().user_id).empty();
     };
 
     const StoredObject unused("temporary_unused", "", data.size());
-    auto drop = fill(unused);
-    ASSERT_TRUE(drop);
-    drop();
+    fill(unused, data.size());
     EXPECT_FALSE(cached(unused));
 
-    const StoredObject read_by_other("temporary_read_by_other", "", data.size());
-    drop = fill(read_by_other);
+    const StoredObject read_by_normal_reader("temporary_read_by_normal_reader", "", data.size());
     {
-        auto cells = regular.resolve(read_by_other, 0, ByteRange{0, data.size()});
-        EXPECT_EQ(cells.front().reader->read(ByteRange{0, data.size()}).totalBytes(), data.size());
+        auto cells = fill(read_by_normal_reader, data.size());
+        auto normal_cells = regular.resolve(read_by_normal_reader, 0, ByteRange{0, data.size()});
+        EXPECT_EQ(normal_cells.front().reader->read(ByteRange{0, data.size()}).totalBytes(), data.size());
     }
-    drop();
-    EXPECT_FALSE(cached(read_by_other));
+    EXPECT_TRUE(cached(read_by_normal_reader));
 
-    const StoredObject held_by_other("temporary_held_by_other", "", data.size());
-    drop = fill(held_by_other);
+    const StoredObject held_by_normal_reader("temporary_held_by_normal_reader", "", data.size());
     {
-        auto cells = regular.resolve(held_by_other, 0, ByteRange{0, data.size()});
-        drop();
+        auto cells = fill(held_by_normal_reader, data.size());
+        auto normal_cells = regular.resolve(held_by_normal_reader, 0, ByteRange{0, data.size()});
+        cells.clear();
+        EXPECT_TRUE(cached(held_by_normal_reader));
     }
-    EXPECT_TRUE(cached(held_by_other));
+    EXPECT_FALSE(cached(held_by_normal_reader));
+
+    const StoredObject written_by_normal_writer("temporary_written_by_normal_writer", "", data.size());
+    {
+        auto cells = fill(written_by_normal_writer, data.size() / 2);
+        auto normal_cells = regular.resolve(written_by_normal_writer, 0, ByteRange{0, data.size()});
+        CacheWriter & normal_writer = *normal_cells.back().writer;
+        auto role = normal_writer.takeFillRole();
+        ASSERT_TRUE(role);
+        EXPECT_EQ(normal_writer.write(bytesAt(data.size() / 2, data.substr(data.size() / 2)), role), data.size() / 2);
+    }
+    EXPECT_TRUE(cached(written_by_normal_writer));
 }
 
