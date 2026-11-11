@@ -1024,15 +1024,21 @@ Aggregate functions, window functions and table functions are out of scope: they
 other factories that this privilege does not cover. Listing an aggregate name is rejected when the
 configuration is loaded, so it never looks protected while it is not.
 
-The check runs when a call is resolved to that function, not when the name is merely looked up, so
-`system.functions` and `SHOW FUNCTIONS` keep working for users without the grant, and an alias that
-shadows a protected name (`WITH x -> x + 1 AS hex SELECT arrayMap(hex, [1])`) is unaffected. A SQL
-user-defined function that calls a listed function also requires a grant for that inner function.
+The grant is required to create a listed function for a query, whatever part of the server creates it, so
+it is checked for the function which is executed. A SQL user-defined function that calls a listed function
+requires the grant for that inner function. When a setting makes a call execute another function, the grant
+is required for that one: under `use_legacy_to_time` a call of `toTime` executes `toTimeWithFixedDate`. To
+restrict some functionality, list every function that provides it.
 
-Both the function as written and the function which is actually executed require the grant. They differ
-when a setting or an optimization replaces a call: `in` is executed as `nullIn` under `transform_null_in`,
-`divide` as `divideExact` under `sql_compatible_division_for_integers`, and `x = 1 OR x = 2 OR x = 3` as
-`x IN (1, 2, 3)`, so such a chain requires the grant for `in` when `in` is listed.
+This includes the functions which the server adds to a query itself, for example `if` around the expressions
+of `INSERT ... VALUES` and of `ALTER TABLE ... UPDATE`. So do not list basic functions such as `if`, `in`,
+`tuple` or `equals`: ordinary queries would require their grants.
+
+`system.functions` and `SHOW FUNCTIONS` show the listed functions to users without the grant, and a lambda
+alias that shadows a listed name (`WITH x -> x + 1 AS hex SELECT arrayMap(hex, [1])`) is unaffected.
+
+As with the other privileges, revoking the grant does not remove the results which the user already has in the
+[query cache](/concepts/features/performance/caches/query-cache): they are returned until they expire.
 
 An `ON CLUSTER` query is analyzed by the hosts that execute it, so the grant is checked there, like the other
 privileges checked during the analysis of an expression. With the `distributed_ddl_use_initial_user_and_roles`

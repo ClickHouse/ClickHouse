@@ -919,6 +919,9 @@
              listing either `isValidASCII` or its `isASCII` alias covers both spellings.
              The name in GRANT FUNCTION ON <name> is resolved the same way and stored as the
              registered name: GRANT FUNCTION ON HEX grants `hex`.
+             The grant is required for every listed function which is executed for a query, including
+             the ones the server adds to it itself (e.g. `if` around the expressions of INSERT ... VALUES),
+             so do not list basic functions such as `if`, `in` or `tuple`.
              The list is read at server start only: like the other settings of this section, it is
              not picked up by SYSTEM RELOAD CONFIG.
              Aggregate and window functions are not covered and an aggregate name here is an error:
