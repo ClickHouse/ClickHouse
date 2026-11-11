@@ -304,15 +304,19 @@ if (RUST_BUILD_CACHE_DIR)
         message(FATAL_ERROR "RUST_BUILD_CACHE_DIR needs Cargo 1.91 or newer (`build.build-dir`), found ${Rust_CARGO_VERSION}")
     endif()
     # Cargo does not track the headers that build scripts compile C/C++ code against (libc++ and the compiler's implicit include
-    # directories: libc and the compiler's own headers), so their contents are part of the key.
+    # directories: libc and the compiler's own headers), so their contents are part of the key, and changing them (directories
+    # included, for added and removed files) re-runs CMake.
     set(_rust_native_dirs ${CXX_INCLUDE_DIR} ${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES} ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
     list(REMOVE_DUPLICATES _rust_native_dirs)
     set(_rust_native_headers "")
     foreach (_dir IN LISTS _rust_native_dirs)
-        file(GLOB_RECURSE _files LIST_DIRECTORIES false "${_dir}/*")
+        file(GLOB_RECURSE _files LIST_DIRECTORIES true "${_dir}/*")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_dir}" ${_files})
         foreach (_file IN LISTS _files)
-            if (IS_DIRECTORY "${_file}") # a symlink: the glob lists no directories
+            if (IS_SYMLINK "${_file}" AND IS_DIRECTORY "${_file}")
                 file(READ_SYMLINK "${_file}" _file_hash)
+            elseif (IS_DIRECTORY "${_file}")
+                continue()
             else()
                 file(SHA256 "${_file}" _file_hash)
             endif()
