@@ -9943,8 +9943,9 @@ Allow namespace-aware resolution of dotted table identifiers.
 A dotted table path such as `db.ns.table` is always parsed as table `ns.table` of database `db`, the same as
 the quoted name ``db.`ns.table` ``; this does not depend on the setting. When the setting is enabled, the
 analyzer additionally:
-- resolves a two-part name `a.b` in a table expression both as table `b` of database `a` and as table `a.b`
-  of the current database, and fails with `AMBIGUOUS_IDENTIFIER` when both exist. Database `a` must exist in
+- resolves a two-part name `a.b` in a table expression as table `b` of database `a`, and also as table `a.b`
+  of the current database if that database supports table namespaces (a data lake catalog) and `a` is not
+  `system`. It fails with `AMBIGUOUS_IDENTIFIER` when both exist. Database `a` must exist in
   both cases; when it does not, the query fails with `UNKNOWN_DATABASE` even if the table `a.b` exists;
 - lets a column qualifier span the parts of such a table name, so `ns.table.column` and
   `db.ns.table.column` refer to a column of table `ns.table`.

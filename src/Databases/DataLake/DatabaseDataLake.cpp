@@ -2187,8 +2187,10 @@ You can also spell out every part with dots:
   inside database `db`; with `allow_experimental_table_namespaces` enabled it is
   then subject to the same two-part rule as `a.b` below, with `a` = `db`.
 - With `allow_experimental_table_namespaces` enabled, a two-part name `a.b` in a
-  table expression is resolved both as table `b` of database `a` and as table
-  `a.b` of the current database. Database `a` must
+  table expression is resolved as table `b` of database `a`, and also as table
+  `a.b` of the current database if that database supports table namespaces
+  (a data lake catalog) and `a` is not `system`. A catalog namespace named
+  `system` is referenced as `` `system.t` `` or `catalog_name.system.t`. Database `a` must
   exist; when only one of the two tables exists it is used, and when both exist
   the query fails with `AMBIGUOUS_IDENTIFIER`. Other statements (`EXISTS`,
   `DESCRIBE`, `INSERT`, `SHOW CREATE TABLE`, DDL) always read `a.b` as

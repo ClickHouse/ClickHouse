@@ -284,6 +284,21 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 
 /// Resolve identifier functions implementation
 
+/// `a.b` is also read as table `a.b` of the current database only if that database has table namespaces.
+/// `system` always names the system database.
+static bool canBeTablePathInCurrentDatabase(const Identifier & table_identifier, const ContextPtr & context)
+{
+    if (table_identifier[0] == DatabaseCatalog::SYSTEM_DATABASE)
+        return false;
+
+    const String current_database = context->getCurrentDatabase();
+    if (current_database.empty())
+        return false;
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(current_database);
+    return database && database->isDatalakeCatalog();
+}
+
 /// Try resolve table identifier from database catalog
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
 {
@@ -299,7 +314,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     {
         if (allow_table_namespaces)
         {
-            auto current_database_result = tryResolveTableIdentifier("", table_identifier.getFullName(), context);
+            std::shared_ptr<TableNode> current_database_result;
+            if (canBeTablePathInCurrentDatabase(table_identifier, context))
+                current_database_result = tryResolveTableIdentifier("", table_identifier.getFullName(), context);
 
             IdentifierView table_identifier_view = table_identifier;
             table_identifier_view.popFirst();
