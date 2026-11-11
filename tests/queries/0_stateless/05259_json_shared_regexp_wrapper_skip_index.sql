@@ -58,3 +58,25 @@ ALTER TABLE wrapper_timezone_05259 MODIFY COLUMN nul Nullable(JSON(a DateTime('A
 SELECT 'rules and timezone', id FROM wrapper_timezone_05259 WHERE toString(nul) = '{"a":"2020-01-01 09:00:00"}';
 
 DROP TABLE wrapper_timezone_05259;
+
+-- An index expression that sees the type name does not keep the old granules.
+DROP TABLE IF EXISTS type_name_index_05259;
+
+CREATE TABLE type_name_index_05259
+(
+    id UInt64,
+    j JSON,
+    INDEX ty dynamicType(CAST(j, 'Dynamic')) TYPE set(0) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO type_name_index_05259 SELECT number, toJSONString(map('a', number)) FROM numbers(24);
+
+ALTER TABLE type_name_index_05259 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$');
+
+SELECT 'type name', count() FROM type_name_index_05259 WHERE dynamicType(CAST(j, 'Dynamic')) = 'JSON(SHARED REGEXP \'^zzz$\')';
+SELECT 'type name', count() FROM type_name_index_05259 WHERE dynamicType(CAST(j, 'Dynamic')) = 'JSON(SHARED REGEXP \'^zzz$\')' SETTINGS use_skip_indexes = 0;
+
+DROP TABLE type_name_index_05259;

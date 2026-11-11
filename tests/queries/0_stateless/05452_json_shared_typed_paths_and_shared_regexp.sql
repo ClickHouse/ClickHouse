@@ -34,6 +34,12 @@ FROM (SELECT CAST(CAST('{"a":1,"c":2}', 'JSON(SHARED a UInt32)'), 'JSON(SHARED a
 -- Both differ.
 SELECT j.a, j.c, JSONSharedDataPaths(j)
 FROM (SELECT CAST(CAST('{"a":1,"c":2}', 'JSON(SHARED a UInt32)'), 'JSON(a UInt32, SHARED REGEXP \'^c\')') AS j);
+-- Both differ: the values are copied, so a stored date-like String stays a String.
+DROP TABLE IF EXISTS t_shared_paths_and_rules_cast;
+CREATE TABLE t_shared_paths_and_rules_cast (j JSON(SHARED a UInt32, SHARED REGEXP '^c')) ENGINE = Memory;
+INSERT INTO t_shared_paths_and_rules_cast SETTINGS input_format_try_infer_dates = 0, input_format_try_infer_datetimes = 0 VALUES ('{"a":1,"d":"2020-01-01"}');
+SELECT dynamicType(j.d), dynamicType(c.d) FROM (SELECT j, CAST(j, 'JSON(a UInt32)') AS c FROM t_shared_paths_and_rules_cast);
+DROP TABLE t_shared_paths_and_rules_cast;
 
 SELECT '-- MergeTree';
 DROP TABLE IF EXISTS t_shared_paths_and_rules;

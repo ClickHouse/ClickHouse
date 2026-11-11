@@ -125,3 +125,21 @@ SELECT 'rules-only alter', trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT co
 ALTER TABLE index_04839 MODIFY COLUMN j JSON(a DateTime('Asia/Tokyo'), SHARED REGEXP '^yyy$');
 SELECT 'rules and timezone alter', id FROM index_04839 WHERE toString(j) = '{"a":"2020-01-01 09:00:00"}';
 DROP TABLE index_04839;
+
+-- A rules-only ALTER rewrites no data, so it is refused when a key or a projection is computed from the whole column.
+CREATE TABLE key_04839 (id UInt64, j JSON) ENGINE = MergeTree ORDER BY (dynamicType(CAST(j, 'Dynamic')), id);
+ALTER TABLE key_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE key_04839;
+CREATE TABLE key_04839 (id UInt64, j JSON) ENGINE = MergeTree PARTITION BY dynamicType(CAST(j, 'Dynamic')) ORDER BY id;
+ALTER TABLE key_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE key_04839;
+CREATE TABLE key_04839 (id UInt64, j JSON, PROJECTION p (SELECT dynamicType(CAST(j, 'Dynamic')) AS ty, count() GROUP BY ty)) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE key_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE key_04839;
+
+-- A key on a subcolumn and a projection that stores the column as is do not depend on the rules.
+CREATE TABLE key_04839 (id UInt64, j JSON(a UInt32), PROJECTION p (SELECT * ORDER BY j.a)) ENGINE = MergeTree ORDER BY (j.a, id) SETTINGS index_granularity = 1;
+INSERT INTO key_04839 SELECT number, toJSONString(map('a', number)) FROM numbers(24);
+ALTER TABLE key_04839 MODIFY COLUMN j JSON(a UInt32, SHARED REGEXP '^zzz$');
+SELECT 'subcolumn key', count() FROM key_04839 WHERE j.a = 5;
+DROP TABLE key_04839;

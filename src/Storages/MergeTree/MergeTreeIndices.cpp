@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -237,6 +238,22 @@ bool isMeaningPreservingSharedRegexpChange(const IDataType & part_type, const ID
         { return hasSameMeaning(*path_and_type.second, *metadata_typed_paths.at(path_and_type.first)); });
 }
 
+/// True if the index expression passes the column only to functions that cannot see its type name.
+bool readsOnlyColumnValues(const IMergeTreeIndex & skip_index, const String & column)
+{
+    static const NameSet value_only_functions = {"toString", "length", "empty", "notEmpty", "JSONAllPaths"};
+
+    for (const auto & node : skip_index.index.expression->getActionsDAG().getNodes())
+    {
+        bool is_value_only = node.type == ActionsDAG::ActionType::FUNCTION && value_only_functions.contains(node.function_base->getName());
+        for (const auto * child : node.children)
+            if (child->type == ActionsDAG::ActionType::INPUT && child->result_name == column && !is_value_only)
+                return false;
+    }
+
+    return true;
+}
+
 /// The part-side type of a required column, read from the part's OWN column list.
 ///
 /// IMergeTreeDataPart::tryGetColumn() answers from `columns_description`, a storage-wide interning
@@ -404,7 +421,7 @@ bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & p
         /// toString(v)) now yields different values than the granule holds.
         if (part_type->equals(*metadata_type) && hasSameMeaning(*part_type, *metadata_type))
             continue;
-        if (isMeaningPreservingSharedRegexpChange(*part_type, *metadata_type))
+        if (isMeaningPreservingSharedRegexpChange(*part_type, *metadata_type) && readsOnlyColumnValues(skip_index, column))
             continue;
 
         /// A granule of an expression index stores the EXPRESSION's result type, which can change

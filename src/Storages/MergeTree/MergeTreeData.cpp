@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
@@ -5953,6 +5954,16 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     }
 }
 
+/// Whether the AST passes the column to a function or gives it an alias, so its values are not stored as is.
+bool usesColumnInExpression(const IAST & ast, const String & column, bool in_function = false)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+        return identifier->name() == column && (in_function || !identifier->tryGetAlias().empty());
+
+    in_function = in_function || ast.as<ASTFunction>();
+    return std::ranges::any_of(ast.children, [&](const auto & child) { return usesColumnInExpression(*child, column, in_function); });
+}
+
 /// Source columns an expression reads, resolved against `columns` via the query analyzer over a fake
 /// table. keep_alias_columns=false expands ALIAS chains to their base columns.
 Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
@@ -7176,6 +7187,22 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                             "assignment to column '{}'; a metadata-only ALTER cannot recompute the TTL. Drop the TTL to run this change",
                             backQuoteIfNeed(command.column_name), set_part.column_name);
             }
+        }
+        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type && old_types.contains(command.column_name)
+            && isJSONSharedDataPathRegexpsOnlyChange(*old_types.at(command.column_name), *command.data_type))
+        {
+            /// A SHARED REGEXP change rewrites no data, so a key or a projection computed from the whole column would go stale.
+            if (columns_in_keys.contains(command.column_name))
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of key column {} is forbidden",
+                    backQuoteIfNeed(command.column_name));
+
+            for (const auto & projection : old_metadata.getProjections())
+                if (new_metadata.getProjections().has(projection.name) && usesColumnInExpression(*projection.query_ast, command.column_name))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "ALTER of column {} is forbidden because projection {} computes an expression from it. Drop the projection first",
+                        backQuoteIfNeed(command.column_name),
+                        backQuoteIfNeed(projection.name));
         }
     }
 

@@ -12,6 +12,7 @@ Array(JSON(SHARED a UInt32, b UInt32, SHARED REGEXP \'^y\'))
 1	2	['c']
 JSON(SHARED a UInt32, SHARED REGEXP \'^c\')	1	2
 1	2	['c']
+String	String
 -- MergeTree
 0	0	0	0	0	1
 1	1	2	3	4	1

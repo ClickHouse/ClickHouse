@@ -2058,8 +2058,9 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         };
     }
 
-    /// Types that differ only in SHARED REGEXP store values alike, so copy the column instead of the text round trip.
-    if (isJSONSharedDataPathRegexpsOnlyChange(*from_type, *to_object))
+    /// Types that differ only in path placement store values alike, so copy the column instead of the text round trip.
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
+        from_object && from_object->equalsExceptPathPlacement(*to_object))
     {
         return [](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
         {

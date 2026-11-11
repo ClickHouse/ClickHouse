@@ -76,6 +76,8 @@ public:
     bool equalsIgnoringSharedTypedPaths(const DataTypeObject & rhs) const;
     /// Equal except for the SHARED REGEXP rules, which change only where new dynamic paths are placed.
     bool equalsExceptSharedDataPathRegexps(const IDataType & rhs) const;
+    /// Equal except for both path placement rules: the SHARED marks of typed paths and the SHARED REGEXP rules.
+    bool equalsExceptPathPlacement(const DataTypeObject & rhs) const;
 
     void updateHashImpl(SipHash & hash) const override;
 
@@ -127,9 +129,6 @@ public:
 
 private:
     DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
-
-    /// Equal except for both path placement rules: the SHARED marks of typed paths and the SHARED REGEXP rules.
-    bool equalsExceptPathPlacement(const DataTypeObject & rhs) const;
 
     /// Don't change these constants, it can break backward compatibility.
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
