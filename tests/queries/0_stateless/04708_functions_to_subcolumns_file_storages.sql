@@ -1,4 +1,5 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
+-- no-parallel: File(Parquet) fixtures use fixed paths shared by concurrent test runs.
 
 SET optimize_functions_to_subcolumns = 1;
 -- The pass disables itself for the whole query when a join can wrap results in Nullable, so a
