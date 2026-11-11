@@ -499,7 +499,22 @@ void SettingsConstraints::clampResetToDefault(
             checkOrClamp(current_settings, reset_as_change, CLAMP_ON_VIOLATION, source);
 
             if (reset_as_change.empty())
+            {
+                /// The reset was either refused or does not change the value. The latter is not a no-op for an
+                /// explicitly assigned `Settings` setting: the reset clears the assignment, and under an active
+                /// `compatibility` the setting then takes the value of that version. So decide it by the
+                /// constraints alone, which refuse it again if it was refused above.
+                if (Settings::hasBuiltin(name) && current_settings.isChanged(name))
+                {
+                    std::string_view setting_name = Settings::resolveName(name);
+                    SettingChange change{name, default_value};
+                    if (access_control->isSettingNameAllowed(setting_name)
+                        && getChecker(current_settings, setting_name).check(change, settingCastValueUtil(name, default_value), CLAMP_ON_VIOLATION, source)
+                        && change.value == default_value)
+                        allowed_resets.push_back(name);
+                }
                 continue;
+            }
 
             if (reset_as_change.front().value == default_value)
                 allowed_resets.push_back(name);

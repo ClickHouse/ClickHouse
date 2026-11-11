@@ -2,7 +2,6 @@ set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpqxx")
 
 set (SRCS
     "${LIBRARY_DIR}/src/array.cxx"
-    "${LIBRARY_DIR}/src/binarystring.cxx"
     "${LIBRARY_DIR}/src/blob.cxx"
     "${LIBRARY_DIR}/src/connection.cxx"
     "${LIBRARY_DIR}/src/cursor.cxx"
@@ -25,16 +24,19 @@ set (SRCS
     "${LIBRARY_DIR}/src/time.cxx"
     "${LIBRARY_DIR}/src/transaction.cxx"
     "${LIBRARY_DIR}/src/transaction_base.cxx"
+    "${LIBRARY_DIR}/src/types.cxx"
     "${LIBRARY_DIR}/src/util.cxx"
-    "${LIBRARY_DIR}/src/version.cxx"
     "${LIBRARY_DIR}/src/wait.cxx"
 )
 
-configure_file(${LIBRARY_DIR}/include/pqxx/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/pqxx/config-internal-compiler.h @ONLY)
-configure_file(${LIBRARY_DIR}/include/pqxx/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/pqxx/config-public-compiler.h @ONLY)
+# The template only contains `#undef PQXX_HAVE_*` lines; copying it verbatim leaves every optional
+# feature disabled, which matches how the library was configured before and keeps the build hermetic
+# (no try_compile feature probes).
+configure_file(${LIBRARY_DIR}/include/pqxx/internal/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/pqxx/internal/config.h @ONLY)
 
 add_library(_libpqxx ${SRCS})
 target_link_libraries(_libpqxx PUBLIC ch_contrib::libpq)
-target_include_directories (_libpqxx SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include" ${CMAKE_CURRENT_BINARY_DIR})
+# The generated `config.h` must take precedence over a stale one that an in-tree build of `libpqxx` may have left in its source tree.
+target_include_directories (_libpqxx SYSTEM BEFORE PUBLIC ${CMAKE_CURRENT_BINARY_DIR} "${LIBRARY_DIR}/include")
 
 add_library(ch_contrib::libpqxx ALIAS _libpqxx)
