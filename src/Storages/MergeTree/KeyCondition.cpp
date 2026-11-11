@@ -2320,6 +2320,25 @@ static bool tryNormalizeTextConstantForZonelessDateTimeInput(
     return true;
 }
 
+/// The type of the value in the single row of `column`: the active member of a `Variant` or `Dynamic`, otherwise
+/// `type`. The row must not be NULL.
+static DataTypePtr activeValueType(const IColumn & column, const DataTypePtr & type)
+{
+    if (isDynamic(type))
+        return assert_cast<const ColumnDynamic &>(column).getTypeAt(0);
+
+    if (isVariant(type))
+    {
+        const auto & variant_column = assert_cast<const ColumnVariant &>(column);
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+        const auto discriminator = variant_column.globalDiscriminatorAt(0);
+        chassert(discriminator < variant_type.getVariants().size());
+        return variant_type.getVariant(discriminator);
+    }
+
+    return type;
+}
+
 /// Identifies a `FixedString` constant, including an active `Variant` or `Dynamic` member.
 /// The column holds the constant's single data row, without a `ColumnConst` wrapper. A string `Field`
 /// is non-NULL, so an erased constant must have an active member type. `ColumnDynamic::getTypeAt` also
@@ -2330,22 +2349,9 @@ static bool isFixedStringConstant(
     if (value.getType() != Field::Types::String)
         return false;
 
-    DataTypePtr value_type = type;
-    if (isDynamic(type))
-    {
-        value_type = assert_cast<const ColumnDynamic &>(column).getTypeAt(0);
-        chassert(value_type);
-    }
-    else if (isVariant(type))
-    {
-        const auto & variant_column = assert_cast<const ColumnVariant &>(column);
-        const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
-        const auto discriminator = variant_column.globalDiscriminatorAt(0);
-        chassert(discriminator < variant_type.getVariants().size());
-        value_type = variant_type.getVariant(discriminator);
-    }
-
-    value_type = removeLowCardinalityAndNullable(value_type);
+    const DataTypePtr active_type = activeValueType(column, type);
+    chassert(active_type);
+    const DataTypePtr value_type = removeLowCardinalityAndNullable(active_type);
     if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(value_type.get()))
     {
         chassert(value.safeGet<String>().size() == fixed_string_type->getN());
@@ -2393,6 +2399,15 @@ static bool tupleConstantLosesFixedStringPadding(const ColumnPtr & column, const
     const ColumnPtr data_column = removeNullable(column->convertToFullColumnIfConst());
     const DataTypePtr data_type = removeLowCardinalityAndNullable(type);
     const DataTypePtr data_target_type = removeLowCardinalityAndNullable(target_type);
+    /// A `Variant` or `Dynamic` is compared as its active member; a held `Tuple` that may hold a `FixedString` is reported.
+    if (isVariant(data_type) || isDynamic(data_type))
+    {
+        if (data_column->isNullAt(0) || !isTuple(data_target_type))
+            return false;
+        const DataTypePtr active_type = removeLowCardinalityAndNullable(activeValueType(*data_column, data_type));
+        return isTuple(active_type)
+            && anyInTypeTree(*active_type, [](const IDataType & node) { return isFixedString(node) || isDynamic(node); });
+    }
     const auto * tuple_column = typeid_cast<const ColumnTuple *>(data_column.get());
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get());
     const auto * target_tuple_type = typeid_cast<const DataTypeTuple *>(data_target_type.get());

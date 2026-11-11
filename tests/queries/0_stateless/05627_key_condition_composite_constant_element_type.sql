@@ -49,6 +49,8 @@ SELECT count() FROM t_fixed_string WHERE a != tuple(toFixedString('abc', 5), 1);
 SELECT count() FROM t_fixed_string WHERE a >= tuple(toFixedString('abc', 5), 1);
 SELECT count() FROM t_fixed_string WHERE a = tuple(toNullable(toFixedString('abc', 5)), 1);
 SELECT count() FROM t_fixed_string WHERE a = tuple(CAST(toFixedString('abc', 5), 'Variant(FixedString(5), UInt8)'), 1);
+SELECT count() FROM t_fixed_string WHERE a = CAST(tuple(toFixedString('abc', 5), 1) AS Variant(Tuple(FixedString(5), UInt8), UInt8));
+SELECT count() FROM t_fixed_string WHERE a = CAST(tuple(toFixedString('abc', 5), 1) AS Dynamic);
 
 CREATE TABLE t_fixed_string_nested (a Tuple(Tuple(String), Int32)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_fixed_string_nested VALUES ((tuple('abc'), 1)), ((tuple('abc\0'), 1)), ((tuple('abc\0\0'), 1)), ((tuple('abd'), 1));
