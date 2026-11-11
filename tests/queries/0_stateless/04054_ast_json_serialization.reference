@@ -106,6 +106,7 @@ CreateQuery_as_select	1
 CreateQuery_as_table	t
 CreateQuery_cluster	my_cluster
 DropQuery_table	DropQuery	Drop	t	1
+DropQuery_detached	1	DROP DETACHED TABLE IF EXISTS t SYNC
 DropQuery_database	Drop	db	1
 DropQuery_sync	1
 DropQuery_view	1

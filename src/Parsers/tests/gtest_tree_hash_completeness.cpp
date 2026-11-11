@@ -373,6 +373,7 @@ TEST(TreeHashCompleteness, CreateDropAndShowMembersAreSignificant)
     EXPECT_NE(hashOf("CREATE VIEW v AS SELECT 1"), hashOf("CREATE OR REPLACE VIEW v AS SELECT 1"));
 
     EXPECT_NE(hashOf("DROP TABLE t"), hashOf("DROP VIEW t"));
+    EXPECT_NE(hashOf("DROP TABLE t"), hashOf("DROP DETACHED TABLE t"));
     EXPECT_NE(hashOf("DETACH TABLE t"), hashOf("DETACH TABLE t PERMANENTLY"));
     EXPECT_NE(hashOf("TRUNCATE TABLES FROM db LIKE 'x%'"), hashOf("TRUNCATE TABLES FROM db LIKE 'y%'"));
     EXPECT_NE(hashOf("TRUNCATE TABLES FROM db"), hashOf("TRUNCATE TABLES FROM db LIKE ''"));
