@@ -101,7 +101,6 @@ def setting_names(mod, content):
 
 def main():
     mod = load_module()
-    transform = mod.mintlify_transform
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
 
     repo_root = HERE.parents[4]
@@ -128,58 +127,6 @@ def main():
         "session-settings",
         "beta-and-experimental",
     ]
-
-    for badge in (
-        "CloudNotSupportedBadge",
-        "CloudSupportedBadge",
-        "VersionBadge",
-    ):
-        migrated, _ = transform.transform_imports(
-            f"import {badge} from '@theme/badges/{badge}';\n\n"
-            f"<{badge} />\n\n"
-            "Content after the badge.\n",
-            transform.Lookups(docs_root=repo_root / "docs"),
-            [],
-        )
-        assert migrated == (
-            f'import {{ {badge} }} from '
-            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
-            f"<{badge} />\n\n"
-            "Content after the badge.\n"
-        )
-
-        migrated_snippet, _ = transform.transform_imports(
-            f'import {badge} from '
-            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
-            f"<{badge} />\n\n"
-            "Content after the badge.\n",
-            transform.Lookups(docs_root=repo_root / "docs"),
-            [],
-        )
-        assert migrated_snippet == (
-            f'import {{ {badge} }} from '
-            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
-            f"<{badge} />\n\n"
-            "Content after the badge.\n"
-        )
-        remigrated_snippet, _ = transform.transform_imports(
-            migrated_snippet,
-            transform.Lookups(docs_root=repo_root / "docs"),
-            [],
-        )
-        assert remigrated_snippet == migrated_snippet
-
-    migrated_namespace, _ = transform.transform_imports(
-        "import * as BadgeNS from '@theme/badges/CloudNotSupportedBadge';\n\n"
-        "<BadgeNS.CloudNotSupportedBadge />\n",
-        transform.Lookups(docs_root=repo_root / "docs"),
-        [],
-    )
-    assert migrated_namespace == (
-        "import * as BadgeNS from "
-        '"/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";\n\n'
-        "<BadgeNS.CloudNotSupportedBadge />\n"
-    )
 
     for badge in ("ExperimentalBadge", "BetaBadge", "CloudOnlyBadge"):
         import_line = (
@@ -1331,8 +1278,8 @@ def main():
         observed_beta_rewrite = []
 
         def fake_generate_artifacts(
-                gen, binary, docs_dir, repo_root, lk, generated_routes=None):
-            del binary, lk
+                gen, binary, docs_dir, repo_root, generated_routes=None):
+            del binary
             if gen["name"] in mod.SETTINGS_SPLIT_FAMILIES:
                 family = mod.SETTINGS_SPLIT_FAMILIES[gen["name"]]
                 return [mod.GeneratedArtifact(
@@ -1366,7 +1313,6 @@ def main():
         mod.format_generators = lambda docs_dir: []
         mod.table_function_generators = lambda docs_dir: []
         mod.window_function_generators = lambda docs_dir: []
-        mod.mintlify_transform.build_lookups = lambda docs_root: object()
         mod.generate_artifacts = fake_generate_artifacts
         mod.stale_settings_page_paths = (
             lambda family_name, artifacts, docs_dir: []
