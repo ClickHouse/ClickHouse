@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -106,23 +107,19 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
 
 bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data)
 {
-    size_t size = src_array_offsets.size();
-    res_data.reserve(src_data.size());
+    /// One `index` call instead of a virtual `insertFrom` call per element.
+    auto indexes_column = ColumnUInt64::create(src_data.size());
+    auto & indexes = indexes_column->getData();
 
     ColumnArray::Offset src_prev_offset = 0;
-    for (size_t i = 0; i < size; ++i)
+    for (const auto src_offset : src_array_offsets)
     {
-        ssize_t src_index = src_array_offsets[i] - 1;
-
-        while (src_index >= static_cast<ssize_t>(src_prev_offset))
-        {
-            res_data.insertFrom(src_data, src_index);
-            --src_index;
-        }
-
-        src_prev_offset = src_array_offsets[i];
+        for (size_t i = src_prev_offset; i < src_offset; ++i)
+            indexes[i] = src_offset - 1 - (i - src_prev_offset);
+        src_prev_offset = src_offset;
     }
 
+    res_data.insertRangeFrom(*src_data.index(*indexes_column, 0), 0, src_data.size());
     return true;
 }
 
