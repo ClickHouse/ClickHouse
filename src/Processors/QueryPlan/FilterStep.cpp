@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
 
 #include <limits>
@@ -323,15 +324,13 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
-bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
+/// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
+/// so it must be cheap (no functions that are worth to execute lazily) and all its functions must be unable to throw,
+/// be stateless, have no observable side effects and be deterministic in the scope of the query. See setting `short_circuit_function_evaluation_reorder_arguments`.
+bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * atom)
 {
-    std::stack<const ActionsDAG::Node *> nodes;
-    nodes.push(node);
-    while (!nodes.empty())
+    return allReachableNodes({atom}, [](const ActionsDAG::Node * node)
     {
-        node = nodes.top();
-        nodes.pop();
-
         if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
             return false;
 
@@ -340,7 +339,7 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
             DataTypesWithConstInfo arguments;
             arguments.reserve(node->children.size());
             for (const auto * child : node->children)
-                arguments.push_back({child->result_type, child->column != nullptr});
+                arguments.push_back({child->result_type, child->column != nullptr, child->column.get()});
 
             const auto & function = *node->function_base;
             if (function.isStateful()
@@ -351,10 +350,8 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
                 return false;
         }
 
-        for (const auto * child : node->children)
-            nodes.push(child);
-    }
-    return true;
+        return true;
+    });
 }
 
 bool canAndChainAtomsBeMovedToTheFront(const ActionsDAG::Node * filter)
@@ -367,15 +364,10 @@ bool canAndChainAtomsBeMovedToTheFront(const ActionsDAG::Node * filter)
 
 /// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?
 /// Only heavy atoms are worth to evaluate on fewer rows, so a cheap atom is moved only in front of heavy ones.
-static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
+static bool isHeavyAndChainAtom(const ActionsDAG::Node * atom)
 {
-    std::stack<const ActionsDAG::Node *> nodes;
-    nodes.push(node);
-    while (!nodes.empty())
+    return anyReachableNode({atom}, [](const ActionsDAG::Node * node)
     {
-        node = nodes.top();
-        nodes.pop();
-
         if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
         {
             DataTypesWithConstInfo arguments;
@@ -387,31 +379,25 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
                 return true;
         }
 
-        for (const auto * child : node->children)
-            nodes.push(child);
-    }
-    return false;
+        return false;
+    });
 }
 
-bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
+/// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
+/// or functions that are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
+/// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
+bool hasOrderSensitiveFunctions(const ActionsDAG::Node * atom)
 {
-    std::stack<const ActionsDAG::Node *> nodes;
-    nodes.push(node);
-    while (!nodes.empty())
+    return anyReachableNode({atom}, [](const ActionsDAG::Node * node)
     {
-        node = nodes.top();
-        nodes.pop();
-
         if (node->type == ActionsDAG::ActionType::FUNCTION
             && (node->function_base->isStateful()
                 || node->function_base->hasObservableSideEffects()
                 || !node->function_base->isDeterministicInScopeOfQuery()))
             return true;
 
-        for (const auto * child : node->children)
-            nodes.push(child);
-    }
-    return false;
+        return false;
+    });
 }
 
 /// Try to split the left most AND atom to a separate DAG.
@@ -539,7 +525,9 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
 
             /// Each split atom gets the same query condition cache key.
-            return std::make_shared<FilterTransform>(header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, condition);
+            return std::make_shared<FilterTransform>(
+                header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, condition,
+                /*update_row_numbers_info_=*/ false, optimize_constant_columns_after_filter);
         });
     }
 
@@ -549,7 +537,9 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
+        return std::make_shared<FilterTransform>(
+            header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition,
+            /*update_row_numbers_info_=*/ false, optimize_constant_columns_after_filter);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -691,6 +681,15 @@ void FilterStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (remove_filter_column)
         flags |= 1;
+    /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in:
+    /// bit 2 is set if the value is known, bit 3 holds the value.
+    if (optimize_constant_columns_after_filter)
+    {
+        flags |= 2;
+        if (*optimize_constant_columns_after_filter)
+            flags |= 4;
+    }
+    /// Bit 4 marks a filter applying a row policy after the read.
     if (row_level_filter_after_read)
     {
         if (ctx.step_version < 1)
@@ -698,7 +697,7 @@ void FilterStep::serialize(Serialization & ctx) const
                 "A Filter step applying a row policy after the read requires query plan serialization version >= {} "
                 "(Filter step version 1), but the peer only supports version {}; all nodes must be upgraded",
                 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILTER_ROW_LEVEL_MARK, ctx.version);
-        flags |= 2;
+        flags |= 8;
     }
     writeIntBinary(flags, ctx.out);
 
@@ -729,10 +728,12 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
 
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
-    auto filter_step = std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    auto step = std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
     if (flags & 2)
-        filter_step->markAsRowLevelFilterAfterRead();
-    return filter_step;
+        step->setOptimizeConstantColumnsAfterFilter(bool(flags & 4));
+    if (flags & 8)
+        step->markAsRowLevelFilterAfterRead();
+    return step;
 }
 
 bool FilterStep::canRemoveUnusedColumns() const
@@ -780,6 +781,15 @@ FilterStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_posi
 }
 
 
+std::optional<bool> FilterStep::combineOptimizeConstantColumnsAfterFilter(std::optional<bool> lhs, std::optional<bool> rhs)
+{
+    if (!lhs)
+        return rhs;
+    if (!rhs)
+        return lhs;
+    return *lhs && *rhs;
+}
+
 QueryPlanStepPtr FilterStep::clone() const
 {
     return std::make_unique<FilterStep>(*this);
@@ -788,7 +798,7 @@ QueryPlanStepPtr FilterStep::clone() const
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 carries the late row-level filter mark (bit 2 of the flags byte).
+    /// Version 1 carries the late row-level filter mark (bit 4 of the flags byte).
     registry.registerStep("Filter", FilterStep::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILTER_ROW_LEVEL_MARK}});
 }
 

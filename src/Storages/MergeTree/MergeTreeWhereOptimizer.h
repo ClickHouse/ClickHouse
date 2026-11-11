@@ -54,11 +54,13 @@ public:
     /// `columns_read_before_filter` are the columns that the reader observes before the moved conditions
     /// are applied (the existing PREWHERE and the row policy): no string value filter can be applied
     /// during the scan to them (see `extractStringValueFilters`).
+    /// `top_k_filter_column` is the column of the `__topKFilter` that will be prepended to PREWHERE, empty if none.
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final,
         const NameSet & columns_read_before_filter = {},
+        const String & top_k_filter_column = {},
         bool row_level_filter_after_read = false);
 
 private:
@@ -153,6 +155,7 @@ private:
         bool apply_string_filters_during_scan = false;
         bool row_level_filter_after_read = false;
         const NameSet * columns_read_before_filter = nullptr;
+        String top_k_filter_column;
     };
 
     struct OptimizeResult
