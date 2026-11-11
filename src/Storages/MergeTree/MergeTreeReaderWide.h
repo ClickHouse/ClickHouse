@@ -195,8 +195,7 @@ private:
     /// part by every read, like a partially read column. Filled by `addStreams`.
     NameSet columns_not_cacheable;
 
-    /// Set, by position, for the sparse columns that have only default values in the part (see
-    /// `addStreams`): the row their next read continues from.
+    /// By position, set for a sparse column with only defaults in the part: the row its next read starts from.
     std::vector<std::optional<size_t>> only_defaults_next_row;
 
     /// Whether the column at `pos` is read from the part even when the rest of the granule is
