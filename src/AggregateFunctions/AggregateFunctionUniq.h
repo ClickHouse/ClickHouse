@@ -353,6 +353,28 @@ struct AggregateFunctionUniqTraits
             sipHash128PaddedFixedStrings(reinterpret_cast<const char *>(typed_column.getData().data() + begin), sizeof(IPv6), num_rows, hashes);
         }
     }
+
+    /// hashes[rows[i]] = hashExact(value(column, begin + rows[i])), for i in [0, num_rows), several values at a time.
+    static void hashExactRows(const IColumn & column, size_t begin, const UInt32 * rows, size_t num_rows, UInt128 * hashes)
+        requires has_batched_hash_exact
+    {
+        const auto & typed_column = assert_cast<const ColumnType &>(column);
+        if constexpr (std::is_same_v<ColumnType, ColumnString>)
+        {
+            sipHash128PaddedStringRows(
+                reinterpret_cast<const char *>(typed_column.getChars().data()), typed_column.getOffsets().data() + begin, rows, num_rows, hashes);
+        }
+        else if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
+        {
+            const size_t n = typed_column.getN();
+            sipHash128PaddedFixedStringRows(reinterpret_cast<const char *>(typed_column.getChars().data()) + begin * n, n, rows, num_rows, hashes);
+        }
+        else
+        {
+            sipHash128PaddedFixedStringRows(
+                reinterpret_cast<const char *>(typed_column.getData().data() + begin), sizeof(IPv6), rows, num_rows, hashes);
+        }
+    }
 };
 
 
@@ -685,7 +707,7 @@ private:
     }
 
     /// GROUP BY without `-If`: hashes the values of a chunk of rows at once, then inserts them in row order. With `check_places`,
-    /// rows without a place are hashed too, and skipped.
+    /// only the rows with a place are hashed.
     template <bool check_places>
     void addBatchHashed(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn & column) const
     {
@@ -693,19 +715,28 @@ private:
         using Key = typename DataSet::value_type;
         static constexpr auto hint = is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel;
 
-        std::array<Key, chunk_size> hashes; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `num_rows` entries are read
+        std::array<Key, chunk_size> hashes; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the entries of hashed rows are read
         for (size_t begin = row_begin; begin < row_end; begin += chunk_size)
         {
             const size_t num_rows = std::min(chunk_size, row_end - begin);
-            Traits::hashExactRange(column, begin, num_rows, hashes.data());
-            for (size_t i = 0; i < num_rows; ++i)
+            if constexpr (check_places)
             {
-                if constexpr (check_places)
+                std::array<UInt32, chunk_size> rows; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `count` entries are read
+                size_t count = 0;
+                for (size_t i = 0; i < num_rows; ++i)
                 {
-                    if (!places[begin + i])
-                        continue;
+                    rows[count] = static_cast<UInt32>(i);
+                    count += places[begin + i] != nullptr;
                 }
-                this->data(places[begin + i] + place_offset).set.template insert<const Key &, hint>(hashes[i]);
+                Traits::hashExactRows(column, begin, rows.data(), count, hashes.data());
+                for (size_t j = 0; j < count; ++j)
+                    this->data(places[begin + rows[j]] + place_offset).set.template insert<const Key &, hint>(hashes[rows[j]]);
+            }
+            else
+            {
+                Traits::hashExactRange(column, begin, num_rows, hashes.data());
+                for (size_t i = 0; i < num_rows; ++i)
+                    this->data(places[begin + i] + place_offset).set.template insert<const Key &, hint>(hashes[i]);
             }
         }
     }
