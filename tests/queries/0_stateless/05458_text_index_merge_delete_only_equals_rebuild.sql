@@ -105,7 +105,7 @@ CREATE TABLE t_text_lwd_merged
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 256, allow_experimental_text_index_phrase_search = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
-    vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
+    min_bytes_for_wide_part = 0, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
     merge_text_indexes_and_projections_on_delete_only_merges = 1;
 
 CREATE TABLE t_text_lwd_rebuilt
@@ -116,7 +116,7 @@ CREATE TABLE t_text_lwd_rebuilt
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 256, allow_experimental_text_index_phrase_search = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
-    vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
+    min_bytes_for_wide_part = 0, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
     merge_text_indexes_and_projections_on_delete_only_merges = 0;
 
 INSERT INTO t_text_lwd_merged SELECT number * 2, concat('even ', toString(number % 50), if(number % 5 = 0, ' doomed', ''), ' even') FROM numbers(20000);
@@ -141,6 +141,11 @@ SELECT
      FROM (SELECT token, cardinality, num_posting_blocks, has_embedded_postings, has_raw_postings, has_compressed_postings, row_id, positions
            FROM mergeTreeTextIndex(currentDatabase(), t_text_lwd_rebuilt, idx_text) ORDER BY token, row_id));
 SELECT count() FROM mergeTreeTextIndex(currentDatabase(), t_text_lwd_merged, idx_text) WHERE token = 'doomed';
+
+SYSTEM FLUSH LOGS part_log;
+SELECT table, merge_algorithm, ProfileEvents['MergedTextIndexes'], ProfileEvents['RebuiltTextIndexes'] FROM system.part_log
+WHERE database = currentDatabase() AND table IN ('t_text_lwd_merged', 't_text_lwd_rebuilt') AND event_type = 'MergeParts' AND error = 0
+ORDER BY table;
 
 DROP TABLE t_text_lwd_merged;
 DROP TABLE t_text_lwd_rebuilt;
