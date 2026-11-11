@@ -157,6 +157,29 @@ sed -i "s|^SF:ci/tmp/build/|SF:$WORKSPACE_PATH/|" "llvm_coverage.info"
 echo "Deduplicating template instantiations..."
 python3 "$WORKSPACE_PATH/ci/jobs/scripts/dedup_lcov_instantiations.py" llvm_coverage.info
 
+# `llvm-cov export` reports a line for every closing brace, and a brace after a
+# `return` or `throw` is never executed, so these lines carry no logic and only
+# add noise to the totals (about 104K of 1.26M lines on master). Drop them from
+# the tracefile itself, so the published .info, the HTML report, the summary
+# numbers and the diff report all count the same lines. The filter reads the
+# source files, which are present in the workspace.
+echo "Dropping brace-only lines..."
+lcov --add-tracefile llvm_coverage.info \
+    --branch-coverage \
+    --filter brace \
+    --ignore-errors inconsistent,inconsistent \
+    --ignore-errors corrupt,corrupt \
+    --ignore-errors unsupported,unsupported \
+    --ignore-errors source,source \
+    --ignore-errors range,range \
+    --ignore-errors count,count \
+    --ignore-errors category,category \
+    --ignore-errors branch,branch \
+    --ignore-errors empty,empty \
+    --quiet \
+    -o llvm_coverage.brace.info
+mv llvm_coverage.brace.info llvm_coverage.info
+
 rm -rf ./coverage_html/*
 
 echo "Generating HTML report..."

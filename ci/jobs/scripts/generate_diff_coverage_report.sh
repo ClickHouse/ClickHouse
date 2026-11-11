@@ -205,7 +205,7 @@ genhtml \
   --ignore-errors empty \
   --ignore-errors unused \
   --simplified-colors \
-  --filter missing \
+  --filter missing,brace \
   --flat \
   current.changed.info
 
