@@ -2142,8 +2142,7 @@ Chunk StorageFileSource::generate()
                 }
             }
 
-            /// A source of a split file keeps the file open between its buckets, but checks for each of them
-            /// that the file is the version that was split.
+            /// The source of a split file keeps its buffer between buckets but checks the file version for each.
             if (!read_buf || split_file)
             {
                 struct stat file_stat{};
@@ -3158,7 +3157,6 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
     object_metadata.etag = split_file->file_cache_version;
     std::optional<RelativePathWithMetadata> object_with_metadata(std::in_place, path, std::move(object_metadata));
 
-    /// More buckets than streams, so that the sources whose buckets are small or pruned take more of them.
     static constexpr size_t split_file_buckets_per_stream = 4;
     split_file->buckets = FormatFactory::instance().getSplitter(storage->format_name)->splitForParallelReading(
         max_num_streams * split_file_buckets_per_stream,

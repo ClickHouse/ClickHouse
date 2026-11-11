@@ -362,7 +362,6 @@ private:
         /// describe this version only, so every source checks that it reads this version.
         String file_cache_version;
         VectorWithMemoryTracking<FileBucketInfoPtr> buckets;
-        /// The index of the next bucket to take.
         std::atomic<size_t> next_bucket = 0;
 
         /// Every source reads only the row groups of the buckets it takes, so the query condition cache entry

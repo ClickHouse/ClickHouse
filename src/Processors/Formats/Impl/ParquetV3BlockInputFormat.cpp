@@ -864,7 +864,6 @@ VectorWithMemoryTracking<FileBucketInfoPtr> ParquetBucketSplitter::splitForParal
         total_bytes += bytes;
     }
 
-    /// The size of a bucket is the larger of its shares of the rows and of the uncompressed bytes of the file.
     VectorWithMemoryTracking<double> bucket_sizes(num_buckets);
     for (size_t b = 0; b < num_buckets; ++b)
         bucket_sizes[b] = std::max(bucket_rows[b] / total_rows, total_bytes > 0 ? bucket_bytes[b] / total_bytes : 0.0);
