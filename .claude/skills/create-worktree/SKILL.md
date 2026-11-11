@@ -95,6 +95,7 @@ ${CLAUDE_SKILL_DIR}/worktree.sh update-submodules <WORKTREE_PATH>
 - It keeps the existing submodule git data of the worktree (`<MAIN_REPO>/.git/worktrees/<name>/modules`), with its local branches, stashes and commits, and copies only the missing git data from the main checkout. Never delete that directory to "repair" a worktree: it can hold the only copy of local submodule work.
 - It reads the pins from the index, so it also works during a merge, after the conflicts in the submodules are resolved.
 - It does not use `-f` for submodules that are already checked out: when local changes are in the way, it fails for that submodule, and the user decides.
+- When an earlier setup was interrupted, it finishes the first checkout of each submodule that did not complete it. A marker file in the git data of the submodule shows this; the final check fails while a marker is left.
 
 ## What the script does
 
@@ -107,6 +108,7 @@ ${CLAUDE_SKILL_DIR}/worktree.sh update-submodules <WORKTREE_PATH>
 
 ## Notes
 
+- The script ignores `submodule.recurse` from the user configuration: it handles each submodule itself.
 - The main checkout must have its submodules initialized once (`git submodule update --init` in the main checkout, not in a worktree).
 - Build directories are not shared. Set up CMake and the build in the new worktree separately.
 - `SUBMODULE_CHECKOUT_WORKERS` sets the parallel checkout workers in one submodule: by default 2 on macOS, where the clones leave little to check out, and `min(8, CPUs)` on Linux. `SUBMODULE_JOBS` (default `CPUs / SUBMODULE_CHECKOUT_WORKERS`) sets how many submodules are processed at the same time.

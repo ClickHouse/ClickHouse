@@ -39,6 +39,17 @@ HEAVY="contrib/llvm-project contrib/google-cloud-cpp contrib/aws contrib/openssl
 contrib/rust_vendor contrib/sysroot contrib/grpc contrib/arrow contrib/curl contrib/rocksdb contrib/postgres
 contrib/wasmtime"
 
+# User configuration must not make git recurse into submodules: the script handles each submodule itself. A recursing
+# checkout or merge would touch submodules before their git data exists, or move submodules of the main checkout that
+# someone works on. Configuration from the environment overrides all configuration files.
+n=${GIT_CONFIG_COUNT:-0}
+export GIT_CONFIG_COUNT=$((n + 1)) "GIT_CONFIG_KEY_$n=submodule.recurse" "GIT_CONFIG_VALUE_$n=false"
+unset n
+
+# Written into the git data of a submodule when it is copied, removed after its first checkout succeeded. A retry
+# finishes every submodule that still has it.
+INCOMPLETE=worktree-sh-incomplete
+
 TAB=$(printf '\t')
 OS=$(uname -s)
 if [ "$OS" = Darwin ]; then CPU_COUNT=$(sysctl -n hw.ncpu); else CPU_COUNT=$(nproc); fi
@@ -47,8 +58,21 @@ MAIN=""  # main checkout
 GD=""    # its git dir
 WT=""    # worktree
 WGD=""   # git dir of the worktree, `$GD/worktrees/<name>`
+CREATED=""  # what `create` added, for the message on failure
 
 die() { printf 'FAILED: %s\n' "$*" >&2; exit 1; }
+
+# On failure after `create` added the worktree, say what is left and how to continue. Nothing is removed automatically.
+on_exit()
+{
+    local rc=$?
+    if [ "$rc" != 0 ] && [ -n "$CREATED" ]
+    then
+        printf 'The worktree %s exists (%s). Finish its setup with: %s update-submodules %s\n' "$WT" "$CREATED" "$0" "$WT" >&2
+        printf 'Or remove it with: git -C %s worktree remove --force %s\n' "$MAIN" "$WT" >&2
+    fi
+}
+trap on_exit EXIT
 note() { printf '[%4d s] %s\n' "$SECONDS" "$*"; }
 
 usage()
@@ -283,35 +307,45 @@ refresh_main_worktree()
 }
 
 # Runs for one submodule in parallel with the others.
-# Arguments: worktree, main checkout, OS, checkout workers, submodule git data, commit, path.
+# Arguments: worktree, main checkout, OS, checkout workers, name of the marker file, submodule git data, commit, path.
 # shellcheck disable=SC2016 # Expanded by the inner shell.
 WORKER='
-    wt=$1 main=$2 os=$3 workers=$4 store=$5 sha=$6 path=$7
+    wt=$1 main=$2 os=$3 workers=$4 incomplete=$5 store=$6 sha=$7 path=$8
     dst=$wt/$path
+    marker=$store/$incomplete
     opts="-c advice.detachedHead=false -c checkout.workers=$workers -c checkout.thresholdForParallelism=100"
     opts="$opts -c index.threads=true -c core.fsync=none -c gc.auto=0"
-    if [ ! -f "$dst/.git" ]
+    if [ -f "$marker" ] || [ ! -f "$dst/.git" ]
     then
-        if [ -d "$dst" ] && [ -n "$(ls -A "$dst")" ]
+        # The first checkout of this submodule, or the resume of an interrupted one: the marker is still there.
+        if [ ! -f "$marker" ] && [ -d "$dst" ] && [ -n "$(ls -A "$dst")" ]
         then
             echo "FAILED: $path: not empty and not a submodule checkout" >&2
             exit 1
         fi
-        if [ "$os" = Darwin ] && [ -f "$main/$path/.git" ]
+        : > "$marker" || exit 1
+        if [ ! -d "$dst" ] || [ -z "$(ls -A "$dst")" ]
         then
-            if [ -d "$dst" ]; then rmdir "$dst" || exit 1; fi
-            cp -Rcp "$main/$path" "$dst" || { echo "FAILED: $path: clone of the main checkout files" >&2; exit 1; }
-            printf "gitdir: %s\n" "$store" > "$dst/.git" || exit 1
-            # The clones have new inodes. Refresh the stat data in the index, so that the checkout below writes only
-            # the files that differ, and the other files keep the shared blocks.
-            git -C "$dst" status --porcelain --untracked-files=no > /dev/null || exit 1
-        else
-            mkdir -p "$dst" && printf "gitdir: %s\n" "$store" > "$dst/.git" || exit 1
+            if [ "$os" = Darwin ] && [ -f "$main/$path/.git" ]
+            then
+                if [ -d "$dst" ]; then rmdir "$dst" || exit 1; fi
+                cp -Rcp "$main/$path" "$dst" || { echo "FAILED: $path: clone of the main checkout files" >&2; exit 1; }
+            else
+                mkdir -p "$dst" || exit 1
+            fi
         fi
+        printf "gitdir: %s\n" "$store" > "$dst/.git" || exit 1
         top=$(git -C "$dst" rev-parse --show-toplevel) || exit 1
         [ "$top" = "$dst" ] || { echo "FAILED: $path: its git data points at $top" >&2; exit 1; }
+        if [ "$os" = Darwin ]
+        then
+            # Clones have new inodes. Refresh the stat data in the index, so that the checkout below writes only the
+            # files that differ, and the other files keep the shared blocks.
+            git -C "$dst" status --porcelain --untracked-files=no > /dev/null || exit 1
+        fi
         # shellcheck disable=SC2086 # opts is a list of options.
         git -C "$dst" $opts checkout -q -f --detach "$sha" || { echo "FAILED: $path: checkout of $sha" >&2; exit 1; }
+        rm -f "$marker" || exit 1
     else
         top=$(git -C "$dst" rev-parse --show-toplevel) || exit 1
         [ "$top" = "$dst" ] || { echo "FAILED: $path: its git data points at $top" >&2; exit 1; }
@@ -337,7 +371,7 @@ materialize()
         do
             printf '%s\0%s\0%s\0' "$WGD/modules/$name" "$sha" "$path"
         done |
-        xargs -0 -n 3 -P "$jobs" sh -c "$WORKER" sh "$WT" "$MAIN" "$OS" "$workers" ||
+        xargs -0 -n 3 -P "$jobs" sh -c "$WORKER" sh "$WT" "$MAIN" "$OS" "$workers" "$INCOMPLETE" ||
         die "some submodules were not set up (see the FAILED lines above)"
 }
 
@@ -349,9 +383,9 @@ verify()
     do
         n=$((n + 1))
         cur=$(git -C "$WT/$path" rev-parse HEAD 2> /dev/null || echo none)
-        [ "$cur" = "$sha" ] || bad="$bad $path"
+        [ "$cur" = "$sha" ] && [ ! -e "$WGD/modules/$name/$INCOMPLETE" ] || bad="$bad $path"
     done <<< "$1"
-    [ -z "$bad" ] || die "not at the recorded commit:$bad"
+    [ -z "$bad" ] || die "not at the recorded commit, or the first checkout did not finish:$bad"
     note "submodules: all $n at the recorded commits"
     dirty=$(git -C "$WT" status --porcelain --ignore-submodules=untracked |
         awk -v paths="$(cut -f2 <<< "$1" | tr '\n' ' ')" '
@@ -387,6 +421,7 @@ sync_submodules()
         else
             mkdir -p "$(dirname "$store")"
             copy_store "$GD/modules/$name" "$store"
+            : > "$store/$INCOMPLETE"
             copied=$((copied + 1))
         fi
         # The git data under this worktree belongs to it. This also repairs git data that points at another checkout.
@@ -418,9 +453,11 @@ cmd_create()
     then
         [ -z "$start" ] || die "branch $branch exists; do not give a start point"
         git -C "$MAIN" worktree add -q --no-checkout "$WT" "$branch"
+        CREATED="branch $branch"
     else
         [ -n "$start" ] || die "branch $branch does not exist; give a start point"
         git -C "$MAIN" worktree add -q --no-checkout -b "$branch" "$WT" "$start"
+        CREATED="new branch $branch; delete it with: git -C $MAIN branch -D $branch"
     fi
     git -C "$WT" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
     note "worktree: $WT on $branch at $(git -C "$WT" rev-parse --short HEAD)"
