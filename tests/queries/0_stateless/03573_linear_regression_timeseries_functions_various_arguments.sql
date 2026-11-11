@@ -37,12 +37,12 @@ SELECT timeSeriesPredictLinearToGrid(10, 120, 10, 61, -60)(timestamps, values) F
 SELECT * FROM ts_data_nullable WHERE value IS NULL AND id < 5;
 
 -- Test with Nullable arguments
-SELECT timeSeriesLastToGrid(15, 125, 10, 10)(arrayResize(timestamps, arrayMin([length(timestamps), length(values)]) as min_len), arrayResize(values, min_len)) FROM ts_data;
-SELECT timeSeriesLastToGrid(15, 125, 10, 10)(timestamp, value) FROM ts_data_nullable;
-SELECT timeSeriesLastToGridIf(15, 125, 10, 10)(timestamp, value, id < 5) FROM ts_data_nullable;
+SELECT timeSeriesResampleToGridWithStaleness(15, 125, 10, 10)(arrayResize(timestamps, arrayMin([length(timestamps), length(values)]) as min_len), arrayResize(values, min_len)) FROM ts_data;
+SELECT timeSeriesResampleToGridWithStaleness(15, 125, 10, 10)(timestamp, value) FROM ts_data_nullable;
+SELECT timeSeriesResampleToGridWithStalenessIf(15, 125, 10, 10)(timestamp, value, id < 5) FROM ts_data_nullable;
 
-SELECT timeSeriesLastToGrid(15, 125, 10, 10)([10, 20, 30]::Array(UInt32), [1.0, 2.0, NULL]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
-SELECT timeSeriesLastToGrid(15, 125, 10, 10)([10, NULL, 30]::Array(Nullable(UInt32)), [1.0, 2.0, 3.0]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT timeSeriesResampleToGridWithStaleness(15, 125, 10, 10)([10, 20, 30]::Array(UInt32), [1.0, 2.0, NULL]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT timeSeriesResampleToGridWithStaleness(15, 125, 10, 10)([10, NULL, 30]::Array(Nullable(UInt32)), [1.0, 2.0, 3.0]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 -- End timestamp not aligned by step
 SELECT timeSeriesDerivToGrid(100, 120, 15, 20)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));

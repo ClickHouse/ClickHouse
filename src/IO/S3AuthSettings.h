@@ -6,7 +6,6 @@
 #include <Core/SettingsFields.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/Client.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace Poco::Util
 {
@@ -58,7 +57,7 @@ struct S3AuthSettings
     bool hasUpdates(const S3AuthSettings & other) const;
     void updateIfChanged(const S3AuthSettings & settings);
     bool canBeUsedByUser(const String & user) const { return users.empty() || users.contains(user); }
-    NormalizedHTTPHeaderEntries getHeaders() const;
+    HTTPHeaderEntries getHeaders() const;
 
     /// Clear request-auth material that may have been merged in from the server `<s3>`/endpoint config (generic
     /// headers, per-request access headers, and the SSE-C key / SSE-KMS config), so a credential-restricted
@@ -78,32 +77,16 @@ struct S3AuthSettings
     /// otherwise mint a server-identity bearer token for a user-chosen endpoint.
     void clearServerManagedGcpOAuth();
 
-    NormalizedHTTPHeaderEntries headers;
-    NormalizedHTTPHeaderEntries access_headers;
+    HTTPHeaderEntries headers;
+    HTTPHeaderEntries access_headers;
 
     UnorderedSetWithMemoryTracking<std::string> users;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
-
-    /// Whether the Google credential (`google_service_account_key` or the ADC triple) was supplied by the query, a named
-    /// collection or a BigLake catalog rather than merged from the server `<s3>`/endpoint config. Only such a credential
-    /// is explicit for a session restricted by `s3_allow_server_credentials_in_user_queries`. The value of a credential
-    /// cannot tell its origin, so the origin is recorded when the settings are built and kept through every copy and
-    /// client rebuild; merging the server config (`updateIfChanged`) never sets it.
-    /// It is not part of `serialize`: its callers ship `S3ObjectStorage::getS3SettingsForExternalClients`, which carries
-    /// only the credentials the client has already resolved (keys, or a GCS bearer token as a header), never a Google key
-    /// or ADC triple, so there is no Google credential whose origin would have to be restored.
-    bool google_credentials_explicit = false;
 
     void serialize(WriteBuffer & out, ContextPtr context) const;
     static S3AuthSettings deserialize(ReadBuffer & in, ContextPtr context);
 
 private:
-    /// Obsolete settings (such as `max_connections`) are still accepted so that an existing configuration keeps
-    /// working, but they must not look like a change to anyone: `hasUpdates` is what decides whether a live S3
-    /// client is torn down and rebuilt on a config reload. Reset them to default right after every path that
-    /// can populate them, so an obsolete key never marks the settings object as changed.
-    void resetObsoleteSettings();
-
     std::unique_ptr<S3AuthSettingsImpl> impl;
 };
 

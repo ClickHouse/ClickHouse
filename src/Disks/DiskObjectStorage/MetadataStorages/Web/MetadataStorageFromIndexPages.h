@@ -5,7 +5,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 
-#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 
 #include <optional>
@@ -26,7 +25,7 @@ private:
     };
 
     std::vector<std::string> makeListingURLs(const std::string & path, size_t shard_index) const;
-    IndexPage readIndexPage(const Poco::URI & uri, const Poco::Net::HTTPBasicCredentials & credentials) const;
+    IndexPage readIndexPage(const std::string & url) const;
     std::vector<std::string> extractURLs(
         const std::string & page_body,
         const std::string & listing_url,
@@ -83,11 +82,7 @@ public:
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return true; }
-    bool isRemote() const override { return true; }
     bool areBlobPathsRandom() const override { return false; }
-    /// Nothing is ever written, hence nothing is ever removed or replicated.
-    bool hasDeadBlobsQueue() const override { return false; }
-    bool hasMissingBlobsQueue() const override { return false; }
 };
 
 }
