@@ -571,7 +571,7 @@ void resizeOutputAfterReading(Pipe & pipe, size_t resize_to, bool keep_streams, 
             for (size_t g = 0, next = 0; g < groups; ++g)
             {
                 const size_t group_size = output_ports / groups + (g < output_ports % groups ? 1 : 0);
-                auto resize = std::make_shared<ResizeProcessor>(header, group_size, group_size);
+                auto resize = std::make_shared<StickyResizeProcessor>(header, group_size);
                 auto resize_input = resize->getInputs().begin();
                 auto resize_output = resize->getOutputs().begin();
                 for (size_t i = 0; i < group_size; ++i, ++next, ++resize_input, ++resize_output)

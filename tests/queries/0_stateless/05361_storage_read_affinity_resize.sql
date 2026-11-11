@@ -26,8 +26,8 @@ SELECT countIf(trimLeft(explain) = 'Overflow × 2 1 → 2') FROM (EXPLAIN PIPELI
 -- A single file is resized to `max_threads`.
 SELECT countIf(trimLeft(explain) LIKE 'Overflow%'), countIf(trimLeft(explain) = 'Resize 1 → 2') FROM (EXPLAIN PIPELINE SELECT k FROM file(currentDatabase() || '_05361_0.parquet'));
 -- With many streams the streams are split into groups of `min_outstreams_per_resize_after_split`.
-SELECT position(arrayStringConcat(groupArray(trimLeft(explain)), '|'), 'Concat × 4 2 → 1|Resize × 2 2 → 2|Overflow × 4 1 → 2') > 0 FROM (EXPLAIN PIPELINE SELECT k % 7 AS g, count() FROM file(currentDatabase() || '_05361_*.parquet') GROUP BY g) SETTINGS max_threads = 4, min_outstreams_per_resize_after_split = 2;
-SELECT position(arrayStringConcat(groupArray(trimLeft(explain)), '|'), 'Concat × 4 2 → 1|Resize 4 → 4|Overflow × 4 1 → 2') > 0 FROM (EXPLAIN PIPELINE SELECT k % 7 AS g, count() FROM file(currentDatabase() || '_05361_*.parquet') GROUP BY g) SETTINGS max_threads = 4, min_outstreams_per_resize_after_split = 0;
+SELECT position(arrayStringConcat(groupArray(trimLeft(explain)), '|'), 'Concat × 4 2 → 1|StickyResize × 2 2 → 2|Overflow × 4 1 → 2') > 0 FROM (EXPLAIN PIPELINE SELECT k % 7 AS g, count() FROM file(currentDatabase() || '_05361_*.parquet') GROUP BY g) SETTINGS max_threads = 4, min_outstreams_per_resize_after_split = 2;
+SELECT position(arrayStringConcat(groupArray(trimLeft(explain)), '|'), 'Concat × 4 2 → 1|StickyResize 4 → 4|Overflow × 4 1 → 2') > 0 FROM (EXPLAIN PIPELINE SELECT k % 7 AS g, count() FROM file(currentDatabase() || '_05361_*.parquet') GROUP BY g) SETTINGS max_threads = 4, min_outstreams_per_resize_after_split = 0;
 -- A read that only counts rows keeps its streams.
 SELECT countIf(trimLeft(explain) LIKE 'Overflow%') FROM (EXPLAIN PIPELINE SELECT count() FROM file(currentDatabase() || '_05361_*.parquet')) SETTINGS optimize_count_from_files = 1, optimize_trivial_count_query = 1;
 SELECT countIf(trimLeft(explain) LIKE 'Overflow%') FROM (EXPLAIN PIPELINE SELECT count() FROM s3(s3_conn, filename = currentDatabase() || '_05361/data_*.parquet')) SETTINGS optimize_count_from_files = 1, optimize_trivial_count_query = 1;

@@ -139,3 +139,84 @@ TEST(ConcatProcessor, WithoutReadAheadAsksForAChunkOnlyWhenTheOutputCanTakeIt)
     concat.prepare();
     EXPECT_TRUE(first.isNeeded());
 }
+
+TEST(StickyResizeProcessor, AnOutputSticksToOneInputUntilItFinishes)
+{
+    auto header = makeHeader();
+    PortOwner upstream(header, 0, 3);
+    PortOwner downstream(header, 3, 0);
+    StickyResizeProcessor resize(header, 3);
+
+    std::vector<OutputPort *> sources;
+    std::vector<InputPort *> inputs;
+    std::vector<OutputPort *> outputs;
+    std::vector<InputPort *> consumers;
+    for (auto & port : upstream.getOutputs())
+        sources.push_back(&port);
+    for (auto & port : resize.getInputs())
+        inputs.push_back(&port);
+    for (auto & port : resize.getOutputs())
+        outputs.push_back(&port);
+    for (auto & port : downstream.getInputs())
+        consumers.push_back(&port);
+    for (size_t i = 0; i < 3; ++i)
+    {
+        connect(*sources[i], *inputs[i]);
+        connect(*outputs[i], *consumers[i]);
+    }
+
+    auto prepare = [&](IProcessor::UpdatedInputPorts updated_inputs, IProcessor::UpdatedOutputPorts updated_outputs)
+    { return resize.prepare(updated_inputs, updated_outputs); };
+
+    /// An output waits for its own input only.
+    consumers[0]->setNeeded();
+    prepare({}, {outputs[0]});
+    EXPECT_TRUE(sources[0]->isNeeded());
+    EXPECT_FALSE(sources[1]->isNeeded());
+    EXPECT_FALSE(sources[2]->isNeeded());
+
+    /// After its own input, it takes the oldest chunk.
+    sources[0]->finish();
+    prepare({inputs[0]}, {});
+    EXPECT_TRUE(sources[1]->isNeeded());
+    EXPECT_TRUE(sources[2]->isNeeded());
+    sources[2]->push(makeChunk(2));
+    sources[1]->push(makeChunk(1));
+    prepare({inputs[2], inputs[1]}, {});
+    EXPECT_EQ(valueOf(consumers[0]->pull()), 2);
+
+    /// It keeps waiting for the input of that chunk while another input has a chunk.
+    prepare({}, {outputs[0]});
+    EXPECT_FALSE(consumers[0]->hasData());
+    EXPECT_TRUE(sources[2]->isNeeded());
+    sources[2]->push(makeChunk(3));
+    prepare({inputs[2]}, {});
+    EXPECT_EQ(valueOf(consumers[0]->pull()), 3);
+
+    sources[2]->finish();
+    prepare({inputs[2]}, {outputs[0]});
+    EXPECT_EQ(valueOf(consumers[0]->pull()), 1);
+
+    sources[1]->finish();
+    ASSERT_EQ(prepare({inputs[1]}, {outputs[0]}), IProcessor::Status::Finished);
+    for (auto * consumer : consumers)
+        EXPECT_TRUE(consumer->isFinished());
+}
+
+TEST(StickyResizeProcessor, ClosedOutputsCloseTheInputs)
+{
+    auto header = makeHeader();
+    PortOwner upstream(header, 0, 2);
+    PortOwner downstream(header, 2, 0);
+    StickyResizeProcessor resize(header, 2);
+    connect(upstream.getOutputs().front(), resize.getInputs().front());
+    connect(upstream.getOutputs().back(), resize.getInputs().back());
+    connect(resize.getOutputs().front(), downstream.getInputs().front());
+    connect(resize.getOutputs().back(), downstream.getInputs().back());
+
+    downstream.getInputs().front().close();
+    downstream.getInputs().back().close();
+    ASSERT_EQ(resize.prepare({}, {&resize.getOutputs().front(), &resize.getOutputs().back()}), IProcessor::Status::Finished);
+    EXPECT_TRUE(upstream.getOutputs().front().isFinished());
+    EXPECT_TRUE(upstream.getOutputs().back().isFinished());
+}
