@@ -135,12 +135,12 @@ trace:         [0,0,0,0,631010292,205306916,447260096,447257472,447067860,447068
         "Getting a symbol for a single address",
         R"(
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(447257472) FORMAT Vertical;
+SELECT addressToSymbol(447257472::UInt64) AS symbol FORMAT Vertical;
         )",
         R"(
 Row 1:
 ──────
-addressToSymbol(447257472): _ZN2DB16LazyOutputFormat8getChunkEm
+symbol: _ZN2DB16LazyOutputFormat8getChunkEm
         )"
     },
     {

@@ -108,12 +108,12 @@ trace:                   [0,0,0,0,631010292,205306916,447260096,447257472,447067
         "Getting the source code filename and the line number for a single address",
         R"(
 SET allow_introspection_functions=1;
-SELECT addressToLine(447257472) FORMAT Vertical;
+SELECT addressToLine(447257472::UInt64) AS source_line FORMAT Vertical;
         )",
         R"(
 Row 1:
 ──────
-addressToLine(447257472): src/Processors/Formats/LazyOutputFormat.cpp:25
+source_line: src/Processors/Formats/LazyOutputFormat.cpp:25
         )"
     },
     {
