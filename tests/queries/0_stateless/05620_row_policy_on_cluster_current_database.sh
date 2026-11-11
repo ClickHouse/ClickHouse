@@ -28,5 +28,11 @@ show
 on_cluster "DROP ROW POLICY ${policy} ON t_05620 ON CLUSTER test_shard_localhost"
 show
 
+# On a cluster with <default_database>, the privileges are also checked on the current database.
+on_cluster "CREATE ROW POLICY ${policy} ON t_05620 ON CLUSTER test_cluster_two_shards_different_databases USING x = 3 TO ALL"
+show
+on_cluster "DROP ROW POLICY ${policy} ON t_05620 ON CLUSTER test_shard_localhost"
+show
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${user}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05620"
