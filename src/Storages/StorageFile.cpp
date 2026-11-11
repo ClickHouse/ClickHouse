@@ -2108,7 +2108,10 @@ Chunk StorageFileSource::generate()
                     }
                     current_archive_entry_cache_key.reset();
                     if (current_path.empty())
+                    {
+                        read_buf.reset();
                         return {};
+                    }
 
                     if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
@@ -2139,7 +2142,9 @@ Chunk StorageFileSource::generate()
                 }
             }
 
-            if (!read_buf)
+            /// A source of a split file keeps the file open between its buckets, but checks for each of them
+            /// that the file is the version that was split.
+            if (!read_buf || split_file)
             {
                 struct stat file_stat{};
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
@@ -2191,7 +2196,7 @@ Chunk StorageFileSource::generate()
                     /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
                     read_buf = std::make_unique<EmptyReadBuffer>();
                 }
-                else
+                else if (!read_buf)
                 {
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
 
@@ -2648,7 +2653,8 @@ Chunk StorageFileSource::generate()
             }
         }
 
-        read_buf.reset();
+        if (!split_file)
+            read_buf.reset();
         archive_entry_read_buf.reset();
     }
 
