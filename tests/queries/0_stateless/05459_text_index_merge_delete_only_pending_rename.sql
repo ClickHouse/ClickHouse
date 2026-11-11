@@ -108,3 +108,60 @@ FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_pending_readd' AND event_type = 'MergeParts' AND error = 0;
 
 DROP TABLE t_pending_readd;
+
+-- A text index or projection dropped and re-added with another definition under a pending mutation:
+-- the source parts still hold the old definition's files, so the merge rebuilds both.
+DROP TABLE IF EXISTS t_pending_index_redefine;
+DROP TABLE IF EXISTS t_pending_projection_redefine;
+
+CREATE TABLE t_pending_index_redefine
+(
+    id UInt64,
+    text String,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+)
+ENGINE = ReplacingMergeTree ORDER BY id
+SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, merge_text_indexes_and_projections_on_delete_only_merges = 1;
+
+CREATE TABLE t_pending_projection_redefine
+(
+    id UInt64,
+    v Int64,
+    PROJECTION p (SELECT id, v, _part_offset ORDER BY v)
+)
+ENGINE = ReplacingMergeTree ORDER BY v
+SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, deduplicate_merge_projection_mode = 'rebuild',
+    merge_text_indexes_and_projections_on_delete_only_merges = 1;
+
+INSERT INTO t_pending_index_redefine VALUES (1, 'UPPER');
+INSERT INTO t_pending_index_redefine VALUES (2, 'UPPER');
+INSERT INTO t_pending_projection_redefine SELECT number, -number FROM numbers(1000);
+INSERT INTO t_pending_projection_redefine SELECT number, -number FROM numbers(1000, 1000);
+
+SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
+
+ALTER TABLE t_pending_index_redefine DROP INDEX idx_text;
+ALTER TABLE t_pending_index_redefine ADD INDEX idx_text lower(text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1;
+ALTER TABLE t_pending_projection_redefine DROP PROJECTION p;
+ALTER TABLE t_pending_projection_redefine ADD PROJECTION p (SELECT id, v, _part_offset ORDER BY id);
+
+OPTIMIZE TABLE t_pending_index_redefine FINAL;
+OPTIMIZE TABLE t_pending_projection_redefine FINAL;
+
+SELECT 'pending redefinition';
+SELECT groupArray(token) FROM mergeTreeTextIndex(currentDatabase(), t_pending_index_redefine, idx_text);
+SELECT count() FROM t_pending_index_redefine WHERE hasToken(lower(text), 'upper') SETTINGS force_data_skipping_indices = 'idx_text';
+SELECT count() FROM t_pending_index_redefine WHERE hasToken(lower(text), 'upper') SETTINGS use_skip_indexes = 0;
+SELECT id, v FROM t_pending_projection_redefine WHERE id = 17 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT id, v FROM t_pending_projection_redefine WHERE id = 17 SETTINGS optimize_use_projections = 0;
+
+SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT table, ProfileEvents['MergedTextIndexes'], ProfileEvents['RebuiltTextIndexes'], ProfileEvents['MergedProjections'], ProfileEvents['RebuiltProjections']
+FROM system.part_log
+WHERE database = currentDatabase() AND table IN ('t_pending_index_redefine', 't_pending_projection_redefine') AND event_type = 'MergeParts' AND error = 0
+ORDER BY table;
+
+DROP TABLE t_pending_index_redefine;
+DROP TABLE t_pending_projection_redefine;

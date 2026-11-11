@@ -941,6 +941,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// and columns missing from all source parts (the TTL step recomputes the `MATERIALIZED` columns that read them).
     /// Also excluded: a `_part_offset` or `_part_index` column in the table or a source part shadows the virtual column the mapping reads,
     /// and a pending mutation of any column but `_row_exists` changes the values the merge reads (a re-added column reads its default).
+    /// Also excluded while a `DROP INDEX` or `DROP PROJECTION` is pending: a re-added name may still have the old definition's files.
     const auto merging_mode = global_ctx->merging_params.mode;
     bool merging_mode_only_drops_rows =
         merging_mode == MergeTreeData::MergingParams::Ordinary ||
@@ -960,6 +961,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         return !columns.empty();
     };
 
+    auto has_pending_definition_drop = [&]
+    {
+        for (const auto & [_, commands] : global_ctx->data->getUnfinishedMutationCommands())
+            for (const auto & command : commands)
+                if (command.type == MutationCommand::DROP_INDEX || command.type == MutationCommand::DROP_PROJECTION)
+                    return true;
+        return false;
+    };
+
     global_ctx->merge_only_drops_rows =
         global_ctx->merge_may_reduce_rows
         && (*global_ctx->data_settings)[MergeTreeSetting::merge_text_indexes_and_projections_on_delete_only_merges]
@@ -970,7 +980,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && global_ctx->new_data_part->expired_columns.empty()
         && !has_shadowing_column(global_ctx->metadata_snapshot->getColumns())
         && std::ranges::none_of(global_ctx->future_part->parts, [&](const auto & part) { return has_shadowing_column(part->getColumnsDescription()); })
-        && std::ranges::none_of(global_ctx->alter_conversions, has_pending_value_change);
+        && std::ranges::none_of(global_ctx->alter_conversions, has_pending_value_change)
+        && !has_pending_definition_drop();
 
     /// If every source part of a TTLDrop merge has a calculated rows TTL that has expired, all rows are dropped.
     /// Skip creating the read pipeline to avoid opening source parts
