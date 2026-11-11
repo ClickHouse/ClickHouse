@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs Parquet support.
 
 # Regression test for a logical error 'KeyCondition uses PREWHERE output' in the
 # Parquet v3 reader (src/Processors/Formats/Impl/Parquet/Reader.cpp). It fired when a

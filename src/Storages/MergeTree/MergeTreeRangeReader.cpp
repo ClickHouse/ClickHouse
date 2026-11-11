@@ -54,30 +54,6 @@ LoggerPtr getMergeTreeRangeReaderLogger()
     return log;
 }
 
-static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
-{
-    if (!column)
-        return true;
-
-    if (filter_column == column)
-        return false;
-
-    if (column->use_count() > 1)
-        return false;
-
-    bool can_inplace = true;
-    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
-    {
-        if (!can_inplace)
-            return;
-
-        if (!canInplaceFilter(subcolumn, filter_column))
-            can_inplace = false;
-    });
-
-    return can_inplace;
-}
-
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     : const_description(*column_)
 {
@@ -120,10 +96,8 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            if (canInplaceFilter(column, filter.getColumn()))
+            if (canInplaceFilter(column))
             {
-                /// The contract is - not to filter in-place if the column is shared. But if there're some shared subcolumns,
-                /// we'll clone them via IColumn::mutate() and then safely filter in-place.
                 auto mutable_column = IColumn::mutate(std::move(column));
                 mutable_column->filter(filter_data);
                 column = std::move(mutable_column);
@@ -1918,12 +1892,10 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
-        /// Null when predicate_statistics_sample_rate = 0 (default). countBytesInFilter()
-        /// is an O(rows) scan that the following optimize() does not otherwise need, so
-        /// keep it behind the guard.
-        if (performance_counters)
-            performance_counters->rows_passed_filter += current_filter.countBytesInFilter();
         result.optimize(current_filter, can_read_incomplete_granules, false);
+        /// Null when predicate_statistics_sample_rate = 0 (default). Counts the rows that passed all steps so far.
+        if (performance_counters)
+            performance_counters->rows_passed_filter += result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
 
         if (prewhere_info->need_filter && !result.filterWasApplied())
         {

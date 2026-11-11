@@ -346,6 +346,10 @@ private:
                 tryVisit<ASTSelectQuery>(child);
             else if (child->as<ASTSelectIntersectExceptQuery>())
                 tryVisit<ASTSelectIntersectExceptQuery>(child);
+            /// A parenthesized operand with its own `SETTINGS` clause stays wrapped into a union of its own
+            /// (see `ParserUnionQueryElement`), as does a parenthesized union that is not lifted into this one.
+            else if (child->as<ASTSelectWithUnionQuery>())
+                tryVisit<ASTSelectWithUnionQuery>(child);
         }
     }
 
