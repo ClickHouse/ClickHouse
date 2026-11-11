@@ -2,6 +2,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
@@ -9,6 +10,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
@@ -657,6 +659,16 @@ ColumnPtr recursiveRemoveFixedArray(const ColumnPtr & column)
         if (nested.get() == column_nullable->getNestedColumnPtr().get())
             return column;
         return ColumnNullable::create(nested, column_nullable->getNullMapColumnPtr());
+    }
+
+    /// A lazy argument of a short-circuit function: its result is converted when it is executed,
+    /// so that it is not executed for the rows where it is not needed.
+    if (const auto * column_function = typeid_cast<const ColumnFunction *>(column.get()))
+    {
+        auto result_type = column_function->getResultType();
+        if (column_function->isShortCircuitArgument() && recursiveRemoveFixedArray(result_type).get() != result_type.get())
+            return column_function->recursivelyRemoveFixedArrayFromResult();
+        return column;
     }
 
     /// The lazily replicated column keeps its indexes, only the replicated values are converted.

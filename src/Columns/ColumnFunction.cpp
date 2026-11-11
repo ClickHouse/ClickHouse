@@ -1,5 +1,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnFixedArray.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/validateColumnType.h>
@@ -11,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Functions/IFunction.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
@@ -57,7 +59,7 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
     for (auto & column : capture)
         column.column = column.column->cloneResized(size);
 
-    return ColumnFunction::create(
+    auto res = ColumnFunction::create(
         size,
         function,
         capture,
@@ -67,6 +69,8 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
         short_circuit_eager_argument);
+    res->recursively_remove_fixed_array_from_result = recursively_remove_fixed_array_from_result;
+    return res;
 }
 
 ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
@@ -95,7 +99,7 @@ ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
     }
 
     size_t replicated_size = 0 == elements_size ? 0 : offsets.back();
-    return ColumnFunction::create(
+    auto res = ColumnFunction::create(
         replicated_size,
         function,
         capture,
@@ -105,6 +109,8 @@ ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
         short_circuit_eager_argument);
+    res->recursively_remove_fixed_array_from_result = recursively_remove_fixed_array_from_result;
+    return res;
 }
 
 ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
@@ -115,7 +121,7 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     for (auto & column : capture)
         column.column = column.column->cut(start, length);
 
-    return ColumnFunction::create(
+    auto res = ColumnFunction::create(
         length,
         function,
         capture,
@@ -125,6 +131,8 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
         short_circuit_eager_argument);
+    res->recursively_remove_fixed_array_from_result = recursively_remove_fixed_array_from_result;
+    return res;
 }
 
 Field ColumnFunction::operator[](size_t n) const
@@ -269,7 +277,7 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
     else
         filtered_size = capture.front().column->size();
 
-    return ColumnFunction::create(
+    auto res = ColumnFunction::create(
         filtered_size,
         function,
         capture,
@@ -279,6 +287,8 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
         short_circuit_eager_argument);
+    res->recursively_remove_fixed_array_from_result = recursively_remove_fixed_array_from_result;
+    return res;
 }
 
 void ColumnFunction::filter(const Filter & filt)
@@ -315,7 +325,7 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
     for (auto & column : capture)
         column.column = column.column->permute(perm, limit);
 
-    return ColumnFunction::create(
+    auto res = ColumnFunction::create(
         limit,
         function,
         capture,
@@ -325,6 +335,8 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
         short_circuit_eager_argument);
+    res->recursively_remove_fixed_array_from_result = recursively_remove_fixed_array_from_result;
+    return res;
 }
 
 ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
@@ -333,7 +345,7 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
     for (auto & column : capture)
         column.column = column.column->index(indexes, limit);
 
-    return ColumnFunction::create(
+    auto res = ColumnFunction::create(
         limit == 0 ? indexes.size() : limit,
         function,
         capture,
@@ -343,6 +355,8 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
         short_circuit_eager_argument);
+    res->recursively_remove_fixed_array_from_result = recursively_remove_fixed_array_from_result;
+    return res;
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
@@ -371,7 +385,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_co
     {
         auto & capture = captures[part];
         size_t capture_size = capture.empty() ? counts[part] : capture.front().column->size();
-        columns.emplace_back(ColumnFunction::create(
+        auto column = ColumnFunction::create(
             capture_size,
             function,
             std::move(capture),
@@ -380,7 +394,9 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_co
             recursively_convert_result_to_full_column_if_low_cardinality,
             allow_lazy_replicated_captures,
             short_circuit_argument_statistics,
-            short_circuit_eager_argument));
+            short_circuit_eager_argument);
+        column->recursively_remove_fixed_array_from_result = recursively_remove_fixed_array_from_result;
+        columns.emplace_back(std::move(column));
     }
 
     return columns;
@@ -497,10 +513,12 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
 
 DataTypePtr ColumnFunction::getResultType() const
 {
+    auto type = function->getResultType();
     if (recursively_convert_result_to_full_column_if_low_cardinality)
-        return recursiveRemoveLowCardinality(function->getResultType());
-
-    return function->getResultType();
+        type = recursiveRemoveLowCardinality(type);
+    if (recursively_remove_fixed_array_from_result)
+        type = recursiveRemoveFixedArray(type);
+    return type;
 }
 
 ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
@@ -565,12 +583,17 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
         res.column = recursiveRemoveLowCardinality(res.column);
         res.type = recursiveRemoveLowCardinality(res.type);
     }
+    if (recursively_remove_fixed_array_from_result)
+    {
+        res.column = recursiveRemoveFixedArray(res.column);
+        res.type = recursiveRemoveFixedArray(res.type);
+    }
     return res;
 }
 
 ColumnPtr ColumnFunction::recursivelyConvertResultToFullColumnIfLowCardinality() const
 {
-    return ColumnFunction::create(
+    auto res = ColumnFunction::create(
         elements_size,
         function,
         captured_columns,
@@ -580,6 +603,24 @@ ColumnPtr ColumnFunction::recursivelyConvertResultToFullColumnIfLowCardinality()
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
         short_circuit_eager_argument);
+    res->recursively_remove_fixed_array_from_result = recursively_remove_fixed_array_from_result;
+    return res;
+}
+
+ColumnPtr ColumnFunction::recursivelyRemoveFixedArrayFromResult() const
+{
+    auto res = ColumnFunction::create(
+        elements_size,
+        function,
+        captured_columns,
+        is_short_circuit_argument,
+        is_function_compiled,
+        recursively_convert_result_to_full_column_if_low_cardinality,
+        allow_lazy_replicated_captures,
+        short_circuit_argument_statistics,
+        short_circuit_eager_argument);
+    res->recursively_remove_fixed_array_from_result = true;
+    return res;
 }
 
 void ColumnFunction::forEachMutableSubcolumn(MutableColumnCallback callback)

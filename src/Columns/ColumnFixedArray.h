@@ -219,7 +219,8 @@ private:
 
 /// Replaces `ColumnFixedArray` with `ColumnArray` of the same elements in the column and in its nested columns
 /// (inside `ColumnConst`, `ColumnArray`, `ColumnTuple`, `ColumnMap`, `ColumnNullable` and `ColumnReplicated`), in agreement with
-/// `recursiveRemoveFixedArray` for types. The elements are not copied. Returns the same pointer if there is no `ColumnFixedArray`.
+/// `recursiveRemoveFixedArray` for types. A lazy argument of a short-circuit function (`ColumnFunction`) converts its result
+/// when it is executed. The elements are not copied. Returns the same pointer if there is no `ColumnFixedArray`.
 ColumnPtr recursiveRemoveFixedArray(const ColumnPtr & column);
 
 }
