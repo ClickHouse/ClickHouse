@@ -12,6 +12,10 @@
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 
+#if defined(__SSE2__)
+#    include <emmintrin.h>
+#endif
+
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
 #    include <llvm/IR/IRBuilder.h>
@@ -27,6 +31,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
 }
 
@@ -295,8 +300,10 @@ void ColumnFixedString::doInsertRangeFrom(const IColumn & src, size_t start, siz
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
     chassert(this->n == src_concrete.n);
 
-    if (start > src_concrete.size() || length > src_concrete.size() - start)
-        throwInsertRangeFromOutOfBound("ColumnFixedString", start, length, src_concrete.size());
+    if (start + length > src_concrete.size())
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
+                        "in ColumnFixedString::insertRangeFrom method (size() = {}).",
+                        toString(start), toString(length), toString(src_concrete.size()));
 
     size_t old_size = chars.size();
     chars.resize(old_size + length * n);
@@ -344,7 +351,11 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
                 res->chars.resize(res_chars_size + n);
                 memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
                 res_chars_size += n;
-                mask = mask & (mask - 1);
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
             }
         }
         data_pos += chars_per_simd_elements;
@@ -405,7 +416,11 @@ void ColumnFixedString::filter(const IColumn::Filter & filt)
                 size_t index = std::countr_zero(mask);
                 memmove(res_data_pos + res_chars_size, data_pos + index * n, n);
                 res_chars_size += n;
-                mask = mask & (mask - 1);
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
             }
         }
         data_pos += chars_per_simd_elements;

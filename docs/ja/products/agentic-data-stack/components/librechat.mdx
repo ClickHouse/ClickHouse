@@ -1,0 +1,41 @@
+---
+sidebarTitle: 'LibreChat'
+title: 'LibreChat'
+description: 'LibreChat が agentic data stack のチャットおよびエージェント向けフロントエンドとしてどのように機能するか'
+doc_type: 'guide'
+keywords: ['agentic data stack', 'LibreChat', 'チャット', 'フロントエンド', 'MCP']
+---
+
+LibreChat は、[Agentic Data Stack](/ja/products/agentic-data-stack/overview) の**チャットおよびエージェント向けフロントエンド**です。ユーザーは SQL を書く代わりに、自然な言葉で質問するだけで、エージェントがそれに回答します。
+
+エージェントは ClickHouse MCPサーバー を通じてデータベースやテーブルを確認し、読み取り専用クエリを実行して、その結果をもとに回答を生成します。このスタックでは、こうした連携があらかじめ構成されているため、LibreChat は初回サインイン直後からデータをクエリできます。完全なスタックを立ち上げるには、[Docker setup guide](/ja/products/agentic-data-stack/docker-setup) を参照してください。
+
+<div id="capabilities">
+  ## LibreChatの機能
+</div>
+
+| 機能                                                                                    | できること                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [データをもとにエージェントを構築する](https://www.librechat.ai/docs/features/agents)                   | 繰り返し発生する質問に対応できる、再利用可能なエージェントを構築します。ClickHouse対応にするには、主に2つあります。スキーマや優先して使いたいテーブルを説明する**Instructions**を与えること、そして**ClickHouse-Local** MCPサーバーを追加して、データベースやテーブルの一覧表示と読み取り専用のクエリ実行を可能にすることです。 |
+| [さらに多くのMCPサーバーを接続する](https://www.librechat.ai/docs/features/mcp)                      | エージェントはClickHouseだけに限定されません。LibreChatのMCP設定から任意のMCPサーバーを追加すれば、1つのチャットからほかのデータベース、社内API、SaaSツールにもアクセスできます。                                                                                 |
+| [チャートと可視化を生成する](https://www.librechat.ai/docs/features/artifacts)                     | たとえば「売上上位10製品をチャート化して」のように、結果の可視化をエージェントに依頼できます。すると、確認や共有ができる対話型チャートが返されます。可視化にはLibreChat Artifactsを使用し、エージェントごとに有効化します。                                                                  |
+| [コードインタープリターでコードを実行する](https://www.librechat.ai/docs/features/code_interpreter)       | SQLだけでなく、エージェントは安全なサンドボックス内でコードを実行して、結果の変換や分析も行えます。たとえば、クエリ結果をファイルにしたり、計算済みメトリクスに変換したりできます。                                                                                               |
+| [長時間実行されるクエリをバックグラウンドで実行する](https://www.librechat.ai/docs/features/resumable_streams) | クエリに時間がかかる場合でも、待ち続ける必要はありません。resumable streamsを使えば、generationを開始して別のconversationに切り替え、あとから完了した応答を確認できます。                                                                                  |
+| [分析結果を読み取り専用リンクとして共有する](https://www.librechat.ai/docs/features/shareable_links)       | conversationを読み取り専用リンクとして共有すれば、ほかの人は再実行せずに分析内容を確認できます。共有ビューにはツール呼び出しと各回答の元になったSQLが含まれるため、結果がどのように生成されたかを明確に追跡できます。                                                                        |
+| [MCPサーバーへのアクセスを制御する](https://www.librechat.ai/docs/features/access_control)           | チームでのデプロイメントでは、ロールベースのアクセス制御によって、だれがMCPサーバーやエージェントを使用、作成、共有できるか、またどのレベル (Viewer、Editor、Owner) で許可されるかが管理されます。                                                                             |
+
+<div id="in-the-stack">
+  ## スタック内で
+</div>
+
+LibreChat は `librechat.yaml` によって事前に設定されているため、すぐに使い始められます。
+
+* [ClickHouse MCPサーバー](/ja/products/agentic-data-stack/components/mcp-server) はツールソースとして登録済みのため、エージェントは追加設定なしで ClickHouse を探索し、クエリできます。
+* すべての会話は [Langfuse](/ja/products/agentic-data-stack/components/langfuse) にトレースされ、プロンプト、ツール呼び出し、応答、コスト、レイテンシが記録されるため、オブザーバビリティを確保できます。
+* [Admin Panel](https://github.com/ClickHouse/librechat-admin-panel) (ポート 3081) はブラウザベースの UI で、`librechat.yaml` を手作業で編集しなくても、この設定 (エンドポイント、MCPサーバー、エージェント設定) を変更できます。
+
+ClickHouse MCPサーバー をスタンドアロンの LibreChat インスタンスに接続する場合は、公式ガイドを参照してください: [Using ClickHouse MCP server with LibreChat](/ja/guides/use-cases/ai-ml/MCP/librechat)。LibreChat の全機能に関するドキュメントについては、[LibreChat documentation](https://www.librechat.ai/docs) を参照してください。
+
+<Info>
+  **マネージド環境を利用したい場合**は、ClickHouse Cloud の [ClickHouse Agents](/ja/products/cloud/features/ai-ml/agents) (ベータ) をご利用ください。これは同じ基盤上に構築された、セットアップ不要のホスト型エージェント環境で、エージェント構築機能を Cloud Console から利用できます。
+</Info>

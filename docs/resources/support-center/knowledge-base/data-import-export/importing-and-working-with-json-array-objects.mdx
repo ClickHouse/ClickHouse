@@ -259,9 +259,9 @@ Query id: 1af54994-b756-472f-88d7-8b5cdca0e54e
 5 rows in set. Elapsed: 0.001 sec. 
 ```
 
-now let's get the `id` of the rows where `time` is between a given interval.
+now let's get the `id` of  of the rows where `time` is between a given interval.
 
-we use `arrayCount` to see if there is a count greater than 0 of items in the array returned by the map function that will match the condition `x BETWEEN toDateTime('2021-06-18 11:46:00', 'Europe/Rome') AND toDateTime('2021-06-18 11:50:00', 'Europe/Rome')`
+we use `arrayCount` to see if there is a count greater than than 0 of items in the array returned by the map function that will match the condition `x BETWEEN toDateTime('2021-06-18 11:46:00', 'Europe/Rome') AND toDateTime('2021-06-18 11:50:00', 'Europe/Rome')`
 
 ```sql
 clickhousebook.local :) SELECT

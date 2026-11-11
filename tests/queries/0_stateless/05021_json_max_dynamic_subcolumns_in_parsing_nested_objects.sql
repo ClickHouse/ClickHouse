@@ -2,6 +2,8 @@
 -- whose columns are built from the type inferred during parsing.
 -- One table per insert: a path whose nested type differs between parts reads as shared data anyway.
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_json_parsing_cap_nested;
 DROP TABLE IF EXISTS t_json_parsing_cap_nested_deep;
 

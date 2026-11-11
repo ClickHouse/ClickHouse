@@ -1,0 +1,3 @@
+<clickhouse>
+    <user_defined_executable_functions_config>/etc/clickhouse-server/functions/*.xml</user_defined_executable_functions_config>
+</clickhouse>
