@@ -33,14 +33,14 @@
 1	[10,11]	[10,11]	['ten','eleven']	Array(UInt32)	[[10],[],[11]]	Array(Array(UInt32))
 2	[]	[]	[]	Array(UInt32)	[[],[]]	Array(Array(UInt32))
 3	[30]	[30]	['thirty']	Array(UInt32)	[]	Array(Array(UInt32))
--- array tuple elements reach file, Merge, and table-function subcolumns
-1
-1
-1
-1
+-- File, Merge, and file() keep Array(Tuple) on the function path
+0
+0
+0
 0
 1
-1
+0
+0
 -- other array subcolumns, nullable tuple wrappers, and unnamed file fields stay unchanged
 0
 0
@@ -54,4 +54,20 @@
 -- defaulted Array(Tuple) parents stay on the function path
 0
 0
+0
+-- a missing Parquet tuple field keeps array offsets and filters
+[0,0]
+[0,0]
+1
+1
+0
+-- Merge without a parent DEFAULT still uses the child DEFAULT
+1	[42]
+1	[42]
+1
+1
+0
+-- merge() keeps different child DEFAULT expressions
+[[42],[99]]
+[[42],[99]]
 0

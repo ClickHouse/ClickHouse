@@ -1335,6 +1335,13 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 bool storageAllowsTransformer(
     const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
 {
+    /// Format readers may synthesize a missing Array(Tuple) element without its
+    /// sibling array offsets. Wrappers may also lose child DEFAULT expressions.
+    /// Only direct MergeTree reads currently preserve the necessary semantics.
+    if (function_name == "tupleElement" && isArray(type)
+        && (!storage.isMergeTree() || storage.readsFromOtherTables()))
+        return false;
+
     auto & answers = getSubcolumnSupportAnswers(storage, cache);
 
     /// Without buckets the key subcolumn `m.key_<key>` reads the whole Map, so `m['key']` is not rewritten to it.

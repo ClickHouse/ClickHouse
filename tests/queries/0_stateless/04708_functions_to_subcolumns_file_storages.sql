@@ -125,7 +125,7 @@ SELECT id, tupleElement(a, 'code'), tupleElement(a, 1), tupleElement(a, -1),
        toTypeName(tupleElement(nested, 'code'))
 FROM t_array_tuple_file ORDER BY id;
 
-SELECT '-- array tuple elements reach file, Merge, and table-function subcolumns';
+SELECT '-- File, Merge, and file() keep Array(Tuple) on the function path';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 'code') FROM t_array_tuple_file)
 WHERE explain ILIKE '%column_name: a.code%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 1) FROM t_array_tuple_file)
@@ -199,3 +199,84 @@ WHERE explain ILIKE '%column_name: a.code%';
 
 DROP TABLE t_array_tuple_default_merge;
 DROP TABLE t_array_tuple_default_file;
+
+-- The Parquet file has array offsets and a.payload but no a.code. A subcolumn
+-- read must not replace the two defaulted code values with an empty array.
+INSERT INTO FUNCTION file('04708_missing_array_tuple_field.parquet', Parquet, 'a Array(Tuple(payload String))')
+SELECT [('ten',), ('eleven',)]
+SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT '-- a missing Parquet tuple field keeps array offsets and filters';
+SELECT tupleElement(a, 'code')
+FROM file('04708_missing_array_tuple_field.parquet', Parquet, 'a Array(Tuple(code UInt32, payload String))')
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT tupleElement(a, 'code')
+FROM file('04708_missing_array_tuple_field.parquet', Parquet, 'a Array(Tuple(code UInt32, payload String))')
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count()
+FROM file('04708_missing_array_tuple_field.parquet', Parquet, 'a Array(Tuple(code UInt32, payload String))')
+WHERE has(tupleElement(a, 'code'), 0)
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count()
+FROM file('04708_missing_array_tuple_field.parquet', Parquet, 'a Array(Tuple(code UInt32, payload String))')
+WHERE has(tupleElement(a, 'code'), 0)
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT tupleElement(a, 'code')
+    FROM file('04708_missing_array_tuple_field.parquet', Parquet, 'a Array(Tuple(code UInt32, payload String))'))
+WHERE explain ILIKE '%column_name: a.code%';
+
+-- The Merge wrapper declares no default, but its File child has a nonempty one.
+-- Two children with different defaults also lose those defaults in merge()'s inferred schema.
+DROP TABLE IF EXISTS t_array_tuple_default_no_metadata;
+DROP TABLE IF EXISTS t_array_tuple_default_child_42;
+DROP TABLE IF EXISTS t_array_tuple_default_child_99;
+
+CREATE TABLE t_array_tuple_default_child_42
+(
+    id UInt64,
+    a Array(Tuple(code UInt32, payload String)) DEFAULT [(42, 'default payload')]
+)
+ENGINE = File(Parquet, '04708_missing_array_tuple_default.parquet');
+
+CREATE TABLE t_array_tuple_default_child_99
+(
+    id UInt64,
+    a Array(Tuple(code UInt32, payload String)) DEFAULT [(99, 'other payload')]
+)
+ENGINE = File(Parquet, '04708_missing_array_tuple_default.parquet');
+
+CREATE TABLE t_array_tuple_default_no_metadata
+(
+    id UInt64,
+    a Array(Tuple(code UInt32, payload String))
+)
+ENGINE = Merge(currentDatabase(), '^t_array_tuple_default_child_42$');
+
+SELECT '-- Merge without a parent DEFAULT still uses the child DEFAULT';
+SELECT id, tupleElement(a, 'code') FROM t_array_tuple_default_no_metadata
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, tupleElement(a, 'code') FROM t_array_tuple_default_no_metadata
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_array_tuple_default_no_metadata WHERE has(tupleElement(a, 'code'), 42)
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_array_tuple_default_no_metadata WHERE has(tupleElement(a, 'code'), 42)
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 'code') FROM t_array_tuple_default_no_metadata)
+WHERE explain ILIKE '%column_name: a.code%';
+
+SELECT '-- merge() keeps different child DEFAULT expressions';
+SELECT arraySort(groupArray(tupleElement(a, 'code')))
+FROM merge(currentDatabase(), '^t_array_tuple_default_child_(42|99)$')
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT arraySort(groupArray(tupleElement(a, 'code')))
+FROM merge(currentDatabase(), '^t_array_tuple_default_child_(42|99)$')
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT tupleElement(a, 'code')
+    FROM merge(currentDatabase(), '^t_array_tuple_default_child_(42|99)$'))
+WHERE explain ILIKE '%column_name: a.code%';
+
+DROP TABLE t_array_tuple_default_no_metadata;
+DROP TABLE t_array_tuple_default_child_42;
+DROP TABLE t_array_tuple_default_child_99;
