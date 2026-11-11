@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -8,8 +9,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/RemoteHostFilter.h>
-
-#include <base/scope_guard.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
@@ -55,9 +54,13 @@ class FunctionAiEmbed final : public IFunction
 public:
     static constexpr auto name = "aiEmbed";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiEmbed>(context); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        context->checkAccess(AccessType::aiEmbed);
+        return std::make_shared<FunctionAiEmbed>(context);
+    }
 
-    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) {}
+    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfBackgroundExpression(context); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -95,6 +98,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Before resolving the credentials: their validation errors must not reveal a named collection.
+        FunctionBaseAI::checkHasUser(getContext());
+
         const auto & settings = getContext()->getSettingsRef();
         auto params = FunctionBaseAI::resolveAIParams(
             getContext(), arguments, FunctionBaseAI::embeddingParams(), settings[Setting::ai_function_embedding_default_credentials]);
@@ -148,14 +154,7 @@ public:
             inputs.push_back(value);
         }
 
-        /// One text per row here, so the text counts are the row counts. Increment upon destruction,
-        /// to avoid underreporting on error.
         FunctionBaseAI::EmbeddingResult embedding_result;
-        SCOPE_EXIT({
-            ProfileEvents::increment(ProfileEvents::AIRowsProcessed, embedding_result.texts_embedded);
-            ProfileEvents::increment(ProfileEvents::AIRowsSkipped, embedding_result.texts_skipped);
-        });
-
         FunctionBaseAI::embedTexts(
             provider, model, dimensions, getName(), getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
             inputs, max_batch_size, max_concurrent_requests, policy, quota_tracker, embedding_result);
@@ -189,6 +188,9 @@ public:
         /// fill final empties (pre-filtered tail rows and any trailing skipped inputs)
         for (; cursor < input_rows_count; ++cursor)
             offsets_vec.push_back(current_offset);
+
+        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, embedding_result.texts_embedded);
+        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, embedding_result.texts_skipped);
 
         return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }

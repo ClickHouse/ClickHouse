@@ -23,25 +23,17 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
-#include <optional>
 
 #include <Disks/IDisk.h>
 namespace fs = std::filesystem;
-
-namespace ProfileEvents
-{
-    extern const Event DatabaseTablesEnumerated;
-}
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool fsync_metadata;
     extern const SettingsUInt64 glob_expansion_max_elements;
 }
 
@@ -139,8 +131,8 @@ String DatabasePostgreSQL::getTableNameForLogs(const String & table_name) const
 String DatabasePostgreSQL::formatTableName(const String & table_name, bool quoted) const
 {
     if (configuration.schema.empty())
-        return quoted ? doubleQuoteStringPostgreSQL(table_name) : table_name;
-    return quoted ? fmt::format("{}.{}", doubleQuoteStringPostgreSQL(configuration.schema), doubleQuoteStringPostgreSQL(table_name))
+        return quoted ? doubleQuoteString(table_name) : table_name;
+    return quoted ? fmt::format("{}.{}", doubleQuoteString(configuration.schema), doubleQuoteString(table_name))
                   : fmt::format("{}.{}", configuration.schema, table_name);
 }
 
@@ -160,7 +152,7 @@ bool DatabasePostgreSQL::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     Tables tables;
@@ -172,10 +164,8 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         auto connection_holder = pool->get();
         auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 
-        /// Apply the filter before `fetchTable`: it queries the remote structure of one table, so
-        /// a query that names the tables it wants must not pay for the whole schema.
         for (const auto & table_name : table_names)
-            if (!detached_or_dropped.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
+            if (!detached_or_dropped.contains(table_name))
                 tables[table_name] = fetchTable(table_name, local_context, true);
     }
     catch (...)
@@ -183,33 +173,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
     }
 
-    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
-}
-
-/// Note: DatabasePostgreSQL does not own the underlying data -- it lives on the remote Postgres server.
-/// dropTable() is implemented as detachTablePermanently() for this engine, so a "dropped" table
-/// here is really just a locally-detached, remotely-recoverable table (same semantics as an
-/// explicit DETACH TABLE PERMANENTLY). It is therefore correct for such tables to show up here
-/// with is_permanently = 1, tracked via detached_or_dropped.
-DatabaseDetachedTablesSnapshotIteratorPtr DatabasePostgreSQL::getDetachedTablesIterator(
-    ContextPtr /* context */, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
-{
-    SnapshotDetachedTables snapshot;
-    std::lock_guard lock(mutex);
-    for (const auto & table_name : detached_or_dropped)
-    {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
-            continue;
-        SnapshotDetachedTable snapshot_table;
-        snapshot_table.database = database_name;
-        snapshot_table.table = table_name;
-        auto db_disk = getDisk();
-        fs::path table_marked_removed_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-        snapshot_table.is_permanently = db_disk->existsFile(table_marked_removed_path);
-        snapshot.emplace(table_name, std::move(snapshot_table));
-    }
-    return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(snapshot));
 }
 
 
@@ -310,7 +274,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 }
 
 
-void DatabasePostgreSQL::attachTable(ContextPtr local_context, const String & table_name, const StoragePtr & storage, const String &)
+void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
     auto db_disk = getDisk();
     std::lock_guard lock{mutex};
@@ -325,47 +289,16 @@ void DatabasePostgreSQL::attachTable(ContextPtr local_context, const String & ta
                         "Cannot attach PostgreSQL table {} because it already exists (database: {})",
                         getTableNameForLogs(table_name), database_name);
 
-    /// Everything that can throw runs before the erase from `detached_or_dropped`, which is what
-    /// makes the table visible, so a failed `ATTACH TABLE` stays retryable.
-    std::optional<StoragePtr> cached_before;
     if (cache_tables)
-    {
-        if (auto it = cached_tables.find(table_name); it != cached_tables.end())
-            cached_before = it->second;
         cached_tables[table_name] = storage;
-    }
-
-    try
-    {
-        if (persistent)
-        {
-            fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-
-            /// fsync the parent directory so the `unlink` survives a power loss. Only when a
-            /// marker exists: a plain (non-permanent) `DETACH` writes none, so the `unlink` is a
-            /// no-op there and there is nothing to make durable.
-            SyncGuardPtr dir_sync_guard;
-            if (local_context->getSettingsRef()[Setting::fsync_metadata] && db_disk->existsFile(table_marked_as_removed))
-                dir_sync_guard = db_disk->getDirectorySyncGuard(getMetadataPath());
-
-            db_disk->removeFileIfExists(table_marked_as_removed);
-        }
-    }
-    catch (...)
-    {
-        /// `getCreateTableQueryImpl` reads the cache without consulting `detached_or_dropped`, so a
-        /// storage left behind by a failed attach would be served to later callers.
-        if (cache_tables)
-        {
-            if (cached_before)
-                cached_tables[table_name] = *cached_before;
-            else
-                cached_tables.erase(table_name);
-        }
-        throw;
-    }
 
     detached_or_dropped.erase(table_name);
+
+    if (!persistent)
+        return;
+
+    fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+    db_disk->removeFileIfExists(table_marked_as_removed);
 }
 
 
@@ -400,47 +333,7 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
 }
 
 
-void DatabasePostgreSQL::detachTablePermanently(ContextPtr local_context, const String & table_name)
-{
-    if (!persistent)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE PERMANENTLY is not supported for non-persistent PostgreSQL database");
-
-    auto db_disk = getDisk();
-    std::lock_guard lock{mutex};
-
-    if (!checkPostgresTable(table_name))
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot detach table {} because it does not exist", getTableNameForLogs(table_name));
-
-    if (detached_or_dropped.contains(table_name))
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
-
-    fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-
-    /// Insert before writing the marker and roll back on failure: inserting allocates, so doing it
-    /// afterwards could throw with the marker already durable and not retryable.
-    detached_or_dropped.emplace(table_name);
-
-    try
-    {
-        /// fsync the parent directory so the marker survives a power loss, else the table silently
-        /// re-appears on restart. The marker is an empty file, so only its directory entry matters.
-        SyncGuardPtr dir_sync_guard;
-        if (local_context->getSettingsRef()[Setting::fsync_metadata])
-            dir_sync_guard = db_disk->getDirectorySyncGuard(getMetadataPath());
-
-        db_disk->createFile(mark_table_removed);
-    }
-    catch (...)
-    {
-        detached_or_dropped.erase(table_name);
-        throw;
-    }
-
-    if (cache_tables)
-        cached_tables.erase(table_name);
-}
-
-void DatabasePostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool /* sync */)
+void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* sync */)
 {
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");
@@ -455,29 +348,12 @@ void DatabasePostgreSQL::dropTable(ContextPtr local_context, const String & tabl
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-
-    /// Insert before writing the marker and roll back on failure: inserting allocates, so doing it
-    /// afterwards could throw with the marker already durable and not retryable.
-    detached_or_dropped.emplace(table_name);
-
-    try
-    {
-        /// fsync the parent directory so the marker survives a power loss, else the table silently
-        /// re-appears on restart. The marker is an empty file, so only its directory entry matters.
-        SyncGuardPtr dir_sync_guard;
-        if (local_context->getSettingsRef()[Setting::fsync_metadata])
-            dir_sync_guard = db_disk->getDirectorySyncGuard(getMetadataPath());
-
-        db_disk->createFile(mark_table_removed);
-    }
-    catch (...)
-    {
-        detached_or_dropped.erase(table_name);
-        throw;
-    }
+    db_disk->createFile(mark_table_removed);
 
     if (cache_tables)
         cached_tables.erase(table_name);
+
+    detached_or_dropped.emplace(table_name);
 }
 
 
@@ -553,36 +429,19 @@ void DatabasePostgreSQL::removeOutdatedTables()
         }
     }
 
-    /// Reconcile detached_or_dropped with the live remote schema:
-    /// - If a table was only ordinarily DETACH'd (no .removed marker), and the remote table
-    ///   has disappeared, the entry is pruned (nothing left to ATTACH).
-    /// - If a table was permanently detached (DETACH TABLE PERMANENTLY or DROP TABLE → .removed exists),
-    ///   the marker and entry are preserved even if the remote table disappears. This ensures that
-    ///   if a same-name table is later recreated remotely, it stays hidden in ClickHouse until
-    ///   explicit ATTACH TABLE — matching the documented behavior.
     auto db_disk = getDisk();
     for (auto iter = detached_or_dropped.begin(); iter != detached_or_dropped.end();)
     {
         if (!actual_tables.contains(*iter))
         {
-            const auto & table_name = *iter;
-            fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-            bool is_permanent = persistent && db_disk->existsFile(table_marked_as_removed);
+            auto table_name = *iter;
+            iter = detached_or_dropped.erase(iter);
 
-            /// Only prune non-permanent detach entries when the remote table disappears.
-            /// Permanent detach markers (.removed) are preserved so a recreated remote table
-            /// stays hidden until explicit ATTACH TABLE.
-            if (!is_permanent)
-            {
-                if (persistent)
-                    db_disk->removeFileIfExists(table_marked_as_removed);
-                iter = detached_or_dropped.erase(iter);
-            }
-            else
-            {
-                /// Permanent detach: preserve the marker and keep the table in detached_or_dropped
-                ++iter;
-            }
+            if (!persistent)
+                continue;
+
+            fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+            db_disk->removeFileIfExists(table_marked_as_removed);
         }
         else
             ++iter;
@@ -782,14 +641,13 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to reach a
         /// host through the database engine that `remote_url_allow_hosts` forbids elsewhere.
-        /// Skip it only for the server's own replay of stored metadata (the same distinction
-        /// `DatabaseDataLake` uses): startup rebuilds every database from persisted metadata with
-        /// an ATTACH query and `loadMetadata` aborts on the first exception, so enforcing the policy
-        /// there would turn one database created before the whitelist was tightened into a server
-        /// that cannot boot. The loader flag, not `internal`, is the discriminator: wrappers such as
-        /// `PARALLEL WITH` run user statements as internal ones, and a user-issued `ATTACH DATABASE`
-        /// is not a replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
-        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// Skip it only for an internal metadata replay (server startup / restore, the same
+        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
+        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
+        /// enforcing the policy there would turn one database created before the whitelist was
+        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
+        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
         if (!is_internal_metadata_replay)
         {
             for (const auto & address : configuration.addresses)
@@ -817,7 +675,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             use_table_cache,
             args.uuid);
     };
-    factory.registerDatabase("PostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3), {
+    factory.registerDatabase("PostgreSQL", create_fn, {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
@@ -866,9 +724,9 @@ TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named
 | INTEGER          | Nullable([Int32](/reference/data-types/int-uint))|
 | ARRAY            | [Array](/reference/data-types/array)             |
 
-<Note>
+:::note
 PostgreSQL `numeric(p, 0)` with a precision `p` greater than 76 (the maximum supported by `Decimal256`) — for example `numeric(78, 0)`, commonly used to store 256-bit integers — is mapped to [`Int256`](/reference/data-types/int-uint) instead of `Decimal`. Values that do not fit into the `Int256` range are rejected with an error.
-</Note>
+:::
 
 ## Examples of use {#examples-of-use}
 

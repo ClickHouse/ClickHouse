@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-parallel, no-replicated-database
+# no-parallel: creates and drops a global named collection
 # no-replicated-database: named collections are server-global, not database-scoped
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -20,6 +21,7 @@ CREATE NAMED COLLECTION $collection_name AS
     api_key = 'fake-key';
 
 CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
+GRANT AI FUNCTIONS ON *.* TO $user_name;
 "
 
 # Runs the AI functions as the test user in one client invocation and emits one line

@@ -52,10 +52,6 @@ public:
     virtual bool hasStaticStructure() const { return false; }
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
-    /// Returns true if the storage created by this table function can store its own unreplicated data on disk.
-    /// Used to classify `CREATE TABLE ... AS table_function(...)` without executing the table function,
-    /// see `IStorage::hasUnreplicatedTableDataOnDisk`.
-    virtual bool hasUnreplicatedTableDataOnDisk() const { return false; }
 
     /** Return array of table function arguments indexes for which query tree analysis must be skipped.
       * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
@@ -63,23 +59,6 @@ public:
     virtual VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
-
-    /** The identity of the source this call reads, if a parallel-replicas read can be coordinated over it.
-      * Each replica resolves the call itself, so the call must denote the same logical source on every
-      * replica, and evaluating it must have no effect beyond looking that source up. The identity names the
-      * read to the coordinator, so every replica must compute the same one: it must not depend on anything
-      * local to a server, such as the UUID of a hidden inner table, nor on the alias the call was written
-      * with, and calls that read different sources must get different ones. `timeSeriesSamples(db, ts)`
-      * reads the samples table of `db.ts`, and is identified as `timeSeriesSamples(db.ts)`.
-      *
-      * No value, the default, means the call cannot be the coordinated read: one that produces a storage of
-      * its own (`s3`, `numbers`, `view`, `merge`) is not the same table on any two replicas, even when that
-      * storage is a `MergeTree`. A value does not make the read eligible by itself - the storage it resolves
-      * to is checked as for a table. The identity is used only when the replicas are sent the query: a plan
-      * fragment names the storage the call resolved to on the initiator, and the read is coordinated under
-      * that storage's name.
-      */
-    virtual std::optional<String> getParallelReplicasReadID() const { return std::nullopt; }
 
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;
@@ -103,17 +82,6 @@ public:
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
     virtual bool canBeUsedToCreateTable() const { return true; }
-
-    /// Whether the storage this table function returns is chosen by the current user's grants
-    /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
-    /// definition, not even nested in an argument of another table function such as `remote`:
-    /// the persisted definition is later resolved with no user or under the connection's
-    /// credentials, so the branch that must depend on the reader's grants cannot be decided.
-    virtual bool dependsOnCurrentUserGrants() const { return false; }
-
-    /// Whether two reads of the returned storage within one query may produce different rows
-    /// (e.g. `generateRandom`). Counterpart of `IFunction::isDeterministicInScopeOfQuery`.
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
@@ -139,12 +107,17 @@ public:
     StoragePtr
     execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false, bool check_create_temporary_table = true, bool check_source_access = true) const;
 
-    /// Returns actual table structure after enforcing source access checks.
-    /// Use this instead of getActualTableStructure() from outside execute().
+    /// Returns actual table structure after enforcing the same access checks as `execute`: source, engine,
+    /// and `CREATE TEMPORARY TABLE` (for table functions not allowed in readonly mode).
+    /// Use this instead of `getActualTableStructure` from outside `execute`.
     ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
 
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
+
+    /// Check the `CREATE TEMPORARY TABLE` grant, required to use a table function unless it is allowed
+    /// in readonly mode and the query is not an insert.
+    void checkCreateTemporaryTableAccess(ContextPtr context, bool is_insert_query) const;
 
     /// The URI of the function for permission checking. Can be an empty string if not applicable.
     /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.

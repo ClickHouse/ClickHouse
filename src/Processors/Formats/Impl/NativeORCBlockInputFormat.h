@@ -153,7 +153,8 @@ public:
         bool null_as_default_,
         bool case_insensitive_matching_ = false,
         bool dictionary_as_low_cardinality_ = false,
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore);
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore,
+        std::unordered_set<UInt64> count_only_fields_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -163,11 +164,7 @@ public:
         BlockMissingValues * block_missing_values = nullptr);
 
     void orcColumnsToCHChunk(
-        Chunk & res,
-        NameToColumnPtr & name_to_column_ptr,
-        const Names & orc_field_names,
-        size_t num_rows,
-        BlockMissingValues * block_missing_values = nullptr);
+        Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
 private:
     ColumnWithTypeAndName readColumnFromORCColumn(
@@ -184,6 +181,8 @@ private:
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
+    /// ORC column ids of the struct fields that are read only for the size and the null map of their struct.
+    const std::unordered_set<UInt64> count_only_fields;
 };
 }
 #endif
