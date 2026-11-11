@@ -13,8 +13,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 
-echo '--- a new definition with a future version is rejected, also by a full-definition ATTACH ---'
-$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "ATTACH TABLE ts_future_version UUID '$uuid' (metric_name String) ENGINE = TimeSeries SETTINGS version = 999" 2>&1 | grep -o "INVALID_SETTING_VALUE" | head -1
+echo '--- a new definition with a future version is rejected, and a full-definition ATTACH of a TimeSeries table with inner tables is refused ---'
+$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "CREATE TABLE ts_future_version (metric_name String) ENGINE = TimeSeries SETTINGS version = 999" 2>&1 | grep -o "INVALID_SETTING_VALUE" | head -1
+$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "ATTACH TABLE ts_future_version UUID '$uuid' (metric_name String) ENGINE = TimeSeries SETTINGS version = 999" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
 
 echo '--- a table with a future version can be attached, even if its definition uses a setting unknown to this server ---'
 # The stored definition of a new table is rewritten to a future version and attached back with the short ATTACH.

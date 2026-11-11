@@ -1,6 +1,6 @@
 -- Tags: no-parallel, no-ordinary-database
--- Tag no-parallel: static UUIDs
--- Tag no-ordinary-database: a full-definition ATTACH TABLE requires a UUID
+-- no-parallel: full-definition ATTACH uses fixed UUIDs, which collide across concurrent runs of this test.
+-- no-ordinary-database: an Ordinary database rejects the UUID clause of ATTACH.
 
 -- An ATTACH that states the whole definition is validated like the equivalent CREATE.
 
@@ -14,6 +14,8 @@ SET enable_unique_key = 1;
 
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS src;
+DROP TABLE IF EXISTS mv;
+DROP TABLE IF EXISTS dst;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- UNIQUE KEY with a table TTL
@@ -81,14 +83,26 @@ ATTACH TABLE t UUID '05621000-0000-0000-0000-000000000015' (a String) ENGINE = F
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary; -- { serverError UNKNOWN_DATABASE_ENGINE }
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary; -- { serverError UNKNOWN_DATABASE_ENGINE }
 
--- TimeSeries inner column of a wrong type
+-- TimeSeries inner column of a wrong type, inner engine not allowed for its target
 SET enable_time_series_table = 1;
 CREATE TABLE t ENGINE = TimeSeries SAMPLES INNER COLUMNS(min_time DateTime64(3)); -- { serverError BAD_TYPE_OF_FIELD }
-ATTACH TABLE t UUID '05621000-0000-0000-0000-000000000016' ENGINE = TimeSeries SAMPLES INNER COLUMNS(min_time DateTime64(3)); -- { serverError BAD_TYPE_OF_FIELD }
-
--- TimeSeries inner engine not allowed for its target
 CREATE TABLE t ENGINE = TimeSeries RECENT SAMPLES INNER ENGINE = Memory; -- { serverError INCORRECT_QUERY }
-ATTACH TABLE t UUID '05621000-0000-0000-0000-000000000017' ENGINE = TimeSeries RECENT SAMPLES INNER ENGINE = Memory; -- { serverError INCORRECT_QUERY }
+CREATE MATERIALIZED VIEW mv (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 0 AS SELECT x FROM src; -- { serverError BAD_ARGUMENTS }
+
+-- A full-definition ATTACH of a view with inner tables is refused, valid or not, with or without an inner engine
+ATTACH TABLE t UUID '05621000-0000-0000-0000-000000000016' ENGINE = TimeSeries SAMPLES INNER COLUMNS(min_time DateTime64(3)); -- { serverError BAD_ARGUMENTS }
+ATTACH TABLE t UUID '05621000-0000-0000-0000-000000000017' ENGINE = TimeSeries RECENT SAMPLES INNER ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+ATTACH TABLE t UUID '05621000-0000-0000-0000-000000000018' ENGINE = TimeSeries; -- { serverError BAD_ARGUMENTS }
+ATTACH MATERIALIZED VIEW mv UUID '05621000-0000-0000-0000-000000000019' (x UInt8) ENGINE = MergeTree ORDER BY x AS SELECT x FROM src; -- { serverError BAD_ARGUMENTS }
+ATTACH MATERIALIZED VIEW mv UUID '05621000-0000-0000-0000-000000000020' (x UInt8) AS SELECT x FROM src; -- { serverError BAD_ARGUMENTS }
+
+-- A full-definition ATTACH of a view with an external target is allowed
+CREATE TABLE dst (x UInt8) ENGINE = MergeTree ORDER BY x;
+ATTACH MATERIALIZED VIEW mv UUID '05621000-0000-0000-0000-000000000021' TO dst (x UInt8) AS SELECT x FROM src;
+INSERT INTO src VALUES (1);
+SELECT count() FROM dst;
+DROP TABLE mv;
+DROP TABLE dst;
 
 -- A short ATTACH of a valid table still works
 DETACH TABLE src;

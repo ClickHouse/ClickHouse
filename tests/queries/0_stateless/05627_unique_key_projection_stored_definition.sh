@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-object-storage, no-s3-storage, no-fasttest
+# Tags: no-shared-merge-tree, no-object-storage, no-s3-storage, no-fasttest, no-ordinary-database
 # no-shared-merge-tree, no-object-storage, no-s3-storage: UNIQUE KEY needs a plain MergeTree on a disk with transactions.
 # no-fasttest: UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
+# no-ordinary-database: UNIQUE KEY tables are not supported in an Ordinary database.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

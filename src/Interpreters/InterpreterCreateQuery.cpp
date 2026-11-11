@@ -58,6 +58,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/SubcolumnCodecs.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -721,6 +722,15 @@ void checkSubcolumnCodecsAreEnabled(const ContextPtr & context, LoadingStrictnes
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
 }
 
+bool hasInnerTables(const ASTCreateQuery & create)
+{
+    if (create.is_materialized_view)
+        return create.is_materialized_view_with_inner_table();
+    if (create.is_time_series_table)
+        return std::ranges::any_of(StorageTimeSeries::getTargetKinds(), [&](auto kind) { return !create.hasTargetTableID(kind); });
+    return false;
+}
+
 /// Applies the `CODEC name (...)` entries of a column list to the columns they name.
 void applyCodecDeclarations(
     const ASTExpressionList & declarations,
@@ -1069,6 +1079,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (isFreshDefinition(mode) && create.is_clone_as && create.as_table.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "CLONE AS requires a source table name, not a SELECT query or table function");
+
+    /// The inner tables of a view are bound by name, but `RESTORE` rebuilds them from the view's definition,
+    /// so a user-supplied one would store inner definitions that nothing validated.
+    if (mode == LoadingStrictnessLevel::ATTACH_FULL_DEFINITION && hasInnerTables(create))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ATTACH with a full definition is not supported for {} with inner tables. Use 'ATTACH TABLE {};' to attach "
+            "the stored definition, or CREATE it with TO pointing to the existing table",
+            create.is_materialized_view ? "a materialized view" : "a TimeSeries table",
+            backQuoteIfNeed(create.getTable()));
 
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
