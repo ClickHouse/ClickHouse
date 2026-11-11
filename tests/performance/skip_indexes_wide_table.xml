@@ -1,0 +1,38 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>x</name>
+            <values>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>6</value>
+                <value>7</value>
+                <value>8</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>y</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>6</value>
+                <value>7</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE skip_indexes_wide ENGINE = MergeTree ORDER BY tuple() EMPTY AS SELECT * FROM generateRandom(arrayStringConcat(arrayMap(i -> concat('c', toString(i), ' String'), range(1000)), ', '))</create_query>
+    <create_query>ALTER TABLE skip_indexes_wide ADD INDEX i{x}{y} c{x}{y} TYPE bloom_filter GRANULARITY 1</create_query>
+    <fill_query>INSERT INTO skip_indexes_wide (c0) VALUES ('a')</fill_query>
+
+    <query>SELECT count() FROM skip_indexes_wide WHERE c0 = 'x'</query>
+
+    <drop_query>DROP TABLE IF EXISTS skip_indexes_wide</drop_query>
+</test>
