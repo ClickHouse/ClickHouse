@@ -9,6 +9,7 @@
 
 #include <Formats/ColumnNameMaps.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <arrow/table.h>
@@ -92,12 +93,13 @@ private:
         std::string column_name;
     };
 
+    using RecordBatchFieldMappings = VectorWithMemoryTracking<RecordBatchFieldMapping>;
     using NameToArrowColumn = UnorderedMapWithMemoryTracking<std::string, ArrowColumn>;
 
-    std::vector<RecordBatchFieldMapping> buildRecordBatchFieldMapping(const arrow::Schema & schema) const;
+    RecordBatchFieldMappings buildRecordBatchFieldMapping(const arrow::Schema & schema) const;
     NameToArrowColumn mapRecordBatchColumns(
         const arrow::RecordBatch & batch,
-        const std::vector<RecordBatchFieldMapping> & field_mapping) const;
+        const RecordBatchFieldMappings & field_mapping) const;
 
     Chunk arrowColumnsToCHChunk(
         const NameToArrowColumn & name_to_arrow_column,
@@ -124,7 +126,7 @@ private:
     UnorderedMapWithMemoryTracking<std::string, DictionaryInfo> dictionary_infos;
 
     std::shared_ptr<arrow::Schema> record_batch_schema;
-    std::vector<RecordBatchFieldMapping> record_batch_field_mapping;
+    RecordBatchFieldMappings record_batch_field_mapping;
     NamesAndTypesList record_batch_header;
 
     std::optional<ColumnNameMap> parquet_columns_to_clickhouse;

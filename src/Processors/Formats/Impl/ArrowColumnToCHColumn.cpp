@@ -3,6 +3,7 @@
 
 #if USE_ARROW || USE_PARQUET
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -45,7 +46,6 @@
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <algorithm>
 #include <bit>
-#include <unordered_set>
 #include <arrow/builder.h>
 #include <arrow/array.h>
 #include <arrow/util/key_value_metadata.h>
@@ -2948,13 +2948,13 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
     return arrowColumnsToCHChunk(name_to_arrow_column, num_rows, metadata, block_missing_values);
 }
 
-std::vector<ArrowColumnToCHColumn::RecordBatchFieldMapping> ArrowColumnToCHColumn::buildRecordBatchFieldMapping(
+ArrowColumnToCHColumn::RecordBatchFieldMappings ArrowColumnToCHColumn::buildRecordBatchFieldMapping(
     const arrow::Schema & schema) const
 {
-    std::vector<RecordBatchFieldMapping> result;
+    RecordBatchFieldMappings result;
     result.reserve(schema.num_fields());
-    std::unordered_set<std::string> field_names;
-    std::unordered_set<std::string> mapped_names;
+    UnorderedSetWithMemoryTracking<std::string> field_names;
+    UnorderedSetWithMemoryTracking<std::string> mapped_names;
     field_names.reserve(schema.num_fields());
     mapped_names.reserve(schema.num_fields());
 
@@ -2994,7 +2994,7 @@ std::vector<ArrowColumnToCHColumn::RecordBatchFieldMapping> ArrowColumnToCHColum
 
 ArrowColumnToCHColumn::NameToArrowColumn ArrowColumnToCHColumn::mapRecordBatchColumns(
     const arrow::RecordBatch & batch,
-    const std::vector<RecordBatchFieldMapping> & field_mapping) const
+    const RecordBatchFieldMappings & field_mapping) const
 {
     NameToArrowColumn result;
     result.reserve(field_mapping.size());
