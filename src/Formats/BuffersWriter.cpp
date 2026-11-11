@@ -48,7 +48,7 @@ void BuffersWriter::write(const Block & block)
 
         WriteBufferFromOwnString buffer;
 
-        NativeWriter::writeData(*serialization, full_column, buffer, format_settings, 0, 0, format_settings.client_protocol_version);
+        NativeWriter::writeData(*serialization, full_column, buffer, &format_settings, 0, 0, format_settings.client_protocol_version);
 
         /// Size of buffer in bytes (UInt64)
         UInt64 buffer_size = static_cast<UInt64>(buffer.count());

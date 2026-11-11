@@ -125,7 +125,6 @@ build_digest_config = Job.CacheDigestConfig(
         "./cmake",
         "./base",
         "./programs",
-        "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/relocation_headroom.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
@@ -159,7 +158,6 @@ fast_test_digest_config = Job.CacheDigestConfig(
         "./cmake",
         "./base",
         "./programs",
-        "./rust",
     ],
 )
 
@@ -959,11 +957,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
     )
-    # The selection depends on the merge-queue entry (the tests `master` changed
-    # after the PR's last CI run) and on the attempt (`Targeting.selection_cutoff`),
-    # neither of which is in the digest, so a cached result must not stand in.
-    for job in stateless_tests_targeted_mq_jobs:
-        job.digest_config = None
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
@@ -1338,7 +1331,6 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./rust",
             ],
             exclude_paths=test_data_submodules,
             with_git_submodules=True,
@@ -1726,9 +1718,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         )
     )
-    # Not cached, for the same reason as `stateless_tests_targeted_mq_jobs`.
-    for job in integration_test_targeted_mq_jobs:
-        job.digest_config = None
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job
     # script via Info().pr_number and Info().workflow_name.

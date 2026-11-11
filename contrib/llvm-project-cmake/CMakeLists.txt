@@ -15,6 +15,10 @@ option (ENABLE_EMBEDDED_COMPILER "Enable JIT compilation" ${ENABLE_EMBEDDED_COMP
 option (ENABLE_DWARF_PARSER "Enable DWARF input format" ${ENABLE_DWARF_PARSER_DEFAULT})
 option (ENABLE_BLAKE3 "Enable BLAKE3 function" ${ENABLE_LIBRARIES})
 
+if (ENABLE_GPU AND NOT ENABLE_EMBEDDED_COMPILER)
+    message(FATAL_ERROR "ENABLE_GPU requires ENABLE_EMBEDDED_COMPILER: the GPU engine compiles its expressions with LLVM")
+endif()
+
 if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER AND NOT ENABLE_BLAKE3)
     message(STATUS "Not using LLVM")
     return()
@@ -180,6 +184,14 @@ endif()
 
 if (ENABLE_XRAY)
     include(${LLVM_CMAKE_DIR}/sources/LLVMXRay.cmake)
+endif()
+
+# The GPU engine compiles expressions into PTX at run time, see `src/GPU/GPUJIT.h`.
+if (ENABLE_GPU AND ENABLE_EMBEDDED_COMPILER)
+    set (LLVM_ENABLE_NVPTX 1)
+    include(${LLVM_CMAKE_DIR}/sources/LLVMNVPTX.cmake)
+else()
+    set (LLVM_ENABLE_NVPTX 0)
 endif()
 
 #
@@ -894,8 +906,25 @@ if (ARCH_LOONGARCH64)
     tablegen_generate(LOONGARCH "${LOONGARCH_TD}" "-gen-sd-node-info" "lib/Target/LoongArch/LoongArchGenSDNodeInfo.inc")
 endif()
 
+#
+# NVPTX-specific TableGen, a target besides the host's
+#
+if (LLVM_ENABLE_NVPTX)
+    set(NVPTX_TD "${LLVM_SOURCE_DIR}/lib/Target/NVPTX/NVPTX.td")
+
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-asm-writer" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenAsmWriter.inc")
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-dag-isel" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenDAGISel.inc")
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-instr-info" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenInstrInfo.inc")
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-register-info" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenRegisterInfo.inc")
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-sd-node-info" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenSDNodeInfo.inc")
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-subtarget" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenSubtargetInfo.inc")
+endif()
+
 # Combine all tablegen outputs
 set(ALL_TABLEGEN_OUTPUTS ${COMMON_TABLEGEN_OUTPUTS})
+if (LLVM_ENABLE_NVPTX)
+    list(APPEND ALL_TABLEGEN_OUTPUTS ${NVPTX_TABLEGEN_OUTPUTS})
+endif()
 if (ARCH_AMD64)
     list(APPEND ALL_TABLEGEN_OUTPUTS ${X86_TABLEGEN_OUTPUTS})
 elseif (ARCH_AARCH64)
@@ -1017,6 +1046,19 @@ elseif (ARCH_LOONGARCH64)
     add_llvm_library(LLVMLoongArchCodeGen SOURCES ${LLVMLOONGARCHCODEGEN_SOURCES} DEPENDS LLVMLoongArchInfo LLVMLoongArchDesc LLVMCodeGen LLVMSelectionDAG LLVMAsmPrinter LLVMTarget LLVMMC LLVMSupport)
 endif()
 
+if (LLVM_ENABLE_NVPTX)
+    add_llvm_library(LLVMNVPTXInfo SOURCES ${LLVMNVPTXINFO_SOURCES} DEPENDS LLVMMC LLVMSupport)
+    add_llvm_library(LLVMNVPTXDesc SOURCES ${LLVMNVPTXDESC_SOURCES} DEPENDS LLVMNVPTXInfo LLVMMC LLVMSupport LLVMTargetParser)
+    add_llvm_library(LLVMNVPTXCodeGen SOURCES ${LLVMNVPTXCODEGEN_SOURCES}
+        DEPENDS LLVMNVPTXInfo LLVMNVPTXDesc LLVMAnalysis LLVMAsmPrinter LLVMCodeGen LLVMCodeGenTypes LLVMCore LLVMipo LLVMMC
+            LLVMScalarOpts LLVMSelectionDAG LLVMSupport LLVMTarget LLVMTargetParser LLVMTransformUtils LLVMVectorize)
+    foreach (nvptx_library LLVMNVPTXInfo LLVMNVPTXDesc LLVMNVPTXCodeGen)
+        target_include_directories(${nvptx_library} BEFORE PRIVATE
+            "${LLVM_BINARY_DIR}/lib/Target/NVPTX"
+            "${LLVM_SOURCE_DIR}/lib/Target/NVPTX")
+    endforeach()
+endif()
+
 # XRay support
 if (ENABLE_XRAY)
     add_llvm_library(LLVMXRay SOURCES ${LLVMXRAY_SOURCES} DEPENDS LLVMSupport LLVMObject)
@@ -1096,6 +1138,10 @@ else()
 
     if (ENABLE_XRAY)
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMXRay)
+    endif()
+
+    if (LLVM_ENABLE_NVPTX)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMNVPTXInfo LLVMNVPTXDesc LLVMNVPTXCodeGen)
     endif()
 endif()
 
