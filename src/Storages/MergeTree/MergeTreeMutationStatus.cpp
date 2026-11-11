@@ -34,6 +34,11 @@ void MutationScopeInitialBytes::account(const MergeTreePartInfo & info, UInt64 p
             return;
     }
 
+    /// Allocate the new entry first, so a failed allocation leaves the counted weights untouched.
+    std::map<MergeTreePartInfo, UInt64> staged;
+    staged.emplace(info, part_bytes);
+    auto node = staged.extract(staged.begin());
+
     for (auto it = range_begin; it != counted_parts.end()
          && it->first.getKind() == info.getKind() && it->first.getPartitionId() == info.getPartitionId()
          && it->first.min_block <= info.max_block;)
@@ -48,7 +53,7 @@ void MutationScopeInitialBytes::account(const MergeTreePartInfo & info, UInt64 p
             return;
         ++it;
     }
-    counted_parts.emplace(info, part_bytes);
+    counted_parts.insert(std::move(node));
     bytes += part_bytes;
 }
 
