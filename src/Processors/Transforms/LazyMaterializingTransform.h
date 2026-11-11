@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 
 
-
 namespace DB
 {
 
