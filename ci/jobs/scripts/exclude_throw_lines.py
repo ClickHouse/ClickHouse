@@ -5,9 +5,8 @@ Drop the lines of exception-throwing statements from an LCOV tracefile.
 A `throw` statement is the error exit of a check whose condition is on the line
 before it, and the condition line stays in the report. Counting the `throw`
 itself measures how many error messages the tests trigger, not how much logic
-they reach. DuckDB applies the same rule to its published number
-(`lcov_excl_line` in its `.github/workflows/lcovrc`), but `lcov_excl_line` only
-matches one line, while ClickHouse formats a throw as
+they reach. lcov's own `lcov_excl_line` option cannot express this because it
+matches one line only, while ClickHouse formats a throw as
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "Message {}", argument);

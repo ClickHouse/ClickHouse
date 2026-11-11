@@ -182,7 +182,7 @@ mv llvm_coverage.brace.info llvm_coverage.info
 
 # Lines of `throw` statements measure how many error messages the tests
 # trigger rather than how much logic they reach (the check before the throw
-# stays in the report). DuckDB excludes them from its published number too.
+# stays in the report).
 echo "Dropping lines of throwing statements..."
 python3 "$WORKSPACE_PATH/ci/jobs/scripts/exclude_throw_lines.py" llvm_coverage.info
 
