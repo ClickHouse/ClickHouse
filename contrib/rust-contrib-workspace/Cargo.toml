@@ -18,6 +18,10 @@ name = "_ch_rust_workspace"
 version = "0.1.0"
 edition = "2021"
 
+# Static in the manifest, unlike the members: nothing depends on it, so cargo writes no other archive.
+[lib]
+crate-type = ["staticlib"]
+
 [features]
 skim = ["dep:_ch_rust_skim_rust"]
 prql = ["dep:_ch_rust_prql"]

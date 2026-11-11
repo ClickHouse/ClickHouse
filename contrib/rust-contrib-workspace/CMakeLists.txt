@@ -18,7 +18,8 @@ if (NOT _enabled_crates OR (ENABLE_THINLTO AND NOT CMAKE_BUILD_TYPE_UC STREQUAL 
     return()
 endif()
 
-clickhouse_import_crate(MANIFEST_PATH "${RUST_CONTRIB_WORKSPACE_MANIFEST}" CRATES _ch_rust_workspace FEATURES ${_enabled_features})
+# The only package of the workspace that is static in its manifest; `CRATES` would only add a redundant `OVERRIDE_CRATE_TYPE`.
+clickhouse_import_crate(MANIFEST_PATH "${RUST_CONTRIB_WORKSPACE_MANIFEST}" FEATURES ${_enabled_features})
 clickhouse_config_crate_env(_ch_rust_workspace)
 
 # The root run builds the build scripts of the members as well, so it needs what their runs need (OpenSSL).
