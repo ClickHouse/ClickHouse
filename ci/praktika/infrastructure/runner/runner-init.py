@@ -610,7 +610,13 @@ timedatectl status | grep 'NTP service: active'
                                 "log_group_name": "runners/cloud-init-output",
                                 "log_stream_name": "{instance_id}",
                                 "retention_in_days": 30,
-                            }
+                            },
+                            {
+                                "file_path": "/var/log/amazon/ec2/ec2-macos-init.log",
+                                "log_group_name": "runners/cloud-init-output",
+                                "log_stream_name": "{instance_id}-ec2-macos-init",
+                                "retention_in_days": 30,
+                            },
                         ]
                     }
                 },
