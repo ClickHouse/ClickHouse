@@ -2,6 +2,10 @@
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
+#include <initializer_list>
+#include <string_view>
+#include <utility>
+
 using namespace DB;
 
 namespace
@@ -25,11 +29,27 @@ namespace
 
 TEST(PromQLParser, StandaloneStartEndFunctions)
 {
-    for (const auto * query :
-         {"start()", "end()", "end() - start()", "start\n()", "end # comment\r()", "start # comment\n()"})
+    /// Check the canonical output, not just that an expression round-trips to itself.
+    for (const auto & [query, expected] :
+         std::initializer_list<std::pair<std::string_view, std::string_view>>{
+             {"start()", "start()"},
+             {"end()", "end()"},
+             {"end() - start()", "end() - start()"},
+             {"start\n()", "start()"},
+             {"end # comment\r()", "end()"},
+             {"start # comment\n()", "start()"},
+         })
     {
         PrometheusQueryTree tree{query};
         EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::SCALAR) << query;
+        expectStartEndRoundTrip(query, expected);
+    }
+
+    /// Nested calls return vectors while the boundary functions themselves return scalars.
+    for (const auto * query : {"vector(start())", "vector(end())", "vector(end() - start())"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::INSTANT_VECTOR) << query;
         expectStartEndRoundTrip(query, tree.toString());
     }
 
@@ -51,7 +71,9 @@ TEST(PromQLParser, StandaloneStartEndFunctions)
 
 TEST(PromQLParser, InvalidStandaloneStartEndFunctions)
 {
-    for (const auto * query : {"start(1)", "end(1)", "start(1, 2)", "end(1, 2)", "START()", "END()", "Start()", "End()", "vector(START())"})
+    for (const auto * query :
+         {"start(1)", "end(1)", "start(1, 2)", "end(1, 2)", "start(time())", "end(vector(1))",
+          "vector(start(1))", "vector(end(1))", "START()", "END()", "Start()", "End()", "vector(START())"})
     {
         PrometheusQueryTree tree;
         String error_message;
