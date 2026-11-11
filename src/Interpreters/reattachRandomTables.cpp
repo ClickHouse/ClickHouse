@@ -112,6 +112,11 @@ bool canBeReattached(const StoragePtr & table, const std::unordered_set<const IS
     if (storage->isDictionary() || storage->isSystemStorage())
         return false;
 
+    /// `SYSTEM STOP VIEW` and `SYSTEM PAUSE VIEW` do not hold an action lock, they change the state of the refresh task,
+    /// and a reattached view would start refreshing again.
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()); materialized_view && materialized_view->isRefreshable())
+        return false;
+
     const String engine = storage->getName();
     /// `Buffer` keeps data in memory and flushes it on `DETACH`, which loses the data if there is no destination.
     if (engine == "Memory" || engine == "Buffer")
