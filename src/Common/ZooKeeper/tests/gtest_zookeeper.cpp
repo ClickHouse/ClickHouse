@@ -54,6 +54,7 @@ public:
     }
 
     bool isExpired() const override { return false; }
+    silk::FiberEvent & getExpiredEvent() override { unsupported(); }
     std::optional<int8_t> getConnectedNodeIdx() const override { return 0; }
     String getConnectedHostPort() const override { return "GetCallbackKeeper:0000"; }
     int64_t getConnectionXid() const override { return 0; }
@@ -76,7 +77,6 @@ public:
     void multi(std::span<const RequestPtr>, MultiCallback) override { unsupported(); }
     void multi(const Requests &, MultiCallback) override { unsupported(); }
     void getACL(const String &, GetACLCallback) override { unsupported(); }
-    silk::FiberEvent & getExpiredEvent() override { unsupported(); }
 
 private:
     [[noreturn]] static void unsupported()
