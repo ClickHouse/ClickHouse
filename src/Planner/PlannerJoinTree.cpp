@@ -2726,11 +2726,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             {
                                 auto custom_key_ast = parseCustomKeyForTable(
                                     inner_context->getSettingsRef()[Setting::parallel_replicas_custom_key], *inner_context);
-                                buildFilterQueryTree(
+                                auto custom_key_query_tree = buildFilterQueryTree(
                                     custom_key_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
                                     /*check_access_rights=*/ true);
+                                checkCustomKeyQueryTreeReadsOnlyRow(custom_key_query_tree, custom_key_ast);
                             }
 
                             /// Replace the view's table expression in the outer query with the
@@ -2969,12 +2970,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
                         {
                             /// The key is evaluated on the replicas on behalf of this user.
+                            /// The replicas get the filter generated from the AST, so check the binding the analyzer makes here.
                             auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context);
-                            buildFilterQueryTree(
+                            auto custom_key_query_tree = buildFilterQueryTree(
                                 custom_key_ast,
                                 table_expression_query_info.table_expression,
                                 query_context,
                                 /*check_access_rights=*/ true);
+                            checkCustomKeyQueryTreeReadsOnlyRow(custom_key_query_tree, custom_key_ast);
 
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
                             auto modified_query_info = select_query_info;
