@@ -15,6 +15,8 @@ CREATE VIEW v_sealed DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT name,
 CREATE VIEW v_none SQL SECURITY NONE AS SELECT name, sum(id) AS s FROM t_private GROUP BY name;
 CREATE VIEW v_nested DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT name FROM v_sealed WHERE s > 0;
 CREATE VIEW v_param DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT name, sum(id) AS s FROM t_private WHERE id > {p:UInt64} GROUP BY name;
+CREATE VIEW v_describe DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT {p:UInt64} AS p, (SELECT max(id) FROM t_private) AS m;
+CREATE VIEW v_resolve DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT {p:UInt64} AS p, number FROM numbers(assumeNotNull((SELECT min(id) FROM t_private)));
 CREATE TABLE t_policy (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_policy VALUES (1), (2);
 CREATE ROW POLICY p_policy ON t_policy USING id > 1 TO ALL;
@@ -34,6 +36,10 @@ SET force_optimize_projection = 0, force_optimize_projection_name = '';
 -- A filtered aggregate need not use the projection.
 SELECT name FROM v_param(p = 0) UNION ALL SELECT name FROM v_param(p = 1) SETTINGS log_comment = 'param' FORMAT Null;
 
+-- Analysis alone runs the scalar subqueries of the body, and those in the arguments of a table function in it.
+DESCRIBE TABLE v_describe(p = 1) SETTINGS log_comment = 'describe' FORMAT Null;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT * FROM v_resolve(p = 1)) SETTINGS log_comment = 'resolve' FORMAT Null;
+
 -- The body's own optimization fails while the caller is still planning, after the body was registered.
 SELECT name FROM v_sealed SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p_missing', log_comment = 'before_start' FORMAT Null; -- { serverError INCORRECT_DATA }
 SELECT throwIf(s > 0) FROM v_sealed SETTINGS log_comment = 'while_processing' FORMAT Null; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
@@ -48,7 +54,7 @@ SELECT
     has(projections, currentDatabase() || '.t_private.p_by_name') AS uses_projection
 FROM system.query_log
 WHERE current_database = currentDatabase() AND is_initial_query AND type IN ('QueryFinish', 'ExceptionBeforeStart')
-    AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param', 'before_start')
+    AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param', 'describe', 'resolve', 'before_start')
 ORDER BY log_comment;
 
 SELECT 'child rows';
@@ -61,18 +67,18 @@ SELECT
     initial_query_id IN (
         SELECT query_id FROM system.query_log
         WHERE current_database = currentDatabase() AND is_initial_query AND type IN ('QueryFinish', 'ExceptionBeforeStart')
-            AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param', 'before_start')
+            AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param', 'describe', 'resolve', 'before_start')
     ) AS of_caller
 FROM system.query_log
 WHERE current_database = currentDatabase() AND NOT is_initial_query AND type = 'QueryFinish'
-    AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param')
+    AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param', 'describe', 'resolve')
 ORDER BY log_comment, body;
 
 SELECT 'user_query_log';
 SELECT log_comment, countIf(type = 'QueryStart'), countIf(type = 'QueryFinish'), countIf(type = 'ExceptionBeforeStart')
 FROM system.user_query_log
 WHERE current_database = currentDatabase()
-    AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param', 'before_start')
+    AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param', 'describe', 'resolve', 'before_start')
 GROUP BY log_comment
 ORDER BY log_comment;
 

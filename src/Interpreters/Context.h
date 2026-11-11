@@ -1231,6 +1231,7 @@ public:
     void addQueryAccessInfo(const Names & partition_names);
     void addViewAccessInfo(const String & view_name);
     /// The body `body_query` of the view `view_id`, run in `body_context` under the view's identity, is logged as a child row of this query.
+    /// No-op unless `body_context` has a query context other than this one.
     void addSQLSecurityOverriddenBody(const StorageID & view_id, const ContextPtr & body_context, const ASTPtr & body_query);
     void addUsedRowPolicy(const String & policy_name);
 

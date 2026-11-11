@@ -340,9 +340,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view, const ASTPtr & view_query)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    /// Only the context of a `DEFINER` / `NONE` view has a query context of its own.
-    if (context->hasQueryContext() && view_context->hasQueryContext()
-        && view_context->getQueryContext() != context->getQueryContext())
+    if (context->hasQueryContext())
         context->getQueryContext()->addSQLSecurityOverriddenBody(view->getStorageID(), view_context, view_query);
 
     Settings view_settings = view_context->getSettingsCopy();

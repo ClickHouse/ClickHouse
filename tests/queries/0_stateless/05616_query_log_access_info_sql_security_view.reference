@@ -2,32 +2,38 @@ caller rows
 before_start	0	0
 definer	0	0
 definer_inlined	0	0
+describe	0	0
 direct	1	1
 invoker	1	1
 nested	0	0
 none	0	0
 param	0	0
+resolve	0	0
 sealed	0	0
 sealed_twice	0	0
 child rows
 definer	SELECT id, name FROM t_private	definer	1	1	1
 definer_inlined	SELECT id, name FROM t_private	definer	1	1	1
+describe	SELECT _CAST(1, \'UInt64\') AS p, (SELECT max(id) FROM t_private) AS m	definer	1	0	1
 nested	SELECT name FROM v_sealed WHERE s > 0	definer	0	0	1
 nested	SELECT name, sum(id) AS s FROM t_private GROUP BY name	definer	1	1	1
 none	SELECT name, sum(id) AS s FROM t_private GROUP BY name	none	1	1	1
 param	SELECT name, sum(id) AS s FROM t_private WHERE id > _CAST(0, \'UInt64\') GROUP BY name	definer	1	0	1
 param	SELECT name, sum(id) AS s FROM t_private WHERE id > _CAST(1, \'UInt64\') GROUP BY name	definer	1	0	1
+resolve	SELECT _CAST(1, \'UInt64\') AS p, number FROM numbers(assumeNotNull((SELECT min(id) FROM t_private)))	definer	1	0	1
 sealed	SELECT name, sum(id) AS s FROM t_private GROUP BY name	definer	1	1	1
 sealed_twice	SELECT name, sum(id) AS s FROM t_private GROUP BY name	definer	1	1	1
 user_query_log
 before_start	0	0	1
 definer	1	1	0
 definer_inlined	1	1	0
+describe	1	1	0
 direct	1	1	0
 invoker	1	1	0
 nested	1	1	0
 none	1	1	0
 param	1	1	0
+resolve	1	1	0
 sealed	1	1	0
 sealed_twice	1	1	0
 failed query child rows

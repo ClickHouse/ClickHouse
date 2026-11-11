@@ -3399,6 +3399,10 @@ void Context::addViewAccessInfo(const String & view_name)
 
 void Context::addSQLSecurityOverriddenBody(const StorageID & view_id, const ContextPtr & body_context, const ASTPtr & body_query)
 {
+    /// Only the context of a `DEFINER` / `NONE` body has a query context of its own.
+    if (!body_context->hasQueryContext() || body_context->getQueryContext().get() == this)
+        return;
+
     const auto hash = body_query->getTreeHash(/*ignore_aliases=*/ false);
     const std::pair<UInt64, UInt64> query_hash{hash.low64, hash.high64};
     auto user = body_context->getUserName();
@@ -3607,6 +3611,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            if (hasQueryContext())
+                getQueryContext()->addSQLSecurityOverriddenBody(table->getStorageID(), view_context, query);
             auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
@@ -3899,6 +3905,8 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    if (hasQueryContext())
+        getQueryContext()->addSQLSecurityOverriddenBody(original_view->getStorageID(), view_context, query);
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
