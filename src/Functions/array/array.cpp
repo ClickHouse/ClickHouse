@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
@@ -320,9 +321,21 @@ private:
 
     bool executeGeneric(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
+        /// Instead of a virtual `insertFrom` call per element, concatenate the arguments and interleave them
+        /// with one `index` call.
+        const size_t num_columns = columns.size();
+        auto concatenated = out_data.cloneEmpty();
+        concatenated->reserve(input_rows_count * num_columns);
+        for (const auto * column : columns)
+            concatenated->insertRangeFrom(*column, 0, input_rows_count);
+
+        auto indexes_column = ColumnUInt64::create(input_rows_count * num_columns);
+        auto & indexes = indexes_column->getData();
         for (size_t i = 0; i < input_rows_count; ++i)
-            for (const auto * column : columns)
-                out_data.insertFrom(*column, i);
+            for (size_t j = 0; j < num_columns; ++j)
+                indexes[i * num_columns + j] = j * input_rows_count + i;
+
+        out_data.insertRangeFrom(*concatenated->index(*indexes_column, 0), 0, input_rows_count * num_columns);
         return true;
     }
 
