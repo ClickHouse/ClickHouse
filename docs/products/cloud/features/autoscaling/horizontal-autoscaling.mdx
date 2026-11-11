@@ -7,8 +7,12 @@ title: 'Horizontal autoscaling'
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge/>
+
 <Note>
-Horizontal autoscaling is in Private Preview and is available on the Scale and Enterprise plans. To request access, contact your ClickHouse account team or support.
+Horizontal autoscaling is in Beta and is available on the Scale and Enterprise plans. Its behavior and capabilities may change before general availability.
 </Note>
 
 <Note>
@@ -78,7 +82,6 @@ Scaling events are visible on the service's metrics dashboard in the ClickHouse 
 
 ## Known limitations {#known-limitations}
 
-- Horizontal autoscaling is in Private Preview and must be enabled for your organization by the ClickHouse support team.
 - The vertical replica size must be pinned by setting minimum memory equal to maximum memory.
 - Replica limits apply; see [Usage limits](/cloud/bestpractices/usage-limits) for the limits that apply to your service, and contact support if you need additional replicas.
 - Recommendations are made every 10 minutes; horizontal autoscaling isn't designed to absorb sub-minute spikes. For predictable peaks, consider [scheduled scaling](/products/cloud/features/autoscaling/scheduled-scaling).
