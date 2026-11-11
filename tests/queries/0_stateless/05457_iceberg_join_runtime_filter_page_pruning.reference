@@ -40,8 +40,8 @@ h_off	0	0	0
 --- W together with a filter of the query ---
 1	705
 1	705
-w_on	14	0	20
-w_off	0	0	6
+w_on	13	0	20
+w_off	0	0	7
 --- Q1 the query condition cache ---
 0	0
 0	0
@@ -53,6 +53,11 @@ q1_off	0	0	0
 1	1510
 x_on	14	0	14
 x_off	0	0	0
+--- M a page index of the join key that cannot be parsed ---
+2	2215
+2	2215
+m_on	0	0	0
+m_off	0	0	0
 --- Q2 the per-file row count cache ---
 1	1
 2	2215
