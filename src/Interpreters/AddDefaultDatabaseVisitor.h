@@ -795,10 +795,13 @@ private:
         }
     }
 
+    /// Qualifies a bare table or dictionary name with the initiator's current database, which the workers don't know, so
+    /// that they act on the object the initiator checked the access to.
     void visitDDL(ASTPtr & /* parent */, ASTSystemQuery & query, ASTPtr &) const
     {
         if (query.type != ASTSystemQuery::Type::RELOAD_DICTIONARY
-            && query.type != ASTSystemQuery::Type::UNLOAD_DICTIONARY)
+            && query.type != ASTSystemQuery::Type::UNLOAD_DICTIONARY
+            && query.type != ASTSystemQuery::Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE)
             return;
 
         if (!query.table || query.database || only_replace_current_database_function)
