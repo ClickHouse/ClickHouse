@@ -1,4 +1,5 @@
 #include <Formats/SchemaInferenceUtils.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>

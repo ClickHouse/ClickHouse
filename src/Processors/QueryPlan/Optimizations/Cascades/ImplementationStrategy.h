@@ -29,6 +29,10 @@ struct IReadStrategy : IImplementationStrategy
 {
     [[nodiscard]] virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
 };
+struct IWindowStrategy : IImplementationStrategy
+{
+    virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
+};
 struct IDistinctStrategy : IImplementationStrategy
 {
     [[nodiscard]] virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
@@ -72,6 +76,16 @@ struct PartialAggregationStrategy final : IAggregationStrategy
 {
     [[nodiscard]] String getName() const override { return "PartialAggregation"; }
     [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
+};
+
+/// --- Window strategy ---
+
+/// One strategy for both the single-node and the per-node window; the cost formula
+/// divides the work by the node count, which is what tells them apart.
+struct WindowStrategy final : IWindowStrategy
+{
+    String getName() const override { return "Window"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 /// --- Final DISTINCT strategies ---

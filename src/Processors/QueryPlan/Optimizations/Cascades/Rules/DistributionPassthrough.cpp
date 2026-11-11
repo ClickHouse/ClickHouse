@@ -89,20 +89,45 @@ protected:
             SortDescription input_sorting = required_properties.sorting;
             bool can_translate = !dag || translateSortDescription(*dag, input_sorting);
 
+            /// The step keeps rows within their stream, so a required stream layout is also
+            /// delegated: the input delivers it and the output claims it. Disjoint columns
+            /// that do not map through the DAG degrade to a `Single` demand, which delivers
+            /// every layout.
+            StreamLayout input_layout = required_properties.stream_layout;
+            DistributionColumns input_disjoint_columns = required_properties.stream_disjoint_columns;
+            if (input_layout == StreamLayout::Disjoint
+                && dag && !translateDistributionColumns(*dag, input_disjoint_columns))
+            {
+                input_layout = StreamLayout::Single;
+                input_disjoint_columns.clear();
+            }
+
             if (can_translate)
             {
-                auto create_sorted_variant = [&](const DistributionDescription & dist)
+                auto create_sorted_variant = [&](const DistributionDescription & input_dist, const DistributionDescription & output_dist)
                 {
                     auto sorted_impl = std::make_shared<GroupExpression>(*expression);
 
                     chassert(sorted_impl->inputs.size() == 1);
                     auto & sorted_input_props = sorted_impl->inputs[0].required_properties;
 
-                    sorted_input_props.distribution = dist;
+                    sorted_input_props.distribution = input_dist;
                     sorted_input_props.sorting = input_sorting;
+                    /// Translation renames columns, so the canonical set order must be rebuilt.
+                    if (input_layout == StreamLayout::Disjoint)
+                    {
+                        sorted_input_props.setDisjointStreams(input_disjoint_columns);
+                    }
+                    else
+                    {
+                        sorted_input_props.stream_layout = input_layout;
+                        sorted_input_props.stream_disjoint_columns.clear();
+                    }
 
-                    sorted_impl->properties.distribution = dist;
+                    sorted_impl->properties.distribution = output_dist;
                     sorted_impl->properties.sorting = required_properties.sorting;
+                    sorted_impl->properties.stream_layout = required_properties.stream_layout;
+                    sorted_impl->properties.stream_disjoint_columns = required_properties.stream_disjoint_columns;
 
                     addPhysicalToMemo(sorted_impl, required_properties, memo, result);
                 };
@@ -111,10 +136,23 @@ protected:
                 {
                     DistributionDescription dist;
                     dist.node_count = candidate;
-                    create_sorted_variant(dist);
+                    create_sorted_variant(dist, dist);
                 }
 
-                create_sorted_variant({});
+                create_sorted_variant({}, {});
+
+                /// A sorted variant at the full required distribution, with its columns
+                /// translated through the step like in `tryCreateAtDistribution`. Without it
+                /// a sort below this step could never serve a consumer that requires
+                /// distribution by specific columns (e.g. a per-node window): the shuffle and
+                /// the sort would always land above this step, even when the input can
+                /// deliver both below it.
+                if (!required_properties.distribution.columns.empty())
+                {
+                    DistributionDescription translated = required_properties.distribution;
+                    if (!dag || translateDistributionColumns(*dag, translated.columns))
+                        create_sorted_variant(translated, required_properties.distribution);
+                }
             }
         }
 

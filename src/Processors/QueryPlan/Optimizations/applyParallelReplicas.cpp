@@ -589,6 +589,30 @@ public:
             parent_node->children = {&new_split_node};
             return;
         }
+
+        /// A `LIMIT` without `ORDER BY` can take any rows, so a `LimitStep` of `limit + offset` rows is added to the
+        /// plan fragment: each replica stops after that many rows. The query's `LIMIT` stays on the initiator and
+        /// applies the offset and the final limit. With `exact_rows_before_limit`, the `Limit` in the plan fragment reads
+        /// all rows but returns only `limit + offset` of them, and `markAsShardLimit` makes `rows_before_limit_at_least`
+        /// count all the rows it read.
+        const auto * limit_step = typeid_cast<const LimitStep *>(parent_step);
+        if (limit_step && !limit_step->withTies())
+        {
+            const auto local_limit = limit_step->getLimitWithOffset();
+            if (!local_limit || *local_limit == 0)
+                return;
+
+            const bool read_till_end = limit_step->alwaysReadTillEnd();
+            auto * fragment_child = original_split_node->children.front();
+            auto & local_limit_node = nodes.emplace_back();
+            auto local_limit_step = std::make_unique<LimitStep>(fragment_child->step->getOutputHeader(), *local_limit, 0, read_till_end);
+            local_limit_step->markAsShardLimit();
+            local_limit_node.step = std::move(local_limit_step);
+            local_limit_node.step->setStepDescription("local LIMIT");
+            local_limit_node.children = {fragment_child};
+            original_split_node->children = {&local_limit_node};
+            return;
+        }
     }
 
 private:

@@ -50,13 +50,13 @@ public:
     void addSubstreamToLastColumn(const String & substream);
     void addSubstreamsToLastColumn(const std::vector<String> & substreams);
 
-    [[nodiscard]] size_t getSubstreamPosition(size_t column_position, const String & substream) const;
-    [[nodiscard]] std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const String & substream) const;
-    [[nodiscard]] size_t getSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
-    [[nodiscard]] std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
-    [[nodiscard]] std::optional<size_t> tryGetSubstreamPosition(const String & substream) const;
-    [[nodiscard]] size_t getFirstSubstreamPosition(size_t column_position) const;
-    [[nodiscard]] size_t getLastSubstreamPosition(size_t column_position) const;
+    size_t getSubstreamPosition(size_t column_position, const String & substream) const;
+    std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const String & substream) const;
+    size_t getSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const SerializationSubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
+    std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const SerializationSubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
+    std::optional<size_t> tryGetSubstreamPosition(const String & substream) const;
+    size_t getFirstSubstreamPosition(size_t column_position) const;
+    size_t getLastSubstreamPosition(size_t column_position) const;
 
     [[nodiscard]] const std::vector<String> & getColumnSubstreams(size_t column_position) const;
 

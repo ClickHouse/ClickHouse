@@ -414,7 +414,11 @@ public:
 
     [[nodiscard]] bool isKafkaEngine(bool as_alias = false) const;
 
-    [[nodiscard]] bool isNotTruncableEngine() const;
+    bool isTimeSeriesEngine(bool as_alias = false) const;
+
+    bool isFileLogEngine(bool as_alias = false) const;
+
+    bool isNotTruncableEngine() const;
 
     [[nodiscard]] bool isEngineReplaceable() const;
 
