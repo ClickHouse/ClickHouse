@@ -143,7 +143,8 @@ void UserDefinedSQLFunctionVisitor::visitImpl(
             return;
 
         UnorderedSetWithMemoryTracking<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_, inside_apply ? &lambda_names : nullptr);
+        auto replace_result = tryToReplaceFunction(
+            *function, udf_in_replace_process, context_, lambda_names, inside_apply ? &lambda_names : nullptr);
         if (replace_result)
             ast = replace_result;
     }
@@ -162,6 +163,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(
     const ASTFunction & function,
     UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process,
     ContextPtr context_,
+    const std::unordered_set<String> & query_lambda_names, /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
     const std::unordered_set<String> * shadowed_names) /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
 {
     if (udf_in_replace_process.contains(function.name))
@@ -218,7 +220,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(
             function_core_expression->children.at(1)->getColumnName(),
             function.name);
 
-    UnorderedMapWithMemoryTracking<std::string, ASTPtr> identifier_name_to_function_argument;
+    ArgumentSubstitutions identifier_name_to_function_argument;
 
     for (size_t parameter_index = 0; parameter_index < identifiers_raw.size(); ++parameter_index)
     {
@@ -260,9 +262,48 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(
         shadowed_names = &body_shadowed_names;
     }
 
+    /// The expressions of `APPLY` in the body are expanded like the ones in the query (see `visitImpl`): a lambda
+    /// declared in the query or in the body takes precedence over a UDF of the same name there.
+    std::unordered_set<String> apply_shadowed_names; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+    if (shadowed_names)
+    {
+        apply_shadowed_names = *shadowed_names;
+    }
+    else
+    {
+        apply_shadowed_names = query_lambda_names;
+        collectLambdaNames(*function_body_to_update, apply_shadowed_names);
+    }
+
     auto expression_list = make_intrusive<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
 
+    expandFunctionBody(
+        expression_list, identifier_name_to_function_argument, udf_in_replace_process, context_,
+        query_lambda_names, shadowed_names, apply_shadowed_names);
+
+    udf_in_replace_process.erase(it);
+
+    function_body_to_update = expression_list->children[0];
+
+    auto function_alias = function.tryGetAlias();
+
+    if (!function_alias.empty())
+        function_body_to_update->setAlias(function_alias);
+
+    return function_body_to_update;
+}
+
+
+void UserDefinedSQLFunctionVisitor::expandFunctionBody(
+    const ASTPtr & expression_list,
+    const ArgumentSubstitutions & substitutions,
+    UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process,
+    ContextPtr context_,
+    const std::unordered_set<String> & query_lambda_names, /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+    const std::unordered_set<String> * shadowed_names, /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+    const std::unordered_set<String> & apply_shadowed_names) /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+{
     StackWithMemoryTracking<ASTPtr> ast_nodes_to_update;
     ast_nodes_to_update.push(expression_list);
 
@@ -271,13 +312,18 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(
         auto ast_node_to_update = ast_nodes_to_update.top();
         ast_nodes_to_update.pop();
 
+        if (auto * apply_transformer = ast_node_to_update->as<ASTColumnsApplyTransformer>())
+            expandApplyTransformerInFunctionBody(
+                *apply_transformer, substitutions, udf_in_replace_process, context_, query_lambda_names, apply_shadowed_names);
+
         for (auto & child : ast_node_to_update->children)
         {
             /// The analyzer resolves the functions in the body of a UDF in the scope of the query, so a lambda declared
             /// there shadows a UDF of the same name called from the body too.
             if (auto * inner_function = child->as<ASTFunction>(); inner_function && !(shadowed_names && shadowed_names->contains(inner_function->name)))
             {
-                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_, shadowed_names);
+                auto replace_result = tryToReplaceFunction(
+                    *inner_function, udf_in_replace_process, context_, query_lambda_names, shadowed_names);
                 if (replace_result)
                     child = replace_result;
             }
@@ -285,9 +331,9 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(
             auto identifier_name_opt = tryGetIdentifierName(child);
             if (identifier_name_opt)
             {
-                auto function_argument_it = identifier_name_to_function_argument.find(*identifier_name_opt);
+                auto function_argument_it = substitutions.find(*identifier_name_opt);
 
-                if (function_argument_it == identifier_name_to_function_argument.end())
+                if (function_argument_it == substitutions.end())
                     continue;
 
                 auto child_alias = child->tryGetAlias();
@@ -303,16 +349,75 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(
         }
     }
 
-    udf_in_replace_process.erase(it);
+}
 
-    function_body_to_update = expression_list->children[0];
+void UserDefinedSQLFunctionVisitor::expandApplyTransformerInFunctionBody(
+    ASTColumnsApplyTransformer & apply_transformer,
+    const ArgumentSubstitutions & substitutions,
+    UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process,
+    ContextPtr context_,
+    const std::unordered_set<String> & query_lambda_names, /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+    const std::unordered_set<String> & apply_shadowed_names) /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+{
+    /// Only to materialize `uuid_type_version` into the bodies of the UDFs, as in `visitImpl`.
+    if (context_->getSettingsRef()[Setting::uuid_type_version] != 2)
+        return;
 
-    auto function_alias = function.tryGetAlias();
+    /// Expands the UDFs in a copy of `expression` with the same recursion detection and the same substitution of the
+    /// arguments of the enclosing UDF, except the ones shadowed by `shadowed_argument` (the argument of the lambda).
+    const auto expand = [&](const ASTPtr & expression, const String & shadowed_argument)
+    {
+        ArgumentSubstitutions expression_substitutions = substitutions;
+        if (!shadowed_argument.empty())
+            expression_substitutions.erase(shadowed_argument);
 
-    if (!function_alias.empty())
-        function_body_to_update->setAlias(function_alias);
+        auto wrapper = make_intrusive<ASTExpressionList>();
+        wrapper->children.push_back(expression->clone());
+        expandFunctionBody(
+            wrapper, expression_substitutions, udf_in_replace_process, context_,
+            query_lambda_names, &apply_shadowed_names, apply_shadowed_names);
+        return wrapper->children[0];
+    };
 
-    return function_body_to_update;
+    ASTPtr lambda;
+    String lambda_argument;
+    if (apply_transformer.lambda)
+    {
+        lambda = apply_transformer.lambda;
+        lambda_argument = apply_transformer.lambda_arg;
+    }
+    else if (!apply_transformer.parameters && !apply_shadowed_names.contains(apply_transformer.func_name))
+    {
+        const auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(apply_transformer.func_name);
+        if (user_defined_function && user_defined_function->as<ASTCreateSQLFunctionQuery>())
+        {
+            /// The argument must not be the name of a parameter of the enclosing UDF: it would be substituted then.
+            lambda_argument = "x";
+            while (substitutions.contains(lambda_argument))
+                lambda_argument += "_";
+            lambda = makeASTFunction("lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>(lambda_argument)),
+                makeASTFunction(apply_transformer.func_name, make_intrusive<ASTIdentifier>(lambda_argument)));
+        }
+    }
+
+    if (lambda)
+    {
+        ASTPtr expanded_lambda = expand(lambda, lambda_argument);
+        if (applyUUIDTypeVersionInPlace(*expanded_lambda->clone(), 2, apply_shadowed_names))
+        {
+            apply_transformer.lambda = expanded_lambda;
+            apply_transformer.lambda_arg = lambda_argument;
+            apply_transformer.func_name.clear();
+        }
+    }
+
+    if (apply_transformer.parameters)
+    {
+        ASTPtr expanded_parameters = expand(apply_transformer.parameters, {});
+        if (applyUUIDTypeVersionInPlace(*expanded_parameters->clone(), 2, apply_shadowed_names))
+            apply_transformer.parameters = expanded_parameters;
+    }
 }
 
 }

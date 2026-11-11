@@ -1829,7 +1829,15 @@ void assertTypeCanBeKeptInField(const String & function_name, const IDataType & 
         size_t alternatives_with_both = 0;
         for (const auto & alternative : variant->getVariants())
         {
-            const bool has_uuid = anyInTypeTree(*alternative, [](const IDataType & t) { return WhichDataType(t).isUUID(); });
+            /// `Dynamic` and `JSON` infer `UUID` for an untyped `UUID` value inserted from a `Field` (see `ColumnDynamic::insert`),
+            /// so they read the values in the layout of `UUID` too.
+            const bool has_uuid = anyInTypeTree(
+                *alternative,
+                [](const IDataType & t)
+                {
+                    WhichDataType which(t);
+                    return which.isUUID() || which.isDynamic() || which.isObject();
+                });
             const bool has_uuid2 = anyInTypeTree(*alternative, [](const IDataType & t) { return WhichDataType(t).isUUID2(); });
             alternatives_with_uuid += has_uuid;
             alternatives_with_uuid2 += has_uuid2;
@@ -1843,7 +1851,7 @@ void assertTypeCanBeKeptInField(const String & function_name, const IDataType & 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Aggregate function {} does not support the argument type {}: it keeps the values without the alternative of the `Variant`, "
-            "and it is not known whether a value is a `UUID` or a `UUID2`",
+            "and it is not known whether a value is a `UUID` or a `UUID2` (`Dynamic` and `JSON` read it as a `UUID`)",
             function_name,
             type.getName());
 }

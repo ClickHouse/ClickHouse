@@ -2201,7 +2201,8 @@ public:
         res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count);
         if (res)
             return res;
-        if (types_equal && (which_left.isUUID() || which_left.isIPv4() || which_left.isIPv6()))
+        /// `UUID2` shares the column with `UUID`, and the integer order of its values is its order.
+        if (types_equal && (which_left.isUUID() || which_left.isUUID2() || which_left.isIPv4() || which_left.isIPv6()))
         {
             res = executeNumSameType<UUID>(col_left_untyped, col_right_untyped);
             if (!res)
