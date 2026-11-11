@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Formats/FormatSettings.h>
 
 #include <algorithm>
 #include <Formats/JSONExtractTree.h>
