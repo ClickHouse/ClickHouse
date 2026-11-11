@@ -34,7 +34,11 @@ INSERT INTO t_qrc_set_source_memory SELECT number FROM numbers(100);
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0, max_rows_to_group_by = 0;
 SET allow_experimental_correlated_subqueries = 0, rewrite_in_to_join = 0;
-SET use_index_for_in_with_subqueries = 1, use_query_condition_cache = 0;
+-- Disable the speculative set build for primary key analysis (`FutureSetFromSubquery::buildOrderedSetInplace`).
+-- It distributes only a clone of the set source, and `StreamInQueryResultCacheStep` cannot be cloned
+-- yet, so the build falls back to running the original source locally on the initiator and writes the
+-- cache entry. Only the set source conversion of the deferred build is under test here.
+SET use_index_for_in_with_subqueries = 0, use_query_condition_cache = 0;
 
 SELECT '-- without a distributed plan the set source is built locally and caches';
 SELECT count() FROM t_qrc_set_source_big WHERE k IN (SELECT id FROM t_qrc_set_source_small WHERE id < 50 SETTINGS use_query_cache = 1);
