@@ -13,7 +13,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the best groups copy the string keys they keep out of the blocks. The spilled string cells repeat the string
 # key methods spilling on every block, so most groups enter the counting table from a spilled block, under a
 # throw-mode group limit at the exact group count: a key the counting table did not copy splits its group,
-# which exceeds the limit. The limit also turns the top-K pruning off, so every unit is counted.
+# which exceeds the limit. The merge counts only the groups that the top-K pruning keeps, so these cells
+# select the 5000 best groups: only the 3000 head keys have more than one row, so no bin is bounded below
+# the 5000th count, and the pruning keeps every group.
 #
 # Half of the rows go to a head of 3000 keys with about 25 rows each, so many groups tie around the top and
 # replace each other among the best. The other half are unique keys, which keep the aggregation frozen. A
@@ -60,6 +62,6 @@ check 'Wide fixed keys' 'max_threads = 4' 'toUInt64(k % 100) AS a, toUInt64(intD
 check 'Full large top' 'max_threads = 4' 'k' 'k' 'c DESC LIMIT 300 OFFSET 100'
 check 'Limit above the groups of a unit' 'max_threads = 4' 'k' 'k' 'c DESC LIMIT 65536'
 check 'Spilled number key' 'max_bytes_before_external_group_by = 2000000' 'k' 'k' 'c DESC LIMIT 10'
-check 'Spilled packed string key' "$spilled_string_settings" "concat(toString(k), repeat('x', k % 30)) AS sk" 'sk' 'c DESC LIMIT 10'
-check 'Spilled legacy string key' "enable_packed_string_keys_in_aggregation = 0, $spilled_string_settings" "$legacy_string_key" 'sk' 'c DESC LIMIT 10'
-check 'Spilled serialized keys' "$spilled_string_settings" 'k % 100 AS a, toString(intDiv(k, 100)) AS b' 'a, b' 'c DESC LIMIT 10'
+check 'Spilled packed string key' "$spilled_string_settings" "concat(toString(k), repeat('x', k % 30)) AS sk" 'sk' 'c DESC LIMIT 5000'
+check 'Spilled legacy string key' "enable_packed_string_keys_in_aggregation = 0, $spilled_string_settings" "$legacy_string_key" 'sk' 'c DESC LIMIT 5000'
+check 'Spilled serialized keys' "$spilled_string_settings" 'k % 100 AS a, toString(intDiv(k, 100)) AS b' 'a, b' 'c DESC LIMIT 5000'
