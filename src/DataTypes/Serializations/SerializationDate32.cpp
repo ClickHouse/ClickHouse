@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationDate32.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

@@ -1212,6 +1212,14 @@ If it is set true, end of line in TSV format will be \\r\\n instead of \\n.
 
 If true escape ' with '', otherwise quoted with \\'
 
+## output_format_vortex_string_as_string {#output_format_vortex_string_as_string}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to write `String` columns of the `Vortex` format as `Utf8`, which Vortex compresses better than `Binary`."}]}]}/>
+
+Write `String` columns of the `Vortex` format as `Utf8` instead of `Binary`. Vortex compresses `Utf8` better. A `Utf8` value has to be valid UTF-8 and the Vortex writer does not check that, so ClickHouse checks every value and throws an exception if one is not valid UTF-8; disable the setting to write such data as `Binary`. `FixedString` columns are always written as `Binary`. Both types are read back as `String`.
+
 ## output_format_write_statistics {#output_format_write_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

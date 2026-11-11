@@ -120,6 +120,14 @@ To disable the split of `Resize` nodes, set this setting to 0. This will prevent
 
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
 
+## min_string_column_bytes_for_hash_join_row_store {#min_string_column_bytes_for_hash_join_row_store}
+
+<SettingsInfoBlock type="UInt64" default_value="8388608" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8388608"},{"label": "New setting to control the minimum estimated size of a build-side `String` column to store it in the hash join row store."}]}]}/>
+
+Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means `String` columns are not stored in the row store.
+
 ## min_table_rows_to_use_projection_index {#min_table_rows_to_use_projection_index}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
