@@ -357,12 +357,14 @@ void Aggregator::prepareAdaptiveTopK(
     if (!params.bucket_top_k || external_merge)
         return;
 
-    /// Settling skips units unread, whose groups the statistics and a throw-mode group limit need. It also
-    /// drops the groups tied with the output ones, which `LIMIT` allows only because the order is by the rank
-    /// alone and not `WITH TIES` (see `tryPushBucketTopKIntoAggregation`). A descending order never settles,
-    /// because a rank has no largest possible value.
+    /// Settling skips units unread, whose groups the statistics need. A throw-mode group limit allows it,
+    /// as it allows the pruning: the merge checks the limit against the groups it builds (see
+    /// `checkMergedGroupLimit`). Settling also drops the groups tied with the output ones, which `LIMIT`
+    /// allows only because the order is by the rank alone and not `WITH TIES` (see
+    /// `tryPushBucketTopKIntoAggregation`). A descending order never settles, because a rank has no largest
+    /// possible value.
     std::optional<UInt64> best_possible_rank;
-    if (params.bucket_top_k_ascending && !collects_statistics && !params.max_rows_to_group_by)
+    if (params.bucket_top_k_ascending && !collects_statistics)
         best_possible_rank = bucket_top_k_min_rank;
     shared.top_k_threshold
         = std::make_unique<AdaptiveTopKThreshold>(params.bucket_top_k, params.bucket_top_k_ascending, best_possible_rank);

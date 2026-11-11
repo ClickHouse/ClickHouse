@@ -476,8 +476,7 @@ public:
     /// these cases the pruning is dropped; otherwise the buckets are ordered for it by their bin bounds. The
     /// threshold that the merge threads share (see `AdaptiveTopKThreshold`) needs only exact ranks of the
     /// converted units, so it is created for every merge but an external one, which outputs partial states.
-    /// It settles an ascending top-K only where the merge may skip units: not under the statistics or a
-    /// throw-mode group limit, which need every group.
+    /// It settles an ascending top-K unless the merge collects the statistics, which need every group.
     void prepareAdaptiveTopK(
         AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const;
 
@@ -494,7 +493,8 @@ public:
     /// before the next, so the merge holds the unit's groups instead of all its spilled records; a count-first unit,
     /// which passes over its records twice, reads the spill streams back twice. `merged_group_count` receives
     /// the number of groups that the merge builds over all the bucket's units, before any top-K truncation.
-    /// The groups that the top-K pruning skips, with their unit or with their count bin, add none.
+    /// The groups that the top-K pruning skips, with their unit or with their count bin, add none, and so do
+    /// the units that a settled ascending top-K skips.
     AggregatedChunks mergeAndConvertAdaptiveBucket(
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,
@@ -522,8 +522,9 @@ public:
     /// producers' checks miss what this catches: the baseline producers check their tables one by one, so
     /// they cannot see the merged cardinality, and the adaptive producers cannot see the staged keys at all.
     /// The total covers only the groups that the merge builds: a merge that prunes by the top-K (the
-    /// threshold merge, the adaptive top-K pruning) skips the groups that cannot rank, and a merge that
-    /// stops early, as under a `LIMIT` without `ORDER BY`, never reaches its later buckets.
+    /// threshold merge, the adaptive top-K pruning, the settled adaptive merge of an ascending top-K) skips
+    /// the groups that the top does not need, and a merge that stops early, as under a `LIMIT` without
+    /// `ORDER BY`, never reaches its later buckets.
     /// The dropping modes keep the merge untouched: their contract is decided at the producers, and stopping
     /// the merge here would drop already-aggregated groups.
     void checkMergedGroupLimit(std::atomic<size_t> & merged_groups, size_t bucket_groups) const;

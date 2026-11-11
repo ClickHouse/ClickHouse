@@ -26,8 +26,8 @@ settings="
     SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size = 8192;
     SET adaptive_aggregator_freeze_threshold = 128;
     SET collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
-    SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1;"
-limit="max_rows_to_group_by = 10000000, group_by_overflow_mode = 'throw'"
+    SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1;
+    SET max_rows_to_group_by = 10000000, group_by_overflow_mode = 'throw';"
 
 function top() { echo "SELECT k, $1 FROM ($source) GROUP BY k ORDER BY $2"; }
 
@@ -59,5 +59,5 @@ function check()
 
 check 'Settled at 0' 'max_threads = 4' 'count(x) AS c' 'c ASC LIMIT 10' AdaptiveAggregationPrunedUnits
 
-$CLICKHOUSE_LOCAL --query "$settings SET max_rows_to_group_by = 5000, group_by_overflow_mode = 'throw';
-    $(top 'count(x) AS c' 'c ASC LIMIT 10') FORMAT Null;" 2>&1 | grep -o 'TOO_MANY_ROWS' | head -1
+$CLICKHOUSE_LOCAL --query "$settings $(exact 'Settled at 0' 'count(x) AS c' 'c ASC LIMIT 10')
+    SELECT (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'AdaptiveAggregationPrunedUnits') > 0;" | paste -sd '\t'
