@@ -146,6 +146,7 @@
     M(IcebergMetadataJSONParses, "Number of times an Iceberg `metadata.json` was parsed. The parsing happens on every access, also when the file content is served from the Iceberg metadata cache.", ValueType::Number) \
     M(IcebergMetadataJSONParsedBytes, "Total size of the Iceberg `metadata.json` content parsed.", ValueType::Bytes) \
     M(IcebergMetadataJSONParseMicroseconds, "Total time spent parsing Iceberg `metadata.json` files.", ValueType::Microseconds) \
+    M(IcebergMetadataJSONValidations, "Number of times an Iceberg `metadata.json` was checked for the fields the Iceberg specification requires. A file served from the Iceberg metadata cache is checked once.", ValueType::Number) \
     M(IcebergManifestListsRead, "Number of Iceberg manifest lists read from storage (not served from the Iceberg metadata cache).", ValueType::Number) \
     M(IcebergManifestListsReadMicroseconds, "Total time spent reading and decoding Iceberg manifest lists from storage.", ValueType::Microseconds) \
     M(IcebergManifestFilesRead, "Number of Iceberg manifest files read from storage (not served from the Iceberg metadata cache).", ValueType::Number) \
@@ -544,6 +545,7 @@
     M(IcebergTrivialCountOptimizationApplied, "Trivial count optimization applied while reading from Iceberg", ValueType::Number) \
     M(IcebergVersionHintUsed, "Number of times version-hint.text has been used.", ValueType::Number) \
     M(IcebergMinMaxIndexPrunedFiles, "Number of skipped files by using MinMax index in Iceberg", ValueType::Number) \
+    M(IcebergRuntimeFilterPrunedFiles, "Number of Iceberg data files skipped because their manifest bounds cannot contain a key of a JOIN runtime filter", ValueType::Number) \
     M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
     M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
     M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
@@ -551,6 +553,8 @@
     M(JoinNonJoinedTransformRowCount, "Number of non-joined rows emitted by NonJoinedBlocksTransform.", ValueType::Number) \
     M(JoinNonJoinedHashTableScans, "Number of times a RIGHT or FULL hash join scanned its hash table for non-joined rows.", ValueType::Number) \
     M(JoinNonJoinedHashTableScansSkipped, "Number of times a RIGHT or FULL hash join skipped scanning its hash table for non-joined rows, because every right key in the scanned part had matched.", ValueType::Number) \
+    M(JoinPackedStringKeysInline, "Number of single `String` join keys of up to 15 bytes that hash joins inserted inline into their hash tables (see `enable_packed_string_keys_in_hash_join`). A join with `OR` inserts a key for each condition. A row is counted again when it is inserted again: after a `grace_hash` join splits its buckets, or after a spilling join switches to `grace_hash`.", ValueType::Number) \
+    M(JoinPackedStringKeysHashed, "Number of single `String` join keys of 16 bytes or more that hash joins inserted into their hash tables as their 128-bit `SipHash` (see `enable_packed_string_keys_in_hash_join`). A join with `OR` inserts a key for each condition. A row is counted again when it is inserted again: after a `grace_hash` join splits its buckets, or after a spilling join switches to `grace_hash`.", ValueType::Number) \
     M(JoinDelayedJoinedTransformBlockCount, "Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinDelayedJoinedTransformRowCount, "Number of rows emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
@@ -707,6 +711,11 @@
     M(InsertedCompactParts, "Number of parts inserted in Compact format.", ValueType::Number) \
     M(MergedIntoWideParts, "Number of parts merged into Wide format.", ValueType::Number) \
     M(MergedIntoCompactParts, "Number of parts merged into Compact format.", ValueType::Number) \
+    M(AdaptiveCodecBlocksPriced, "Number of blocks that adaptive codec selection priced from the start, compressing them with every candidate codec and keeping the smallest output.", ValueType::Number) \
+    M(AdaptiveCodecBlocksRepriced, "Number of blocks that adaptive codec selection priced after the remembered winner had lost ground on them.", ValueType::Number) \
+    M(AdaptiveCodecBlocksReused, "Number of blocks that adaptive codec selection compressed with the remembered winner alone.", ValueType::Number) \
+    M(AdaptiveCodecBytesDefault, "Compressed bytes the default codec produced on the sample blocks of adaptive codec selection, one per window of `adaptive_codec_selection_period` blocks.", ValueType::Bytes) \
+    M(AdaptiveCodecBytesWritten, "Compressed bytes adaptive codec selection wrote on its sample blocks. The ratio to `AdaptiveCodecBytesDefault` is the saving against the default codec.", ValueType::Bytes) \
     \
     M(MergeTreeDataProjectionWriterRows, "Number of rows INSERTed to MergeTree tables projection.", ValueType::Number) \
     M(MergeTreeDataProjectionWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables projection.", ValueType::Bytes) \
@@ -1293,6 +1302,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperWatchTriggeredNodeDeleted, "Number of watch triggers by `DELETE` operation", ValueType::Number) \
     M(KeeperWatchTriggeredNodeDataChanged, "Number of watch triggers by change operations", ValueType::Number) \
     M(KeeperWatchTriggeredNodeChildrenChanged, "Number of watch triggers by children change operations", ValueType::Number) \
+    M(KeeperRejectedCommittedLogRollback, "Number of times Keeper refused a request that would have rolled back already-committed log entries", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \
@@ -1329,6 +1339,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ObjectStorageListedObjects, "Total objects returned by object storage listing API before any filtering.", ValueType::Number) \
     M(ObjectStorageGlobFilteredObjects, "Objects that did not match the glob or regex pattern and were skipped during listing.", ValueType::Number) \
+    M(ObjectStorageHiddenFilteredObjects, "Objects with a hidden path segment (starting with '_' or '.') below the non-glob prefix that were skipped during listing.", ValueType::Number) \
     M(ObjectStoragePredicateFilteredObjects, "Objects removed by virtual column predicate filtering on _path/_file.", ValueType::Number) \
     M(ObjectStorageReadObjects, "Objects actually opened for reading by the object storage source.", ValueType::Number) \
     M(ObjectStorageMetadataFetchedForRead, "Number of object metadata requests (e.g. S3 HEAD) issued to read objects (by the object storage source, its file iterators, and schema inference), because the size and ETag of the object were not known from listing or table metadata.", ValueType::Number) \
@@ -1424,6 +1435,9 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheReceivedSlowDownPackets, "Distributed Cache client event. Total number of received SlowDown packets received from distributed cache (the server rejected a new connection because this client has too many open connections relative to its weight)", ValueType::Number) \
     M(DistrCacheSentDataPackets, "Distributed Cache client event. Total number of data packets sent to distributed cache", ValueType::Number) \
     M(DistrCacheSentDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets sent to distributed cache", ValueType::Bytes) \
+    M(DistrCacheRequestsEndedOnRelease, "Distributed Cache client event. Number of open requests which the client had to end while releasing them (a retry which reconnected, a new request over an unfinished one, or the client going away) instead of the reader ending them explicitly", ValueType::Number) \
+    M(DistrCacheEndRequestNotSentSocketNotWritable, "Distributed Cache client event. Number of EndRequest packets which were not sent because the socket was not writable (the server stopped draining it): the connection is dropped instead and the server notices the EOF", ValueType::Number) \
+    M(DistrCacheEndRequestMicroseconds, "Distributed Cache client event. Time spent sending EndRequest packets to distributed cache", ValueType::Microseconds) \
     M(DistrCacheUnusedPackets, "Distributed Cache client event. Number of skipped unused packets from distributed cache", ValueType::Number) \
     M(DistrCacheUnusedDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were ignored", ValueType::Bytes) \
     M(DistrCacheUnusedDataPacketsBytesUnknownRequest, "Distributed Cache client event. The number of bytes in ignored Data packets (part of DistrCacheUnusedDataPacketsBytes) that arrived for a request the client no longer tracks (e.g. reading was stopped via EndRequest after the server had already sent more data)", ValueType::Bytes) \
@@ -1466,11 +1480,34 @@ The server successfully detected this situation and will download merged part fr
     \
     M(DistrCacheTemporaryFilesCreated, "Distributed Cache connection event. Number of temporary files created in distributed cache", ValueType::Number) \
     M(DistrCacheTemporaryFilesBytesWritten, "Distributed Cache connection event. Number of bytes written to temporary files created in distributed cache", ValueType::Number) \
+    M(DistrCacheTemporaryFilesPublished, "Distributed Cache committed temporary-data event. Number of files published by a client", ValueType::Number) \
+    M(DistrCacheTemporaryFilesPublicationAmbiguous, "Distributed Cache committed temporary-data event. Number of ambiguous publication replies", ValueType::Number) \
+    M(DistrCacheTemporaryFilesConfirmed, "Distributed Cache committed temporary-data event. Number of publications confirmed on the original server", ValueType::Number) \
+    M(DistrCacheTemporaryFilesHandoffFailed, "Distributed Cache committed temporary-data event. Number of failed owner handoffs", ValueType::Number) \
+    M(DistrCacheTemporaryFilesConfirmationFailed, "Distributed Cache committed temporary-data event. Number of failed publication confirmations", ValueType::Number) \
+    M(DistrCacheTemporaryDataRenewBatches, "Distributed Cache committed temporary-data event. Number of renewal batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataRenewBatchFailures, "Distributed Cache committed temporary-data event. Number of failed renewal batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataReleaseBatches, "Distributed Cache committed temporary-data event. Number of release batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataReleaseBatchFailures, "Distributed Cache committed temporary-data event. Number of failed release batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataReleasesDropped, "Distributed Cache committed temporary-data event. Number of releases given up after a terminal failure or after the server-side TTL passed while retrying, left to TTL cleanup", ValueType::Number) \
+    M(DistrCacheReadFinalAckFailed, "Distributed Cache event. Number of reads whose connection was lost before the final acknowledgement; the fully received range was accepted", ValueType::Number) \
+    M(DistrCacheTemporaryDataRegistryCallbackFailures, "Distributed Cache committed temporary-data event. Number of contained temporary-data registry callback failures", ValueType::Number) \
+    M(DistrCacheTemporaryDataRegistryLockWaitMicroseconds, "Distributed Cache committed temporary-data event. Time spent waiting for the temporary-data registry mutex on contention", ValueType::Microseconds) \
+    M(DistrCacheTemporaryDataRegistryScheduleFailures, "Distributed Cache committed temporary-data event. Number of temporary-data registry task schedule failures", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesPublished, "Distributed Cache server event. Number of committed temporary files published", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesPublishRejected, "Distributed Cache server event. Number of rejected committed temporary publications", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesReleased, "Distributed Cache server event. Number of committed temporary files released", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesExpired, "Distributed Cache server event. Number of committed temporary files expired", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesExtended, "Distributed Cache server event. Number of committed temporary file TTL extensions", ValueType::Number) \
+    M(DistrCacheServerTemporaryDataControlMicroseconds, "Distributed Cache server event. Time spent processing committed temporary-data controls", ValueType::Microseconds) \
+    M(DistrCacheServerTemporaryReadRejected, "Distributed Cache server event. Number of rejected committed temporary reads", ValueType::Number) \
+    M(DistrCacheServerTemporaryCleanupScheduleFailures, "Distributed Cache server event. Number of committed temporary cleanup schedule failures", ValueType::Number) \
     \
     M(DistrCacheServerProcessRequestMicroseconds, "Distributed Cache server event. Time spent processing request on DistributedCache server side", ValueType::Microseconds) \
     M(DistrCacheServerStartRequestPackets, "Distributed Cache server event. Number of StartRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerContinueRequestPackets, "Distributed Cache server event. Number of ContinueRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerEndRequestPackets, "Distributed Cache server event. Number of EndRequest packets in DistributedCacheServer", ValueType::Number) \
+    M(DistrCacheServerRequestsClosedWithoutEndRequest, "Distributed Cache server event. Number of requests whose client closed the connection without sending EndRequest (a killed client, a client whose socket was not writable, or an old client), so the server stopped serving them on EOF. Closes driven by this server (shutdown or connection eviction) are not counted", ValueType::Number) \
     M(DistrCacheServerReceivedCredentialsRefreshPackets, "Distributed Cache server event. Number of RefreshCredentials client packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerAckRequestPackets, "Distributed Cache server event. Number of AckRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerNewS3CachedClients, "Distributed Cache server event. The number of new cached s3 clients", ValueType::Number) \
@@ -1488,6 +1525,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerConnectionsRejectedOverLimit, "Distributed Cache server event. The number of new connections rejected with a SlowDown packet because the connecting client exceeded its share of connections", ValueType::Number) \
     M(DistrCacheServerConnectionRegistryLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for the global connection registry mutex on contention (identify, setClientWeight, eviction, and unregister when a reindex or bucket removal is due)", ValueType::Microseconds) \
     M(DistrCacheServerConnectionRegistryClientLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for a per-client connection bucket mutex on contention (register/unregister/identify/eviction)", ValueType::Microseconds) \
+    M(DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for the committed temporary-files mutex on contention.", ValueType::Microseconds) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
     M(LogTrace, "Number of log messages with level Trace", ValueType::Number) \
@@ -1792,6 +1830,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetPrefetcherUsedBytes, "Total bytes of the ranges read by DB::Parquet::Prefetcher that were actually used by the parquet reader.", ValueType::Bytes) \
     M(ParquetDecompressedBytes, "Total uncompressed size of parquet pages (data and dictionary pages) decompressed by the parquet reader.", ValueType::Bytes) \
     M(ParquetPagesDecompressedToSkipRows, "Number of parquet data pages whose decompression was triggered by skipping rows filtered out by PREWHERE (the page may also serve rows read later).", ValueType::Number) \
+    M(ParquetTopKRowGroupsBoundedByDictionary, "The number of parquet row groups whose `ORDER BY ... LIMIT` sort column range was taken from the values of its dictionary that can pass the filter, because its min/max statistics could not bound it (see `use_top_k_dynamic_filtering`)", ValueType::Number) \
     M(ParquetTopKSkippedRowGroups, "The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)", ValueType::Number) \
     M(ParquetFilesSkippedByCachedStatistics, "The number of Parquet files that a read skipped without opening them, because the min/max statistics of the filter columns, kept with the cached file metadata by an earlier read of the same file version, exclude every row group", ValueType::Number) \
     M(ParquetReadMinMaxFromStatistics, "The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)", ValueType::Number) \
@@ -2238,8 +2277,7 @@ const std::string_view & getDocumentation(Event event)
     return docs[event];
 }
 
-/// Get ProfileEvent by its name
-Event getByName(std::string_view name)
+static const std::unordered_map<std::string_view, Event> & getNameToEventMap()
 {
     static const std::unordered_map<std::string_view, Event> map =
     {
@@ -2248,6 +2286,13 @@ Event getByName(std::string_view name)
 #undef M
     };
 
+    return map;
+}
+
+/// Get ProfileEvent by its name
+Event getByName(std::string_view name)
+{
+    const auto & map = getNameToEventMap();
     auto it = map.find(name);
     if (it == map.end())
     {
@@ -2260,6 +2305,15 @@ Event getByName(std::string_view name)
             name, DB::getHintsErrorMessageSuffix(DB::NamePrompter<3>::getHints(String(name), all_names)));
     }
 
+    return it->second;
+}
+
+std::optional<Event> tryGetByName(std::string_view name)
+{
+    const auto & map = getNameToEventMap();
+    auto it = map.find(name);
+    if (it == map.end())
+        return std::nullopt;
     return it->second;
 }
 
