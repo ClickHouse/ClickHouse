@@ -82,7 +82,6 @@ PartitionPruner::PartitionPruner(
         nullable_partition_key = DB::KeyDescription::getKeyFromAST(
             partition_key_ast,
             getPartitionColumnsDescription(partition_columns_, table_schema_, /* keep_nullable */ true),
-            {},
             context);
 
         DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context);
