@@ -1473,7 +1473,12 @@ void MergeTreeReaderWide::readData(
             return;
 
         if (auto * stream = streams.find(*stream_name))
+        {
+            /// An open stream gets the current read bound before it is positioned.
+            if (stream->isInitialized())
+                stream->adjustRightMark(last_mark_to_read);
             stream->seekToMark(from_mark);
+        }
     };
 
     deserialize_settings.get_avg_value_size_hint_callback

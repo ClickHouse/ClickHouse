@@ -60,6 +60,7 @@ public:
     ReadBuffer * getDataBuffer();
 
     size_t getFileSize() const { return file_size; }
+    bool isInitialized() const { return initialized; }
 
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
