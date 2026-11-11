@@ -20,6 +20,8 @@ echo '-- SHOW INDEXES'
 $ON -q "SHOW INDEXES FROM t"
 echo '-- information_schema.columns'
 $ON -q "SELECT count() FROM information_schema.columns WHERE table_schema = currentDatabase() AND table_name = 't'"
+echo '-- system.columns'
+$ON -q "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't' ORDER BY name"
 echo '-- system.one'
 $ON -q "SELECT * FROM system.one"
 

@@ -6,6 +6,9 @@ t	1	idx	1		\N	0	\N	\N	\N	BLOOM_FILTER			YES	b
 t	1	PRIMARY	1	a	A	0	\N	\N	\N	PRIMARY			YES	
 -- information_schema.columns
 2
+-- system.columns
+a
+b
 -- system.one
 0
 -- temporary table with a dotted name
