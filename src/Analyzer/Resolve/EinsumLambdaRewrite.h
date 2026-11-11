@@ -24,9 +24,12 @@ namespace DB
   *
   * The arguments of `einsum` after the lambda are optional: each of them must be an array used in the expression.
   *
-  * `is_scoped_function` tells if a name of a function is bound to a lambda function in the scope of the query,
+  * `is_scoped_function` returns the lambda function bound to a name of a function in the scope of the query, or nullptr,
   * like `WITH (x, y) -> x + y AS multiply`: then a call of `multiply` in the expression is not a product.
+  * The names in such lambda functions are not used for the generated parameters, because their expressions are resolved
+  * where they are called.
   */
-QueryTreeNodePtr rewriteEinsumLambda(const FunctionNode & function_node, const std::function<bool(const String &)> & is_scoped_function);
+using ScopedFunctionLookup = std::function<QueryTreeNodePtr(const String &)>;
+QueryTreeNodePtr rewriteEinsumLambda(const FunctionNode & function_node, const ScopedFunctionLookup & is_scoped_function);
 
 }

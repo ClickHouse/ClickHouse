@@ -1,4 +1,5 @@
 #include <Analyzer/Resolve/EinsumLambdaRewrite.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/LambdaNode.h>
@@ -48,6 +49,8 @@ void collectIdentifierNames(const IQueryTreeNode & node, std::unordered_set<Stri
         for (const auto & part : identifier->getIdentifier().getParts())
             names.insert(part);
     }
+    if (const auto * column = node.as<ColumnNode>())
+        names.insert(column->getColumnName());
     if (const auto * lambda = node.as<LambdaNode>())
         for (const auto & name : lambda->getArguments().getNames())
             names.insert(name);
@@ -95,6 +98,31 @@ const FunctionNode * asArrayElement(const IQueryTreeNode & node)
     return nullptr;
 }
 
+/// Collects the names in the lambda functions bound in the query outside of the lambda function of einsum that are called
+/// in the expression, also transitively: their expressions are resolved where they are called, so a generated parameter
+/// with the same name as a free name in them would capture it.
+void collectNamesOfCalledFunctions(
+    const IQueryTreeNode & node,
+    const ScopedFunctionLookup & is_scoped_function,
+    std::unordered_set<String> & names,
+    std::unordered_set<String> & visited_functions)
+{
+    checkStackSize();
+
+    if (const auto * function = node.as<FunctionNode>(); function && visited_functions.insert(function->getFunctionName()).second)
+    {
+        if (auto scoped_function = is_scoped_function(function->getFunctionName()))
+        {
+            collectIdentifierNames(*scoped_function, names);
+            collectNamesOfCalledFunctions(*scoped_function, is_scoped_function, names, visited_functions);
+        }
+    }
+
+    for (const auto & child : node.getChildren())
+        if (child)
+            collectNamesOfCalledFunctions(*child, is_scoped_function, names, visited_functions);
+}
+
 QueryTreeNodePtr makeFunction(const String & name, QueryTreeNodes arguments)
 {
     auto function = std::make_shared<FunctionNode>(name);
@@ -136,6 +164,68 @@ QueryTreeNodePtr applySubscripts(QueryTreeNodePtr array, std::span<const QueryTr
     return array;
 }
 
+/// Whether the subscript can have a free name that is not visible in its syntax: a call of a function can be a call
+/// of a lambda function, like `f` in `WITH y -> y + x AS f`, whose expression is resolved where it is called.
+bool containsFunction(const IQueryTreeNode & node)
+{
+    checkStackSize();
+
+    switch (node.getNodeType())
+    {
+        case QueryTreeNodeType::FUNCTION:
+        case QueryTreeNodeType::LAMBDA:
+        case QueryTreeNodeType::QUERY:
+        case QueryTreeNodeType::UNION:
+            return true;
+        default:
+            break;
+    }
+    for (const auto & child : node.getChildren())
+        if (child && containsFunction(*child))
+            return true;
+    return false;
+}
+
+/** Like `applySubscripts`, but the subscripts after the first `nullptr` that are not constants are calculated outside
+  * of the generated lambda functions, if one of them contains a function, so that a generated parameter cannot capture a free name:
+  *   arr[][f(0)] -> arrayMap((b, s1) -> arrayMap(x -> x[s1], b), [arr], [f(0)])[1]
+  * Then the generated lambda functions contain only the generated names.
+  */
+QueryTreeNodePtr applySubscriptsWithoutCapture(QueryTreeNodePtr array, std::span<const QueryTreeNodePtr> subscripts)
+{
+    auto first_empty = std::find(subscripts.begin(), subscripts.end(), nullptr);
+    bool has_function = std::any_of(first_empty, subscripts.end(),
+        [](const QueryTreeNodePtr & subscript) { return subscript && containsFunction(*subscript); });
+    if (!has_function)
+        return applySubscripts(std::move(array), subscripts);
+
+    array = applySubscripts(std::move(array), subscripts.first(first_empty - subscripts.begin()));
+
+    Names names{"b"};
+    QueryTreeNodes arguments{nullptr, makeFunction("array", {std::move(array)})};
+    QueryTreeNodes rest;
+    for (auto it = first_empty; it != subscripts.end(); ++it)
+    {
+        if (!*it || (*it)->getNodeType() == QueryTreeNodeType::CONSTANT)
+        {
+            rest.push_back(*it);
+            continue;
+        }
+        names.push_back("s" + std::to_string(names.size()));
+        arguments.push_back(makeFunction("array", {(*it)->clone()}));
+        rest.push_back(std::make_shared<IdentifierNode>(Identifier{names.back()}));
+    }
+
+    auto body = applySubscripts(std::make_shared<IdentifierNode>(Identifier{"b"}), rest);
+    arguments[0] = std::make_shared<LambdaNode>(std::make_shared<LambdaArgumentsNode>(names), std::move(body), /*is_operator=*/ true);
+    return makeFunction("arrayElement", {makeFunction("arrayMap", std::move(arguments)), std::make_shared<ConstantNode>(Field(UInt64(1)))});
+}
+
+bool isSubquery(const IQueryTreeNode & node)
+{
+    return node.getNodeType() == QueryTreeNodeType::QUERY || node.getNodeType() == QueryTreeNodeType::UNION;
+}
+
 /// The aliases of a scope of the lambda function of einsum or of a lambda function inside it.
 /// An alias defined inside a nested lambda function is visible only there, and the parameters of a nested lambda function
 /// hide the aliases with the same names from the outer scopes.
@@ -147,14 +237,14 @@ struct AliasScope
     const AliasScope * parent = nullptr;
 };
 
-/// Collects the aliases of the scope, without the nested lambda functions, which have their own scopes.
+/// Collects the aliases of the scope, without the nested lambda functions and subqueries, which have their own scopes.
 void collectScopeAliases(const QueryTreeNodePtr & node, AliasScope & scope)
 {
     checkStackSize();
 
     if (node->hasAlias())
         scope.aliases.emplace(node->getAlias(), node);
-    if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
+    if (node->getNodeType() == QueryTreeNodeType::LAMBDA || isSubquery(*node))
         return;
     for (const auto & child : node->getChildren())
         if (child)
@@ -169,6 +259,17 @@ AliasScope makeLambdaScope(const LambdaNode & lambda, const AliasScope & parent)
     for (const auto & name : lambda.getArguments().getNames())
         scope.parameters.insert(name);
     collectScopeAliases(lambda.getExpression(), scope);
+    return scope;
+}
+
+/// The scope of a subquery inside `parent`: the aliases inside the subquery are visible only there.
+AliasScope makeSubqueryScope(const IQueryTreeNode & subquery, const AliasScope & parent)
+{
+    AliasScope scope;
+    scope.parent = &parent;
+    for (const auto & child : subquery.getChildren())
+        if (child)
+            collectScopeAliases(child, scope);
     return scope;
 }
 
@@ -203,7 +304,7 @@ struct FunctionBinding
   * does not hide the function.
   */
 FunctionBinding resolveFunctionName(
-    String name, const AliasScope & scope, const std::function<bool(const String &)> & is_scoped_function)
+    String name, const AliasScope & scope, const ScopedFunctionLookup & is_scoped_function)
 {
     FunctionBinding binding;
     std::unordered_set<const IQueryTreeNode *> visited;
@@ -214,6 +315,13 @@ FunctionBinding resolveFunctionName(
         const AliasScope * expression_scope = nullptr;
         for (const AliasScope * current = lookup_scope; current && !expression; current = current->parent)
         {
+            /// A parameter of a nested lambda function can be a lambda function, like `f` in `invoke(f -> f(0), x -> [x])`.
+            if (current->parameters.contains(name))
+            {
+                binding.is_lambda = true;
+                binding.is_local = true;
+                return binding;
+            }
             if (auto it = current->aliases.find(name); it != current->aliases.end() && isFunctionAliasExpression(*it->second))
             {
                 expression = it->second.get();
@@ -223,7 +331,7 @@ FunctionBinding resolveFunctionName(
 
         if (!expression)
         {
-            binding.is_lambda = is_scoped_function(name);
+            binding.is_lambda = is_scoped_function(name) != nullptr;
             return binding;
         }
 
@@ -262,7 +370,7 @@ String findLocalName(
     const IQueryTreeNode & node,
     const AliasScope & scope,
     std::unordered_set<String> & inner_parameters,
-    const std::function<bool(const String &)> & is_scoped_function)
+    const ScopedFunctionLookup & is_scoped_function)
 {
     checkStackSize();
 
@@ -270,7 +378,7 @@ String findLocalName(
     if (const auto * function = node.as<FunctionNode>())
     {
         const auto & name = function->getFunctionName();
-        if (resolveFunctionName(name, scope, is_scoped_function).is_local)
+        if (!inner_parameters.contains(name) && resolveFunctionName(name, scope, is_scoped_function).is_local)
             return name;
     }
 
@@ -307,7 +415,7 @@ String findLocalName(
 class EinsumLambdaRewriter
 {
 public:
-    EinsumLambdaRewriter(const LambdaNode & lambda_, const std::function<bool(const String &)> & is_scoped_function_)
+    EinsumLambdaRewriter(const LambdaNode & lambda_, const ScopedFunctionLookup & is_scoped_function_)
         : lambda(lambda_), indices(lambda.getArguments().getNames()), is_scoped_function(is_scoped_function_)
     {
         if (indices.empty())
@@ -327,6 +435,10 @@ public:
 
         std::unordered_set<String> used_names;
         collectIdentifierNames(*body, used_names);
+        {
+            std::unordered_set<String> visited_functions;
+            collectNamesOfCalledFunctions(*body, is_scoped_function, used_names, visited_functions);
+        }
         value_prefix = "x";
         while (std::any_of(used_names.begin(), used_names.end(), [&](const String & name) { return isValueName(name); }))
             value_prefix += "_";
@@ -430,7 +542,7 @@ private:
     const LambdaNode & lambda;
     const Names & indices;
     /// Whether the name is bound to a lambda function in the query outside of the lambda function of einsum.
-    const std::function<bool(const String &)> & is_scoped_function;
+    const ScopedFunctionLookup & is_scoped_function;
 
     std::vector<TensorElement> elements;
     /// The arrays of the elements, before the subscripts that are not indices are applied.
@@ -547,6 +659,15 @@ private:
             return;
         }
 
+        if (isSubquery(*node))
+        {
+            auto subquery_scope = makeSubqueryScope(*node, scope);
+            for (auto & child : node->getChildren())
+                if (child)
+                    replaceTensorElements(child, subquery_scope);
+            return;
+        }
+
         for (auto & child : node->getChildren())
             if (child)
                 replaceTensorElements(child, scope);
@@ -601,7 +722,7 @@ private:
             else
                 fixed_subscripts.push_back(subscript);
         }
-        element.tensor = applySubscripts(array->clone(), fixed_subscripts);
+        element.tensor = applySubscriptsWithoutCapture(array->clone(), fixed_subscripts);
 
         /// The same element is the same value of the lambda function.
         for (size_t i = 0; i < elements.size(); ++i)
@@ -663,6 +784,15 @@ private:
             return;
         }
 
+        if (isSubquery(node))
+        {
+            auto subquery_scope = makeSubqueryScope(node, scope);
+            for (const auto & child : node.getChildren())
+                if (child)
+                    collectIndices(*child, subquery_scope, used, visited_aliases);
+            return;
+        }
+
         /// A call of a lambda function bound by an alias, like `f(0)` with `(x -> a[i]) AS f`, uses the indices of its expression.
         if (const auto * function = node.as<FunctionNode>())
         {
@@ -691,6 +821,15 @@ private:
         {
             auto lambda_scope = makeLambdaScope(*nested_lambda, scope);
             findSummationIndicesImpl(nested_lambda->getExpression(), lambda_scope);
+            return;
+        }
+
+        if (isSubquery(*node))
+        {
+            auto subquery_scope = makeSubqueryScope(*node, scope);
+            for (const auto & child : node->getChildren())
+                if (child)
+                    findSummationIndicesImpl(child, subquery_scope);
             return;
         }
 
@@ -724,7 +863,7 @@ private:
 
 }
 
-QueryTreeNodePtr rewriteEinsumLambda(const FunctionNode & function_node, const std::function<bool(const String &)> & is_scoped_function)
+QueryTreeNodePtr rewriteEinsumLambda(const FunctionNode & function_node, const ScopedFunctionLookup & is_scoped_function)
 {
     const auto & arguments = function_node.getArguments().getNodes();
     const auto & lambda = arguments.at(0)->as<const LambdaNode &>();
