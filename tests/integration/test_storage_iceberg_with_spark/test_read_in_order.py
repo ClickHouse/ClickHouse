@@ -462,6 +462,79 @@ def test_read_in_order_nulls_first(started_cluster_iceberg_with_spark, storage_t
     assert (count_in_pipeline(instance, query, "PartialSortingTransform") > 0) == with_nulls
 
 
+def test_read_in_order_cloned_read(started_cluster_iceberg_with_spark):
+    """A sealed view clones its optimized plan, and a correlated subquery executes it twice;
+    each copy must list its own files, whether reading in order was declined or accepted."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_read_in_order_cloned_read_" + get_uuid_str()
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id BIGINT) USING iceberg")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} WRITE ORDERED BY id")
+    for i in range(1, 7):
+        spark.sql(f"INSERT INTO {TABLE_NAME} VALUES ({i}), ({i + 6})")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        "local",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    # Six files over a threshold of one declines; aggregation in order under a high threshold accepts.
+    instance.query(
+        f"CREATE VIEW {TABLE_NAME}_declined SQL SECURITY NONE AS SELECT id FROM {TABLE_NAME} ORDER BY id "
+        f"SETTINGS max_threads=1, read_in_order_two_level_merge_threshold=1")
+    instance.query(
+        f"CREATE VIEW {TABLE_NAME}_accepted SQL SECURITY NONE AS SELECT id FROM {TABLE_NAME} GROUP BY id "
+        f"SETTINGS max_threads=1, optimize_aggregation_in_order=1, read_in_order_two_level_merge_threshold=100")
+    assert count_in_pipeline(
+        instance, f"SELECT id FROM {TABLE_NAME} GROUP BY id", "AggregatingInOrderTransform",
+        "max_threads=1, optimize_aggregation_in_order=1, read_in_order_two_level_merge_threshold=100") > 0
+    for view in [f"{TABLE_NAME}_declined", f"{TABLE_NAME}_accepted"]:
+        query = (
+            f"SELECT id FROM {view} AS o WHERE EXISTS (SELECT 1 FROM numbers(20) WHERE number = o.id) ORDER BY id "
+            f"SETTINGS correlated_subqueries_use_in_memory_buffer=0")
+        assert get_array_as_returned(instance.query(query)) == list(range(1, 13))
+        assert get_array_as_returned(instance.query(f"{query}, optimize_read_in_order=0")) == list(range(1, 13))
+
+
+def test_read_in_order_several_row_groups(started_cluster_iceberg_with_spark):
+    """With the sort elided, a file's row groups must arrive in file order. Roaring-bitmap position
+    deletes stop the Iceberg reader from pinning preserve_order itself, so only the in-order read pins it."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_read_in_order_row_groups_" + get_uuid_str()
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id BIGINT) USING iceberg "
+        f"TBLPROPERTIES ('write.parquet.row-group-size-bytes' = '1')")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} WRITE LOCALLY ORDERED BY id")
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT /*+ COALESCE(1) */ id FROM range(0, 10000)")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        "local",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    row_groups = instance.query(
+        f"SELECT num_row_groups FROM file('iceberg_data/default/{TABLE_NAME}/data/**.parquet', 'ParquetMetadata')")
+    assert len(row_groups.split()) == 1 and int(row_groups) > 10, row_groups
+
+    query = f"SELECT id FROM {TABLE_NAME} ORDER BY id"
+    settings = "max_threads=8, input_format_parquet_preserve_order=0, use_roaring_bitmap_iceberg_positional_deletes=1"
+    assert count_in_pipeline(instance, query, "PartialSortingTransform", settings) == 0
+    assert count_in_pipeline(instance, query, "MergeSortingTransform", settings) == 0
+    for _ in range(5):
+        assert get_array_as_returned(instance.query(f"{query} SETTINGS {settings}")) == list(range(10000))
+
+
 def test_defining_columns_with_special_character(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     table_name = "demo_event_" + get_uuid_str()

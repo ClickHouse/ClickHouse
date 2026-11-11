@@ -102,7 +102,10 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
 
 QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 {
-    return std::make_unique<ReadFromObjectStorageStep>(*this);
+    auto copy = std::make_unique<ReadFromObjectStorageStep>(*this);
+    /// Reading consumes the iterator, so a copy lists its own files (from the same table state, see `createIterator`).
+    copy->iterator_wrapper.reset();
+    return copy;
 }
 
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -416,7 +419,8 @@ void ReadFromObjectStorageStep::createIterator()
     auto context = getContext();
 
     /// The TopK query condition cache key is made from the same table state the files are read from.
-    iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
+    if (!iterator_metadata)
+        iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
