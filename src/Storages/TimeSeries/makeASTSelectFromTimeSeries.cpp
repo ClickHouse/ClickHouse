@@ -103,7 +103,7 @@ namespace
             /// subcolumn `tags.keys`); we can't be sure for it, so we return false.
             for (const auto & name_part : identifier->name_parts)
             {
-                if (name_part == TimeSeriesColumnNames::Tags)
+                if (name_part.spelling == TimeSeriesColumnNames::Tags)
                     return false;
             }
         }

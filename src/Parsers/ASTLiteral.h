@@ -21,7 +21,7 @@ protected:
         /// A synthesized literal leaves it unset, so it cannot be taken for a recorded literal
         /// whose freed address it reused.
         UInt32 has_token_info : 1;
-        UInt32 unused : 29;
+        UInt32 unused : 27;
     };
 
 public:

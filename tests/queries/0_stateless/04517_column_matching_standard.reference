@@ -1,0 +1,64 @@
+--- standard: unquoted spellings fold, header shows the canonical column
+FirstName
+a
+FirstName
+a
+FirstName
+a
+--- standard: case siblings are ambiguous for any unquoted spelling, including the exact one
+AMBIGUOUS_IDENTIFIER
+AMBIGUOUS_IDENTIFIER
+AMBIGUOUS_IDENTIFIER
+--- standard: double quotes pin the exact spelling
+Val
+1
+val
+2
+UNKNOWN_IDENTIFIER
+--- standard: tuple subcolumn suffixes fold, quoted suffix pins
+Data.Name
+n
+Data.Name
+n
+UNKNOWN_IDENTIFIER
+--- sensitive default: exact spellings work, folded spellings fail
+FirstName
+a
+UNKNOWN_IDENTIFIER
+1	2
+n
+UNKNOWN_IDENTIFIER
+--- standard: WHERE / GROUP BY / ORDER BY fold like SELECT
+a
+x	3
+y	5
+y
+x
+--- standard: expression aliases fold, quoted alias definitions pin, case-sibling definitions rejected
+1	1
+1	1
+MULTIPLE_EXPRESSIONS_FOR_ALIAS
+UNKNOWN_IDENTIFIER
+1	2
+--- standard: CTE names fold, quoted CTE definitions pin, case-sibling definitions rejected
+1
+UNKNOWN_TABLE
+1
+MULTIPLE_EXPRESSIONS_FOR_ALIAS
+UNKNOWN_TABLE
+--- standard: lambda arguments fold, case-sibling arguments rejected
+[2,3]
+BAD_ARGUMENTS
+UNKNOWN_IDENTIFIER
+--- standard: alias vs column precedence follows the exact-mode order
+5	5
+5	5
+5	10
+AMBIGUOUS_COLUMN_NAME
+--- standard: window names fold, quoted definitions pin, case-sibling definitions rejected
+1
+2
+2
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS

@@ -118,19 +118,24 @@ public:
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
         const ContextPtr & context,
+        const ASTPtr & original_ast = nullptr,
         const StoragePtr & replaced_storage = nullptr);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
     /// per-field Array columns of the table expression (e.g. `loc.x`, `loc.y`).
     /// Returns nullptr if the identifier does not match any nested prefix in the table.
+    /// A non-empty `foldable_name` (the quote-structured `identifier` under `standard` name matching)
+    /// matches the prefix parts through ASCII case folding, keeping double-quoted parts exact.
     static QueryTreeNodePtr tryResolveIdentifierAsNestedPrefix(
         const Identifier & identifier,
         const AnalysisTableExpressionData & table_expression_data,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const IdentifierName & foldable_name = {});
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
         const ContextPtr & context,
+        const ASTPtr & original_ast = nullptr,
         const StoragePtr & replaced_storage = nullptr);
 
     /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
@@ -153,7 +158,8 @@ public:
         const QueryTreeNodePtr & compound_expression,
         String compound_expression_source,
         IdentifierResolveScope & scope,
-        bool can_be_not_found = false);
+        bool can_be_not_found = false,
+        const IdentifierName & foldable_nested_path = {});
 
     IdentifierResolveResult tryResolveIdentifierFromExpressionArguments(
         const IdentifierLookup & identifier_lookup,

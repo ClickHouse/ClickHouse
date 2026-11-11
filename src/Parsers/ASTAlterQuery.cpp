@@ -168,6 +168,10 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
         w.writeString("to_database", to_database);
     if (!to_table.empty())
         w.writeString("to_table", to_table);
+    w.writeQuote("from_database_quote", from_database_quote);
+    w.writeQuote("from_table_quote", from_table_quote);
+    w.writeQuote("to_database_quote", to_database_quote);
+    w.writeQuote("to_table_quote", to_table_quote);
     if (!snapshot_name.empty())
         w.writeString("snapshot_name", snapshot_name);
     if (!execute_command_name.empty())
@@ -249,6 +253,10 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     from_table = r.getString("from_table");
     to_database = r.getString("to_database");
     to_table = r.getString("to_table");
+    from_database_quote = r.readQuote("from_database_quote");
+    from_table_quote = r.readQuote("from_table_quote");
+    to_database_quote = r.readQuote("to_database_quote");
+    to_table_quote = r.readQuote("to_table_quote");
     snapshot_name = r.getString("snapshot_name");
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");

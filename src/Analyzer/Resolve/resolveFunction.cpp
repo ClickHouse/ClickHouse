@@ -24,6 +24,7 @@
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -59,6 +60,7 @@
 
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 
@@ -88,6 +90,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsNameMatchMode database_and_table_name_matching;
     extern const SettingsBool enable_function_early_short_circuit;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
@@ -482,13 +485,22 @@ bool isTableIdentifierShadowedInScope(const IdentifierNode & identifier_node, co
     return false;
 }
 
+/// The table identifier AST carries the quoting of the parts, so double-quoted parts stay exact under `standard` name matching.
+ASTPtr makeTableIdentifierAST(const IdentifierNode & identifier_node)
+{
+    const auto & identifier_name = identifier_node.getIdentifierName();
+    if (identifier_name.size() != 1 && identifier_name.size() != 2)
+        return {};
+    return make_intrusive<ASTTableIdentifier>(identifier_name);
+}
+
 bool isUnsafeCountScalarSource(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
 {
     QueryTreeNodePtr resolved_table = join_tree;
     if (const auto * identifier = join_tree->as<IdentifierNode>())
     {
         auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier->getIdentifier(), scope.context);
+            identifier->getIdentifier(), scope.context, makeTableIdentifierAST(*identifier));
         resolved_table = std::move(resolve_result.resolved_identifier);
     }
 
@@ -524,7 +536,7 @@ bool hasLateAttachedTableFilter(
     if (const auto * identifier = join_tree->as<IdentifierNode>())
     {
         auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier->getIdentifier(), scope.context);
+            identifier->getIdentifier(), scope.context, makeTableIdentifierAST(*identifier));
         resolved_table = std::move(resolve_result.resolved_identifier);
     }
 
@@ -1471,7 +1483,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     QueryTreeNodePtr lambda_expression_untyped;
     if (!function_node_ptr->isWindowFunction())
     {
-        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
+        /// A function name is written without quotes, so it folds under `standard` matching.
+        IdentifierLookup function_name_lookup{Identifier{function_name}, IdentifierLookupContext::FUNCTION};
+        function_name_lookup.identifier_name = IdentifierName({IdentifierPart{function_name, IdentifierPartQuote::Unquoted}});
+        auto function_lookup_result = tryResolveIdentifier(function_name_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
@@ -1652,6 +1667,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto identifier = first_argument_identifier.getIdentifier();
 
         IdentifierLookup identifier_lookup{identifier, IdentifierLookupContext::EXPRESSION};
+        identifier_lookup.identifier_name = first_argument_identifier.getIdentifierName();
         auto resolve_result = tryResolveIdentifier(identifier_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
 
         if (resolve_result.isResolved())
@@ -1674,7 +1690,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context, replaced_storage).resolved_identifier;
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+                    identifier, scope.context, makeTableIdentifierAST(first_argument_identifier), replaced_storage).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",
@@ -1691,7 +1708,30 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         scope.scope_node->formatASTForErrorMessage());
             }
 
-            first_argument = std::make_shared<ConstantNode>(identifier.getFullName());
+            String table_or_dictionary_name = identifier.getFullName();
+            /// `getJoin` resolves the table again from this name. Under `standard` matching write a name with
+            /// double-quoted parts in the identifier syntax, so these parts stay exact in that lookup too.
+            if (is_special_function_join_get
+                && scope.context->getSettingsRef()[Setting::database_and_table_name_matching] == NameMatchMode::Standard)
+            {
+                const auto & name_parts = first_argument_identifier.getIdentifierName().parts;
+                bool has_double_quoted_part = std::ranges::any_of(
+                    name_parts, [](const IdentifierPart & part) { return part.quote == IdentifierPartQuote::DoubleQuoted; });
+                if (has_double_quoted_part)
+                {
+                    table_or_dictionary_name.clear();
+                    for (const auto & part : name_parts)
+                    {
+                        if (!table_or_dictionary_name.empty())
+                            table_or_dictionary_name += '.';
+                        table_or_dictionary_name += part.quote == IdentifierPartQuote::DoubleQuoted
+                            ? doubleQuoteString(part.spelling)
+                            : backQuote(part.spelling);
+                    }
+                }
+            }
+
+            first_argument = std::make_shared<ConstantNode>(std::move(table_or_dictionary_name));
         }
     }
 
@@ -2041,7 +2081,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 subquery_node->as<QueryNode>()->clearProjectionColumns();
                 if (subquery_projection_columns.size() == 1)
                 {
-                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
+                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({IdentifierPart{unique_column_name, IdentifierPartQuote::Unquoted}});
                     subquery_node->as<QueryNode>()->resolveProjectionColumns(subquery_projection_columns);
                 }
                 else
@@ -2277,13 +2317,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 /// Now check if the identifier resolves as a column or alias.
                                 /// This is deferred to here because tryResolveIdentifier may allocate
                                 /// tree nodes that affect node ID numbering.
-                                auto expression_resolve_result = tryResolveIdentifier(
-                                    {identifier, IdentifierLookupContext::EXPRESSION}, scope, {});
+                                IdentifierLookup rewrite_expression_lookup{identifier, IdentifierLookupContext::EXPRESSION};
+                                rewrite_expression_lookup.identifier_name = identifier_node->getIdentifierName();
+                                auto expression_resolve_result = tryResolveIdentifier(rewrite_expression_lookup, scope, {});
 
                                 if (!expression_resolve_result.isResolved())
                                 {
-                                    auto function_resolve_result = tryResolveIdentifier(
-                                        {identifier, IdentifierLookupContext::FUNCTION}, scope, {});
+                                    IdentifierLookup rewrite_function_lookup{identifier, IdentifierLookupContext::FUNCTION};
+                                    rewrite_function_lookup.identifier_name = identifier_node->getIdentifierName();
+                                    auto function_resolve_result = tryResolveIdentifier(rewrite_function_lookup, scope, {});
 
                                     if (!function_resolve_result.isResolved())
                                     {

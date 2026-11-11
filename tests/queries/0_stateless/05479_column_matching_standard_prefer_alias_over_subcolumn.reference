@@ -1,0 +1,6 @@
+--- unquoted qualifier folds to the right-side alias, not the left-side subcolumn
+1	1
+1	1
+--- unquoted qualifier folds to the table name
+100
+--- double-quoted qualifier stays exact

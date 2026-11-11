@@ -267,6 +267,7 @@ void ASTColumnsReplaceTransformer::Replacement::writeJSON(WriteBuffer & out) con
 {
     JSONObjectWriter w(out, "ColumnsReplaceTransformerReplacement");
     w.writeString("name", name);
+    w.writeQuote("name_quote", name_quote);
     w.writeChildren(children);
 }
 
@@ -394,6 +395,7 @@ void ASTColumnsReplaceTransformer::Replacement::readJSON(const Poco::JSON::Objec
 {
     JSONObjectReader r(json);
     name = r.getString("name");
+    name_quote = r.readQuote("name_quote");
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTColumnsReplaceTransformer::Replacement JSON requires a non-empty 'name'");
