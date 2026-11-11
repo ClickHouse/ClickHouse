@@ -24,12 +24,12 @@
 #include <Access/resolveSetting.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Functions/FunctionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
 #include <base/range.h>
 #include <Common/Exception.h>
@@ -42,10 +42,9 @@
 
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <algorithm>
-#include <filesystem>
 #include <atomic>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <unordered_set>
@@ -103,8 +102,8 @@ namespace
         {
             /// A bare list such as `<functions_requiring_grant>hex, decrypt</functions_requiring_grant>`
             /// protects nothing. Say so instead of starting up with an empty list.
-            String text = config.getString(prefix, "");
-            boost::trim(text);
+            const String section_text = config.getString(prefix, "");
+            const std::string_view text = trimWhitespace(section_text);
             if (!text.empty())
                 throw Exception(
                     ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
@@ -133,10 +132,10 @@ namespace
 
             function_elements_text_size += count_non_whitespace(config.getRawString(prefix + "." + key, ""));
 
-            String name = config.getString(prefix + "." + key);
-            boost::trim(name);
+            const String element_text = config.getString(prefix + "." + key);
+            const std::string_view name = trimWhitespace(element_text);
             if (!name.empty())
-                names.push_back(std::move(name));
+                names.emplace_back(name);
         }
 
         /// `keys` lists only child elements, so a name written as bare text next to them, as in

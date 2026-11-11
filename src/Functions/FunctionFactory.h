@@ -56,9 +56,10 @@ public:
     /// Returns nullptr if not found.
     FunctionOverloadResolverPtr tryGet(const std::string & name, ContextPtr context) const;
 
-    /// The methods above check the `FUNCTION` grant of the user of `context`, see `checkFunctionAccess`. This one
-    /// does not: it is only for looking at the properties of a function which is not going to be executed, such as
-    /// its arity, where an exception about a function the query may not even call would be wrong.
+    /// Every other method which returns a function checks the `FUNCTION` grant of the user of `context`, see
+    /// `checkFunctionAccess`. This one does not: it is only for looking at the properties of a function which is
+    /// not going to be executed, such as its arity, where an exception about a function the query may not even
+    /// call would be wrong.
     FunctionOverloadResolverPtr tryGetWithoutAccessCheck(const std::string & name, ContextPtr context) const;
 
     /// The same methods to get developer interface implementation.

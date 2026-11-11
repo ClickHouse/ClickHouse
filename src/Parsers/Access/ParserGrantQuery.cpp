@@ -1017,7 +1017,8 @@ For example, for the AzureBlobStorage table engine, following grant may be requi
 
 Allows executing a specified SQL function. Applies to ordinary functions and user-defined functions
 (SQL, executable, and WebAssembly) listed in the
-[`functions_requiring_grant`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)
+`functions_requiring_grant` list of the
+[`access_control_improvements`](/reference/settings/server-settings/settings/access-control#access_control_improvements)
 server setting. By default the list is empty and any user can call any function.
 
 Aggregate functions, window functions and table functions are out of scope: they are resolved through
@@ -1041,7 +1042,8 @@ As with the other privileges, revoking the grant does not remove the results whi
 [query cache](/concepts/features/performance/caches/query-cache): they are returned until they expire.
 
 An `ON CLUSTER` query is analyzed by the hosts that execute it, so the grant is checked there, like the other
-privileges checked during the analysis of an expression. With the `distributed_ddl_use_initial_user_and_roles`
+privileges checked during the analysis of an expression. With the
+[`distributed_ddl_use_initial_user_and_roles`](/reference/settings/server-settings/settings/distributed-ddl#distributed_ddl_use_initial_user_and_roles)
 server setting disabled, which is the default, the hosts execute such queries with their own rights; enable it to
 check the grant of the user who submitted the query.
 

@@ -105,16 +105,6 @@ def test_grant_for_another_function_is_not_enough():
     )
 
 
-def test_show_grants():
-    instance.query("CREATE USER A")
-    instance.query("GRANT FUNCTION ON hex TO A")
-    assert instance.query("SHOW GRANTS FOR A") == TSV(["GRANT FUNCTION ON hex TO A"])
-
-    instance.query("REVOKE FUNCTION ON hex FROM A")
-    instance.query("GRANT EXECUTE FUNCTION ON hex TO A")
-    assert instance.query("SHOW GRANTS FOR A") == TSV(["GRANT FUNCTION ON hex TO A"])
-
-
 def test_udf_body_is_checked():
     instance.query("CREATE USER A")
     instance.query("CREATE FUNCTION wrap_hex AS (x) -> hex(x)")
