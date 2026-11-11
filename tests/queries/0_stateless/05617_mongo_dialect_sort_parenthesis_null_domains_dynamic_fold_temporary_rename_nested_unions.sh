@@ -49,7 +49,9 @@ mongo --query 'db.mongo_dyn_fold.aggregate([{"$sort" : {"id" : 1}}, {"$project" 
 mongo --query 'db.mongo_dyn_fold.aggregate([{"$match" : {"id" : 1}}, {"$project" : {"_id" : 0, "p" : {"$multiply" : [{"$numberLong" : "9007199254740993"}, 3, 1.0]}, "q" : {"$multiply" : [{"$numberLong" : "9007199254740993"}, 3]}, "s" : {"$add" : [{"$numberLong" : "9007199254740993"}, {"$numberLong" : "-9007199254740992"}, 0.0]}}}]);'
 
 echo '-- $rename to a narrower type in a temporary table'
-# The rename is rejected, and both fields keep their values.
+# The rename is rejected, and both fields keep their values. Only the name of the error and the
+# selected row are kept: a debug build prints the stack trace of the error, whose frames also
+# start with a number.
 ${CLICKHOUSE_CLIENT} --mutations_sync 2 --ignore-error --query "
     CREATE TEMPORARY TABLE mongo_tmp_rename (id Int32, source Int64, target Int32) ENGINE = MergeTree ORDER BY id;
     INSERT INTO mongo_tmp_rename VALUES (1, 2147483648, 7);
@@ -58,7 +60,7 @@ ${CLICKHOUSE_CLIENT} --mutations_sync 2 --ignore-error --query "
     db.mongo_tmp_rename.updateMany({}, {\"\$rename\" : {\"source\" : \"target\"}});
     SET dialect = 'clickhouse';
     SELECT source, target FROM mongo_tmp_rename;
-" 2>&1 | grep -oE '\([A-Z_]+\)$|^[0-9].*'
+" 2>&1 | grep -oE '\([A-Z_]+\)$|^[0-9]+'$'\t''[0-9]+$' | uniq
 # A rename to a wider type works.
 ${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "
     CREATE TEMPORARY TABLE mongo_tmp_rename (id Int32, source Int32, target Int64) ENGINE = MergeTree ORDER BY id;
