@@ -105,6 +105,8 @@ namespace DB::DataLakeStorageSetting
 namespace DB::Setting
 {
 extern const SettingsString iceberg_metadata_compression_method;
+extern const SettingsTimezone iceberg_timezone_for_timestamptz;
+extern const SettingsTimezone session_timezone;
 }
 
 namespace ProfileEvents
@@ -2404,6 +2406,50 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
     if (iceberg_transform_name.starts_with("identity") || iceberg_transform_name.starts_with("truncate"))
         return source_type;
     return std::make_shared<DataTypeInt32>();
+}
+
+static DataTypePtr setTimezoneForTimestamptz(const DataTypePtr & type, const String & timezone)
+{
+    if (const auto * datetime = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+    {
+        if (datetime->hasExplicitTimeZone() && datetime->getTimeZone().getTimeZone() == "UTC")
+            return std::make_shared<DataTypeDateTime64>(datetime->getScale(), timezone);
+        return type;
+    }
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return makeNullable(setTimezoneForTimestamptz(nullable->getNestedType(), timezone));
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(setTimezoneForTimestamptz(array->getNestedType(), timezone));
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return std::make_shared<DataTypeMap>(
+            setTimezoneForTimestamptz(map->getKeyType(), timezone), setTimezoneForTimestamptz(map->getValueType(), timezone));
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        for (const auto & element : tuple->getElements())
+            elements.push_back(setTimezoneForTimestamptz(element, timezone));
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+    return type;
+}
+
+NamesAndTypesList setTimezoneForTimestamptz(const NamesAndTypesList & columns, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    String timezone = settings[Setting::iceberg_timezone_for_timestamptz];
+    if (timezone.empty())
+        timezone = settings[Setting::session_timezone];
+    if (timezone.empty())
+        timezone = DateLUT::serverTimezoneInstance().getTimeZone();
+    if (timezone == "UTC")
+        return columns;
+
+    NamesAndTypesList result;
+    for (const auto & column : columns)
+        result.emplace_back(column.name, setTimezoneForTimestamptz(column.type, timezone));
+    return result;
 }
 
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context)

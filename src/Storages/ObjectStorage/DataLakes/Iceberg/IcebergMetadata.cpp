@@ -1955,7 +1955,8 @@ ObjectIterator IcebergMetadata::iterate(
 NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-    return *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
+    return setTimezoneForTimestamptz(
+        *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id), local_context);
 }
 
 std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
@@ -1972,7 +1973,8 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
     auto result = std::make_unique<StorageInMemoryMetadata>();
     result->setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
+        ColumnsDescription{setTimezoneForTimestamptz(
+            *persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id), local_context)});
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);
     return result;
@@ -2258,7 +2260,10 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.table_uuid);
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);
+    auto result = getSortingKeyDescriptionFromMetadata(
+        metadata_object,
+        setTimezoneForTimestamptz(*persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context),
+        local_context);
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     result.sort_order_id = sort_order_id;
     return result;

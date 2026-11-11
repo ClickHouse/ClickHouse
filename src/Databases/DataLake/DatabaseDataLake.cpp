@@ -172,6 +172,13 @@ namespace FailPoints
 namespace
 {
 
+NamesAndTypesList getTableSchema(const DataLake::ICatalog & catalog, const DataLake::TableMetadata & table_metadata, const ContextPtr & context)
+{
+    if (catalog.getTableEngineName(table_metadata) == "Iceberg")
+        return Iceberg::setTimezoneForTimestamptz(table_metadata.getSchema(), context);
+    return table_metadata.getSchema();
+}
+
 /// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
 /// catalog and Azure storage requests, so the scope must be the Azure storage audience.
 constexpr auto ONELAKE_STORAGE_AUTH_SCOPE = "https://storage.azure.com/.default";
@@ -1317,7 +1324,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto storage_type = table_engine_args.storage_type;
     const bool static_credentials_applied = table_engine_args.static_credentials_applied;
 
-    const auto columns = ColumnsDescription(table_metadata.getSchema());
+    const auto columns = ColumnsDescription(getTableSchema(*catalog, table_metadata, context_));
 
     const bool catalog_manages_provider_chain = catalogManagesProviderChain(*catalog);
 
@@ -1912,7 +1919,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
-    ContextPtr /* context_ */,
+    ContextPtr context_,
     bool throw_on_error) const
 {
     const auto settings_version = database_settings.get();
@@ -1952,7 +1959,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     create_table_query->setTable(name);
     create_table_query->setDatabase(getDatabaseName());
 
-    for (const auto & column_type_and_name : table_metadata.getSchema())
+    for (const auto & column_type_and_name : getTableSchema(*catalog, table_metadata, context_))
     {
         LOG_DEBUG(log, "Processing column {}", column_type_and_name.name);
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
