@@ -669,6 +669,26 @@ static bool astHasScopeSettingsDifferentFromContext(const IAST & ast, const Sett
             return true;
         }
     }
+
+    /// `SETTINGS name = DEFAULT` is stored separately and resets the setting in the nested context.
+    for (const auto & name : set_query->default_settings)
+    {
+        if (name == "additional_table_filters" || name == "additional_result_filter" || isSettingIgnoredInQueryResultCache(name))
+            continue;
+
+        try
+        {
+            Settings reset_settings = settings;
+            reset_settings.setDefaultValue(name);
+            if (reset_settings.get(name) != settings.get(name))
+                return true;
+        }
+        catch (...)
+        {
+            /// Ok to ignore: an unknown setting, which the query itself rejects later; fail closed.
+            return true;
+        }
+    }
     return false;
 }
 
@@ -1020,6 +1040,11 @@ static std::optional<std::vector<UInt128>> computeFiltersModificationHashes(cons
     filter_hashes.reserve(filter_asts.size());
     for (const auto & filter_ast : filter_asts)
     {
+        /// A subquery of the filter (`x IN (SELECT ... SETTINGS ...)`) is planned under its own settings
+        /// too, the same as a subquery of the query itself. See `astHasScopeSettingsDifferentFromContext`.
+        if (astHasScopeSettingsDifferentFromContext(*filter_ast, context->getSettingsRef()))
+            return {};
+
         auto filter_hash = computeReferencedTablesModificationHashImpl(filter_ast->clone(), context);
         if (!filter_hash)
             return {};
