@@ -23,7 +23,6 @@ CREATE VIEW v0_04516 AS
     FROM t4_04516, t0_04516
     HAVING (NOT CAST((NOT t4_04516.c0) AS Bool));
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 16;
 SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET query_plan_merge_expression_into_join = 1;
@@ -36,13 +35,13 @@ FROM t0_04516, v0_04516, t4_04516;
 -- above the view's inner join was merged, which is the state this test covers. The outer relation
 -- is labelled by its alias and a flattened inner one by its database, so only the merged shape puts
 -- the two in one join label. The label also carries a cost annotation whose text depends on the
--- randomized cost model, hence the pin.
+-- randomized cost model, hence the pin. A relation with a row estimate shows it in brackets after its name.
 SELECT count() > 0 FROM (
     EXPLAIN SELECT t4_04516.c1, t0_04516.c1, v0_04516.d0, t0_04516.c0
     FROM t0_04516, v0_04516, t4_04516
     SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_algorithm = 'greedy',
              query_plan_merge_expression_into_join = 1, query_plan_optimize_join_order_randomize = 0
-) WHERE explain LIKE '%t0_04516 × ' || currentDatabase() || '.t4_04516%';
+) WHERE match(explain, '(^|[^.])t0_04516(\\[[^\\]]*\\])? × ' || currentDatabase() || '\\.t4_04516');
 
 INSERT INTO t0_04516 VALUES (true, 1), (false, 2);
 INSERT INTO t4_04516 VALUES (1, true), (0, false);

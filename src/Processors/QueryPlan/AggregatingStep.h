@@ -91,11 +91,11 @@ public:
     bool canUseRadixUniqExact() const;
 
     /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
-    void enableBucketTopK(size_t n, bool ascending, size_t count_index)
+    void enableBucketTopK(size_t n, bool ascending, size_t rank_index)
     {
         params.bucket_top_k = n;
         params.bucket_top_k_ascending = ascending;
-        params.bucket_top_k_count_index = count_index;
+        params.bucket_top_k_rank_index = rank_index;
     }
 
     void disableBucketTopK() { params.bucket_top_k = 0; }
@@ -202,6 +202,7 @@ private:
         QueryPipelineBuilder & pipeline,
         const AggregatingTransformParamsPtr & transform_params,
         size_t max_threads,
+        size_t new_temporary_data_merge_threads,
         const StatsCollectingParams & stats_collecting_params) const;
 
     Aggregator::Params params;
