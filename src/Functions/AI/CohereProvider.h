@@ -34,6 +34,8 @@ class CohereProvider : public IAIProvider
 public:
     CohereProvider(const String & endpoint_, const String & api_key_);
 
+    HTTPHeaderEntries getHeaders() const override;
+
     bool supportsRerank() const override { return true; }
     void rerank(const AIRerankRequest & ai_rerank_request, const ConnectionTimeouts & timeouts, AIRerankResponse & response) override;
 

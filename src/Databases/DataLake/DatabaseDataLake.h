@@ -7,6 +7,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Disks/DiskType.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -85,6 +86,19 @@ public:
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
+
+    String getDefaultTableEngineName(const String & name) const override;
+
+    /// Creates an Iceberg table in the catalog if there are no engine arguments and the catalog writes the first metadata file.
+    /// Otherwise returns nullptr. In such cases the storage factory creates the table.
+    StoragePtr maybeCreateTableInExternalCatalog(ContextPtr context_, const ASTCreateQuery & create, const ColumnsDescription & columns) const override;
+
+    ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
+
+    void applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const;
+
+    static bool catalogManagesProviderChain(const DataLake::ICatalog & catalog);
+    static bool catalogConfiguresStorageAccess(const DataLake::ICatalog & catalog);
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
@@ -141,6 +155,32 @@ private:
         DataLake::DataLakeTableFormat table_format) const;
 
     std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
+
+    struct TableEngineArgs
+    {
+        ASTs args;
+        DatabaseDataLakeStorageType storage_type = DatabaseDataLakeStorageType::Other;
+        bool static_credentials_applied = false;
+    };
+
+    TableEngineArgs buildTableEngineArgs(
+        const DatabaseDataLakeSettings & settings,
+        const DataLake::ICatalog & catalog,
+        const DataLake::TableMetadata & table_metadata,
+        bool lightweight) const;
+
+    std::optional<DataLake::TableMetadata> tryGetNewTableMetadata(
+        const DatabaseDataLakeSettings & settings,
+        const DataLake::ICatalog & catalog,
+        const String & name) const;
+
+    Exception cannotTellNewTableLocation(const String & name) const;
+
+    /// Throws when the catalog places the table on a different storage than the table engine writes to.
+    void checkStorageTypeMatchesEngine(const String & name, DatabaseDataLakeStorageType engine_type, DatabaseDataLakeStorageType catalog_type) const;
+
+    /// Loads the table that the catalog has just created. Drops it from the catalog if the load fails.
+    StoragePtr loadCreatedTable(const DataLake::ICatalog & catalog, const String & name, ContextPtr context_) const;
 
     /// Shared implementation of getTablesIterator / getTablesIteratorWithHint.
     /// keep_unresolved_tables controls what happens when a single table's metadata cannot

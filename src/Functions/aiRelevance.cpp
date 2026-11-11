@@ -4,6 +4,8 @@
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
+#include <Functions/AI/AIRequestExecutor.h>
+#include <Access/Common/AccessFlags.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
@@ -18,21 +20,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 
-#include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 
-#include <chrono>
 #include <string_view>
-#include <thread>
 
 namespace ProfileEvents
 {
-    extern const Event AIAPICalls;
-    extern const Event AIInputTokens;
-    extern const Event AIOutputTokens;
-    extern const Event AISearchUnits;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -42,10 +36,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 ai_function_request_timeout_sec;
-    extern const SettingsUInt64 ai_function_max_retries;
-    extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
-    extern const SettingsBool ai_function_throw_on_error;
     extern const SettingsString ai_function_rerank_default_credentials;
     extern const SettingsNonZeroUInt64 ai_function_rerank_max_batch_size;
     extern const SettingsBool allow_experimental_ai_relevance_function;
@@ -71,10 +61,11 @@ public:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Function '{}' is experimental. Set `allow_experimental_ai_relevance_function` setting to enable it", name);
 
+        context->checkAccess(AccessType::aiRelevance);
         return std::make_shared<FunctionAiRelevance>(context);
     }
 
-    explicit FunctionAiRelevance(ContextPtr context_) : context(context_) {}
+    explicit FunctionAiRelevance(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfBackgroundExpression(context); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -115,14 +106,16 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        FunctionBaseAI::checkHasUser(getContext());
+
         const auto & settings = getContext()->getSettingsRef();
         auto params = FunctionBaseAI::resolveAIParams(
             getContext(), arguments, paramSpecs(), settings[Setting::ai_function_rerank_default_credentials]);
 
         String model = params.getString("model");
 
-        auto provider = createAIProvider(
-            params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+        std::shared_ptr<IAIProvider> provider = createAIProvider(
+            getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
         if (!provider->supportsRerank())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "AI provider '{}' does not support reranking", params.collection.provider);
@@ -130,17 +123,12 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        UInt64 timeout_sec = settings[Setting::ai_function_request_timeout_sec].value;
-        UInt64 max_retries = settings[Setting::ai_function_max_retries].value;
-        UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
-        bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_rerank_max_batch_size].value);
 
         /// Shared across every AI function call in the query
         auto quota_tracker = getContext()->getAIQuotaTracker();
 
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
-        timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
+        const auto policy = FunctionBaseAI::makeRequestPolicy(getContext());
 
         /// `isNullAt` and `getDataAt` are virtual on `IColumn`, so a single path covers `ColumnString`,
         /// `ColumnConst(ColumnString)`, `ColumnNullable` and `ColumnConst(ColumnNullable)` (e.g.
@@ -188,19 +176,11 @@ public:
         auto & scores = score_col->getData();
         auto & null_map = null_map_col->getData();
 
-        UInt64 total_api_calls = 0;
-        UInt64 total_input_tokens = 0;
-        UInt64 total_output_tokens = 0;
-        UInt64 total_search_units = 0;
         UInt64 rows_processed = 0;
         UInt64 rows_skipped = 0;
 
         /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
         SCOPE_EXIT({
-            ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
-            ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
-            ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
-            ProfileEvents::increment(ProfileEvents::AISearchUnits, total_search_units);
             ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
             ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
         });
@@ -224,59 +204,22 @@ public:
                 ai_rerank_request.query = String(group.query);
                 ai_rerank_request.model = model;
                 ai_rerank_request.function_name = getName();
+                ai_rerank_request.query_id = getContext()->getCurrentQueryId();
+                ai_rerank_request.initial_query_id = getContext()->getClientInfo().initial_query_id;
                 ai_rerank_request.documents.reserve(batch_end - batch_start);
                 for (size_t k = batch_start; k < batch_end; ++k)
                     ai_rerank_request.documents.push_back(document_column.getDataAt(group.rows[k]));
 
-                AIRerankResponse ai_rerank_response;
-                bool batch_ok = false;
-
-                for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
-                {
-                    /// Reserve an API-call slot before each request; this also performs a quota check.
-                    /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
-                    if (!quota_tracker->recordApiCall())
-                        break;
-
-                    try
-                    {
-                        ++total_api_calls;
-                        /// Recorded even if `rerank` throws: the provider fills the billed usage before validating
-                        /// the results, so a malformed response that was billed for is still counted. Cohere bills
-                        /// in `search_units` and reports no tokens, in which case both token counts are `0`.
-                        SCOPE_EXIT({
-                            quota_tracker->recordTokens(ai_rerank_response.input_tokens, ai_rerank_response.output_tokens);
-                            total_input_tokens += ai_rerank_response.input_tokens;
-                            total_output_tokens += ai_rerank_response.output_tokens;
-                            total_search_units += ai_rerank_response.search_units;
-                        });
-                        provider->rerank(ai_rerank_request, timeouts, ai_rerank_response);
-                        batch_ok = true;
-                        break;
-                    }
-                    catch (...)
-                    {
-                        if (attempt < max_retries && FunctionBaseAI::isRetriableProviderError(std::current_exception()))
-                        {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(FunctionBaseAI::computeRetryBackoffMs(retry_delay_ms, attempt)));
-                            continue;
-                        }
-
-                        if (!throw_on_error) /// Skip to next batch, this batch's rows stay NULL.
-                            break;
-
-                        throw;
-                    }
-                }
-
-                if (!batch_ok)
+                /// Wait for this batch before releasing the input columns backing its document views.
+                auto ai_rerank_response = submitAIRequest(provider, std::move(ai_rerank_request), policy, quota_tracker).get();
+                if (!ai_rerank_response)
                 {
                     rows_skipped += batch_end - batch_start;
                     continue;
                 }
 
                 /// The provider guarantees one result per document, each with a distinct in-range `index`.
-                for (const auto & result : ai_rerank_response.results)
+                for (const auto & result : ai_rerank_response->results)
                 {
                     size_t row = group.rows[batch_start + result.index];
                     scores[row] = result.relevance_score;

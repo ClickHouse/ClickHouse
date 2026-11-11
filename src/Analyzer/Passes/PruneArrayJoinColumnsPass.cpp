@@ -9,6 +9,7 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
@@ -41,7 +42,7 @@ struct ExpressionUsage
     /// Subcolumn names from the nested() first argument. Empty if not a nested() expression.
     std::vector<std::string> nested_subcolumn_names;
 
-    /// Filled after pruning: the column type of the ARRAY JOIN expression, which references must adopt.
+    /// Set only if pruning changed the ARRAY JOIN expression: its new column type. References adopt it, keeping their own Nullable.
     DataTypePtr pruned_type;
 
     /// Filled after pruning: old 1-based tupleElement index -> new 1-based index.
@@ -185,17 +186,24 @@ public:
             if (function_node->getFunctionName() != "tupleElement")
                 return;
 
-            const auto & arguments = function_node->getArguments().getNodes();
+            auto & arguments = function_node->getArguments().getNodes();
             if (arguments.size() < 2)
                 return;
 
             auto * column_node = arguments[0]->as<ColumnNode>();
-            auto * constant_node = arguments[1]->as<ConstantNode>();
-            if (!column_node || !constant_node)
+            if (!column_node)
                 return;
 
             auto * expr_usage = findReferencedExpression(*column_node, usage_map);
-            if (!expr_usage || expr_usage->fully_used)
+            if (!expr_usage)
+                return;
+
+            /// needChildVisit skips all arguments, but the default argument may reference ARRAY JOIN columns too.
+            for (size_t i = 1; i < arguments.size(); ++i)
+                visit(arguments[i]);
+
+            auto * constant_node = arguments[1]->as<ConstantNode>();
+            if (!constant_node || expr_usage->fully_used)
                 return;
 
             if (expr_usage->hasNested())
@@ -302,6 +310,7 @@ void pruneNestedFunctionArguments(
     auto new_result_type = function_node.getResultType();
     auto new_column_type = assert_cast<const DataTypeArray &>(*new_result_type).getNestedType();
     column_node.setColumnType(std::move(new_column_type));
+    expr_usage.pruned_type = column_node.getColumnType();
 }
 
 /// Updates reference ColumnNode types, rewrites stale numeric tupleElement
@@ -335,6 +344,11 @@ public:
         if (!expr_usage || !expr_usage->pruned_type)
             return;
 
+        /// The same node can be reached from several clauses (e.g. ORDER BY ALL shares the projection node),
+        /// and the index remap must be applied to it once.
+        if (!processed_nodes.insert(function_node).second)
+            return;
+
         /// Rewrite numeric tupleElement index if pruning changed positions.
         auto * constant_node = arguments[1]->as<ConstantNode>();
         if (constant_node)
@@ -349,10 +363,15 @@ public:
             }
         }
 
-        if (column_node->getColumnType()->equals(*expr_usage->pruned_type))
+        /// `join_use_nulls` makes a reference `Nullable` while the ARRAY JOIN expression is not.
+        auto new_column_type = expr_usage->pruned_type;
+        if (isNullableOrLowCardinalityNullable(column_node->getColumnType()))
+            new_column_type = makeNullableOrLowCardinalityNullableSafe(new_column_type);
+
+        if (column_node->getColumnType()->equals(*new_column_type))
             return;
 
-        column_node->setColumnType(expr_usage->pruned_type);
+        column_node->setColumnType(std::move(new_column_type));
 
         auto tuple_element_function = FunctionFactory::instance().get("tupleElement", getContext());
         function_node->resolveAsFunction(tuple_element_function->build(function_node->getArgumentColumns()));
@@ -360,6 +379,7 @@ public:
 
 private:
     ArrayJoinUsageMap & usage_map;
+    std::unordered_set<const FunctionNode *> processed_nodes;
 };
 
 }
@@ -432,18 +452,6 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
                 continue;
 
             pruneNestedFunctionArguments(*column_node, *function_node, expr_usage, context);
-        }
-
-        /// Collect post-pruning types for step 3c.
-        for (const auto & join_expr : join_expressions)
-        {
-            auto * col_node = join_expr->as<ColumnNode>();
-            if (!col_node)
-                continue;
-
-            auto expr_it = expressions_usage.find(col_node->getColumnName());
-            if (expr_it != expressions_usage.end())
-                expr_it->second.pruned_type = col_node->getColumnType();
         }
     }
 

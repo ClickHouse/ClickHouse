@@ -17,6 +17,11 @@ from . import fake_sentry_server
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
+def read_fake_sentry_file(node, path):
+    with open(os.path.join(node.logs_dir, os.path.basename(path))) as f:
+        return f.read()
+
+
 @pytest.fixture(scope="module")
 def started_node():
     cluster = helpers.cluster.ClickHouseCluster(__file__)
@@ -66,9 +71,7 @@ def test_send_segfault(started_node):
     result = None
     for attempt in range(1, 6):
         time.sleep(attempt)
-        result = started_node.exec_in_container(
-            ["cat", fake_sentry_server.RESULT_PATH], user="root"
-        )
+        result = read_fake_sentry_file(started_node, fake_sentry_server.RESULT_PATH)
         if result == "OK":
             break
         if result == "INITIAL_STATE":
@@ -79,9 +82,7 @@ def test_send_segfault(started_node):
     assert result == "OK", "Crash report not sent"
 
     payload = json.loads(
-        started_node.exec_in_container(
-            ["cat", fake_sentry_server.PAYLOAD_PATH], user="root"
-        )
+        read_fake_sentry_file(started_node, fake_sentry_server.PAYLOAD_PATH)
     )
     assert "server_uuid" in payload, "Crash report has no server_uuid: " + repr(payload)
     assert payload["server_uuid"] == uuid_before_crash

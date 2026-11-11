@@ -1,7 +1,9 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
+#include <Analyzer/TableQualifiers.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
@@ -16,6 +18,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 
 #include <string_view>
 #include <unordered_set>
@@ -111,12 +114,7 @@ bool comparisonCanMergeDistinctValues(const IDataType & type)
         return which.isFloat() || which.isDynamic() || which.isVariant() || which.isObject();
     };
 
-    if (is_ambiguous(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child) { result = result || is_ambiguous(child); });
-    return result;
+    return anyInTypeTree(type, is_ambiguous);
 }
 
 }
@@ -148,6 +146,18 @@ SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & des
     }
 
     return prefix;
+}
+
+bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header)
+{
+    for (const auto & column_description : description)
+    {
+        const auto * column = header.findByName(column_description.column_name);
+        if (!column || !column->column || !isColumnConst(*column->column))
+            return false;
+    }
+
+    return true;
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -498,12 +508,21 @@ void deserializeFillColumnDescription(FillColumnDescription & fill, ReadBuffer &
 
 }
 
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version)
+void serializeSortDescription(
+    const SortDescription & sort_description,
+    WriteBuffer & out,
+    UInt64 version,
+    bool for_cache_key,
+    const Block * input_header)
 {
     writeVarUInt(sort_description.size(), out);
     for (const auto & desc : sort_description)
     {
-        writeStringBinary(desc.column_name, out);
+        /// A sort column is a plan-build-local name in a cache key; see `writeCacheKeyColumnName`.
+        if (for_cache_key)
+            writeCacheKeyColumnName(desc.column_name, input_header, out);
+        else
+            writeStringBinary(desc.column_name, out);
 
         UInt8 flags = 0;
         if (desc.direction > 0)

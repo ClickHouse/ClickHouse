@@ -26,6 +26,13 @@ CohereProvider::CohereProvider(const String & endpoint_, const String & api_key_
 {
 }
 
+HTTPHeaderEntries CohereProvider::getHeaders() const
+{
+    if (api_key.empty())
+        return {};
+    return {{"Authorization", "Bearer " + api_key}};
+}
+
 void CohereProvider::rerank(const AIRerankRequest & ai_rerank_request, const ConnectionTimeouts & timeouts, AIRerankResponse & response)
 {
     response = {};
@@ -47,10 +54,14 @@ void CohereProvider::rerank(const AIRerankRequest & ai_rerank_request, const Con
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
+    for (const auto & header : getHeaders())
+        http_request.set(header.name, header.value);
     chassert(!ai_rerank_request.function_name.empty());
     http_request.set("X-ClickHouse-AI-Function", ai_rerank_request.function_name);
+    if (!ai_rerank_request.query_id.empty())
+        http_request.set("X-ClickHouse-Query-Id", sanitize(ai_rerank_request.query_id));
+    if (!ai_rerank_request.initial_query_id.empty())
+        http_request.set("X-ClickHouse-Initial-Query-Id", sanitize(ai_rerank_request.initial_query_id));
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);

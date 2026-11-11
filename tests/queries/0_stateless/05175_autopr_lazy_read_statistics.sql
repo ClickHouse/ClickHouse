@@ -1,3 +1,7 @@
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None)
+-- Both byte bounds below rely on granules of at least the default size: a lazy read pulls in whole
+-- granules, so with small ones it reads little more than its own rows and no longer crosses the bound.
+
 -- Automatic parallel replicas only considers a query whose every plan step can collect dataflow
 -- statistics, so a step that cannot takes every query containing it out of consideration. Lazy
 -- materialization puts such a step in the plan: `LazilyReadFromMergeTree` reads the lazy columns
@@ -25,7 +29,6 @@ INSERT INTO t_autopr_lazy_read SELECT number, cityHash64(number), repeat('x', 50
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1,
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-SET enable_analyzer = 1;
 -- Lazy materialization only applies to a `LIMIT` up to this value, and `clickhouse-test` randomizes
 -- it down to 1, which would leave the plan without the step under test. Zero means no limit.
 SET query_plan_max_limit_for_lazy_materialization = 0;

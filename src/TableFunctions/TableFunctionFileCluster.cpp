@@ -133,7 +133,7 @@ All patterns supported by [File](/reference/functions/table-functions/file#globs
 ## Related {#related}
 
 - [File table function](/reference/functions/table-functions/file)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = false});
 }
 

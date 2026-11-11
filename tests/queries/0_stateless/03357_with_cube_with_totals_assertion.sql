@@ -1,4 +1,3 @@
-SET enable_analyzer=1;
 SET allow_suspicious_low_cardinality_types = 1;
 SET max_rows_to_group_by = 65535;
 SET max_threads = 1;
