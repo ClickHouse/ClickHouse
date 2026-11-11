@@ -125,6 +125,18 @@ def is_latest_release_branch(branch: str, repo: str = GITHUB_REPOSITORY) -> bool
     return latest_branch == branch
 
 
+def find_open_pr_branch(prefix: str, repo: str = GITHUB_REPOSITORY, skip: str = "") -> str:
+    """URL of an OPEN PR whose head branch starts with `prefix`, or '' if none."""
+    api_path = f"/repos/{repo}/git/matching-refs/heads/{prefix}"
+    raw = GH.get_output_with_retries(f"gh api {shlex.quote(api_path)} --jq '[.[].ref]'")
+    assert raw, f"matching-refs lookup for [{prefix}] in [{repo}] failed"
+    for ref in json.loads(raw):
+        branch = ref.removeprefix("refs/heads/")
+        if branch != skip and GH.get_pr_state_by_branch(branch, repo=repo) == "OPEN":
+            return GH.get_pr_url_by_branch(branch, repo=repo)
+    return ""
+
+
 def update_contributors(raise_error: bool = False) -> None:
     if Git.is_shallow():
         msg = "The repository is shallow, refusing to update contributors"
@@ -274,6 +286,13 @@ class ReleaseInfo:
                 release_branch = f"{version.major}.{version.minor}"
                 expected_prev_tag = f"v{version.major}.{version.minor}.1.1-new"
                 version.bump_release().with_description(VersionType.NEW)
+                bump_pr = find_open_pr_branch(
+                    "bump_version_", skip=f"bump_version_{version.string}"
+                )
+                assert not bump_pr, (
+                    f"version bump PR [{bump_pr}] of an earlier release is still open: "
+                    f"merge or close it, then retry"
+                )
                 assert (
                     git.latest_tag == expected_prev_tag
                 ), f"BUG: latest tag [{git.latest_tag}], expected [{expected_prev_tag}]"
@@ -355,6 +374,14 @@ class ReleaseInfo:
                     f"release line {version.major}.{version.minor}.{version.patch} already has a "
                     f"release tag [{released.split()[0]}]: either the ref targets a commit with a "
                     f"superseded release, or there is a bug in the release/versioning logic"
+                )
+                # A surviving open changelog PR means an earlier release on this branch is not finalized.
+                changelog_pr = find_open_pr_branch(
+                    f"auto/v{release_branch}.", skip=f"auto/{release_tag}"
+                )
+                assert not changelog_pr, (
+                    f"changelog PR [{changelog_pr}] of an earlier release on [{release_branch}] "
+                    f"is still open: merge or close it, then retry"
                 )
         # skip-repo/skip-docker only re-publish an existing release, so reject them against a ref that resolves to a new (untagged) release.
         assert self.is_tag_pushed or not (skip_repo or skip_docker), (
