@@ -213,7 +213,7 @@ String substraitTypeShortName(const substrait::Type & type, const SubstraitPlanE
 void setSubstraitTypeByShortName(substrait::Type & type, std::string_view short_name)
 {
 #define M(KIND, ACCESSOR, SHORT_NAME) \
-    if (short_name == SHORT_NAME) \
+    if (short_name == (SHORT_NAME)) \
     { \
         type.mutable_##ACCESSOR(); \
         return; \
