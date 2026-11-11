@@ -3,5 +3,7 @@ without the REMOTE grant
 with the REMOTE grant
 runner_a
 runner_c
+runner_copy
+runner_r
 SQL SECURITY with a cluster without secret
 0

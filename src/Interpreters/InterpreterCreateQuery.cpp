@@ -1100,7 +1100,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
-    if (create.is_time_series_table && !expectsExistingState(mode))
+    if (create.is_time_series_table && (isFreshDefinition(mode) || !expectsExistingState(mode)))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
 
     TableProperties properties;
@@ -2399,7 +2399,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Only here is an engine inherited through `AS` known, and nothing is enqueued or created yet.
     /// A replay of a stored definition was checked when it was created.
     if (isFreshDefinition(mode))
-        checkExportAccess(create);
+        checkEngineSettingsAccess(create);
 
     /// The definition persisted below must not depend on the session setting, because reloads and
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
@@ -4214,8 +4214,8 @@ BlockIO InterpreterCreateQuery::execute()
                                 inherited.setTargetInnerEngine(target.kind, target.inner_engine->clone());
                 }
 
-                /// the worker inherits the move destination of the source too, and runs with no user
-                checkExportAccess(inherited);
+                /// the worker inherits the engine settings of the source too, and runs with no user
+                checkEngineSettingsAccess(inherited);
 
                 /// A worker copies the source's indices with no user, so declare their transforms here.
                 if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
@@ -4380,13 +4380,14 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     return required_access;
 }
 
-void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) const
+void InterpreterCreateQuery::checkEngineSettingsAccess(const ASTCreateQuery & create) const
 {
     /// Internal queries (initiated by the server itself) always have access to everything.
     if (internal)
         return;
 
     getContext()->checkAccess(StorageFactory::instance().getExportAccess(create));
+    getContext()->checkAccess(StorageFactory::instance().getCreateAccess(create));
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
