@@ -59,6 +59,7 @@ GD=""    # its git dir
 WT=""    # worktree
 WGD=""   # git dir of the worktree, `$GD/worktrees/<name>`
 CREATED=""  # what `create` added, for the message on failure
+PHASE=""    # of `create`: "parent" until the superproject checkout finished, then "submodules"
 
 die() { printf 'FAILED: %s\n' "$*" >&2; exit 1; }
 
@@ -68,7 +69,15 @@ on_exit()
     local rc=$?
     if [ "$rc" != 0 ] && [ -n "$CREATED" ]
     then
-        printf 'The worktree %s exists (%s). Finish its setup with: %s update-submodules %s\n' "$WT" "$CREATED" "$0" "$WT" >&2
+        printf 'The worktree %s exists (%s).\n' "$WT" "$CREATED" >&2
+        if [ "$PHASE" = parent ]
+        then
+            printf 'Its superproject checkout did not finish. Finish it with:\n' >&2
+            printf '    git -C %s -c submodule.recurse=false checkout -f HEAD -- .\n' "$WT" >&2
+            printf 'and then, for a build: %s update-submodules %s\n' "$0" "$WT" >&2
+        else
+            printf 'Finish its setup with: %s update-submodules %s\n' "$0" "$WT" >&2
+        fi
         printf 'Or remove it with: git -C %s worktree remove --force %s\n' "$MAIN" "$WT" >&2
     fi
 }
@@ -401,6 +410,34 @@ verify()
     fi
 }
 
+# Checks, before any fetch or copy, that the files of each submodule of the gitlink list $1 are safe to touch. A checked
+# out submodule must use the git data under this worktree. A directory without a checkout must be empty, unless an
+# interrupted first checkout of this script left it (the marker). Otherwise the files are someone's work: stop, and
+# change nothing.
+check_destinations()
+{
+    local sha path name url dst store actual bad=""
+    while IFS="$TAB" read -r sha path name url
+    do
+        dst=$WT/$path
+        store=$WGD/modules/$name
+        if [ -e "$dst/.git" ]
+        then
+            actual=$(git -C "$dst" rev-parse --absolute-git-dir 2> /dev/null) || actual=""
+            if [ -z "$actual" ] || [ ! -d "$store" ] || [ "$(cd "$actual" && pwd -P)" != "$(cd "$store" && pwd -P)" ]
+            then
+                bad="$bad
+    $path: checked out with git data '${actual:-unknown}', but its git data under this worktree is $store"
+            fi
+        elif [ -d "$dst" ] && [ -n "$(ls -A "$dst")" ] && [ ! -e "$store/$INCOMPLETE" ]
+        then
+            bad="$bad
+    $path: has files, but is not a submodule checkout"
+        fi
+    done <<< "$1"
+    [ -z "$bad" ] || die "these submodule directories were not set up by this script; nothing was changed:$bad"
+}
+
 # Sets up or updates every submodule of WT. Existing submodule git data of the worktree is kept: it can have local
 # branches, stashes and commits that exist nowhere else. Missing git data is copied from the main checkout; only for
 # the submodules of this worktree, because git data of other submodules would keep a core.worktree that points at the
@@ -411,6 +448,7 @@ sync_submodules()
     require_main_stores
     list=$(gitlinks "$WT")
     [ -n "$list" ] || die "no submodules recorded in $WT"
+    check_destinations "$list"
     refresh_main_stores "$list" "$WGD"
     while IFS="$TAB" read -r sha path name url
     do
@@ -459,7 +497,9 @@ cmd_create()
         git -C "$MAIN" worktree add -q --no-checkout -b "$branch" "$WT" "$start"
         CREATED="new branch $branch; delete it with: git -C $MAIN branch -D $branch"
     fi
+    PHASE=parent
     git -C "$WT" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
+    PHASE=submodules
     note "worktree: $WT on $branch at $(git -C "$WT" rev-parse --short HEAD)"
     if [ "$submodules" = 0 ]
     then

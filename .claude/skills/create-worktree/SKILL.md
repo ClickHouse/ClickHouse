@@ -96,6 +96,7 @@ ${CLAUDE_SKILL_DIR}/worktree.sh update-submodules <WORKTREE_PATH>
 - It reads the pins from the index, so it also works during a merge, after the conflicts in the submodules are resolved.
 - It does not use `-f` for submodules that are already checked out: when local changes are in the way, it fails for that submodule, and the user decides.
 - When an earlier setup was interrupted, it finishes the first checkout of each submodule that did not complete it. A marker file in the git data of the submodule shows this; the final check fails while a marker is left.
+- If a submodule directory has files that this script did not set up (a checkout that uses other git data, or files without a checkout), it stops before any change and lists those directories.
 
 ## What the script does
 
