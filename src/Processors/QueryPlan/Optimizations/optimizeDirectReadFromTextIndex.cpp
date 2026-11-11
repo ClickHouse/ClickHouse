@@ -890,13 +890,18 @@ private:
                 /// If the postprocessed token contains separator characters it would be ill-formed as a
                 /// hasToken* needle (BAD_ARGUMENTS / NULL on non-indexed parts in Exact mode), so keep
                 /// the original needle in that case.
-                VectorWithMemoryTracking<String> tokens = postprocessor->processTokens(VectorWithMemoryTracking<String>{needles_field.safeGet<String>()});
-                if (tokens.empty())
-                    needles_field = String{};
-                else if (std::ranges::any_of(tokens.front(), isTokenSeparator))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index postprocessor produced an invalid token '{}'", tokens.front());
-                else
-                    needles_field = tokens.front();
+                /// An empty needle has no token for the postprocessor, as in the index condition.
+                const String needle = needles_field.safeGet<String>();
+                if (!needle.empty())
+                {
+                    VectorWithMemoryTracking<String> tokens = postprocessor->processTokens(VectorWithMemoryTracking<String>{needle});
+                    if (tokens.empty())
+                        needles_field = String{};
+                    else if (std::ranges::any_of(tokens.front(), isTokenSeparator))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index postprocessor produced an invalid token '{}'", tokens.front());
+                    else
+                        needles_field = tokens.front();
+                }
             }
             else if (needles_field.getType() == Field::Types::Array)
             {

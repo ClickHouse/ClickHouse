@@ -14,6 +14,8 @@ DROP TABLE IF EXISTS tab_post;
 DROP TABLE IF EXISTS tab_lc;
 DROP TABLE IF EXISTS tab_nullable;
 DROP TABLE IF EXISTS tab_sep;
+DROP TABLE IF EXISTS tab_post_empty;
+DROP TABLE IF EXISTS tab_post_empty_str;
 
 CREATE TABLE tab_substr (id UInt32, m Map(String, String),
     INDEX tix mapValues(m) TYPE text(tokenizer = splitByNonAlpha, preprocessor = substringIndex(mapValues(m), '\n', 1)))
@@ -166,6 +168,26 @@ SELECT 'separator', groupArray(id) FROM (SELECT id FROM tab_sep WHERE hasAnyToke
 SELECT 'separator', 'no index', groupArray(id) FROM (SELECT id FROM tab_sep WHERE hasAnyTokens(m['k'], 'zz') ORDER BY id)
 SETTINGS use_skip_indexes = 0;
 
+-- A postprocessor turning '' into a token must not make an empty `hasToken` term match.
+CREATE TABLE tab_post_empty (id UInt32, m Map(String, String),
+    INDEX tix mapValues(m) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(mapValues(m)),
+        postprocessor = if(empty(mapValues(m)), 'x', mapValues(m))))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_post_empty VALUES (1, map('k', 'X')), (2, map('k', 'y'));
+
+CREATE TABLE tab_post_empty_str (id UInt32, s String,
+    INDEX tix s TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(s), postprocessor = if(empty(s), 'x', s)))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_post_empty_str VALUES (1, 'X'), (2, 'y');
+
+SELECT 'post empty',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_empty WHERE hasToken(m['k'], '') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_empty_str WHERE hasToken(s, '') ORDER BY id));
+SELECT 'post empty', 'no index',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_empty WHERE hasToken(m['k'], '') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post_empty_str WHERE hasToken(s, '') ORDER BY id))
+SETTINGS use_skip_indexes = 0;
+
 DROP TABLE tab_substr;
 DROP TABLE tab_fixed;
 DROP TABLE tab_lower;
@@ -176,3 +198,5 @@ DROP TABLE tab_post;
 DROP TABLE tab_lc;
 DROP TABLE tab_nullable;
 DROP TABLE tab_sep;
+DROP TABLE tab_post_empty;
+DROP TABLE tab_post_empty_str;

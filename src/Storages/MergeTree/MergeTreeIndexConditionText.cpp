@@ -1684,7 +1684,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (function_name == "hasToken" && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
             return false;
 
-        /// The predicate receives the preprocessed needle, which may contain a separator: it raises on every row, so prune none.
+        /// The predicate receives the preprocessed needle whole, which may contain a separator the index splits on: prune none.
         if (is_map_element_value && has_preprocessor
             && std::ranges::any_of(preprocessor->processConstant(value_field.safeGet<String>()), isTokenSeparator))
         {
