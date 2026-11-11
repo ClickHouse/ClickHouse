@@ -16,6 +16,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/scope_guard_safe.h>
+#include <thread>
 #include <vector>
 using namespace DB;
 
@@ -232,9 +233,14 @@ TEST(ColumnUnique, NullableViewIsRestoredWhenItsReconstructionHitsMemoryLimit)
     column_unique->uniqueInsert(Field(String("a")));
     const size_t size = column_unique->size();
 
+    /// Run under the memory limit in a separate thread without a `ThreadStatus`, so that every allocation
+    /// goes straight to `total_memory_tracker`. In a thread with a `ThreadStatus` (e.g. after another test
+    /// called `MainThreadStatus::getInstance`) small allocations are deferred as untracked memory and do not
+    /// hit the limit, so the test would depend on the order in which the tests run.
+    int error_code = 0;
+    std::thread thread([&]
     {
-        /// Drain deferred allocations so the clamp below is exact; a no-op with no thread status.
-        CurrentThread::flushUntrackedMemory();
+        ASSERT_FALSE(CurrentThread::isInitialized());
         const Int64 prev_hard_limit = total_memory_tracker.getHardLimit();
         SCOPE_EXIT_SAFE(total_memory_tracker.setHardLimit(prev_hard_limit));
         /// Let `operator new` refuse allocations of any size, as with a small
@@ -246,7 +252,6 @@ TEST(ColumnUnique, NullableViewIsRestoredWhenItsReconstructionHitsMemoryLimit)
         /// The callback itself succeeds, but every allocation after it fails, so the
         /// re-creation of the nullable view after the callback hits the memory limit.
         /// The exception must propagate instead of calling `std::terminate`.
-        int error_code = 0;
         try
         {
             column_unique->forEachMutableSubcolumn([](IColumn::WrappedPtr &)
@@ -258,8 +263,9 @@ TEST(ColumnUnique, NullableViewIsRestoredWhenItsReconstructionHitsMemoryLimit)
         {
             error_code = e.code();
         }
-        ASSERT_EQ(error_code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
-    }
+    });
+    thread.join();
+    ASSERT_EQ(error_code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 
     /// The nullable view and `reverse_index` must be valid after the exception.
     ASSERT_NE(column_unique->getNestedColumn(), nullptr);
