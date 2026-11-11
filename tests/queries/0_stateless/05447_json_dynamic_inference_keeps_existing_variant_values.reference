@@ -1,0 +1,24 @@
+Date
+1	2024-01-15	Date
+2	1900-01-01 00:00:00.000000000	DateTime64(9)
+3	2149-06-07 00:00:00.000000000	DateTime64(9)
+4	2299-12-31	String
+5	2024-02-01	Date
+DateTime
+1	2024-01-15 12:30:00	DateTime
+2	1900-01-01 00:00:00.000000000	DateTime64(9)
+3	2200-01-01 00:00:00.000000000	DateTime64(9)
+4	2024-01-15 12:30:00.123000000	DateTime64(9)
+5	2024-01-15 13:00:00	DateTime
+Array(Nullable(Date))
+1	['2024-01-15']	Array(Nullable(Date))
+2	['1900-01-01 00:00:00.000000000']	Array(Nullable(DateTime64(9)))
+Shared data
+1	2024-01-15	{'a':'Date'}
+2	1900-01-01 00:00:00.000000000	{'a':'DateTime64(9)'}
+3	2024-01-15 12:30:00.123000000	{'a':'DateTime64(9)'}
+JSONExtract into Dynamic
+1	2024-01-15	Date
+2	1900-01-01 00:00:00.000000000	DateTime64(9)
+3	[1,2]	Array(Nullable(Int64))
+4	[1,'x']	Array(Dynamic)
