@@ -41,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 82
+    version: int = 81
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -712,8 +712,7 @@ brew install \
     bash \
     coreutils \
     llvm
-# A root-owned file in an old keg makes cleanup exit 1, and that must not reboot the host.
-brew cleanup --prune=all -s || true
+brew cleanup --prune=all -s
 
 # Python packages used by jobs. `boto3` is bootstrapped in `user_data_macos.txt`
 # because runner-init itself imports it; the rest are version-gated here.
