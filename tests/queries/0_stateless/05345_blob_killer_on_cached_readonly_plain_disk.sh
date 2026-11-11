@@ -50,10 +50,10 @@ SYSTEM FLUSH LOGS text_log;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 
 SELECT 'cache layer, blob killer started', count() FROM system.text_log
-WHERE logger_name = '05345_cache_${CLICKHOUSE_DATABASE}::BlobKillerThread' AND message LIKE 'Execution started%';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = '05345_cache_${CLICKHOUSE_DATABASE}::BlobKillerThread' AND message LIKE 'Execution started%';
 
 SELECT 'cache layer, blob killer not needed', count() > 0 FROM system.text_log
-WHERE logger_name = '05345_cache_${CLICKHOUSE_DATABASE}::BlobKillerThread' AND message LIKE 'Execution is not needed%';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = '05345_cache_${CLICKHOUSE_DATABASE}::BlobKillerThread' AND message LIKE 'Execution is not needed%';
 
 DROP TABLE reader SYNC;
 DROP TABLE writer SYNC;

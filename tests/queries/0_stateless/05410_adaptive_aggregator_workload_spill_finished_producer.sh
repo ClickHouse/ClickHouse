@@ -29,11 +29,11 @@ $CLICKHOUSE_CLIENT -q "CREATE WORKLOAD $workload SETTINGS max_memory = '1Gi', ma
 
 # A producer of the adaptive aggregator that finishes hands its staged records over to the session, which keeps them
 # spillable until the last producer finishes. Each lane of the `UNION ALL` feeds a producer of its own. The first four
-# lanes are one block of distinct keys each, whose producer stages about 6 MiB of records and finishes at once. The
-# workload is over its spill limit from the start, but it spills nothing below `min_bytes_to_spill`, so no producer
-# spills its records itself. The last lane sleeps before its few rows arrive, so its producer is still running when the
-# records of the other four, about 24 MiB together, are in the session. The query writes them to disk and reports the
-# spill.
+# lanes are one block of distinct keys each, whose producer stages its records in about 2 MiB of chunks, nearly all of
+# them the first chunks of its partitions, and finishes at once. The workload is over its spill limit from the start,
+# but it spills nothing below `min_bytes_to_spill`, so no producer spills its records itself. The last lane sleeps
+# before its few rows arrive, so its producer is still running when the records of the other four, about 8 MiB
+# together, are in the session. The query writes them to disk and reports the spill.
 settings=(
     --workload "$workload"
     --enable_adaptive_aggregator 1
@@ -45,7 +45,7 @@ settings=(
     --use_aggregation_memory_tracker 1
     --max_bytes_before_external_group_by 0
     --max_bytes_ratio_before_external_group_by 0
-    --min_bytes_to_spill 8Mi
+    --min_bytes_to_spill 4Mi
     --max_threads 2
     --max_threads_min_free_memory_per_thread 0
     --max_block_size 200000
