@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS t_bf_lower;
 DROP TABLE IF EXISTS t_bf_fixed;
 DROP TABLE IF EXISTS t_bf_lc;
 DROP TABLE IF EXISTS t_bf_real;
+DROP TABLE IF EXISTS t_bf_order;
+DROP TABLE IF EXISTS t_bf_json;
 
 CREATE TABLE t_bf_fixed
 (
@@ -95,8 +97,52 @@ SELECT count() FROM t_bf_lower WHERE lower(s) = 'abc';
 SELECT count() FROM t_bf_lower WHERE lower(s) IN ('abc');
 SELECT count() FROM t_bf_lower WHERE `lower(s)` = 'x' SETTINGS force_data_skipping_indices = 'idx';
 
+-- Same columns and names, different argument order.
+CREATE TABLE t_bf_order
+(
+    `'k'` String,
+    arr Array(String),
+    INDEX idx_map mapKeys(map(`'k'`, 'k')) TYPE bloom_filter,
+    INDEX idx_concat concat(`'k'`, 'k') TYPE bloom_filter,
+    INDEX idx_lambda arrayMap(x -> concat(x, `'k'`, 'k'), arr) TYPE bloom_filter
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_bf_order VALUES ('x', ['a']);
+
+SELECT count() FROM t_bf_order WHERE map('k', `'k'`)['k'] = 'x';
+SELECT count() FROM t_bf_order WHERE mapContainsKey(map('k', `'k'`), 'k');
+SELECT count() FROM t_bf_order WHERE has(mapKeys(map('k', `'k'`)), 'k');
+SELECT count() FROM t_bf_order WHERE mapKeys(map('k', `'k'`)) IN (['k']);
+SELECT count() FROM t_bf_order WHERE arrayJoin(mapKeys(map('k', `'k'`))) = 'k';
+SELECT count() FROM t_bf_order WHERE concat('k', `'k'`) = 'kx';
+SELECT count() FROM t_bf_order WHERE concat('k', `'k'`) IN ('kx');
+SELECT count() FROM t_bf_order WHERE has(arrayMap(x -> concat(x, 'k', `'k'`), arr), 'akx');
+
+SELECT count() FROM t_bf_order WHERE has(mapKeys(map(`'k'`, 'k')), 'x') SETTINGS force_data_skipping_indices = 'idx_map';
+SELECT count() FROM t_bf_order WHERE concat(`'k'`, 'k') = 'xk' SETTINGS force_data_skipping_indices = 'idx_concat';
+SELECT count() FROM t_bf_order WHERE has(arrayMap(x -> concat(x, `'k'`, 'k'), arr), 'axk') SETTINGS force_data_skipping_indices = 'idx_lambda';
+
+-- The same for `JSON` subcolumns.
+CREATE TABLE t_bf_json
+(
+    j JSON,
+    `JSONAllPaths(j)` Array(String),
+    INDEX idx `JSONAllPaths(j)` TYPE bloom_filter
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_bf_json VALUES ('{"a":1}', ['x']);
+
+SELECT count() FROM t_bf_json WHERE j.a = 1;
+SELECT count() FROM t_bf_json WHERE j.a::Int64 = 1;
+SELECT count() FROM t_bf_json WHERE isNotNull(j.a);
+SELECT count() FROM t_bf_json WHERE has(`JSONAllPaths(j)`, 'x') SETTINGS force_data_skipping_indices = 'idx';
+
 DROP TABLE t_bf_fixed;
 DROP TABLE t_bf_lc;
 DROP TABLE t_bf_real;
 DROP TABLE t_bf_array;
 DROP TABLE t_bf_lower;
+DROP TABLE t_bf_order;
+DROP TABLE t_bf_json;

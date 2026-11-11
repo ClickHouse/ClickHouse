@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -16,6 +17,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -250,47 +252,232 @@ struct MapIndexInfo
     Field key_field;
 };
 
-void collectInputNames(const ActionsDAG::Node * node, std::vector<std::string_view> & names)
+/// Compares a query expression with an index expression built by the old analyzer, where names differ
+/// (a column can be literally named `mapKeys(m)`) and lambdas may be folded to constants.
+class ExpressionMatcher
 {
-    if (node->type == ActionsDAG::ActionType::INPUT)
-        names.push_back(node->result_name);
-
-    for (const auto * child : node->children)
-        collectInputNames(child, names);
-}
-
-/// A column can be literally named `mapKeys(m)`; trees are not compared since index expressions come from the old analyzer.
-bool isSameExpression(const ActionsDAG::Node * query_node, const ActionsDAG::Node * index_node)
-{
-    query_node = query_node->getWithoutAlias();
-    index_node = index_node->getWithoutAlias();
-
-    bool query_is_input = query_node->type == ActionsDAG::ActionType::INPUT;
-    bool index_is_input = index_node->type == ActionsDAG::ActionType::INPUT;
-    if (query_is_input || index_is_input)
-        return query_is_input && index_is_input && query_node->result_name == index_node->result_name;
-
-    std::vector<std::string_view> query_inputs;
-    std::vector<std::string_view> index_inputs;
-    collectInputNames(query_node, query_inputs);
-    collectInputNames(index_node, index_inputs);
-
-    for (auto * inputs : {&query_inputs, &index_inputs})
+public:
+    static bool isSame(const ActionsDAG::Node * query_node, const ActionsDAG::Node * index_node)
     {
-        std::ranges::sort(*inputs);
-        inputs->erase(std::unique(inputs->begin(), inputs->end()), inputs->end());
+        return match({.node = query_node}, {.node = index_node});
     }
 
-    return query_inputs == index_inputs;
-}
+private:
+    struct Scope;
+
+    /// Either a node of the DAG of `scope`, or a column captured by a folded lambda.
+    struct Operand
+    {
+        const ActionsDAG::Node * node = nullptr;
+        const ColumnWithTypeAndName * captured_column = nullptr;
+        const Scope * scope = nullptr;
+    };
+
+    /// The body of a lambda: its inputs are captured operands or lambda arguments.
+    struct Scope
+    {
+        const LambdaCapture * capture = nullptr;
+        std::vector<Operand> captured = {};
+        size_t depth = 0;
+    };
+
+    struct Lambda
+    {
+        const LambdaCapture * capture = nullptr;
+        const ActionsDAG * body = nullptr;
+        std::vector<Operand> captured = {};
+    };
+
+    static Operand resolve(Operand operand)
+    {
+        while (operand.node)
+        {
+            operand.node = operand.node->getWithoutAlias();
+            if (operand.node->type != ActionsDAG::ActionType::INPUT || !operand.scope)
+                break;
+
+            const auto & captured_names = operand.scope->capture->captured_names;
+            auto it = std::ranges::find(captured_names, operand.node->result_name);
+            if (it == captured_names.end())
+                break;
+            operand = operand.scope->captured[static_cast<size_t>(it - captured_names.begin())];
+        }
+        return operand;
+    }
+
+    static std::optional<ColumnWithTypeAndName> getConstant(const Operand & operand)
+    {
+        ColumnWithTypeAndName constant;
+        if (operand.captured_column)
+            constant = *operand.captured_column;
+        else if (operand.node->column && isColumnConst(*operand.node->column))
+            constant = {operand.node->column, operand.node->result_type, ""};
+        else
+            return std::nullopt;
+
+        WhichDataType which(constant.type);
+        if (which.isFunction() || which.isSet())
+            return std::nullopt;
+
+        /// Constants of the index expression have no rows.
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(constant.column.get()))
+            constant.column = column_const->getDataColumnPtr();
+        if (constant.column->empty())
+            return std::nullopt;
+        return constant;
+    }
+
+    static std::optional<Lambda> getLambda(const Operand & operand)
+    {
+        if (operand.node && operand.node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto * function = typeid_cast<const FunctionCapture *>(operand.node->function_base.get());
+            if (!function)
+                return std::nullopt;
+
+            Lambda lambda{.capture = &function->getCapture(), .body = &function->getAcionsDAG()};
+            for (const auto * child : operand.node->children)
+                lambda.captured.push_back({.node = child, .scope = operand.scope});
+            return lambda;
+        }
+
+        ColumnPtr column = operand.captured_column ? operand.captured_column->column : ColumnPtr(operand.node->column);
+        if (!column)
+            return std::nullopt;
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+            column = column_const->getDataColumnPtr();
+
+        const auto * column_function = typeid_cast<const ColumnFunction *>(column.get());
+        if (!column_function)
+            return std::nullopt;
+        const auto * function = typeid_cast<const FunctionExpression *>(column_function->getFunction().get());
+        if (!function)
+            return std::nullopt;
+
+        Lambda lambda{.capture = &function->getCapture(), .body = &function->getAcionsDAG()};
+        for (const auto & captured_column : column_function->getCapturedColumns())
+            lambda.captured.push_back({.captured_column = &captured_column});
+        return lambda;
+    }
+
+    static const ActionsDAG::Node * getLambdaResult(const Lambda & lambda)
+    {
+        for (const auto * output : lambda.body->getOutputs())
+            if (output->result_name == lambda.capture->return_name)
+                return output;
+        return nullptr;
+    }
+
+    static std::optional<size_t> getLambdaArgumentIndex(const Operand & operand)
+    {
+        size_t index = 0;
+        for (const auto & argument : operand.scope->capture->lambda_arguments)
+        {
+            if (argument.name == operand.node->result_name)
+                return index;
+            ++index;
+        }
+        return std::nullopt;
+    }
+
+    static bool matchLambdas(const Lambda & query, const Operand & query_operand, const Lambda & index, const Operand & index_operand)
+    {
+        auto same_type = [](const auto & lhs, const auto & rhs) { return lhs.type->equals(*rhs.type); };
+        if (!std::ranges::equal(query.capture->lambda_arguments, index.capture->lambda_arguments, same_type)
+            || !query.capture->return_type->equals(*index.capture->return_type))
+            return false;
+
+        const auto * query_result = getLambdaResult(query);
+        const auto * index_result = getLambdaResult(index);
+        if (!query_result || !index_result)
+            return false;
+
+        size_t depth = (query_operand.scope ? query_operand.scope->depth : 0) + 1;
+        if (depth != (index_operand.scope ? index_operand.scope->depth : 0) + 1)
+            return false;
+
+        Scope query_scope{.capture = query.capture, .captured = query.captured, .depth = depth};
+        Scope index_scope{.capture = index.capture, .captured = index.captured, .depth = depth};
+        return match({.node = query_result, .scope = &query_scope}, {.node = index_result, .scope = &index_scope});
+    }
+
+    static bool match(Operand query, Operand index)
+    {
+        query = resolve(query);
+        index = resolve(index);
+
+        auto query_constant = getConstant(query);
+        auto index_constant = getConstant(index);
+        if (query_constant || index_constant)
+            return query_constant && index_constant && query_constant->type->equals(*index_constant->type)
+                && (*query_constant->column)[0] == (*index_constant->column)[0];
+
+        auto query_lambda = getLambda(query);
+        auto index_lambda = getLambda(index);
+        if (query_lambda || index_lambda)
+            return query_lambda && index_lambda && matchLambdas(*query_lambda, query, *index_lambda, index);
+
+        if (!query.node || !index.node || query.node->type != index.node->type)
+            return false;
+
+        switch (query.node->type)
+        {
+            case ActionsDAG::ActionType::INPUT:
+            {
+                if (!query.scope || !index.scope)
+                    return !query.scope && !index.scope && query.node->result_name == index.node->result_name;
+
+                auto query_argument = getLambdaArgumentIndex(query);
+                return query_argument && query.scope->depth == index.scope->depth && query_argument == getLambdaArgumentIndex(index);
+            }
+            case ActionsDAG::ActionType::FUNCTION:
+                if (query.node->function_base->getName() != index.node->function_base->getName())
+                    return false;
+                [[fallthrough]];
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            {
+                if (query.node->children.size() != index.node->children.size())
+                    return false;
+                for (size_t i = 0; i < query.node->children.size(); ++i)
+                {
+                    Operand query_child{.node = query.node->children[i], .scope = query.scope};
+                    Operand index_child{.node = index.node->children[i], .scope = index.scope};
+                    if (!match(query_child, index_child))
+                        return false;
+                }
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+};
 
 std::optional<size_t> findIndexPosition(
     const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, const RPNBuilderTreeNode & node)
 {
     auto position = header.findPositionByName(node.getColumnName());
-    if (position && isSameExpression(node.getDAGNode(), index_nodes[*position]))
+    if (position && ExpressionMatcher::isSame(node.getDAGNode(), index_nodes[*position]))
         return position;
     return std::nullopt;
+}
+
+Names collectJSONIndexColumns(const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes)
+{
+    Names names(header.columns());
+    for (size_t position = 0; position < names.size(); ++position)
+    {
+        const auto * index_node = index_nodes[position]->getWithoutAlias();
+        if (index_node->type != ActionsDAG::ActionType::FUNCTION || index_node->function_base->getName() != "JSONAllPaths"
+            || index_node->children.size() != 1)
+            continue;
+
+        const auto * argument = index_node->children.front()->getWithoutAlias();
+        const auto & name = header.getByPosition(position).name;
+        if (argument->type == ActionsDAG::ActionType::INPUT && name == fmt::format("JSONAllPaths({})", argument->result_name))
+            names[position] = name;
+    }
+    return names;
 }
 
 /// `map_node` is nullptr for the table column `map_column_name` itself.
@@ -315,7 +502,7 @@ std::optional<size_t> findMapIndexPosition(
         return std::nullopt;
 
     bool same_map = map_node
-        ? isSameExpression(map_node, argument)
+        ? ExpressionMatcher::isSame(map_node, argument)
         : argument->type == ActionsDAG::ActionType::INPUT && argument->result_name == map_column_name;
     if (!same_map)
         return std::nullopt;
@@ -469,6 +656,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
     , json_argument_types(std::move(json_argument_types_))
     , index_nodes(std::move(index_nodes_))
+    , json_index_columns(collectJSONIndexColumns(header, index_nodes))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     if (!predicate)
@@ -649,7 +837,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     if (function_name == "isNotNull" && arguments_size == 1)
     {
         auto arg = function.getArgumentAt(0);
-        if (auto json_info = tryMatchNodeToJSONIndex(arg, header, "JSONAllPaths", json_argument_types))
+        if (auto json_info = tryMatchNodeToJSONIndex(arg, json_index_columns, "JSONAllPaths", json_argument_types))
         {
             auto arg_type = arg.getDAGNode()->result_type;
             /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
@@ -811,7 +999,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
     /// nullIn/globalNullIn are deliberately not wired here: JSON paths need per-path NULL checks.
-    if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths", json_argument_types))
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types))
     {
         if (function_name != "in" && function_name != "globalIn")
             return false;
@@ -1350,7 +1538,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions
     /// like `json.some.path = value`, `json.some.path.:Type = value`, or `json.path::Type = value`.
-    if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths", json_argument_types))
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types))
     {
         if (function_name != "equals")
             return false;
