@@ -366,7 +366,8 @@ static FillColumnDescription::StepFunction getStepFunction(
         /// a value past `INT64_MAX` that the column can hold continues as a UInt64, so that the filling from an
         /// explicit FROM goes on like it does from a data value. Any other step wraps around in the carrier like
         /// for the other integer types, which `FillingRow` takes for passing the border of the filling.
-        return [step_value = step.safeGet<Int64>()](Field & field, Int64 jumps_count)
+        /// Both the shift of a negative step and the step from a UInt64 cursor wrap around on purpose.
+        return [step_value = step.safeGet<Int64>()](Field & field, Int64 jumps_count) NO_SANITIZE_UNSIGNED_OVERFLOW
         {
             const UInt64 shift = static_cast<UInt64>(step_value) * static_cast<UInt64>(jumps_count);
 
