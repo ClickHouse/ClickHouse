@@ -29,9 +29,8 @@ cuvs::distance::DistanceType cuvsDistanceOf(CagraDistance distance)
     return distance == CagraDistance::L2 ? cuvs::distance::DistanceType::L2Expanded : cuvs::distance::DistanceType::InnerProduct;
 }
 
-/// The resources of the calling thread. Their stream is by default the per-thread default stream, so calls from
-/// different threads do not queue behind each other, and cuVS keeps what it caches between searches (the descriptors
-/// of datasets) in them.
+/// Per thread: the per-thread default stream keeps threads from queueing behind each other, and cuVS caches dataset
+/// descriptors here.
 raft::resources & threadResources()
 {
     thread_local raft::resources resources;
@@ -100,7 +99,7 @@ using DeviceVpqDataset = cuvs::neighbors::device_vpq_dataset<half, int64_t>;
 namespace
 {
 
-/// A codebook of `rows * columns` floats in host memory, as halves on the device.
+/// Host floats to device halves.
 raft::device_matrix<half, uint32_t, raft::row_major> uploadCodebook(raft::resources & res, const float * codebook, size_t rows, size_t columns)
 {
     std::vector<half> halves(rows * columns);
@@ -109,7 +108,7 @@ raft::device_matrix<half, uint32_t, raft::row_major> uploadCodebook(raft::resour
     auto device_codebook = raft::make_device_matrix<half, uint32_t>(res, static_cast<uint32_t>(rows), static_cast<uint32_t>(columns));
     checkCuda(cudaMemcpyAsync(device_codebook.data_handle(), halves.data(), halves.size() * sizeof(half), cudaMemcpyHostToDevice,
         raft::resource::get_cuda_stream(res).get()), "copying a VPQ codebook to the device");
-    /// `halves` goes away on return.
+    /// `halves` dies on return.
     raft::resource::sync_stream(res);
     return device_codebook;
 }
@@ -187,7 +186,7 @@ struct CagraIndex::State
 {
     std::unique_ptr<cuvs::neighbors::device_padded_dataset<float, int64_t>> dataset;
     std::optional<cuvs::neighbors::cagra::device_padded_index<float, uint32_t>> index;
-    /// For CAGRA-Q, instead of the two above.
+    /// CAGRA-Q, instead of the two above.
     std::optional<DeviceVpqDataset> compressed_dataset;
     std::optional<cuvs::neighbors::cagra::device_pq_index<float, uint32_t, half>> compressed_index;
     size_t dimensions = 0;
@@ -207,7 +206,7 @@ __host__ CagraIndex::CagraIndex(const float * dataset, const uint32_t * graph, s
             dataset, static_cast<int64_t>(rows), static_cast<int64_t>(dimensions));
         new_state->dataset = cuvs::neighbors::make_device_padded_dataset(res, host_dataset);
 
-        /// The graph is copied to the device by the index, which owns that copy.
+        /// The index copies the graph to the device.
         auto host_graph = raft::make_host_matrix_view<const uint32_t, int64_t>(
             graph, static_cast<int64_t>(rows), static_cast<int64_t>(graph_degree));
         new_state->index.emplace(res, cuvsDistanceOf(distance), new_state->dataset->as_dataset_view(), host_graph);

@@ -16,7 +16,7 @@ target_link_libraries (clickhouse_gpu_cudf PRIVATE
     ch_gpu::cudart
 )
 
-# CAGRA of cuVS for the `cagra` method of the vector similarity index, see CuvsCagra.cuh.
+# CAGRA of cuVS, see CuvsCagra.cuh.
 add_library (clickhouse_gpu_cuvs STATIC
     CuvsCagra.cu
 )

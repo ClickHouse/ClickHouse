@@ -19,48 +19,37 @@ namespace DB
 ///
 ///     INDEX idx vec TYPE vector_similarity('cagra', 'L2Distance', dimensions[, quantization[, graph_degree, intermediate_graph_degree]])
 ///
-/// The granule keeps the vectors and the graph, which are what the file of the index holds as well. The first search of a
-/// granule uploads both to the device, and they stay there for as long as the granule is in the cache of vector
-/// similarity indexes. Granules of fewer than `min_rows_for_graph` rows have no graph and are searched exactly on the CPU,
-/// as CAGRA cannot build a graph of fewer rows than its degree, and a scan of so few rows is faster than a round trip to
-/// the device anyway.
+/// A granule holds the vectors and the graph; the first search uploads them to the device, where they stay while the
+/// granule is cached. Granules of fewer than `min_rows_for_graph` rows have no graph and are searched exactly on the CPU.
 ///
-/// The quantization is `f32` (the default: the vectors are kept as `Float32`) or `pqN` with N of 2, 4 or 8 (CAGRA-Q: the
-/// vectors are compressed by VPQ, N components to a byte, see `GPU::CagraCompressedDataset`). The graph is built from the
-/// vectors as they are and searched over the compressed ones, by the distances to the decompressed vectors, which are
-/// approximate: `vector_search_with_rescoring` makes the query compute the exact distances of the rows it found.
-/// CAGRA-Q supports only the L2 distance, which orders normalized vectors as the cosine distance does, so it is for
-/// `L2Distance` and `cosineDistance`. Granules without a graph keep their vectors as `Float32`.
+/// Quantization `pq2`, `pq4`, `pq8` (CAGRA-Q) keeps the vectors compressed by VPQ, so the distances are approximate.
+/// CAGRA-Q supports only L2, hence only `L2Distance` and `cosineDistance` (normalized vectors).
 
 enum class CagraMetric : uint8_t
 {
-    L2 = 0,     /// `L2Distance`, the distance is squared as in the `hnsw` method
-    Cosine = 1, /// `cosineDistance`, vectors are normalized and searched by inner product
-    Dot = 2,    /// `dotProduct`, the distance is `1 - dot` as in the `hnsw` method
+    L2 = 0,     /// squared, as in `hnsw`
+    Cosine = 1, /// normalized vectors, inner product
+    Dot = 2,    /// `1 - dot`, as in `hnsw`
 };
 
 struct CagraParams
 {
     size_t graph_degree = 64;
     size_t intermediate_graph_degree = 128;
-    /// The components of a vector per byte of its VPQ codes, or 0 for `Float32` vectors.
+    /// Components per byte of VPQ code; 0 for `Float32`.
     size_t pq_len = 0;
 };
 
-/// The vectors of a granule compressed by VPQ, as `GPU::CagraCompressedDataset` copies them to the host.
+/// Vectors compressed by VPQ, see `GPU::CagraCompressedDataset`.
 struct CagraCompressedVectors
 {
     size_t pq_len = 0;
     size_t vq_centers = 0;
     size_t row_bytes = 0;
-    /// `vq_centers * dimensions` floats.
-    std::vector<float> vq_codebook;
-    /// `GPU::cagra_pq_codebook_rows * pq_len` floats.
-    std::vector<float> pq_codebook;
-    /// `rows * row_bytes` bytes.
-    std::vector<uint8_t> codes;
+    std::vector<float> vq_codebook; /// vq_centers x dimensions
+    std::vector<float> pq_codebook; /// cagra_pq_codebook_rows x pq_len
+    std::vector<uint8_t> codes;     /// rows x row_bytes
 
-    /// The approximation of the vector `row` of `dimensions` components that it encodes.
     void decompress(size_t row, size_t dimensions, float * vector) const;
     size_t memoryUsageBytes() const;
 };
@@ -70,7 +59,7 @@ class CagraDeviceIndex;
 struct MergeTreeIndexGranuleCagra final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleCagra(const String & index_name_, CagraMetric metric_, size_t dimensions_);
-    /// `dataset` is empty if the vectors are `compressed`.
+    /// `dataset` is empty if `compressed` is set.
     MergeTreeIndexGranuleCagra(
         const String & index_name_, CagraMetric metric_, size_t dimensions_, size_t rows_,
         std::vector<float> && dataset_, std::optional<CagraCompressedVectors> && compressed_,
@@ -83,24 +72,22 @@ struct MergeTreeIndexGranuleCagra final : public IMergeTreeIndexGranule
     bool empty() const override { return rows == 0; }
     size_t memoryUsageBytes() const override;
 
-    /// The `limit` nearest rows to `query` (normalized already for `CagraMetric::Cosine`). `candidates` is the size of the
-    /// internal top-k list of CAGRA, i.e. the trade-off between speed and recall.
+    /// The `limit` nearest rows to `query`, searched on the device. `candidates` is `itopk_size` of CAGRA.
+    /// For `Cosine`, queries must be normalized.
     NearestNeighbours search(const std::vector<float> & query, size_t limit, size_t candidates, bool return_distances) const;
 
-    /// The `limit` nearest rows to each of `num_queries` queries, which are `num_queries * dimensions` floats (normalized
-    /// already for `CagraMetric::Cosine`), in one search on the device. Writes `num_queries * limit` row numbers and
-    /// distances; a missing neighbour has the row `std::numeric_limits<UInt32>::max()`.
+    /// The same for `num_queries` queries at once, on the device. Writes `num_queries * limit` rows and distances;
+    /// a missing row is `std::numeric_limits<UInt32>::max()`.
     void searchBatch(const std::vector<float> & queries, size_t num_queries, size_t limit, size_t candidates,
         std::vector<UInt32> & neighbours, std::vector<float> & distances) const;
 
-    /// The same as `search`, on the CPU: a beam search over the graph, as CAGRA does on the device, without cuVS.
+    /// The same as `search`, as a beam search over the graph on the CPU.
     NearestNeighbours searchOnCpu(const std::vector<float> & query, size_t limit, size_t candidates, bool return_distances) const;
 
-    /// The same as `searchBatch`, on the CPU, with the queries spread over all cores.
+    /// The same as `searchBatch`, on all CPU cores.
     void searchBatchOnCpu(const std::vector<float> & queries, size_t num_queries, size_t limit, size_t candidates,
         std::vector<UInt32> & neighbours, std::vector<float> & distances) const;
 
-    /// Normalizes a vector for `CagraMetric::Cosine`.
     static void normalize(float * vector, size_t dimensions);
 
     const String index_name;
@@ -112,8 +99,7 @@ struct MergeTreeIndexGranuleCagra final : public IMergeTreeIndexGranule
     std::optional<CagraCompressedVectors> compressed;
     std::vector<UInt32> graph;
 
-    /// The distance that the `hnsw` method would return for the distance that CAGRA returned, or, for compressed vectors,
-    /// for the squared L2 distance to the decompressed vector.
+    /// The distance of CAGRA as `hnsw` returns it.
     float toDistance(float cuvs_distance) const;
 
 private:
@@ -187,7 +173,6 @@ private:
     const CagraParams params;
 };
 
-/// For the creator and the validator of `vector_similarity`, which hand the `cagra` method over to these.
 MergeTreeIndexPtr cagraIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const FieldVector & args);
 void cagraIndexValidator(const IndexDescription & index, const FieldVector & args);
 

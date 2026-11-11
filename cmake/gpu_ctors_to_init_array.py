@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
-"""Moves the static constructors of an archive from `.ctors` to `.init_array`.
+"""Moves the static constructors of an archive from `.ctors` to `.init_array`, which lld does not do (see cmake/cuda.cmake).
 
-Some static libraries of the CUDA toolkit (NVRTC, nvJitLink, the PTX compiler) still register their constructors in
-`.ctors`. GNU ld places such sections into `.init_array`; lld, which links ClickHouse, keeps a separate `.ctors` that
-nothing runs, so their globals are never constructed and the first call crashes. See cmake/cuda.cmake.
-
-`.ctors` runs from its last entry to its first, `.init_array` from the first to the last, so the entries of each section
-are reversed here (as GNU ld does it), by rewriting the offsets of their relocations in place, and the sections get the
-type of `.init_array`. Then `llvm-objcopy` renames them.
+The entries are reversed, as `.ctors` runs backwards, by rewriting relocation offsets; then `llvm-objcopy` renames the sections.
 
 usage: gpu_ctors_to_init_array.py <llvm-objcopy> <input.a> <output.a>
 """
@@ -23,8 +17,7 @@ SHT_INIT_ARRAY = 14
 
 
 def reverse_ctors_in_object(data, base):
-    """Reverses the relocations of the `.ctors` sections of the ELF64 little-endian relocatable at `base` and makes the
-    sections `SHT_INIT_ARRAY`, in place."""
+    """Reverses `.ctors` relocations of the ELF64 LE object at `base` and makes them `SHT_INIT_ARRAY`, in place."""
     if data[base:base + 4] != b"\x7fELF" or data[base + 4] != 2 or data[base + 5] != 1:
         return 0
     e_shoff, = struct.unpack_from("<Q", data, base + 0x28)

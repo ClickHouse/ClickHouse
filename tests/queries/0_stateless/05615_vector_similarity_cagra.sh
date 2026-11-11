@@ -1,25 +1,22 @@
 #!/usr/bin/env bash
 
-# Checks the `cagra` method of the `vector_similarity` index (a CAGRA graph of cuVS, built and searched on the GPU) and
-# the table function `vectorSearch`: the nearest neighbours the index finds against an exact search, for each distance
-# function, on the GPU and with `vector_search_cagra_on_cpu`, after the index is read back from disk and after a merge
-# builds it anew, for granules too small for a graph, which are searched exactly, and for vectors compressed by VPQ
-# (CAGRA-Q), whose index is smaller.
-#
-# Where the build has no GPU support, or the server cannot use the device, the same checks run with the `hnsw` method
-# (without quantization, so that its distances are exact as well) instead and hold as well. That is what makes this test runnable everywhere: it checks CAGRA exactly on the machines
-# that can run it.
+# Recall of the `cagra` vector similarity index and of `vectorSearch` against exact search: each distance function, GPU
+# and CPU search, after reload and merge, small granules, and CAGRA-Q. Without a usable GPU the same checks run with
+# `hnsw` (unquantized), so the test runs everywhere.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+CLICKHOUSE_CLIENT_WITHOUT_CAGRA="$CLICKHOUSE_CLIENT"
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_cagra_index=1"
 
 DIMENSIONS=32
 ROWS=30000
 QUERIES=20
 K=10
 
-# Pseudo-random vectors in [-1, 1): reproducible, and without the structure that would make a search too easy.
+# Reproducible pseudo-random vectors in [-1, 1).
 vectors()
 {
     local from=$1 count=$2
@@ -34,14 +31,13 @@ query_vector()
 
 USE_GPU=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE name = 'USE_GPU'")
 
-# The arguments of `vector_similarity` before and after the distance function.
+# Arguments of `vector_similarity` around the distance function.
 METHOD="'hnsw'"
 METHOD_PARAMETERS="$DIMENSIONS, 'f32', 32, 128"
-# The same for vectors compressed by VPQ, two components to a byte.
+# The same for CAGRA-Q.
 PQ_METHOD_PARAMETERS="$METHOD_PARAMETERS"
 if [ "$USE_GPU" == "1" ]; then
-    # A graph is built only for granules of at least 10000 rows, and searched on the device: both are what needs a device.
-    # A machine without one, or a server not started for it, is told apart from a failure, which is reported.
+    # 10000 rows get a graph and need the device; no device or no `GLIBC_TUNABLES` falls back, other errors are printed.
     PROBE_ERROR=$($CLICKHOUSE_CLIENT --query "
         CREATE TABLE probe (id UInt64, vec Array(Float32), INDEX idx vec TYPE vector_similarity('cagra', 'L2Distance', $DIMENSIONS))
         ENGINE = MergeTree ORDER BY id;
@@ -58,10 +54,8 @@ if [ "$USE_GPU" == "1" ]; then
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS probe"
 fi
 
-# The share of the exact `K` nearest rows that a search through the index finds, over `QUERIES` query vectors, checked to
-# be at least 0.9. The plan is checked to use the index, or the check would hold trivially. The settings are of the query,
-# not of the subquery that searches through the index: the plan is optimized for vector search (e.g. for
-# `vector_search_with_rescoring`) by the settings of the query.
+# Recall@K over `QUERIES` queries is at least 0.9, and the index is used. The settings go on the outer query: the plan
+# is optimized (e.g. for `vector_search_with_rescoring`) by the settings of the query, not of a subquery.
 check_recall()
 {
     local table=$1 distance=$2 settings=$3 hits=0 direction=ASC
@@ -144,7 +138,7 @@ if [ "$USE_GPU" == "1" ]; then
         CREATE TABLE queries (q UInt32, vec Array(Float32)) ENGINE = MergeTree ORDER BY q;
         INSERT INTO queries SELECT number, arrayMap(i -> toFloat32((cityHash64(1000000 + number, i) % 2000) / 1000 - 1), range($DIMENSIONS))
             FROM numbers($QUERIES);"
-    # `vectorSearch` returns what the index found, without rescoring: by the approximate distances for compressed vectors.
+    # No rescoring in `vectorSearch`: CAGRA-Q ranks by approximate distances.
     for table_and_recall in t_L2Distance:9 t_merged:9 t_pq_L2Distance:7; do
         table=${table_and_recall%:*}
         recall=${table_and_recall#*:}
@@ -186,3 +180,17 @@ check_error "'cagra', 'L2Distance', 0" INCORRECT_DATA
 check_error "'cagra', 'L2Distance', 32, 'pq3'" INCORRECT_DATA
 check_error "'cagra', 'dotProduct', 32, 'pq2'" INCORRECT_DATA
 check_error "'cagra', 'L2Distance', 30, 'pq4'" INCORRECT_DATA
+
+echo "-- The experimental setting"
+if [ "$USE_GPU" == "1" ]; then
+    $CLICKHOUSE_CLIENT_WITHOUT_CAGRA --query "
+        CREATE TABLE t_disabled (vec Array(Float32), INDEX idx vec TYPE vector_similarity('cagra', 'L2Distance', 32)) ENGINE = MergeTree ORDER BY tuple()" 2>&1 \
+        | grep -o -m1 "SUPPORT_IS_DISABLED"
+    $CLICKHOUSE_CLIENT_WITHOUT_CAGRA --query "
+        CREATE TABLE t_disabled (vec Array(Float32)) ENGINE = MergeTree ORDER BY tuple();
+        ALTER TABLE t_disabled ADD INDEX idx vec TYPE vector_similarity('cagra', 'L2Distance', 32);" 2>&1 \
+        | grep -o -m1 "SUPPORT_IS_DISABLED"
+else
+    echo SUPPORT_IS_DISABLED
+    echo SUPPORT_IS_DISABLED
+fi

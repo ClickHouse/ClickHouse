@@ -1,10 +1,6 @@
-# RAFT, header-only: the primitives cuVS is built on. Nothing of it is compiled here (upstream's
-# RAFT_COMPILE_LIBRARY is off in the cuVS build too).
-#
-# include/raft/core/logger_macros.hpp is checked in, the only header upstream generates that the sources include. It is
-# contrib/rapids-logger/cmake/logger_macros.hpp.in with the substitutions of upstream's
-# create_logger_macros(RAFT "raft::default_logger()" include/raft/core), as contrib/rmm-cmake does it for RMM.
-# Regenerate it when the submodule moves.
+# RAFT, header-only, for cuVS.
+# include/raft/core/logger_macros.hpp is generated from rapids-logger's logger_macros.hpp.in as upstream's
+# create_logger_macros(RAFT "raft::default_logger()" include/raft/core) does; regenerate it when the submodule moves.
 
 if (NOT ENABLE_GPU)
     message (STATUS "Not using RAFT")

@@ -1,13 +1,6 @@
-# cuVS, the vector search library of RAPIDS, for the `cagra` method of the vector similarity index. On the GPU island,
-# like cuDF (see gpu_island_target in cmake/cuda.cmake). Tests, benchmarks, the C API and the Python pieces are not built.
-#
-# Only what CAGRA needs is compiled: CAGRA build, search and serialization, IVF-PQ and NN-descent, which build its graph,
-# IVF-Flat's scan and refine, which IVF-PQ uses, the VPQ compression of CAGRA-Q, balanced k-means, select-k and the
-# pairwise distances. Upstream generates most of its translation units and all its JIT-LTO kernel fragments from JSON
-# matrices. Those calls of its
-# cpp/CMakeLists.txt are evaluated here as they are (see cuvs_evaluate_upstream below), so the instantiations stay exactly
-# upstream's when the submodule moves; the list of sources of the library is written out here. cuTile kernels and the
-# multi-GPU algorithms are off.
+# cuVS for the `cagra` vector similarity index, on the GPU island like cuDF (see gpu_island_target in cmake/cuda.cmake).
+# Only what CAGRA and CAGRA-Q need is built. The generated instantiations and JIT-LTO fragments come from evaluating
+# upstream's cpp/CMakeLists.txt (cuvs_evaluate_upstream), so they follow the submodule; the source list is ours.
 
 if (NOT ENABLE_GPU)
     message (STATUS "Not using cuVS")
@@ -17,7 +10,7 @@ endif ()
 set (CUVS_CPP_DIR "${ClickHouse_SOURCE_DIR}/contrib/cuvs/cpp")
 set (CUVS_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
-# What upstream's cmake/modules/ConfigureCUDA.cmake sets, without the -Werror it adds for gcc.
+# As upstream's ConfigureCUDA.cmake, without -Werror.
 set (CUVS_CUDA_FLAGS
     --expt-extended-lambda
     --expt-relaxed-constexpr
@@ -27,7 +20,7 @@ set (CUVS_CUDA_FLAGS
     -Xcompiler=-fopenmp)
 set (CUVS_CXX_FLAGS -Wno-deprecated-declarations -DRAFT_HIDE_DEPRECATION_WARNINGS -DCUDA_API_PER_THREAD_DEFAULT_STREAM)
 
-# The names upstream's generator calls link the kernels with.
+# Names that upstream's generator links the kernels with.
 add_library (rmm::rmm ALIAS _rmm)
 add_library (raft::raft ALIAS _raft)
 add_library (CCCL::CCCL ALIAS _cccl)
@@ -39,8 +32,7 @@ include ("${CMAKE_CURRENT_SOURCE_DIR}/island_jit_lto.cmake")
 
 set (BUILD_MG_ALGOS OFF)
 
-# Evaluates the part of upstream's cpp/CMakeLists.txt from the line `BEGIN` up to, not including, the line `END`, with its
-# source and binary directories replaced by the ones of this build.
+# Evaluates upstream's cpp/CMakeLists.txt from `BEGIN` up to `END`, with our source and binary directories.
 file (READ "${CUVS_CPP_DIR}/CMakeLists.txt" CUVS_UPSTREAM_CMAKELISTS)
 macro (cuvs_evaluate_upstream BEGIN END)
     string (FIND "${CUVS_UPSTREAM_CMAKELISTS}" "${BEGIN}" _cuvs_begin)
@@ -55,7 +47,7 @@ macro (cuvs_evaluate_upstream BEGIN END)
     cmake_language (EVAL CODE "${_cuvs_code}")
 endmacro ()
 
-# The instantiations of CAGRA search, and the JIT-LTO kernel fragments of all of the library.
+# CAGRA search instantiations and all JIT-LTO fragments.
 cuvs_evaluate_upstream (
     "  generate_inst_matrix(\n    cagra_search_inst_files"
     "  include(cmake/modules/generate_cutile_kernels.cmake)")
@@ -64,11 +56,10 @@ cuvs_evaluate_upstream (
     "  generate_inst_matrix(\n    pairwise_matrix_dispatch_inst_files"
     "  add_library(\n    cuvs_objs OBJECT")
 
-# ClickHouse forbids compile options in the interface of a contrib target (cmake/sanitize_targets.cmake); the kernels get
-# them from add_jit_lto_kernel instead.
+# No interface compile options on contrib targets (cmake/sanitize_targets.cmake); add_jit_lto_kernel sets them.
 set_target_properties (jit_lto_kernel_usage_requirements PROPERTIES INTERFACE_COMPILE_OPTIONS "")
 
-# The fragments of the indexes that are not built.
+# Fragments of indexes we do not build.
 list (FILTER jit_lto_files EXCLUDE REGEX "/generated_kernels/(ivf_sq|ivf_rabitq)/")
 
 set (CUVS_SOURCES
@@ -117,7 +108,7 @@ set (CUVS_SOURCES
 list (TRANSFORM CUVS_SOURCES PREPEND "${CUVS_CPP_DIR}/")
 
 list (APPEND CUVS_SOURCES
-    # The VPQ compression of CAGRA-Q, instead of src/preprocessing/quantize/pq.cu: see the comment in it.
+    # VPQ of CAGRA-Q, instead of src/preprocessing/quantize/pq.cu (see the file).
     "${CMAKE_CURRENT_SOURCE_DIR}/vpq_train_from_rows.cu"
     ${cagra_build_inst_files}
     ${cagra_serialize_inst_files}
@@ -136,7 +127,7 @@ list (APPEND CUVS_SOURCES
 
 add_library (_cuvs STATIC ${CUVS_SOURCES})
 
-# First, before any of the properties below: this wipes the target clean.
+# First: it wipes the target.
 gpu_island_target (_cuvs)
 
 target_include_directories (_cuvs SYSTEM PUBLIC "${CUVS_CPP_DIR}/include")
@@ -158,7 +149,7 @@ set_target_properties (_cuvs PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     CUDA_VISIBILITY_PRESET hidden)
 
-# The math libraries of CUDA and OpenMP statically, like the CUDA runtime: nothing of cuVS is needed at run time.
+# CUDA math libraries and OpenMP statically, like the CUDA runtime.
 gpu_cuda_library (CUVS_CUBLAS_LIBRARY cublas_static)
 gpu_cuda_library (CUVS_CUBLASLT_LIBRARY cublasLt_static)
 gpu_cuda_library (CUVS_CUSOLVER_LIBRARY cusolver_static)
