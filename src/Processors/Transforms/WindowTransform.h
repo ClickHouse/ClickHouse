@@ -126,6 +126,14 @@ private:
     /// Pending batch for evaluation.
     WindowBounds bounds;
     RowNumber batch_start;
+    /// The number of rows the aggregate functions add to their states to evaluate the pending batch. The batch
+    /// is evaluated early when it exceeds `max_batch_frame_rows`, so that the row walk checks cancellation
+    /// between the batches (see `computeReadyRows`). The frame of the previous row in the partition is needed
+    /// to compute it.
+    Int64 batch_frame_rows = 0;
+    Int64 previous_frame_start = 0;
+    Int64 previous_frame_end = 0;
+    static constexpr Int64 max_batch_frame_rows = 1 << 20;
 };
 
 }

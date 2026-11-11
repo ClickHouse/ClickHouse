@@ -142,10 +142,14 @@ void WindowTransform::addInputBlock(Chunk chunk)
 
 void WindowTransform::computeReadyRows()
 {
-    /// Cancellation is checked per row here; window functions evaluate each batch without cancellation checks
+    /// Cancellation is checked per row here; window functions evaluate each batch without cancellation checks,
+    /// so a batch is also evaluated once its estimated work is large: otherwise a single batch with a moving
+    /// frame (e.g. `quantileExact(x) OVER (ROWS BETWEEN 50000 PRECEDING AND CURRENT ROW)`, which recalculates
+    /// the aggregate over the whole frame on each row) would keep running long after the query is cancelled.
     while (!isCancelledOrOuterCancelled())
     {
-        if (bounds.rows != 0 && peers.current().location.block != batch_start.block)
+        if (bounds.rows != 0
+            && (peers.current().location.block != batch_start.block || batch_frame_rows >= max_batch_frame_rows))
             evaluateRowsBatch();
 
         if (peers.current().location == partition.bounds().end.location)
@@ -181,6 +185,20 @@ void WindowTransform::recordCurrentRowBounds()
     {
         bounds.frame_start.push_back(frame.bounds().start.row_index_in_partition);
         bounds.frame_end.push_back(frame.bounds().end.row_index_in_partition);
+        /// Mirrors `AggregateWindowFunctionRecalculate`: it adds the whole frame when the frame start moves,
+        /// and the rows the frame end advanced by otherwise. With an unbounded frame start the aggregate
+        /// functions only add the rows the frame end advanced by, which are bounded by the block size.
+        const Int64 frame_start = frame.bounds().start.row_index_in_partition;
+        const Int64 frame_end = frame.bounds().end.row_index_in_partition;
+        if (!aggregate_functions.empty() && params.window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
+        {
+            if (frame_start != previous_frame_start)
+                batch_frame_rows += std::max<Int64>(frame_end - frame_start, 0);
+            else
+                batch_frame_rows += std::max<Int64>(frame_end - previous_frame_end, 0);
+        }
+        previous_frame_start = frame_start;
+        previous_frame_end = frame_end;
     }
     if (required.peers)
     {
@@ -216,6 +234,7 @@ void WindowTransform::evaluateRowsBatch()
 
     first_row_read_by_functions = first_row;
     clearBounds(bounds);
+    batch_frame_rows = 0;
 }
 
 void WindowTransform::packReadyBlock()
@@ -240,6 +259,8 @@ void WindowTransform::startNextPartition()
     peers.enterPartition(partition_start);
     frame.enterPartition(partition_start);
     first_row_read_by_functions = 0;
+    previous_frame_start = 0;
+    previous_frame_end = 0;
 
     for (auto & slot : general_functions)
         slot.function->resetPartition(slot.state.data());
