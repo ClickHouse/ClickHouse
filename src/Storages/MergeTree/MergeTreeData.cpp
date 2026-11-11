@@ -7489,7 +7489,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                 postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
             }
 
-            if (!at_least_one_physical_column_rest)
+            /// Local parts may differ between replicas, so they must not prevent replay of a committed `ALTER`.
+            if (!is_secondary_replay && !at_least_one_physical_column_rest)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot alter table because part '{}' would have no stored physical columns. "
                     "Materialize a remaining physical column first using "
