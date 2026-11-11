@@ -179,7 +179,6 @@ private:
 
     void addPrewhereAliasActions();
     void applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const;
-    bool shouldMoveToPrewhere() const;
     /// Whether the row policy filter can be handed to the storage's read(). Shared by the
     /// push site and the apply-as-FilterStep fallback, which must stay exact complements.
     bool shouldPushRowLevelFilterToStorage() const;
@@ -191,15 +190,13 @@ private:
     /// Different stages of query execution.
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
-    void executeAggregation(
-        QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
+    void executeAggregation(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
-    void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
-    void executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
+    void executeOrder(QueryPlan & query_plan);
     void executeWithFill(QueryPlan & query_plan);
     void executeMergeSorted(QueryPlan & query_plan, const std::string & description);
     void executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset);

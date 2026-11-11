@@ -77,6 +77,12 @@ public:
         uint32_t get_children_recursive_nodes_limit,
         ListRecursiveCallback callback) override;
 
+    void listWithOptions(
+        const String & path,
+        const ListOptions & options,
+        ListWithOptionsCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
+
     void set(
         const String & path,
         const String & data,
@@ -117,7 +123,7 @@ public:
 
     void finalize(const String & reason) override;
 
-    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override { return false; }
+    bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const override;
 
     void getACL(const String & path, GetACLCallback  callback) override;
 

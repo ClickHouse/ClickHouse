@@ -45,7 +45,9 @@
         dest-folder (str binaries-cache-dir "/" encoded-url)
         dest-file (str dest-folder "/clickhouse")
         dest-symlink (str root-folder "/" expected-file-name)
-        wget-opts (concat cu/std-wget-opts [:-O dest-file])]
+        ;; Jepsen's SSH exec reads stderr only after stdout is closed, so a command
+        ;; whose stderr outgrows the 2 MiB channel window never returns.
+        wget-opts (concat cu/std-wget-opts [:--no-verbose :-O dest-file])]
     (if-not (cu/exists? dest-file)
       (do
         (info "Downloading" url)

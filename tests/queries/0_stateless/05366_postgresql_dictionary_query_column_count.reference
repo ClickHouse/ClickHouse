@@ -1,0 +1,8 @@
+--- too few columns
+(NUMBER_OF_COLUMNS_DOESNT_MATCH)
+Row has 2 columns instead of 3
+must return them in this order: `id`, `name`, `extra`
+--- too many columns
+(TOO_MANY_COLUMNS)
+Row has 3 columns instead of 2
+must return them in this order: `id`, `name`

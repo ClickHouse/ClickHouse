@@ -26,6 +26,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 
@@ -101,12 +102,15 @@ BlockIO InterpreterDeleteQuery::execute()
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
+    if (delete_query.cluster.empty())
+        checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(guard));
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
@@ -114,7 +118,10 @@ BlockIO InterpreterDeleteQuery::execute()
     /// metadata is not loaded until the first access.  Initialize it now so that
     /// supportsDelete() and subsequent mutation checks see valid metadata.
     table->updateExternalDynamicMetadataIfExists(getContext());
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+    /// A lazily loaded table reports only its columns, so the checks below would see no projections
+    /// and validate the mutation against metadata that has no keys.
+    auto resolved_table = resolveStorageProxyLoading(table);
+    auto metadata_snapshot = resolved_table->getInMemoryMetadataPtr(getContext(), false);
 
     if (table->supportsDelete())
     {
@@ -146,7 +153,10 @@ BlockIO InterpreterDeleteQuery::execute()
         /// to analyze.
         MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, getContext());
         MutationsInterpreter::Settings mutation_settings(false);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        auto validation_context = Context::createCopy(getContext());
+        validation_context->setAnalyzingBackgroundExpressions(true);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, validation_context, mutation_settings).validate();
+        getContext()->onQueryExecutionStarted();
         table->mutate(mutation_commands, getContext());
         return {};
     }
@@ -159,14 +169,17 @@ BlockIO InterpreterDeleteQuery::execute()
 
         if (metadata_snapshot->hasProjections())
         {
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
+            /// `MutateTask` treats THROW like DROP, so missing this check drops the projections.
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(resolved_table, DeferredTable::Load).get())
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "DELETE query is not allowed for table {} because as it has projections and setting "
-                        "lightweight_mutation_projection_mode is set to THROW. "
-                        "User should change lightweight_mutation_projection_mode OR "
-                        "drop all the projections manually before running the query",
-                        table_id.getFullTableName());
+                        "DELETE query is not allowed for table {} because it has projections and its table-level "
+                        "MergeTree setting 'lightweight_mutation_projection_mode' is set to 'throw'. "
+                        "Change this table setting with "
+                        "ALTER TABLE {} MODIFY SETTING lightweight_mutation_projection_mode = 'rebuild' (or 'drop'), "
+                        "or drop all the projections manually before running the query. "
+                        "Note that a query-level or session-level setting with this name has no effect",
+                        table_id.getFullTableName(), table_id.getFullTableName());
         }
 
         /// The cluster case ships the DELETE itself rather than a rewritten ALTER, so that every host
@@ -185,6 +198,10 @@ BlockIO InterpreterDeleteQuery::execute()
 
             DDLQueryOnClusterParams params;
             params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
+            params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()](const String &, bool throw_if_unresolved)
+            {
+                checkNoRowPolicyForSetOperands(captured_query_ptr, table_id.database_name, context, throw_if_unresolved);
+            };
             return executeDDLQueryOnCluster(query_ptr, getContext(), params);
         }
 

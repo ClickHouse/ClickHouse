@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Backups/BackupInfo.h>
+#include <Backups/resolveDefaultedSettings.h>
 #include <Common/SettingsChanges.h>
 #include <map>
 #include <optional>
@@ -27,7 +28,7 @@ enum class RestoreTableCreationMode : uint8_t
 
 using RestoreDatabaseCreationMode = RestoreTableCreationMode;
 
-/// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
+/// How the RESTORE command will handle if a user (or role or profile) which it's going to restore already exists.
 enum class RestoreAccessCreationMode : uint8_t
 {
     /// RESTORE will throw an exception if some user already exists.
@@ -41,6 +42,7 @@ enum class RestoreAccessCreationMode : uint8_t
 };
 
 using RestoreUDFCreationMode = RestoreAccessCreationMode;
+using RestoreNamedCollectionCreationMode = RestoreAccessCreationMode;
 
 using RestoreWorkloadsAndResourcesCreationMode = RestoreAccessCreationMode;
 
@@ -121,7 +123,7 @@ struct RestoreSettings
     /// Setting "allow_non_empty_tables=true" thus can cause data duplication in the table, use with caution.
     bool allow_non_empty_tables = false;
 
-    /// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
+    /// How the RESTORE command will handle if a user (or role or profile) which it's going to restore already exists.
     RestoreAccessCreationMode create_access = RestoreAccessCreationMode::kCreateIfNotExists;
 
     /// Ignore dependencies or dependents (with update_access_entities_dependents=true) of access entities in the case if they can't be resolved.
@@ -153,6 +155,14 @@ struct RestoreSettings
 
     /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
     RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
+
+    /// Whether to restore SQL-created named collections. If not set, defaults to true - even under
+    /// `structure_only`: a table whose engine references a named collection (e.g.
+    /// `ENGINE = URL(collection)`) cannot be created without it.
+    std::optional<bool> restore_named_collections;
+
+    /// How the RESTORE command will handle if a named collection which it's going to restore already exists.
+    RestoreNamedCollectionCreationMode create_named_collection = RestoreNamedCollectionCreationMode::kCreateIfNotExists;
 
     /// How the RESTORE command will handle if a workload or resource which it's going to restore already exists.
     /// WORKLOAD and RESOURCE entities are intertwined (a workload may reference a resource via SETTINGS ... FOR
@@ -210,6 +220,9 @@ struct RestoreSettings
     bool shouldRestoreAccessEntities() const { return restore_access_entities.value_or(!structure_only); }
     bool shouldRestoreFunctions() const { return restore_functions.value_or(!structure_only); }
 
+    /// Named collections are restored even under `structure_only`, see `restore_named_collections`.
+    bool shouldRestoreNamedCollections() const { return restore_named_collections.value_or(true); }
+
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
 
@@ -222,7 +235,7 @@ struct RestoreSettings
     /// `ReplaceQueryParameterVisitor` has substituted query parameters.
     /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
     /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
-    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
+    static CoreSettingsFromQuery extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 };
 
 }

@@ -1,0 +1,8 @@
+<clickhouse>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>

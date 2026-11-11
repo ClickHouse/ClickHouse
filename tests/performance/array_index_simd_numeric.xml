@@ -1,0 +1,44 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>8192</max_block_size>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</create_query>
+    <create_query>
+        CREATE TABLE perf_array_index_simd_numeric (arr Array(UInt32)) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO perf_array_index_simd_numeric
+        SELECT materialize(range(4096)::Array(UInt32))
+        FROM numbers(20000)
+    </fill_query>
+    <!-- Short arrays with the first match just past the scalar prefix, in the first block. -->
+    <create_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric_short</create_query>
+    <create_query>
+        CREATE TABLE perf_array_index_simd_numeric_short (arr Array(UInt32)) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO perf_array_index_simd_numeric_short
+        SELECT arrayMap(x -> if(x = 8 + cityHash64(number) % 8, 0, x + 1), range(24))::Array(UInt32)
+        FROM numbers(4000000)
+    </fill_query>
+    <!-- Keep one representative input, but time each function independently. -->
+    <query>
+        SELECT sum(has(arr, 4294967295))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(arr, 100))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(arr, 0))
+        FROM perf_array_index_simd_numeric_short
+        FORMAT Null
+    </query>
+    <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric_short</drop_query>
+</test>

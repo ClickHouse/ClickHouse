@@ -11,9 +11,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 يدعم ClickHouse معظم تنسيقات البيانات النصية والثنائية المعروفة. يتيح ذلك سهولة التكامل مع أي خط معالجة بيانات
 تقريبًا للاستفادة من مزايا ClickHouse.
 
-<div id="input-formats">
-  ## تنسيقات الإدخال
-</div>
+## تنسيقات الإدخال {#input-formats}
 
 تُستخدم تنسيقات الإدخال في:
 
@@ -36,18 +34,14 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 اقرأ [تحليل المقارنة المعيارية الكامل](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient).
 وللاطلاع على نتائج الاختبار كاملةً، استكشف [لوحة FastFormats](https://fastformats.clickhouse.com/) عبر الإنترنت.
 
-<div id="output-formats">
-  ## تنسيقات الإخراج
-</div>
+## تنسيقات الإخراج {#output-formats}
 
 تُستخدم تنسيقات الإخراج المدعومة من أجل:
 
 * تنسيق نتائج استعلام `SELECT`
 * تنفيذ عمليات `INSERT` في الجداول المعتمدة على الملفات
 
-<div id="formats-overview">
-  ## نظرة عامة على التنسيقات
-</div>
+## نظرة عامة على التنسيقات {#formats-overview}
 
 التنسيقات المدعومة هي:
 
@@ -150,14 +144,15 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 | [DWARF](/ar/reference/formats/DWARF)                                                                                               | ✔       | ✗       |
 | [Markdown](/ar/reference/formats/Markdown)                                                                                         | ✗       | ✔       |
 | [Form](/ar/reference/formats/Form)                                                                                                 | ✔       | ✗       |
+| [PNG](/ar/reference/formats/PNG)                                                                                                   | ✗       | ✔       |
+| [Puffin](/ar/reference/formats/Puffin/Puffin)                                                                                      | ✔       | ✗       |
+| [PuffinMetadata](/ar/reference/formats/Puffin/PuffinMetadata)                                                                      | ✔       | ✗       |
 
 يمكنك التحكّم في بعض معلمات معالجة التنسيق باستخدام إعدادات ClickHouse. لمزيد من المعلومات، راجع قسم [الإعدادات](/ar/reference/settings/formats).
 
 إعدادات إضافية خاصة بتنسيق JSON موثّقة في صفحة [إعدادات تنسيق JSON](/ar/reference/formats/JSON/format-settings).
 
-<div id="formatschema">
-  ## مخطط التنسيق
-</div>
+## مخطط التنسيق {#formatschema}
 
 يُحدَّد اسم الملف الذي يحتوي على مخطط التنسيق بواسطة الإعداد `format_schema`.
 ويجب تعيين هذا الإعداد عند استخدام أحد التنسيقين `Cap'n Proto` و`Protobuf`.
@@ -174,9 +169,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 يجب أن يكون موجودًا في الدليل المحدد في [format&#95;schema&#95;path](/ar/reference/settings/server-settings/settings/format#format_schema_path)
 ضمن إعدادات الخادم.
 
-<div id="skippingerrors">
-  ## تخطي الأخطاء
-</div>
+## تخطي الأخطاء {#skippingerrors}
 
 يمكن لبعض التنسيقات مثل `CSV` و`TabSeparated` و`TSKV` و`JSONEachRow` و`Template` و`CustomSeparated` و`Protobuf` تخطي صف تالف عند حدوث خطأ في التحليل، ومواصلة التحليل من بداية الصف التالي. راجع إعدادَي [input&#95;format&#95;allow&#95;errors&#95;num](/ar/reference/settings/formats/input-format#input_format_allow_errors_num) و
 [input&#95;format&#95;allow&#95;errors&#95;ratio](/ar/reference/settings/formats/input-format#input_format_allow_errors_ratio).
