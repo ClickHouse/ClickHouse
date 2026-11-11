@@ -1,6 +1,6 @@
 ---
 title: 'JOIN memory management and spilling'
-sidebar_label: 'Memory and spilling'
+sidebarTitle: 'Memory and spilling'
 description: 'Limits, spill thresholds, and temporary storage used by ClickHouse JOINs.'
 keywords: ['JOIN memory', 'JOIN spilling', 'max_bytes_in_join', 'grace hash join', 'temporary storage']
 doc_type: 'guide'
@@ -17,6 +17,11 @@ Two groups of settings control JOIN memory. For most algorithms, hard limits sto
 Both limits also apply to the [`Join` table engine](/reference/engines/table-engines/special/join). If a query contains several JOINs, ClickHouse checks the limits for every JOIN.
 
 For hash-based algorithms, including the algorithms that spill to disk, reaching a limit stops the query and never makes a JOIN spill. As a result, a limit at or below the spill threshold normally stops the query before the JOIN can spill.
+
+Two settings change this behavior:
+
+- [`enable_adaptive_memory_spill_scheduler`](/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler) spills eligible processors to disk under query memory pressure. For JOINs, it applies only to a JOIN that can already spill: a `hash`, `parallel_hash`, or `auto` JOIN with a non-zero [spill threshold](#spill-thresholds), a `grace_hash` JOIN, or the block nested loop fallback when temporary storage is configured. Such a JOIN can then be spilled before it reaches the spill threshold or a hard limit.
+- [`legacy_join_size_limits_trigger_spilling`](/reference/settings/session-settings/other#legacy_join_size_limits_trigger_spilling) restores the behavior of versions before 26.10, in which the hard limits make the part of a JOIN that already runs on disk spill further instead of stopping the query. With this setting, `grace_hash` spills on the hard limits alone and ignores the spill thresholds. `hash` and `parallel_hash` still start spilling at the spill threshold and keep treating the hard limits as caps during their in-memory phase.
 
 The limits act differently for other algorithms:
 
@@ -49,5 +54,8 @@ The `ExternalJoinWritePart`, `ExternalJoinCompressedBytes`, and `ExternalJoinUnc
 
 ## Related pages {#related-pages}
 
-- [JOIN algorithms](/concepts/features/operations/select/join-algorithms)
+- [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)
 - [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution)
+- [JOIN algorithms](/concepts/features/operations/select/join-algorithms)
+- [JOIN settings](/concepts/features/operations/select/join-settings)
+- [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins)
