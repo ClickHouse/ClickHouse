@@ -7,9 +7,10 @@ SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 10000000
 
 INSERT INTO t_ephemeral_patch VALUES (7), (9);
 ALTER TABLE t_ephemeral_patch ADD COLUMN b UInt64 DEFAULT 42;
+ALTER TABLE t_ephemeral_patch MATERIALIZE COLUMN b SETTINGS mutations_sync = 2;
 ALTER TABLE t_ephemeral_patch MODIFY COLUMN a UInt64 EPHEMERAL;
 
--- Enable lightweight updates after insertion so the base part still stores only `a`.
+-- Enable lightweight updates after materializing `b`.
 ALTER TABLE t_ephemeral_patch MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1;
 SYSTEM STOP MERGES t_ephemeral_patch;
 
@@ -19,7 +20,7 @@ ALTER TABLE t_ephemeral_patch RENAME COLUMN a TO a_old SETTINGS alter_sync = 0;
 SYSTEM START MERGES t_ephemeral_patch;
 ALTER TABLE t_ephemeral_patch RENAME COLUMN a_old TO a_final SETTINGS alter_sync = 2;
 
--- Historical `a` is only a reader input; the output must preserve the patched `b` values.
+-- The rewrite must omit historical `a` and preserve the patched `b` values.
 SELECT count(), sum(b) FROM t_ephemeral_patch;
 SELECT count() FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_ephemeral_patch' AND active

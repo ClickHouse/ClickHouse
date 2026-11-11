@@ -2456,30 +2456,6 @@ void MutationsInterpreter::Source::read(
 
     if (data)
     {
-        /// Keep historical columns available only to the source reader, which may need one
-        /// to count rows when every requested column is absent from the part. Mutation stages
-        /// retain the current schema, so these columns are not added to the output.
-        std::optional<ColumnsDescription> read_columns;
-        const auto options = GetColumnsOptions(GetColumnsOptions::All)
-            .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
-            .withSubcolumns();
-        for (const auto & column : part->getColumns())
-        {
-            if (storage_snapshot->tryGetColumn(options, column.name))
-                continue;
-
-            if (!read_columns)
-                read_columns.emplace(storage_snapshot->metadata->getColumns());
-            read_columns->add(ColumnDescription(column.name, column.type));
-        }
-
-        if (read_columns)
-        {
-            auto read_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_snapshot->metadata);
-            read_metadata->setColumns(std::move(*read_columns));
-            storage_snapshot = storage_snapshot->clone(std::move(read_metadata), storage_snapshot->data);
-        }
-
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Mutation,
             plan,

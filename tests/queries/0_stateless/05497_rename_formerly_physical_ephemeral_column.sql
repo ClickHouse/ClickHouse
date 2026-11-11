@@ -27,7 +27,7 @@ SELECT id, b_renamed FROM t_rename_formerly_physical_ephemeral ORDER BY id;
 
 DROP TABLE t_rename_formerly_physical_ephemeral;
 
--- No stored columns remain physical in the compact part.
+-- Materialize `b` before converting the last stored physical column in a compact part.
 
 CREATE TABLE t_rename_formerly_physical_ephemeral (a UInt64)
 ENGINE = MergeTree ORDER BY tuple()
@@ -36,6 +36,8 @@ SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 10000000
 
 INSERT INTO t_rename_formerly_physical_ephemeral VALUES (7), (9);
 ALTER TABLE t_rename_formerly_physical_ephemeral ADD COLUMN b UInt64 DEFAULT 42;
+ALTER TABLE t_rename_formerly_physical_ephemeral MODIFY COLUMN a UInt64 EPHEMERAL; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_rename_formerly_physical_ephemeral MATERIALIZE COLUMN b SETTINGS mutations_sync = 2;
 ALTER TABLE t_rename_formerly_physical_ephemeral MODIFY COLUMN a UInt64 EPHEMERAL;
 ALTER TABLE t_rename_formerly_physical_ephemeral RENAME COLUMN a TO a_old;
 
@@ -46,7 +48,7 @@ WHERE database = currentDatabase() AND table = 't_rename_formerly_physical_ephem
 
 DROP TABLE t_rename_formerly_physical_ephemeral;
 
--- No stored columns remain physical in the wide part.
+-- The same restriction applies to wide parts.
 
 CREATE TABLE t_rename_formerly_physical_ephemeral (a UInt64)
 ENGINE = MergeTree ORDER BY tuple()
@@ -57,8 +59,10 @@ INSERT INTO t_rename_formerly_physical_ephemeral VALUES (7), (9);
 SELECT part_type FROM system.parts
 WHERE database = currentDatabase() AND table = 't_rename_formerly_physical_ephemeral' AND active;
 
--- The wide part has no stored columns that remain physical in the table.
+-- Missing `b` does not yet preserve the rows in the wide part.
 ALTER TABLE t_rename_formerly_physical_ephemeral ADD COLUMN b UInt64 DEFAULT 42;
+ALTER TABLE t_rename_formerly_physical_ephemeral MODIFY COLUMN a UInt64 EPHEMERAL; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_rename_formerly_physical_ephemeral MATERIALIZE COLUMN b SETTINGS mutations_sync = 2;
 ALTER TABLE t_rename_formerly_physical_ephemeral MODIFY COLUMN a UInt64 EPHEMERAL;
 ALTER TABLE t_rename_formerly_physical_ephemeral RENAME COLUMN a TO a_old;
 
