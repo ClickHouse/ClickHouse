@@ -1,0 +1,15 @@
+1_honest_initial	current_user	ATTACKER
+1_honest_initial	max_query_size	rejected
+1_honest_initial	policy_rows	attacker-row
+2_forged_victim	current_user	ATTACKER
+2_forged_victim	max_query_size	rejected
+2_forged_victim	policy_rows	attacker-row
+3_forged_default	current_user	ATTACKER
+3_forged_default	max_query_size	rejected
+3_forged_default	policy_rows	attacker-row
+4_forged_unknown	current_user	ATTACKER
+4_forged_unknown	max_query_size	rejected
+4_forged_unknown	policy_rows	attacker-row
+5_forged_empty	current_user	ATTACKER
+5_forged_empty	max_query_size	rejected
+5_forged_empty	policy_rows	attacker-row

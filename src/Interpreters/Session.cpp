@@ -14,6 +14,7 @@
 #include <Common/Crypto/X509Certificate.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
@@ -35,6 +36,11 @@ namespace Setting
 {
     extern const SettingsUInt64 max_sessions_for_user;
     extern const SettingsBool push_external_roles_in_interserver_queries;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool trust_initial_user_without_interserver_secret;
 }
 
 namespace ErrorCodes
@@ -765,16 +771,44 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setInitiatorVersionIfUnset();
     }
 
-    if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    /// An interserver session proved the cluster secret in `TCPHandler`, so the initiator identity it
+    /// replays is authentic. Any other session carries only what the client put on the wire:
+    /// `query_kind`, `initial_user` and `initial_address` can all be set by any native client (even
+    /// `clickhouse-client --query_kind secondary_query`). Gate on the session interface, which is set
+    /// server-side in `TCPHandler::makeSession`, never on the client-controlled per-query `query_kind`.
+    const bool is_interserver_authenticated_session = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER;
+
+    /// A cluster without an interserver `<secret>` forwards the initiator over an unauthenticated
+    /// connection, so trusting it is insecure; the default is to ignore it. This server setting opts
+    /// back into the legacy behavior for backward compatibility on a trusted network.
+    const bool trust_unauthenticated_initiator
+        = global_context->getServerSettings()[ServerSetting::trust_initial_user_without_interserver_secret];
+
+    /// Pin `initial_user` / `initial_address` to the authenticated identity unless the initiator is
+    /// trusted (an authentic interserver query, or the legacy setting above). They are read as the real
+    /// initiator by `currentUser()` (and through it row policies, views and default expressions), by
+    /// `system.user_query_log`, and by the audit columns of `system.query_log` / `system.processes`. For
+    /// an initial query they already equal the current user; for a secondary query over an ordinary
+    /// connection this stops a client from impersonating anyone.
+    if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        || !(is_interserver_authenticated_session || trust_unauthenticated_initiator))
     {
         query_context->setInitialUserName(query_context->getClientInfo().current_user);
         query_context->setInitialAddress(*query_context->getClientInfo().current_address);
     }
 
+    /// The `TCP_INTERSERVER` per-query interface is produced only server-side (`TCPHandler`, in
+    /// interserver mode); no ordinary client sends it. A forged one would make a secondary query look
+    /// authenticated to code that keys off the interface (e.g. the `max_query_size` lift in
+    /// `executeQuery`), so drop it back to the real session interface on a non-interserver session.
+    if (!is_interserver_authenticated_session
+        && query_context->getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER)
+        query_context->setClientInterface(getClientInfo().interface);
+
     /// On a secret interserver query, enable the initiator's current roles (external, bypassing the grant check)
     /// and drop defaults so row policies match. Gate on the session interface, not the client-controlled per-query one.
     std::vector<UUID> effective_external_roles = external_roles;
-    const bool apply_initiator_roles = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
+    const bool apply_initiator_roles = is_interserver_authenticated_session
         && query_context->getClientInfo().current_roles.has_value()
         && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
     if (apply_initiator_roles)
