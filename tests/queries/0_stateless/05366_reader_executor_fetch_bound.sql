@@ -35,6 +35,7 @@ SELECT
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05366_two_ranges', '05366_two_ranges_long_connections')
-ORDER BY log_comment;
+ORDER BY log_comment
+FORMAT TSVWithNames;
 
 DROP TABLE t_fetch_bound;

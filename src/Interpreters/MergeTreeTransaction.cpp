@@ -13,6 +13,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/retryTransientStoreError.h>
 #if CLICKHOUSE_CLOUD
 #include <Storages/StorageSharedMergeTree.h>
 #endif
@@ -47,6 +48,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char transaction_after_commit_pause[];
+    extern const char transaction_pause_before_mutation_csn_store[];
     extern const char transaction_rollback_pause_after_mark[];
     extern const char transaction_rollback_reset_removal_tid_fail[];
 }
@@ -187,23 +189,28 @@ void NonTransactionalRemovalLocks::store()
 
 void MergeTreeTransaction::removeOldPart(
     const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn,
-    LockKind kind, NonTransactionalRemovalLocks & removal_locks)
+    LockKind kind, NonTransactionalRemovalLocks * removal_locks)
 {
+    TransactionInfoContext transaction_context{storage->getStorageID(), part_to_remove->name};
+
     if (txn)
     {
         /// Lock part for removal and write current TID into version metadata file.
         /// If server crash just after committing transactions
         /// we will find this TID in version metadata and will finally remove part.
-        TransactionInfoContext transaction_context{storage->getStorageID(), part_to_remove->name};
         txn->removeOldPart(storage, part_to_remove, transaction_context, kind);
         return;
     }
-    removal_locks.lock(storage, /*covering_part=*/ nullptr, {part_to_remove}, kind);
+
+    if (removal_locks)
+        removal_locks->lock(storage, /*covering_part=*/ nullptr, {part_to_remove}, kind);
+    else
+        part_to_remove->version->setAndStoreNonTransactionalRemovalTID(kind, transaction_context);
 }
 
 void MergeTreeTransaction::addNewPartAndRemoveCovered(
     const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts,
-    MergeTreeTransaction * txn, LockKind kind, NonTransactionalRemovalLocks & removal_locks)
+    MergeTreeTransaction * txn, LockKind kind, NonTransactionalRemovalLocks * removal_locks)
 {
     TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
     TransactionInfoContext transaction_context{storage->getStorageID(), new_part->name};
@@ -234,7 +241,18 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(
     }
     else
     {
-        removal_locks.lock(storage, new_part, covered_parts, kind);
+        if (removal_locks)
+        {
+            removal_locks->lock(storage, new_part, covered_parts, kind);
+        }
+        else
+        {
+            for (const auto & covered : covered_parts)
+            {
+                transaction_context.part_name = covered->name;
+                covered->version->setAndStoreNonTransactionalRemovalTID(kind, transaction_context);
+            }
+        }
     }
 }
 
@@ -468,6 +486,8 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    /// The metadata writes below retry a transient storage error: no caller is left to report it to.
+    TransientStoreRetryScope retry_scope;
     /// A cancelled query or merge must not interrupt this: an escaping exception terminates the server.
     ThreadStatus::QueryCancellationBlocker cancellation_blocker;
 
@@ -509,6 +529,9 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
         removed.part->version->setAndStoreRemovalCSN(assigned_csn);
     }
 
+    /// Test-only pause point: lets `KILL MUTATION` erase a committed mutation before its CSN is stored.
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_pause_before_mutation_csn_store);
+
     for (const auto & storage_and_mutation : committed_mutations)
         storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, assigned_csn);
 
@@ -538,6 +561,8 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    /// The metadata writes below retry a transient storage error: no caller is left to report it to.
+    TransientStoreRetryScope retry_scope;
     /// A cancelled query or merge must not interrupt this: an escaping exception terminates the server.
     ThreadStatus::QueryCancellationBlocker cancellation_blocker;
     /// Exclusive like `beforeCommit`: a background merge holds the gate across both its commit `multi`

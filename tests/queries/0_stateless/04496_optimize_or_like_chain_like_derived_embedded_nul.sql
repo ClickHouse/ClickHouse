@@ -16,12 +16,12 @@ CREATE TABLE t_or_like_nul_derived (s String) ENGINE = Memory;
 INSERT INTO t_or_like_nul_derived VALUES ('aXb'), ('a\0b'), ('cd');
 
 -- Baseline (rewrite disabled): only 'a\0b' and 'cd' match -> 2.
-SELECT count() FROM t_or_like_nul_derived WHERE s LIKE 'a\0_' OR s LIKE 'cd' SETTINGS optimize_or_like_chain = 0, enable_analyzer = 1;
+SELECT count() FROM t_or_like_nul_derived WHERE s LIKE 'a\0_' OR s LIKE 'cd' SETTINGS optimize_or_like_chain = 0;
 
 -- Rewrite enabled with Hyperscan allowed: must still give 2 (must not take the truncating `multiMatchAny`).
-SELECT count() FROM t_or_like_nul_derived WHERE s LIKE 'a\0_' OR s LIKE 'cd' SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 1, enable_analyzer = 1;
+SELECT count() FROM t_or_like_nul_derived WHERE s LIKE 'a\0_' OR s LIKE 'cd' SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 1;
 
 -- Rewrite enabled with Hyperscan disabled (no fast path applies -> keep originals): 2.
-SELECT count() FROM t_or_like_nul_derived WHERE s LIKE 'a\0_' OR s LIKE 'cd' SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 0, enable_analyzer = 1;
+SELECT count() FROM t_or_like_nul_derived WHERE s LIKE 'a\0_' OR s LIKE 'cd' SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 0;
 
 DROP TABLE t_or_like_nul_derived;

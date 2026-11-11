@@ -2,12 +2,14 @@
 
 #include <array>
 #include <atomic>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/SetSpillable.h>
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
@@ -65,7 +67,7 @@ struct IEJoinResidualCondition
 
     ExpressionActionsPtr actions;
     /// One entry per required column of `actions`, in `getRequiredColumnsWithTypes` order.
-    std::vector<Source> inputs;
+    VectorWithMemoryTracking<Source> inputs;
 };
 
 /*
@@ -94,6 +96,7 @@ public:
         size_t max_block_bytes_);
 
     const char * getName() const override { return "IEJoinAlgorithm"; }
+    std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -263,11 +266,12 @@ private:
     std::array<KeyOrder, 2> key_order;
     /// The residual ON condition gating candidate pairs, if any.
     std::optional<IEJoinResidualCondition> residual;
+    SetSpillables set_spillables;
     const std::atomic<bool> * is_cancelled = nullptr;
     /// Header of the residual's input columns (in its required-columns order) and the
     /// precomputed input positions for `ExpressionActions::executeOnColumns`.
     Block residual_input_header;
-    std::vector<ssize_t> residual_input_positions;
+    VectorWithMemoryTracking<ssize_t> residual_input_positions;
     /// The inputs are each sorted by the first condition's key (ascending, NULLS LAST):
     /// selects the merge-based L1 build; with the flag off the operator orders the union
     /// itself with an index sort.
@@ -393,6 +397,7 @@ public:
         size_t max_block_bytes);
 
     String getName() const override { return "IEJoinTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return algorithm.getSpillables(); }
 
 protected:
     void onCancel() noexcept override;

@@ -108,7 +108,7 @@ VectorWithMemoryTracking<CacheWriter *> ReadPlan::writersFor(ByteRange range) co
     return writers;
 }
 
-std::optional<size_t> ReadPlan::appendOnlyCellEnd(size_t offset) const
+std::optional<size_t> ReadPlan::missSegmentEndFor(size_t offset) const
 {
     std::optional<size_t> end;
     for (const auto & tier : tiers)

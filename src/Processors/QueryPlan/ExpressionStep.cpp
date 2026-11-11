@@ -129,7 +129,7 @@ void ExpressionStep::updateOutputHeader()
 
 void ExpressionStep::serialize(Serialization & ctx) const
 {
-    actions_dag.serialize(ctx.out, ctx.registry);
+    actions_dag.serialize(ctx.out, ctx.registry, ctx.input_header);
 }
 
 QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
