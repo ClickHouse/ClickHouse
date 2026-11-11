@@ -84,8 +84,8 @@ public:
     /// `INSERT ... SELECT` keeps the arguments as written: every node inserts on its own, and with an omitted or
     /// `'auto'` structure it takes the structure from the insertion table
     /// (`use_structure_from_insertion_table_in_table_functions`), which carries the `DEFAULT` expressions for the
-    /// fields missing in the files. The structure of the storage has names and types only, so adding it would make
-    /// the nodes fill those fields with the default values of their types.
+    /// fields missing in the files. The structure added for a `SELECT` carries only the `DEFAULT`s a node can evaluate
+    /// from it, so adding it would make the nodes fill the other fields with the default values of their types.
     virtual void updateQueryToSendIfNeeded(
         ASTPtr & /*query*/,
         const StorageSnapshotPtr & /*storage_snapshot*/,
