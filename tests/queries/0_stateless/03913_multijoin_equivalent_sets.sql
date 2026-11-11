@@ -17,7 +17,6 @@ INSERT INTO t3 SELECT number, toString(number) AS value FROM numbers(100_000);
 INSERT INTO t4 SELECT number, toString(number) AS value FROM numbers(100_000);
 INSERT INTO t5 SELECT number, toString(number) AS value FROM numbers(100_000);
 
-SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 0;
 SET optimize_move_to_prewhere = 1;

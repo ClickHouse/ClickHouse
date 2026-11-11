@@ -7,7 +7,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 
