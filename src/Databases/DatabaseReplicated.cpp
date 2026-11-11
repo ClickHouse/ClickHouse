@@ -2858,12 +2858,10 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
 
 void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                        const String & table_metadata_tmp_path, const String & table_metadata_path,
-                       ContextPtr query_context)
+                       const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
     chassert(txn || !isDDLWorkerCurrentlyActive());
-
-    String statement = getObjectDefinitionFromCreateQuery(query.clone());
 
     /// For CREATE OR REPLACE, the metadata node for the temporary table is intentionally omitted
     /// from the transaction because renameTable will create it under the final name atomically.
@@ -2886,7 +2884,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
-    DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
+    DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, statement, query_context);
     tables_metadata_digest = new_digest;
 
     /// commitCreateTable() commits the txn, so no need to try to attach it to txn
