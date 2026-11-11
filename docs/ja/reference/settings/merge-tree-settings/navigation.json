@@ -1,7 +1,6 @@
 {
-  "group": "MergeTree テーブルの設定",
-  "root": "ja/reference/settings/merge-tree-settings",
   "directory": "none",
+  "group": "MergeTree テーブルの設定",
   "pages": [
     "ja/reference/settings/merge-tree-settings/add-minmax",
     "ja/reference/settings/merge-tree-settings/allow",
@@ -85,5 +84,6 @@
     "ja/reference/settings/merge-tree-settings/write-ahead",
     "ja/reference/settings/merge-tree-settings/zero-copy",
     "ja/reference/settings/merge-tree-settings/other"
-  ]
+  ],
+  "root": "ja/reference/settings/merge-tree-settings"
 }

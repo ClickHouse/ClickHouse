@@ -60,8 +60,8 @@
       "pages": [
         "ja/resources/changelogs/oss/2026",
         {
-          "group": "アーカイブ",
           "expanded": false,
+          "group": "アーカイブ",
           "pages": [
             "ja/resources/changelogs/oss/2025",
             "ja/resources/changelogs/oss/2024",

@@ -1,7 +1,6 @@
 {
-  "group": "세션 설정",
-  "root": "ko/reference/settings/session-settings",
   "directory": "none",
+  "group": "세션 설정",
   "pages": [
     "ko/reference/settings/session-settings/additional",
     "ko/reference/settings/session-settings/aggregate",
@@ -168,7 +167,6 @@
     "ko/reference/settings/session-settings/mysql-map",
     "ko/reference/settings/session-settings/network",
     "ko/reference/settings/session-settings/number-of",
-    "ko/reference/settings/session-settings/obfuscate-markov",
     "ko/reference/settings/session-settings/odbc-bridge",
     "ko/reference/settings/session-settings/opentelemetry-start",
     "ko/reference/settings/session-settings/opentelemetry-trace",
@@ -264,5 +262,6 @@
     "ko/reference/settings/session-settings/weight-lowering",
     "ko/reference/settings/session-settings/write-through-distributed-cache",
     "ko/reference/settings/session-settings/other"
-  ]
+  ],
+  "root": "ko/reference/settings/session-settings"
 }

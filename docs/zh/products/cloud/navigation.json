@@ -147,8 +147,7 @@
             "zh/products/cloud/guides/security/saml-sso-removal",
             "zh/products/cloud/guides/security/cloud-access-management/scim-setup",
             "zh/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
-            "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
+            "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
           ]
         }
       ]
@@ -307,8 +306,8 @@
         {
           "group": "API 参考文档",
           "openapi": {
-            "source": "_specs/cloud-openapi.json",
-            "directory": "zh/products/cloud/api-reference"
+            "directory": "zh/products/cloud/api-reference",
+            "source": "_specs/cloud-openapi.json"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"

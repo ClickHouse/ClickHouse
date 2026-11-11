@@ -28,7 +28,7 @@
         ]
       },
       {
-        "group": "通知",
+        "group": "Notifications",
         "pages": [
           "products/cloud/api-reference/notifications/notification-get-list",
           "products/cloud/api-reference/notifications/notification-types-get-list",
@@ -142,7 +142,7 @@
         ]
       },
       {
-        "group": "スナップショット",
+        "group": "Snapshot",
         "pages": [
           "products/cloud/api-reference/snapshot/snapshot-get-list",
           "products/cloud/api-reference/snapshot/snapshot-get",
@@ -151,7 +151,7 @@
         ]
       },
       {
-        "group": "クエリ API エンドポイント",
+        "group": "Query API endpoints",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
@@ -161,7 +161,7 @@
         ]
       },
       {
-        "group": "保存クエリ",
+        "group": "Saved queries",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",

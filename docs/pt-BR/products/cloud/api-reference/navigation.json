@@ -28,7 +28,7 @@
         ]
       },
       {
-        "group": "Notificações",
+        "group": "Notifications",
         "pages": [
           "products/cloud/api-reference/notifications/notification-get-list",
           "products/cloud/api-reference/notifications/notification-types-get-list",
@@ -59,7 +59,7 @@
         ]
       },
       {
-        "group": "Gerenciamento de Funções",
+        "group": "Gerenciamento de funções",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -142,7 +142,7 @@
         ]
       },
       {
-        "group": "Captura instantânea",
+        "group": "Snapshot",
         "pages": [
           "products/cloud/api-reference/snapshot/snapshot-get-list",
           "products/cloud/api-reference/snapshot/snapshot-get",
@@ -151,7 +151,7 @@
         ]
       },
       {
-        "group": "Endpoints da API de consultas",
+        "group": "Query API endpoints",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
@@ -161,7 +161,7 @@
         ]
       },
       {
-        "group": "Consultas salvas",
+        "group": "Saved queries",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",

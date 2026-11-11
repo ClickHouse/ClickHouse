@@ -54,7 +54,6 @@
         {
           "group": "وضع الموصل",
           "hidden": true,
-          "tag": "Preview",
           "pages": [
             "ar/products/bring-your-own-cloud/connector/overview",
             "ar/products/bring-your-own-cloud/connector/onboarding",
@@ -69,7 +68,8 @@
             "ar/products/bring-your-own-cloud/connector/reference/configuration",
             "ar/products/bring-your-own-cloud/connector/reference/faq",
             "ar/products/bring-your-own-cloud/connector/reference/privilege-model"
-          ]
+          ],
+          "tag": "Preview"
         }
       ]
     }

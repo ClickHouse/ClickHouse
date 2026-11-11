@@ -1,7 +1,6 @@
 {
-  "group": "格式设置",
-  "root": "zh/reference/settings/formats",
   "directory": "none",
+  "group": "格式设置",
   "pages": [
     "zh/reference/settings/formats/bool",
     "zh/reference/settings/formats/date-time",
@@ -20,5 +19,6 @@
     "zh/reference/settings/formats/show-create",
     "zh/reference/settings/formats/type-json",
     "zh/reference/settings/formats/other"
-  ]
+  ],
+  "root": "zh/reference/settings/formats"
 }

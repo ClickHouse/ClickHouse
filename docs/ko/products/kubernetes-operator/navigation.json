@@ -1,11 +1,10 @@
 {
   "item": "Kubernetes Operator",
-  "icon": "/images/icons/icon-kubernetes-operator.svg",
   "pages": [
     "ko/products/kubernetes-operator/overview",
     {
-      "group": "설치",
       "expanded": true,
+      "group": "설치",
       "pages": [
         "ko/products/kubernetes-operator/install/kubectl",
         "ko/products/kubernetes-operator/install/helm",
@@ -13,8 +12,8 @@
       ]
     },
     {
-      "group": "가이드",
       "expanded": true,
+      "group": "가이드",
       "pages": [
         "ko/products/kubernetes-operator/guides/introduction",
         "ko/products/kubernetes-operator/guides/configuration",
@@ -27,8 +26,8 @@
       ]
     },
     {
-      "group": "참고",
       "expanded": true,
+      "group": "참고",
       "pages": [
         "ko/products/kubernetes-operator/reference/api-reference"
       ]

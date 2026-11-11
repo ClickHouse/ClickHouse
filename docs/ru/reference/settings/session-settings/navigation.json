@@ -1,7 +1,6 @@
 {
-  "group": "Настройки сеанса",
-  "root": "ru/reference/settings/session-settings",
   "directory": "none",
+  "group": "Настройки сеанса",
   "pages": [
     "ru/reference/settings/session-settings/additional",
     "ru/reference/settings/session-settings/aggregate",
@@ -168,7 +167,6 @@
     "ru/reference/settings/session-settings/mysql-map",
     "ru/reference/settings/session-settings/network",
     "ru/reference/settings/session-settings/number-of",
-    "ru/reference/settings/session-settings/obfuscate-markov",
     "ru/reference/settings/session-settings/odbc-bridge",
     "ru/reference/settings/session-settings/opentelemetry-start",
     "ru/reference/settings/session-settings/opentelemetry-trace",
@@ -264,5 +262,6 @@
     "ru/reference/settings/session-settings/weight-lowering",
     "ru/reference/settings/session-settings/write-through-distributed-cache",
     "ru/reference/settings/session-settings/other"
-  ]
+  ],
+  "root": "ru/reference/settings/session-settings"
 }

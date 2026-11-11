@@ -1,6 +1,5 @@
 {
   "item": "ClickPipes",
-  "root": "zh/integrations/clickpipes/home",
   "pages": [
     "zh/integrations/clickpipes/home",
     {
@@ -204,14 +203,6 @@
       ]
     },
     {
-      "group": "安全与访问",
-      "icon": "shield-check",
-      "pages": [
-        "zh/integrations/clickpipes/security/aws-iam-role",
-        "zh/integrations/clickpipes/security/gcp-workload-identity"
-      ]
-    },
-    {
       "group": "网络",
       "icon": "network-wired",
       "pages": [
@@ -224,5 +215,6 @@
     },
     "zh/integrations/clickpipes/monitoring",
     "zh/integrations/clickpipes/dynamodb"
-  ]
+  ],
+  "root": "zh/integrations/clickpipes/home"
 }

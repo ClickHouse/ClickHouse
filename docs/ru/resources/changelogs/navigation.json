@@ -60,8 +60,8 @@
       "pages": [
         "ru/resources/changelogs/oss/2026",
         {
-          "group": "Архив",
           "expanded": false,
+          "group": "Архив",
           "pages": [
             "ru/resources/changelogs/oss/2025",
             "ru/resources/changelogs/oss/2024",

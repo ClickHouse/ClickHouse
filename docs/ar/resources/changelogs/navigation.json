@@ -60,8 +60,8 @@
       "pages": [
         "ar/resources/changelogs/oss/2026",
         {
-          "group": "الأرشيف",
           "expanded": false,
+          "group": "الأرشيف",
           "pages": [
             "ar/resources/changelogs/oss/2025",
             "ar/resources/changelogs/oss/2024",

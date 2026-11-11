@@ -1,6 +1,5 @@
 {
   "item": "ClickPipes",
-  "root": "ko/integrations/clickpipes/home",
   "pages": [
     "ko/integrations/clickpipes/home",
     {
@@ -204,14 +203,6 @@
       ]
     },
     {
-      "group": "보안 및 액세스",
-      "icon": "shield-check",
-      "pages": [
-        "ko/integrations/clickpipes/security/aws-iam-role",
-        "ko/integrations/clickpipes/security/gcp-workload-identity"
-      ]
-    },
-    {
       "group": "네트워킹",
       "icon": "network-wired",
       "pages": [
@@ -224,5 +215,6 @@
     },
     "ko/integrations/clickpipes/monitoring",
     "ko/integrations/clickpipes/dynamodb"
-  ]
+  ],
+  "root": "ko/integrations/clickpipes/home"
 }

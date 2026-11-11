@@ -97,27 +97,19 @@
         "es/clickstack/features/event-patterns",
         "es/clickstack/features/event-deltas",
         "es/clickstack/features/alerts",
-        "es/clickstack/features/anomaly-detection",
         "es/clickstack/service-maps",
         "es/clickstack/features/session-replay",
         "es/clickstack/mcp",
         "es/clickstack/url-parameters",
         {
-          "group": "Demo days",
+          "group": "Jornadas de demostración",
           "pages": [
             "es/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
                 {
-                  "group": "octubre",
-                  "pages": [
-                    "es/clickstack/demo-days/2026/2026-10-08",
-                    "es/clickstack/demo-days/2026/2026-10-01"
-                  ]
-                },
-                {
-                  "group": "septiembre",
+                  "group": "Septiembre",
                   "pages": [
                     "es/clickstack/demo-days/2026/2026-09-24",
                     "es/clickstack/demo-days/2026/2026-09-17",
@@ -126,7 +118,7 @@
                   ]
                 },
                 {
-                  "group": "agosto",
+                  "group": "Agosto",
                   "pages": [
                     "es/clickstack/demo-days/2026/2026-08-28",
                     "es/clickstack/demo-days/2026/2026-08-21",
@@ -135,7 +127,7 @@
                   ]
                 },
                 {
-                  "group": "julio",
+                  "group": "Julio",
                   "pages": [
                     "es/clickstack/demo-days/2026/2026-07-31",
                     "es/clickstack/demo-days/2026/2026-07-24",
@@ -145,7 +137,7 @@
                   ]
                 },
                 {
-                  "group": "junio",
+                  "group": "Junio",
                   "pages": [
                     "es/clickstack/demo-days/2026/2026-06-26",
                     "es/clickstack/demo-days/2026/2026-06-18",
@@ -154,7 +146,7 @@
                   ]
                 },
                 {
-                  "group": "mayo",
+                  "group": "Mayo",
                   "pages": [
                     "es/clickstack/demo-days/2026/2026-05-29",
                     "es/clickstack/demo-days/2026/2026-05-22",
@@ -163,7 +155,7 @@
                   ]
                 },
                 {
-                  "group": "abril",
+                  "group": "Abril",
                   "pages": [
                     "es/clickstack/demo-days/2026/2026-04-17",
                     "es/clickstack/demo-days/2026/2026-04-10",
@@ -295,8 +287,8 @@
       "expanded": true,
       "group": "Referencia de la API",
       "openapi": {
-        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
-        "directory": "es/clickstack/api-reference"
+        "directory": "es/clickstack/api-reference",
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
       },
       "root": "es/clickstack/api-reference"
     }

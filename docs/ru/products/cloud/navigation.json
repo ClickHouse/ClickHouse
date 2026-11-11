@@ -147,8 +147,7 @@
             "ru/products/cloud/guides/security/saml-sso-removal",
             "ru/products/cloud/guides/security/cloud-access-management/scim-setup",
             "ru/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
-            "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
+            "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
           ]
         }
       ]
@@ -307,8 +306,8 @@
         {
           "group": "Справочник по API",
           "openapi": {
-            "source": "_specs/cloud-openapi.json",
-            "directory": "ru/products/cloud/api-reference"
+            "directory": "ru/products/cloud/api-reference",
+            "source": "_specs/cloud-openapi.json"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"

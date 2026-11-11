@@ -1,6 +1,5 @@
 {
   "item": "ClickPipes",
-  "root": "ru/integrations/clickpipes/home",
   "pages": [
     "ru/integrations/clickpipes/home",
     {
@@ -204,14 +203,6 @@
       ]
     },
     {
-      "group": "Безопасность и доступ",
-      "icon": "shield-check",
-      "pages": [
-        "ru/integrations/clickpipes/security/aws-iam-role",
-        "ru/integrations/clickpipes/security/gcp-workload-identity"
-      ]
-    },
-    {
       "group": "Сетевые подключения",
       "icon": "network-wired",
       "pages": [
@@ -224,5 +215,6 @@
     },
     "ru/integrations/clickpipes/monitoring",
     "ru/integrations/clickpipes/dynamodb"
-  ]
+  ],
+  "root": "ru/integrations/clickpipes/home"
 }

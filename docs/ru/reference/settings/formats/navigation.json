@@ -1,7 +1,6 @@
 {
-  "group": "Настройки формата",
-  "root": "ru/reference/settings/formats",
   "directory": "none",
+  "group": "Настройки формата",
   "pages": [
     "ru/reference/settings/formats/bool",
     "ru/reference/settings/formats/date-time",
@@ -20,5 +19,6 @@
     "ru/reference/settings/formats/show-create",
     "ru/reference/settings/formats/type-json",
     "ru/reference/settings/formats/other"
-  ]
+  ],
+  "root": "ru/reference/settings/formats"
 }
