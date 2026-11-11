@@ -7,6 +7,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -140,10 +141,10 @@ public:
             SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const;
     };
 
-    /// NOTE: std::list is an implementation detail.
+    /// NOTE: the list is an implementation detail.
     /// It allows to add and remove new nodes inplace without reallocation.
     /// Raw pointers to nodes remain valid.
-    using Nodes = std::list<Node>;
+    using Nodes = ListWithMemoryTracking<Node>;
 
 private:
     Nodes nodes;
@@ -320,6 +321,9 @@ public:
     /// constant, and a kept predicate is an ordinary output that removing unused columns can drop.
     void foldFilterPredicateThroughMaterialize(std::string & filter_column_name, bool & remove_filter_column, const Block & input_header);
 
+    /// The constant that `foldFilterPredicateThroughMaterialize` would fold the predicate `node` to, or nullptr.
+    static ColumnConstPtr tryFoldPredicateThroughMaterialize(const Node * node);
+
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
     void deduplicateSubtrees();
@@ -361,11 +365,17 @@ public:
     /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
     /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
     static bool hasUnsafeHiddenLambdaBody(const Node & node, const std::function<bool(const IFunctionBase &)> & is_unsafe);
+    /// Inputs below `root` (or `roots`, in one walk) read by a `!isDeterministic()` function, also through a lambda body: the result
+    /// may depend on their representation (e.g. constness). `outermost_readers`, if set, receives each node where such a read starts.
+    static std::unordered_set<const Node *> getInputsReadByRepresentation(const Node & root, NodeRawConstPtrs * outermost_readers = nullptr);
+    static std::unordered_set<const Node *> getInputsReadByRepresentation(const NodeRawConstPtrs & roots, NodeRawConstPtrs * outermost_readers = nullptr);
     /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
     bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    /// The functions `compileExpressions` compiled into `function`, or nullptr if it is not a compiled expression.
+    static const std::vector<FunctionBasePtr> * getCompiledFunctions(const IFunctionBase & function);
 #endif
 
     using NodeMapping = std::unordered_map<const Node *, const Node *>;
