@@ -241,6 +241,7 @@ public:
         , part_rows(std::move(part_rows_))
         , next_part_offsets(part_rows.size())
         , dropped_values(part_rows.size())
+        , surviving_rows(part_rows.size())
         , finalized(false)
     {
         /// Consecutive dropped rows of a part have equal values.
@@ -302,6 +303,7 @@ public:
             offset_map.insert((num_rows << 1) | 1);
             dropped_value = (num_rows + 1) << 1;
             ++next_offset;
+            ++surviving_rows[part_index];
             ++num_rows;
         }
     }
@@ -337,6 +339,14 @@ public:
         chassert(mode != MappingMode::Disabled);
         chassert(part_index < offset_maps.size());
         return offset_maps[part_index].size();
+    }
+
+    /// Number of source rows of the part that survive the merge.
+    UInt64 getPartSurvivingRowsCount(UInt64 part_index) const
+    {
+        chassert(mode == MappingMode::EnabledWithDrops);
+        chassert(part_index < surviving_rows.size());
+        return surviving_rows[part_index];
     }
 
     /// Finalizes all _part_offset maps and releases temporary buffers.
@@ -400,6 +410,7 @@ public:
         part_rows.clear();
         next_part_offsets.clear();
         dropped_values.clear();
+        surviving_rows.clear();
         num_rows = 0;
     }
 
@@ -411,6 +422,7 @@ private:
     std::vector<UInt64> part_rows;          /// Number of source rows per part
     std::vector<UInt64> next_part_offsets;  /// Next expected source offset per part
     std::vector<UInt64> dropped_values;     /// Encoded value for dropped rows per part
+    std::vector<UInt64> surviving_rows;     /// Number of surviving source rows per part
 
     bool finalized;
 

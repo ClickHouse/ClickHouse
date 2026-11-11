@@ -648,6 +648,9 @@ TEST(MergedPartOffsetsTest, DropsBasic)
     EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 1), std::nullopt);
     EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 2), std::nullopt);
     EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 3), 3);
+
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(0), 2);
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(1), 2);
 }
 
 TEST(MergedPartOffsetsTest, DropsNothingDropped)
@@ -690,6 +693,11 @@ TEST(MergedPartOffsetsTest, DropsWholePartAndEmptyPart)
 
     for (UInt64 offset = 0; offset < 4; ++offset)
         EXPECT_EQ(merged_offsets.tryGetNewOffset(1, offset), std::nullopt);
+
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(0), 2);
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(1), 0);
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(2), 0);
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(3), 2);
 }
 
 TEST(MergedPartOffsetsTest, DropsAllRowsDropped)

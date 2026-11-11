@@ -2942,6 +2942,11 @@ bool MergeTask::MergeTextIndexStage::prepare() const
                 if (part->rows_count == 0)
                     continue;
 
+                /// Nor does a part whose rows were all dropped by the merge.
+                if (global_ctx->merged_part_offsets->isMappingWithDrops()
+                    && global_ctx->merged_part_offsets->getPartSurvivingRowsCount(part_idx) == 0)
+                    continue;
+
                 if (index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
                 {
                     /// If text index exists in the source part, take it as is.
