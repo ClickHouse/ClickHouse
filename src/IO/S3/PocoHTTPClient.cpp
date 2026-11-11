@@ -1067,7 +1067,6 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFr
     /// The token endpoint comes from the user-provided key, validate it against the allowed hosts.
     remote_host_filter.checkURL(Poco::URI(token_endpoint));
 
-    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
     auto result = fetchGCPOAuthTokenWithJWTAssertion(assertion, token_endpoint, getCredentialAcquisitionTimeouts(timeouts), group);
     return
     {
