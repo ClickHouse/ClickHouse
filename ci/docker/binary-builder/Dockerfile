@@ -33,6 +33,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         zlib1g-dev \
         python3-boto3 \
         pigz \
+        libjemalloc2 \
         yasm \
         zstd \
         zip \

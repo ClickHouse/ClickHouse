@@ -612,6 +612,21 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
         # ThinLTO generates code in the linker, which does not see -falign-loops.
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")
+
+        # lld runs the ThinLTO backends in one thread per core, and they contend in glibc malloc.
+        # The linker's allocator does not change the linked output.
+        option(ENABLE_THINLTO_LINK_JEMALLOC "Preload the host's jemalloc into ThinLTO links if it is installed" ON)
+        if (ENABLE_THINLTO_LINK_JEMALLOC AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux"
+            AND NOT CMAKE_C_LINKER_LAUNCHER AND NOT CMAKE_CXX_LINKER_LAUNCHER)
+            find_file(THINLTO_LINK_JEMALLOC NAMES libjemalloc.so.2
+                PATHS "/usr/lib/${CMAKE_HOST_SYSTEM_PROCESSOR}-linux-gnu" /usr/local/lib /usr/lib64 /usr/lib
+                NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+            if (THINLTO_LINK_JEMALLOC)
+                message (STATUS "ThinLTO links preload ${THINLTO_LINK_JEMALLOC}")
+                set (CMAKE_C_LINKER_LAUNCHER "${CMAKE_COMMAND};-E;env;LD_PRELOAD=${THINLTO_LINK_JEMALLOC}")
+                set (CMAKE_CXX_LINKER_LAUNCHER "${CMAKE_COMMAND};-E;env;LD_PRELOAD=${THINLTO_LINK_JEMALLOC}")
+            endif ()
+        endif ()
     endif()
 
     if (ENABLE_CFI)
