@@ -32,19 +32,7 @@ The Python SDK is in beta. See the [Python feature status](https://hypequery.com
 <ConnectionDetails />
 
 </Step>
-<Step title="Create a read-only user for hypequery" id="2-create-a-read-only-user">
-
-hypequery only reads from ClickHouse, so give it a dedicated read-only user. Use `readonly = 2`, which blocks writes and schema changes but still lets hypequery apply per-query limits such as `max_execution_time`:
-
-```sql
-CREATE USER hypequery IDENTIFIED BY '<password>' SETTINGS readonly = 2;
-GRANT SELECT ON analytics.* TO hypequery;
-```
-
-Replace `analytics` with the database your application reads from. To stop a query from raising a limit past what you allow, add [constraints on settings](/concepts/features/configuration/settings/constraints-on-settings) to the user's profile. See [read-only ClickHouse users](https://hypequery.com/docs/reference/readonly-users) for how hypequery behaves with `readonly = 1`.
-
-</Step>
-<Step title="Install hypequery" id="3-install-hypequery">
+<Step title="Install hypequery" id="2-install-hypequery">
 
 <Tabs>
 <Tab title="TypeScript">
@@ -65,7 +53,7 @@ pip install "hypequery[clickhouse]"
 </Tabs>
 
 </Step>
-<Step title="Configure the connection" id="4-configure-the-connection">
+<Step title="Configure the connection" id="3-configure-the-connection">
 
 Add the connection details from step 1 to your application's environment. The two SDKs read different variables.
 
@@ -75,7 +63,7 @@ Add the connection details from step 1 to your application's environment. The tw
 ```bash
 CLICKHOUSE_URL=https://<your-service>.clickhouse.cloud:8443
 CLICKHOUSE_DATABASE=analytics
-CLICKHOUSE_USERNAME=hypequery
+CLICKHOUSE_USERNAME=<username>
 CLICKHOUSE_PASSWORD=<password>
 ```
 
@@ -87,7 +75,7 @@ CLICKHOUSE_HOST=<your-service>.clickhouse.cloud
 CLICKHOUSE_PORT=8443
 CLICKHOUSE_SECURE=true
 CLICKHOUSE_DATABASE=analytics
-CLICKHOUSE_USERNAME=hypequery
+CLICKHOUSE_USERNAME=<username>
 CLICKHOUSE_PASSWORD=<password>
 ```
 
@@ -97,7 +85,7 @@ Set `CLICKHOUSE_SECURE=true` for ClickHouse Cloud and any other service that use
 </Tabs>
 
 </Step>
-<Step title="Generate datasets from your schema" id="5-generate-datasets">
+<Step title="Generate datasets from your schema" id="4-generate-datasets">
 
 The CLI connects to ClickHouse, reads your tables, and writes a dataset definition for each one:
 
@@ -171,7 +159,7 @@ orders = dataset(
 </Tabs>
 
 </Step>
-<Step title="Query a dataset" id="6-query-a-dataset">
+<Step title="Query a dataset" id="5-query-a-dataset">
 
 Select dimensions and measures by name. hypequery validates the request, generates parameterized SQL, and runs it on ClickHouse. Because the dataset declares a `tenantKey`, every query must pass the caller's tenant, and hypequery adds the matching `WHERE tenant_id = ...` filter. A query without a tenant is rejected:
 
