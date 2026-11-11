@@ -76,7 +76,88 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_reset/buckets/0' AND nam
 SELECT 'reset / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_reset/buckets/1' AND name = 'processed';
 
+-- 5. A pointer left in bucket 0 of a `buckets = 1` queue is migrated while no other bucket exists.
+CREATE TABLE q_legacy (x UInt64)
+ENGINE = S3Queue('http://localhost:11111/test/05620_legacy/', 'username', 'password', CSV)
+SETTINGS mode = 'ordered', buckets = 1,
+         keeper_path = '/clickhouse/{database}/q_legacy';
+
+INSERT INTO system.zookeeper (path, name, value)
+SELECT '/clickhouse/' || currentDatabase() || '/q_legacy/buckets/0', 'processed',
+       '{"file_path":"legacy.csv","last_processed_timestamp":0,"last_exception":"","retries":0,"processor_id":""}';
+
+ALTER TABLE q_legacy MODIFY SETTING buckets = 2;
+
+SELECT 'legacy / processed', count() FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_legacy' AND name = 'processed';
+SELECT 'legacy / bucket 0', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_legacy/buckets/0' AND name = 'processed';
+SELECT 'legacy / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_legacy/buckets/1' AND name = 'processed';
+
+-- 6. With pointers in both `<keeper_path>/processed` and bucket 0, the greater one is migrated.
+CREATE TABLE q_dual_root (x UInt64)
+ENGINE = S3Queue('http://localhost:11111/test/05620_dual_root/', 'username', 'password', CSV)
+SETTINGS mode = 'ordered', buckets = 1, last_processed_path = 'd.csv',
+         keeper_path = '/clickhouse/{database}/q_dual_root';
+
+INSERT INTO system.zookeeper (path, name, value)
+SELECT '/clickhouse/' || currentDatabase() || '/q_dual_root/buckets/0', 'processed',
+       '{"file_path":"c.csv","last_processed_timestamp":0,"last_exception":"","retries":0,"processor_id":""}';
+
+ALTER TABLE q_dual_root MODIFY SETTING buckets = 2;
+
+SELECT 'dual root / processed', count() FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_dual_root' AND name = 'processed';
+SELECT 'dual root / bucket 0', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_dual_root/buckets/0' AND name = 'processed';
+SELECT 'dual root / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_dual_root/buckets/1' AND name = 'processed';
+
+CREATE TABLE q_dual_bucket (x UInt64)
+ENGINE = S3Queue('http://localhost:11111/test/05620_dual_bucket/', 'username', 'password', CSV)
+SETTINGS mode = 'ordered', buckets = 1, last_processed_path = 'a.csv',
+         keeper_path = '/clickhouse/{database}/q_dual_bucket';
+
+INSERT INTO system.zookeeper (path, name, value)
+SELECT '/clickhouse/' || currentDatabase() || '/q_dual_bucket/buckets/0', 'processed',
+       '{"file_path":"b.csv","last_processed_timestamp":0,"last_exception":"","retries":0,"processor_id":""}';
+
+ALTER TABLE q_dual_bucket MODIFY SETTING buckets = 2;
+
+SELECT 'dual bucket / processed', count() FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_dual_bucket' AND name = 'processed';
+SELECT 'dual bucket / bucket 0', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_dual_bucket/buckets/0' AND name = 'processed';
+SELECT 'dual bucket / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_dual_bucket/buckets/1' AND name = 'processed';
+
+-- 7. Once bucket 1 exists, bucket 0's pointer belongs to bucket 0 only.
+CREATE TABLE q_peer (x UInt64)
+ENGINE = S3Queue('http://localhost:11111/test/05620_peer/', 'username', 'password', CSV)
+SETTINGS mode = 'ordered', buckets = 1,
+         keeper_path = '/clickhouse/{database}/q_peer';
+
+INSERT INTO system.zookeeper (path, name, value)
+SELECT '/clickhouse/' || currentDatabase() || '/q_peer/buckets', '1', '';
+INSERT INTO system.zookeeper (path, name, value)
+SELECT '/clickhouse/' || currentDatabase() || '/q_peer/buckets/0', 'processed',
+       '{"file_path":"live.csv","last_processed_timestamp":0,"last_exception":"","retries":0,"processor_id":""}';
+
+ALTER TABLE q_peer MODIFY SETTING buckets = 2;
+
+SELECT 'peer / processed', count() FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_peer' AND name = 'processed';
+SELECT 'peer / bucket 0', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_peer/buckets/0' AND name = 'processed';
+SELECT 'peer / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_peer/buckets/1' AND name = 'processed';
+
 DROP TABLE q_one;
 DROP TABLE q_zero;
 DROP TABLE q_empty;
 DROP TABLE q_reset;
+DROP TABLE q_legacy;
+DROP TABLE q_dual_root;
+DROP TABLE q_dual_bucket;
+DROP TABLE q_peer;
