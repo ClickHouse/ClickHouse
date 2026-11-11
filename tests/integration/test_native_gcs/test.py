@@ -200,7 +200,10 @@ def test_mergetree_on_gcs_disk(started_cluster):
     # Merge parts (writes new part blobs, deletes old ones) and re-read.
     node.query("OPTIMIZE TABLE gcs_mt FINAL")
     assert node.query("SELECT count() FROM gcs_mt").strip() == "2000"
-    assert node.query("SELECT sum(a) FROM gcs_mt").strip() == str(sum(range(2000)))
+    assert node.query(
+        "SELECT sum(a) FROM gcs_mt",
+        settings={"use_statistics_for_sum_avg_aggregation": 0},
+    ).strip() == str(sum(range(2000)))
 
     node.query("DROP TABLE gcs_mt SYNC")
 
@@ -443,9 +446,11 @@ def test_dynamic_gcs_disk_renews_a_refresh_token_credential(started_cluster):
     assert "client_id=ch-client-id" in last_body, last_body
     assert "refresh_token=ch-refresh-token" in last_body, last_body
 
-    assert node.query("SELECT sum(a) FROM gcs_adc_refresh").strip() == str(
-        sum(range(100))
-    )
+    # The read has to reach object storage: a `sum` answered from column statistics would not.
+    assert node.query(
+        "SELECT sum(a) FROM gcs_adc_refresh",
+        settings={"use_statistics_for_sum_avg_aggregation": 0},
+    ).strip() == str(sum(range(100)))
     after_read, _ = token_exchanges(SHORT_LIVED_TOKEN_PORT)
     assert (
         after_read > after_write
@@ -488,9 +493,10 @@ def test_dynamic_gcs_disk_caches_a_long_lived_access_token(started_cluster):
     )
 
     node.query("INSERT INTO gcs_adc_cached SELECT number FROM numbers(1000)")
-    assert node.query("SELECT sum(a) FROM gcs_adc_cached").strip() == str(
-        sum(range(1000))
-    )
+    assert node.query(
+        "SELECT sum(a) FROM gcs_adc_cached",
+        settings={"use_statistics_for_sum_avg_aggregation": 0},
+    ).strip() == str(sum(range(1000)))
     warmed_up, _ = token_exchanges(LONG_LIVED_TOKEN_PORT)
     assert warmed_up > before, "the disk did not exchange the refresh token at all"
 
@@ -499,9 +505,10 @@ def test_dynamic_gcs_disk_caches_a_long_lived_access_token(started_cluster):
             f"INSERT INTO gcs_adc_cached SELECT number FROM numbers({i * 1000}, 1000)"
         )
     assert node.query("SELECT count() FROM gcs_adc_cached").strip() == "4000"
-    assert node.query("SELECT sum(a) FROM gcs_adc_cached").strip() == str(
-        sum(range(4000))
-    )
+    assert node.query(
+        "SELECT sum(a) FROM gcs_adc_cached",
+        settings={"use_statistics_for_sum_avg_aggregation": 0},
+    ).strip() == str(sum(range(4000)))
 
     after, _ = token_exchanges(LONG_LIVED_TOKEN_PORT)
     assert (
@@ -893,9 +900,14 @@ def test_profile_events(started_cluster):
 
     read_id = f"gcs_ev_read_{uuid.uuid4()}"
     # `sum(a)` rather than `count()`: with `optimize_trivial_count_query` a count is answered from
-    # the part metadata and never reaches object storage.
+    # the part metadata and never reaches object storage. For the same reason the `sum` is not
+    # answered from column statistics.
     assert sum(range(10000)) == int(
-        node.query("SELECT sum(a) FROM gcs_events", query_id=read_id)
+        node.query(
+            "SELECT sum(a) FROM gcs_events",
+            settings={"use_statistics_for_sum_avg_aggregation": 0},
+            query_id=read_id,
+        )
     )
 
     node.query("SYSTEM FLUSH LOGS")
@@ -1133,7 +1145,10 @@ def test_request_rate_throttler_disk(started_cluster):
     assert sum(range(1000)) == int(
         node.query(
             "SELECT sum(a) FROM gcs_throttle",
-            settings={"enable_filesystem_cache": 0},
+            settings={
+                "enable_filesystem_cache": 0,
+                "use_statistics_for_sum_avg_aggregation": 0,
+            },
             query_id=read_id,
         )
     )
