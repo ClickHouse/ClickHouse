@@ -69,3 +69,12 @@ NOT_IMPLEMENTED
 1	-2147483648
 2	5
 3	5
+--- DELETE and UPDATE of tables written by PyIceberg and Spark
+py_del_control	[0,1,2,4,5]
+py_del_wrapped	[1,2,3,4,5]
+py_upd_wrapped	[0,2,3,4,5,100]
+[100]
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+[0,1,2,3,4,5,6]
+[0,1]

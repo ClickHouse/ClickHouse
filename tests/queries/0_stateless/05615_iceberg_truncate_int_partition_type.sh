@@ -169,8 +169,36 @@ ${CH} --query "
     ALTER TABLE t_promoted_ok UPDATE id = 3 WHERE id = 2;
     SELECT id, x FROM t_promoted_ok ORDER BY id;"
 
+echo '--- DELETE and UPDATE of tables written by PyIceberg and Spark'
+# https://github.com/ClickHouse/ClickHouse/issues/130669: fixtures of 05568, one copy per mutation.
+WRAP="${CUR_DIR}/data_minio/iceberg_truncate_int32_wraparound"
+for name in py_del_control py_del_wrapped py_upd_wrapped; do
+    cp -r "${WRAP}/t" "${LAKE}/${name}"
+done
+cp -r "${WRAP}/promoted" "${LAKE}/py_promoted"
+cp -r "${WRAP}/java_wide" "${LAKE}/java_wide"
+for name in py_del_control py_del_wrapped py_upd_wrapped py_promoted java_wide; do
+    ${CH} --query "CREATE TABLE ${name} ENGINE = IcebergLocal('${LAKE}/${name}')"
+done
+${CH} --query "
+    DELETE FROM py_del_control WHERE id = 3;
+    DELETE FROM py_del_wrapped WHERE id = 0;
+    ALTER TABLE py_upd_wrapped UPDATE id = 100 WHERE id = 1;"
+for name in py_del_control py_del_wrapped py_upd_wrapped; do
+    ${CH} --query "SELECT '${name}', groupArray(id) FROM (SELECT id FROM ${name} ORDER BY id)"
+done
+${CH} --use_iceberg_partition_pruning=1 --query "
+    SELECT groupArray(id) FROM (SELECT id FROM py_upd_wrapped WHERE x = -2147483641 ORDER BY id)"
+# A wrapped key kept after `int` -> `long` promotion, and Java's truncate[1073741825] key: refused, rows unchanged.
+${CH} --query "DELETE FROM py_promoted WHERE id = 0" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
+${CH} --query "DELETE FROM java_wide WHERE id = 1" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
+${CH} --query "
+    SELECT groupArray(id) FROM (SELECT id FROM py_promoted ORDER BY id);
+    SELECT groupArray(id) FROM (SELECT id FROM java_wide ORDER BY id)"
+
 ${CH} --query "
     DROP TABLE t_int; DROP TABLE t_nullable; DROP TABLE t_int16; DROP TABLE t_wide; DROP TABLE t_too_wide;
     DROP TABLE t_too_wide_long; DROP TABLE t_long; DROP TABLE t_string; DROP TABLE legacy; DROP TABLE t_ml;
-    DROP TABLE t_promoted; DROP TABLE t_promoted_ok;"
+    DROP TABLE t_promoted; DROP TABLE t_promoted_ok; DROP TABLE py_del_control; DROP TABLE py_del_wrapped;
+    DROP TABLE py_upd_wrapped; DROP TABLE py_promoted; DROP TABLE java_wide;"
 rm -rf "${LAKE}"
