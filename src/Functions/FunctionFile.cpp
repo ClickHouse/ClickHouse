@@ -229,9 +229,8 @@ public:
         }
         else
         {
-        /// Do not use fs::canonical or fs::weakly_canonical.
-        /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-        const String user_files_absolute_path = fs::absolute(fs::path(context->getUserFilesPath())).lexically_normal().string();
+        fs::path user_files_absolute_path = fs::canonical(fs::path(context->getUserFilesPath()));
+        std::string user_files_absolute_path_string = user_files_absolute_path.string();
 
         // If run in Local mode, no need for path checking.
         bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
@@ -242,7 +241,7 @@ public:
             fs::path file_path(filename.data(), filename.data() + filename.size());
 
             if (file_path.is_relative())
-                file_path = fs::absolute(fs::path(user_files_absolute_path) / file_path).lexically_normal();
+                file_path = user_files_absolute_path / file_path;
 
             /// Do not use fs::canonical or fs::weakly_canonical.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
@@ -250,8 +249,8 @@ public:
 
             try
             {
-                if (need_check && !fileOrSymlinkPathStartsWith(file_path.string(), user_files_absolute_path))
-                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path);
+                if (need_check && !fileOrSymlinkPathStartsWith(file_path.string(), user_files_absolute_path_string))
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);
                 auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
