@@ -1,8 +1,0 @@
-# Used only for the secondary "excluding throw lines" figure printed by
-# llvm_coverage_job.py, which applies the same rule as DuckDB's
-# .github/workflows/lcovrc so the two projects can be compared like for like.
-# The primary coverage numbers do not use this file: many of these lines are
-# user-facing errors that tests are expected to reach.
-# The patterns take effect only together with `--filter region`.
-lcov_excl_line = throw Exception|throw DB::Exception|throw ErrnoException|ErrnoException::throw|throwFromErrno|throw std::|UNREACHABLE\(|std::terminate\(|LCOV_EXCL_LINE
-lcov_excl_br_line = throw Exception|throw DB::Exception|throw ErrnoException|ErrnoException::throw|throwFromErrno|throw std::|UNREACHABLE\(|LCOV_EXCL_BR_LINE

@@ -57,7 +57,6 @@ def missing_profile_files(expected: list[str], present: list[str]) -> list[str]:
 
 def get_lcov_summary(
     info_file_path: str,
-    extra_args: list[str] | None = None,
 ) -> tuple[
     tuple[float, int, int],
     tuple[float, int, int],
@@ -69,9 +68,6 @@ def get_lcov_summary(
     items (hit), and the total number of items.  Raw counts allow callers to
     compute precise deltas (e.g. "+55 lines covered") that round-tripping
     through a percentage would lose.
-
-    `extra_args` are passed to lcov verbatim, e.g. a `--config-file` with
-    exclusion patterns plus the `--filter` that applies them.
     """
     # lcov --summary writes to stderr, so merge stderr into stdout with 2>&1
     output = Shell.get_output(
@@ -83,7 +79,6 @@ def get_lcov_summary(
                 "--branch-coverage",
                 "--summary",
                 shlex.quote(info_file_path),
-                *(shlex.quote(arg) for arg in (extra_args or [])),
                 "2>&1",
             ]
         ),
@@ -875,23 +870,6 @@ if __name__ == "__main__":
                 }
                 with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
                     json.dump(_master_data, f)
-                # Secondary figure: the same tracefile with lines that throw an
-                # exception excluded, the rule DuckDB applies to its published
-                # number. Printed only, not stored in CI DB, gates nothing. It is
-                # computed after coverage_comment.json is written, so a failure
-                # here cannot drop the CI DB row.
-                (x_line_cov, x_line_hit, x_line_total), _, _ = get_lcov_summary(
-                    f"{TEMP_DIR}/llvm_coverage.info",
-                    extra_args=[
-                        "--config-file",
-                        f"{CURRENT_DIR}/ci/jobs/scripts/coverage_exclude_throw.lcovrc",
-                        "--filter",
-                        "region",
-                        "--ignore-errors",
-                        "source,source,unsupported,unsupported,range,range,empty,empty",
-                    ],
-                )
-                print(f"Master coverage excluding throw lines: lines={x_line_cov:.2f}% ({x_line_hit}/{x_line_total})")
             except Exception as e:
                 print(f"Warning: failed to compute master coverage stats: {e}")
 
