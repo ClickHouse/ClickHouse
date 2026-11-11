@@ -533,7 +533,13 @@ public:
         }
 
         if (replacements.empty())
+        {
+            /// A rewrite `processTextIndexFunction` dropped left nodes that would still be executed.
+            if (actions_dag.getNodes().size() != nodes_ptrs.size())
+                actions_dag.removeUnusedActions(original_inputs);
+
             return std::nullopt;
+        }
 
         for (auto & output : actions_dag.outputs)
         {
@@ -581,6 +587,8 @@ private:
     {
         String index_name;
         const TextIndexReadInfo * info = nullptr;
+        /// The query the index answers the function with.
+        TextSearchQueryPtr search_query;
         /// The virtual column replacing the function. An empty name means the inject-only rewrite (no direct read).
         IndexReadTask::Column virtual_column;
     };
@@ -650,14 +658,16 @@ private:
                 continue;
 
             /// The search query is built from the canonicalized subtree, but the rewrites below apply to
-            /// the original node, so check that node as well.
-            if (!text_index_condition.canAnswerFunctionNode(function_node))
+            /// the original node, so check that node as well. A key-existence query does not use the tokenizer argument.
+            if (search_query->getFunctionName() == function_node.function_base->getName()
+                && !text_index_condition.canAnswerFunctionNode(function_node))
                 continue;
 
             SelectedCondition condition
             {
                 .index_name = index_name,
                 .info = &info,
+                .search_query = search_query,
                 .virtual_column = {},
             };
 
@@ -717,7 +727,26 @@ private:
         const std::vector<SelectedCondition> & selected_conditions,
         const ContextPtr & context)
     {
-        if (selected_conditions.size() != 1 || function_node.children.size() < 2 || function_node.children.size() > 3)
+        if (function_node.children.size() < 2 || function_node.children.size() > 3)
+            return &function_node;
+
+        auto function_name = function_node.function_base->getName();
+
+        /// A key-existence query (`mapContainsKey`, `JSONPathExists`) comes from an index on the keys or paths,
+        /// not on the searched value, so its transforms do not apply.
+        const SelectedCondition * condition = nullptr;
+        for (const auto & selected_condition : selected_conditions)
+        {
+            if (selected_condition.search_query->getFunctionName() != function_name)
+                continue;
+
+            if (condition)
+                return &function_node;
+
+            condition = &selected_condition;
+        }
+
+        if (!condition)
             return &function_node;
 
         auto new_children = function_node.children;
@@ -733,13 +762,11 @@ private:
         Field needles_field = (*arg_needles->column)[0];
         DataTypePtr needles_type = arg_needles->result_type;
 
-        const auto & condition = selected_conditions.front();
-        const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->condition);
+        const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition->info->condition);
         auto preprocessor = condition_text.getPreprocessor();
         auto postprocessor = condition_text.getPostprocessor();
         const bool has_postprocessor = postprocessor && postprocessor->hasActions();
         const auto * tokenizer = condition_text.getTokenizer();
-        auto function_name = function_node.function_base->getName();
 
         /// All three transforms follow the index definition, so they apply to every occurrence of the function.
         const bool apply_preprocessor = needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
@@ -921,6 +948,25 @@ private:
 
         if (!new_function_node->result_type->equals(*function_node.result_type))
             new_function_node = &actions_dag.addCast(*new_function_node, function_node.result_type, "", context);
+
+        /// The other selected conditions are key-existence ones: the index skipped granules and adds a hint assuming
+        /// the predicate is false for a missing key or path. Rewrite only if that still holds.
+        if (selected_conditions.size() > 1)
+        {
+            ActionsDAGWithInversionPushDown canonical_dag(new_function_node, context, /* boolean_context */ false);
+            const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : *new_function_node;
+
+            for (const auto & other_condition : selected_conditions)
+            {
+                if (&other_condition == condition)
+                    continue;
+
+                const auto & other_text = typeid_cast<const MergeTreeIndexConditionText &>(*other_condition.info->condition);
+                auto other_query = other_text.createTextSearchQuery(canonical_node);
+                if (!other_query || other_query->getHash() != other_condition.search_query->getHash())
+                    return &function_node;
+            }
+        }
 
         return &actions_dag.addAlias(*new_function_node, function_node.result_name);
     }
