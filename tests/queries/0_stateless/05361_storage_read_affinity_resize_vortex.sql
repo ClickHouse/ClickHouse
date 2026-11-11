@@ -16,7 +16,7 @@ INSERT INTO t_vortex_preserve_order SELECT number FROM numbers(1000);
 INSERT INTO t_vortex_preserve_order SELECT number FROM numbers(10);
 INSERT INTO t_vortex_preserve_order SELECT number FROM numbers(10);
 
-SELECT countIf(trimLeft(explain) = 'AffinityResize 2 → 2') FROM (EXPLAIN PIPELINE SELECT k FROM t_vortex);
+SELECT countIf(trimLeft(explain) = 'Overflow × 2 1 → 2') FROM (EXPLAIN PIPELINE SELECT k FROM t_vortex);
 SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_vortex_preserve_order);
 SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_vortex_preserve_order) SETTINGS max_threads = 8;
 

@@ -4,8 +4,8 @@
 namespace DB
 {
 
-ConcatProcessor::ConcatProcessor(SharedHeader header, size_t num_inputs)
-    : IProcessor(InputPorts(num_inputs, header), OutputPorts{header}), current_input(inputs.begin())
+ConcatProcessor::ConcatProcessor(SharedHeader header, size_t num_inputs, bool read_ahead_)
+    : IProcessor(InputPorts(num_inputs, header), OutputPorts{header}), current_input(inputs.begin()), read_ahead(read_ahead_)
 {
 }
 
@@ -53,7 +53,7 @@ ConcatProcessor::Status ConcatProcessor::prepare()
         return Status::NeedData;
 
     /// Move data.
-    output.push(input.pull());
+    output.push(input.pull(/* set_not_needed = */ !read_ahead));
 
     /// Now, we pushed to output, and it must be full.
     return Status::PortFull;

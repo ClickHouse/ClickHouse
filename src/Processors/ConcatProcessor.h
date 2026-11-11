@@ -13,11 +13,12 @@ namespace DB
   * Pulls all data from first input, then all data from second input, etc...
   * Doesn't do any heavy calculations.
   * Preserves an order of data.
+  * Without `read_ahead`, the current input is asked for a chunk only when the output can take it.
   */
 class ConcatProcessor final : public IProcessor
 {
 public:
-    ConcatProcessor(SharedHeader header, size_t num_inputs);
+    ConcatProcessor(SharedHeader header, size_t num_inputs, bool read_ahead_ = true);
 
     String getName() const override { return "Concat"; }
 
@@ -27,6 +28,7 @@ public:
 
 private:
     InputPorts::iterator current_input;
+    bool read_ahead;
 };
 
 }

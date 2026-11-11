@@ -14,6 +14,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/ConcatProcessor.h>
 #include <Processors/ResizeProcessor.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/ReadHelpers.h>
@@ -563,16 +564,34 @@ void resizeOutputAfterReading(Pipe & pipe, size_t resize_to, bool keep_streams, 
 
         pipe.transform([&](const OutputPortRawPtrs & ports)
         {
+            const auto & header = pipe.getSharedHeader();
+            Processors overflows;
             Processors resizes;
+            Processors concats;
             for (size_t g = 0, next = 0; g < groups; ++g)
             {
                 const size_t group_size = output_ports / groups + (g < output_ports % groups ? 1 : 0);
-                auto resize = std::make_shared<AffinityResizeProcessor>(pipe.getSharedHeader(), group_size);
-                for (auto & input : resize->getInputs())
-                    connect(*ports[next++], input);
+                auto resize = std::make_shared<ResizeProcessor>(header, group_size, group_size);
+                auto resize_input = resize->getInputs().begin();
+                auto resize_output = resize->getOutputs().begin();
+                for (size_t i = 0; i < group_size; ++i, ++next, ++resize_input, ++resize_output)
+                {
+                    auto overflow = std::make_shared<OverflowProcessor>(header);
+                    auto concat = std::make_shared<ConcatProcessor>(header, 2, /* read_ahead = */ false);
+                    connect(*ports[next], overflow->getInputs().front());
+                    connect(overflow->getOutputs().front(), concat->getInputs().front());
+                    connect(overflow->getOutputs().back(), *resize_input);
+                    connect(*resize_output, concat->getInputs().back());
+                    overflows.emplace_back(std::move(overflow));
+                    concats.emplace_back(std::move(concat));
+                }
                 resizes.emplace_back(std::move(resize));
             }
-            return resizes;
+
+            Processors processors = std::move(overflows);
+            processors.insert(processors.end(), resizes.begin(), resizes.end());
+            processors.insert(processors.end(), concats.begin(), concats.end());
+            return processors;
         });
     }
 }

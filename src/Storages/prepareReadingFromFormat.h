@@ -135,7 +135,7 @@ namespace DB
     size_t clampClusterFunctionNumStreams(UInt64 num_streams);
 
     /// Spreads the output of a read whose streams take whole files over `resize_to` threads: fewer streams are resized;
-    /// otherwise, unless `keep_streams`, a stream that has run out of files takes chunks of the other streams of its group
-    /// (`AffinityResizeProcessor`). With many streams, a group has at least `min_streams_per_group` streams, as in `Pipe::resize`.
+    /// otherwise, unless `keep_streams`, a stream that has run out of files takes the chunks that the other streams of its
+    /// group cannot pass on yet. With many streams, a group has at least `min_streams_per_group` streams, as in `Pipe::resize`.
     void resizeOutputAfterReading(Pipe & pipe, size_t resize_to, bool keep_streams, size_t min_streams_per_group);
 }
