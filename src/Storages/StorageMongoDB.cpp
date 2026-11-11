@@ -447,7 +447,9 @@ static bool isOutsideBoolDomain(const Field & value, const DataTypePtr & type)
 /// BSON 256 is read as 0. A bound is kept in its own BSON type only if this conversion keeps it.
 static bool isKeptByBoolReader(const Field & value, const DataTypePtr & type)
 {
-    return !tryConvertFieldToTypeExact(value, DataTypeUInt8(), type.get()).isNull();
+    /// The conversion takes `getPtr` of its target, so the target must be owned by a `shared_ptr`.
+    static const DataTypePtr reader_type = std::make_shared<DataTypeUInt8>();
+    return !tryConvertFieldToTypeExact(value, *reader_type, type.get()).isNull();
 }
 
 static bool isWideInteger(const DataTypePtr & type)
