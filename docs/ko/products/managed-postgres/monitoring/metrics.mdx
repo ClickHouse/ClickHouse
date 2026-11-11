@@ -15,7 +15,9 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 [ClickHouse Managed Postgres Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus)에서 노출되는 모든 메트릭이 나열되어 있습니다.
 설정 및 인증에 대해서는 [Prometheus 엔드포인트] 페이지를 참조하십시오.
 
-## 공통 레이블 {#common-labels}
+<div id="common-labels">
+  ## 공통 레이블
+</div>
 
 모든 메트릭에는 다음 레이블이 포함됩니다.
 
@@ -29,7 +31,9 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 CPU 메트릭의 `mode`, 연결의 `state`, 데이터베이스 크기의 `database`).
 이러한 레이블은 각 메트릭과 함께 나열됩니다.
 
-## 정보 메트릭 {#information-metric}
+<div id="information-metric">
+  ## 정보 메트릭
+</div>
 
 `PostgresServiceInfo`는 값이 항상 `1`인 게이지로, 레이블에
 서비스의 현재 상태와 버전이 포함됩니다. 이를 사용해
@@ -44,7 +48,9 @@ CPU 메트릭의 `mode`, 연결의 `state`, 데이터베이스 크기의 `databa
 (예: `running`, `creating`, `stopped`). `postgres_version`은
 Postgres의 메이저 버전(예: `17`, `18`)을 나타냅니다.
 
-## 용량 {#capacity}
+<div id="capacity">
+  ## 용량
+</div>
 
 서비스에 프로비저닝된 정적 한도입니다. 이 값은
 서비스 크기를 조정할 때만 변경됩니다.
@@ -55,7 +61,9 @@ Postgres의 메이저 버전(예: `17`, `18`)을 나타냅니다.
 | `PostgresServer_MemoryLimitBytes`  | gauge | bytes | 서비스에 할당된 메모리입니다.      |
 | `PostgresServer_StorageLimitBytes` | gauge | bytes | 서비스에 할당된 스토리지입니다.     |
 
-## 리소스 사용률 {#resource-utilization}
+<div id="resource-utilization">
+  ## 리소스 사용률
+</div>
 
 | 메트릭                                    | 유형  | 추가 레이블 | 설명                                                                                               |
 | -------------------------------------- | --- | ------ | ------------------------------------------------------------------------------------------------ |
@@ -68,7 +76,9 @@ CPU 사용률을 백분율로 계산하려면,
 확인하려는 모드에 대한 `PostgresServer_CPUSeconds_Total`의 rate를 구한 다음
 `PostgresServer_CPUCores`로 나누십시오.
 
-## 디스크 및 네트워크 I/O {#io}
+<div id="io">
+  ## 디스크 및 네트워크 I/O
+</div>
 
 | 메트릭                                         | 유형      | 단위    | 설명                 |
 | ------------------------------------------- | ------- | ----- | ------------------ |
@@ -77,7 +87,9 @@ CPU 사용률을 백분율로 계산하려면,
 | `PostgresServer_NetworkReceiveBytes_Total`  | counter | bytes | 네트워크를 통해 수신한 바이트 수 |
 | `PostgresServer_NetworkTransmitBytes_Total` | counter | bytes | 네트워크를 통해 전송한 바이트 수 |
 
-## 데이터베이스 활동 {#database-activity}
+<div id="database-activity">
+  ## 데이터베이스 활동
+</div>
 
 서비스 시작 이후 누적된 카운터입니다. `rate()` 또는 `irate()`를 사용해
 초당 값으로 변환합니다.
@@ -92,28 +104,9 @@ CPU 사용률을 백분율로 계산하려면,
 | `PostgresServer_TransactionsRolledBack_Total` | counter | 롤백된 트랜잭션 수입니다.  |
 | `PostgresServer_Deadlocks_Total`              | counter | 감지된 데드락 수입니다.   |
 
-## 쿼리 성능 {#query-performance}
-
-기록된 Query Insights 이벤트를 기반으로 집계한 카운터이며, `UTILITY` 작업은 제외됩니다.
-
-| 메트릭                                        | 유형      | 단위           | 설명                                                                 |
-| ------------------------------------------ | ------- | ------------ | ------------------------------------------------------------------ |
-| `PostgresQuery_Calls_Total`                | counter | events       | 기록된 쿼리 이벤트 수입니다.                                                   |
-| `PostgresQuery_DurationMicroseconds_Total` | counter | microseconds | 기록된 쿼리의 총 실행 시간입니다.                                                |
-| `PostgresQuery_ErrorEvents_Total`          | counter | events       | 오류 심각도가 0이 아닌 기록된 이벤트 수이며, 경고도 포함됩니다.                              |
-| `PostgresQuery_FailureEvents_Total`        | counter | events       | 심각도가 `ERROR` 이상인 기록된 이벤트 수입니다.                                     |
-| `PostgresQuery_Rows_Total`                 | counter | rows         | 기록된 쿼리가 반환했거나 영향을 받은 행 수입니다.                                       |
-| `PostgresQuery_SharedBlocksHit_Total`      | counter | blocks       | 기록된 쿼리에서 캐시에 적중한 공유 블록 수입니다.                                       |
-| `PostgresQuery_SharedBlocksRead_Total`     | counter | blocks       | 기록된 쿼리가 읽은 공유 블록 수입니다.                                             |
-| `PostgresQuery_WALBytes_Total`             | counter | bytes        | 기록된 쿼리가 생성한 WAL 바이트 수입니다.                                          |
-| `PostgresQuery_SelectCalls_Total`          | counter | events       | 기록된 `SELECT` 이벤트 수입니다.                                             |
-| `PostgresQuery_InsertCalls_Total`          | counter | events       | 기록된 `INSERT` 이벤트 수입니다.                                             |
-| `PostgresQuery_UpdateCalls_Total`          | counter | events       | 기록된 `UPDATE` 이벤트 수입니다.                                             |
-| `PostgresQuery_DeleteCalls_Total`          | counter | events       | 기록된 `DELETE` 이벤트 수입니다.                                             |
-| `PostgresQuery_MergeCalls_Total`           | counter | events       | 기록된 `MERGE` 이벤트 수입니다.                                              |
-| `PostgresQuery_OtherCalls_Total`           | counter | events       | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `MERGE`를 제외한 기록된 이벤트 수입니다. |
-
-## 연결, 캐시, 데이터베이스 크기 {#connections-cache-size}
+<div id="connections-cache-size">
+  ## 연결, 캐시, 데이터베이스 크기
+</div>
 
 | 메트릭                                | 유형    | 추가 레이블     | 설명                                                                         |
 | ---------------------------------- | ----- | ---------- | -------------------------------------------------------------------------- |
@@ -121,7 +114,9 @@ CPU 사용률을 백분율로 계산하려면,
 | `PostgresServer_CacheHitRatio`     | gauge |            | 버퍼 캐시 적중률입니다. 전체 접근 블록 수 대비 캐시에서 제공된 블록 수의 비율을 백분율로 나타냅니다.                 |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database` | 각 데이터베이스의 디스크 크기(바이트)입니다. `postgres` 기본 데이터베이스와 사용자가 생성한 모든 데이터베이스를 포함합니다. |
 
-## 관련 페이지 {#related}
+<div id="related">
+  ## 관련 페이지
+</div>
 
 * [Prometheus 엔드포인트] — 설정, 인증 및 스크레이핑
 * [대시보드](/ko/products/managed-postgres/monitoring/dashboard) — Cloud Console에 기본 제공되는 차트

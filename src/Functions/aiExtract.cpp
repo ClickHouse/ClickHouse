@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -26,18 +27,15 @@ public:
 
     explicit FunctionAiExtract(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiExtract>(context_); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        context_->checkAccess(AccessType::aiExtract);
+        return std::make_shared<FunctionAiExtract>(context_);
+    }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-
-    String getSignatureString() const override
-    {
-        return
-            "(const String, Nullable(String), const String, [const Number]) -> Nullable(String)"
-            " OR (const String, String, const String, [const Number]) -> String";
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -49,6 +47,7 @@ public:
             {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
         return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 

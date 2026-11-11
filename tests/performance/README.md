@@ -53,8 +53,6 @@ Test template:
 </test>
 ```
 
-The drop queries also run when the test fails, and a test whose drop queries cannot be shown to have cleaned up stops the rest of its batch.
-
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
 ### Setup queries that cannot run on the reference server
@@ -105,60 +103,6 @@ Notes:
 * Profiler runs and server-side `ProfileEvents` are not collected for shell scripts (there is no single query to attribute them to); only the timing difference is reported.
 * `CLICKHOUSE_CURL` is `curl -q -sS --fail --max-time 120`. Unlike `tests/queries/shell_config.sh`, it adds `--fail` so that an HTTP 4xx/5xx response makes `curl` exit non-zero and the query fails — a benchmark must never time a server error response as a fast successful sample.
 * On timeout (`--max-query-seconds`, `--prewarm-max-query-seconds`) the whole process group of the script is killed, not just the immediate `bash`, so a script blocked inside a child such as `curl` or `$CLICKHOUSE_LOCAL` cannot keep running and pollute later measurements.
-
-### Long tests (nightly only)
-
-Tests tagged `long` are skipped in PR and master runs (`perf.py` skips them unless given `--long`). A nightly workflow runs them and labels its rows in the performance tables `workflow_name = 'NightlyExtendedPerformance'`; its schedule lives in that workflow (`ci/workflows/nightly_extended_performance.py`; rerun with `gh workflow run NightlyExtendedPerformance`). Examples: `calibration.xml` (the per-host yardstick), `tpch_sf100.xml`, `tpcds_sf100.xml`.
-
-How to write one:
-
-* `<test run_all_queries="1" max_query_seconds="N">`: `max_query_seconds` replaces `--max-query-seconds` and `--prewarm-max-query-seconds` for this test. The budget applies to each statement of a query; a query stops being repeated once its cumulative time per server reaches three budgets.
-* Put `<max_execution_time>0</max_execution_time>` into `<settings>`, otherwise long setup statements are cut by the server profile limit. Prewarm and timed runs still get the budget.
-* Load raw data with `fill_query` and finish every loaded MergeTree table as `tpch_sf100.xml` does: insert; `MODIFY SETTING lock_acquire_timeout_for_background_operations`; `OPTIMIZE ... FINAL` with `optimize_throw_if_noop = 1`; row and part counts; then content checks. `tpch_sf100.xml` also runs `MATERIALIZE STATISTICS` (`mutations_sync = 1`) before `SYSTEM STOP MERGES`, which blocks mutations too; for a test whose queries only read, the harness stops merges after the setup (`perf.py --stop-merges`).
-* Keep the tables in `default` (no `CREATE DATABASE`, no `USE`) and drop them with `DROP TABLE IF EXISTS <t> SYNC`, so the disk is free for the next test. (`USE` in existing tests is reconnect-safe: `clickhouse_driver` re-sends the database selected by `USE` when it reconnects.)
-* Job-local S3 (`<test requires_s3="1">`): write through the `perf_s3` named collection (each server has its own prefix, emptied after each such test in the nightly; a failed cleanup is an error and ends the batch); read the shared immutable data through `perf_s3_data` (`requires_s3_read_dataset="1"`: `tpch_ice10_s3`; `requires_s3_public_data="1"`: the prefixes in `s3_service.PUBLIC_PREFIXES` under their public keys). `iceberg_delete_data_on_drop` in `<settings>` has no effect: a drop uses the server's default profile.
-* Arrow Flight: the nightly servers listen on `arrowflight_port`; address the server itself as `arrowFlight('127.0.0.1:' || toString(getServerPort('arrowflight_port')), '<table in default>')`, the same text on both servers.
-* Iceberg REST catalog (`requires_s3_catalog="1"`): the job-local SeaweedFS serves it on `localhost:8181`; the harness seeds the immutable table bucket `perf-catalog` (namespace `many`, tables `t1`..`t200`, one row each, `id = n`). Such a test creates one `DataLakeCatalog` database as its only exception to the `default`-only rule and drops it with `DROP DATABASE ... SYNC`; the fixed ports are part of the test text.
-* Every timed statement with side effects (`ALTER`, `INSERT`, `OPTIMIZE`, `DELETE`, table recreation) is a shell query: `perf.py` profiles a query whose timing changed (every query with `profile_all_queries`) right after its runs, each statement cut at 10 s, and a cut mutation keeps running into the next query; shell queries are not profiled. A shell query gets its settings on the client command line (`--mutations_sync 2`, `--allow_insert_into_iceberg 1`, ...); the test's `<settings>` do not apply to it.
-* Reuse `tests/benchmarks/` with `<query file="../benchmarks/<name>/queries/query_NN.sql"/>` and `<settings file="../benchmarks/<name>/settings.json"/>`.
-* There is no skip syntax for known-problem queries: keep a working query in the test (a fixed formulation, or a placeholder such as `SELECT 'Q35 skipped'`) and describe the original query, the reason and the issue link in the benchmark's README (e.g. `tests/benchmarks/tpc-ds/README.md`). A flaky query gets an issue and is removed.
-
-Run one test locally:
-
-```
-# Against two running servers.
-tests/performance/scripts/perf.py --long --host localhost localhost --port 9001 9002 --binary <old> <new> --http-port 8123 8124 tests/performance/tpch_sf100.xml
-# The whole harness as the nightly job runs it; the tested binary is ./ci/tmp/clickhouse or --ch-path <dir>.
-python3 ci/jobs/performance_tests.py --test-options "arm_release, master_head, nightly, 1/1" --reference-path <older clickhouse> --test tpch_sf100
-```
-
-With the `nightly` test option the harness sorts the test list, slices it round-robin over the `N/M` batches except the tests in `NIGHTLY_PERF_PLACEMENT` (`ci/defs/defs.py`; `"<test>.xml"` maps to `"N/4"`, a batch; to an extra job name matching `[a-z0-9_]+`, a job of its own; or to `"skip"`, run nowhere: the kill switch, effective the next night), prepends `calibration.xml` to every job, runs all queries with `perf.py --long`, and skips the performance dashboard and delta gates.
-
-Red and green. A timeout is `TIMEOUT_EXCEEDED` (for a shell query, its time limit); anything else is an error. The tested side is the new server, the reference side the old one.
-
-| | tested side, alone or with the reference | reference side only |
-|---|---|---|
-| prewarm error or timeout | red (`run-error` line) | `partial`, measured on the tested side |
-| timed-run timeout | red | with `--long`: censored row, both sides keep running; otherwise red |
-| timed-run error | red | red |
-
-A censored row records the time of the completed statements plus the budget. With `--long`, regressions and `partial` queries are visible but do not turn the job red, and:
-
-* A settings or setup failure on the reference side (a feature the older binary lacks) runs the test on the tested side only, reported as `partial`, without `do_not_check_in_pr`. A setup failure on the tested side is red.
-* Every test runs under `timeout -k 60` with a 4-hour budget. A non-zero exit always leaves an error record (`124`: budget expired, `137`: killed), so the job is red. A failed upload of the required results (raw runs, query metrics, test times) is red too.
-* Teardown: on exit, including `SIGTERM`, `perf.py` runs the drop queries on every server that ran setup and prints `teardown-complete` only if all of them succeeded (a missing table is accepted on a reference whose setup failed). Without that line the harness records `teardown incomplete, stopping the batch` and runs no further tests on that host; what was measured is still reported.
-* Changes reported by the nightly are unconfirmed: `confirm_changes` is skipped, and the repetition from night to night is the confirmation.
-
-To get the text of a reported `query_index` (0-based, after substitutions), check out the tests of that run and use `tests/performance/scripts/perf.py --print-queries tests/performance/<test>.xml --queries-to-run <query_index>`.
-
-#### Conditions changelog
-
-Nightly results are comparable only under the same conditions. Append a dated line whenever any of them changes:
-
-* YYYY-MM-DD (first scheduled night): instance type `r8g.4xlarge`, image `clickhouse/performance-comparison`, pool `arm-medium-storage`.
-* YYYY-MM-DD (first night with the new tests): 26 new `long` tests (Iceberg and data lakes, formats, Arrow Flight, vector index, JSON, engine, projections, skip indexes, analyzer, query shapes, encodings), `NIGHTLY_PERF_PLACEMENT` pins, Arrow Flight port and ticket flags on the nightly servers, S3 public-data and REST-catalog seeding, S3 cleanup after every S3 test.
-
-Each job log also carries the resolved docker image digest (printed by the praktika runner) and the host identity (kernel, OS, CPU, memory, instance).
 
 ### How to run performance test
 

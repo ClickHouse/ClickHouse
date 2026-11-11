@@ -12,18 +12,14 @@
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/ProfileEvents.h>
-
-namespace ProfileEvents
-{
-    extern const Event RuntimeFilterLookupsBeforeBuildFinished;
-}
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
 }
 
@@ -63,9 +59,20 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String, Any) -> UInt8";
+        if (arguments.size() != 2)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                            "Number of arguments for function {} can't be {}, should be 2",
+                            getName(), arguments.size());
+
+        if (!WhichDataType(arguments[0]).isString())
+            throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument of function '{}' must be a String filter id",
+                    getName());
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -96,20 +103,10 @@ public:
         if (!filter_lookup)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter lookup was not initialized");
 
-        /// Look up the filter by the rendezvous id; if it has not been registered yet, all rows pass.
+        /// Look up the filter by the rendezvous id; if it has not been registered/built yet, all rows pass.
         auto filter = filter_lookup->find(filter_id);
-        if (!filter)
+        if (!filter || !filter->isReady())
             return DataTypeUInt8().createColumnConst(input_rows_count, true);
-
-        /// A registered filter may still be building: it becomes findable after the first build
-        /// stream registers it, but is ready only after the last stream merges. The join itself
-        /// keeps the result correct, so the block passes through unfiltered; count it so the
-        /// window is observable.
-        if (!filter->isReady())
-        {
-            ProfileEvents::increment(ProfileEvents::RuntimeFilterLookupsBeforeBuildFinished);
-            return DataTypeUInt8().createColumnConst(input_rows_count, true);
-        }
 
         const auto & data_column = arguments[1];
 

@@ -26,6 +26,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFactory.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
@@ -82,12 +83,6 @@ namespace
     {
         if (table_name.database != DatabaseCatalog::SYSTEM_DATABASE)
             return false;
-
-#if CLICKHOUSE_CLOUD
-        /// `system.masking_policies` backs an access entity, so it belongs to this list.
-        if (table_name.table == "masking_policies")
-            return true;
-#endif
 
         return (table_name.table == "users") || (table_name.table == "roles") || (table_name.table == "settings_profiles")
             || (table_name.table == "row_policies") || (table_name.table == "quotas");
@@ -176,8 +171,6 @@ void RestorerFromBackup::run(Mode mode_)
 
     if (mode == Mode::CHECK_ACCESS_ONLY)
         return;
-
-    context->onQueryExecutionStarted();
 
     /// Create databases using the create queries read from the backup.
     setStage(Stage::CREATING_DATABASES);
@@ -386,7 +379,17 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 continue;
             }
 
-            if (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
+            const bool is_temporary = (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE);
+
+            /// The definition comes from the backup, and the table is created by an internal query that checks
+            /// nothing, so settings that send the data elsewhere are authorized here, as for `CREATE`.
+            /// An external engine replaced by `Null` sends nothing, but temporary tables keep their engine.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist
+                && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
+                required_access.append_range(StorageFactory::instance().getExportAccess(create));
+
+            if (is_temporary)
             {
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
                     required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
@@ -394,7 +397,6 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             }
 
             AccessFlags flags;
-            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
 
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
             {
@@ -646,8 +648,6 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Execute CREATE DATABASE query.
         InterpreterCreateQuery interpreter{create_database_query, create_query_context};
         interpreter.setInternal(true);
-        /// The `ON CLUSTER` path gets the same flag from `QueryFlags::distributed_backup_restore` in `DDLWorker`.
-        interpreter.setIsRestoreFromBackup(true);
         interpreter.execute();
     }
     catch (Exception & e)

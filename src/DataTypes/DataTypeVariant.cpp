@@ -220,21 +220,13 @@ SerializationPtr DataTypeVariant::doGetSerialization(const SerializationInfoSett
     return SerializationVariant::create(variants, serializations, variant_names, getName());
 }
 
-DataTypePtr DataTypeVariant::doCloneWithChildren(const DataTypes & new_children) const
+void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback) const
 {
-    /// A rewritten alternative can print a different name, and two alternatives that differed only in
-    /// that name then collapse into one. Announcing fewer alternatives than the payload was written
-    /// with is a wrong result rather than something to paper over, so refuse instead.
-    std::unordered_set<String> names;
-    for (const auto & variant : new_children)
-        if (!names.insert(variant->getName()).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot rewrite the nested types of {}: two of its alternatives would become the same type {}",
-                getName(), variant->getName());
-
-    /// The default constructor re-sorts the alternatives by name, which after a rename would silently
-    /// permute the discriminators of an existing column. Keep the order this type already has.
-    return std::make_shared<DataTypeVariant>(new_children, FixedDiscriminatorOrder{});
+    for (const auto & variant : variants)
+    {
+        callback(*variant);
+        variant->forEachChild(callback);
+    }
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
@@ -551,8 +543,6 @@ SELECT v::Nullable(Float64) FROM test;
 │                        42.42 │
 └──────────────────────────────┘
 ```
-
-An alternative that cannot be converted to the destination type causes an error only if the column contains values of this alternative.
 
 ### Converting a Variant to another Variant {#converting-a-variant-to-another-variant}
 

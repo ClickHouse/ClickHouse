@@ -19,7 +19,8 @@
 9991	9991
 9990	9990
 Description: Filter TopK Granules
-dynamic filter in prewhere	1	1
+Prewhere filter column: __topKFilter(v1) (removed)
+FUNCTION __topKFilter(v1 : 0) -> __topKFilter(v1) UInt8 : 1
 1	1
 2	2
 3	3

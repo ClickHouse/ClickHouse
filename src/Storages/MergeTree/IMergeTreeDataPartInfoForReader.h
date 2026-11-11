@@ -6,7 +6,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ColumnSize.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/UUID.h>
 #include <base/types.h>
 
 namespace DB
@@ -127,17 +126,9 @@ public:
 
     virtual SerializationPtr getSerialization(const NameAndTypePair & column) const = 0;
 
-    virtual SerializationPtr tryGetSerialization(const String & column_name) const = 0;
-
-    /// A static subcolumn's serialization from the part. Defaults to nothing, so an implementation that
-    /// does not provide it resolves subcolumns against the column's serialization instead.
-    virtual SerializationPtr tryGetSubcolumnSerialization(const String & /*column_name*/, const String & /*subcolumn_name*/) const { return nullptr; }
-
     virtual const SerializationInfoByName & getSerializationInfos() const = 0;
 
     virtual String getTableName() const = 0;
-
-    virtual UUID getTableUUID() const { return UUIDHelpers::Nil; }
 
     virtual void reportBroken() = 0;
 
