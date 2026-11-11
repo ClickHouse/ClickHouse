@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ShuffleStep.h>
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
@@ -121,7 +122,8 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
         return 0;
     }
 
-    if (typeid_cast<const SortingStep *>(child.get()))
+    /// `SHUFFLE` must see the complete population, even when it preserves the row count.
+    if (typeid_cast<const SortingStep *>(child.get()) || typeid_cast<const ShuffleStep *>(child.get()))
         return 0;
 
     /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
