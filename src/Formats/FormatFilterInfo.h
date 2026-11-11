@@ -105,6 +105,10 @@ public:
     bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
     bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
 
+    /// Built from an Iceberg schema: a writer stores values in the physical types the Iceberg spec gives them.
+    void setIcebergSchema() { is_iceberg_schema = true; }
+    bool isIcebergSchema() const { return is_iceberg_schema; }
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
@@ -117,6 +121,7 @@ private:
     bool has_iceberg_required_info = false;
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
+    bool is_iceberg_schema = false;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;

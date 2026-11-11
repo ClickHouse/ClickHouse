@@ -696,6 +696,20 @@ template DataTypePtr createDecimalMaxPrecision<Decimal64>(UInt64 scale);
 template DataTypePtr createDecimalMaxPrecision<Decimal128>(UInt64 scale);
 template DataTypePtr createDecimalMaxPrecision<Decimal256>(UInt64 scale);
 
+size_t getDecimalMinimalByteSize(UInt32 precision)
+{
+    UInt256 max_value = 1;
+    for (UInt32 i = 0; i < precision; ++i)
+        max_value *= 10;
+    max_value -= 1;
+
+    /// One bit is taken by the sign, hence `8 * bytes - 1`.
+    size_t bytes = 1;
+    while (bytes < sizeof(UInt256) && (max_value >> (8 * bytes - 1)) != 0)
+        ++bytes;
+    return bytes;
+}
+
 /// Explicit template instantiations.
 template class DataTypeDecimal<Decimal32>;
 template class DataTypeDecimal<Decimal64>;

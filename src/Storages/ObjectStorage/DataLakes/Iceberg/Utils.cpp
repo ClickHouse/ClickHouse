@@ -1042,22 +1042,6 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, /* validate = */ true);
 }
 
-/// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
-/// minimum number of bytes that can hold every value of the declared precision. One bit of that
-/// space is taken by the sign, hence `8 * bytes - 1`.
-static size_t icebergDecimalRequiredBytes(UInt32 precision)
-{
-    UInt256 max_value = 1;
-    for (UInt32 i = 0; i < precision; ++i)
-        max_value *= 10;
-    max_value -= 1;
-
-    size_t bytes = 1;
-    while (bytes < sizeof(UInt256) && (max_value >> (8 * bytes - 1)) != 0)
-        ++bytes;
-    return bytes;
-}
-
 /// Returns type and required
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter)
 {
@@ -1219,7 +1203,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
 
             Poco::JSON::Object::Ptr decimal_type = new Poco::JSON::Object;
             decimal_type->set("type", "fixed");
-            decimal_type->set("size", icebergDecimalRequiredBytes(precision));
+            decimal_type->set("size", getDecimalMinimalByteSize(precision));
             /// `fixed` is a named Avro type, so the name must be unique within the manifest schema:
             /// two partition fields of the same decimal shape must not both define `decimal_P_S`.
             decimal_type->set("name", fmt::format("decimal_{}_{}_{}", precision, scale, field_id));
