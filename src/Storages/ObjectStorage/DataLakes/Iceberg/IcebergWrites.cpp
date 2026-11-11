@@ -1079,9 +1079,8 @@ void generateManifestList(
                             if (old_entry.hasField(field))
                                 new_entry.field(field) = old_entry.field(field);
                         };
-                        /// The counts are `["null", T]` unions in a v1 list and plain values later, and avro-cpp encodes a datum by its
-                        /// own union-ness, so each count is rebuilt in the shape of the new list. Iceberg Java before 1.5 names the file
-                        /// counts `added_data_files_count` and so on.
+                        /// v1 lists hold the counts as `["null", T]` unions and avro-cpp encodes a datum by its own union-ness, so each
+                        /// count is rebuilt in the new list's shape. Iceberg Java < 1.5 names the file counts `added_data_files_count` etc.
                         auto copy_count = [&](const String & field, const char * old_name, avro::Type type)
                         {
                             String source = field;
