@@ -65,6 +65,13 @@ NameSet RequiredSourceColumnsData::requiredColumns() const
         if (array_join_columns.contains(name) || array_join_columns.contains(table_name))
             continue;
 
+        if (mask_subcolumns_of_aliases)
+        {
+            auto it = compound_identifier_prefixes.find(name);
+            if (it != compound_identifier_prefixes.end() && complex_aliases.contains(it->second) && !masked_columns.contains(it->second))
+                continue;
+        }
+
         if (!complex_aliases.contains(name) || masked_columns.contains(name))
             required.insert(name);
     }

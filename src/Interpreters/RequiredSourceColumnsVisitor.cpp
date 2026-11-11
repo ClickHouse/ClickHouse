@@ -170,8 +170,17 @@ void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPt
     if (node.name().empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Expected not empty name");
 
-    if (!data.private_aliases.contains(node.name()))
-        data.addColumnIdentifier(node);
+    if (data.private_aliases.contains(node.name()))
+        return;
+
+    if (data.mask_subcolumns_of_aliases && node.compound())
+    {
+        if (data.private_aliases.contains(node.name_parts.front()))
+            return;
+        data.compound_identifier_prefixes.emplace(node.name(), node.name_parts.front());
+    }
+
+    data.addColumnIdentifier(node);
 }
 
 void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr &, Data & data)
