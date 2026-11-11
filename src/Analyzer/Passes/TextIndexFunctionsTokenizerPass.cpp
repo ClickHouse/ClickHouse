@@ -11,6 +11,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -85,13 +86,35 @@ StoragePtr getIndexStorage(const StoragePtr & storage, const ContextPtr & contex
 }
 
 /// For a subcolumn, the column it belongs to.
-std::optional<String> columnOwning(const StorageInMemoryMetadata & metadata, const String & name)
+std::optional<NameAndTypePair> columnOwning(const StorageInMemoryMetadata & metadata, const String & name)
 {
     auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
-    if (const auto column = metadata.getColumns().tryGetColumn(options, name))
-        return column->getNameInStorage();
+    const auto column = metadata.getColumns().tryGetColumn(options, name);
+    if (!column)
+        return {};
 
-    return {};
+    return metadata.getColumns().tryGetColumn(options, column->getNameInStorage());
+}
+
+/// Whether `carrier` reads through `inside`, both subcolumns of `type`. Compares the substream path the
+/// resolver itself picks, so a sibling that merely flattens to the same name is not taken for a path.
+bool resolvesInside(const DataTypePtr & type, const String & carrier, const String & inside)
+{
+    const auto carrier_info = type->tryGetSubcolumnInfo(carrier);
+    const auto inside_info = type->tryGetSubcolumnInfo(inside);
+    if (!carrier_info || !inside_info)
+        return false;
+
+    const auto & outer = inside_info->substreams_path;
+    const auto & inner = carrier_info->substreams_path;
+    if (inner.size() < outer.size())
+        return false;
+
+    for (size_t i = 0; i < outer.size(); ++i)
+        if (outer[i].toString() != inner[i].toString())
+            return false;
+
+    return true;
 }
 
 /// Spelled the way `IndexDescription::column_names` is.
@@ -381,31 +404,48 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isOrdinaryFunction())
-            return;
-
-        /// By value: resolving the node below assigns the member this would otherwise alias.
-        const String function_name = function_node->getFunctionName();
-        if (!doesTextSearchFunctionAcceptTokenizer(function_name))
-            return;
-
-        /// No explicit tokenizer is the only case the index decides.
-        auto & arguments = function_node->getArguments().getNodes();
-        if (arguments.size() != 2)
-            return;
-
-        auto tokenizer = findTextIndexTokenizer(arguments.front(), function_name);
-        if (tokenizer.empty())
-            return;
-
-        arguments.push_back(std::make_shared<ConstantNode>(std::move(tokenizer), std::make_shared<DataTypeString>()));
-        resolveOrdinaryFunctionNodeByName(*function_node, function_name, getContext());
+        /// By value: resolving the node below assigns the member a reference would alias.
+        if (const String function_name = forwardTokenizer(node); !function_name.empty())
+            resolveOrdinaryFunctionNodeByName(*node->as<FunctionNode>(), function_name, getContext());
     }
 
 private:
     /// Constructing a tokenizer can load a dictionary; forwardability depends on the function.
     std::map<std::tuple<const IStorage *, String, String>, String> tokenizer_cache;
+
+    /// Appends the tokenizer the text index on the haystack implies, and names the function if it did.
+    /// The node is left unresolved: the only caller that keeps it re-resolves it.
+    String forwardTokenizer(QueryTreeNodePtr & node)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node || !function_node->isOrdinaryFunction())
+            return {};
+
+        String function_name = function_node->getFunctionName();
+        if (!doesTextSearchFunctionAcceptTokenizer(function_name))
+            return {};
+
+        /// No explicit tokenizer is the only case the index decides.
+        auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() != 2)
+            return {};
+
+        auto tokenizer = findTextIndexTokenizer(arguments.front(), function_name);
+        if (tokenizer.empty())
+            return {};
+
+        arguments.push_back(std::make_shared<ConstantNode>(std::move(tokenizer), std::make_shared<DataTypeString>()));
+        return function_name;
+    }
+
+    void forwardNestedTokenizers(QueryTreeNodePtr & node)
+    {
+        for (auto & child : node->getChildren())
+            if (child)
+                forwardNestedTokenizers(child);
+
+        forwardTokenizer(node);
+    }
 
     String findTextIndexTokenizer(const QueryTreeNodePtr & expression, const String & function_name)
     {
@@ -432,6 +472,14 @@ private:
                 return {};
 
             map_only_name = "mapValues(" + indexExpressionName(*resolution.expression) + ")";
+        }
+
+        /// A nested call is rewritten too, so the lookup has to name the expression that will run,
+        /// whichever of the two the traversal reaches first. The clone never leaves this function.
+        if (map_only_name.empty())
+        {
+            resolution.expression = resolution.expression->clone();
+            forwardNestedTokenizers(resolution.expression);
         }
 
         const auto & resolved = *resolution.expression;
@@ -469,9 +517,16 @@ private:
                 if (!matched)
                     return false;
 
-                /// A declared column of that name is read instead; only the indexed column may own it.
+                /// A declared column of that name is read instead, unless the carrier reads through the
+                /// indexed value.
                 const auto owner = columnOwning(*metadata, carrier);
-                return !owner || *owner == matched->json_column_name;
+                if (!owner || owner->name == matched->json_column_name)
+                    return true;
+                if (!matched->json_column_name.starts_with(owner->name + "."))
+                    return false;
+
+                const size_t prefix = owner->name.size() + 1;
+                return resolvesInside(owner->type, carrier.substr(prefix), matched->json_column_name.substr(prefix));
             };
 
             const bool describes = std::ranges::any_of(carriers.names, [&](const String & carrier)

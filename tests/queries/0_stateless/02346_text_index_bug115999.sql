@@ -682,8 +682,7 @@ SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.gr
 WHERE hasAnyTokens(t.j.other::String, ['ell']) OR b.category = 'nonexistent';
 SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(t.j.typed, ['ell']) OR b.category = 'nonexistent';
--- Tracked gap, prints 0: a path under a `Tuple` is not provably the indexed value's rather than a
--- sibling's, so the tokenizer is not forwarded.
+-- The indexed JSON value may itself sit inside a physical column.
 SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(t.c.j.k, ['ell']) OR b.category = 'nonexistent';
 
@@ -752,6 +751,62 @@ SELECT count() FROM (SELECT vr FROM t_115999_element LIMIT 10) AS sub CROSS JOIN
 WHERE hasAnyTokens(variantElement(sub.vr, 'String'), ['ell']) OR b.category = 'nonexistent';
 
 DROP TABLE t_115999_element;
+
+-- An index can be defined on an expression that itself contains a text-search call. Forwarding a
+-- tokenizer into that nested call changes the enclosing haystack, so the index picked for the
+-- enclosing call must be the one that describes the rewritten expression, whichever of the two the
+-- traversal reaches first. Spelling the nested tokenizer out by hand must not change any answer.
+SELECT 'a text-search call nested inside the haystack of another';
+CREATE TABLE t_115999_nested
+(
+    id UInt64,
+    group_id UInt64,
+    s String,
+    INDEX idx_s s TYPE text(tokenizer = ngrams(3)),
+    INDEX idx_expr if(hasAnyTokens(s, ['ell']), s, '') TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE t_115999_nested_spelled
+(
+    id UInt64,
+    group_id UInt64,
+    s String,
+    INDEX idx_s s TYPE text(tokenizer = ngrams(3)),
+    INDEX idx_expr if(hasAnyTokens(s, ['ell'], 'ngrams(3)'), s, '') TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_115999_nested VALUES (1, 1, 'hello world');
+INSERT INTO t_115999_nested_spelled VALUES (1, 1, 'hello world');
+
+SELECT hasAnyTokens(if(hasAnyTokens(s, ['ell']), s, ''), ['hello world']) FROM t_115999_nested;
+SELECT hasAnyTokens(if(hasAnyTokens(s, ['ell'], 'ngrams(3)'), s, ''), ['hello world']) FROM t_115999_nested;
+SELECT hasAnyTokens(if(hasAnyTokens(s, ['ell']), s, ''), ['hello world']) FROM t_115999_nested_spelled;
+SELECT hasAnyTokens(if(hasAnyTokens(s, ['ell'], 'ngrams(3)'), s, ''), ['hello world']) FROM t_115999_nested_spelled;
+SELECT hasAllTokens(if(hasAnyTokens(s, ['ell']), s, ''), ['hello world']) FROM t_115999_nested;
+SELECT hasAllTokens(if(hasAnyTokens(s, ['ell'], 'ngrams(3)'), s, ''), ['hello world']) FROM t_115999_nested;
+
+SELECT count() FROM t_115999_nested AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(if(hasAnyTokens(t.s, ['ell']), t.s, ''), ['hello world']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_nested AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(if(hasAnyTokens(t.s, ['ell'], 'ngrams(3)'), t.s, ''), ['hello world']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_nested_spelled AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(if(hasAnyTokens(t.s, ['ell']), t.s, ''), ['hello world']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_nested_spelled AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(if(hasAnyTokens(t.s, ['ell'], 'ngrams(3)'), t.s, ''), ['hello world']) OR b.category = 'nonexistent';
+
+-- The nested call sits in a subquery projection, which the enclosing call reaches only through the
+-- join tree -- a subtree the traversal visits after the projection holding the enclosing call.
+SELECT hasAnyTokens(e, ['hello world']) FROM (SELECT if(hasAnyTokens(s, ['ell']), s, '') AS e FROM t_115999_nested);
+SELECT hasAnyTokens(e, ['hello world']) FROM (SELECT if(hasAnyTokens(s, ['ell'], 'ngrams(3)'), s, '') AS e FROM t_115999_nested);
+SELECT hasAnyTokens(e, ['hello world']) FROM (SELECT if(hasAnyTokens(s, ['ell']), s, '') AS e FROM t_115999_nested_spelled);
+SELECT hasAnyTokens(e, ['hello world']) FROM (SELECT if(hasAnyTokens(s, ['ell'], 'ngrams(3)'), s, '') AS e FROM t_115999_nested_spelled);
+
+DROP TABLE t_115999_nested;
+DROP TABLE t_115999_nested_spelled;
 
 -- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
 -- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
