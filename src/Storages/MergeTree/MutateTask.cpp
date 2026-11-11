@@ -1377,12 +1377,21 @@ static void splitAndModifyMutationCommands(
         }
     }
 
-    /// If no stored column remains physical in the table, materialize current physical columns
-    /// to preserve the rows. This applies to both full rewrites and mutations of wide parts.
-    const auto physical_columns = table_columns.getAllPhysical();
-    if (std::ranges::none_of(physical_columns, [&](const auto & column) { return part_columns.has(column.name); }))
+    /// Persistent virtual columns can also preserve rows without materializing missing table columns.
+    /// A full data mutation may remove `_row_exists`, so do not rely on it in that case.
+    const bool affects_all_columns = std::ranges::any_of(for_interpreter, [](const auto & command) { return command.affectsAllColumns(); });
+    const bool has_stored_column = std::ranges::any_of(part_columns, [&](const auto & column)
     {
-        for (const auto & column : physical_columns)
+        if (table_columns.hasPhysical(column.name))
+            return true;
+
+        return metadata_snapshot->virtuals.tryGet(column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).has_value()
+            && (column.name != RowExistsColumn::name || !affects_all_columns);
+    });
+
+    if (!has_stored_column)
+    {
+        for (const auto & column : table_columns.getAllPhysical())
         {
             if (mutated_columns.contains(column.name))
                 continue;

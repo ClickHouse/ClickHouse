@@ -14,10 +14,10 @@ ALTER TABLE t_ephemeral_patch MODIFY SETTING enable_block_number_column = 1, ena
 SYSTEM STOP MERGES t_ephemeral_patch;
 
 UPDATE t_ephemeral_patch SET b = 43 WHERE b = 42 SETTINGS enable_lightweight_update = 1;
-ALTER TABLE t_ephemeral_patch RENAME COLUMN a TO a_old SETTINGS mutations_sync = 0;
+ALTER TABLE t_ephemeral_patch RENAME COLUMN a TO a_old SETTINGS alter_sync = 0;
 
 SYSTEM START MERGES t_ephemeral_patch;
-ALTER TABLE t_ephemeral_patch RENAME COLUMN a_old TO a_final SETTINGS mutations_sync = 2;
+ALTER TABLE t_ephemeral_patch RENAME COLUMN a_old TO a_final SETTINGS alter_sync = 2;
 
 -- Historical `a` is only a reader input; the output must preserve the patched `b` values.
 SELECT count(), sum(b) FROM t_ephemeral_patch;
