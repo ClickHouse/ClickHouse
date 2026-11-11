@@ -48,6 +48,7 @@
 #cmakedefine01 USE_PARQUET
 #cmakedefine01 USE_ORC
 #cmakedefine01 USE_ARROW
+#cmakedefine01 USE_ARROW_LIBRARY
 #cmakedefine01 USE_PROTOBUF
 #cmakedefine01 USE_MSGPACK
 #cmakedefine01 USE_ICU
