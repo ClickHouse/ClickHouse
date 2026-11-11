@@ -1008,6 +1008,9 @@ struct ParserExpressionImpl
     ParserQualifiedColumnsMatcher qualified_columns_matcher_parser;
     ParserSubquery subquery_parser;
 
+    /// Positions of CASE and INTERVAL tokens whose keyword reading failed; only the identifier reading is tried there.
+    std::unordered_set<const char *> failed_keyword_readings;
+
     bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
 
     using Layers = std::vector<std::unique_ptr<Layer>>;
@@ -3120,7 +3123,13 @@ protected:
     bool getResultImpl(ASTPtr & node) override
     {
         if (if_permitted)
+        {
+            /// The `ELSE` branch is a table function.
+            if (elements.size() == 2)
+                if (auto * else_function = elements[1]->as<ASTFunction>())
+                    else_function->setKind(ASTFunction::Kind::TABLE_FUNCTION);
             node = makeASTFunction("viewIfPermitted", std::move(elements));
+        }
         else
             node = makeASTFunction("view", std::move(elements));
 
@@ -3326,6 +3335,9 @@ static bool isArrayConstructorWithKeyword(IParser::Pos pos)
                 if (depth == 0)
                     return true;
                 break;
+            /// The statement ends before the bracket is closed.
+            case TokenType::Semicolon:
+                return false;
             default:
                 break;
         }
@@ -3432,7 +3444,11 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto start = getFunctionLayer(identifier, is_table_function, /*is_first_identifier=*/true, allow_function_parameters);
         start->is_table_function = is_table_function;
         if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
+        {
+            if (is_table_function)
+                node->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_FUNCTION);
             return true;
+        }
     }
 
     return false;
@@ -3609,6 +3625,10 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
                 if (!layers.back()->getResult(res))
                     break;
 
+                /// Bracket layers can fold into one `ASTLiteral`, which `max_ast_depth` does not see,
+                /// so they count towards the parse depth from push to pop.
+                if (typeid_cast<ArrayLayer *>(layers.back().get()) || typeid_cast<RoundBracketsLayer *>(layers.back().get()))
+                    pos.decreaseDepth();
                 layers.pop_back();
                 layers.back()->pushOperand(res);
                 continue;
@@ -3627,11 +3647,13 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
         if (layers.size() == 1 && layers.back()->getResult(node))
             return true;
 
-        layers.pop_back();
-
         /// We try to check whether there was a checkpoint
-        while (!layers.empty() && !layers.back()->saved_checkpoint)
+        bool popped_keyword_layer = false;
+        do
+        {
+            popped_keyword_layer = dynamic_cast<IntervalLayer *>(layers.back().get()) || dynamic_cast<CaseLayer *>(layers.back().get());
             layers.pop_back();
+        } while (!layers.empty() && !layers.back()->saved_checkpoint);
 
         if (layers.empty())
             return false;
@@ -3641,6 +3663,10 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
 
         auto saved_checkpoint = layers.back()->saved_checkpoint.value();
         layers.back()->saved_checkpoint.reset();
+
+        /// A keyword layer reads nothing below itself, so if it failed unfinished it fails wherever this position is reached.
+        if (popped_keyword_layer)
+            failed_keyword_readings.insert(saved_checkpoint.first->begin);
 
         pos = saved_checkpoint.first;
         layers.back()->current_checkpoint = saved_checkpoint.second;
@@ -3954,13 +3980,20 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     auto current_checkpoint = layers.back()->current_checkpoint;
     layers.back()->current_checkpoint = Checkpoint::None;
 
-    if (current_checkpoint != Checkpoint::Interval && parseOperator(pos, toStringView(Keyword::INTERVAL), expected))
+    /// Skipping a failed keyword reading leaves no checkpoint, as trying it again and restoring would.
+    const bool keyword_reading_failed = failed_keyword_readings.contains(old_pos->begin);
+    if (keyword_reading_failed)
+        layers.back()->saved_checkpoint.reset();
+
+    if (current_checkpoint != Checkpoint::Interval && !keyword_reading_failed
+        && parseOperator(pos, toStringView(Keyword::INTERVAL), expected))
     {
         layers.back()->saved_checkpoint = {old_pos, Checkpoint::Interval};
         layers.push_back(std::make_unique<IntervalLayer>());
         return Action::OPERAND;
     }
-    if (current_checkpoint != Checkpoint::Case && parseOperator(pos, toStringView(Keyword::CASE), expected))
+    if (current_checkpoint != Checkpoint::Case && !keyword_reading_failed
+        && parseOperator(pos, toStringView(Keyword::CASE), expected))
     {
         layers.back()->saved_checkpoint = {old_pos, Checkpoint::Case};
         layers.push_back(std::make_unique<CaseLayer>());
@@ -3987,6 +4020,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             ++pos;
             ++pos;
             layers.push_back(std::make_unique<ArrayLayer>());
+            pos.increaseDepth();
             return Action::OPERAND;
         }
 
@@ -4021,12 +4055,14 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
             ++pos;
             layers.push_back(std::make_unique<RoundBracketsLayer>());
+            pos.increaseDepth();
             return Action::OPERAND;
         }
         else if (pos->type == TokenType::OpeningSquareBracket)
         {
             ++pos;
             layers.push_back(std::make_unique<ArrayLayer>());
+            pos.increaseDepth();
             return Action::OPERAND;
         }
         else if (mysql_global_variable_parser.parse(pos, tmp, expected))
@@ -4500,8 +4536,8 @@ Two settings control when spilling starts:
 - `max_bytes_before_external_set` sets a threshold in bytes of total query memory. It defaults to `0`
   (disabled).
 - `max_bytes_ratio_before_external_set` sets a fraction of available memory under server or user
-  limits, measured at the start of execution. It defaults to `0` (disabled) and has no effect when
-  neither limit applies.
+  limits, measured at the start of execution. It defaults to `0.5`, half of the available memory, and
+  has no effect when neither limit applies.
 
 When both thresholds apply, the smaller is used. A set is written to disk only once it takes at least
 16 MiB, or the threshold if it is smaller. For example, this query writes the set to disk once the set
@@ -4515,24 +4551,35 @@ SETTINGS max_bytes_before_external_set = 16777216;
 ```
 
 A set is usually built before the rest of the query takes much memory. A set that stays in memory while
-it is built can still be written to disk later, while the query uses it: once query memory exceeds the
-threshold, the set is written to disk, and most of its memory is released for the rest of the query, such
-as an aggregation that grows after the set is built.
+it is built can still be written to disk later, while the query uses it: once query memory, together with
+the memory that the set keeps when it is on disk, such as its Bloom filter, exceeds the threshold, the set is
+written to disk, and most of its memory is released for the rest of the query, such as an aggregation that
+grows after the set is built.
 
 `max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
 set an absolute threshold below that limit. These thresholds do not cap memory usage. Leave room for
 other query processing and the spill itself.
 
+A set on disk keeps a Bloom filter of its keys in memory, so that lookups of keys that are not in the set
+can skip reading the disk. `max_bytes_for_external_set_bloom_filter` limits the memory of the filter,
+128 MiB by default.
+
+A set on disk also caches in memory the blocks that its lookups read, so that later lookups of keys in
+the same blocks do not read the disk again. `max_bytes_for_external_set_cache` limits the memory of the
+cache, 128 MiB by default.
+
 A set written to disk while it is built cannot be used by the primary key or data skipping indexes. With
 `GLOBAL IN`, the temporary table that sends the result of the subquery to the remote servers stays in
 memory, while the sets that the remote servers build from it can be written to disk.
 
-When a set is written to disk while it is built, the whole subquery is read before the size limits of
-the set are checked: `max_rows_in_set` counts its distinct keys, and `max_bytes_in_set` counts only its
-part in memory. With `set_overflow_mode = 'break'`, the set keeps the keys that come first in the order
-in which it stores them on disk, up to the limits, and not the keys of the first rows of the subquery.
-For a `UInt64` key, these are the smallest values. For a `String` key, they form an arbitrary subset,
-since the set stores only the 128-bit SipHash of each string on disk.
+When a set is written to disk while it is built, the whole subquery is read before the size limits of the
+set are checked: `max_rows_in_set` counts its distinct keys, and `max_bytes_in_set` counts each key at
+its width in the set, from 1 to 32 bytes, such as 8 bytes for a `UInt64` and 16 bytes for a `String`, but
+not the memory that lookups use, such as the Bloom filter and the cache. With
+`set_overflow_mode = 'break'`, the set keeps the keys that come first in the order in which it stores
+them on disk, up to the limits, and not the keys of the first rows of the subquery. For keys of numbers,
+dates and short `FixedString` values, alone or in a tuple, these are the smallest keys. Other keys, such
+as `String`, form an arbitrary subset.
 
 ## Distributed Subqueries {#distributed-subqueries}
 

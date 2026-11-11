@@ -8,7 +8,6 @@ DROP TABLE IF EXISTS t_04624;
 CREATE TABLE t_04624 (k UInt64) ENGINE = MergeTree ORDER BY intHash32(k) SAMPLE BY intHash32(k);
 INSERT INTO t_04624 SELECT number FROM numbers(10000);
 
-SET enable_analyzer = 1;
 SET serialize_query_plan = 1;
 SET prefer_localhost_replica = 0;
 
