@@ -33,6 +33,12 @@ echo '<clickhouse>' > "$test_dir/config.d/malformed.xml"
 "$CLICKHOUSE_BINARY" extract-from-config --config-file "$test_dir/config.xml" --key key 2>&1 | grep -c "Failed to merge config with '.*/malformed.xml'"
 
 # A read error is still an error: reading `/proc/self/mem` from offset 0 fails with EIO.
+# There is no `/proc` on macOS, so this check runs on Linux only.
 rm "$test_dir/config.d/malformed.xml"
-ln -s /proc/self/mem "$test_dir/config.d/unreadable.xml"
-"$CLICKHOUSE_BINARY" extract-from-config --config-file "$test_dir/config.xml" --key key 2>&1 | grep -c "Cannot read from file .*/unreadable.xml"
+if [ -e /proc/self/mem ]
+then
+    ln -s /proc/self/mem "$test_dir/config.d/unreadable.xml"
+    "$CLICKHOUSE_BINARY" extract-from-config --config-file "$test_dir/config.xml" --key key 2>&1 | grep -c "Cannot read from file .*/unreadable.xml"
+else
+    echo 1
+fi
