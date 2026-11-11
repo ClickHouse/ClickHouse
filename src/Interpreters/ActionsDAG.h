@@ -114,6 +114,10 @@ public:
         /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
         /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
         bool is_masked_secret = false;
+        /// For a non-deterministic constant: the hash of the expression it was folded from (see
+        /// `ConstantNode::getNonDeterministicSourceHash`), 0 if unknown. A build-independent hash identifies the
+        /// constant by it instead of by the value, which differs between two builds of the same query.
+        UInt64 source_expression_hash = 0;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
 
@@ -207,7 +211,8 @@ public:
         std::string name,
         bool is_deterministic_constant = true,
         bool is_masked_secret = false,
-        bool is_runtime_filter_id = false);
+        bool is_runtime_filter_id = false,
+        UInt64 source_expression_hash = 0);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(

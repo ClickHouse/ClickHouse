@@ -163,9 +163,21 @@ void ConstantNode::convertToNullable()
            makeNullableOrLowCardinalityNullableSafe(constant_value.getType())};
 }
 
-bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
+bool ConstantNode::isComparedBySourceExpression(CompareOptions compare_options) const
+{
+    return compare_options.non_deterministic_constants_by_source_expression && !is_deterministic && source_expression;
+}
+
+bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
+
+    const bool by_source = isComparedBySourceExpression(compare_options);
+    if (by_source != rhs_typed.isComparedBySourceExpression(compare_options))
+        return false;
+    if (by_source)
+        return constant_value.getType()->equals(*rhs_typed.constant_value.getType())
+            && source_expression->isEqual(*rhs_typed.source_expression, compare_options);
 
     const auto & column = constant_value.getColumn();
     const auto & rhs_column = rhs_typed.constant_value.getColumn();
@@ -174,10 +186,24 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
            && column->compareAt(0, 0, *rhs_column, 1) == 0;
 }
 
-void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
+void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
 {
-    constant_value.getColumn()->updateHashFast(hash_state);
+    if (isComparedBySourceExpression(compare_options))
+    {
+        const auto source_hash = source_expression->getTreeHash(compare_options);
+        hash_state.update(source_hash.low64);
+        hash_state.update(source_hash.high64);
+    }
+    else
+        constant_value.getColumn()->updateHashFast(hash_state);
     constant_value.getType()->updateHash(hash_state);
+}
+
+UInt64 ConstantNode::getNonDeterministicSourceHash() const
+{
+    if (is_deterministic || !source_expression)
+        return 0;
+    return source_expression->getTreeHash({.compare_aliases = false, .non_deterministic_constants_by_source_expression = true}).low64;
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const

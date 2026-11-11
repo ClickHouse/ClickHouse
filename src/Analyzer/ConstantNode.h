@@ -138,6 +138,10 @@ public:
 
     bool isDeterministic() const { return is_deterministic; }
 
+    /// For a non-deterministic constant folded from an expression, the hash of that expression, which unlike the
+    /// value is the same every time the query is analyzed: `now() - INTERVAL 1 DAY` hashes as written. 0 otherwise.
+    UInt64 getNonDeterministicSourceHash() const;
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
 
@@ -150,6 +154,8 @@ protected:
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
+    bool isComparedBySourceExpression(CompareOptions compare_options) const;
+
     ConstantValue constant_value;
     QueryTreeNodePtr source_expression;
     bool is_deterministic = true;

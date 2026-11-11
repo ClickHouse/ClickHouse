@@ -128,6 +128,9 @@ public:
         /// Do not compare the cte name or check the is_cte flag for the query node.
         /// Calculate a hash as if is_cte is false and cte_name is empty.
         bool ignore_cte = false;
+        /// Identify a non-deterministic constant by the expression it was folded from rather than by its value:
+        /// `now() - INTERVAL 1 DAY` then compares and hashes the same whenever the query is analyzed.
+        bool non_deterministic_constants_by_source_expression = false;
     };
 
     /** Is tree equal to other tree with node root.
@@ -135,7 +138,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false, .non_deterministic_constants_by_source_expression = false }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -155,7 +158,7 @@ public:
       * the lookup explicitly for the empty case (see `QueryAnalyzer::resolveExpressionNode`
       * and `PlannerActionsVisitorImpl::visitColumn`).
       */
-    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false, .non_deterministic_constants_by_source_expression = false }) const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;

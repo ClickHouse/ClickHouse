@@ -208,7 +208,7 @@ ActionsDAG buildAboveLimitDAG(
                 case ActionsDAG::ActionType::COLUMN:
                     copy = &dag.addColumn(
                         node->column, node->result_type, node->result_name, node->is_deterministic_constant, node->is_masked_secret,
-                        node->is_runtime_filter_id);
+                        node->is_runtime_filter_id, node->source_expression_hash);
                     break;
                 case ActionsDAG::ActionType::ALIAS:
                     copy = &dag.addAlias(*children.front(), node->result_name);

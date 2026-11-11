@@ -415,7 +415,14 @@ void ActionsDAG::Node::updateHash(
         /// the DAG around them. Skipping only its value keeps the single-replica and parallel-replicas
         /// plan builds matching without dropping any other constant's value (it still serializes
         /// normally for distributed propagation).
-        if (!is_runtime_filter_id && (with_variable_size_constant_values || column->valuesHaveFixedSize()))
+        ///
+        /// A non-deterministic constant folded from an expression is identified by that expression in a
+        /// build-independent hash: its value differs between two builds of the same query (`now()` is read
+        /// again by every analysis), so hashing it would keep a query that filters on `now()` from ever
+        /// reusing statistics, or even from matching its own parallel-replicas plan.
+        if (build_independent && source_expression_hash)
+            hash_state.update(source_expression_hash);
+        else if (!is_runtime_filter_id && (with_variable_size_constant_values || column->valuesHaveFixedSize()))
             column->updateHashWithValue(0, hash_state);
 
         /// A `Const(Set)` needs its identity added rather than its value skipped: `ColumnSet` is a dummy
@@ -585,7 +592,8 @@ const ActionsDAG::Node & ActionsDAG::addColumn(
     std::string name,
     bool is_deterministic_constant,
     bool is_masked_secret,
-    bool is_runtime_filter_id)
+    bool is_runtime_filter_id,
+    UInt64 source_expression_hash)
 {
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
@@ -603,6 +611,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(
     node.is_deterministic_constant = is_deterministic_constant;
     node.is_masked_secret = is_masked_secret;
     node.is_runtime_filter_id = is_runtime_filter_id;
+    node.source_expression_hash = source_expression_hash;
 
     return addNode(std::move(node));
 }
@@ -4635,7 +4644,7 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
                 /// its mark and hash its volatile value again.
                 result_node = &result_dag.addColumn(
                     node->column, node->result_type, node->result_name,
-                    node->is_deterministic_constant, node->is_masked_secret, node->is_runtime_filter_id);
+                    node->is_deterministic_constant, node->is_masked_secret, node->is_runtime_filter_id, node->source_expression_hash);
                 break;
             }
             case ActionsDAG::ActionType::ALIAS:
@@ -5423,9 +5432,12 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         /// such a value can be arbitrarily large (a folded scalar subquery), and hashing it on every
         /// execution costs more than the rest of planning. It also leaves out the value of the
         /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
-        /// stable identity. This output is hash-only and never deserialized; the transmission path
-        /// (`for_cache_key == false`) always writes the value.
-        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
+        /// stable identity. A non-deterministic constant folded from an expression is keyed by that
+        /// expression instead of its value, as in `Node::updateHash`. This output is hash-only and never
+        /// deserialized; the transmission path (`for_cache_key == false`) always writes the value.
+        if (has_column && registry.for_cache_key && node.source_expression_hash)
+            writeBinaryLittleEndian(node.source_expression_hash, out);
+        else if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
             serializeConstant(*node.result_type, *node.column, out, registry, input_header);
 
         if (node.type == ActionType::INPUT)
