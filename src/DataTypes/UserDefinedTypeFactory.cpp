@@ -20,6 +20,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTObjectTypeArgument.h>
+#include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
 
 #include <algorithm>
@@ -704,9 +705,12 @@ ASTPtr UserDefinedTypeFactory::prepareType(
 
     /// `DataTypeFactory` resolves user-defined types before the built-in ones, so a user-defined type named after
     /// a built-in type, alias or family would hijack every later use of that name: `CREATE TYPE UInt64 AS String`
-    /// would change the meaning of `UInt64` everywhere.
+    /// would change the meaning of `UInt64` everywhere. `ParserDataType` also replaces every spelling of some
+    /// built-in names followed by arguments with the canonical one (`array(T)` is parsed as `Array(T)`), so a type
+    /// with such a name could be created but never used: reject these spellings too.
     const auto & data_type_factory = DataTypeFactory::instance();
-    if (data_type_factory.hasNameOrAlias(type_name) || data_type_factory.hasNameOrAlias(Poco::toLower(type_name)))
+    if (data_type_factory.hasNameOrAlias(type_name) || data_type_factory.hasNameOrAlias(Poco::toLower(type_name))
+        || data_type_factory.hasNameOrAlias(String(getCanonicalNameOfDataTypeWithArguments(type_name))))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Cannot create user-defined type {}: a built-in data type with this name already exists",
                         backQuote(type_name));

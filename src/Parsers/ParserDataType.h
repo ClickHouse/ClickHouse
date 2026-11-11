@@ -12,6 +12,12 @@ namespace DB
 /// unquoted (`x.y`, `Null`, `8`, ...) are rejected.
 bool isValidDataTypeName(std::string_view name);
 
+/// The name that `ParserDataType` gives to the data type spelled `name` when it is followed by arguments.
+/// The composite types of the SQL standard are spelled case-insensitively (`ARRAY(INTEGER)`, `map(K, V)`),
+/// so `ParserDataType` replaces any spelling of `Array` and `Map` with the canonical name. For other names
+/// returns `name` unchanged.
+std::string_view getCanonicalNameOfDataTypeWithArguments(std::string_view name);
+
 /// Parses data type as ASTFunction
 /// Examples: Int8, Array(Nullable(FixedString(16))), DOUBLE PRECISION, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
 class ParserDataType : public IParserBase

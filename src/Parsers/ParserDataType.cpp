@@ -282,6 +282,15 @@ bool isValidDataTypeName(std::string_view name)
         || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC" || n == "SETTINGS" || n == "STATISTICS");
 }
 
+std::string_view getCanonicalNameOfDataTypeWithArguments(std::string_view name)
+{
+    if (equalsCaseInsensitive(name, "Array"))
+        return "Array";
+    if (equalsCaseInsensitive(name, "Map"))
+        return "Map";
+    return name;
+}
+
 bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     String type_name;
@@ -365,13 +374,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// The SQL standard, PostgreSQL and Trino spell the composite types case-insensitively,
     /// e.g. ARRAY(INTEGER), MAP(VARCHAR, BIGINT).
-    if (pos->type == TokenType::OpeningRoundBracket)
-    {
-        if (type_name_upper == "ARRAY")
-            type_name = "Array";
-        else if (type_name_upper == "MAP")
-            type_name = "Map";
-    }
+    if (pos->type == TokenType::OpeningRoundBracket && type_name_suffix.empty())
+        type_name = getCanonicalNameOfDataTypeWithArguments(type_name);
 
     /// skip trailing comma in types, e.g. Tuple(Int, String,)
     if (pos->type == TokenType::Comma)
