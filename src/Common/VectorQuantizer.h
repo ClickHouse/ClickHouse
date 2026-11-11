@@ -49,8 +49,7 @@ struct VectorQuantizer
     using QueryPtr = std::unique_ptr<const Query, QueryDeleter>;
 
     /// Prepare the query state once for a reference vector; `is_l2` selects L2Distance vs cosineDistance for the
-    /// norm-retaining methods (`int8`, `prefix_int8`, `prefix_bf16`);
-    /// the cosine-only methods (`rabitq`, `turboquant`) ignore it.
+    /// norm-retaining methods (`int8`, `prefix_int8`, `prefix_bf16`); the cosine-only methods (`rabitq`, `turboquant`) ignore it.
     static QueryPtr prepareQuery(std::string_view method, const float * ref, size_t dimensions, size_t bits, bool is_l2);
 
     /// Calculates the approximate distance between the prepared query and one encoded vector (`code` is `bytesPerVector` bytes).
