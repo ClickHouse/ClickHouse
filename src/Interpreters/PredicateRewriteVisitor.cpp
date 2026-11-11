@@ -172,6 +172,8 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         || subquery.limitBy() || subquery.limitLength() || subquery.limitByLength() || subquery.limitByOffset()
         || subquery.limitAfter() || subquery.limitUntil()
         || hasNonRewritableFunction(subquery.select(), getContext())
+        /// The predicate goes into `HAVING`, which is evaluated before the window functions `QUALIFY` filters by.
+        || subquery.qualify()
         || (subquery.orderBy() && subquery.limitOffset()))
         return false;
 
