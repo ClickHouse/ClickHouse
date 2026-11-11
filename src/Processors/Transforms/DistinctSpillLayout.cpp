@@ -5,6 +5,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
@@ -155,6 +156,10 @@ Chunk DistinctSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival_n
         key_columns.reserve(key_columns_pos.size());
         for (const auto pos : key_columns_pos)
             key_columns.push_back(columns[pos].get());
+        /// The in-memory set hashes the keys with negative zeros replaced (`-0.` is equal to `0.`), so the
+        /// fingerprints have to be computed the same way. The output keeps the original values.
+        Columns normalized_key_columns;
+        replaceNegativeZeros(key_columns, normalized_key_columns);
         auto hashes = ColumnUInt128::create(num_rows);
         for (size_t row = 0; row < num_rows; ++row)
             hashes->getData()[row] = ColumnsHashing::hash128(row, key_columns.size(), key_columns);
