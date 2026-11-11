@@ -1800,6 +1800,12 @@ void StorageFileSource::beforeDestroy()
     if (storage->file_renamer.isEmpty())
         return;
 
+    /// A source reading a bucket of a split file has an iterator of its own, with its own copy of the shared
+    /// lock (see `ReadFromFile::initializePipeline`), so it lets the lock go as soon as it is done. Otherwise
+    /// the last reader could not take the exclusive lock below, as the same query would still hold the shared one.
+    if (split_file)
+        files_iterator->releaseReadLock();
+
     int32_t cnt = storage->readers_counter.fetch_sub(1, std::memory_order_acq_rel);
 
     if (std::uncaught_exceptions() == 0 && cnt == 1 && !storage->was_renamed)
@@ -3132,7 +3138,7 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
         return nullptr;
 
     /// Wait for a concurrent `INSERT` to finish writing the file (including the footer) before reading
-    /// its metadata, as the sources do. The caller keeps the lock until the sources take their own.
+    /// its metadata. The iterators of the sources keep the lock while they read.
     read_lock = storage->lockRwlock(RWLockImpl::Read, context);
 
     /// A file that has disappeared is handled by the source, according to `engine_file_empty_if_not_exists`.
@@ -3278,7 +3284,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             format_filter_info->column_mapper.get(),
             storage->format_settings ? &*storage->format_settings : nullptr);
 
-    /// Held until the sources are constructed, see `trySplitSingleFile`.
+    /// Shared by the iterators of all the sources of the split file, see `trySplitSingleFile`.
     RWLockImpl::LockHolder split_file_read_lock;
     auto split_file = trySplitSingleFile(format_filter_info, query_condition_cache_table_id, split_file_read_lock);
     if (split_file)
@@ -3304,7 +3310,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         if (storage->has_peekable_read_buffer_from_fd.exchange(false))
             read_buffer = std::move(storage->peekable_read_buffer_from_fd);
 
-        /// Every source reading a bucket of the split file opens the file itself.
+        /// Every source reading a bucket of the split file opens the file itself. Its iterator holds a copy
+        /// of the shared lock taken for the split, so that the lock stays held for as long as any source reads
+        /// the file: neither the iterator of this step nor the step itself necessarily outlives the
+        /// construction of the pipeline (the old analyzer destroys the query plan before the pipeline runs).
         auto source_files_iterator = files_iterator;
         if (split_file)
             source_files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
@@ -3313,7 +3322,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                 /*predicate=*/ nullptr,
                 storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
                 info.hive_partition_columns_to_read_from_file_path,
-                ctx);
+                ctx,
+                /*distributed_processing_=*/ false,
+                /*archive_member_path_=*/ String{},
+                split_file_read_lock);
 
         auto source = std::make_shared<StorageFileSource>(
             info,
