@@ -222,8 +222,12 @@ private:
     ///
     /// Also updates current segment metadata (cardinality, payload size).
     ///
-    /// When scoring is enabled, the block-max metadata takes the doc lengths from `doc_lengths[row_id]`.
-    void encodeBlock(std::span<const UInt32> block_row_ids, std::span<const UInt32> weights, std::span<const UInt8> doc_lengths);
+    /// When scoring is enabled, the block-max metadata takes the doc lengths from `doc_lengths[row_id - doc_lengths_first_row_id]`.
+    void encodeBlock(
+        std::span<const UInt32> block_row_ids,
+        std::span<const UInt32> weights,
+        std::span<const UInt8> doc_lengths,
+        UInt32 doc_lengths_first_row_id);
 
     /// Encodes one block of `count` weights with the weights codec and appends it to `compressed_data`, after its deltas.
     /// An empty `weights` means that every weight is 1.
