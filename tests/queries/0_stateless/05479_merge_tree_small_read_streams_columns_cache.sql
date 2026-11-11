@@ -13,6 +13,8 @@ OPTIMIZE TABLE t_small_read_columns_cache FINAL;
 SET max_threads = 4, max_threads_min_free_memory_per_thread = 0;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET allow_prefetched_read_pool_for_local_filesystem = 0;
+-- `sum` must read the parts instead of being answered from the per-part statistics.
+SET use_statistics_for_sum_avg_aggregation = 0;
 
 SELECT count(), sum(rows), sum(marks) FROM system.parts WHERE database = currentDatabase() AND table = 't_small_read_columns_cache' AND active;
 
