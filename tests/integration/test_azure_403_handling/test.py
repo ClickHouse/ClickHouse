@@ -199,7 +199,7 @@ def test_permanent_error_read_fails_without_accusing_part(started_cluster, kind)
 
     node.query(f"SYSTEM ENABLE FAILPOINT {perm_fp}")
     try:
-        err = node.query_and_get_error(f"SELECT sum(k) FROM {table}")
+        err = node.query_and_get_error(f"SELECT sum(k) FROM {table} SETTINGS use_statistics_for_sum_avg_aggregation = 0")
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {perm_fp}")
 
@@ -267,11 +267,12 @@ def test_non_retryable_error_still_marks_part_broken(
 
     node.query("SYSTEM ENABLE FAILPOINT azure_inject_bad_request")
     pause_failpoint = "merge_tree_reader_pause_before_report_broken"
+    read_query = f"SELECT sum(k) FROM {table} SETTINGS use_statistics_for_sum_avg_aggregation = 0"
     executor = None
 
     try:
         if not cancel_during_unwind:
-            node.query_and_get_error(f"SELECT sum(k) FROM {table}")
+            node.query_and_get_error(read_query)
             node.wait_for_log_line(BROKEN_PART_LOG, timeout=60)
             return
 
@@ -280,7 +281,7 @@ def test_non_retryable_error_still_marks_part_broken(
         executor = ThreadPoolExecutor(max_workers=1)
         query_future = executor.submit(
             node.query_and_get_error,
-            f"SELECT sum(k) FROM {table} SETTINGS max_threads=1, "
+            f"{read_query}, max_threads=1, "
             "allow_prefetched_read_pool_for_remote_filesystem=1, "
             "filesystem_prefetch_max_memory_usage='1Gi'",
             query_id=query_id,

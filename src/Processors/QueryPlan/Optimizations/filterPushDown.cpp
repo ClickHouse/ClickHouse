@@ -38,6 +38,7 @@
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/TableJoin.h>
 #include <fmt/format.h>
@@ -94,35 +95,15 @@ static void addImpliedIndexHintInputs(const ActionsDAG::Node & node, NameSet & r
 static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
 {
     NameSet res;
-
-    /// We treat all INPUT as identifier
-    if (node->type == ActionsDAG::ActionType::INPUT)
+    visitReachableNodes({node}, [&](const ActionsDAG::Node * cur)
     {
-        res.emplace(node->result_name);
-        return res;
-    }
-
-    std::queue<const ActionsDAG::Node *> queue;
-    queue.push(node);
-
-    while (!queue.empty())
-    {
-        const auto * top = queue.front();
-        addImpliedIndexHintInputs(*top, res);
-        for (const auto * child : top->children)
-        {
-            if (child->type == ActionsDAG::ActionType::INPUT)
-            {
-                res.emplace(child->result_name);
-            }
-            else
-            {
-                /// Only push non INPUT child into the queue
-                queue.push(child);
-            }
-        }
-        queue.pop();
-    }
+        /// We treat all INPUT as identifier
+        if (cur->type == ActionsDAG::ActionType::INPUT)
+            res.emplace(cur->result_name);
+        else
+            addImpliedIndexHintInputs(*cur, res);
+        return VisitResult::Continue;
+    });
     return res;
 }
 
@@ -812,11 +793,15 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             cross_type_equivalent_columns.insert(replaced_name);
 
             /// A source that already has the supertype is not cast by the JOIN either, so it can stand in
-            /// under its own name provided that name denotes a single type here: the JOIN republishes an
-            /// input's name at its output type, and a pushed filter binds its inputs to those outputs by name.
+            /// under its own name, provided that name carries the source's type wherever it also occurs in
+            /// the JOIN output, and does occur at that type in the input of the stream this filter is pushed to.
+            const auto & source_stream_input_header
+                = source.fromLeft() ? *left_stream_input_header : *right_stream_input_header;
             const auto * source_in_output = join_output_header.findByName(source.getColumnName());
+            const auto * source_in_stream = source_stream_input_header.findByName(source.getColumnName());
             if (source.getType()->equals(*supertype)
-                && (!source_in_output || source_in_output->type->equals(*source.getType())))
+                && (!source_in_output || source_in_output->type->equals(*source.getType()))
+                && source_in_stream && source_in_stream->type->equals(*source.getType()))
             {
                 equivalent_columns[replaced_name] = source.getColumn();
                 return;
@@ -1215,27 +1200,16 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
             stack.insert(stack.end(), node->children.begin(), node->children.end());
     }
 
-    stack.push_back(conjunct);
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    while (!stack.empty())
+    return anyReachableNode({conjunct}, [](const ActionsDAG::Node * node)
     {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (!visited.emplace(node).second)
-            continue;
-
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
             if (name == "equals" || name == "isNotDistinctFrom")
                 return true;
         }
-
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-
-    return false;
+        return false;
+    });
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
