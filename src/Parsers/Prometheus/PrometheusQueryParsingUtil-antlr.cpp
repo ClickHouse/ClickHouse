@@ -844,6 +844,13 @@ namespace
                     error_listener.setError(fmt::format("Unknown function '{}'", function_name), getStartPos(function_name_ctx));
                     return nullptr;
                 }
+                if (!arguments.empty())
+                {
+                    error_listener.setError(
+                        fmt::format("Function '{}' expects no arguments", function_name),
+                        getStartPos(function_name_ctx));
+                    return nullptr;
+                }
                 return makeFunction(function_name, arguments);
             }
             throwInconsistentSchema("Function", ctx->getText());
