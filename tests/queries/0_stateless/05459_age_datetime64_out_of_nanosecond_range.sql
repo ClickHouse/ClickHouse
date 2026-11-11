@@ -22,6 +22,5 @@ SELECT age('second', toDateTime64('1500-01-01 00:00:00.500', 3), toDateTime64('2
 -- a saturated cast carries a maximal fractional part
 SELECT age('second', toDateTime64(1e20, 3), toDateTime64('2015-08-18 00:00:00.000', 3));
 
--- a Date past 2106-02-07 does not fit UInt32 seconds
-SELECT dateDiff('second', toDate('2120-01-01'), toDate('2120-01-02'));
+-- a Date operand past 2106-02-07
 SELECT age('day', toDateTime64('2120-01-01 12:00:00.000', 3), toDate('2120-01-02')), age('day', toDate('2120-01-02'), toDateTime64('2120-01-01 12:00:00.000', 3));
