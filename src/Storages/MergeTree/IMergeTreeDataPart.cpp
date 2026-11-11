@@ -692,6 +692,19 @@ void SharedPartColumnsHolder::release() noexcept
     bundle = SharedPartColumns::getEmpty();
 }
 
+/// The memory of an index is not accounted as memory usage of the query that loads it, so it must not be subtracted from memory usage
+/// of the query that frees it. A column of the index must not be held longer than the index.
+static std::shared_ptr<IMergeTreeDataPart::Index> makeIndex(Columns columns)
+{
+    return {
+        new IMergeTreeDataPart::Index(std::move(columns)),
+        [](const IMergeTreeDataPart::Index * index)
+        {
+            MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+            delete index;
+        }};
+}
+
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
 {
     std::scoped_lock lock(index_mutex);
@@ -710,6 +723,22 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
 {
     std::scoped_lock lock(index_mutex);
     return index;
+}
+
+bool IMergeTreeDataPart::isIndexInMemory() const
+{
+    std::unique_lock lock(index_mutex, std::try_to_lock);
+
+    /// It is being loaded.
+    if (!lock)
+        return true;
+
+    if (index)
+        return true;
+
+    auto index_cache = storage.getPrimaryIndexCache();
+    return index_cache
+        && index_cache->contains(PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart()));
 }
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
@@ -765,7 +794,7 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     MemoryTrackerBlockerInThread not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
-    index = std::make_shared<Index>(std::move(index_columns));
+    index = makeIndex(std::move(index_columns));
 }
 
 void IMergeTreeDataPart::unloadIndex()
@@ -2043,7 +2072,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
         getReadSettings(),
         [&](MutableColumns & index_columns) { optimizeIndexColumns(marks_count, index_columns); });
 
-    return std::make_shared<Index>(std::move(loaded_index));
+    return makeIndex(std::move(loaded_index));
 }
 
 NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const

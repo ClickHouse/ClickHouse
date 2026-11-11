@@ -533,6 +533,9 @@ public:
     /// It doesn't check cache
     IndexPtr tryGetIndex() const;
 
+    /// Returns true if the index is loaded, or in the cache, or is being loaded.
+    bool isIndexInMemory() const;
+
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
     void setIndex(Columns index_columns);
