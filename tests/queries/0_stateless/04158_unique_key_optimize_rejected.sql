@@ -6,7 +6,7 @@
 -- INSERT / SELECT keep working.
 -- All keys distinct (dedup is a later PR).
 
-SET enable_unique_key = 1;
+SET allow_experimental_unique_key = 1;
 SET async_insert = 0;
 SET optimize_trivial_count_query = 0;
 SET optimize_use_implicit_projections = 0;

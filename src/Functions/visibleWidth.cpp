@@ -51,17 +51,14 @@ public:
         return name;
     }
 
-    /// The setting decides the width for the same arguments, see `IFunctionBase::updateHash`.
-    void updateHash(SipHash & hash) const override { hash.update(behavior); }
-
     size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "(Any) -> UInt64";
+        return std::make_shared<DataTypeUInt64>();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

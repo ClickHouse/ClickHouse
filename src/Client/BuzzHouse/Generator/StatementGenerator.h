@@ -120,8 +120,6 @@ const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), fl
                          skip_tuple_node = (1 << 4), skip_nested_node = (1 << 5), to_table_entries = (1 << 6), to_remote_entries = (1 << 7);
 
 void collectColumnPaths(String cname, SQLType * tp, uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
-/// Paths that can get a codec: the columns and their subcolumns
-const constexpr uint32_t codec_paths = flat_tuple | flat_nested | skip_nested_node | collect_generated;
 
 class CatalogBackup
 {
@@ -161,12 +159,6 @@ enum class IndexUsage
     TableIndex = 1,
     ProjectionIndex = 2,
     HypotheticalIndex = 3,
-};
-
-enum class ProjectionUsage
-{
-    TableProjection = 1,
-    HypotheticalProjection = 2,
 };
 
 class StatementGenerator
@@ -298,8 +290,7 @@ private:
         ShowStatement,
         CreatePolicy,
         SnapshotQuery,
-        CreateHypotheticalIndex,
-        CreateHypotheticalProjection
+        CreateHypotheticalIndex
     };
 
     enum class LitOp
@@ -388,8 +379,7 @@ private:
         MergeTextIndexUDF,
         MergeIndexAnalyzeUDF,
         MergeCodecBlockCountsUDF,
-        FilesystemUDF,
-        ObfuscateUDF
+        FilesystemUDF
     };
 
     ProbabilityGenerator SQLGen;
@@ -514,17 +504,6 @@ private:
         return res;
     }
 
-    uint32_t totalHypotheticalProjections() const
-    {
-        uint32_t res = 0;
-
-        for (const auto & [_, t] : tables)
-        {
-            res += static_cast<uint32_t>(t.hypothetical_projections.size());
-        }
-        return res;
-    }
-
 public:
     template <typename T>
     std::vector<std::reference_wrapper<T>> & filterCollection(std::function<bool(T &)> func)
@@ -577,14 +556,10 @@ private:
     String addTableColumn(
         RandomGenerator & rg, SQLTable & t, uint32_t cname, bool staged, bool modify, bool is_pk, ColumnSpecial special, ColumnDef * cd);
     void addTableIndex(RandomGenerator & rg, SQLTable & t, IndexUsage usage, IndexDef * idef);
-    void addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionUsage usage, ProjectionDef * pdef);
+    void addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionDef * pdef);
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, ConstraintDef * cdef);
-    void addTableCodec(RandomGenerator & rg, const SQLTable & t, ColumnCodec * cc);
-    void addTimeSeriesColumn(RandomGenerator & rg, SQLTable & t, const String & name, ColumnDef * cd);
-    void addTimeSeriesInnerColumns(RandomGenerator & rg, TimeSeriesTarget target, TableDef * tdef);
     void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool allow_asc_desc, TableKey * tkey);
     void setClusterClause(RandomGenerator & rg, const std::optional<String> & cluster, Cluster * clu, bool force = false) const;
-    void setDatabaseClusterClause(RandomGenerator & rg, const std::shared_ptr<SQLDatabase> & db, Cluster * clu) const;
     void setClusterInfo(RandomGenerator & rg, SQLBase & b) const;
     template <typename T>
     void randomEngineParams(RandomGenerator & rg, std::optional<SQLRelation> & rel, T * te);
@@ -597,13 +572,12 @@ private:
     void setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr);
     void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
 
-    void generateNextRefreshableView(RandomGenerator & rg, bool allow_incremental, RefreshableView * rv);
+    void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * rv);
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextCreatePolicy(RandomGenerator & rg, bool row, CreatePolicy * crp);
     bool hasTable(const String & tkey) const { return tables.contains(tkey); }
     const SQLTable & lookupTable(const String & tkey) const { return tables.at(tkey); }
-    void dropHypotheticalObject(RandomGenerator & rg, SQLObject sobject, Drop * dp);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
     void generateInsertToTable(RandomGenerator & rg, const SQLTable & t, bool in_parallel, std::optional<uint64_t> rows, Insert * ins);
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
@@ -640,7 +614,6 @@ private:
     void generateNextShowStatement(RandomGenerator & rg, ShowStatement * st);
 
     void generateLikeExpr(RandomGenerator & rg, Expr * expr);
-    static String generateLikeEscape(RandomGenerator & rg);
     Expr * generatePartialSearchExpr(RandomGenerator & rg, Expr * expr) const;
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
@@ -655,7 +628,6 @@ private:
     void generateWindowDefinition(RandomGenerator & rg, WindowDefn * wdef);
     void generateExpression(RandomGenerator & rg, Expr * expr);
     void generateLambdaCall(RandomGenerator & rg, uint32_t nparams, LambdaExpr * lexpr);
-    void generateFuncComposition(RandomGenerator & rg, uint32_t nparams, FuncComposition * comp);
     void generateFuncCall(RandomGenerator & rg, bool allow_funcs, bool allow_aggr, SQLFuncCall * func_call);
     void generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call);
     void prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq);
@@ -683,36 +655,20 @@ private:
     String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
     String getNextHTTPURL(RandomGenerator & rg, bool secure);
     template <typename T>
-    void addRandomHTTPHeaders(RandomGenerator & rg, const bool is_write, T * func)
+    void addRandomHTTPHeaders(RandomGenerator & rg, T * func)
     {
         static const std::array<const char *, 5> encodings = {"gzip", "zstd", "br", "deflate", "lz4"};
-        static const std::array<const char *, 4> user_agents = {"BuzzHouse", "curl/8.5.0", "Mozilla/5.0", ""};
-        static const std::array<const char *, 4> origins = {"http://localhost", "https://example.com", "null", ""};
-        /// Mostly a valid W3C `traceparent`, which starts an OpenTelemetry trace, otherwise a malformed one
-        const String traceparent = fmt::format(
-            "{}-{}-{}-0{}",
-            rg.nextSmallNumber() < 9 ? "00" : "ff",
-            rg.nextHexBytes(rg.nextSmallNumber() < 9 ? 16 : 8),
-            rg.nextHexBytes(8),
-            rg.nextBool() ? "1" : "0");
-        std::vector<std::pair<const char *, String>> candidates = {
+        using Candidate = std::pair<const char *, String>;
+        std::array<Candidate, 5> candidates = {{
             {"Accept-Encoding", String(rg.pickRandomly(encodings))},
-            {"X-ClickHouse-Quota", "q" + std::to_string(rg.nextSmallNumber())},
+            {"Content-Encoding", String(rg.pickRandomly(encodings))},
+            {"X-ClickHouse-Compress", rg.nextBool() ? "1" : "0"},
+            {"X-ClickHouse-Progress", rg.nextBool() ? "1" : "0"},
             {"X-ClickHouse-Database",
              collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
                  ? rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)).get()->getName()
                  : "default"},
-            {"traceparent", traceparent},
-            {"tracestate", "buzzhouse=" + rg.nextHexBytes(4)},
-            {"User-Agent", String(rg.pickRandomly(user_agents))},
-            {"Referer", rg.nextBool() ? "http://localhost:8123/play" : "https://example.com/"},
-            {"Origin", String(rg.pickRandomly(origins))},
-        };
-        /// A custom `Content-Encoding` does not compress the request body, so the receiver fails to decode a write
-        if (!is_write)
-        {
-            candidates.emplace_back("Content-Encoding", String(rg.pickRandomly(encodings)));
-        }
+        }};
         std::shuffle(candidates.begin(), candidates.end(), rg.generator);
         for (const auto & [name, value] : candidates)
         {
@@ -745,7 +701,6 @@ private:
     uint32_t generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
     void addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
     void addWindowDefs(RandomGenerator & rg, SelectStatementCore * ssc);
-    bool generateStarSelect(RandomGenerator & rg, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
     void generateSelect(
         RandomGenerator & rg,
         bool top,
@@ -754,7 +709,7 @@ private:
         uint32_t allowed_clauses,
         std::optional<String> recursive,
         Select * sel);
-    void generateExprIn(RandomGenerator & rg, bool allow_empty, ExprInType * expr);
+    void generateExprIn(RandomGenerator & rg, ExprInType * expr);
 
     void generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);
     void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);
@@ -782,7 +737,6 @@ private:
     void generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br);
     void generateNextSnapshot(RandomGenerator & rg, SnapshotQuery * sq);
     void generateNextCreateHypotheticalIndex(RandomGenerator & rg, CreateHypotheticalIndex * hi);
-    void generateNextCreateHypotheticalProjection(RandomGenerator & rg, CreateHypotheticalProjection * hp);
     void updateGeneratorFromSingleQuery(const SingleSQLQuery & sq, ExternalIntegrations & ei, bool success);
 
     template <typename T>
@@ -944,11 +898,11 @@ public:
     const std::function<bool(const SQLDictionary &)> attached_dictionaries = [](const SQLDictionary & d) { return d.isAttached(); };
     const std::function<bool(const SQLTable &)> has_mergeable_tables
         = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && t.can_run_merges; };
-    /// Hypothetical (WHAT-IF) indexes and projections are only supported on MergeTree family tables
-    /// whose `StorageID` resolves to a non-nil UUID: tables in `Ordinary` and `Shared` databases
+    /// Hypothetical (WHAT-IF) indexes are only supported on MergeTree family tables whose
+    /// `StorageID` resolves to a non-nil UUID: tables in `Ordinary` and `Shared` databases
     /// (including the default database on cloud runs) have none, and the interpreter rejects
     /// them with `NOT_IMPLEMENTED`
-    const std::function<bool(const SQLTable &)> attached_tables_for_create_hypotheticals
+    const std::function<bool(const SQLTable &)> attached_tables_for_create_hypothetical_index
         = [&cloud = this->supports_cloud_features](const SQLTable & t)
     {
         const bool has_table_uuid = t.db ? (!t.db->isOrdinaryDatabase() && !t.db->isSharedDatabase()) : !cloud;
@@ -957,30 +911,14 @@ public:
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_drop_hypothetical_index
         = [](const SQLTable & t) { return t.isAttached() && !t.hypothetical_indexes.empty(); };
-    const std::function<bool(const SQLTable &)> attached_tables_for_drop_hypothetical_projection
-        = [](const SQLTable & t) { return t.isAttached() && !t.hypothetical_projections.empty(); };
 
+    /// Hypothetical indexes are session scoped on the server, so they are all gone after a reconnect
     void clearHypotheticalIndexes()
     {
         for (auto & [_, t] : tables)
         {
             t.hypothetical_indexes.clear();
         }
-    }
-
-    void clearHypotheticalProjections()
-    {
-        for (auto & [_, t] : tables)
-        {
-            t.hypothetical_projections.clear();
-        }
-    }
-
-    /// Hypothetical objects are session scoped on the server, so they are all gone after a reconnect
-    void clearHypotheticals()
-    {
-        clearHypotheticalIndexes();
-        clearHypotheticalProjections();
     }
 
     const std::function<bool(const SQLTable &)> attached_tables_to_test_format = [](const SQLTable & t)

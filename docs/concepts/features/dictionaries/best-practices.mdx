@@ -32,14 +32,8 @@ When choosing a layout, use the following guidelines:
 - **`hashed`** — stores the full dictionary in a hash table. Can be faster than `hashed_array` when you have very few attributes, but consumes more memory as attribute count grows.
 - **`complex_key_hashed` / `complex_key_hashed_array`** — use these when keys aren't castable to `UInt64` (for example, `String` keys). They follow the same performance tradeoffs as their non-complex counterparts.
 - **`sparse_hashed`** — trades CPU for lower memory usage compared to `hashed`. Rarely the best choice — it's only efficient when you have a single attribute. In most cases, `hashed_array` is a better fit.
-- **`cache` / `ssd_cache`** — only cache frequently accessed keys. Useful when the full dataset doesn't fit in memory, but lookups may hit the source on cache misses. Not recommended for latency-sensitive workloads or reliable insert-time enrichment; see [Cache dictionaries in ingestion paths](#cache-dictionaries-in-ingestion-path).
+- **`cache` / `ssd_cache`** — only cache frequently accessed keys. Useful when the full dataset doesn't fit in memory, but lookups may hit the source on cache misses. Not recommended for latency-sensitive workloads.
 - **`direct`** — queries the source for every lookup with no in-memory storage. Use when the data changes too frequently to cache or when the dictionary is too large for memory.
-
-## Cache dictionaries in ingestion paths {#cache-dictionaries-in-ingestion-path}
-
-Cache-based layouts — `cache`, `complex_key_cache`, `ssd_cache`, and `complex_key_ssd_cache` — retain warmed entries only on the local server. Each server warms its cache independently, and a server restart or replacement starts with an empty cache. Cold-cache lookups depend on the dictionary source, adding latency and potentially blocking or failing inserts if the source cannot serve the lookup. In ClickHouse Cloud, autoscaling and managed node replacement make this condition more likely.
-
-Avoid these layouts for insert-time enrichment in [incremental materialized views](/concepts/features/materialized-views/incremental-materialized-view) or `MATERIALIZED` and `DEFAULT` columns when predictable latency and source availability matter. Use a layout that loads the complete dictionary on each server instead: typically `hashed` or `hashed_array` for `UInt64` keys, and `complex_key_hashed` or `complex_key_hashed_array` for string or composite keys. `flat` and other fully loaded layouts can also be appropriate. If the complete dictionary cannot fit, enrich data before insertion or at query time rather than relying on a warmed cache in the ingestion path.
 
 ## Monitoring dictionary usage {#monitoring-dictionary-usage}
 

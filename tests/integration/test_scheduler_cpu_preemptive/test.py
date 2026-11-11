@@ -100,7 +100,7 @@ def test_create_workload():
     def do_checks():
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/admin/%' and type='request_queue'"
+                "select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
             )
             == "1\n"
         )
@@ -112,7 +112,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/production/%' and type='request_queue'"
+                "select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
             )
             == "1\n"
         )
@@ -124,7 +124,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/development/%' and type='request_queue'"
+                "select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
             )
             == "1\n"
         )

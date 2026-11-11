@@ -1,5 +1,4 @@
 #include <Columns/ColumnObject.h>
-#include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -33,28 +32,6 @@ TEST(ColumnObject, CreateEmpty)
     ASSERT_TRUE(col_object.getSharedDataPathsAndValues().second->empty());
     ASSERT_EQ(col_object.getMaxDynamicTypes(), 10);
     ASSERT_EQ(col_object.getMaxDynamicPaths(), 20);
-}
-
-TEST(ColumnObject, HasOnlyTypeDefaults)
-{
-    auto static_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, a UInt32)");
-    auto static_column = static_type->createColumn();
-    auto & static_object = assert_cast<ColumnObject &>(*static_column);
-
-    ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
-    static_object.insert(Object{});
-    static_object.insert(Object{{"a", Field{0u}}});
-    ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
-
-    auto dynamic_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1)");
-    auto dynamic_column = dynamic_type->createColumn();
-    auto & dynamic_object = assert_cast<ColumnObject &>(*dynamic_column);
-
-    ASSERT_TRUE(dynamic_object.hasOnlyTypeDefaults());
-    dynamic_object.insert(Object{});
-    ASSERT_TRUE(dynamic_object.hasOnlyTypeDefaults());
-    dynamic_object.insert(Object{{"a", Field{0u}}});
-    ASSERT_FALSE(dynamic_object.hasOnlyTypeDefaults());
 }
 
 TEST(ColumnObject, GetName)
@@ -359,6 +336,29 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
     ASSERT_EQ(col_object2[2], (Object{{"b.d", Field(442u)}, {"a.b", Array{"Str11", "Str22"}}, {"a.a", Tuple{"Str33", 444u}}, {"a.c", Field("Str44")}, {"a.d", Array{Field(445), Field(446)}}, {"a.e", Field(447)}}));
 }
 
+TEST(ColumnObject, SkipSerializedInArena)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, b.d UInt32, a.b Array(String))");
+    auto col = type->createColumn();
+    auto & col_object = assert_cast<ColumnObject &>(*col);
+    col_object.insert(Object{{"b.d", Field(42u)}, {"a.b", Array{"Str1", "Str2"}}, {"a.a", Tuple{"Str3", 441u}}, {"a.c", Field("Str4")}, {"a.d", Array{Field(45), Field(46)}}, {"a.e", Field(47)}});
+    col_object.insert(Object{{"b.a", Field(48)}, {"b.b", Array{Field(49), Field(50)}}});
+    col_object.insert(Object{{"b.d", Field(442u)}, {"a.b", Array{"Str11", "Str22"}}, {"a.a", Tuple{"Str33", 444u}}, {"a.c", Field("Str44")}, {"a.d", Array{Field(445), Field(446)}}, {"a.e", Field(447)}});
+
+    Arena arena;
+    const char * pos = nullptr;
+    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos, nullptr);
+    col_object.serializeValueIntoArena(1, arena, pos, nullptr);
+    col_object.serializeValueIntoArena(2, arena, pos, nullptr);
+
+    auto col2 = type->createColumn();
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    col2->skipSerializedInArena(in);
+    col2->skipSerializedInArena(in);
+    col2->skipSerializedInArena(in);
+    ASSERT_TRUE(in.eof());
+}
+
 TEST(ColumnObject, rollback)
 {
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.a UInt32, a.b UInt32)");
@@ -602,12 +602,9 @@ TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
     /// reserve(total_size) instead of reserve(total_size * factor) left them sized for one batch.
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=10)");
 
-    /// The reservation must exceed the initial allocation of the discriminators (4096 bytes, one byte per row), which the
-    /// non-empty target below already has, otherwise the capacity assertions below are vacuous.
-    static constexpr size_t source_rows = 1'000;
     auto source = type->createColumn();
     auto & source_object = assert_cast<ColumnObject &>(*source);
-    for (size_t i = 0; i != source_rows; ++i)
+    for (size_t i = 0; i != 100; ++i)
         source_object.insert(Object{{"a", Field{UInt64(i)}}});
     /// Load-bearing precondition: if "a" landed in shared data the assertions below would be vacuous.
     ASSERT_EQ(source_object.getDynamicPaths().size(), 1u);
@@ -615,27 +612,17 @@ TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
 
     auto target = type->createColumn();
     auto & target_object = assert_cast<ColumnObject &>(*target);
-    target_object.insert(Object{{"a", Field{UInt64(1'000)}}});
 
     VectorWithMemoryTracking<ColumnPtr> sources;
     sources.push_back(std::move(source));
 
     static constexpr size_t factor = 8;
-    const size_t expected_reservation = (target_object.size() + sources.front()->size()) * factor;
     target_object.prepareForSquashing(sources, factor);
 
     /// Control, asserted first so it is reached even while the regression below still fails:
-    /// shared_data already includes the non-empty target and scales by `factor`, and must keep doing so.
-    ASSERT_GE(target_object.getSharedDataPtr()->capacity(), expected_reservation);
+    /// shared_data already scales by `factor`, and must keep doing so.
+    ASSERT_GE(target_object.getSharedDataPtr()->capacity(), 100u * factor);
 
-    /// Regression: the rows that the target already has were not included, so every dynamic path grew
-    /// (reallocated and copied its discriminators and offsets) during the squashing.
     ASSERT_TRUE(target_object.getDynamicPathsPtrs().contains("a"));
-    const size_t dynamic_path_capacity = target_object.getDynamicPathsPtrs().at("a")->capacity();
-    ASSERT_GE(dynamic_path_capacity, expected_reservation);
-
-    /// The reservation is enough: the dynamic path does not grow while the `factor` batches are inserted.
-    for (size_t batch = 0; batch != factor; ++batch)
-        target_object.insertRangeFrom(*sources.front(), 0, source_rows);
-    ASSERT_EQ(target_object.getDynamicPathsPtrs().at("a")->capacity(), dynamic_path_capacity);
+    ASSERT_GE(target_object.getDynamicPathsPtrs().at("a")->capacity(), 100u * factor);
 }

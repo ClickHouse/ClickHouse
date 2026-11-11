@@ -7,7 +7,6 @@
 
 #if USE_PARQUET
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
 
@@ -23,7 +22,7 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::
 /*
  * Try to hash elements in a ClickHouse column; Will return std::nullopt in case one of them can't be hashed
  * */
-std::optional<VectorWithMemoryTracking<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor);
+std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor);
 
 }
 
