@@ -8,7 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -24,6 +23,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -137,7 +138,7 @@ namespace
     {
         constexpr size_t complex_types_size = complex_types.size() * allow_complex_types;
         constexpr size_t result_size = simple_types.size() + complex_types_size;
-        std::array<TypeIndex, result_size> result{};
+        std::array<TypeIndex, result_size> result;
         size_t index = 0;
 
         for (size_t i = 0; i != simple_types.size(); ++i, ++index)
@@ -188,7 +189,7 @@ namespace
         /// and slowness of this function, and it can lead to `Max query size exceeded`
         /// while using this function with generateRandom.
         size_t num_values = rng() % 16 + 1;
-        VectorWithMemoryTracking<Int16> values(num_values);
+        std::vector<Int16> values(num_values);
 
         /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1].
         for (Int16 & x : values)
@@ -240,13 +241,10 @@ namespace
     }
 
     template <bool allow_complex_types = true>
-    void writeRandomType(const String & column_name, pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types, size_t depth = 0, size_t max_depth = MAX_DEPTH)
+    void writeRandomType(const String & column_name, pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types, size_t depth = 0)
     {
-        if (allow_complex_types && depth > max_depth)
-        {
-            writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth, max_depth);
-            return;
-        }
+        if (allow_complex_types && depth > MAX_DEPTH)
+            writeRandomType<false>(column_name, rng, buf, depth);
 
         constexpr auto all_types = getAllTypes<allow_complex_types>();
         auto type = all_types[rng() % all_types.size()];
@@ -295,14 +293,14 @@ namespace
             case TypeIndex::Nullable:
             {
                 writeCString("Nullable(", buf);
-                writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
+                writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
                 writeChar(')', buf);
                 return;
             }
             case TypeIndex::Array:
             {
                 writeCString("Array(", buf);
-                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
+                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
                 writeChar(')', buf);
                 return;
             }
@@ -311,7 +309,7 @@ namespace
                 writeCString("Map(", buf);
                 writeMapKeyType(column_name, rng, buf);
                 writeCString(", ", buf);
-                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
+                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
                 writeChar(')', buf);
                 return;
             }
@@ -336,7 +334,7 @@ namespace
                         writeString(element_name, buf);
                         writeChar(' ', buf);
                     }
-                    writeRandomType(element_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
+                    writeRandomType(element_name, rng, buf, allow_suspicious_lc_types, depth + 1);
                 }
                 writeChar(')', buf);
                 return;
@@ -365,6 +363,31 @@ namespace
 FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
 {
     return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
+}
+
+DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    if (arguments.size() > 2)
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: passed {}, expected from 0 to 2",
+            getName(), arguments.size());
+
+
+    for (size_t i = 0; i != arguments.size(); ++i)
+    {
+        if (!isUInt(arguments[i]) && !arguments[i]->onlyNull())
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of the {} argument of function {}, expected unsigned integer or Null",
+                arguments[i]->getName(),
+                i + 1,
+                getName());
+        }
+    }
+
+    return std::make_shared<DataTypeString>();
 }
 
 ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
@@ -410,25 +433,6 @@ String FunctionGenerateRandomStructure::generateRandomStructure(size_t seed, con
     return buf.str();
 }
 
-String FunctionGenerateRandomStructure::generateRandomDataType(pcg64 & rng, bool allow_suspicious_lc_types, bool allow_complex_types)
-{
-    WriteBufferFromOwnString buf;
-    String column_name = "c";
-    if (allow_complex_types)
-        writeRandomType<true>(column_name, rng, buf, allow_suspicious_lc_types);
-    else
-        writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types);
-    return buf.str();
-}
-
-String FunctionGenerateRandomStructure::generateRandomTypeForTest(size_t seed, bool allow_suspicious_lc_types, size_t max_depth)
-{
-    pcg64 rng(seed);
-    WriteBufferFromOwnString buf;
-    writeRandomType<true>("c", rng, buf, allow_suspicious_lc_types, /*depth=*/0, max_depth);
-    return buf.str();
-}
-
 REGISTER_FUNCTION(GenerateRandomStructure)
 {
     FunctionDocumentation::Description description = R"(
@@ -465,7 +469,7 @@ c1 Map(UInt256, UInt16)
 SELECT generateRandomStructure(NULL, 33)
         )",
         R"(
-c1 DateTime, c2 Enum8(\'c2V0\' = -123, \'c2V1\' = 94, \'c2V2\' = -105, \'c2V3\' = 67), c3 Nullable(UInt8), c4 String, c5 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(71))), c6 UInt32, c7 Bool, c8 Float64
+c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCardinality(Nullable(FixedString(30))), c4 Int16, c5 Enum8('c5V0' = 0, 'c5V1' = 1, 'c5V2' = 2, 'c5V3' = 3), c6 Nullable(UInt8), c7 String, c8 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(70)))
         )"
     }
     };

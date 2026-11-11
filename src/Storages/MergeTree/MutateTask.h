@@ -37,7 +37,8 @@ public:
         const MergeTreeTransactionPtr & txn,
         MergeTreeData & data_,
         MergeTreeDataMergerMutator & mutator_,
-        PartitionActionBlocker & merges_blocker_);
+        PartitionActionBlocker & merges_blocker_,
+        bool need_prefix_);
 
     bool execute();
     void cancel() noexcept;
@@ -72,15 +73,7 @@ private:
 
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MutateTaskPtr task)
 {
-    try
-    {
-        while (task->execute()) {}
-    }
-    catch (...)
-    {
-        task->cancel();
-        throw;
-    }
+    while (task->execute()) {}
     return task->getFuture().get();
 }
 
