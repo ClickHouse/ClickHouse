@@ -1057,6 +1057,9 @@ Packet LocalConnection::receivePacket()
         {
             packet.exception.reset(state->exception->clone());
             next_packet_type.reset();
+            /// An exception is the last packet of the query, as `EndOfStream` is.
+            state.reset();
+            last_sent_snapshots.clear();
             break;
         }
         case Protocol::Server::Progress:
