@@ -58,6 +58,8 @@ void StorageSystemUserDefinedTypes::backupData(BackupEntriesCollector & backup_e
 
 void StorageSystemUserDefinedTypes::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
+    /// Normally RESTORE does not come here: the user-defined types are restored before any table is created
+    /// (see RestorerFromBackup::restoreUserDefinedTypes), because the persisted expressions of tables can refer to them.
     UserDefinedTypeFactory::instance().restore(restorer, data_path_in_backup);
 }
 
