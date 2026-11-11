@@ -1,11 +1,7 @@
-# librtcx's generator of JIT-LTO kernel fragments (contrib/librtcx/cmake/modules/generate_jit_lto_kernels.cmake), which
-# cuVS builds its kernels with, put on the GPU island. Two of its functions are redefined after including it:
-#   - add_jit_lto_kernel makes a target that ClickHouse's directory-scope toolchain would reach; here it is wiped with
-#     gpu_island_target first, and compiled for the one architecture upstream builds its LTO-IR fragments for (`JIT_LTO_TARGET_ARCHITECTURE`).
-#   - process_jit_lto_matrix_entry registers each fragment from register_fatbin.cpp.in here, see that file.
-#   - generate_jit_lto_kernels finds bin2c through find_package(CUDAToolkit), which cmake/cuda.cmake avoids; here it is
-#     taken from the toolkit that nvcc belongs to.
-# The matrix helpers are used as they are.
+# librtcx's JIT-LTO fragment generator, on the GPU island. Redefined after including it:
+#   - add_jit_lto_kernel: wipes the target with gpu_island_target, builds for `JIT_LTO_TARGET_ARCHITECTURE` only;
+#   - process_jit_lto_matrix_entry: registers fragments via register_fatbin.cpp.in;
+#   - generate_jit_lto_kernels: takes bin2c from nvcc's toolkit instead of find_package(CUDAToolkit).
 
 include ("${ClickHouse_SOURCE_DIR}/contrib/librtcx/cmake/modules/generate_jit_lto_kernels.cmake")
 
@@ -22,7 +18,7 @@ function (add_jit_lto_kernel kernel_target)
     gpu_island_target (${kernel_target})
 
     target_link_libraries (${kernel_target} PRIVATE ${_JIT_LTO_LINK_LIBRARIES})
-    # The flags upstream hands down through jit_lto_kernel_usage_requirements: see CMakeLists.txt here.
+    # Flags upstream passes via jit_lto_kernel_usage_requirements.
     target_compile_options (${kernel_target} PRIVATE ${CUVS_CUDA_FLAGS} -Xfatbin=--compress-all --compress-mode=size ${_JIT_LTO_EXTRA_COMPILE_OPTIONS})
     set_target_properties (${kernel_target} PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON

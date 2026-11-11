@@ -220,6 +220,14 @@ FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments)
     return result;
 }
 
+bool isCagraVectorSimilarityIndex(const IndexDescription & index)
+{
+    if (index.type != "vector_similarity" || !index.arguments || index.arguments->children.empty())
+        return false;
+    const auto * method = index.arguments->children.front()->as<ASTLiteral>();
+    return method && method->value.getType() == Field::Types::String && method->value.safeGet<String>() == "cagra";
+}
+
 bool IndexDescription::isSimpleSingleColumnIndex() const
 {
     return expression_list_ast && expression_list_ast->children.size() == 1 && expression_list_ast->children[0]->as<ASTIdentifier>();

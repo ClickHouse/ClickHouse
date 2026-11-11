@@ -52,13 +52,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// vectorSearch(database, table, index_name, queries, k): the `k` nearest rows of the table to each of `queries`, an
-/// `Array(Array(Float32))`, by a `vector_similarity` index of the `cagra` method. Each granule of the index is searched once
-/// for all the queries, which is what the GPU is fast at, and the results of all granules are merged into the top `k`.
-///
-/// The result is computed when the function is executed, i.e. when the query is planned, and is held in memory.
-/// The same as `MergeTreeIndexGranuleCagra::searchBatch`, for the `hnsw` method: the queries are searched on all the
-/// cores, one query at a time on each, as USearch has no batched search.
+/// `MergeTreeIndexGranuleCagra::searchBatch` for `hnsw`: USearch has no batched search, so one query per core.
 void searchBatchHnsw(const USearchIndexWithSerialization & index, const std::vector<float> & queries, size_t num_queries,
     size_t dimensions, size_t limit, size_t expansion, std::vector<UInt32> & neighbours, std::vector<float> & distances)
 {
@@ -68,7 +62,7 @@ void searchBatchHnsw(const USearchIndexWithSerialization & index, const std::vec
     neighbours.assign(num_queries * limit, std::numeric_limits<UInt32>::max());
     distances.assign(num_queries * limit, std::numeric_limits<float>::infinity());
 
-    /// USearch keeps a context per thread number, and has as many as `deserialize` reserved: twice the cores.
+    /// USearch has a context per thread, `deserialize` reserves twice the cores.
     const size_t num_threads = std::min<size_t>(getNumberOfCPUCoresToUse(), num_queries);
     std::atomic<size_t> next_query = 0;
     std::mutex mutex;
@@ -108,6 +102,8 @@ void searchBatchHnsw(const USearchIndexWithSerialization & index, const std::vec
         std::rethrow_exception(exception);
 }
 
+/// vectorSearch(database, table, index_name, queries, k): the `k` nearest rows to each query. Every granule is searched
+/// once for all queries, and the results are merged. Computed at planning time and held in memory.
 class TableFunctionVectorSearch : public ITableFunction
 {
 public:
@@ -203,7 +199,7 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
     auto vector_cache = context->getVectorSimilarityIndexCache();
     auto reader_settings = MergeTreeReaderSettings::createFromContext(context);
 
-    /// Per query, the candidates from all granules: (distance, part, offset in part).
+    /// Per query: (distance, part, offset) from all granules.
     struct Candidate
     {
         float distance;

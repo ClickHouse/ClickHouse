@@ -58,13 +58,13 @@ namespace ErrorCodes
 namespace
 {
 
-/// Below this, a granule has no graph and is searched exactly: see the comment in the header.
+/// Smaller granules have no graph and are searched exactly.
 constexpr size_t min_rows_for_graph = 10000;
 
-/// What CAGRA marks a missing neighbour with, when fewer than `limit` were found.
+/// A missing neighbour in the result of CAGRA.
 constexpr UInt32 invalid_neighbour = std::numeric_limits<UInt32>::max();
 
-/// The `pq_len` of a quantization of the `cagra` method: 0 for `f32`.
+/// `pq_len` of a quantization; 0 for `f32`.
 size_t parseQuantization(const String & quantization)
 {
     if (quantization == "f32")
@@ -103,16 +103,12 @@ void checkFinite(const float * vector, size_t dimensions, int error_code, std::s
             throw Exception(error_code, "Vector for vector similarity index ({}) must not contain non-finite values (NaN or Inf)", context);
 }
 
-/// cuVS runs on the device of the `GPUDevice`, and allocates from its memory pool.
 void checkCanUseDevice()
 {
     GPU::GPUDevice::instance();
 
-    /// When a thread exits, glibc trims its cache of stacks (40 MiB by default) and frees the DTVs of the evicted ones -
-    /// in the exiting thread, after jemalloc has torn down its state of that thread. jemalloc then initializes the thread
-    /// anew and puts a new tcache, which lives in the TLS of the thread, into the list of an arena; the stack goes away
-    /// and the next walk of that list crashes. The threads of OpenMP that cuVS starts during a build make the cache
-    /// overflow. A large enough cache never trims.
+    /// The OpenMP threads of cuVS overflow the glibc stack cache; trimming it after jemalloc's thread teardown leaves a
+    /// dangling tcache in an arena list, which crashes later. A large enough cache never trims.
     const char * tunables = std::getenv("GLIBC_TUNABLES"); // NOLINT(concurrency-mt-unsafe)
     if (!tunables || !std::string_view(tunables).contains("glibc.pthread.stack_cache_size="))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -120,7 +116,6 @@ void checkCanUseDevice()
             "`GLIBC_TUNABLES=glibc.pthread.stack_cache_size=17179869184`");
 }
 
-/// Builds the graph of `rows` vectors of `dataset` on the device and returns it, `rows * graph_degree` neighbours.
 std::vector<UInt32> buildGraph(const std::vector<float> & dataset, size_t rows, size_t dimensions, CagraMetric metric, CagraParams params)
 {
     checkCanUseDevice();
@@ -132,7 +127,6 @@ std::vector<UInt32> buildGraph(const std::vector<float> & dataset, size_t rows, 
 
 }
 
-/// The graph and the vectors of a granule on the device, ready to search.
 class CagraDeviceIndex : public GPU::CagraIndex
 {
 public:
@@ -183,7 +177,7 @@ size_t CagraCompressedVectors::memoryUsageBytes() const
 
 float MergeTreeIndexGranuleCagra::toDistance(float cuvs_distance) const
 {
-    /// The squared L2 distance of normalized vectors is twice their cosine distance.
+    /// For normalized vectors, squared L2 = 2 * cosine distance.
     if (compressed)
         return metric == CagraMetric::Cosine ? cuvs_distance / 2 : cuvs_distance;
     return metric == CagraMetric::L2 ? cuvs_distance : 1.0f - cuvs_distance;
@@ -272,7 +266,7 @@ void MergeTreeIndexGranuleCagra::deserializeBinary(ReadBuffer & istr, MergeTreeI
         istr.readStrict(reinterpret_cast<char *>(vectors.pq_codebook.data()), vectors.pq_codebook.size() * sizeof(float));
         istr.readStrict(reinterpret_cast<char *>(vectors.codes.data()), vectors.codes.size());
 
-        /// `decompress` and the device index rely on the VQ centers of the rows being in the codebook.
+        /// `decompress` and the device index look up the VQ codebook by these.
         for (size_t row = 0; row < rows; ++row)
         {
             UInt32 center = 0;
@@ -404,7 +398,7 @@ void MergeTreeIndexGranuleCagra::searchBatch(const std::vector<float> & queries,
         return;
     }
 
-    /// CAGRA returns at most as many neighbours as there are rows; the rest of each row of the result stays missing.
+    /// CAGRA returns at most `rows` neighbours.
     const size_t k = std::min(limit, rows);
     const auto device = getDeviceIndex();
     std::vector<UInt32> found_neighbours(num_queries * k);
@@ -428,16 +422,14 @@ void MergeTreeIndexGranuleCagra::searchBatch(const std::vector<float> & queries,
 namespace
 {
 
-/// A beam search over the graph for one query, as the single-CTA search of CAGRA does it on the device: a sorted list
-/// of the best `candidates` rows seen so far, from which the best row not expanded yet is expanded - its neighbours in
-/// the graph are measured and merged into the list - until all rows in the list are expanded. The list starts from rows
-/// spread over the granule, as CAGRA starts from random samples.
+/// Beam search over the graph, like the single-CTA search of CAGRA: expand the best unexpanded row of a sorted list of
+/// `candidates` rows until all are expanded. The list starts from rows spread over the granule.
 class CpuBeamSearch
 {
 public:
     explicit CpuBeamSearch(const MergeTreeIndexGranuleCagra & granule_)
         : granule(granule_)
-        /// Compressed vectors are searched by the squared L2 distance, as CAGRA-Q does.
+        /// Compressed vectors are searched by squared L2, as in CAGRA-Q.
         , metric(granule.dimensions,
             granule.metric == CagraMetric::L2 || granule.compressed ? unum::usearch::metric_kind_t::l2sq_k : unum::usearch::metric_kind_t::ip_k,
             unum::usearch::scalar_kind_t::f32_k)
@@ -445,7 +437,7 @@ public:
     {
     }
 
-    /// Writes up to `limit` rows and distances, best first, and returns how many.
+    /// Writes up to `limit` rows and distances, best first; returns how many.
     size_t search(const float * query, size_t limit, size_t candidates, UInt32 * rows_out, float * distances_out)
     {
         const size_t rows = granule.rows;
@@ -453,7 +445,7 @@ public:
         list.clear();
         visited.clear();
 
-        /// The `hnsw` method returns `1 - dot` for the inner product and the squared L2 distance, and so does this metric.
+        /// `1 - dot` or squared L2, as in `hnsw`.
         auto distance = [&](UInt32 row)
         {
             const float * vector = granule.dataset.data() + static_cast<size_t>(row) * granule.dimensions;
@@ -520,7 +512,7 @@ private:
     unum::usearch::metric_punned_t metric;
     std::vector<Entry> list;
     HashSet<UInt32> visited;
-    /// The vector of the row being measured, for compressed vectors.
+    /// The decompressed row, for compressed vectors.
     std::vector<float> decompressed;
 };
 
@@ -661,7 +653,7 @@ void MergeTreeIndexAggregatorCagra::update(const Block & block, size_t * pos, si
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Array values in column with vector similarity index have {} elements, expects {} elements", offsets[row] - offsets[row - 1], dimensions);
 
-    /// `update` is called for every mark: no exact `reserve` here, which would copy the whole dataset each time.
+    /// No exact `reserve`: `update` is called per mark.
     const size_t old_size = dataset.size();
 
     const auto & data = column_array->getData();

@@ -1,7 +1,5 @@
-// The part of cuVS' src/preprocessing/quantize/pq.cu that CAGRA-Q needs: `make_vpq_dataset` (its header) calls
-// `detail::vpq_train_from_rows`, which is the same here as there. pq.cu itself is not built: it also instantiates the
-// inverse transform of PQ, whose `reconstruct_vectors_kernel` (it takes an `std::optional` by value) nvcc 13.1 compiles
-// into NVVM IR that NVVM rejects ("Explicit load/store type does not match pointee type of pointer operand").
+// `detail::vpq_train_from_rows` of cuVS' pq.cu, which `make_vpq_dataset` calls. pq.cu is not built: NVVM of nvcc 13.1
+// rejects its `reconstruct_vectors_kernel` ("Explicit load/store type does not match pointee type of pointer operand").
 
 #include "preprocessing/quantize/detail/pq.cuh"
 

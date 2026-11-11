@@ -1,5 +1,4 @@
-# CUTLASS, header-only, for cuVS: its pairwise distances and the fused L2 nearest neighbour of k-means on sm80+.
-# In a namespace of cuVS's choosing (as its get_cutlass.cmake sets it), so it cannot clash with another copy.
+# CUTLASS, header-only, for cuVS, in the namespace its get_cutlass.cmake picks.
 
 if (NOT ENABLE_GPU)
     message (STATUS "Not using CUTLASS")
