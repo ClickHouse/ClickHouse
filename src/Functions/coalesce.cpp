@@ -6,6 +6,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -229,7 +230,7 @@ private:
         filtered_args.reserve(arguments.size());
         /// The positions of the profiles in `profile->argument_profiles` are the positions in `arguments`,
         /// not in `filtered_args`, because they are matched with the arguments of the action.
-        std::vector<size_t> filtered_args_positions;
+        VectorWithMemoryTracking<size_t> filtered_args_positions;
         filtered_args_positions.reserve(arguments.size());
         for (size_t arg_pos = 0; arg_pos < arguments.size(); ++arg_pos)
         {
