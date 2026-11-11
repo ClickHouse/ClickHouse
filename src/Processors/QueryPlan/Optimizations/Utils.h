@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <type_traits>
+#include <unordered_map>
 
 namespace DB
 {
@@ -78,6 +80,10 @@ enum class FilterResult
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
 
+[[nodiscard]] bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag);
+
+[[nodiscard]] bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root);
+
 /// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
 /// many times and on which rows it was evaluated.
@@ -86,6 +92,11 @@ enum class FilterResult
 /// True if optimizeExchanges will lift a plain gather above this step, so a scatter/gather pair separated
 /// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
+
+/// Columns of each node's output that are a constant there, or below it where a filter pushed down from above can read them.
+using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
+
+[[nodiscard]] ConstantColumns collectConstantColumns(const QueryPlan::Node & root);
 
 /// The filter's result for one row whose inputs in `filter_input` have those values; every other input is unknown.
 [[nodiscard]] FilterResult filterResultForInputValues(
@@ -98,7 +109,9 @@ enum class FilterResult
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
     const Block & input_stream_header,
-    bool allow_unknown_function_arguments = false);
+    bool allow_unknown_function_arguments = false,
+    /// The plan node of the side, to also refuse a constant below it.
+    const QueryPlan::Node * side_node = nullptr);
 
 [[nodiscard]] FilterResult filterResultForMatchedRows(
     ActionsDAG pre_actions_dag,
