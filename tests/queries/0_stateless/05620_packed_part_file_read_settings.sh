@@ -27,9 +27,9 @@ read_settings="max_threads = 1, remote_filesystem_read_prefetch = 1, enable_file
     prefetch_buffer_size = 1048576, max_read_buffer_size = 1048576,
     allow_prefetched_read_pool_for_remote_filesystem = 0, use_uncompressed_cache = 0, use_columns_cache = 0,
     use_page_cache_for_disks_without_file_cache = 0, use_page_cache_for_object_storage = 0, use_page_cache_for_local_disks = 0,
-    read_through_distributed_cache = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
+    force_read_through_distributed_cache = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
     local_filesystem_read_method = 'pread', local_filesystem_read_prefetch = 0, min_bytes_to_use_mmap_io = 0,
-    min_bytes_to_use_direct_io = 0"
+    min_bytes_to_use_direct_io = 0, use_query_condition_cache = 0"
 
 for storage in packed full; do
     if [ "$storage" = "packed" ]; then full_storage_bytes="'10Gi'"; else full_storage_bytes=0; fi

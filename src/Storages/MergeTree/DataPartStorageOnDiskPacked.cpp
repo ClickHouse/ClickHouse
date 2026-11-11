@@ -366,8 +366,7 @@ void DataPartStorageOnDiskPacked::prepareReadImpl(
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
                     auto outer_buf = reader->readFile(
-                        volume->getDisk(), getRelativeDataPath(), String(SKIP_INDICES_PACKED_FILENAME),
-                        PackedFilesReader::getReadSettingsForFile(s, inner.size), std::nullopt);
+                        volume->getDisk(), getRelativeDataPath(), String(SKIP_INDICES_PACKED_FILENAME), s, std::nullopt);
                     return std::make_unique<ReadBufferFromFileView>(std::move(outer_buf), file_name, inner.offset, inner.offset + inner.size);
                 };
             pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
