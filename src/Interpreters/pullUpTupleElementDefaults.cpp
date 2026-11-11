@@ -175,11 +175,10 @@ void checkDefaultDoesNotReferenceElements(
     /// The default cannot reference the column it is written in, neither directly (`c`) nor through
     /// subcolumn syntax (`c.a`, or the quoted spelling `` `c.a` ``): after the pull-up it becomes a
     /// self-referential column-level default. A name with the `<column>.` prefix, quoted or not, may
-    /// as well be an independent column named `c.a`, so it is a self-reference only if it names an
-    /// actual subcolumn of the column and no table column has exactly this name. That is why only the
-    /// complete names are checked here, not the roots of compound identifiers. The type of the column
-    /// is known only after all its defaults are stripped, so such names are collected into
-    /// `subcolumn_references` and checked by `pullUpTupleElementDefaults`. This has to be rejected
+    /// as well be an independent column named `c.a`, so it is a self-reference unless a table column
+    /// has exactly this name. That is why only the complete names are checked here, not the roots of
+    /// compound identifiers. The table columns are known only to the caller, so such names are
+    /// collected into `subcolumn_references` and checked by `pullUpTupleElementDefaults`. This has to be rejected
     /// here: the cycle detection in `ColumnsDescription` compares whole identifiers, so it does not
     /// recognize `c.a` as a reference to the column `c`, and the failure would be deferred to the first
     /// insert that omits the column.
@@ -189,7 +188,7 @@ void checkDefaultDoesNotReferenceElements(
         if (name == column_name)
             throwSelfReference(column_name);
         if (name.starts_with(column_subcolumn_prefix))
-            subcolumn_references.insert(name.substr(column_subcolumn_prefix.size()));
+            subcolumn_references.insert(name);
     }
 
     /// The roots of compound identifiers are checked for the ambiguity as well: in `a.b`, `a` may be
@@ -508,18 +507,18 @@ void pullUpTupleElementDefaults(
     if (!built_default)
         return;
 
-    /// A name with the `<column>.` prefix is a self-reference only if it names a subcolumn of the column
-    /// and no table column has exactly this name; otherwise it refers to an independent column with a
-    /// dotted name. An exact column name takes precedence over a subcolumn, as in
-    /// `ColumnsDescription::tryGetColumn`. The table columns are consulted only for an actual subcolumn,
-    /// so `is_table_column` is not called for a default that does not need it.
-    if (!subcolumn_references.empty())
-    {
-        const DataTypePtr column_type = DataTypeFactory::instance().get(type);
-        for (const auto & subcolumn : subcolumn_references)
-            if (column_type->hasSubcolumn(subcolumn) && !(is_table_column && is_table_column(col_decl.name + "." + subcolumn)))
-                throwSelfReference(col_decl.name);
-    }
+    /// A name with the `<column>.` prefix refers to an independent column with a dotted name if a table
+    /// column has exactly this name: an exact column name takes precedence over a subcolumn, as in
+    /// `ColumnsDescription::tryGetColumn`. Otherwise it is a self-reference. Whether the name is a
+    /// subcolumn of the type written here is deliberately not checked: the type is not final yet. It may
+    /// still be wrapped in `Nullable` (by the `NULL` modifier or `data_type_default_nullable`), which adds
+    /// the `null` subcolumn, and a later `MODIFY COLUMN` of the same query may change it while keeping this
+    /// default. A name which is neither a table column nor a subcolumn cannot be resolved in any case, so
+    /// rejecting it does not reject a valid default. `is_table_column` is called only for such a name, so
+    /// it is not called for a default that does not need it.
+    for (const auto & name : subcolumn_references)
+        if (!(is_table_column && is_table_column(name)))
+            throwSelfReference(col_decl.name);
 
     if (col_decl.default_specifier != ColumnDefaultSpecifier::Empty || col_decl.getDefaultExpression())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

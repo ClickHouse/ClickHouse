@@ -35,8 +35,8 @@ enum class TupleElementDefaultStateVersion
 ///
 /// `is_table_column` tells whether a name is the exact name of a column of the table the column belongs
 /// to (in the resulting schema), as far as it is known. A default that references `c.a` (quoted or not)
-/// from inside the column `c` is a self-reference if `a` is a subcolumn of `c`, unless `c.a` is the exact
-/// name of a table column: an exact column name takes precedence over a subcolumn, as in
+/// from inside the column `c` is a self-reference, unless `c.a` is the exact name of a table column: an
+/// exact column name takes precedence over a subcolumn, as in
 /// `ColumnsDescription::tryGetColumn`. It is called only when such a reference is found, so the caller
 /// may check the access to the table schema in it. Without it, every such reference is rejected.
 /// See https://github.com/ClickHouse/ClickHouse/issues/2797.
