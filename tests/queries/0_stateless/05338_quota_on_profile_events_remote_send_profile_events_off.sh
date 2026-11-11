@@ -32,10 +32,10 @@ ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_05338 TO ${U}"
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 100 year MAX SelectedParts = 1 TO ${U}"
 
 # Off both in the user's profile and in the query itself.
-${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_05338) SETTINGS send_profile_events = 0"
+${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_05338) SETTINGS send_profile_events = 0, use_statistics_for_sum_avg_aggregation = 0"
 ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectedParts'] FROM system.quotas_usage WHERE quota_name = '${Q}'"
-${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_05338) SETTINGS send_profile_events = 0"
-${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_05338) SETTINGS send_profile_events = 0" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
+${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_05338) SETTINGS send_profile_events = 0, use_statistics_for_sum_avg_aggregation = 0"
+${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_05338) SETTINGS send_profile_events = 0, use_statistics_for_sum_avg_aggregation = 0" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
 ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectedParts'] FROM system.quotas_usage WHERE quota_name = '${Q}'"
 
 cleanup

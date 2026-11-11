@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 

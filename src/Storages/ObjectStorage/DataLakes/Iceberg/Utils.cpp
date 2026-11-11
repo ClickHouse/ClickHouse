@@ -1658,8 +1658,10 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
             Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
             sorting_field->set(f_source_id, *source_id);
             sorting_field->set(f_transform, transform_name);
-            sorting_field->set(f_direction, reverse_flags.empty() || !reverse_flags[i] ? "asc" : "desc");
-            sorting_field->set("null-order", "nulls-first");
+            const bool descending = !reverse_flags.empty() && reverse_flags[i];
+            sorting_field->set(f_direction, descending ? "desc" : "asc");
+            /// ClickHouse sorts NULLs as greater than any value, see `sortBlockByKeyDescription`.
+            sorting_field->set(f_null_order, descending ? "nulls-first" : "nulls-last");
             sorting_fields->add(sorting_field);
         }
         sort_order->set(Iceberg::f_fields, sorting_fields);
@@ -1682,6 +1684,25 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     setFormatVersion1SchemaAndPartitionSpec(new_metadata_file_content);
 
     return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
+}
+
+CompressionMethod setMetadataCompressionCodecProperty(Poco::JSON::Object::Ptr metadata_object, const ContextPtr & context)
+{
+    const auto & compression_method_str = context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
+    const auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+    if (compression_method_str.empty())
+        return compression_method;
+
+    /// Key on the raw setting: an explicit `none` must reach a catalog that defaults to gzip.
+    const String codec_name = compression_method == CompressionMethod::None ? "none" : toContentEncodingName(compression_method);
+    Poco::JSON::Object::Ptr properties = metadata_object->getObject("properties");
+    if (!properties)
+    {
+        properties = new Poco::JSON::Object;
+        metadata_object->set("properties", properties);
+    }
+    properties->set("write.metadata.compression-codec", codec_name);
+    return compression_method;
 }
 
 void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
@@ -1787,9 +1808,9 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             {
                 /// Manifests and manifest lists share this directory but are never named `v...`.
                 if (list_v_prefixed_names_only)
-                    listing = listPrefix(*object_storage, table_path, "metadata/v", ".metadata.json");
+                    listing = listPrefixNonRecursive(*object_storage, table_path, "metadata", "v", ".metadata.json");
                 if (!list_v_prefixed_names_only || listing.matched.empty())
-                    listing = listPrefix(*object_storage, table_path, "metadata", ".metadata.json");
+                    listing = listPrefixNonRecursive(*object_storage, table_path, "metadata", "", ".metadata.json");
                 if (!listing.matched.empty())
                     break;
                 if (attempt + 1 < MAX_LIST_RETRIES)

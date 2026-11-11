@@ -1,0 +1,14 @@
+-- joinGet, no grants: an existing Join table, a non-Join table and a missing table look the same
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- mergeTreeIndex, no grants: DESCRIBE and SELECT reveal nothing
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- a grant on one column makes the table visible, and the column-level check applies as before
+ACCESS_DENIED
+OK: 1
+ACCESS_DENIED
+OK: a
