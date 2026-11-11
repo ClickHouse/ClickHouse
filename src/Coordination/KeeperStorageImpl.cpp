@@ -985,7 +985,9 @@ processLocal(const Coordination::ZooKeeperCheckWatchRequest & zk_request, Keeper
     ProfileEvents::increment(ProfileEvents::KeeperCheckWatchRequest);
     auto response = zk_request.makeResponse();
 
-    if (!storage.containsWatch(zk_request.getPath(), zk_request.type))
+    if (!magic_enum::enum_contains(zk_request.type))
+        response->error = Coordination::Error::ZBADARGUMENTS;
+    else if (!storage.containsWatch(zk_request.getPath(), zk_request.type))
         response->error = Coordination::Error::ZNOWATCHER;
     return response;
 }
@@ -1004,7 +1006,9 @@ processLocal(const Coordination::ZooKeeperRemoveWatchRequest & zk_request, Keepe
     ProfileEvents::increment(ProfileEvents::KeeperRemoveWatchRequest);
     auto response = zk_request.makeResponse();
 
-    if (!storage.removePersistentWatch(zk_request.path, zk_request.type, session_id))
+    if (!magic_enum::enum_contains(zk_request.type))
+        response->error = Coordination::Error::ZBADARGUMENTS;
+    else if (!storage.removePersistentWatch(zk_request.path, zk_request.type, session_id))
         response->error = Coordination::Error::ZNOWATCHER;
 
     return response;
@@ -1024,7 +1028,10 @@ processLocal(const Coordination::ZooKeeperAddWatchRequest & zk_request, KeeperSt
     ProfileEvents::increment(ProfileEvents::KeeperAddWatchRequest);
     auto response = zk_request.makeResponse();
 
-    storage.addPersistentWatch(zk_request.path, zk_request.mode, session_id);
+    if (!magic_enum::enum_contains(zk_request.mode))
+        response->error = Coordination::Error::ZBADARGUMENTS;
+    else
+        storage.addPersistentWatch(zk_request.path, zk_request.mode, session_id);
     return response;
 }
 
