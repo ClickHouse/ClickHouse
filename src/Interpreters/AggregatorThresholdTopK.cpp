@@ -89,7 +89,8 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::tryMergeAndConvertOneBuck
     Arena * arena,
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
-    std::atomic<int> * threshold_top_k_verdict) const
+    std::atomic<int> * threshold_top_k_verdict,
+    size_t * merged_group_count) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -98,7 +99,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::tryMergeAndConvertOneBuck
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
         return mergeAndConvertOneBucketToChunkThresholdTopKImpl<decltype(merged_data.NAME)::element_type>( \
-            variants, arena, bucket, is_cancelled, threshold_top_k_verdict);
+            variants, arena, bucket, is_cancelled, threshold_top_k_verdict, merged_group_count);
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
@@ -109,7 +110,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::tryMergeAndConvertOneBuck
 template <typename Method>
 requires SetAggregationMethod<Method>
 std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketToChunkThresholdTopKImpl(
-    ManyAggregatedDataVariants &, Arena *, Int32, std::atomic<bool> &, std::atomic<int> *) const
+    ManyAggregatedDataVariants &, Arena *, Int32, std::atomic<bool> &, std::atomic<int> *, size_t *) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "The top-K threshold merge does not support set methods");
 }
@@ -121,7 +122,8 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
     Arena * arena,
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
-    std::atomic<int> * threshold_top_k_verdict) const
+    std::atomic<int> * threshold_top_k_verdict,
+    size_t * merged_group_count) const
 {
     /// The plan never requests the threshold merge for nullable or low-cardinality keys (their
     /// tables carry a special null-key cell the walk below does not visit), but the dispatch
@@ -736,6 +738,8 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
 
             ProfileEvents::increment(ProfileEvents::AggregationThresholdTopKMergedGroups, merged_groups);
             ProfileEvents::increment(ProfileEvents::AggregationThresholdTopKPrunedCells, total_cells - consumed_cells);
+            if (merged_group_count)
+                *merged_group_count = merged_groups;
 
             /// Materialize the candidates, exactly like the ordinary conversion would.
             auto & method_object = getDataVariant<Method>(merged_data);

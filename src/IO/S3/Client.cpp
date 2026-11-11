@@ -767,6 +767,17 @@ template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
+    /// With an empty key the SDK addresses the bucket itself, e.g. `DeleteObject` becomes `DeleteBucket`.
+    if constexpr (requires { request.GetKey(); })
+    {
+        if (request.GetKey().empty())
+            return std::invoke_result_t<RequestFn, RequestType &>(Aws::Client::AWSError<Aws::S3::S3Errors>(
+                Aws::S3::S3Errors::MISSING_PARAMETER,
+                "MISSING_PARAMETER",
+                fmt::format("The object key is empty, so the request would address bucket {} itself", request.GetBucket()),
+                /*isRetryable*/ false));
+    }
+
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
