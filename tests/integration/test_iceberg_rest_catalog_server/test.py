@@ -381,6 +381,11 @@ def test_config(started_cluster):
     )
     assert_error_shape(response, "NoSuchWarehouseException")
 
+    response = catalog_request(
+        "GET", "/v1/config", params={"warehouse": ""}, expected_code=404
+    )
+    assert_error_shape(response, "NoSuchWarehouseException")
+
 
 def test_namespaces(started_cluster):
     ns = f"sales_{uuid.uuid4().hex[:8]}"
@@ -1299,6 +1304,26 @@ def test_unsupported_format_is_refused(started_cluster):
             )
             assert_error_shape(response, "InternalServerError")
         assert node.contains_in_log("has an unsupported format version")
+    finally:
+        zk.set(KEEPER_ROOT, json.dumps(definition).encode())
+
+    list_namespaces()
+
+
+def test_invalid_definition_is_server_error(started_cluster):
+    # A damaged definition in Keeper is not a client error.
+    zk = get_keeper()
+    definition = warehouse_definition(BASE_LOCATION, WAREHOUSE_UUID)
+    damaged = {k: v for k, v in definition.items() if k != "base_location"}
+    zk.set(KEEPER_ROOT, json.dumps(damaged).encode())
+    try:
+        response = catalog_request(
+            "GET", "/v1/my_warehouse/namespaces", expected_code=500
+        )
+        assert_error_shape(response, "InternalServerError")
+        assert node.contains_in_log(
+            "is invalid: Missing or empty string 'base_location'"
+        )
     finally:
         zk.set(KEEPER_ROOT, json.dumps(definition).encode())
 

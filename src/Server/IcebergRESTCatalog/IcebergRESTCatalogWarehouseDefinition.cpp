@@ -94,9 +94,17 @@ IcebergRESTCatalogWarehouseDefinition IcebergRESTCatalogWarehouseDefinition::fro
     if (format_version != FORMAT_VERSION)
         throw Exception(ErrorCodes::INCORRECT_DATA, "{} has an unsupported format version: expected {}, found {}", what, FORMAT_VERSION, format_version);
 
-    auto definition = fromJSON(*json);
-    definition.uuid = parseFromString<UUID>(getRequiredString(*json, "uuid"));
-    return definition;
+    try
+    {
+        auto definition = fromJSON(*json);
+        definition.uuid = parseFromString<UUID>(getRequiredString(*json, "uuid"));
+        return definition;
+    }
+    catch (const Exception & e)
+    {
+        /// `fromJSON` throws `BAD_ARGUMENTS`, which the handler reports as a client error.
+        throw Exception(ErrorCodes::INCORRECT_DATA, "{} is invalid: {}", what, e.message());
+    }
 }
 
 }
