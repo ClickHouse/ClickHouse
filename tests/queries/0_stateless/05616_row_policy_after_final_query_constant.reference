@@ -7,6 +7,12 @@ now
 IN subquery
 0
 2	0
+IN Set table
+1
+2	0
+IN Set table in a lambda
+1
+2	0
 column outside the sorting key
 1
 100	0
