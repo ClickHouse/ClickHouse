@@ -195,7 +195,7 @@ static bool isTemporaryMetadataFile(const String & file_name)
 /// True for `v<N>.metadata.json`, the only scheme whose file name is itself the compare-and-set:
 /// aiming at an N that exists collides, so existence means N is committed and a higher N carries a
 /// superset of the state. A uuid in the name removes both properties.
-static bool isVersionNumberedCommitScheme(const String & file_name)
+bool isVersionNumberedCommitScheme(const String & file_name)
 {
     if (!file_name.starts_with('v'))
         return false;
@@ -281,6 +281,16 @@ MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         .version = parseMetadataVersion(version_str, file_name),
         .path = path,
         .compression_method = getCompressionMethodFromMetadataFile(path)};
+}
+
+/// True for the name a commit without a transactional catalog gives version N in a uuid scheme: like `v<N>`, it
+/// is that commit's compare-and-set, so it exists only once N is committed. Another writer's uuid is not.
+static bool isUuidNamedCommit(const String & file_name)
+{
+    if (isVersionNumberedCommitScheme(file_name) || isTemporaryMetadataFile(file_name))
+        return false;
+    const auto info = getMetadataFileAndVersion(file_name);
+    return file_name == FileNamesGenerator::uuidMetadataFileName(info.version, file_name.starts_with('v'), info.compression_method);
 }
 
 /// Resolve metadata filename from version hint content.
@@ -519,9 +529,10 @@ bool tryWriteVersionHintFile(
         /// lastly, let's update it
         try
         {
-            /// Write just the version number for Spark/spec compatibility.
+            /// Spark reads a bare number as `v<N>.metadata.json`, so a file named otherwise is written in full.
+            const String metadata_file_name = std::filesystem::path(storage_metadata_path).filename();
             Iceberg::writeMessageToFile(
-                std::to_string(metadata_file_info.version),
+                isVersionNumberedCommitScheme(metadata_file_name) ? std::to_string(metadata_file_info.version) : metadata_file_name,
                 storage_version_hint_path,
                 object_storage,
                 context,
@@ -2037,9 +2048,9 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                     "Iceberg table with path {} has metadata files named `v<N>.metadata.json` and metadata "
                     "files named `<N>-<uuid>.metadata.json`, and nothing declares which of the two schemes "
                     "this table commits through, so its current metadata file cannot be identified. "
-                    "Refusing, because this operation deletes or rewrites metadata. Declare the current "
-                    "`v<N>.metadata.json` with `iceberg_use_version_hint = 1` and a "
-                    "`metadata/version-hint.text` naming it, or remove the metadata files of the other scheme",
+                    "Refusing, because this operation deletes or rewrites metadata. If the current one is a "
+                    "`v<N>.metadata.json`, write its number N into `metadata/version-hint.text` and set "
+                    "`iceberg_use_version_hint = 1`; otherwise remove the metadata files of the other scheme",
                     table_path);
         }
 
@@ -2056,13 +2067,14 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         /// Ranking selected another file than the one the table declares current: either the
         /// declaration is stale or that file was never committed, and nothing here tells which.
-        /// Only a higher `v<N>` is no disagreement, that number exists because a commit wrote it.
+        /// Only a higher name that is a commit's compare-and-set (`v<N>`, isUuidNamedCommit) is no
+        /// disagreement, that name exists because a commit wrote it.
         if (declared_target)
         {
-            const bool superseded_in_own_scheme = isVersionNumberedCommitScheme(*declared_target)
-                && latest_metadata_file_info.version > declared_target_version;
-            if (!superseded_in_own_scheme
-                && std::filesystem::path(latest_metadata_file_info.path).filename() != *declared_target)
+            const String latest_name = std::filesystem::path(latest_metadata_file_info.path).filename();
+            const bool superseded_in_own_scheme = latest_metadata_file_info.version > declared_target_version
+                && (isVersionNumberedCommitScheme(*declared_target) || isUuidNamedCommit(latest_name));
+            if (!superseded_in_own_scheme && latest_name != *declared_target)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Iceberg table with path {} declares '{}' as its current metadata file, but ranking selects "

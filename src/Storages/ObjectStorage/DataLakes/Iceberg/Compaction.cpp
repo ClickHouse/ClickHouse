@@ -212,7 +212,7 @@ static Plan getPlan(
         persistent_table_components.metadata_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_metadata_pointer_overrides */ true);
-    plan.generator.setVersion(metadata_version + 1);
+    plan.generator.continueMetadataChain(metadata_file_path, metadata_version);
 
     Poco::JSON::Object::Ptr initial_metadata_object
         = deepCopy(getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
@@ -519,6 +519,7 @@ static DataFileEntryLineage getEntryLineageForRewrite(const ParsedManifestFileEn
 
 static bool writeConsolidatedManifestFile(
     int metadata_version,
+    const String & metadata_file_path,
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage, ContextPtr context,
@@ -816,7 +817,7 @@ static bool writeConsolidatedManifestFile(
         false,
         compression_method,
         write_format);
-    generator.setVersion(metadata_version + 1);
+    generator.continueMetadataChain(metadata_file_path, metadata_version);
 
     MetadataGenerator metadata_generator(metadata_object);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
@@ -1541,6 +1542,7 @@ void compactIcebergManifests(
 
         if (writeConsolidatedManifestFile(
                 metadata_version,
+                metadata_file_path,
                 metadata_object,
                 persistent_table_components,
                 object_storage_,
