@@ -1,4 +1,4 @@
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 -- The declared types of function parameters are enforced at the call boundary.
