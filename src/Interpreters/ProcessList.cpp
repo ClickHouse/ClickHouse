@@ -121,12 +121,9 @@ static bool isUnlimitedQuery(const IAST * ast)
     return false;
 }
 
-bool isMetadataQuery(const IAST * ast)
+bool isMetadataQuery(const IAST & ast)
 {
-    if (!ast)
-        return false;
-
-    switch (ast->getQueryKind())
+    switch (ast.getQueryKind())
     {
         case IAST::QueryKind::Drop: /// Also DETACH and TRUNCATE
         case IAST::QueryKind::Undrop:
@@ -139,12 +136,12 @@ bool isMetadataQuery(const IAST * ast)
         case IAST::QueryKind::Create: /// Also ATTACH
         {
             /// A `SELECT` (also of a view) is analyzed and a table function is read to infer the structure.
-            const auto * create = ast->as<ASTCreateQuery>();
+            const auto * create = ast.as<ASTCreateQuery>();
             return !create || (!create->select && !create->as_table_function);
         }
         case IAST::QueryKind::Alter:
         {
-            const auto * alter = ast->as<ASTAlterQuery>();
+            const auto * alter = ast.as<ASTAlterQuery>();
             if (!alter || !alter->command_list)
                 return true;
             for (const auto & child : alter->command_list->children)
