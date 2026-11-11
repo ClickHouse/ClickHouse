@@ -153,6 +153,28 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_peer/buckets/0' AND name
 SELECT 'peer / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_peer/buckets/1' AND name = 'processed';
 
+-- 8. A refused migration creates no bucket nodes, so the next attempt still reads bucket 0.
+CREATE TABLE q_part (x UInt64)
+ENGINE = S3Queue('http://localhost:11111/test/05620_part/', 'username', 'password', CSV)
+SETTINGS mode = 'ordered', buckets = 1, last_processed_path = 'd.csv',
+         keeper_path = '/clickhouse/{database}/q_part';
+
+INSERT INTO system.zookeeper (path, name, value)
+SELECT '/clickhouse/' || currentDatabase() || '/q_part/buckets/0', 'processed',
+       '{"file_path":"c.csv","last_processed_timestamp":0,"last_exception":"","retries":0,"processor_id":""}';
+
+-- The child under `<keeper_path>/processed` has the shape of a partitioned queue's pointers.
+CREATE TABLE q_part_holder (x UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/{database}/q_part/processed/holder', '{replica}')
+ORDER BY tuple();
+
+ALTER TABLE q_part MODIFY SETTING buckets = 2; -- { serverError SUPPORT_IS_DISABLED }
+
+SELECT 'part / bucket 1 after refusal', count() FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_part/buckets' AND name = '1';
+SELECT 'part / bucket 0 after refusal', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_part/buckets/0' AND name = 'processed';
+
 DROP TABLE q_one;
 DROP TABLE q_zero;
 DROP TABLE q_empty;
@@ -161,3 +183,5 @@ DROP TABLE q_legacy;
 DROP TABLE q_dual_root;
 DROP TABLE q_dual_bucket;
 DROP TABLE q_peer;
+DROP TABLE q_part_holder SYNC;
+DROP TABLE q_part;

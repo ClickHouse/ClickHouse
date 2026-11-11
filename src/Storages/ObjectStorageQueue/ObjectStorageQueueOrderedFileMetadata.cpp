@@ -997,17 +997,28 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         return;
     }
 
-    /// Older versions migrated `buckets = 1` into bucket 0, after which the queue kept writing `<zk_path>/processed`.
-    /// Bucket 0's node is such a pointer only while no other replica has created the bucketed layout.
-    const bool use_legacy_bucket_0 = prev_value == 1
-        && !zk_client->exists(std::filesystem::path(zk_path) / "buckets" / "1");
+    const auto buckets_path = std::filesystem::path(zk_path) / "buckets";
 
     for (size_t try_num = 0; try_num <= retries; ++try_num)
     {
         requests.clear();
 
+        /// The bucket nodes are created together with the migrated pointer, so `buckets/1` exists only after a migration.
+        /// Before it, bucket 0 may hold the pointer of the whole queue, put there by older versions for `buckets = 1`.
+        std::vector<std::string> missing_bucket_paths;
+        if (!zk_client->exists(buckets_path))
+            missing_bucket_paths.push_back(buckets_path);
+        bool bucket_1_missing = false;
         for (size_t i = 0; i < value; ++i)
-            zk_client->createAncestors(getProcessedPathWithBucket(zk_path, /* bucket */i));
+        {
+            const std::string bucket_path = buckets_path / toString(i);
+            if (!zk_client->exists(bucket_path))
+            {
+                missing_bucket_paths.push_back(bucket_path);
+                bucket_1_missing |= i == 1;
+            }
+        }
+        const bool use_legacy_bucket_0 = prev_value == 1 && bucket_1_missing;
 
         std::vector<std::string> candidate_paths{getProcessedPathWithoutBucket(zk_path)};
         if (use_legacy_bucket_0)
@@ -1031,9 +1042,14 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
 
         if (old_processed_paths.empty())
         {
+            for (const auto & path : missing_bucket_paths)
+                zk_client->createIfNotExists(path, "");
             LOG_TRACE(log, "Processed node does not exist at paths {}", fmt::join(candidate_paths, ", "));
             return;
         }
+
+        for (const auto & path : missing_bucket_paths)
+            requests.push_back(zkutil::makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
 
         for (size_t i = 0; i < value; ++i)
         {
@@ -1079,6 +1095,14 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Cannot change old metadata structure, "
                             "because someone is modifying it concurrently");
+        }
+
+        if (code == Coordination::Error::ZNODEEXISTS
+            && failed_idx < old_processed_paths.size() + missing_bucket_paths.size())
+        {
+            LOG_TRACE(log, "Bucket node {} was created concurrently by another replica, will recheck",
+                      requests[failed_idx]->getPath());
+            continue;
         }
 
         if (code == Coordination::Error::ZNODEEXISTS)

@@ -22,3 +22,5 @@ dual bucket / bucket 1	1	b.csv
 peer / processed	0
 peer / bucket 0	1	live.csv
 peer / bucket 1	0	
+part / bucket 1 after refusal	0
+part / bucket 0 after refusal	1	c.csv
