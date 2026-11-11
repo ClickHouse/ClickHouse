@@ -131,6 +131,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
+    extern const SettingsBool query_plan_cache_allow_scalar_subqueries;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_skip_unused_shards;
@@ -1044,8 +1045,23 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
         used_row_policies.emplace(std::move(name));
     }
 
+    auto filter_query_tree = buildFilterQueryTree(row_policy_filter->expression, table_expression_query_info.table_expression, query_context);
+
+    /// The row-policy filter is analyzed here, separately from the query tree checked by
+    /// `queryTreeIsEligibleForPlanCache`, and is planned into the cached plan itself. Check its
+    /// resolved tree, which also contains what the raw policy AST does not show: calls of niladic
+    /// functions spelled without parentheses (e.g. `currentRequestURL IN ('')`) and the expressions
+    /// of `ALIAS` columns the policy reads (e.g. `cutoff DateTime ALIAS now`). Folding them would
+    /// freeze an analysis-time value that a hit keeps enforcing. The collector of storage identities
+    /// is set only while a cacheable logical plan is being built.
+    if (auto identities = query_context->getPlanCacheStorageIdentities();
+        identities
+        && !queryTreeIsEligibleForPlanCache(
+            filter_query_tree, query_context, query_context->getSettingsRef()[Setting::query_plan_cache_allow_scalar_subqueries]))
+        identities->markIneligible();
+
     return buildFilterInfo(
-        row_policy_filter->expression,
+        std::move(filter_query_tree),
         table_expression_query_info.table_expression,
         planner_context,
         std::move(required_names_without_filter));

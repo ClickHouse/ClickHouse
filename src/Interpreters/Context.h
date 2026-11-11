@@ -607,8 +607,8 @@ public:
         }
 
         /// Records that a query tree analyzed while building the plan, but not visible in the
-        /// caller's query tree (the body of a view expanded at plan time), is not eligible for the
-        /// cache - e.g. it folds a non-deterministic function such as `now`.
+        /// caller's query tree (the body of a view expanded at plan time, or a row-policy filter), is
+        /// not eligible for the cache - e.g. it folds a non-deterministic function such as `now`.
         void markIneligible()
         {
             std::lock_guard lock(mutex);

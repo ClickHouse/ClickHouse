@@ -1,0 +1,8 @@
+-- 1. row policy with a niladic function spelled without parentheses
+-- native: 1 2 3 
+-- hits after a native repeat (must be 0): 0
+-- HTTP (must be empty): []
+-- hits of the HTTP run (must be 0): 0
+-- 2. row policy reading an ALIAS column that expands to now
+-- result: 1 
+-- hits after a repeat (must be 0): 0
