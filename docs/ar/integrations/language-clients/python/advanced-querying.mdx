@@ -7,7 +7,9 @@ title: 'الاستعلامات المتقدمة'
 doc_type: 'مرجع'
 ---
 
-## QueryContexts {#querycontexts}
+<div id="querycontexts">
+  ## QueryContexts
+</div>
 
 ينفّذ ClickHouse Connect الاستعلامات القياسية ضمن `QueryContext`. يحتوي `QueryContext` على البُنى الأساسية المستخدمة لبناء الاستعلامات على قاعدة بيانات ClickHouse، بالإضافة إلى الإعدادات المستخدمة لمعالجة النتيجة وتحويلها إلى `QueryResult` أو أي بنية بيانات استجابة أخرى. ويشمل ذلك الاستعلام نفسه، والمعلمات، والإعدادات، وتنسيقات القراءة، وخصائص أخرى.
 
@@ -30,7 +32,9 @@ assert result.first_row == (79,)
 
 لاحظ أن كائنات `QueryContext` ليست آمنة للاستخدام عبر الخيوط، ولكن يمكن الحصول على نسخة منها في بيئة متعددة الخيوط عبر استدعاء التابع `QueryContext.updated_copy`.
 
-## الاستعلامات المتدفقة {#streaming-queries}
+<div id="streaming-queries">
+  ## الاستعلامات المتدفقة
+</div>
 
 يوفّر ClickHouse Connect Client عدة طرق لاسترجاع البيانات كتدفق (وهو مُنفَّذ كمُولِّد في بايثون):
 
@@ -44,7 +48,9 @@ assert result.first_row == (79,)
 
 تعيد كل طريقة كائن `StreamContext`، ويجب فتحه باستخدام عبارة `with`. وتُنتظر طرق التدفق في العميل غير المتزامن وتُفتح باستخدام `async with`.
 
-### كتل البيانات {#data-blocks}
+<div id="data-blocks">
+  ### كتل البيانات
+</div>
 
 يعالج ClickHouse Connect جميع البيانات القادمة من طريقة `query` الأساسية كتدفق من الكتل التي يتلقاها من خادم ClickHouse. وتُنقل هذه الكتل من ClickHouse وإليه باستخدام تنسيق &quot;Native&quot; المخصص. والـ&quot;كتلة&quot; هي ببساطة تسلسل من أعمدة البيانات الثنائية، حيث يحتوي كل عمود على عدد متساوٍ من قيم البيانات من نوع البيانات المحدد. (وبما أن ClickHouse قاعدة بيانات عمودية، فهو يخزّن هذه البيانات بصيغة مشابهة.) ويتحكم في حجم الكتلة المُعادة من الاستعلام إعدادان للمستخدم يمكن ضبطهما على عدة مستويات (ملف تعريف المستخدم، أو المستخدم، أو الجلسة، أو الاستعلام). وهما:
 
@@ -55,11 +61,15 @@ assert result.first_row == (79,)
 
 عند استخدام إحدى طرائق Client `query_*_stream`، تُعاد النتائج كتلةً بكتلة. ولا يحمّل ClickHouse Connect سوى كتلة واحدة في كل مرة. ويتيح ذلك معالجة كميات كبيرة من البيانات دون الحاجة إلى تحميل مجموعة نتائج كبيرة كاملةً إلى الذاكرة. لاحظ أنه ينبغي أن يكون التطبيق مستعدًا لمعالجة أي عدد من الكتل، ولا يمكن التحكم في الحجم الدقيق لكل كتلة.
 
-### مخزن بيانات HTTP المؤقت عند بطء المعالجة {#http-data-buffer-for-slow-processing}
+<div id="http-data-buffer-for-slow-processing">
+  ### مخزن بيانات HTTP المؤقت عند بطء المعالجة
+</div>
 
 إذا كان أحد التطبيقات يستهلك الكتل بمعدل أبطأ بكثير من معدل إنتاجها من الخادم، فقد يُغلَق اتصال HTTP قبل اكتمال المعالجة. زِد الإعداد العام `http_buffer_size` عندما تتوفر للتطبيق ذاكرة كافية لتخزين المزيد من بيانات الاستجابة مؤقتًا. القيمة الافتراضية هي 10 MiB. تظل بايتات الاستجابة `lz4` و`zstd` مضغوطة داخل هذا المخزن المؤقت، مما يزيد من سعته الفعلية.
 
-### StreamContexts {#streamcontexts}
+<div id="streamcontexts">
+  ### StreamContexts
+</div>
 
 تعيد كل واحدة من طرق `query_*_stream` (مثل `query_row_block_stream`) كائن `StreamContext` من ClickHouse، وهو كائن مدمج يجمع بين السياق والمولِّد في بايثون. وهذا هو الاستخدام الأساسي:
 
@@ -78,7 +88,9 @@ with client.query_row_block_stream(
 
 يمكنك استخدام الخاصية `source` في `StreamContext` للوصول إلى الكائن الأب للنتيجة، الذي يتضمن أسماء الأعمدة وأنواعها. وبالنسبة إلى معظم التدفقات، يكون هذا الكائن `QueryResult`؛ أما الطريقتان `query_np_stream` و`query_df_stream` فتُظهران بدلًا من ذلك `NumpyResult`.
 
-### أنواع التدفق {#stream-types}
+<div id="stream-types">
+  ### أنواع التدفق
+</div>
 
 تعيد الطريقة `query_column_block_stream` الكتلة كتسلسل من بيانات الأعمدة المخزَّنة على هيئة أنواع بيانات بايثون الأصلية. وباستخدام استعلامات `taxi_trips` أعلاه، ستكون البيانات المعادة قائمةً يكون كل عنصر فيها قائمةً أخرى (أو `tuple`) تضم كل البيانات الخاصة بالعمود المقابل. لذا فإن `block[0]` سيكون `tuple` لا يحتوي إلا على سلاسل نصية. وتُستخدم التنسيقات المعتمدة على الأعمدة غالبًا لإجراء عمليات تجميعية على جميع القيم في عمود معيّن، مثل جمع إجمالي الأجور.
 
@@ -102,9 +114,13 @@ with df_stream:
 
 أخيرًا، تُغلِّف `query_arrow_stream` استجابة ClickHouse `ArrowStream` داخل `StreamContext`. ويُرجِع كل تكرار `RecordBatch` من PyArrow.
 
-### أمثلة على البيانات المتدفقة {#streaming-examples}
+<div id="streaming-examples">
+  ### أمثلة على البيانات المتدفقة
+</div>
 
-#### تدفّق الصفوف {#stream-rows}
+<div id="stream-rows">
+  #### تدفّق الصفوف
+</div>
 
 ```python
 import clickhouse_connect
@@ -122,7 +138,9 @@ with client.query_rows_stream("SELECT number, number * 2 as doubled FROM system.
         # Additional rows follow
 ```
 
-#### تدفق كتل الصفوف {#stream-row-blocks}
+<div id="stream-row-blocks">
+  #### تدفق كتل الصفوف
+</div>
 
 ```python
 import clickhouse_connect
@@ -135,7 +153,9 @@ with client.query_row_block_stream("SELECT number, number * 2 FROM system.number
         print(f"Received block with {len(block)} rows")
 ```
 
-#### تدفق Pandas DataFrames {#stream-pandas-dataframes}
+<div id="stream-pandas-dataframes">
+  #### تدفق Pandas DataFrames
+</div>
 
 ```python
 import clickhouse_connect
@@ -150,7 +170,9 @@ with client.query_df_stream("SELECT number, toString(number) AS str FROM system.
         print(df.head(3))
 ```
 
-#### تدفق دفعات Arrow {#stream-arrow-batches}
+<div id="stream-arrow-batches">
+  #### تدفق دفعات Arrow
+</div>
 
 ```python
 import clickhouse_connect
@@ -164,7 +186,9 @@ with client.query_arrow_stream("SELECT * FROM large_table") as stream:
         print(f"Received Arrow batch with {arrow_batch.num_rows} rows")
 ```
 
-#### صفوف التدفق غير المتزامنة {#async-stream-rows}
+<div id="async-stream-rows">
+  #### صفوف التدفق غير المتزامنة
+</div>
 
 ```python
 import asyncio
@@ -184,11 +208,15 @@ async def main():
 asyncio.run(main())
 ```
 
-## استعلامات NumPy وPandas وArrow {#numpy-pandas-and-arrow-queries}
+<div id="numpy-pandas-and-arrow-queries">
+  ## استعلامات NumPy وPandas وArrow
+</div>
 
 يوفّر ClickHouse Connect طرق استعلام متخصصة للعمل مع هياكل بيانات NumPy وPandas وArrow. وتتيح لك هذه الطرق استرجاع نتائج الاستعلام مباشرةً بهذه التنسيقات الشائعة للبيانات من دون تحويل يدوي.
 
-### استعلامات NumPy {#numpy-queries}
+<div id="numpy-queries">
+  ### استعلامات NumPy
+</div>
 
 تعيد الطريقة `query_np` نتائج الاستعلام على شكل مصفوفة NumPy بدلًا من كائن `QueryResult` في ClickHouse Connect.
 
@@ -213,7 +241,9 @@ print(np_array)
 #  [4 8]]
 ```
 
-### استعلامات Pandas {#pandas-queries}
+<div id="pandas-queries">
+  ### استعلامات Pandas
+</div>
 
 تعيد الدالة `query_df` نتائج الاستعلام في صورة Pandas DataFrame بدلًا من `QueryResult` في ClickHouse Connect.
 
@@ -237,7 +267,9 @@ print(df)
 # 4       4        8
 ```
 
-### استعلامات PyArrow {#pyarrow-queries}
+<div id="pyarrow-queries">
+  ### استعلامات PyArrow
+</div>
 
 تعيد الدالة `query_arrow` جدول PyArrow باستخدام تنسيق الإخراج `Arrow` في ClickHouse مباشرةً. وهي تقبل `query` و`parameters` و`settings` و`external_data` و`transport_settings`. ويتحكم الخيار `use_strings` في ما إذا كانت أعمدة ClickHouse من النوع `String` ستُخرَج كسلاسل نصية في Arrow أو كقيم ثنائية.
 
@@ -263,7 +295,9 @@ print(arrow_table)
 # str: [["0","1","2"]]
 ```
 
-### DataFrames المستندة إلى Arrow {#arrow-backed-dataframes}
+<div id="arrow-backed-dataframes">
+  ### DataFrames المستندة إلى Arrow
+</div>
 
 يدعم ClickHouse Connect إنشاء DataFrame بكفاءة من نتائج Arrow من خلال `query_df_arrow` و`query_df_arrow_stream`. تتجنب هاتان الطريقتان التحويل عبر كائنات الصفوف في بايثون، وتعيدان استخدام مخازن Arrow المؤقتة عندما تسمح بذلك المكتبة المستهدفة:
 
@@ -272,7 +306,9 @@ print(arrow_table)
   * `dataframe_library="polars"` يُرجع DataFrame من Polars مُنشأً عبر `pl.from_arrow`.
 * `query_df_arrow_stream`: يبث دفعات Arrow على شكل DataFrames من Pandas أو Polars.
 
-#### من الاستعلام إلى DataFrame مستند إلى Arrow {#query-to-arrow-backed-dataframe}
+<div id="query-to-arrow-backed-dataframe">
+  #### من الاستعلام إلى DataFrame مستند إلى Arrow
+</div>
 
 ```python
 import clickhouse_connect
@@ -308,14 +344,18 @@ with client.query_df_arrow_stream(
         print(f"Received {type(df_batch)} batch with {len(df_batch)} rows and dtypes: {df_batch.dtypes}")
 ```
 
-#### ملاحظات ومحاذير {#notes-and-caveats}
+<div id="notes-and-caveats">
+  #### ملاحظات ومحاذير
+</div>
 
 * يتحكم ClickHouse في مخطط Arrow. ويمكن إرجاع الأنواع التي لا تملك تمثيلًا مباشرًا في Arrow باستخدام نوع فعلي متوافق، بما في ذلك الحقول الثنائية. افحص `table.schema` أو أنواع بيانات DataFrame قبل تطبيق التحويلات الخاصة بالتطبيق.
 * تتطلب نتائج Pandas المستندة إلى Arrow الإصدار 2.0 من Pandas أو أحدث.
 * يتحكم `use_strings` في ما إذا كانت أعمدة ClickHouse `String` تستخدم حقول Arrow النصية أم الثنائية عندما يدعم الخادم `output_format_arrow_string_as_string`.
 * لا تزال `tz_mode="schema"` غير مدعومة في طرق الاستعلام المستندة إلى Arrow. وهي تصدر تحذيرًا وتحافظ على البيانات الوصفية للمنطقة الزمنية التي يوفّرها رد Arrow.
 
-## تنسيقات القراءة {#read-formats}
+<div id="read-formats">
+  ## تنسيقات القراءة
+</div>
 
 تتحكم تنسيقات القراءة في القيم المُعادة من `query` و`query_np` و`query_df`. ولا تنطبق على الأساليب الخام أو أساليب Arrow، لأن هذه الأساليب تستخدم تنسيق إخراج الخادم مباشرةً. على سبيل المثال، يؤدي تعيين تنسيق قراءة معرّف UUID إلى `"string"` إلى إرجاع سلاسل UUID بدلًا من كائنات `uuid.UUID`.
 
@@ -355,60 +395,42 @@ client.query(
 )
 ```
 
-### خيارات تنسيق القراءة (أنواع بايثون) {#read-format-options-python-types}
+<div id="read-format-options-python-types">
+  ### خيارات تنسيق القراءة (أنواع بايثون)
+</div>
 
-| نوع ClickHouse        | نوع بايثون الأصلي       | تنسيقات القراءة   | التعليقات                                                                                                                                                                                    |
-| --------------------- | ----------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     | string            |                                                                                                                                                                                              |
-| UInt64                | int                     | signed            | لا يتعامل Superset حاليًا مع قيم UInt64 غير الموقعة الكبيرة                                                                                                                                  |
-| [U]Int[128,256]       | int                     | string            | قيم int في Pandas وNumPy بحد أقصى 64 بت، لذا يمكن إرجاع هذه القيم كسلاسل نصية                                                                                                                |
-| BFloat16              | float                   | -                 | جميع قيم float في بايثون تكون داخليًا بدقة 64 بت                                                                                                                                             |
-| Float32               | float                   | string            | جميع قيم float في بايثون تكون داخليًا بدقة 64 بت                                                                                                                                             |
-| Float64               | float                   | string            |                                                                                                                                                                                              |
-| Decimal               | decimal.Decimal         | -                 |                                                                                                                                                                                              |
-| Interval*             | int                     | string            | القيم هي أعداد موقعة بطول 64 بت مقاسة بوحدة نوع الـ interval.                                                                                                                                |
-| String                | str                     | bytes             | لا تحتوي أعمدة String في ClickHouse على ترميز أصيل، لذا تُستخدم أيضًا للبيانات الثنائية ذات الطول المتغير                                                                                    |
-| FixedString           | bytes                   | string            | FixedStrings هي مصفوفات بايتات ذات حجم ثابت، لكنها تُعامل أحيانًا كسلاسل نصية في بايثون                                                                                                      |
-| Enum[8,16]            | str                     | int               | يعيد التنسيق الأصلي التسميات؛ بينما يعيد `int` القيمة الصحيحة الأساسية.                                                                                                                      |
-| Date                  | datetime.date           | int               | يعيد التنسيق العددي عدد الأيام منذ 1970-01-01.                                                                                                                                               |
-| Date32                | datetime.date           | int               | يعيد التنسيق العددي إزاحة الأيام الموقعة الأوسع.                                                                                                                                             |
-| DateTime              | datetime.datetime       | int               | يعيد التنسيق العددي ثواني epoch.                                                                                                                                                             |
-| DateTime64            | datetime.datetime       | int               | يعيد التنسيق العددي قيم tick وفق precision العمود. تقتصر `datetime` في بايثون على الميكروثواني.                                                                                              |
-| Time                  | datetime.timedelta      | int, string, time | يعيد التنسيق العددي الثواني. يقتصر تنسيق `time` على القيم التي تتوافق مع `datetime.time`.                                                                                                    |
-| Time64                | datetime.timedelta      | int, string, time | قيم scale من 0 إلى 9 مدعومة. يعيد التنسيق العددي قيم tick وفق precision العمود. تقتصر `timedelta` في بايثون على الميكروثواني.                                                                |
-| IPv4                  | `ipaddress.IPv4Address` | string, int       | يمكن قراءة عناوين IP كسلاسل نصية أو كأعداد صحيحة.                                                                                                                                            |
-| IPv6                  | `ipaddress.IPv6Address` | string            | يمكن قراءة عناوين IP كسلاسل نصية، وإذا كانت منسقة بشكل صحيح فيمكن إدراجها كعناوين IP                                                                                                         |
-| Tuple                 | dict or tuple           | tuple, dict, json | تعيد Tuples المسماة قواميس افتراضيًا؛ بينما تعيد Tuples غير المسماة tuples. وتعيد القيمة `Tuple()` الناتج `()`.                                                                              |
-| Map                   | dict                    | pairs             | `dict` هو الخيار الافتراضي. يُرجع `pairs` قائمة من tuples المفتاح/القيمة ويحافظ على المفاتيح المكررة.                                                                                        |
-| Nested                | Sequence[dict]          | -                 |                                                                                                                                                                                              |
-| معرّف UUID            | uuid.UUID               | string            | يمكن قراءة معرّفات UUID كسلاسل نصية منسقة وفق RFC 4122<br />                                                                                                                                 |
-| JSON                  | dict                    | string            | يُرجع قاموس بايثون افتراضيًا. ويُرجع تنسيق `string` JSON string                                                                                                                              |
-| Variant               | object                  | typed             | يُرجع `typed` القيمة `TypedVariant(value, type_name)` بحيث يُحفَظ نوع العضو الأصلي.                                                                                                          |
-| Dynamic               | object                  | -                 | يعيد نوع بايثون المطابق لنوع بيانات ClickHouse المخزَّن لهذه القيمة                                                                                                                          |
-| MultiPoint            | list[tuple]             | -                 | تُعاد كل نقطة على شكل tuple ثنائي.                                                                                                                                                           |
-| Geometry              | tuple or list           | typed             | قيم Point هي tuples ثنائية. أما الأعضاء الآخرون، بما في ذلك MultiPoint، فيستخدمون قوائم متداخلة. اختر `typed` مع المفتاح `Geometry` للحفاظ على نوع العضو. ولا تنطبق إعدادات تنسيق `Variant`. |
-| QBit                  | list[float]             | -                 | يُستخدم NumPy تلقائيًا لتسريع تبديل مواضع البتات عند تثبيته.                                                                                                                                 |
+| نوع ClickHouse        | نوع بايثون الأصلي       | تنسيقات القراءة   | التعليقات                                                                                                 |
+| --------------------- | ----------------------- | ----------------- | --------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     | string            |                                                                                                           |
+| UInt64                | int                     | signed            | لا يتعامل Superset حاليًا مع قيم UInt64 غير الموقعة الكبيرة                                               |
+| [U]Int[128,256]       | int                     | string            | قيم int في Pandas وNumPy بحد أقصى 64 بت، لذا يمكن إرجاع هذه القيم كسلاسل نصية                             |
+| BFloat16              | float                   | -                 | جميع قيم float في بايثون تكون داخليًا بدقة 64 بت                                                          |
+| Float32               | float                   | string            | جميع قيم float في بايثون تكون داخليًا بدقة 64 بت                                                          |
+| Float64               | float                   | string            |                                                                                                           |
+| Decimal               | decimal.Decimal         | -                 |                                                                                                           |
+| String                | str                     | bytes             | لا تحتوي أعمدة String في ClickHouse على ترميز أصيل، لذا تُستخدم أيضًا للبيانات الثنائية ذات الطول المتغير |
+| FixedString           | bytes                   | string            | FixedStrings هي مصفوفات بايتات ذات حجم ثابت، لكنها تُعامل أحيانًا كسلاسل نصية في بايثون                   |
+| Enum[8,16]            | str                     | int               | يعيد التنسيق الأصلي التسميات؛ بينما يعيد `int` القيمة الصحيحة الأساسية.                                   |
+| Date                  | datetime.date           | int               | يعيد التنسيق العددي عدد الأيام منذ 1970-01-01.                                                            |
+| Date32                | datetime.date           | int               | يعيد التنسيق العددي إزاحة الأيام الموقعة الأوسع.                                                          |
+| DateTime              | datetime.datetime       | int               | يعيد التنسيق العددي ثواني epoch.                                                                          |
+| DateTime64            | datetime.datetime       | int               | يعيد التنسيق العددي قيم tick وفق precision العمود. تقتصر `datetime` في بايثون على الميكروثواني.           |
+| Time                  | datetime.timedelta      | int, string, time | يعيد التنسيق العددي الثواني. يقتصر تنسيق `time` على القيم التي تتوافق مع `datetime.time`.                 |
+| Time64                | datetime.timedelta      | int, string, time | يعيد التنسيق العددي قيم tick وفق precision العمود. تقتصر `timedelta` في بايثون على الميكروثواني.          |
+| IPv4                  | `ipaddress.IPv4Address` | string, int       | يمكن قراءة عناوين IP كسلاسل نصية أو كأعداد صحيحة.                                                         |
+| IPv6                  | `ipaddress.IPv6Address` | string            | يمكن قراءة عناوين IP كسلاسل نصية، وإذا كانت منسقة بشكل صحيح فيمكن إدراجها كعناوين IP                      |
+| Tuple                 | dict or tuple           | tuple, dict, json | تعيد Tuples المسماة قواميس افتراضيًا؛ بينما تعيد Tuples غير المسماة tuples.                               |
+| Map                   | dict                    | -                 |                                                                                                           |
+| Nested                | Sequence[dict]          | -                 |                                                                                                           |
+| UUID                  | uuid.UUID               | string            | يمكن قراءة UUIDs كسلاسل نصية منسقة وفق RFC 4122<br />                                                     |
+| JSON                  | dict                    | string            | يُرجع قاموس بايثون افتراضيًا. ويُرجع تنسيق `string` JSON string                                           |
+| Variant               | object                  | typed             | يُرجع `typed` القيمة `TypedVariant(value, type_name)` بحيث يُحفَظ نوع العضو الأصلي.                       |
+| Dynamic               | object                  | -                 | يعيد نوع بايثون المطابق لنوع بيانات ClickHouse المخزَّن لهذه القيمة                                       |
+| QBit                  | list[float]             | -                 | يُستخدم NumPy تلقائيًا لتسريع تبديل مواضع البتات عند تثبيته.                                              |
 
-تدعم `query_np` و`query_np_stream` و`query_df` و`query_df_stream` قيم scale التالية لـ `Time64`: 0 و3 و6 و9. أما القيم الأخرى فتُطلق `ProgrammingError` لعدم وجود وحدة زمنية مطابقة لها في NumPy. استخدم query بايثون قياسيًا مع تنسيق القراءة `int` أو `string` للحفاظ على تلك القيم من precision. ويوثّق [Rust codec](/ar/integrations/language-clients/python/rust-codec#known-behavior-differences) التجريبي استثناءً لـ `Time64` المخزَّن داخل `Dynamic`.
-
-### قيم Map ذات المفاتيح المكررة {#map-pairs}
-
-قد تحتوي قيم Map في ClickHouse على مفاتيح مكررة، في حين لا يحتفظ قاموس بايثون الافتراضي إلا بآخر قيمة لكل مفتاح. للحفاظ على جميع الأزواج بالترتيب الذي يُعيدها به الخادم، اختر تنسيق القراءة `pairs`:
-
-```python
-result = client.query(
-    "SELECT map('key', 'X', 'key', 'Y') AS m",
-    query_formats={"Map": "pairs"},
-)
-print(result.first_item["m"])
-# [('key', 'X'), ('key', 'Y')]
-```
-
-تُطبَّق هذه الصيغة بشكل تعاودي على قيم Map المتداخلة داخل أنواع ClickHouse الأخرى، بما في ذلك Arrays وTuples والمسارات محددة النوع في JSON وDynamic وVariant وقيم Map الأخرى. كما تعمل مع `query_np` و`query_df` ونظيراتهما الخاصة بالدفق. لاختيار هذه الصيغة لقيم Map في عمود واحد من النتائج، استخدم `column_formats={"m": {"Map": "pairs"}}`. ولضبطها على المستوى العام، استخدم `set_read_format("Map", "pairs")`.
-
-هذا تنسيق قراءة فحسب، إذ لا تزال عمليات الإدراج الأصلية لقيم Map تتطلب قواميس ولا تقبل قوائم الأزواج. استخدم `query_arrow` و`insert_arrow` لقراءة المفاتيح المكررة وإعادة كتابتها دون فقدان أي بيانات. ولا تؤثر تنسيقات القراءة في طرق Arrow. وكما هو الحال مع تجاوزات تنسيقات القراءة الأخرى، يؤدي `native_codec="rust"` إلى الرجوع إلى تنفيذ بايثون، بينما يُثير `native_codec="rust_strict"` الاستثناء `NotSupportedError`.
-
-## البيانات الخارجية {#external-data}
+<div id="external-data">
+  ## البيانات الخارجية
+</div>
 
 يمكن لاستعلامات ClickHouse قبول بيانات خارجية بأي تنسيق إدخال مدعوم. يرسل العميل البيانات كجزء من الطلب، ويمكن للاستعلام الرجوع إليها باعتبارها جدولًا خارجيًا مؤقتًا. راجع [توثيق البيانات الخارجية في ClickHouse](/ar/reference/engines/table-engines/special/external-data). تقبل طرائق استعلام العميل كائن `clickhouse_connect.driver.external.ExternalData` عبر المعلمة `external_data`.
 
@@ -451,7 +473,9 @@ result = client.query(
 
 لا تدعم الواجهة الخلفية لـ chDB البيانات الخارجية.
 
-## المناطق الزمنية {#time-zones}
+<div id="time-zones">
+  ## المناطق الزمنية
+</div>
 
 تُنقل قيم `DateTime` و`DateTime64` في ClickHouse على هيئة قيم رقمية مستندة إلى epoch. ويحوّلها ClickHouse Connect إلى كائنات `datetime` في بايثون باستخدام البيانات الوصفية للأعمدة، وتجاوزات الاستعلام، وسياسة المنطقة الزمنية الخاصة بالعميل.
 

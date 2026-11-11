@@ -93,11 +93,6 @@ SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, 
     return ISerialization::pooled(getHash(variant_serializations_, variant_name_), [&] { return new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_); });
 }
 
-bool SerializationVariant::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
-{
-    return !path.empty() && path.back().type == Substream::VariantElement && path.back().variant_element_name == element_name;
-}
-
 SerializationVariant::SerializationVariant(
     const DataTypes & variant_types_,
     const VariantSerializations & variant_serializations_,
@@ -1086,7 +1081,7 @@ bool SerializationVariant::tryDeserializeTextEscapedOrRawImpl(
     /// We don't have enough data in buffer to check if it's a null.
     /// Use PeekableReadBuffer to make a checkpoint before checking null
     /// representation and rollback if check was failed.
-    PeekableReadBuffer peekable_buf(istr);
+    PeekableReadBuffer peekable_buf(istr, true);
     peekable_buf.setCheckpoint();
     if (checkString(null_representation, peekable_buf)
         && (peekable_buf.eof() || *peekable_buf.position() == '\t' || *peekable_buf.position() == '\n'

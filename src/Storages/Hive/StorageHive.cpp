@@ -299,7 +299,6 @@ public:
                     });
                 }
                 pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
-                pipeline->disableProfileEventUpdate();
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
 
@@ -609,6 +608,10 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
     if (partition.values.size() != partition_names.size())
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
             "Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size());
+
+    if (!partition_key_expr)
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+            "Hive metastore returned a partition for table {}.{}, but the table has no partition key", hive_database, hive_table);
 
     /// Join partition values in CSV format
     WriteBufferFromOwnString wb;
@@ -1147,7 +1150,6 @@ void registerStorageHive(StorageFactory & factory)
                 std::move(hive_settings),
                 args.getContext());
         },
-        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,

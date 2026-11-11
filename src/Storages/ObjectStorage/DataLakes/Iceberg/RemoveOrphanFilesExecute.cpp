@@ -256,14 +256,12 @@ RemoveOrphanFilesResult removeOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_table_components,
-    const std::shared_ptr<DataLake::ICatalog> & catalog,
-    const String & table_name)
+    const PersistentTableComponents & persistent_table_components)
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
-    auto [reachable, metadata_version, metadata_path] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
+    auto [reachable, metadata_version] = collectReachableFiles(
+        object_storage, persistent_table_components, data_lake_settings, context, log);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
     if (!object_storage->existsOrHasAnyChild(scan_path))
@@ -279,13 +277,13 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (params.dry_run || scan.orphan_paths.empty())
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
-    auto [_recheck_files, recheck_version, recheck_path] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
-    if (recheck_path != metadata_path)
+    auto [_recheck_files, recheck_version] = collectReachableFiles(
+        object_storage, persistent_table_components, data_lake_settings, context, log);
+    if (recheck_version != metadata_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Current metadata file changed during orphan scan ('{}' v{} -> '{}' v{}); "
+            "Metadata version changed during orphan scan (v{} -> v{}); "
             "aborting to avoid deleting files referenced by a concurrent commit",
-            metadata_path, metadata_version, recheck_path, recheck_version);
+            metadata_version, recheck_version);
 
     auto delete_result = deleteOrphanFiles(scan.orphan_paths, object_storage, log);
     LOG_INFO(log, "Deleted {}/{} orphan files ({} failed)",
@@ -308,19 +306,15 @@ Pipe executeRemoveOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_components,
-    std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name)
+    const PersistentTableComponents & persistent_components)
 {
     /// `persistent_components.format_version` is captured when the table was opened and
     /// can become stale if an external tool (e.g. Spark) upgrades the table v1 -> v2
-    /// between queries. Resolve the same metadata file the scan below roots at, so the
-    /// gate and the scan judge one table state.
+    /// between queries. Read the latest metadata file to get the authoritative version
+    /// for this command gate.
     auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
-        catalog,
-        table_name,
         persistent_components.table_path,
         data_lake_settings,
         persistent_components.metadata_cache,
@@ -328,7 +322,8 @@ Pipe executeRemoveOrphanFiles(
         log.get(),
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method,
-        /* ignore_metadata_pointer_overrides */ true);
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_explicit_metadata_file_path */ true);
 
     auto latest_metadata = getMetadataJSONObject(
         latest_metadata_path,
@@ -375,7 +370,7 @@ Pipe executeRemoveOrphanFiles(
         params.location = parsed.getAs<String>("location");
     params.dry_run = parsed.getAs<UInt64>("dry_run") != 0;
 
-    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components, catalog, table_name);
+    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components);
 
     return resultToPipe(result);
 }

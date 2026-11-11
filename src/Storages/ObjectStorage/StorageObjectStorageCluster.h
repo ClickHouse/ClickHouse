@@ -52,7 +52,7 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
@@ -78,7 +78,7 @@ private:
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        const String & target_cluster_name) override;
+        bool add_structure_and_format) override;
 
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;

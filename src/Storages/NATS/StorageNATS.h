@@ -35,8 +35,7 @@ public:
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode,
-        bool authentication_determined_by_table_,
-        bool fresh_definition_);
+        bool authentication_determined_by_table_);
 
     ~StorageNATS() override;
 
@@ -76,9 +75,6 @@ public:
     void pushConsumer(INATSConsumerPtr consumer);
     INATSConsumerPtr popConsumer();
     INATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
-
-    /// Makes the streaming task subscribe the consumers again before its next cycle.
-    void markConsumersNotReady() { consumers_ready.store(false); }
 
     const String & getFormatName() const { return format_name; }
 
@@ -128,7 +124,6 @@ private:
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
-    bool fresh_definition;
 
     void scheduleStreamingTasksImpl() override;
 
@@ -146,11 +141,8 @@ private:
     void dropConsumers();
 
     bool subscribeConsumers();
-    /// Replaces the subscription of every consumer that stopped consuming and has an empty queue.
-    void resubscribeStaleConsumers();
+    bool consumersNeedResubscribe();
     void unsubscribeConsumers();
-    /// Unsubscribes the consumers in the pool which are still subscribed, without touching `consumers_ready`.
-    void unsubscribeHandedBackConsumers();
 
     void stopEventLoop();
 

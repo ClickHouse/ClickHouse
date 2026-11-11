@@ -10,7 +10,6 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -33,6 +32,9 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsUInt64 max_bytes_in_distinct;
+    extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_distinct_in_order;
@@ -321,25 +323,11 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         if (query.union_mode == SelectUnionMode::UNION_DISTINCT)
         {
             /// Add distinct transform
-            DistinctStep::Settings distinct_settings(settings);
-
-            /// UNION concatenates its branches' streams instead of merging them, so a preliminary
-            /// DISTINCT runs in parallel and shrinks what the final single-stream DISTINCT must merge.
-            if (preliminaryDistinctIsUseful(max_threads))
-            {
-                auto pre_distinct_step = std::make_unique<DistinctStep>(
-                    query_plan.getCurrentHeader(),
-                    distinct_settings,
-                    0,
-                    result_header->getNames(),
-                    true);
-                pre_distinct_step->setStepDescription("Preliminary DISTINCT");
-                query_plan.addStep(std::move(pre_distinct_step));
-            }
+            SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
             auto distinct_step = std::make_unique<DistinctStep>(
                 query_plan.getCurrentHeader(),
-                std::move(distinct_settings),
+                limits,
                 0,
                 result_header->getNames(),
                 false);

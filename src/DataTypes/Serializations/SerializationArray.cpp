@@ -45,11 +45,6 @@ SerializationPtr SerializationArray::create(const SerializationPtr & nested_)
     return ISerialization::pooled(getHash(nested_), [&] { return new SerializationArray(nested_); });
 }
 
-bool SerializationArray::isArraySizesSubcolumn(const SubstreamPath & path)
-{
-    return !path.empty() && path.back().type == Substream::ArraySizes;
-}
-
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
 static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 
@@ -330,23 +325,15 @@ void SerializationArray::serializeOffsetsBinaryBulk(
     const IColumn & offsets_column,
     size_t offset,
     size_t limit,
-    WriteBuffer & stream,
-    bool position_independent_encoding)
-{
-    if (position_independent_encoding)
-        serializeArraySizesPositionIndependent(offsets_column, stream, offset, limit);
-    else
-        SerializationNumber<ColumnArray::Offset>::create()->serializeBinaryBulk(offsets_column, stream, offset, limit);
-}
-
-void SerializationArray::serializeOffsetsBinaryBulk(
-    const IColumn & offsets_column,
-    size_t offset,
-    size_t limit,
     ISerialization::SerializeBinaryBulkSettings & settings)
 {
     if (auto * stream = settings.getter(settings.path))
-        serializeOffsetsBinaryBulk(offsets_column, offset, limit, *stream, settings.position_independent_encoding);
+    {
+        if (settings.position_independent_encoding)
+            serializeArraySizesPositionIndependent(offsets_column, *stream, offset, limit);
+        else
+            SerializationNumber<ColumnArray::Offset>::create()->serializeBinaryBulk(offsets_column, *stream, offset, limit);
+    }
 }
 
 void SerializationArray::serializeBinaryBulkWithMultipleStreams(
@@ -498,11 +485,11 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
                 toString(nested_column.size()), toString(last_offset));
 
-        /// Only a caller that discards this column and refills it afterwards may see it - see
-        /// `partially_read_columns_are_refilled`. For anyone else the column would reach the query
-        /// pipeline with offsets that index past the end of its elements, so it is rejected here
-        /// instead of being read out of bounds later.
-        if (!settings.partially_read_columns_are_refilled)
+        /// An empty elements column is ok for the sizes encoding: it is how a column of a Nested type
+        /// that was added by ALTER reads the parts written before that ALTER. The absolute-offsets
+        /// encoding always writes the elements next to the offsets, so there an empty elements column
+        /// means the data is corrupted and the offsets would index past the end of the elements.
+        if (!settings.position_independent_encoding)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Cannot read array values: elements column is empty while the last offset is {}", toString(last_offset));
     }

@@ -5,12 +5,12 @@
     "ar/clickstack/index",
     {
       "expanded": true,
-      "group": "بدء الاستخدام",
+      "group": "ابدأ الاستخدام",
       "pages": [
         "ar/clickstack/overview",
         {
           "expanded": true,
-          "group": "أدلة البدء السريع",
+          "group": "الدلائل السريعة",
           "pages": [
             "ar/clickstack/getting-started/index",
             "ar/clickstack/getting-started/managed",
@@ -18,7 +18,7 @@
           ]
         },
         {
-          "group": "مجموعات بيانات نموذجية",
+          "group": "مجموعات بيانات تجريبية",
           "pages": [
             "ar/clickstack/example-datasets/index",
             "ar/clickstack/example-datasets/sample-data",
@@ -63,7 +63,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (لم يعد موصى به)",
+                      "group": "v1.x (متوقف)‏",
                       "pages": [
                         "ar/clickstack/deployment/helm-v1",
                         "ar/clickstack/deployment/helm-configuration-v1",
@@ -89,8 +89,7 @@
             "ar/clickstack/features/dashboards/overview",
             "ar/clickstack/features/dashboards/dashboard-templates",
             "ar/clickstack/features/dashboards/sql-visualizations",
-            "ar/clickstack/features/dashboards/row-click-drilldowns",
-            "ar/clickstack/features/dashboards/release-markers"
+            "ar/clickstack/features/dashboards/row-click-drilldowns"
           ]
         },
         "ar/clickstack/notebooks",
@@ -109,58 +108,22 @@
             {
               "group": "2026",
               "pages": [
-                {
-                  "group": "سبتمبر",
-                  "pages": [
-                    "ar/clickstack/demo-days/2026/2026-09-10",
-                    "ar/clickstack/demo-days/2026/2026-09-04"
-                  ]
-                },
-                {
-                  "group": "أغسطس",
-                  "pages": [
-                    "ar/clickstack/demo-days/2026/2026-08-28",
-                    "ar/clickstack/demo-days/2026/2026-08-21",
-                    "ar/clickstack/demo-days/2026/2026-08-15",
-                    "ar/clickstack/demo-days/2026/2026-08-07"
-                  ]
-                },
-                {
-                  "group": "يوليو",
-                  "pages": [
-                    "ar/clickstack/demo-days/2026/2026-07-31",
-                    "ar/clickstack/demo-days/2026/2026-07-24",
-                    "ar/clickstack/demo-days/2026/2026-07-17",
-                    "ar/clickstack/demo-days/2026/2026-07-10",
-                    "ar/clickstack/demo-days/2026/2026-07-02"
-                  ]
-                },
-                {
-                  "group": "يونيو",
-                  "pages": [
-                    "ar/clickstack/demo-days/2026/2026-06-26",
-                    "ar/clickstack/demo-days/2026/2026-06-18",
-                    "ar/clickstack/demo-days/2026/2026-06-12",
-                    "ar/clickstack/demo-days/2026/2026-06-05"
-                  ]
-                },
-                {
-                  "group": "مايو",
-                  "pages": [
-                    "ar/clickstack/demo-days/2026/2026-05-29",
-                    "ar/clickstack/demo-days/2026/2026-05-22",
-                    "ar/clickstack/demo-days/2026/2026-05-15",
-                    "ar/clickstack/demo-days/2026/2026-05-08"
-                  ]
-                },
-                {
-                  "group": "أبريل",
-                  "pages": [
-                    "ar/clickstack/demo-days/2026/2026-04-17",
-                    "ar/clickstack/demo-days/2026/2026-04-10",
-                    "ar/clickstack/demo-days/2026/2026-04-03"
-                  ]
-                }
+                "ar/clickstack/demo-days/2026/2026-07-31",
+                "ar/clickstack/demo-days/2026/2026-07-24",
+                "ar/clickstack/demo-days/2026/2026-07-17",
+                "ar/clickstack/demo-days/2026/2026-07-10",
+                "ar/clickstack/demo-days/2026/2026-07-02",
+                "ar/clickstack/demo-days/2026/2026-06-26",
+                "ar/clickstack/demo-days/2026/2026-06-18",
+                "ar/clickstack/demo-days/2026/2026-06-12",
+                "ar/clickstack/demo-days/2026/2026-06-05",
+                "ar/clickstack/demo-days/2026/2026-05-29",
+                "ar/clickstack/demo-days/2026/2026-05-22",
+                "ar/clickstack/demo-days/2026/2026-05-15",
+                "ar/clickstack/demo-days/2026/2026-05-08",
+                "ar/clickstack/demo-days/2026/2026-04-17",
+                "ar/clickstack/demo-days/2026/2026-04-10",
+                "ar/clickstack/demo-days/2026/2026-04-03"
               ]
             }
           ]
@@ -175,7 +138,6 @@
         "ar/clickstack/managing/admin",
         "ar/clickstack/managing/config",
         "ar/clickstack/managing/estimating-resources",
-        "ar/clickstack/managing/isolating-read-write",
         "ar/clickstack/managing/materialized-views",
         "ar/clickstack/managing/performance-tuning",
         "ar/clickstack/managing/production",
@@ -184,12 +146,12 @@
       ]
     },
     {
-      "group": "أدلة إرشادية",
+      "group": "الأدلة",
       "pages": [
         {
-          "expanded": true,
-          "group": "استيعاب البيانات",
+          "group": "إدخال البيانات",
           "pages": [
+            "ar/clickstack/ingesting-data/index",
             "ar/clickstack/ingesting-data/overview",
             "ar/clickstack/ingesting-data/opentelemetry",
             "ar/clickstack/ingesting-data/vector",
@@ -229,7 +191,7 @@
               ]
             },
             {
-              "group": "حزم تطوير البرمجيات للغات البرمجة",
+              "group": "SDKs للغات البرمجة",
               "pages": [
                 "ar/clickstack/ingesting-data/sdks/index",
                 "ar/clickstack/ingesting-data/sdks/browser",
@@ -278,8 +240,7 @@
         "ar/clickstack/integration-partners/index",
         "ar/clickstack/integration-partners/bindplane",
         "ar/clickstack/integration-partners/bitdrift",
-        "ar/clickstack/integration-partners/odigos",
-        "ar/clickstack/integration-partners/telflo"
+        "ar/clickstack/integration-partners/odigos"
       ]
     },
     {

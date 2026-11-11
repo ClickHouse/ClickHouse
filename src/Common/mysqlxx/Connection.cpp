@@ -120,6 +120,14 @@ void Connection::connect(const char* db,
     if (mysql_ssl_set(driver.get(), ifNotEmpty(ssl_key), ifNotEmpty(ssl_cert), ifNotEmpty(ssl_ca), nullptr, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
+    /// Without an explicit socket, use TCP to the given port: otherwise `localhost` goes to the library's default socket.
+    if (!ifNotEmpty(socket))
+    {
+        unsigned protocol = MYSQL_PROTOCOL_TCP;
+        if (mysql_options(driver.get(), MYSQL_OPT_PROTOCOL, &protocol))
+            throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    }
+
     if (!mysql_real_connect(driver.get(), server, user, password, db, port, ifNotEmpty(socket), driver->client_flag))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 

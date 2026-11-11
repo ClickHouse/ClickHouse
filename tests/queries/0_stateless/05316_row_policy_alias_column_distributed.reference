@@ -1,0 +1,38 @@
+baseline local
+1
+2
+3
+4
+baseline distributed
+1
+2
+3
+4
+policy local
+2
+policy distributed local replica
+2
+policy distributed remote replica
+2
+policy distributed with PREWHERE
+2
+policy local without alias optimization
+2
+policy local with aliases selected
+2	20	ok20
+policy local with aliases selected and PREWHERE
+2	20	ok20
+policy distributed with aliases selected
+2	20	ok20
+policy distributed with aliases selected and PREWHERE
+2	20	ok20
+policy distributed new analyzer
+2
+policy with only an ALIAS predicate
+1	2
+policy with inline expression
+2
+additional filter on ALIAS
+2
+3
+4

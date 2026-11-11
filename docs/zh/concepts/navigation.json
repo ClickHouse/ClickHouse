@@ -19,11 +19,11 @@
     },
     {
       "expanded": true,
-      "group": "ClickHouse 基本概念",
+      "group": "ClickHouse 概念",
       "pages": [
         "zh/concepts/features/index",
         {
-          "group": "物化视图",
+          "group": "materialized views",
           "pages": [
             "zh/concepts/features/materialized-views/index",
             "zh/concepts/features/materialized-views/incremental-materialized-view",
@@ -83,7 +83,6 @@
         {
           "group": "操作",
           "pages": [
-            "zh/concepts/features/operations/background-queries",
             {
               "group": "插入",
               "pages": [
@@ -142,7 +141,7 @@
               ]
             },
             {
-              "group": "服务器 config",
+              "group": "服务器配置",
               "pages": [
                 "zh/concepts/features/configuration/server-config/configuration-files",
                 "zh/concepts/features/configuration/server-config/storing-data",
@@ -150,14 +149,13 @@
                 "zh/concepts/features/configuration/server-config/workload-scheduling",
                 "zh/concepts/features/configuration/server-config/quotas",
                 "zh/concepts/features/configuration/server-config/composable-protocols",
-                "zh/concepts/features/configuration/server-config/startup-scripts",
-                "zh/concepts/features/configuration/server-config/introspection-port"
+                "zh/concepts/features/configuration/server-config/startup-scripts"
               ]
             }
           ]
         },
         {
-          "group": "安全与身份验证",
+          "group": "安全与认证",
           "pages": [
             "zh/concepts/features/security/index",
             "zh/concepts/features/security/access-rights",
@@ -213,34 +211,30 @@
             "zh/concepts/features/interfaces/native-clients-interfaces-index",
             "zh/concepts/features/interfaces/cli",
             "zh/concepts/features/interfaces/client",
-            "zh/concepts/features/interfaces/mcp",
             {
-              "group": "驱动程序与接口",
+              "group": "驱动与接口",
               "pages": [
                 "zh/concepts/features/interfaces/overview",
                 "zh/concepts/features/interfaces/http",
-                "zh/concepts/features/interfaces/framing-formats",
                 "zh/concepts/features/interfaces/tcp",
-                "zh/concepts/features/interfaces/adbc",
+                "zh/concepts/features/interfaces/jdbc",
                 "zh/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"
                 },
                 "zh/concepts/features/interfaces/postgresql",
                 "zh/concepts/features/interfaces/prometheus",
-                "zh/concepts/features/interfaces/prometheus-metrics",
                 "zh/concepts/features/interfaces/ssh",
                 "zh/concepts/features/interfaces/grpc",
                 "zh/concepts/features/interfaces/arrowflight"
               ]
             },
+            "zh/concepts/features/interfaces/cpp",
             "zh/concepts/features/interfaces/schema-inference",
             "zh/concepts/features/interfaces/documentation-search",
             "zh/concepts/features/interfaces/web-sql",
-            "zh/concepts/features/interfaces/sql-console",
             "zh/concepts/features/interfaces/web-ui-color-coding",
             "zh/concepts/features/interfaces/web-ui-pinned-columns",
-            "zh/concepts/features/interfaces/web-ui-result-shaping",
             "zh/concepts/features/interfaces/web-terminal",
             {
               "group": "第三方客户端",

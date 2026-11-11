@@ -93,7 +93,7 @@ public:
         const DB::ActionsDAG & filter_,
         const NamesAndTypesList & virtual_columns_,
         const NamesAndTypesList & hive_partition_columns_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        const std::string & object_namespace_,
         const ContextPtr & context_,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
@@ -109,7 +109,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    const StorageObjectStorageConfigurationPtr configuration;
+    const std::string object_namespace;
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;

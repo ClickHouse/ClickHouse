@@ -8,7 +8,7 @@
       ]
     },
     {
-      "group": "Funcionalidades",
+      "group": "Características",
       "pages": [
         "es/products/managed-postgres/connection",
         "es/products/managed-postgres/settings",
@@ -29,14 +29,6 @@
             "es/products/managed-postgres/extensions/pg_clickhouse/tutorial"
           ]
         },
-        {
-          "group": "pg_chdb",
-          "pages": [
-            "es/products/managed-postgres/extensions/chdb/introduction",
-            "es/products/managed-postgres/extensions/chdb/chdb",
-            "es/products/managed-postgres/extensions/chdb/chdb_hook"
-          ]
-        },
         "es/products/managed-postgres/upgrades",
         "es/products/managed-postgres/openapi",
         "es/products/managed-postgres/terraform"
@@ -49,27 +41,25 @@
       ]
     },
     {
-      "group": "Integración con ClickHouse",
+      "group": "Integración de ClickHouse",
       "pages": [
-        "es/products/managed-postgres/sync-to-clickhouse/clickpipes",
-        "es/products/managed-postgres/sync-to-clickhouse/walshadow"
+        "es/products/managed-postgres/clickhouse-integration"
       ]
     },
     {
       "group": "Migraciones",
       "pages": [
         "es/products/managed-postgres/migrations/overview",
+        "es/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "es/products/managed-postgres/migrations/logical-replication",
+        "es/products/managed-postgres/migrations/peerdb",
         "es/products/managed-postgres/migrations/clickpipes",
         "es/products/managed-postgres/migrations/data-validation",
-        "es/products/managed-postgres/migrations/logical-replication",
-        "es/products/managed-postgres/migrations/neon",
-        "es/products/managed-postgres/migrations/pg_dump-pg_restore",
-        "es/products/managed-postgres/migrations/peerdb",
         "es/products/managed-postgres/migrations/faq"
       ]
     },
     {
-      "group": "Monitorización",
+      "group": "Monitoring",
       "pages": [
         "es/products/managed-postgres/monitoring/overview",
         "es/products/managed-postgres/monitoring/dashboard",
@@ -80,7 +70,7 @@
       ]
     },
     {
-      "group": "Preguntas frecuentes",
+      "group": "FAQ",
       "pages": [
         "es/products/managed-postgres/faq"
       ]

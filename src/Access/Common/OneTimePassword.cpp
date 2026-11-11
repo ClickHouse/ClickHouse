@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
 #include <Poco/String.h>
@@ -151,15 +152,19 @@ static String getOneTimePassword(const String & secret [[ maybe_unused ]], const
 static std::optional<Int64> findMatchingTimeStep(std::string_view password, const OneTimePasswordSecret & secret, UInt64 current_time)
 {
     if (password.size() != static_cast<size_t>(secret.params.num_digits)
-     || !std::all_of(password.begin(), password.end(), ::isdigit))
+     || !std::all_of(password.begin(), password.end(), isNumericASCII))
         return {};
 
+    std::optional<Int64> result;
     for (int delta : {0, -1, 1})
     {
-        if (password == getOneTimePassword(secret.key, secret.params, current_time + delta * secret.params.period))
-            return static_cast<Int64>(current_time / secret.params.period) + delta;
+        auto candidate_pass = getOneTimePassword(secret.key, secret.params, current_time + delta * secret.params.period);
+        bool matched = constantTimeEquals(password, candidate_pass);
+        /// No early return to avoid leaking which window matched
+        if (matched && !result.has_value())
+            result = static_cast<Int64>(current_time / secret.params.period) + delta;
     }
-    return {};
+    return result;
 }
 
 bool checkOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret)
