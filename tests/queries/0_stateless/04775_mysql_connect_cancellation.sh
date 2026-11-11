@@ -70,7 +70,8 @@ wait_for_connect_start()
             # This marker is logged at DEBUG, so the arms need the CI logger level (trace); a
             # coarser level makes them loud fixture failures rather than silent passes.
             if [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.text_log
-                    WHERE query_id = '${query_id}' AND logger_name = 'mysqlxx::Pool'
+                    WHERE event_date >= yesterday() AND event_time >= now() - 600
+                      AND query_id = '${query_id}' AND logger_name = 'mysqlxx::Pool'
                       AND message LIKE 'Connecting to%'
                     SETTINGS enable_parallel_replicas = 0")" = "1" ]; then
                 connecting=1
@@ -196,7 +197,8 @@ if [ "${RC}" = "0" ]; then
     rm -f "${CLICKHOUSE_TMP}/${KILL_RETRY_NAME}.err"
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
     RETRIES=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.text_log
-        WHERE query_id = '${CLICKHOUSE_DATABASE}_${KILL_RETRY_NAME}'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+          AND query_id = '${CLICKHOUSE_DATABASE}_${KILL_RETRY_NAME}'
           AND message LIKE 'Connection to mysql failed%times'
         SETTINGS enable_parallel_replicas = 0")
     if [ "${RETRIES}" = "1" ]; then
@@ -223,7 +225,8 @@ if [ "${RC}" = "0" ]; then
     # StorageMySQL. That the connect itself happened is already guaranteed by the wait.
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
     VIA_STORAGE=$(${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.text_log
-        WHERE query_id = '${CLICKHOUSE_DATABASE}_${ENGINE_NAME}' AND logger_name LIKE 'StorageMySQL%'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+          AND query_id = '${CLICKHOUSE_DATABASE}_${ENGINE_NAME}' AND logger_name LIKE 'StorageMySQL%'
         SETTINGS enable_parallel_replicas = 0")
     if [ "${VIA_STORAGE}" = "1" ]; then
         report "${ENGINE_NAME}" "${ELAPSED_MS}" "QUERY_WAS_CANCELLED" "${ERROR}"
