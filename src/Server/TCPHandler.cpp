@@ -1258,7 +1258,7 @@ void TCPHandler::runImpl()
             }
             catch (const Exception & e)
             {
-                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED && !out->isCanceled())
                 {
                     tryLogCurrentException(log, "Can't send logs to client. But we will try to send the exception.");
                 }
