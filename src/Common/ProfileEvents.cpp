@@ -146,6 +146,7 @@
     M(IcebergMetadataJSONParses, "Number of times an Iceberg `metadata.json` was parsed. The parsing happens on every access, also when the file content is served from the Iceberg metadata cache.", ValueType::Number) \
     M(IcebergMetadataJSONParsedBytes, "Total size of the Iceberg `metadata.json` content parsed.", ValueType::Bytes) \
     M(IcebergMetadataJSONParseMicroseconds, "Total time spent parsing Iceberg `metadata.json` files.", ValueType::Microseconds) \
+    M(IcebergMetadataJSONValidations, "Number of times an Iceberg `metadata.json` was checked for the fields the Iceberg specification requires. A file served from the Iceberg metadata cache is checked once.", ValueType::Number) \
     M(IcebergManifestListsRead, "Number of Iceberg manifest lists read from storage (not served from the Iceberg metadata cache).", ValueType::Number) \
     M(IcebergManifestListsReadMicroseconds, "Total time spent reading and decoding Iceberg manifest lists from storage.", ValueType::Microseconds) \
     M(IcebergManifestFilesRead, "Number of Iceberg manifest files read from storage (not served from the Iceberg metadata cache).", ValueType::Number) \
@@ -544,6 +545,7 @@
     M(IcebergTrivialCountOptimizationApplied, "Trivial count optimization applied while reading from Iceberg", ValueType::Number) \
     M(IcebergVersionHintUsed, "Number of times version-hint.text has been used.", ValueType::Number) \
     M(IcebergMinMaxIndexPrunedFiles, "Number of skipped files by using MinMax index in Iceberg", ValueType::Number) \
+    M(IcebergRuntimeFilterPrunedFiles, "Number of Iceberg data files skipped because their manifest bounds cannot contain a key of a JOIN runtime filter", ValueType::Number) \
     M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
     M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
     M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
@@ -551,6 +553,8 @@
     M(JoinNonJoinedTransformRowCount, "Number of non-joined rows emitted by NonJoinedBlocksTransform.", ValueType::Number) \
     M(JoinNonJoinedHashTableScans, "Number of times a RIGHT or FULL hash join scanned its hash table for non-joined rows.", ValueType::Number) \
     M(JoinNonJoinedHashTableScansSkipped, "Number of times a RIGHT or FULL hash join skipped scanning its hash table for non-joined rows, because every right key in the scanned part had matched.", ValueType::Number) \
+    M(JoinPackedStringKeysInline, "Number of single `String` join keys of up to 15 bytes that hash joins inserted inline into their hash tables (see `enable_packed_string_keys_in_hash_join`). A join with `OR` inserts a key for each condition. A row is counted again when it is inserted again: after a `grace_hash` join splits its buckets, or after a spilling join switches to `grace_hash`.", ValueType::Number) \
+    M(JoinPackedStringKeysHashed, "Number of single `String` join keys of 16 bytes or more that hash joins inserted into their hash tables as their 128-bit `SipHash` (see `enable_packed_string_keys_in_hash_join`). A join with `OR` inserts a key for each condition. A row is counted again when it is inserted again: after a `grace_hash` join splits its buckets, or after a spilling join switches to `grace_hash`.", ValueType::Number) \
     M(JoinDelayedJoinedTransformBlockCount, "Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinDelayedJoinedTransformRowCount, "Number of rows emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
@@ -1298,6 +1302,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperWatchTriggeredNodeDeleted, "Number of watch triggers by `DELETE` operation", ValueType::Number) \
     M(KeeperWatchTriggeredNodeDataChanged, "Number of watch triggers by change operations", ValueType::Number) \
     M(KeeperWatchTriggeredNodeChildrenChanged, "Number of watch triggers by children change operations", ValueType::Number) \
+    M(KeeperRejectedCommittedLogRollback, "Number of times Keeper refused a request that would have rolled back already-committed log entries", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \
@@ -1334,6 +1339,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ObjectStorageListedObjects, "Total objects returned by object storage listing API before any filtering.", ValueType::Number) \
     M(ObjectStorageGlobFilteredObjects, "Objects that did not match the glob or regex pattern and were skipped during listing.", ValueType::Number) \
+    M(ObjectStorageHiddenFilteredObjects, "Objects with a hidden path segment (starting with '_' or '.') below the non-glob prefix that were skipped during listing.", ValueType::Number) \
     M(ObjectStoragePredicateFilteredObjects, "Objects removed by virtual column predicate filtering on _path/_file.", ValueType::Number) \
     M(ObjectStorageReadObjects, "Objects actually opened for reading by the object storage source.", ValueType::Number) \
     M(ObjectStorageMetadataFetchedForRead, "Number of object metadata requests (e.g. S3 HEAD) issued to read objects (by the object storage source, its file iterators, and schema inference), because the size and ETag of the object were not known from listing or table metadata.", ValueType::Number) \
