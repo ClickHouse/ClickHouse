@@ -707,6 +707,11 @@
     M(InsertedCompactParts, "Number of parts inserted in Compact format.", ValueType::Number) \
     M(MergedIntoWideParts, "Number of parts merged into Wide format.", ValueType::Number) \
     M(MergedIntoCompactParts, "Number of parts merged into Compact format.", ValueType::Number) \
+    M(AdaptiveCodecBlocksPriced, "Number of blocks that adaptive codec selection priced from the start, compressing them with every candidate codec and keeping the smallest output.", ValueType::Number) \
+    M(AdaptiveCodecBlocksRepriced, "Number of blocks that adaptive codec selection priced after the remembered winner had lost ground on them.", ValueType::Number) \
+    M(AdaptiveCodecBlocksReused, "Number of blocks that adaptive codec selection compressed with the remembered winner alone.", ValueType::Number) \
+    M(AdaptiveCodecBytesDefault, "Compressed bytes the default codec produced on the sample blocks of adaptive codec selection, one per window of `adaptive_codec_selection_period` blocks.", ValueType::Bytes) \
+    M(AdaptiveCodecBytesWritten, "Compressed bytes adaptive codec selection wrote on its sample blocks. The ratio to `AdaptiveCodecBytesDefault` is the saving against the default codec.", ValueType::Bytes) \
     \
     M(MergeTreeDataProjectionWriterRows, "Number of rows INSERTed to MergeTree tables projection.", ValueType::Number) \
     M(MergeTreeDataProjectionWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables projection.", ValueType::Bytes) \
@@ -1819,6 +1824,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetPrefetcherUsedBytes, "Total bytes of the ranges read by DB::Parquet::Prefetcher that were actually used by the parquet reader.", ValueType::Bytes) \
     M(ParquetDecompressedBytes, "Total uncompressed size of parquet pages (data and dictionary pages) decompressed by the parquet reader.", ValueType::Bytes) \
     M(ParquetPagesDecompressedToSkipRows, "Number of parquet data pages whose decompression was triggered by skipping rows filtered out by PREWHERE (the page may also serve rows read later).", ValueType::Number) \
+    M(ParquetTopKRowGroupsBoundedByDictionary, "The number of parquet row groups whose `ORDER BY ... LIMIT` sort column range was taken from the values of its dictionary that can pass the filter, because its min/max statistics could not bound it (see `use_top_k_dynamic_filtering`)", ValueType::Number) \
     M(ParquetTopKSkippedRowGroups, "The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)", ValueType::Number) \
     M(ParquetFilesSkippedByCachedStatistics, "The number of Parquet files that a read skipped without opening them, because the min/max statistics of the filter columns, kept with the cached file metadata by an earlier read of the same file version, exclude every row group", ValueType::Number) \
     M(ParquetReadMinMaxFromStatistics, "The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)", ValueType::Number) \
