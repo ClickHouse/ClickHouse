@@ -6202,13 +6202,12 @@ def test_standalone_start_end_instant_expressions():
 )
 def test_standalone_start_end_range_boundaries(function_name, expected_value):
     # Test both boundary values directly, including the end between evaluation steps.
-    timestamps = [1000.125, 1000.625, 1001.125, 1001.625, 1002.125]
-    sql_timestamps = [
-        "1970-01-01 00:16:40.125",
-        "1970-01-01 00:16:40.625",
-        "1970-01-01 00:16:41.125",
-        "1970-01-01 00:16:41.625",
-        "1970-01-01 00:16:42.125",
+    evaluation_times = [
+        (1000.125, "1970-01-01 00:16:40.125"),
+        (1000.625, "1970-01-01 00:16:40.625"),
+        (1001.125, "1970-01-01 00:16:41.125"),
+        (1001.625, "1970-01-01 00:16:41.625"),
+        (1002.125, "1970-01-01 00:16:42.125"),
     ]
     expected_http = json.dumps(
         {
@@ -6216,7 +6215,7 @@ def test_standalone_start_end_range_boundaries(function_name, expected_value):
             "result": [
                 {
                     "metric": {},
-                    "values": [[timestamp, expected_value] for timestamp in timestamps],
+                    "values": [[epoch, expected_value] for epoch, _ in evaluation_times],
                 }
             ],
         }
@@ -6224,7 +6223,7 @@ def test_standalone_start_end_range_boundaries(function_name, expected_value):
     expected_sql = (
         "["
         + ",".join(
-            f"('{timestamp}',{expected_value})" for timestamp in sql_timestamps
+            f"('{timestamp}',{expected_value})" for _, timestamp in evaluation_times
         )
         + "]"
     )
