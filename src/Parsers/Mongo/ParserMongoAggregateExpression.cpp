@@ -309,6 +309,13 @@ ASTPtr parseLiteralValue(const rapidjson::Value & value)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot translate the argument of '$literal' into a value");
 }
 
+/** The lambda parameter of a higher order function that the translation of an operator builds
+  * itself. Like a variable (see `variableIdentifier`), it starts with `$`, so that no field path an
+  * argument of the operator names inside the lambda can be captured by it, and with a single `$`,
+  * so that no variable `$$<name>` can be either.
+  */
+constexpr auto ELEMENT_PARAMETER = "$mongo_element";
+
 /// `x -> <body>`, the shape a ClickHouse higher order function takes.
 ASTPtr makeLambda(const std::string & parameter, ASTPtr body)
 {
@@ -322,9 +329,9 @@ ASTPtr makeLambda(const std::string & parameter, ASTPtr body)
   */
 ASTPtr makeSetOfElements(ASTPtr array)
 {
-    auto wrap = makeLambda("__mongo_element", makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__mongo_element")));
+    auto wrap = makeLambda(ELEMENT_PARAMETER, makeASTFunction("tuple", make_intrusive<ASTIdentifier>(ELEMENT_PARAMETER)));
     auto unwrap = makeLambda(
-        "__mongo_element", makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("__mongo_element"), makeLiteral(Field(UInt64(1)))));
+        ELEMENT_PARAMETER, makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(ELEMENT_PARAMETER), makeLiteral(Field(UInt64(1)))));
     return makeASTFunction(
         "arrayMap", std::move(unwrap), makeASTFunction("arrayDistinct", makeASTFunction("arrayMap", std::move(wrap), std::move(array))));
 }
@@ -332,12 +339,16 @@ ASTPtr makeSetOfElements(ASTPtr array)
 /** The lambda parameter a variable `$$<name>` is translated into. A field path `$<name>` reads the
   * field of the document even inside the body of the operator that binds `<name>`, so the variable
   * cannot be the identifier of the same name, which is the field: `$$x` and `$x` are different
-  * values in `{$add: ["$$x", "$x"]}`. A variable of an inner operator still shadows one of the same
-  * name of an outer one, because the inner lambda parameter shadows the outer one.
+  * values in `{$add: ["$$x", "$x"]}`. Nor can it be any other name a field path is translated
+  * into: a prefix such as `__mongo_variable_` would only move the collision to the field
+  * `$__mongo_variable_x`. The parameter is named `$$<name>`, as Mongo writes the variable: a field
+  * path `$<path>` is translated into the identifier `<path>`, which never starts with `$`, because
+  * a text that starts with `$$` is a variable. A variable of an inner operator still shadows one of
+  * the same name of an outer one, because the inner lambda parameter shadows the outer one.
   */
 std::string variableIdentifier(std::string_view name)
 {
-    return fmt::format("__mongo_variable_{}", name);
+    return "$$" + std::string(name);
 }
 
 /// The name a `$map` or a `$filter` binds its element to. Mongo writes it as `$$<name>` and
@@ -1512,11 +1523,11 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     {
         auto arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 2);
-        auto element = make_intrusive<ASTIdentifier>("__mongo_element");
+        auto element = make_intrusive<ASTIdentifier>(ELEMENT_PARAMETER);
         auto body = makeASTFunction("not", makeASTFunction("has", arguments[1], element));
         /// A set operator answers a set: the elements the second array does not hold, each of them
         /// once, the way the neighbouring `$setUnion` and `$setEquals` answer.
-        return makeSetOfElements(makeASTFunction("arrayFilter", makeLambda("__mongo_element", std::move(body)), arguments[0]));
+        return makeSetOfElements(makeASTFunction("arrayFilter", makeLambda(ELEMENT_PARAMETER, std::move(body)), arguments[0]));
     }
 
     if (name == "$setEquals")
@@ -1533,9 +1544,9 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         requireArgumentCount(name, arguments, 1);
         /// Each element is true or false by its type, as `$toBool` decides, so that every string is
         /// true, and an element that is `null` is false.
-        auto body = makeASTFunction("ifNull", makeToBool(make_intrusive<ASTIdentifier>("__mongo_element")), makeLiteral(Field(false)));
+        auto body = makeASTFunction("ifNull", makeToBool(make_intrusive<ASTIdentifier>(ELEMENT_PARAMETER)), makeLiteral(Field(false)));
         return makeASTFunction(
-            name == "$anyElementTrue" ? "arrayExists" : "arrayAll", makeLambda("__mongo_element", std::move(body)), arguments[0]);
+            name == "$anyElementTrue" ? "arrayExists" : "arrayAll", makeLambda(ELEMENT_PARAMETER, std::move(body)), arguments[0]);
     }
 
     if (name == "$map" || name == "$filter")

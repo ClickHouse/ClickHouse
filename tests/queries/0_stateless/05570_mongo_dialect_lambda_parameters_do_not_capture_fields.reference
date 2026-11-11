@@ -1,0 +1,12 @@
+-- $$x is the element and $x is the field
+[101,102]
+[1]
+-- a field named like the old lambda parameter of a variable
+[10,20]
+[1]
+-- an inner variable shadows an outer one of the same name
+[[101],[102,103]]
+-- a field named like the old lambda parameter of $setDifference
+[1]
+-- a field named like the old lambda parameter of $addToSet
+['a','b']

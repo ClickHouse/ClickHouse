@@ -257,11 +257,14 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
                                 make_intrusive<ASTIdentifier>("__mongo_candidate"),
                                 make_intrusive<ASTLiteral>(Field(UInt64(1))))),
                         makeASTFunction("arrayDistinct", std::move(wrapped)));
+                    /// The field is named inside this lambda, so its parameter starts with `$`, which Mongo
+                    /// does not let the name of a stored field start with, rather than being a name such
+                    /// as `__mongo_element` that a field may have and the parameter would capture.
                     auto appended = makeASTFunction(
                         "arrayFilter",
                         make_lambda(
-                            "__mongo_element",
-                            makeASTFunction("not", makeASTFunction("has", field(), make_intrusive<ASTIdentifier>("__mongo_element")))),
+                            "$mongo_element",
+                            makeASTFunction("not", makeASTFunction("has", field(), make_intrusive<ASTIdentifier>("$mongo_element")))),
                         std::move(distinct));
                     result = makeASTFunction("arrayConcat", field(), std::move(appended));
                 }
