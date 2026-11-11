@@ -3,11 +3,11 @@
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <base/extended_types.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <bit>
 #include <cmath>
-#include <deque>
-#include <unordered_set>
 
 
 namespace DB
@@ -226,7 +226,7 @@ Location compareToRange(const T & point, const T & min, const T & max, Less less
 
 template <typename T, typename Less, typename Equal>
 TruthValue evaluatePredicateRange(
-    PredicateLeaf::Operator op, const std::vector<T> & values, const T & min_value, const T & max_value, bool has_null, Less less, Equal equal)
+    PredicateLeaf::Operator op, const VectorWithMemoryTracking<T> & values, const T & min_value, const T & max_value, bool has_null, Less less, Equal equal)
 {
     auto loc_of = [&](const T & v) { return compareToRange(v, min_value, max_value, less, equal); };
     bool min_equals_max = equal(min_value, max_value);
@@ -309,14 +309,14 @@ TruthValue evaluatePredicateRange(
 }
 
 template <typename T>
-TruthValue evaluateRange(PredicateLeaf::Operator op, const std::vector<T> & values, const T & min_value, const T & max_value, bool has_null)
+TruthValue evaluateRange(PredicateLeaf::Operator op, const VectorWithMemoryTracking<T> & values, const T & min_value, const T & max_value, bool has_null)
 {
     return evaluatePredicateRange(op, values, min_value, max_value, has_null,
         [](const T & a, const T & b) { return a < b; },
         [](const T & a, const T & b) { return a == b; });
 }
 
-TruthValue evaluateBoolPredicate(PredicateLeaf::Operator op, const std::vector<Literal> & literals, const Proto::ColumnStatistics & stats)
+TruthValue evaluateBoolPredicate(PredicateLeaf::Operator op, const VectorWithMemoryTracking<Literal> & literals, const Proto::ColumnStatistics & stats)
 {
     bool has_null = stats.has_null.value_or(false);
     if (!stats.bucket_statistics || stats.bucket_statistics->count.empty())
@@ -370,9 +370,9 @@ TruthValue evaluateBoolPredicate(PredicateLeaf::Operator op, const std::vector<L
 }
 
 template <typename T, typename Get>
-std::vector<T> literalsTo(const std::vector<Literal> & literals, Get get)
+VectorWithMemoryTracking<T> literalsTo(const VectorWithMemoryTracking<Literal> & literals, Get get)
 {
-    std::vector<T> result;
+    VectorWithMemoryTracking<T> result;
     for (const auto & literal : literals)
         if (!literal.isNull())
             result.push_back(get(literal));
@@ -592,9 +592,9 @@ public:
     explicit ExpressionTree(Operator op_) : op(op_) {}
     explicit ExpressionTree(TruthValue constant_) : op(Operator::CONSTANT), constant(constant_) {}
     explicit ExpressionTree(size_t leaf_) : op(Operator::LEAF), leaf(leaf_) {}
-    ExpressionTree(Operator op_, std::vector<ExpressionTreePtr> children_) : op(op_), children(std::move(children_)) {}
+    ExpressionTree(Operator op_, VectorWithMemoryTracking<ExpressionTreePtr> children_) : op(op_), children(std::move(children_)) {}
 
-    TruthValue evaluate(const std::vector<TruthValue> & leaves) const
+    TruthValue evaluate(const VectorWithMemoryTracking<TruthValue> & leaves) const
     {
         switch (op)
         {
@@ -625,16 +625,16 @@ public:
     Operator op;
     TruthValue constant = TruthValue::YES_NO_NULL;
     size_t leaf = 0;
-    std::vector<ExpressionTreePtr> children;
+    VectorWithMemoryTracking<ExpressionTreePtr> children;
 };
 
 
-SearchArgument::SearchArgument(ExpressionTreePtr root_, std::vector<PredicateLeaf> leaves_)
+SearchArgument::SearchArgument(ExpressionTreePtr root_, VectorWithMemoryTracking<PredicateLeaf> leaves_)
     : root(std::move(root_)), leaves(std::move(leaves_))
 {
 }
 
-TruthValue SearchArgument::evaluate(const std::vector<TruthValue> & leaf_values) const
+TruthValue SearchArgument::evaluate(const VectorWithMemoryTracking<TruthValue> & leaf_values) const
 {
     return root ? root->evaluate(leaf_values) : TruthValue::YES_NO_NULL;
 }
@@ -662,7 +662,7 @@ ExpressionTreePtr pushDownNot(ExpressionTreePtr root)
             {
                 auto result = std::make_shared<ExpressionTree>(child->op == Op::AND ? Op::OR : Op::AND);
                 for (const auto & kid : child->children)
-                    result->children.push_back(pushDownNot(std::make_shared<ExpressionTree>(Op::NOT, std::vector<ExpressionTreePtr>{kid})));
+                    result->children.push_back(pushDownNot(std::make_shared<ExpressionTree>(Op::NOT, VectorWithMemoryTracking<ExpressionTreePtr>{kid})));
                 return result;
             }
             case Op::LEAF:
@@ -708,7 +708,7 @@ ExpressionTreePtr foldMaybe(ExpressionTreePtr expr)
 /// Converts multi-level ANDs and ORs into single level ones.
 ExpressionTreePtr flatten(ExpressionTreePtr root)
 {
-    std::vector<ExpressionTreePtr> nodes;
+    VectorWithMemoryTracking<ExpressionTreePtr> nodes;
     for (auto & kid : root->children)
     {
         ExpressionTreePtr child = flatten(kid);
@@ -730,7 +730,7 @@ ExpressionTreePtr copyTree(const ExpressionTreePtr & node)
 }
 
 void generateAllCombinations(
-    std::vector<ExpressionTreePtr> & result, const std::vector<ExpressionTreePtr> & and_list, size_t and_index, const std::vector<ExpressionTreePtr> & non_and_list)
+    VectorWithMemoryTracking<ExpressionTreePtr> & result, const VectorWithMemoryTracking<ExpressionTreePtr> & and_list, size_t and_index, const VectorWithMemoryTracking<ExpressionTreePtr> & non_and_list)
 {
     const auto & kids = and_list[and_index]->children;
     if (result.empty())
@@ -746,7 +746,7 @@ void generateAllCombinations(
     }
     else
     {
-        std::vector<ExpressionTreePtr> work = std::move(result);
+        VectorWithMemoryTracking<ExpressionTreePtr> work = std::move(result);
         result.clear();
         for (const auto & kid : kids)
         {
@@ -773,8 +773,8 @@ ExpressionTreePtr convertToCNF(ExpressionTreePtr root)
     if (root->op != Op::OR)
         return root;
 
-    std::vector<ExpressionTreePtr> non_and_list;
-    std::vector<ExpressionTreePtr> and_list;
+    VectorWithMemoryTracking<ExpressionTreePtr> non_and_list;
+    VectorWithMemoryTracking<ExpressionTreePtr> and_list;
     for (const auto & child : root->children)
     {
         if (child->op == Op::AND)
@@ -801,7 +801,7 @@ ExpressionTreePtr convertToCNF(ExpressionTreePtr root)
     return result;
 }
 
-void collectUsedLeaves(const ExpressionTreePtr & node, std::vector<size_t> & reorder, size_t & next)
+void collectUsedLeaves(const ExpressionTreePtr & node, VectorWithMemoryTracking<size_t> & reorder, size_t & next)
 {
     if (node->op == Op::LEAF)
     {
@@ -814,10 +814,10 @@ void collectUsedLeaves(const ExpressionTreePtr & node, std::vector<size_t> & reo
 }
 
 /// The trees can share nodes after the CNF conversion, so rewrite every leaf node exactly once.
-void rewriteLeaves(const ExpressionTreePtr & root, const std::vector<size_t> & reorder)
+void rewriteLeaves(const ExpressionTreePtr & root, const VectorWithMemoryTracking<size_t> & reorder)
 {
-    std::unordered_set<ExpressionTree *> leaves;
-    std::deque<ExpressionTree *> nodes{root.get()};
+    UnorderedSetWithMemoryTracking<ExpressionTree *> leaves;
+    DequeWithMemoryTracking<ExpressionTree *> nodes{root.get()};
     while (!nodes.empty())
     {
         ExpressionTree * node = nodes.front();
@@ -900,7 +900,7 @@ SearchArgumentBuilder & SearchArgumentBuilder::nullSafeEquals(UInt64 column_id, 
     return addLeaf(PredicateLeaf(PredicateLeaf::Operator::NULL_SAFE_EQUALS, type, column_id, {std::move(value)}));
 }
 
-SearchArgumentBuilder & SearchArgumentBuilder::in(UInt64 column_id, PredicateDataType type, const std::vector<Literal> & values)
+SearchArgumentBuilder & SearchArgumentBuilder::in(UInt64 column_id, PredicateDataType type, const VectorWithMemoryTracking<Literal> & values)
 {
     if (values.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create an IN expression with no arguments in ORC search argument builder");
@@ -930,14 +930,14 @@ std::unique_ptr<SearchArgument> SearchArgumentBuilder::build()
     root = convertToCNF(root);
     root = flatten(root);
 
-    std::vector<size_t> reorder(leaves.size(), std::numeric_limits<size_t>::max());
+    VectorWithMemoryTracking<size_t> reorder(leaves.size(), std::numeric_limits<size_t>::max());
     size_t num_used = 0;
     collectUsedLeaves(root, reorder, num_used);
     rewriteLeaves(root, reorder);
 
-    std::vector<PredicateLeaf> used_leaves;
+    VectorWithMemoryTracking<PredicateLeaf> used_leaves;
     used_leaves.reserve(num_used);
-    std::vector<const PredicateLeaf *> by_new_index(num_used);
+    VectorWithMemoryTracking<const PredicateLeaf *> by_new_index(num_used);
     for (size_t i = 0; i < leaves.size(); ++i)
         if (reorder[i] != std::numeric_limits<size_t>::max())
             by_new_index[reorder[i]] = &leaves[i];

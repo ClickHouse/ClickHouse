@@ -121,7 +121,7 @@ ManifestListPruner::ManifestListPruner(
         if (!fields || fields->size() == 0)
             continue;
 
-        auto partition_key = buildPartitionKeyFromSpec(fields, partition_schema_id_, schema_processor_, context);
+        auto partition_key = buildPartitionKeyFromSpec(fields, partition_schema_id_, schema_processor_, context, /* keep_nullable */ true);
         if (!partition_key.key_description.has_value() || partition_key.key_description->data_types.size() != fields->size())
             continue;
 
