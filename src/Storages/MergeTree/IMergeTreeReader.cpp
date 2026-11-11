@@ -372,7 +372,8 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
         /// that reads the part: with the privileges and the row policies of its user, and with its query
         /// status, so that the nested reading is cancelled together with the query. Keep the settings of
         /// the storage context the defaults are evaluated with, except for those that restrict the access
-        /// and the resources of the reading query, so that the limits of its user also bound the set.
+        /// and the resources of the reading query (including its parallelism), so that the limits of its user
+        /// also bound the set.
         context_copy = Context::createCopy(settings.read_context);
         auto default_expressions_settings = storage_context->getSettingsCopy();
         static constexpr std::string_view reader_settings[] =
@@ -386,6 +387,7 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
             "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "read_overflow_mode_leaf",
             "max_rows_to_transfer", "max_bytes_to_transfer", "transfer_overflow_mode",
             "max_execution_time", "timeout_overflow_mode",
+            "max_threads", "max_final_threads", "max_streams_to_max_threads_ratio", "max_streams_for_merge_tree_reading",
         };
         for (std::string_view name : reader_settings)
             default_expressions_settings.set(name, settings.read_context->getSettingsRef().get(name));
