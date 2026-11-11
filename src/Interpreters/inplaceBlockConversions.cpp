@@ -744,37 +744,16 @@ void fillMissingColumns(
                     tuple_elements.push_back(path.back().name_of_substream);
             }, ISerialization::SubstreamData(serialization).withType(column_for_type.type));
 
-            auto base_type = getBaseTypeOfArray(column_for_type.getTypeInStorage(), tuple_elements);
-
-            /// Remove names of tuple elements because they are already processed by 'getBaseTypeOfArray'.
-            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_subcolumn_name, tuple_elements);
-
-            /// Dimensions that the subcolumn extraction from the base type creates by itself.
-            /// For example `.:Array(Dynamic)` of a `JSON` base type is already an array.
-            size_t num_subcolumn_dimensions = 0;
-            if (!subcolumn_name.empty())
-            {
-                if (auto subcolumn_type = base_type->tryGetSubcolumnType(subcolumn_name))
-                {
-                    if (const auto * subcolumn_array_type = typeid_cast<const DataTypeArray *>(subcolumn_type.get()))
-                        num_subcolumn_dimensions = subcolumn_array_type->getNumberOfDimensions();
-                }
-            }
-
-            if (num_dimensions < current_offsets.size() + num_subcolumn_dimensions)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot fill missing column {} of type {}: it has {} array dimensions, but {} are shared "
-                    "with other columns and {} come from the subcolumn {} of type {}",
-                    backQuote(requested_column->name), requested_column->type->getName(), num_dimensions,
-                    current_offsets.size(), num_subcolumn_dimensions, backQuote(subcolumn_name), base_type->getName());
-
             /// The number of dimensions that belongs to the array itself but not shared in Nested column.
             /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.
-            size_t num_empty_dimensions = num_dimensions - current_offsets.size() - num_subcolumn_dimensions;
+            size_t num_empty_dimensions = num_dimensions - current_offsets.size();
 
+            auto base_type = getBaseTypeOfArray(column_for_type.getTypeInStorage(), tuple_elements);
             auto scalar_type = createArrayOfType(base_type, num_empty_dimensions);
             size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
 
+            /// Remove names of tuple elements because they are already processed by 'getBaseTypeOfArray'.
+            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_subcolumn_name, tuple_elements);
             res_columns[i] = createColumnWithDefaultValue(*scalar_type, subcolumn_name, data_size);
 
             for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
@@ -784,13 +763,6 @@ void fillMissingColumns(
         {
             res_columns[i] = createColumnWithDefaultValue(*requested_column->getTypeInStorage(), requested_column->getSubcolumnName(), num_rows);
         }
-
-        /// Consumers of the block (for example merges of columns with dynamic structure) cast nested
-        /// columns according to the type, so a column of a different structure would corrupt memory.
-        if (!columnMatchesTypeStructure(*res_columns[i], *requested_column->type))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Filled missing column {} of type {} has incompatible structure {}",
-                backQuote(requested_column->name), requested_column->type->getName(), res_columns[i]->dumpStructure());
     }
 }
 
