@@ -251,7 +251,7 @@ SELECT 'default needle', 'no index',
     (SELECT groupArray(id) FROM (SELECT id FROM tab_split_pos WHERE hasPhrase(m['k'], repeat(char(0), 5)) ORDER BY id))
 SETTINGS use_skip_indexes = 0;
 
--- The preprocessor is applied to the indexed values only, never to `m['k']`.
+-- The preprocessor applies to `m['k']` too, including the default a row without the key reads.
 CREATE TABLE tab_pre_lower (id UInt32, m Map(String, FixedString(6)),
     INDEX tix mapValues(m) TYPE text(tokenizer = ngrams(3), preprocessor = lower(mapValues(m)), postprocessor = if(match(mapValues(m), '[a-z]'), mapValues(m), '#')))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
@@ -317,34 +317,20 @@ SELECT 'post throw', 'no index',
     (SELECT groupArray(h) FROM (SELECT hasAnyTokens(m['k'], '223') AS h FROM tab_post_throw ORDER BY id))
 SETTINGS use_skip_indexes = 0;
 
--- The preprocessor rejects both default needles, '' and '\0\0\0', but no stored value.
+-- A preprocessor that rejects the search term raises, as for a String column.
 CREATE TABLE tab_pre_throw (id UInt32, s Map(String, String), f Map(String, FixedString(3)),
     INDEX tix_s mapValues(s) TYPE text(tokenizer = ngrams(3), preprocessor = toString(toUInt64(mapValues(s)))),
     INDEX tix_f mapValues(f) TYPE text(tokenizer = ngrams(3), preprocessor = toString(toUInt64(mapValues(f)))))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO tab_pre_throw VALUES (1, map(), map()), (2, map('k', '123'), map('k', '123'));
 
-SELECT 'pre throw', 'subcolumns=1',
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(s['k'], '') ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(s['k'], '') ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAllTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(f['k'], repeat(char(0), 3)) ORDER BY id))
-SETTINGS optimize_functions_to_subcolumns = 1;
-SELECT 'pre throw', 'subcolumns=0',
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(s['k'], '') ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(s['k'], '') ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAllTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(f['k'], repeat(char(0), 3)) ORDER BY id))
-SETTINGS optimize_functions_to_subcolumns = 0;
-SELECT 'pre throw', 'no index',
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(s['k'], '') ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(s['k'], '') ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAllTokens(f['k'], repeat(char(0), 3)) ORDER BY id)),
-    (SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(f['k'], repeat(char(0), 3)) ORDER BY id))
-SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(s['k'], '') ORDER BY id); -- { serverError ATTEMPT_TO_READ_AFTER_EOF }
+SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(s['k'], '') ORDER BY id); -- { serverError ATTEMPT_TO_READ_AFTER_EOF }
+SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(f['k'], repeat(char(0), 3)) ORDER BY id); -- { serverError CANNOT_PARSE_TEXT }
+SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAllTokens(f['k'], repeat(char(0), 3)) ORDER BY id); -- { serverError CANNOT_PARSE_TEXT }
+SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasPhrase(f['k'], repeat(char(0), 3)) ORDER BY id); -- { serverError CANNOT_PARSE_TEXT }
+SELECT groupArray(id) FROM (SELECT id FROM tab_pre_throw WHERE hasAnyTokens(s['k'], '') ORDER BY id)
+SETTINGS use_skip_indexes = 0; -- { serverError ATTEMPT_TO_READ_AFTER_EOF }
 
 DROP TABLE tab_post;
 DROP TABLE tab_post_lc;

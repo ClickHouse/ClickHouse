@@ -180,6 +180,8 @@ public:
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
+    /// Whether `haystack` is a map element `m['key']` (or `m.key_<key>`) answered by this `mapValues(m)` index.
+    bool isMapElementValue(const ActionsDAG::Node & haystack) const;
     /// Returns the name of the virtual column that replaces the function node of the query,
     /// or nothing if the query is not one of this condition or cannot be read directly.
     std::optional<String> tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const;
@@ -327,6 +329,9 @@ private:
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     bool has_preprocessor;
+    /// For an `Array` index with a preprocessor (`mapValues(m)`): the preprocessor applied to the element type's
+    /// default, i.e. what `m['key']` is preprocessed to for a key the map does not hold. Unset if it raises.
+    std::optional<Field> preprocessed_absent_map_value;
     /// Reference postprocessor expression
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     bool has_postprocessor;

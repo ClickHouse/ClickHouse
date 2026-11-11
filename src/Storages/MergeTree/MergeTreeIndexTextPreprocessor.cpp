@@ -139,12 +139,13 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
         preprocessor_column_name,
         index_column_type,
         convertASTForIndexColumn(index_description, expression_ast, true)))
+    , expression_ast_for_element(convertASTForConstant(index_description, expression_ast))
     /// Take constant string and execute preprocessor expression.
     , actions_for_constant(createActionsDAGForPreprocessor(
         {{preprocessor_column_name, std::make_shared<DataTypeString>()}},
         preprocessor_column_name,
         std::make_shared<DataTypeString>(),
-        convertASTForConstant(index_description, expression_ast)))
+        expression_ast_for_element ? expression_ast_for_element->clone() : nullptr))
 {
     if (expression_ast)
     {
@@ -195,6 +196,21 @@ ASTPtr MergeTreeIndexTextPreprocessor::getExpressionAST(const String & col_name)
 ActionsDAG MergeTreeIndexTextPreprocessor::getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const
 {
     return buildActionsDAGFromAST(getExpressionAST(col_name), {{col_name, col_type}});
+}
+
+ASTPtr MergeTreeIndexTextPreprocessor::getElementExpressionAST(const String & col_name) const
+{
+    if (!expression_ast_for_element)
+        return nullptr;
+
+    ASTPtr result = expression_ast_for_element->clone();
+    replaceExpressionToIdentifier(result, preprocessor_column_name, col_name);
+    return result;
+}
+
+ActionsDAG MergeTreeIndexTextPreprocessor::getActionsDAGForElement(const String & col_name, const DataTypePtr & col_type) const
+{
+    return buildActionsDAGFromAST(getElementExpressionAST(col_name), {{col_name, col_type}});
 }
 
 String MergeTreeIndexTextPreprocessor::processConstant(const String & input) const

@@ -762,20 +762,29 @@ private:
             auto haystack_name = getNameWithoutAliases(haystack);
 
             /// Check that preprocessor contains current expression as its argument.
-            if (hasSubexpression(preprocessor_output, haystack_name))
+            const bool is_index_expression = hasSubexpression(preprocessor_output, haystack_name);
+            /// A map element of a `mapValues` index takes the preprocessor of one value.
+            const bool is_map_element = !is_index_expression && condition_text.isMapElementValue(*haystack);
+            if (is_index_expression || is_map_element)
             {
                 /// Keep a `CAST` that drops `Nullable` under the preprocessor, so that the predicate still throws on NULL.
                 new_children[0] = unwrapLosslessConversion(arg_haystack, /*allow_drop_nullable=*/ false);
 
                 if (apply_postprocessor)
                 {
-                    preprocessor_source_ast = preprocessor->getExpressionAST(new_children[0]->result_name);
+                    preprocessor_source_ast = is_map_element
+                        ? preprocessor->getElementExpressionAST(new_children[0]->result_name)
+                        : preprocessor->getExpressionAST(new_children[0]->result_name);
                 }
                 else
                 {
+                    const auto & column_name = new_children[0]->result_name;
+                    const auto & column_type = new_children[0]->result_type;
                     ActionsDAG::NodeRawConstPtrs merged_outputs;
                     actions_dag.mergeNodes(
-                        preprocessor->getActionsDAGForColumn(new_children[0]->result_name, new_children[0]->result_type),
+                        is_map_element
+                            ? preprocessor->getActionsDAGForElement(column_name, column_type)
+                            : preprocessor->getActionsDAGForColumn(column_name, column_type),
                         &merged_outputs);
 
                     chassert(merged_outputs.size() == 1);

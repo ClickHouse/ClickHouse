@@ -256,6 +256,36 @@ static std::optional<size_t> tryGetIndexedFixedStringSize(const Block & header)
     return std::nullopt;
 }
 
+/// The preprocessor applied to the default of the element type of an `Array(String)` or `Array(FixedString)` index, as a
+/// String or Null. Unset when the preprocessor raises on it.
+static std::optional<Field> tryPreprocessArrayElementDefault(const Block & header, const MergeTreeIndexTextPreprocessorPtr & preprocessor)
+{
+    if (header.columns() != 1)
+        return std::nullopt;
+
+    const auto & index_column = header.getByPosition(0);
+    const auto * array_type = typeid_cast<const DataTypeArray *>(index_column.type.get());
+    if (!array_type || !isStringOrFixedString(removeNullable(removeLowCardinality(array_type->getNestedType()))))
+        return std::nullopt;
+
+    try
+    {
+        auto column = index_column.type->createColumn();
+        column->insert(Array{array_type->getNestedType()->getDefault()});
+        const auto result = preprocessor->processColumn({std::move(column), index_column.type, index_column.name}, 0, 1).first;
+
+        const Field result_field = (*result)[0];
+        const auto & values = result_field.safeGet<Array>();
+        if (values.size() == 1 && (values.front().getType() == Field::Types::String || values.front().isNull()))
+            return values.front();
+        return std::nullopt;
+    }
+    catch (const Exception &)
+    {
+        return std::nullopt;
+    }
+}
+
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
@@ -279,6 +309,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
     , has_preprocessor(preprocessor && preprocessor->hasActions())
+    , preprocessed_absent_map_value(has_preprocessor ? tryPreprocessArrayElementDefault(header, preprocessor) : std::nullopt)
     , postprocessor(postprocessor_)
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , automaton_budget(automaton_budget_ ? std::move(automaton_budget_) : std::make_shared<TextIndexAutomatonBudget>())
@@ -531,6 +562,11 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     const auto function_node = rpn_node.toFunctionNode();
 
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
+}
+
+bool MergeTreeIndexConditionText::isMapElementValue(const ActionsDAG::Node & haystack) const
+{
+    return hasIndexForMapElementValue(RPNBuilderTreeNode(&haystack, getContext()));
 }
 
 std::optional<String> MergeTreeIndexConditionText::tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const
@@ -1286,16 +1322,31 @@ bool MergeTreeIndexConditionText::absentMapValueMatches(const String & function_
     if (!array_type)
         return false;
 
-    /// An absent key reads NULL, for which these functions are not true.
-    const auto value_type = removeLowCardinality(array_type->getNestedType());
-    if (value_type->isNullable())
-        return false;
+    String default_value;
+    if (has_preprocessor)
+    {
+        /// A default the guard cannot preprocess leaves such rows to the predicate.
+        if (!preprocessed_absent_map_value)
+            return true;
+        if (preprocessed_absent_map_value->isNull())
+            return false;
+        if (preprocessed_absent_map_value->getType() != Field::Types::String)
+            return true;
+        default_value = preprocessed_absent_map_value->safeGet<String>();
+    }
+    else
+    {
+        /// An absent key reads NULL, for which these functions are not true.
+        const auto value_type = removeLowCardinality(array_type->getNestedType());
+        if (value_type->isNullable())
+            return false;
 
-    if (!isStringOrFixedString(value_type))
-        return false;
+        if (!isStringOrFixedString(value_type))
+            return false;
 
-    const auto default_column = value_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-    const auto default_value = default_column->getDataAt(0);
+        const auto default_column = value_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+        default_value = String(default_column->getDataAt(0));
+    }
 
     VectorWithMemoryTracking<String> terms;
     tokenizer->stringToTokens(default_value.data(), default_value.size(), terms);
@@ -1315,8 +1366,8 @@ bool MergeTreeIndexConditionText::absentMapValueMatches(const String & function_
     if (terms.empty())
         return false;
 
-    /// The plan neither preprocesses a map element nor matches a postprocessed phrase by token membership.
-    if (has_preprocessor || (function_name == "hasPhrase" && has_postprocessor))
+    /// The plan does not match a postprocessed phrase by token membership.
+    if (function_name == "hasPhrase" && has_postprocessor)
         return true;
 
     if (tokens.empty())
@@ -1360,14 +1411,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     bool candidate_for_exact_mode = true;
     bool is_map_element_value = false;
-    /// The plan does not preprocess a map element, so a preprocessor index does not look up a default needle:
-    /// the atom only keeps the rewrite.
-    bool rewrite_only = false;
     if (traverseMapElementValueNode(function_node, index_column_node, value_field))
     {
         has_index_column = true;
         is_map_element_value = true;
-        rewrite_only = has_preprocessor && isMapValueDefault(value_field.safeGet<String>(), header);
 
         /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
         /// because we have to match the specific key to the value and therefore execute a real filter.
@@ -1518,8 +1565,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
         if (value_data_type.isString())
         {
-            if (!rewrite_only)
-                search_tokens = stringToTokens(value_field, /*compact=*/ function_name == "hasAllTokens");
+            search_tokens = stringToTokens(value_field, /*compact=*/ function_name == "hasAllTokens");
         }
         else
         {
@@ -1534,7 +1580,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 search_tokens = postprocessor->processTokens(std::move(search_tokens));
         }
 
-        const bool keeps_absent_key_rows = rewrite_only || (is_map_element_value && absentMapValueMatches(function_name, search_tokens));
+        const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, search_tokens);
         const auto read_mode = keeps_absent_key_rows ? TextIndexDirectReadMode::None : direct_read_mode;
 
         if (function_name == "hasAnyTokens")
@@ -1638,6 +1684,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (function_name == "hasToken" && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
             return false;
 
+        /// The predicate receives the preprocessed needle, which may contain a separator: it raises on every row, so prune none.
+        if (is_map_element_value && has_preprocessor
+            && std::ranges::any_of(preprocessor->processConstant(value_field.safeGet<String>()), isTokenSeparator))
+        {
+            out.function = RPNElement::FUNCTION_UNKNOWN;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::All, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>{}));
+            return true;
+        }
+
         auto tokens = stringToTokens(value_field, /*compact=*/ true);
         if (tokens.empty())
         {
@@ -1651,8 +1707,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             tokens.push_back("");
         }
 
-        out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        const bool keeps_absent_key_rows = is_map_element_value && absentMapValueMatches(function_name, tokens);
+        out.function = keeps_absent_key_rows ? RPNElement::FUNCTION_UNKNOWN : RPNElement::FUNCTION_EQUALS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::All, keeps_absent_key_rows ? TextIndexDirectReadMode::None : direct_read_mode, std::move(tokens)));
         return true;
     }
     if (function_name == "hasPhrase")
@@ -1714,14 +1772,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(unique_tokens)));
 
-            return true;
-        }
-
-        if (rewrite_only)
-        {
-            out.function = RPNElement::FUNCTION_UNKNOWN;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
-                function_name, TextSearchMode::All, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>{}));
             return true;
         }
 
