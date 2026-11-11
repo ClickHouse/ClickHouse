@@ -237,7 +237,18 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             const auto & children = select->as<ASTSelectWithUnionQuery>()->list_of_selects->children;
             for (const auto & child : children)
             {
-                auto * child_select = child->as<ASTSelectQuery>();
+                /// A parenthesized operand with its own `SETTINGS` clause keeps its single-SELECT
+                /// `ASTSelectWithUnionQuery` wrapper (see `ParserUnionQueryElement`), so look through such wrappers:
+                /// the wrapper is only the boundary of that clause and must not hide the operand from `WITH`.
+                IAST * operand = child.get();
+                while (auto * wrapper = operand->as<ASTSelectWithUnionQuery>())
+                {
+                    if (wrapper->list_of_selects->children.size() != 1)
+                        break;
+                    operand = wrapper->list_of_selects->children[0].get();
+                }
+
+                auto * child_select = operand->as<ASTSelectQuery>();
                 if (child_select)
                 {
                     if (child_select->getExpression(ASTSelectQuery::Expression::WITH, false))
