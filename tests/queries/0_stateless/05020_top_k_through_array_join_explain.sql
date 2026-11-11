@@ -44,7 +44,7 @@ FROM
 )
 WHERE explain LIKE '%Filter column:%';
 
-SELECT '-- chained ARRAY JOIN: only the outermost step is rewritten';
+SELECT '-- chained ARRAY JOIN: the sort moves below both';
 EXPLAIN PLAN description = 0
 SELECT x FROM t_aj_explain ARRAY JOIN arr ARRAY JOIN arr2 ORDER BY x LIMIT 10
 SETTINGS query_plan_top_k_through_array_join = 1;
