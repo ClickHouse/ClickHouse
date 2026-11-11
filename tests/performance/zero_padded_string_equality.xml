@@ -1,0 +1,30 @@
+<test>
+    <settings><max_threads>1</max_threads></settings>
+
+    <create_query>
+        CREATE TABLE zero_padded_string_equality
+        (s String, f8 FixedString(8), f12 FixedString(12), f13 FixedString(13), f31 FixedString(31), f32 FixedString(32))
+        ENGINE = Memory
+    </create_query>
+    <fill_query><![CDATA[
+        INSERT INTO zero_padded_string_equality
+        SELECT
+            if(bitTest(cityHash64(number), 0), 'abcdefg', 'xbcdefg') AS a,
+            a, a,
+            if(bitTest(cityHash64(number), 1), 'abcdefg', 'xbcdefg') AS b,
+            a, b
+        FROM numbers(5000000)
+    ]]></fill_query>
+
+    <!-- The unequal widths exercise zero padding, rather than the separate equal-width or 16-byte paths.
+         Independent hash bits mix matches and mismatches without including data generation in the timings. -->
+    <query>SELECT sum(f12 = f13) FROM zero_padded_string_equality</query>
+    <query>SELECT sum(f31 = f32) FROM zero_padded_string_equality</query>
+    <query>SELECT sum(s = f32) FROM zero_padded_string_equality</query>
+    <query>SELECT sum(f8 = 'abcdefg') FROM zero_padded_string_equality</query>
+    <query>SELECT sum(s = toFixedString('abcdefg', 12)) FROM zero_padded_string_equality</query>
+    <query>SELECT sum(f32 = toFixedString('abcdefg', 31)) FROM zero_padded_string_equality</query>
+    <query>SELECT sum(f8 != 'abcdefg') FROM zero_padded_string_equality</query>
+
+    <drop_query>DROP TABLE zero_padded_string_equality</drop_query>
+</test>
