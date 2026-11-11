@@ -769,6 +769,13 @@ private:
                 /// Keep a `CAST` that drops `Nullable` under the preprocessor, so that the predicate still throws on NULL.
                 new_children[0] = unwrapLosslessConversion(arg_haystack, /*allow_drop_nullable=*/ false);
 
+                if (is_map_element)
+                {
+                    const auto element_type = preprocessor->getElementType(new_children[0]->result_type);
+                    if (!element_type->equals(*new_children[0]->result_type))
+                        new_children[0] = &actions_dag.addCast(*new_children[0], element_type, {}, context);
+                }
+
                 if (apply_postprocessor)
                 {
                     preprocessor_source_ast = is_map_element

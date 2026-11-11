@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS tab_throw_absent;
 DROP TABLE IF EXISTS tab_post;
 DROP TABLE IF EXISTS tab_lc;
 DROP TABLE IF EXISTS tab_nullable;
+DROP TABLE IF EXISTS tab_lc_type;
 DROP TABLE IF EXISTS tab_sep;
 DROP TABLE IF EXISTS tab_post_empty;
 DROP TABLE IF EXISTS tab_post_empty_str;
@@ -155,6 +156,25 @@ SELECT 'lc nullable', 'no index',
     (SELECT groupArray(id) FROM (SELECT id FROM tab_nullable WHERE hasAnyTokens(m['k'], 'header') ORDER BY id))
 SETTINGS use_skip_indexes = 0;
 
+-- The index preprocesses a `LowCardinality(String)` map value as `String`, also when it is read as the subcolumn `m.key_k`.
+CREATE TABLE tab_lc_type (id UInt32, m Map(String, LowCardinality(String)),
+    INDEX tix mapValues(m) TYPE text(tokenizer = splitByNonAlpha,
+        preprocessor = if(toTypeName(mapValues(m)) = 'LowCardinality(String)', 'hit', substringIndex(mapValues(m), '\n', 1))))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_lc_type VALUES (1, map('k', 'other\nzzz')), (2, map());
+
+SELECT 'lc type',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_lc_type WHERE hasAnyTokens(m.key_k, 'hit') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_lc_type WHERE hasAllTokens(m.key_k, 'zzz') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_lc_type WHERE hasToken(m.key_k, 'other') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_lc_type WHERE hasPhrase(m.key_k, 'other') ORDER BY id));
+SELECT 'lc type', 'no index',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_lc_type WHERE hasAnyTokens(m.key_k, 'hit') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_lc_type WHERE hasAllTokens(m.key_k, 'zzz') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_lc_type WHERE hasToken(m.key_k, 'other') ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_lc_type WHERE hasPhrase(m.key_k, 'other') ORDER BY id))
+SETTINGS use_skip_indexes = 0;
+
 -- The preprocessed `hasToken` term 'xyz zz' contains a separator, so the function raises, although no row holds 'xyz'.
 -- A row without the key reads ' zz', which matches 'zz'.
 CREATE TABLE tab_sep (id UInt32, m Map(String, String),
@@ -216,6 +236,7 @@ DROP TABLE tab_throw_absent;
 DROP TABLE tab_post;
 DROP TABLE tab_lc;
 DROP TABLE tab_nullable;
+DROP TABLE tab_lc_type;
 DROP TABLE tab_sep;
 DROP TABLE tab_post_empty;
 DROP TABLE tab_post_empty_str;

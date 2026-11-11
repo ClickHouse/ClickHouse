@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
@@ -211,6 +212,18 @@ ASTPtr MergeTreeIndexTextPreprocessor::getElementExpressionAST(const String & co
 ActionsDAG MergeTreeIndexTextPreprocessor::getActionsDAGForElement(const String & col_name, const DataTypePtr & col_type) const
 {
     return buildActionsDAGFromAST(getElementExpressionAST(col_name), {{col_name, col_type}});
+}
+
+DataTypePtr MergeTreeIndexTextPreprocessor::getElementType(const DataTypePtr & col_type) const
+{
+    const auto * array_type = typeid_cast<const DataTypeArray *>(index_column_type.get());
+    if (!array_type)
+        return col_type;
+
+    /// A NULL key reads NULL even when the map value type is not `Nullable`.
+    if (isNullableOrLowCardinalityNullable(col_type))
+        return makeNullableOrLowCardinalityNullableSafe(array_type->getNestedType());
+    return array_type->getNestedType();
 }
 
 String MergeTreeIndexTextPreprocessor::processConstant(const String & input) const

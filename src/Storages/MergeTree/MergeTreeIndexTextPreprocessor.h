@@ -35,6 +35,8 @@ public:
     /// The preprocessor of one element of an `Array` index column, e.g. a map value of `mapValues(m)`, reading from `col_name`.
     ASTPtr getElementExpressionAST(const String & col_name) const;
     ActionsDAG getActionsDAGForElement(const String & col_name, const DataTypePtr & col_type) const;
+    /// The type `arrayMap` passes such an element to the preprocessor as, for an element read as `col_type`.
+    DataTypePtr getElementType(const DataTypePtr & col_type) const;
 
     bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
 
