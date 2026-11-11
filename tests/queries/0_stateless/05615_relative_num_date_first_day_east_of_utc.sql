@@ -1,4 +1,8 @@
 -- The Date 1970-01-01 starts before the Unix epoch in a time zone east of UTC.
+
+-- Disable force_primary_key_reverse_order: Tests primary key analysis, which depends on the sort order
+SET force_primary_key_reverse_order = 0;
+
 SET session_timezone = 'Europe/Berlin';
 
 SELECT toRelativeMinuteNum(toDate('1970-01-01')), toRelativeMinuteNum(toDate('1970-01-02')), toRelativeMinuteNum(toDate32('1970-01-01'));

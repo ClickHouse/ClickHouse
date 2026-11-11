@@ -1,6 +1,9 @@
 -- Tags: zookeeper
 -- zookeeper: the last case uses ReplicatedMergeTree.
 
+-- Disable force_primary_key_reverse_order: The output depends on the sort order
+SET force_primary_key_reverse_order = 0;
+
 -- A table's keys must stay what `CREATE` and a reload derive, whatever session the last `ALTER` ran in.
 -- `transform_null_in` rewrites `in` to `nullIn`, which renames the key column and, for a Nullable argument, changes its type.
 -- `cast_keep_nullable` makes `CAST` of a Nullable column Nullable.
