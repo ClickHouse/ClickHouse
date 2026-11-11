@@ -1,6 +1,7 @@
 #include <Common/PartitionedRecordBuffer.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <limits>
@@ -28,6 +29,11 @@ struct alignas(CH_CACHE_LINE_SIZE) PartitionedRecordBuffer::Block
     /// The size of the block's allocation. Blocks differ in size, since the blocks of a group grow.
     const size_t bytes;
 
+    /// Counts a chunk carved from the block. Only the appending thread changes the count while it appends: consumers
+    /// release chunks after `finishAppending`, and appends resume once they finish. So the count takes no locked
+    /// instruction, which would wait for the stores of the appends to drain at every chunk.
+    void addChunk() { references.store(references.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed); }
+
     void release()
     {
         if (references.fetch_sub(1, std::memory_order_acq_rel) == 1)
@@ -40,13 +46,15 @@ struct alignas(CH_CACHE_LINE_SIZE) PartitionedRecordBuffer::Block
 };
 
 PartitionedRecordBuffer::PartitionedRecordBuffer(
-    size_t num_partitions_, size_t partitions_per_group_, size_t first_chunk_bytes_)
+    size_t num_partitions_, size_t partitions_per_group_, size_t first_chunk_bytes_, size_t max_chunk_bytes_)
     : num_partitions(num_partitions_)
     , partitions_per_group(partitions_per_group_)
     , first_chunk_bytes(first_chunk_bytes_)
+    , max_chunk_bytes(max_chunk_bytes_)
 {
     chassert(num_partitions > 0 && partitions_per_group > 0);
     chassert(first_chunk_bytes >= min_first_chunk_bytes && first_chunk_bytes <= max_first_chunk_bytes);
+    chassert(max_chunk_bytes >= first_chunk_bytes);
     cursors = std::make_unique<Cursor[]>(num_partitions);
     chains = std::make_unique<Chain[]>(num_partitions);
     carvers.resize((num_partitions - 1) / partitions_per_group + 1);
@@ -95,8 +103,9 @@ void PartitionedRecordBuffer::startChunk(size_t partition, size_t bytes)
 {
     /// A chunk is sized in multiples of the header's alignment, so the chunk carved after it in the block starts
     /// aligned. Records need no alignment, and a chunk for a record larger than the doubled capacity is
-    /// sized by that record. The header keeps the size in 32 bits, so a record whose chunk would not fit them is
-    /// rejected before anything is allocated or changed.
+    /// sized by that record. A record that takes more than half of the chunk cap gets a chunk of its own size,
+    /// allocated apart from the blocks (see the class comment). The header keeps the size in 32 bits, so a record
+    /// whose chunk would not fit them is rejected before anything is allocated or changed.
     const size_t needed = ::Memory::alignUp(sizeof(ChunkHeader) + bytes + tail_padding_bytes, alignof(ChunkHeader));
     if (needed > std::numeric_limits<decltype(ChunkHeader::capacity)>::max())
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "A record of {} bytes does not fit a chunk of the partitioned record buffer", bytes);
@@ -109,7 +118,7 @@ void PartitionedRecordBuffer::startChunk(size_t partition, size_t bytes)
     size_t capacity = 0;
     char * data = nullptr;
     Block * block = nullptr;
-    if (needed > max_chunk_bytes)
+    if (needed > max_chunk_bytes / 2)
     {
         capacity = needed;
         data = static_cast<char *>(Allocator<false, false>().alloc(capacity));
@@ -139,7 +148,7 @@ void PartitionedRecordBuffer::startChunk(size_t partition, size_t bytes)
         carver.pos += capacity;
         carver.remaining -= capacity;
         block = carver.block;
-        block->references.fetch_add(1, std::memory_order_relaxed);
+        block->addChunk();
     }
 
     auto * chunk = new (data) ChunkHeader{.next = nullptr, .block = block, .used = 0, .capacity = static_cast<UInt32>(capacity)};
@@ -168,16 +177,33 @@ void PartitionedRecordBuffer::finishAppending()
 
 void PartitionedRecordBuffer::releasePartition(size_t partition)
 {
-    ChunkHeader * chunk = chains[partition].first;
-    while (chunk)
+    /// Other threads wrote the counters of the blocks last, and a locked decrement waits for its cache line and holds
+    /// back the loads after it. The walk along the chain prefetches the counters of a batch of chunks and decrements
+    /// them after the batch, so their cache lines arrive together. The blocks outlive the decrements of the batch
+    /// that they need: a chunk further along the chain holds a reference to its block, and a block that the batch
+    /// names twice holds a reference for each.
+    std::array<Block *, release_batch_chunks> batch{};
+    size_t batched = 0;
+    for (ChunkHeader * chunk = chains[partition].first; chunk;)
     {
-        ChunkHeader * next = chunk->next;
-        if (chunk->block)
-            chunk->block->release();
+        ChunkHeader * const next = chunk->next;
+        if (Block * const block = chunk->block)
+        {
+            __builtin_prefetch(block, /*rw=*/1);
+            batch[batched++] = block;
+            if (batched == batch.size())
+            {
+                for (Block * const batched_block : batch)
+                    batched_block->release();
+                batched = 0;
+            }
+        }
         else
             Allocator<false, false>().free(chunk, chunk->capacity);
         chunk = next;
     }
+    for (size_t i = 0; i < batched; ++i)
+        batch[i]->release();
     chains[partition] = {};
     cursors[partition] = {};
 }
