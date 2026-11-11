@@ -15,12 +15,9 @@ MergeTreeDataPartsVector collectInitial(const StorageMergeTree & data, const Mer
 {
     MergeTreeData::DataPartsKinds affordable_kinds{MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch};
 
-    /// Parts of a partition whose merges are blocked are left out while the parts lock is held.
-    /// `stopMergesAndWaitForPartition` blocks the partition under `currently_processing_in_background_mutex`,
-    /// which is held for the whole selection, before the parts are removed under the parts lock. So a part
-    /// collected here from a partition that is not blocked stays in the working set until the selection has
-    /// tagged it, and the removing operation then waits for the merge. A check after the parts lock is released
-    /// could see the blocker already lifted and keep parts that are gone.
+    /// Checked under the parts lock: a partition is blocked under `currently_processing_in_background_mutex`
+    /// (held for the whole selection) before its parts are removed, so a part kept here stays until it is tagged.
+    /// A check after the parts lock could see the blocker already lifted and keep parts that are gone.
     const auto in_blocked_partition = [&](const MergeTreeDataPartPtr & part)
     {
         return merge_pred.areMergesBlockedInPartition(part->info.getPartitionId());

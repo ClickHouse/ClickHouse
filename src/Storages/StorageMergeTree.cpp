@@ -2809,9 +2809,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         has_mutations = !current_mutations_by_version.empty();
     }
 
-    /// Test hook: holds the selection of a table that has a blocked partition between releasing the mutex
-    /// and checking the selected entry against the blocker. Other tables are let through, so that a test
-    /// does not have to stop the merges of the whole server.
+    /// Test hook: holds the selection between releasing the mutex and the blocker check below, only for a table
+    /// with a blocked partition so that a test does not stall the merges of the whole server.
     fiu_do_on(FailPoints::mt_merge_selecting_task_pause_after_selection,
     {
         if (merger_mutator.merges_blocker.countPartitionBlockers() > 0)
@@ -3412,10 +3411,9 @@ ActionLock StorageMergeTree::stopMergesAndWaitForPartition(String partition_id)
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger_mutator.merges_blocker.cancelForPartition(partition_id);
 
-    /// Every tagged part of the partition is waited for, whatever its state. A merge or mutation of a table
-    /// with transactions publishes its result and outdates its source parts before it commits the transaction
-    /// and untags the sources (`MergePlainMergeTreeTask::finish`), so waiting only for the active parts would
-    /// miss it, and its uncommitted result could not be removed non-transactionally.
+    /// Wait for tagged parts in any state: a merge with a transaction outdates its sources before it commits
+    /// and untags them (`MergePlainMergeTreeTask::finish`), and its uncommitted result cannot be dropped
+    /// non-transactionally.
     const auto count_merging_in_partition = [&]
     {
         size_t count = 0;
