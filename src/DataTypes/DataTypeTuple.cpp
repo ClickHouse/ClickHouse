@@ -17,6 +17,7 @@
 #include <Parsers/ASTNameTypePair.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -289,6 +290,42 @@ std::optional<size_t> DataTypeTuple::tryGetPositionByName(std::string_view name,
         }
     }
     return std::nullopt;
+}
+
+VectorWithMemoryTracking<std::optional<size_t>> DataTypeTuple::matchElementsByName(const DataTypeTuple & to, bool case_insensitive) const
+{
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> positions_by_name;
+    positions_by_name.reserve(names.size());
+    for (size_t i = 0; i < names.size(); ++i)
+        positions_by_name.emplace(names[i], i);
+
+    const auto & to_names = to.getElementNames();
+    VectorWithMemoryTracking<std::optional<size_t>> positions(to_names.size());
+    VectorWithMemoryTracking<UInt8> taken(names.size());
+    for (size_t i = 0; i < to_names.size(); ++i)
+    {
+        if (auto it = positions_by_name.find(to_names[i]); it != positions_by_name.end())
+        {
+            positions[i] = it->second;
+            taken[it->second] = true;
+        }
+    }
+
+    if (!case_insensitive)
+        return positions;
+
+    for (size_t i = 0; i < to_names.size(); ++i)
+    {
+        for (size_t j = 0; j < names.size() && !positions[i]; ++j)
+        {
+            if (!taken[j] && boost::iequals(names[j], to_names[i]))
+            {
+                positions[i] = j;
+                taken[j] = true;
+            }
+        }
+    }
+    return positions;
 }
 
 String DataTypeTuple::getNameByPosition(size_t i) const

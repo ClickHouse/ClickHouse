@@ -24,7 +24,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnsCommon.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -33,12 +32,8 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Utils.h>
 #include <Core/UUID.h>
 #include <Formats/castColumnToRequestedType.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
-#include <Interpreters/castColumn.h>
-#include <Common/quoteString.h>
 #include <algorithm>
 #include <Common/assert_cast.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -49,7 +44,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int THERE_IS_NO_COLUMN;
 }
 
 namespace
@@ -143,144 +137,6 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const ArrowIPC::ArrowFiel
     }
 }
 
-namespace
-{
-/// Prepares the elements of named structs that are requested, recursively; the cast that follows matches them by name.
-/// Nullable tuples are converted with null rows excluded before applying the requested nullability.
-/// Top-level null defaults also populate `missing_values` for column `DEFAULT` expressions.
-ColumnWithTypeAndName prepareArrowColumnForCast(
-    ColumnWithTypeAndName from, const DataTypePtr & to, const FormatSettings & settings,
-    size_t column_index = 0, BlockMissingValues * missing_values = nullptr)
-{
-    if (from.type->equals(*to))
-        return from;
-
-    if (const auto * from_null = typeid_cast<const DataTypeNullable *>(from.type.get()))
-    {
-        const auto & from_null_column = assert_cast<const ColumnNullable &>(*from.column);
-        ColumnWithTypeAndName nested{from_null_column.getNestedColumnPtr(), from_null->getNestedType(), from.name};
-        const DataTypePtr to_nested = removeNullable(to);
-        if (isTuple(nested.type) && isTuple(to_nested))
-        {
-            /// Null structs contain undefined child values. Convert only visible rows, then restore the
-            /// null rows in the destination type so text parsers never see substitute empty strings.
-            const auto & null_map = from_null_column.getNullMapData();
-            const bool has_nulls = !memoryIsZero(null_map.data(), 0, null_map.size());
-            if (has_nulls)
-            {
-                IColumn::Filter visible_rows(null_map.size());
-                for (size_t i = 0; i < null_map.size(); ++i)
-                    visible_rows[i] = !null_map[i];
-                nested.column = nested.column->filter(visible_rows, -1);
-            }
-            nested = prepareArrowColumnForCast(std::move(nested), to_nested, settings);
-            if (has_nulls)
-            {
-                if (settings.null_as_default)
-                    insertNullAsDefaultIfNeeded(nested, {to_nested->createColumn(), to_nested, from.name}, 0, nullptr, true);
-                auto converted = IColumn::mutate(castColumnMatchingTupleElementsByName(nested, to_nested)->convertToFullColumnIfConst());
-                const size_t default_index = converted->size();
-                to_nested->insertDefaultInto(*converted);
-                auto indexes = ColumnUInt64::create(null_map.size());
-                auto & index_data = indexes->getData();
-                size_t visible_index = 0;
-                for (size_t i = 0; i < null_map.size(); ++i)
-                    index_data[i] = null_map[i] ? default_index : visible_index++;
-                nested.column = converted->index(*indexes, 0);
-                nested.type = to_nested;
-            }
-            if (!to->isNullable() && (settings.null_as_default || !settings.schema_inference_allow_nullable_tuple_type))
-            {
-                if (has_nulls && settings.null_as_default && missing_values)
-                    missing_values->setBitsFromNullMap(column_index, null_map);
-                return nested;
-            }
-        }
-        else
-            nested = prepareArrowColumnForCast(std::move(nested), to_nested, settings);
-        from.column = ColumnNullable::create(nested.column, from_null_column.getNullMapColumnPtr());
-        from.type = std::make_shared<DataTypeNullable>(nested.type);
-        return from;
-    }
-    if (const auto * to_null = typeid_cast<const DataTypeNullable *>(to.get()))
-        return prepareArrowColumnForCast(std::move(from), to_null->getNestedType(), settings);
-
-    if (const auto * to_arr = typeid_cast<const DataTypeArray *>(to.get()))
-    {
-        const auto * from_arr = typeid_cast<const DataTypeArray *>(from.type.get());
-        if (!from_arr)
-            return from;
-        const auto & from_arr_column = assert_cast<const ColumnArray &>(*from.column);
-        auto realigned = prepareArrowColumnForCast(
-            {from_arr_column.getDataPtr(), from_arr->getNestedType(), from.name}, to_arr->getNestedType(), settings);
-        from.column = ColumnArray::create(realigned.column, from_arr_column.getOffsetsPtr());
-        from.type = std::make_shared<DataTypeArray>(realigned.type);
-        return from;
-    }
-    if (const auto * to_map = typeid_cast<const DataTypeMap *>(to.get()))
-    {
-        const auto * from_map = typeid_cast<const DataTypeMap *>(from.type.get());
-        if (!from_map)
-            return from;
-        const auto & from_map_column = assert_cast<const ColumnMap &>(*from.column);
-        const auto & from_entries = from_map_column.getNestedData();
-        auto realigned_key = prepareArrowColumnForCast(
-            {from_entries.getColumnPtr(0), from_map->getKeyType(), from.name}, to_map->getKeyType(), settings);
-        auto realigned_value = prepareArrowColumnForCast(
-            {from_entries.getColumnPtr(1), from_map->getValueType(), from.name}, to_map->getValueType(), settings);
-        from.column = ColumnMap::create(ColumnArray::create(
-            ColumnTuple::create(Columns{realigned_key.column, realigned_value.column}), from_map_column.getNestedColumn().getOffsetsPtr()));
-        from.type = std::make_shared<DataTypeMap>(realigned_key.type, realigned_value.type);
-        return from;
-    }
-    if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
-    {
-        const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.type.get());
-        if (!from_tuple)
-            return from;
-
-        const auto & tuple_column = assert_cast<const ColumnTuple &>(*from.column);
-        const auto & source_types = from_tuple->getElements();
-        const auto & target_types = to_tuple->getElements();
-        const bool match_by_name = from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames();
-        if (!match_by_name && source_types.size() != target_types.size())
-            return from;
-
-        Columns columns;
-        DataTypes types;
-        columns.reserve(source_types.size());
-        types.reserve(source_types.size());
-        for (size_t i = 0; i < source_types.size(); ++i)
-        {
-            std::optional<size_t> target_position = i;
-            if (match_by_name)
-                target_position = to_tuple->tryGetPositionByName(from_tuple->getNameByPosition(i + 1));
-            if (!target_position)
-            {
-                columns.push_back(tuple_column.getColumnPtr(i));
-                types.push_back(source_types[i]);
-                continue;
-            }
-            auto prepared = prepareArrowColumnForCast(
-                {tuple_column.getColumnPtr(i), source_types[i], from.name}, target_types[*target_position], settings);
-            columns.push_back(std::move(prepared.column));
-            types.push_back(std::move(prepared.type));
-        }
-
-        /// An empty tuple has no element columns to carry its row count.
-        from.column = columns.empty() ? ColumnTuple::create(tuple_column.size()) : ColumnTuple::create(std::move(columns));
-        if (match_by_name)
-            from.type = std::make_shared<DataTypeTuple>(std::move(types), from_tuple->getElementNames());
-        else if (to_tuple->hasExplicitNames())
-            from.type = std::make_shared<DataTypeTuple>(std::move(types), to_tuple->getElementNames());
-        else
-            from.type = std::make_shared<DataTypeTuple>(std::move(types));
-        return from;
-    }
-    return from;
-}
-
-}
 
 void ArrowIPCBlockInputFormat::prepareReader()
 {
@@ -855,6 +711,12 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
     /// The backing block must outlive the extractor (it holds a reference into it), so keep both.
     UnorderedMapWithMemoryTracking<String, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
 
+    const RequestedTypeCastSettings cast_settings{
+        .null_as_default = format_settings.null_as_default,
+        .case_insensitive = case_insensitive,
+        .null_tuple_as_default = !format_settings.schema_inference_allow_nullable_tuple_type,
+    };
+
     Columns columns;
     columns.reserve(header.columns());
     for (size_t i = 0; i < header.columns(); ++i)
@@ -905,15 +767,8 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
 
             if (!read_from_nested)
             {
-                if (!format_settings.arrow.allow_missing_columns)
-                    throw Exception(
-                        ErrorCodes::THERE_IS_NO_COLUMN,
-                        "Column '{}' is not present in the Arrow IPC data", header_column.name);
-
-                auto missing = createColumnWithDefaults(*header_column.type, num_rows);
-                if (block_missing_values_ptr)
-                    block_missing_values_ptr->setBits(i, num_rows);
-                columns.push_back(std::move(missing));
+                columns.push_back(
+                    createMissingColumn(header_column, num_rows, format_settings.arrow.allow_missing_columns, i, block_missing_values_ptr));
                 continue;
             }
         }
@@ -936,21 +791,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
         {
             const DataTypePtr geo_type = getGeoDataType(geo_it->second.type);
             reinterpretRawByteColumns(column, geo_type, src_field);
-            try
-            {
-                column = prepareArrowColumnForCast(column, geo_type, format_settings, i, block_missing_values_ptr);
-                if (format_settings.null_as_default)
-                    insertNullAsDefaultIfNeeded(column, {geo_type->createColumn(), geo_type, header_column.name}, i, block_missing_values_ptr);
-                column.column = castColumn(column, geo_type);
-                column.type = geo_type;
-            }
-            catch (Exception & e)
-            {
-                e.addMessage(fmt::format(
-                    "while converting GeoParquet column {} from type {} to type {}",
-                    backQuote(header_column.name), column.type->getName(), geo_type->getName()));
-                throw;
-            }
+            castColumnToRequestedType(column, geo_type, cast_settings, i, block_missing_values_ptr);
         }
         else if (geo_it != geo_columns.end())
         {
@@ -966,25 +807,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
         else
             reinterpretRawByteColumns(column, header_column.type, src_field);
 
-        /// Match differently-cased struct field names against the requested type when case-insensitive
-        /// column matching is enabled, so the named-tuple CAST below does not turn them into defaults.
-        if (case_insensitive)
-            column.type = alignStructFieldNamesCaseInsensitive(column.type, header_column.type);
-
-        try
-        {
-            column = prepareArrowColumnForCast(column, header_column.type, format_settings, i, block_missing_values_ptr);
-            if (format_settings.null_as_default)
-                insertNullAsDefaultIfNeeded(column, header_column, i, block_missing_values_ptr, true);
-            column.column = castColumnMatchingTupleElementsByName(column, header_column.type);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format(
-                "while converting column {} from type {} to type {}",
-                backQuote(header_column.name), column.type->getName(), header_column.type->getName()));
-            throw;
-        }
+        castColumnToRequestedType(column, header_column.type, cast_settings, i, block_missing_values_ptr);
         columns.push_back(std::move(column.column));
     }
 

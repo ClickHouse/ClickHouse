@@ -80,7 +80,7 @@ using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
-    bool match_tuple_elements_by_name = false);
+    TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default);
 
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,
@@ -226,7 +226,7 @@ public:
         CastType cast_type,
         std::optional<CastDiagnostic> diagnostic,
         ContextPtr context_,
-        bool match_tuple_elements_by_name)
+        TupleElementsMatching tuple_elements_matching)
     {
         if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
         {
@@ -239,7 +239,7 @@ public:
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
         return createFunctionBaseCast(
-            createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Saturate, match_tuple_elements_by_name),
+            createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Saturate, tuple_elements_matching),
             getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type);
     }
 
@@ -322,16 +322,11 @@ private:
 };
 
 
-FunctionBasePtr createInternalCast(
-    ColumnWithTypeAndName from,
-    DataTypePtr to,
-    CastType cast_type,
-    std::optional<CastDiagnostic> diagnostic,
-    ContextPtr context,
-    bool match_tuple_elements_by_name)
+FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic,
+    ContextPtr context, TupleElementsMatching tuple_elements_matching)
 {
     return CastOverloadResolverImpl::createInternalCast(
-        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, match_tuple_elements_by_name);
+        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, tuple_elements_matching);
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)

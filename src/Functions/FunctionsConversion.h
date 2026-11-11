@@ -141,15 +141,11 @@ struct FunctionConvertSettings
     /// `format_settings` has too many members to hash one by one; this hashes the session settings it
     /// was derived from instead (see `getFormatSettingsHash`).
     const UInt64 format_settings_hash;
-    /// Internal, set only by the input format readers: named tuples are matched by name even when they have no
-    /// element name in common, instead of by position.
-    const bool match_tuple_elements_by_name;
+    const TupleElementsMatching tuple_elements_matching;
 
     /// Note: context may be nullptr (i.e. via castColumn())
-    explicit FunctionConvertSettings(
-        const ContextPtr & context,
-        FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_,
-        bool match_tuple_elements_by_name_ = false)
+    explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_,
+        TupleElementsMatching tuple_elements_matching_ = TupleElementsMatching::Default)
         /// Only use context settings if the overflow behavior was not explicitly via createFromSettings
         : date_time_overflow_behavior(context && datetime_overflow_behavior_ == default_date_time_overflow_behavior ? context->getSettingsRef()[Setting::date_time_overflow_behavior].value : datetime_overflow_behavior_)
         , precise_float_parsing(context && context->getSettingsRef()[Setting::precise_float_parsing])
@@ -164,7 +160,7 @@ struct FunctionConvertSettings
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
         , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
-        , match_tuple_elements_by_name(match_tuple_elements_by_name_)
+        , tuple_elements_matching(tuple_elements_matching_)
     {
     }
 
@@ -191,7 +187,7 @@ struct FunctionConvertSettings
         hash.update(cast_keep_nullable);
         hash.update(cast_string_to_date_time_mode);
         hash.update(format_settings_hash);
-        hash.update(match_tuple_elements_by_name);
+        hash.update(static_cast<UInt8>(tuple_elements_matching));
     }
 };
 
@@ -6185,7 +6181,7 @@ private:
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
-    bool match_tuple_elements_by_name = false);
+    TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default);
 
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,

@@ -1184,40 +1184,24 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
 
     if (!convert_positionally)
     {
-        const auto & from_names = from_type->getElementNames();
-        UnorderedMapWithMemoryTracking<String, size_t> from_positions;
-        from_positions.reserve(from_names.size());
-        for (size_t i = 0; i < from_names.size(); ++i)
-            from_positions[from_names[i]] = i;
+        to_reverse_index = from_type->matchElementsByName(
+            *to_type, settings.tuple_elements_matching == TupleElementsMatching::ByNameCaseInsensitive);
 
-        const auto & to_names = to_type->getElementNames();
-
-        size_t common_names_count = 0;
-        for (const auto & to_name : to_names)
-            common_names_count += from_positions.contains(to_name);
-
-        if (common_names_count == 0 && !settings.match_tuple_elements_by_name)
+        if (settings.tuple_elements_matching == TupleElementsMatching::Default
+            && std::ranges::none_of(to_reverse_index, [](const auto & position) { return position.has_value(); }))
         {
             convert_positionally = true;
+            to_reverse_index.clear();
         }
         else
         {
-            element_wrappers.reserve(to_names.size());
-            to_reverse_index.reserve(from_names.size());
-
-            for (size_t i = 0; i < to_names.size(); ++i)
+            element_wrappers.reserve(to_reverse_index.size());
+            for (size_t i = 0; i < to_reverse_index.size(); ++i)
             {
-                auto it = from_positions.find(to_names[i]);
-                if (it != from_positions.end())
-                {
-                    element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
-                    to_reverse_index.emplace_back(it->second);
-                }
+                if (to_reverse_index[i])
+                    element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[*to_reverse_index[i]], to_element_types[i]));
                 else
-                {
                     element_wrappers.emplace_back();
-                    to_reverse_index.emplace_back();
-                }
             }
         }
     }
@@ -3562,9 +3546,9 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
-    bool match_tuple_elements_by_name)
+    TupleElementsMatching tuple_elements_matching)
 {
-    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior, match_tuple_elements_by_name);
+    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior, tuple_elements_matching);
 }
 
 FunctionBasePtr createFunctionBaseCast(

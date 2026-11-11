@@ -24,7 +24,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/Utils.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
 #include <Functions/DateTimeTransforms.h>
@@ -43,7 +42,6 @@
 #include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
 #include <Formats/castColumnToRequestedType.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <algorithm>
 #include <bit>
 #include <arrow/builder.h>
@@ -87,7 +85,6 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
-    extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
@@ -2155,9 +2152,10 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 /// Cast key column to target type, because it can happen
                 /// that parsed type cannot be ClickHouse Map key type.
                 ColumnWithTypeAndName key{key_column, key_type, "key"};
-                if (settings.null_as_default)
-                    insertNullAsDefaultIfNeeded(key, {key_type_hint->createColumn(), key_type_hint, "key"}, 0, nullptr, true);
-                key_column = castColumnMatchingTupleElementsByName(key, key_type_hint);
+                const RequestedTypeCastSettings cast_settings{
+                    .null_as_default = settings.null_as_default, .case_insensitive = settings.case_insensitive_matching};
+                castColumnToRequestedType(key, key_type_hint, cast_settings);
+                key_column = key.column;
                 key_type = key_type_hint;
             }
 
@@ -3013,12 +3011,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
             if (!read_from_nested)
             {
-                if (!allow_missing_columns)
-                    throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-
-                columns.push_back(createColumnWithDefaults(*header_column.type, num_rows));
-                if (block_missing_values)
-                    block_missing_values->setBits(column_i, num_rows);
+                columns.push_back(createMissingColumn(header_column, num_rows, allow_missing_columns, column_i, block_missing_values));
                 continue;
             }
         }
@@ -3039,14 +3032,12 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                 clickhouse_columns_to_parquet);
         }
 
-        if (null_as_default)
-            insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values, true);
-
         /// In ArrowStream batches can have different dictionaries.
         if (is_stream)
             dictionary_infos.clear();
 
-        castColumnToRequestedType(column, header_column.type);
+        const RequestedTypeCastSettings cast_settings{.null_as_default = null_as_default, .case_insensitive = case_insensitive_matching};
+        castColumnToRequestedType(column, header_column.type, cast_settings, column_i, block_missing_values);
         columns.push_back(std::move(column.column));
     }
 
