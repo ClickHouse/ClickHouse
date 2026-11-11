@@ -8,7 +8,6 @@ SET group_by_two_level_threshold_bytes = 1;
 SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET enable_adaptive_aggregator = 0;
-SET max_rows_to_group_by = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET query_plan_enable_optimizations = 1;

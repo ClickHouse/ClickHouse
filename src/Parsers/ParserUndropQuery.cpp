@@ -4,6 +4,7 @@
 #include <Parsers/ParserUndropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/UUID.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
