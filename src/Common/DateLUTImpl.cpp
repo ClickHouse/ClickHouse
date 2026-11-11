@@ -460,10 +460,9 @@ DateLUTImpl::Time DateLUTImpl::timezoneOffsetOutOfRange(Time t) const
 DateLUTImpl::Time DateLUTImpl::timezoneOffsetAtLocalTimeOutOfRange(Time t) const
 {
     t = std::clamp(t, min_representable_time, max_representable_time);
-    const cctz::civil_second local = cctz::civil_second{1970, 1, 1, 0, 0, 0} + t;
-    return t - makeDateTimeOutOfRange(
-        local.year(), static_cast<UInt8>(local.month()), static_cast<UInt8>(local.day()),
-        static_cast<UInt8>(local.hour()), static_cast<UInt8>(local.minute()), static_cast<UInt8>(local.second()));
+    const auto local = cctz::civil_second{1970, 1, 1} + t;
+    return t - std::chrono::system_clock::to_time_t(
+        cctz_time_zone->lookup(local).post);
 }
 
 DateLUTImpl::Time DateLUTImpl::addDaysOutOfRange(Time t, Int64 delta) const

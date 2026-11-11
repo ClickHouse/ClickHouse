@@ -927,7 +927,7 @@ public:
     Time timezoneOffsetAtLocalTime(Time t) const
     {
         Int64 day = t / 86400;
-        Time time_of_day = t - day * 86400;
+        Time time_of_day = t % 86400;
         if (time_of_day < 0)
         {
             --day;
