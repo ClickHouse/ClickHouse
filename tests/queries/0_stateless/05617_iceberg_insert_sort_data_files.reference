@@ -7,3 +7,4 @@ byte_limit: files,sorted=10,10 tagged=10
 nullable: files,sorted=5,5 tagged=5
 nullable_desc: files,sorted=5,5 tagged=5
 float: files,sorted=5,5 tagged=0
+uuid: files,sorted=5,5 tagged=0

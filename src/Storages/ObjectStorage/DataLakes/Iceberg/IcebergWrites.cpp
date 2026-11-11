@@ -10,6 +10,7 @@
 #include <Core/Range.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -1311,11 +1312,16 @@ IcebergStorageSink::IcebergStorageSink(
     }
 
     sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context, &sort_order_description);
-    /// ClickHouse places NaN by the null order and treats -0.0 and +0.0 as equal, while Iceberg sorts
-    /// NaN after +Infinity and -0.0 before +0.0. Files with a floating-point key are sorted but not tagged.
+    /// Files are tagged only if ClickHouse orders every key type as Iceberg does. It does not for
+    /// floating-point numbers (NaN goes by the null order, -0.0 equals +0.0; Iceberg puts NaN last and
+    /// -0.0 first) or UUIDs (ClickHouse compares the second half first). Such files are sorted but not tagged.
+    auto has_iceberg_order = [](const DataTypePtr & type)
+    {
+        WhichDataType which(removeLowCardinalityAndNullable(type));
+        return which.isIntegerOrDecimal() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which.isStringOrFixedString();
+    };
     if (!sort_description.column_names.empty()
-        && std::none_of(sort_description.data_types.begin(), sort_description.data_types.end(),
-            [](const DataTypePtr & type) { return isFloat(removeNullable(type)); }))
+        && std::all_of(sort_description.data_types.begin(), sort_description.data_types.end(), has_iceberg_order))
         data_file_sort_order_id = metadata->getValue<Int32>(Iceberg::f_default_sort_order_id);
 
     Block extended_block_for_sorting = *sample_block_;
