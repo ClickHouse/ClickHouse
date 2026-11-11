@@ -17,6 +17,7 @@
 #include <Core/Names.h>
 #include <base/unit.h>
 #include <IO/ReadSettings.h>
+#include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/ClientInfo.h>

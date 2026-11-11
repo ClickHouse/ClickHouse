@@ -5,13 +5,15 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
 
 namespace DB
 {
+
+struct QueryPlanStepSerialization;
+struct QueryPlanStepDeserialization;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -67,8 +69,8 @@ struct PrewhereInfo
     /// The same filter as a filter step over the read, passing all the columns the read returns.
     FilterDAGInfo toFilterDAGInfo() &&;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static PrewhereInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -80,8 +82,8 @@ struct FilterDAGInfo
 
     std::string dump() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static FilterDAGInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 struct InputOrderInfo
