@@ -1,5 +1,7 @@
 #include <Core/ProtocolDefines.h>
+#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
