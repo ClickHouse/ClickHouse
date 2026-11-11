@@ -17,7 +17,7 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data)
 
 auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, const ReplicatedMergeTreeMergePredicatePtr & merge_pred)
 {
-    auto predicate = [storage_policy, merge_pred](const MergeTreeDataPartPtr & part) -> std::expected<void, PreformattedMessage>
+    auto predicate = [storage_policy, merge_pred](const MergeTreeDataPartPtr & part) -> std::expected<void, LazyPreformattedMessage>
     {
         return merge_pred->canUsePartInMerges(part);
     };
@@ -32,7 +32,7 @@ std::vector<MergeTreeDataPartsVector> splitPartsByPreconditions(
     return splitRangeByPredicate(std::move(parts), constructPreconditionsPredicate(storage_policy, merge_pred), series_log);
 }
 
-std::expected<void, PreformattedMessage> checkAllParts(
+std::expected<void, LazyPreformattedMessage> checkAllParts(
     const MergeTreeDataPartsVector & parts,
     const StoragePolicyPtr & storage_policy, const ReplicatedMergeTreeMergePredicatePtr & merge_pred)
 {
@@ -60,17 +60,17 @@ CollectedPartsRanges ReplicatedMergeTreePartsCollector::grabAllPossibleRanges(
     return {constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time), std::move(partitions_stats)};
 }
 
-std::expected<PartsRange, PreformattedMessage> ReplicatedMergeTreePartsCollector::grabAllPartsInsidePartition(
+std::expected<PartsRange, LazyPreformattedMessage> ReplicatedMergeTreePartsCollector::grabAllPartsInsidePartition(
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
     const std::string & partition_id) const
 {
-    auto parts = filterByPartitions(collectInitial(storage), PartitionIdsHint{partition_id});
-    if (auto result = checkAllParts(parts, storage_policy, merge_pred); !result)
+    parts_inside_partition = filterByPartitions(collectInitial(storage), PartitionIdsHint{partition_id});
+    if (auto result = checkAllParts(parts_inside_partition, storage_policy, merge_pred); !result)
         return std::unexpected(std::move(result.error()));
 
-    auto ranges = constructPartsRanges({std::move(parts)}, metadata_snapshot, storage_policy, current_time);
+    auto ranges = constructPartsRanges({std::move(parts_inside_partition)}, metadata_snapshot, storage_policy, current_time);
     chassert(ranges.size() == 1);
 
     return std::move(ranges.front());
