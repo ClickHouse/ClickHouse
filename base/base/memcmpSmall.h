@@ -795,29 +795,37 @@ inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_
     return 0 == memcmpSmallLikeZeroPaddedAllowOverflow15(a, a_size, b, b_size);
 }
 
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
 /// Compare the common prefix of `UInt8` columns without ordering mismatching characters.
 inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const UInt8 * a, size_t a_size, const UInt8 * b, size_t b_size)
 {
     __msan_unpoison_overflow_15(a, a_size);
     __msan_unpoison_overflow_15(b, b_size);
 
-    constexpr size_t word_size = sizeof(unsigned __int128);
+    using Bytes = UInt8 __attribute__((ext_vector_type(16)));
     const size_t min_size = std::min(a_size, b_size);
-    for (size_t offset = 0; offset < min_size; offset += word_size)
+    for (size_t offset = 0; offset < min_size; offset += sizeof(Bytes))
     {
-        auto difference = unalignedLoad<unsigned __int128>(a + offset) ^ unalignedLoad<unsigned __int128>(b + offset);
-        if (difference)
-        {
-            const size_t remaining = min_size - offset;
-            if (remaining >= word_size)
-                return false;
+        Bytes x;
+        Bytes y;
+        __builtin_memcpy(&x, a + offset, sizeof(Bytes));
+        __builtin_memcpy(&y, b + offset, sizeof(Bytes));
+        const auto different = x != y;
 
-            /// Ignore differences in the trailing padding of the final word.
-            if constexpr (std::endian::native == std::endian::little)
-                difference <<= (word_size - remaining) * 8;
-            else
-                difference >>= (word_size - remaining) * 8;
-            if (difference)
+#if defined(__aarch64__)
+        /// Narrow each pair of bytes to two nibbles, matching `getNibbleMask`.
+        using Words = UInt16 __attribute__((ext_vector_type(8)));
+        using HalfBytes = UInt8 __attribute__((ext_vector_type(8)));
+        const UInt64 mask = std::bit_cast<UInt64>(__builtin_convertvector(std::bit_cast<Words>(different) >> 4, HalfBytes));
+        constexpr size_t bits_per_byte = 4;
+#else
+        using Bits = bool __attribute__((ext_vector_type(16)));
+        const UInt32 mask = std::bit_cast<UInt16>(__builtin_convertvector(different, Bits));
+        constexpr size_t bits_per_byte = 1;
+#endif
+        if (mask)
+        {
+            if (offset + std::countr_zero(mask) / bits_per_byte < min_size)
                 return false;
             break;
         }
@@ -829,6 +837,7 @@ inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const UInt8 * a, size_t a
     const UInt8 * longest = a_size > b_size ? a : b;
     return memoryIsZeroSmallAllowOverflow15(longest + min_size, std::max(a_size, b_size) - min_size);
 }
+#endif
 
 inline int memcmpSmallCharsAllowOverflow15(const UInt8 * a, size_t a_size, const UInt8 * b, size_t b_size)
 {

@@ -75,7 +75,9 @@ public:
 TEST(PaddedMemory, CopyExactPaddingAndIndependentAlignments)
 {
     for (size_t size : lengths)
+    {
         for (size_t source_offset = 0; source_offset < 16; ++source_offset)
+        {
             for (size_t destination_offset = 0; destination_offset < 16; ++destination_offset)
             {
                 SCOPED_TRACE(::testing::Message() << size << ',' << source_offset << ',' << destination_offset);
@@ -95,13 +97,18 @@ TEST(PaddedMemory, CopyExactPaddingAndIndependentAlignments)
                 for (size_t i = 0; i < destination_offset; ++i)
                     ASSERT_EQ(destination[i], UInt8{0xa5});
             }
+        }
+    }
 }
 
 TEST(PaddedMemory, ZeroPaddedEqualityExactPaddingAndIndependentAlignments)
 {
     for (size_t size : lengths)
+    {
         for (size_t tail : {size_t{0}, size_t{1}, size_t{17}})
+        {
             for (size_t a_offset = 0; a_offset < 16; ++a_offset)
+            {
                 for (size_t b_offset = 0; b_offset < 16; ++b_offset)
                 {
                     SCOPED_TRACE(::testing::Message() << size << ',' << tail << ',' << a_offset << ',' << b_offset);
@@ -135,6 +142,9 @@ TEST(PaddedMemory, ZeroPaddedEqualityExactPaddingAndIndependentAlignments)
                         EXPECT_FALSE(memequalSmallLikeZeroPaddedAllowOverflow15(b, size, a, a_size));
                     }
                 }
+            }
+        }
+    }
 }
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
@@ -148,6 +158,7 @@ TEST(PaddedMemory, GuardPagesAtBothEdges)
     EXPECT_TRUE(memequalSmallLikeZeroPaddedAllowOverflow15(source.end(), zero, destination.end(), zero));
 
     for (size_t size : lengths)
+    {
         for (bool at_end : {false, true})
         {
             SCOPED_TRACE(::testing::Message() << size << ',' << at_end);
@@ -166,5 +177,6 @@ TEST(PaddedMemory, GuardPagesAtBothEdges)
             poisonPadding(dst, size);
             EXPECT_TRUE(memequalSmallLikeZeroPaddedAllowOverflow15(src, size, dst, size));
         }
+    }
 }
 #endif
