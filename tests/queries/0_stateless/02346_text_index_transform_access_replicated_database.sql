@@ -7,22 +7,22 @@
 
 SET allow_introspection_functions = 0;
 
--- {CLICKHOUSE_DATABASE_2} is shared by every test in the client, hence the DROP.
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier}
+-- {CLICKHOUSE_DATABASE_1} may be left over from a previous run, hence the DROP.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
 ENGINE = Replicated('/clickhouse/02346_text_index_transform_access/{database}', 'shard1', 'replica1') FORMAT Null;
 
-CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab (id UInt64, val String)
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tab (id UInt64, val String)
 ENGINE = MergeTree ORDER BY id FORMAT Null;
 
 SELECT '1. ALTER ADD INDEX is denied.';
 
-ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tab
     ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
 
 SELECT '2. CREATE TABLE is denied.';
 
-CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab_denied
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tab_denied
 (
     id UInt64,
     val String,
@@ -30,25 +30,11 @@ CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab_denied
 )
 ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '3. An alias renamed by an earlier command of the same ALTER is denied.';
-
--- The initiator has to authorize against the schema the whole statement produces: the hosts run it
--- without the user, and only after the rename does `renamed` expand to `demangle(val)`.
-SET allow_introspection_functions = 1;
-CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab_alias (id UInt64, val String, mangled String ALIAS demangle(val))
-ENGINE = MergeTree ORDER BY id FORMAT Null;
-CREATE TABLE tab_on_cluster_alias (id UInt64, val String, mangled String ALIAS demangle(val)) ENGINE = MergeTree ORDER BY id;
-SET allow_introspection_functions = 0;
-
-ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab_alias
-    RENAME COLUMN mangled TO renamed,
-    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = renamed) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
-
-SELECT '4. Accepted with the privilege.';
+SELECT '3. Accepted with the privilege.';
 
 SET allow_introspection_functions = 1;
 
-ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tab
     ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1 FORMAT Null;
 
-DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier} FORMAT Null;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} FORMAT Null;

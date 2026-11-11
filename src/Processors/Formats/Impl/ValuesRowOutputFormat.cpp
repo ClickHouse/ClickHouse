@@ -4,7 +4,6 @@
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <Processors/Port.h>
 
 
@@ -43,7 +42,6 @@ void ValuesRowOutputFormat::writeRowBetweenDelimiter()
 }
 
 
-void registerOutputFormatValues(FormatFactory & factory);
 void registerOutputFormatValues(FormatFactory & factory)
 {
     factory.registerOutputFormat("Values", [](

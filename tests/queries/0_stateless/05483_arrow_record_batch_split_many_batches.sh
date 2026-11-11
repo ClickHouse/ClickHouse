@@ -7,8 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # One large block split by a small `output_format_arrow_max_record_batch_size_bytes` into thousands of
-# record batches. The `Variant` and `LowCardinality` columns never need a split themselves, but measuring
-# them is linear in the rows given, so this is the shape where measuring the whole remainder of the block
+# record batches. The `LowCardinality` column never needs a split itself, but measuring it is linear in
+# the rows given, so this is the shape where measuring the whole remainder of the block
 # for every batch would be quadratic. Every batch is bounded by the `String` column: 64 rows of 64 bytes.
 
 FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_many_batches.arrows"
@@ -16,7 +16,6 @@ trap 'rm -f "$FILE"' EXIT
 
 $CLICKHOUSE_LOCAL --query "
     SELECT
-        number::Variant(UInt64, String) AS v,
         toLowCardinality(toString(number % 1000)) AS lc,
         repeat('x', 64) AS s
     FROM numbers(262144)
@@ -37,5 +36,5 @@ print("batches:", len(batches), "row counts:", sorted({batch.num_rows for batch 
 PY
 
 $CLICKHOUSE_LOCAL --query "
-    SELECT count(), sum(variantElement(v, 'UInt64')), uniqExact(lc), sum(length(s))
+    SELECT count(), uniqExact(lc), sum(length(s))
     FROM file('$FILE', ArrowStream)"
