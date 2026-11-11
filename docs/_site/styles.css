@@ -3411,33 +3411,16 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) {
     align-items: flex-start;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) img {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])):not(:nth-child(6)):not(:nth-child(7)) img {
     display: none !important;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div > span:first-child,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child {
-    display: block;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div > span:first-child::after,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child::after {
-    display: block;
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) img,
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) img {
+    display: block !important;
+    width: 16px;
+    height: 16px;
     margin-top: 2px;
-    padding-left: 16px;
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 16px;
-    background-repeat: no-repeat;
-    background-position: left center;
-    background-size: 12px;
-    content: "";
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div > span:first-child::after {
-    content: "langfuse";
-    background-image: url("/images/icons/logo-langfuse.svg");
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child::after {
-    content: "runreveal";
-    background-image: url("/images/integrations/logos/runreveal.webp");
+    object-fit: contain;
 }
 /* Horizontal separator in the Integrations top-nav dropdown, between the
    "Ecosystem" entry and the section entries (ClickPipes / Language clients /
