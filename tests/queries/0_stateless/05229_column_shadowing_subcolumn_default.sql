@@ -1,100 +1,120 @@
--- A column added by `ALTER TABLE ... ADD COLUMN` whose name is also the name of a generated
--- subcolumn of another column (`a.size0` next to an `Array` column `a`) is missing from the parts
--- written before the ALTER. Those parts used to answer that name with the subcolumn - the array's
--- sizes - instead of the column's default, so one `SELECT` mixed two meanings of the same identifier
--- and a merge stored the wrong values permanently.
+-- A stored column may not newly take the name of a subcolumn of another column (`a.size0` next to an
+-- `Array` column `a`): the existing parts do not hold it, and their keys, skip indices, projections and
+-- TTL infos may have been computed from the subcolumn of that name. `CREATE TABLE` and `ALIAS` columns
+-- stay allowed, and a part that does not hold such a column reads its default, not the subcolumn.
 
-DROP TABLE IF EXISTS t_added_size0;
-CREATE TABLE t_added_size0 (a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_added_size0 VALUES ([0]), ([1, 2]);
-ALTER TABLE t_added_size0 ADD COLUMN `a.size0` UInt64 DEFAULT 7;
-INSERT INTO t_added_size0 (a, `a.size0`) VALUES ([3], 7);
+SET enable_analyzer = 1;
 
-SELECT 'an explicit default in the parts that predate the column';
-SELECT a, `a.size0` FROM t_added_size0 ORDER BY a;
+DROP TABLE IF EXISTS t_shadow_alter;
+CREATE TABLE t_shadow_alter (a Array(UInt64), t Tuple(x UInt64), j JSON, s Nullable(String), b UInt64, `c.size0` UInt64, `n.x` Array(UInt64))
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_shadow_alter (a, t, j, s, b, `c.size0`, `n.x`) VALUES ([1, 2], tuple(3), '{"k":4}', 'x', 5, 6, [7]);
 
-SELECT 'and after a merge stores it';
-OPTIMIZE TABLE t_added_size0 FINAL;
-SELECT a, `a.size0` FROM t_added_size0 ORDER BY a;
+SELECT 'ALTER that gives a stored column the name of a subcolumn is refused';
+ALTER TABLE t_shadow_alter ADD COLUMN `a.size0` UInt64 DEFAULT 7; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter ADD COLUMN `a.size0` UInt64 MATERIALIZED 7; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter ADD COLUMN `t.x` UInt64; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter ADD COLUMN `j.k` UInt64; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter ADD COLUMN `j.k.l` UInt64; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter ADD COLUMN `s.null` UInt8; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter ADD COLUMN `n.x.size0` UInt64; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter RENAME COLUMN b TO `a.size0`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_alter ADD COLUMN `d` UInt64, RENAME COLUMN `d` TO `a.size0`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
-SELECT 'the array is still the array';
-SELECT sum(length(a)) FROM t_added_size0;
+SELECT 'an ALIAS column, an unrelated dotted name and an existing column keep working';
+ALTER TABLE t_shadow_alter ADD COLUMN `a.size0` UInt64 ALIAS length(a) + 100;
+ALTER TABLE t_shadow_alter ADD COLUMN `a.other` UInt64 DEFAULT 8;
+ALTER TABLE t_shadow_alter ADD COLUMN `n.y` Array(UInt64);
+ALTER TABLE t_shadow_alter ADD COLUMN c Array(UInt64);
+ALTER TABLE t_shadow_alter MODIFY COLUMN `a.size0` UInt64 ALIAS length(a) + 200;
+ALTER TABLE t_shadow_alter MODIFY COLUMN `a.size0` UInt64 DEFAULT 9; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT `a.size0`, `a.other`, `n.y`, c, `c.size0` FROM t_shadow_alter;
 
-DROP TABLE t_added_size0;
+DROP TABLE t_shadow_alter;
 
-DROP TABLE IF EXISTS t_added_size0_implicit;
-CREATE TABLE t_added_size0_implicit (a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
--- A merge of a column without a default expression drops it from the merged part, which is a
--- separate defect for this name collision: it takes the array's offsets file with it. Keep the parts
--- as they are, so this test covers the read of the column instead.
-SYSTEM STOP MERGES t_added_size0_implicit;
-INSERT INTO t_added_size0_implicit VALUES ([10, 20, 30]);
-ALTER TABLE t_added_size0_implicit ADD COLUMN `a.size0` UInt64;
+-- A table created with such a column may still have parts that do not hold it: with
+-- `skip_empty_columns_on_insert`, an `INSERT` that omits the column records it as missing.
+SELECT 'a part that does not hold the column reads its default';
+DROP TABLE IF EXISTS t_shadow_wide;
+DROP TABLE IF EXISTS t_shadow_compact;
+CREATE TABLE t_shadow_wide (k UInt64, a Array(UInt64), `a.size0` UInt64 DEFAULT 7)
+ENGINE = MergeTree ORDER BY k
+SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+CREATE TABLE t_shadow_compact AS t_shadow_wide
+ENGINE = MergeTree ORDER BY k
+SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+    min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
 
-SELECT 'the implicit default of the type';
-SELECT a, `a.size0` FROM t_added_size0_implicit;
+INSERT INTO t_shadow_wide (k, a) VALUES (1, [10, 20, 30]);
+INSERT INTO t_shadow_wide (k, a, `a.size0`) VALUES (2, [40], 5);
+INSERT INTO t_shadow_compact (k, a) VALUES (1, [10, 20, 30]);
+INSERT INTO t_shadow_compact (k, a, `a.size0`) VALUES (2, [40], 5);
 
-DROP TABLE t_added_size0_implicit;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_shadow_wide' AND active;
+SELECT k, a, `a.size0`, length(a) FROM t_shadow_wide ORDER BY k;
+SELECT count() FROM t_shadow_wide WHERE `a.size0` = 7;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_shadow_compact' AND active;
+SELECT k, a, `a.size0`, length(a) FROM t_shadow_compact ORDER BY k;
+SELECT count() FROM t_shadow_compact WHERE `a.size0` = 7;
+
+DROP TABLE t_shadow_wide;
+DROP TABLE t_shadow_compact;
+
+SELECT 'the same for a column named like a path of a JSON column, and its subcolumns';
+DROP TABLE IF EXISTS t_shadow_json;
+CREATE TABLE t_shadow_json (k UInt64, j JSON, `j.x` Tuple(y UInt64) DEFAULT tuple(toUInt64(7)))
+ENGINE = MergeTree ORDER BY k
+SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_shadow_json (k, j) VALUES (1, '{"x":{"y":11}}');
+INSERT INTO t_shadow_json (k, j, `j.x`) VALUES (2, '{"x":{"y":22}}', tuple(8));
+SELECT k, `j.x`, `j.x.y` FROM t_shadow_json ORDER BY k;
+
+DROP TABLE t_shadow_json;
+
+-- A projection that selects such a column stores it as a column of its own, rather than computing the
+-- subcolumn of the other column in its place.
+SELECT 'a projection stores the column itself';
+DROP TABLE IF EXISTS t_shadow_projection;
+CREATE TABLE t_shadow_projection
+(
+    k UInt64,
+    a Array(UInt64),
+    `a.size0` UInt64,
+    PROJECTION p_index INDEX * TYPE basic(),
+    PROJECTION p_order (SELECT k, `a.size0` ORDER BY `a.size0`)
+)
+ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_shadow_projection VALUES (1, [1, 2, 3], 5), (2, [1], 7);
+SELECT k, a, `a.size0` FROM t_shadow_projection ORDER BY k;
+SELECT k, `a.size0` FROM t_shadow_projection WHERE `a.size0` = 7 SETTINGS optimize_use_projections = 1;
+SELECT k, `a.size0` FROM t_shadow_projection WHERE `a.size0` = 7 SETTINGS optimize_use_projections = 0;
+OPTIMIZE TABLE t_shadow_projection FINAL;
+SELECT k, a, `a.size0` FROM t_shadow_projection ORDER BY k;
+SELECT k, `a.size0` FROM t_shadow_projection WHERE `a.size0` = 7 SETTINGS optimize_use_projections = 1;
+
+DROP TABLE t_shadow_projection;
 
 -- A `Nested` column is read through the same lookup: in a `Wide` part its flattened columns are
--- collected back into one column and read as its subcolumns, which must keep working. The parts are
--- forced to `Wide`, because that collecting - the branch the exact-name guard has to leave alone -
--- happens for `Wide` parts only, and these tables are far too small to become `Wide` on their own.
-DROP TABLE IF EXISTS t_nested_after_add;
-CREATE TABLE t_nested_after_add (id UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_level_for_wide_part = 0;
-INSERT INTO t_nested_after_add VALUES (1, [1, 2], ['a', 'b']), (2, [3], ['c']);
-ALTER TABLE t_nested_after_add ADD COLUMN z UInt64 DEFAULT 5;
-INSERT INTO t_nested_after_add VALUES (3, [4], ['d'], 9);
-
-SELECT 'a nested column and a column added after it, in wide parts';
-SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_nested_after_add' AND active;
-SELECT id, n.x, n.y, z FROM t_nested_after_add ORDER BY id;
-SELECT id, length(n.x) FROM t_nested_after_add ORDER BY id;
-
-DROP TABLE t_nested_after_add;
-
--- The same without the shared offsets of `Nested`, which changes the shape of the read request.
-DROP TABLE IF EXISTS t_nested_own_offsets;
-CREATE TABLE t_nested_own_offsets (id UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY id
-SETTINGS share_nested_offsets = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_level_for_wide_part = 0;
-INSERT INTO t_nested_own_offsets VALUES (1, [1, 2], ['a', 'b']), (2, [3], ['c']);
-ALTER TABLE t_nested_own_offsets ADD COLUMN z UInt64 DEFAULT 5;
-INSERT INTO t_nested_own_offsets VALUES (3, [4], ['d'], 9);
-
-SELECT 'a nested column with its own offsets, in wide parts';
-SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_nested_own_offsets' AND active;
-SELECT id, n.x, n.y, z FROM t_nested_own_offsets ORDER BY id;
-SELECT id, length(n.x) FROM t_nested_own_offsets ORDER BY id;
-
-DROP TABLE t_nested_own_offsets;
-
--- And in `Compact` parts, where the flattened columns of `Nested` are read under their own names.
+-- collected back into one column and read as its subcolumns, which must keep working.
+SELECT 'a nested column and a column added after it';
+DROP TABLE IF EXISTS t_nested_wide;
 DROP TABLE IF EXISTS t_nested_compact;
+CREATE TABLE t_nested_wide (id UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_level_for_wide_part = 0;
 CREATE TABLE t_nested_compact (id UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1099511627776;
+INSERT INTO t_nested_wide VALUES (1, [1, 2], ['a', 'b']), (2, [3], ['c']);
 INSERT INTO t_nested_compact VALUES (1, [1, 2], ['a', 'b']), (2, [3], ['c']);
-ALTER TABLE t_nested_compact ADD COLUMN z UInt64 DEFAULT 5;
-INSERT INTO t_nested_compact VALUES (3, [4], ['d'], 9);
-
-SELECT 'a nested column and a column added after it, in compact parts';
+ALTER TABLE t_nested_wide ADD COLUMN z UInt64 DEFAULT 5, ADD COLUMN `n.z` Array(UInt64);
+ALTER TABLE t_nested_compact ADD COLUMN z UInt64 DEFAULT 5, ADD COLUMN `n.z` Array(UInt64);
+INSERT INTO t_nested_wide VALUES (3, [4], ['d'], 9, [6]);
+INSERT INTO t_nested_compact VALUES (3, [4], ['d'], 9, [6]);
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_nested_wide' AND active;
+SELECT id, n.x, n.y, n.z, z, length(n.x) FROM t_nested_wide ORDER BY id;
 SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_nested_compact' AND active;
-SELECT id, n.x, n.y, z FROM t_nested_compact ORDER BY id;
-SELECT id, length(n.x) FROM t_nested_compact ORDER BY id;
+SELECT id, n.x, n.y, n.z, z, length(n.x) FROM t_nested_compact ORDER BY id;
 
+DROP TABLE t_nested_wide;
 DROP TABLE t_nested_compact;
-
--- A skip index over `a.size0` built in a part where that name meant the sizes of `a` must not be used
--- to prune the column of that name added later: its granules hold the sizes, not the default.
-DROP TABLE IF EXISTS t_added_size0_index;
-CREATE TABLE t_added_size0_index (a Array(UInt64), INDEX i `a.size0` TYPE minmax GRANULARITY 1)
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
-INSERT INTO t_added_size0_index VALUES ([0]), ([1, 2]);
-ALTER TABLE t_added_size0_index ADD COLUMN `a.size0` UInt64 DEFAULT 7;
-INSERT INTO t_added_size0_index (a, `a.size0`) VALUES ([3], 1);
-
-SELECT 'a skip index over the subcolumn of that name is not used for the column';
-SELECT count() FROM t_added_size0_index WHERE `a.size0` = 7;
-SELECT count() FROM t_added_size0_index WHERE `a.size0` = 7 SETTINGS use_skip_indexes = 0;
-
-DROP TABLE t_added_size0_index;
