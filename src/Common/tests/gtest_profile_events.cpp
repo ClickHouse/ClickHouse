@@ -101,7 +101,7 @@ TEST(ProfileEvents, IncrementAtOutermostProcessSkipsNestedScopes)
     ProfileEvents::Counters scope(VariableContext::Thread, &thread);
 
     const ProfileEvents::Count amount = 42;
-    scope.incrementAtOutermostProcess(ProfileEvents::Query, amount);
+    EXPECT_TRUE(scope.incrementAtOutermostProcess(ProfileEvents::Query, amount));
 
     EXPECT_EQ(scope[ProfileEvents::Query], 0u);
     EXPECT_EQ(thread[ProfileEvents::Query], 0u);
@@ -116,7 +116,7 @@ TEST(ProfileEvents, IncrementAtOutermostProcessNoProcessIsNoOp)
     ProfileEvents::Counters global(VariableContext::Global, nullptr);
     ProfileEvents::Counters thread(VariableContext::Thread, &global);
 
-    thread.incrementAtOutermostProcess(ProfileEvents::Query, 7);
+    EXPECT_FALSE(thread.incrementAtOutermostProcess(ProfileEvents::Query, 7));
 
     EXPECT_EQ(thread[ProfileEvents::Query], 0u);
     EXPECT_EQ(global[ProfileEvents::Query], 0u);

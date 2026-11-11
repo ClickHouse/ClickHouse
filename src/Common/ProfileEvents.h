@@ -130,8 +130,8 @@ namespace ProfileEvents
         /// Walk the parent chain from this node to the outermost Process-level counters and call
         /// `increment` once there. Used for query-scoped events such as `MemoryCredits` that must not
         /// land in Thread, ProfileEventsScope, or nested Process counters (materialized views,
-        /// nested async-insert flushes). If this chain has no Process node, does nothing.
-        void incrementAtOutermostProcess(Event event, Count amount = 1);
+        /// nested async-insert flushes). If this chain has no Process node, does nothing and returns false.
+        bool incrementAtOutermostProcess(Event event, Count amount = 1);
 
         struct Snapshot
         {

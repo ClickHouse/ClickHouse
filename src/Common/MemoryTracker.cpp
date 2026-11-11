@@ -1103,8 +1103,17 @@ void MemoryTracker::updateMemoryCredits(Int64 current_amount)
     /// nested Process group). Walk that counter chain to the outermost Process counters and charge
     /// once there, so the value propagates only to User / Global and never lands in Thread, scope, or
     /// nested Process counters used by query_thread_log / query_views_log / nested async-insert rows.
+    ///
+    /// The counters of the current thread may already be detached from the query while its memory tracker still points
+    /// to it: `ThreadStatus::detachFromGroup` resets the parent of `performance_counters` before the cleanup that frees
+    /// `local_data` (and before `setParent` flushes the untracked memory). The timestamp has been advanced already, so
+    /// the delta is kept in this tracker, to be charged by its next update or by the flush at the snapshot of the
+    /// owning thread group, instead of being lost.
     if (const UInt64 delta = takePendingMemoryCredits(takeMemoryCreditsDelta(current_amount)))
-        DB::CurrentThread::getProfileEvents().incrementAtOutermostProcess(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
+    {
+        if (!DB::CurrentThread::getProfileEvents().incrementAtOutermostProcess(ProfileEvents::MemoryCredits, static_cast<Int64>(delta)))
+            addPendingMemoryCredits(delta);
+    }
 }
 
 
