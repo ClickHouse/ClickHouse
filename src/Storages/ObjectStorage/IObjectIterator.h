@@ -7,6 +7,7 @@
 #include <IO/Progress.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB
@@ -19,6 +20,10 @@ extern const int LOGICAL_ERROR;
 
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+struct RuntimeFilterIndexAnalysisDescriptor;
+using RuntimeFilterIndexAnalysisDescriptors = std::vector<RuntimeFilterIndexAnalysisDescriptor>;
+struct IRuntimeFilterLookup;
+using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 
 struct ObjectInfo
 {
@@ -53,7 +58,7 @@ struct ObjectInfo
     /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
-    virtual std::vector<UInt64> getSplitOffsetsHint() const { return {}; }
+    virtual VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const { return {}; }
 
     /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
     /// It is only an estimate used to report the progress of a query, not to compute any result.
@@ -102,6 +107,10 @@ struct IObjectIterator
 
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
+
+    /// The JOIN runtime filters every row of the read passes, set before the first `next`. An iterator
+    /// may skip the objects that cannot contain any of their keys once the filters are built.
+    virtual void setJoinRuntimeFilters(const RuntimeFilterIndexAnalysisDescriptors & /*descriptors*/, RuntimeFilterLookupPtr /*lookup*/) {}
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -126,6 +135,11 @@ public:
     {
         emit_profile_events = value;
         iterator->setEmitProfileEvents(value);
+    }
+
+    void setJoinRuntimeFilters(const RuntimeFilterIndexAnalysisDescriptors & descriptors, RuntimeFilterLookupPtr lookup) override
+    {
+        iterator->setJoinRuntimeFilters(descriptors, std::move(lookup));
     }
 
 private:
