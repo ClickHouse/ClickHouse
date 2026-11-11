@@ -202,15 +202,22 @@ void insertKey(MutableColumns & columns, const KeyLayout & layout, std::string_v
 
 void HashJoinTable::freezeForProbing()
 {
-    auto finish_fill = []<typename Table>(const std::shared_ptr<Table> & table)
+    bool buckets_in_one_mode = false;
+    auto finish_fill = [&]<typename Table>(const std::shared_ptr<Table> & table)
     {
         if (!table)
             return;
         table->computeBucketPrefix();
         if constexpr (is_partitioned_fixed_table<Table>)
             table->restoreMinMaxOptimization();
+        else
+        {
+            buckets_in_one_mode = table->robin_hood_buckets != Table::RobinHoodBuckets::Mixed;
+            buckets_are_robin_hood = table->robin_hood_buckets == Table::RobinHoodBuckets::All;
+        }
     };
     std::visit([&](auto & maps_) { maps_.visit(key_type, finish_fill); }, maps);
+    takes_amac_lookup = buckets_in_one_mode && bufferBytes() >= getMinBytesForPrefetchInJoin();
 }
 
 size_t HashJoinTable::bufferBytes() const
@@ -302,6 +309,9 @@ bool HashJoinTable::tryConvertToFixedHashMapImpl(Maps & maps_)
         key_type = range_type;
         key_range = {min_key, range};
         maps_.template mapOf<source_type>().reset();
+        /// The new map is direct-addressed.
+        takes_amac_lookup = false;
+        buckets_are_robin_hood = false;
         return true;
     };
 

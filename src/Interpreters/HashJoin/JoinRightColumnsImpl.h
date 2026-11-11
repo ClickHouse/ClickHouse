@@ -4,6 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
+#include <Interpreters/HashJoin/AmacLookup.h>
 #include <Interpreters/HashJoin/FindKeys.h>
 #include <Interpreters/HashJoin/JoinFeatures.h>
 #include <Interpreters/HashJoin/JoinRightColumns.h>
@@ -963,10 +964,24 @@ JoinRightColumns::Functions selectFunctions(HashJoin::Type key_type, size_t num_
 
     JoinRightColumns::Functions functions;
     /// In the lambdas below, `later` is true for the disjuncts after the first.
-    const auto select_find_keys = [&](bool later, FindKeysMode mode)
+    /// The key search by the AMAC ring, in two copies: for a table whose buckets are not in the Robin Hood mode, and for one
+    /// whose buckets are.
+    const auto select_find_keys_ring = [&](bool later, FindKeysMode mode)
+    {
+        functions.find_keys_ring[0][later][0] = selectFindKeys<Maps, AmacLookup<false>>(key_type, mode, /*fast_path=*/false);
+        functions.find_keys_ring[0][later][1] = selectFindKeys<Maps, AmacLookup<false>>(key_type, mode, /*fast_path=*/true);
+        functions.find_keys_ring[1][later][0] = selectFindKeys<Maps, AmacLookup<true>>(key_type, mode, /*fast_path=*/false);
+        functions.find_keys_ring[1][later][1] = selectFindKeys<Maps, AmacLookup<true>>(key_type, mode, /*fast_path=*/true);
+    };
+    const auto select_find_keys_in_row_order = [&](bool later, FindKeysMode mode)
     {
         functions.find_keys[later][0] = selectFindKeys<Maps, PrefetchingLookup>(key_type, mode, /*fast_path=*/false);
         functions.find_keys[later][1] = selectFindKeys<Maps, PrefetchingLookup>(key_type, mode, /*fast_path=*/true);
+    };
+    const auto select_find_keys = [&](bool later, FindKeysMode mode)
+    {
+        select_find_keys_in_row_order(later, mode);
+        select_find_keys_ring(later, mode);
     };
 
     /// A join kind with `JoinFeatures::need_filter` always sets `AddedColumns::need_filter`, so it needs no copy of a function
@@ -1012,6 +1027,14 @@ JoinRightColumns::Functions selectFunctions(HashJoin::Type key_type, size_t num_
     }
 
     functions.words_in_row_refs = true;
+    functions.records_key_offsets = Rules::used_flag_action != UsedFlagAction::None;
+    const FindKeysMode mode = functions.records_key_offsets ? FindKeysMode::WordsAndKeyOffsets : FindKeysMode::Words;
+    /// A block that the ring takes runs in two steps, also for a fused join: the ring retires rows out of order.
+    select_find_keys_ring(false, mode);
+    if constexpr (!Features::need_filter)
+        functions.ring_batches[0] = &findKeysInBatchesAndAddMatches<Rules, false>;
+    functions.ring_batches[1] = &findKeysInBatchesAndAddMatches<Rules, true>;
+
     if constexpr (!Features::is_asof_join)
     {
         /// Without row refs to record, a separate match step only costs time.
@@ -1028,11 +1051,10 @@ JoinRightColumns::Functions selectFunctions(HashJoin::Type key_type, size_t num_
         }
     }
 
-    functions.records_key_offsets = Rules::used_flag_action != UsedFlagAction::None;
-    select_find_keys(false, functions.records_key_offsets ? FindKeysMode::WordsAndKeyOffsets : FindKeysMode::Words);
     if constexpr (!Features::need_filter)
         functions.add_matches[0] = &findKeysInBatchesAndAddMatches<Rules, false>;
     functions.add_matches[1] = &findKeysInBatchesAndAddMatches<Rules, true>;
+    select_find_keys_in_row_order(false, mode);
     return functions;
 }
 }

@@ -49,15 +49,25 @@ JoinRightColumns::JoinRightColumns(
         [](const auto & keys) { return !keys.null_map && keys.join_mask_column.getKind() == JoinCommon::JoinMask::Kind::AllTrue; });
     const bool need_filter = added_columns.need_filter;
 
+    for (const size_t robin_hood : {0, 1})
+        for (const size_t later : {0, 1})
+            find_keys_ring_fns[robin_hood][later] = functions.find_keys_ring[robin_hood][later][fast_path];
+
     if (functions.words_in_row_refs)
     {
         /// The batch is the whole block, and `add_matches_fn` runs the key search itself, on search batches or fused.
         search_batch_find_keys_fn = functions.find_keys[0][fast_path];
         add_matches_fn = search_batch_find_keys_fn ? functions.add_matches[need_filter] : functions.fused[need_filter][fast_path];
+        if (ringTakes(0, rows))
+        {
+            search_batch_find_keys_fn = ringFn(0);
+            add_matches_fn = functions.ring_batches[need_filter];
+        }
         if (search_batch_find_keys_fn)
         {
             /// Search batches of about equal size. A short last one would pay the cost of starting a key search for only a few
-            /// rows: `PrefetchingLookup` spends its first rows measuring how far ahead to prefetch.
+            /// rows: `PrefetchingLookup` spends its first rows measuring how far ahead to prefetch, and the ring has to fill
+            /// and drain.
             const size_t num_search_batches = (rows + max_search_batch_rows - 1) / max_search_batch_rows;
             search_batch_rows = num_search_batches ? (rows + num_search_batches - 1) / num_search_batches : 0;
             if (functions.records_key_offsets)

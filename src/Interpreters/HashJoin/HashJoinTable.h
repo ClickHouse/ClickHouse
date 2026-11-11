@@ -294,8 +294,16 @@ public:
         dispatchType([&]<Type TYPE>() { typedMap<TYPE, Maps>(*this).forEachMapped(std::forward<F>(f)); });
     }
 
-    /// Computes the cell prefix sums and the min/max bounds of a direct-addressed map. Call it after the last insert.
+    /// Computes the cell prefix sums and the min/max bounds of a direct-addressed map, and decides `takesAmacLookup`. Call it
+    /// after the last insert.
     void freezeForProbing();
+
+    /// Set by `freezeForProbing`. Whether an AMAC lookup of the probe (`AmacLookup.h`) may take this table: the map lists the
+    /// cells of its buckets, the buckets are all in the Robin Hood mode or none is, and the cells take at least as many bytes
+    /// as the L2 cache. False for a table that was never frozen, such as that of a `Join` engine table.
+    bool takesAmacLookup() const { return takes_amac_lookup; }
+    /// Meaningful only with `takesAmacLookup`: true if the buckets are all in the Robin Hood mode, false if none is.
+    bool bucketsAreRobinHood() const { return buckets_are_robin_hood; }
 
     size_t bufferBytes() const;
     size_t bufferSizeInCells() const;
@@ -492,6 +500,9 @@ private:
     std::vector<std::unique_ptr<Arena>> arenas;
     BuildSlots slots;
     std::atomic<size_t> num_keys = 0;
+    /// See `takesAmacLookup` and `bucketsAreRobinHood`.
+    bool takes_amac_lookup = false;
+    bool buckets_are_robin_hood = false;
 };
 
 }
