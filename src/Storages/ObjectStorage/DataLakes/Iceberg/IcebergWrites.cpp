@@ -706,6 +706,7 @@ void generateManifestFile(
             set_fields(stats.column_sizes, Iceberg::f_column_sizes, [](Int32, Int64 value) { return value; });
             set_fields(stats.value_counts, Iceberg::f_value_counts, [](Int32, Int64 value) { return value; });
             set_fields(stats.null_value_counts, Iceberg::f_null_value_counts, [](Int32, Int64 value) { return value; });
+            set_fields(stats.nan_value_counts, Iceberg::f_nan_value_counts, [](Int32, Int64 value) { return value; });
             set_fields(stats.lower_bounds, Iceberg::f_lower_bounds, to_bytes);
             set_fields(stats.upper_bounds, Iceberg::f_upper_bounds, to_bytes);
         }
@@ -1276,9 +1277,9 @@ IcebergStorageSink::IcebergStorageSink(
     metadata_compression_method = compression_method;
     filename_generator = FileNamesGenerator(
         persistent_table_components.path_resolver.getTableLocation(),
-        (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
+        /* use_uuid_in_metadata */ catalog != nullptr, metadata_compression_method, write_format);
 
-    filename_generator.setVersion(last_version + 1);
+    filename_generator.setBaseMetadataFile(last_version, metadata_path);
 
     if (metadata->has(Iceberg::f_properties))
     {
@@ -1601,7 +1602,7 @@ bool IcebergStorageSink::initializeMetadata()
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
             metadata_compression_method = compression_method;
-            filename_generator.setVersion(last_version + 1);
+            filename_generator.setBaseMetadataFile(last_version, metadata_path);
 
             metadata = deepCopy(getMetadataJSONObject(
                 metadata_path,
