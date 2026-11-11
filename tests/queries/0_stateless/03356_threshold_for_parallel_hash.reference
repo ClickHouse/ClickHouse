@@ -1,8 +1,7 @@
-Algorithm: HashJoin
-Algorithm: ConcurrentHashJoin
-Algorithm: HashJoin
-Algorithm: ConcurrentHashJoin
-Algorithm: ConcurrentHashJoin
-Algorithm: ConcurrentHashJoin
-Algorithm: ConcurrentHashJoin
-Algorithm: HashJoin
+03356_swap_auto	1	0
+03356_swap_false	0	1
+03356_swap_true	1	0
+03356_modulo_cold	0	1
+03356_modulo_warm	0	1
+03356_filter_cold	0	1
+03356_filter_warm	1	0

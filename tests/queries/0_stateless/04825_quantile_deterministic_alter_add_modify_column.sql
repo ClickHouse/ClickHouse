@@ -1,5 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: an explicit state version `0` is replaced with the current version on the replicated database DDL path, https://github.com/ClickHouse/ClickHouse/issues/123032
 -- `ALTER TABLE ... ADD COLUMN` builds the explicit column type in `AlterCommand::parse`, bypassing
 -- `InterpreterCreateQuery`. The current state version has to be pinned into the stored metadata on
 -- this path too, the same way `CREATE TABLE` does it, or the column would keep the version 0 layout

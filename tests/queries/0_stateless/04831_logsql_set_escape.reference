@@ -4,7 +4,7 @@ standalone SET ok
 SET after comment ok
 SET before comment ok
 SET before semicolon comment ok
-allow_experimental_logsql_dialect
+enable_logsql_dialect
 1
 client standalone SET ok
 client SET semicolon comment ok
