@@ -1808,9 +1808,9 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             {
                 /// Manifests and manifest lists share this directory but are never named `v...`.
                 if (list_v_prefixed_names_only)
-                    listing = listPrefix(*object_storage, table_path, "metadata/v", ".metadata.json");
+                    listing = listPrefixNonRecursive(*object_storage, table_path, "metadata", "v", ".metadata.json");
                 if (!list_v_prefixed_names_only || listing.matched.empty())
-                    listing = listPrefix(*object_storage, table_path, "metadata", ".metadata.json");
+                    listing = listPrefixNonRecursive(*object_storage, table_path, "metadata", "", ".metadata.json");
                 if (!listing.matched.empty())
                     break;
                 if (attempt + 1 < MAX_LIST_RETRIES)
