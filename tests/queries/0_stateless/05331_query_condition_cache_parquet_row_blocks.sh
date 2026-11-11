@@ -18,10 +18,10 @@ SETTINGS="use_query_condition_cache = 1, optimize_move_to_prewhere = 1, query_pl
 
 function run()
 {
-    local table=$1 condition=$2 tag=$3
+    local table=$1 condition=$2 tag=$3 extra_settings=${4:-}
     for i in 1 2; do
         ${CLICKHOUSE_CLIENT} --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${tag}_$i" --query "
-            SELECT count(), sum(v) FROM $table WHERE $condition SETTINGS $SETTINGS"
+            SELECT count(), sum(v) FROM $table WHERE $condition SETTINGS $SETTINGS${extra_settings:+, $extra_settings}"
     done
     ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM $table WHERE $condition SETTINGS use_query_condition_cache = 0"
 }
@@ -88,9 +88,17 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO t SELECT number, number * 2 FROM numbe
 touch -d '2020-01-01 00:00:00' "$DATA_FILE"
 
 echo "File"
-run t "k % 100000 < 100" file
+run t "k % 100000 < 100" file "max_threads = 1"
 check_second_run file
 run t "k IN (5, 99999, 500000)" in
+
+# With several threads, a single file is split between sources that each read some of its row groups.
+echo "File, read by several sources"
+run t "k % 100000 < 99" split "max_threads = 4"
+check_second_run split
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count(), sum(v) FROM t WHERE k % 100000 < 99 SETTINGS $SETTINGS, max_threads = 4)
+    WHERE explain LIKE '%File × %'"
 
 echo "File, rewritten so that the skipped blocks match"
 ${CLICKHOUSE_CLIENT} --query "
