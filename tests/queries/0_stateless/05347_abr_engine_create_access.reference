@@ -2,6 +2,8 @@ CREATE without privileges on the source tables
 ACCESS_DENIED
 CREATE over source tables that do not exist
 ACCESS_DENIED
+CREATE with a subquery over a table the user cannot read in the arguments
+ACCESS_DENIED
 CREATE with privileges on only some of the source tables
 ACCESS_DENIED
 0

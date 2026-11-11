@@ -593,7 +593,7 @@ std::shared_ptr<StorageABR> StorageABR::creatorFunction(const StorageFactory::Ar
             "Storage ABR requires exactly three arguments: table_prefix, sample_intervals and retention_expression");
 
     for (auto & engine_arg : engine_args)
-        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
     String table_prefix = checkAndGetLiteralArgument<String>(engine_args[0], "table_prefix");
     if (table_prefix.empty())
