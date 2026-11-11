@@ -4,7 +4,7 @@
 
 # Server-side copies (S3 CopyObject and UploadPartCopy) issued by BACKUP are logged as 'Copy' events.
 
-# MinIO occasionally answers a request with a transient 500 error, which the S3 client retries,
+# The S3 server (SeaweedFS in CI) occasionally answers a request with a transient 500 error, which the S3 client retries,
 # but the `<Error> AWSClient: Response status: 500` log line would still reach stderr.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
