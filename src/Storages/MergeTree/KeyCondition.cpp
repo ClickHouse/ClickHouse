@@ -2385,6 +2385,32 @@ static bool fixedStringConstantLosesPadding(
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
+/// Whether converting a `Tuple` constant to `target_type` drops the padding of a `FixedString` element: tuples are compared
+/// element by element, so such an element is compared as a `FixedString` constant is. An `Array` or a `Map` is compared after
+/// both sides are cast to a common type, so the elements below one are not looked at. `column` holds the constant's row.
+static bool tupleConstantLosesFixedStringPadding(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & target_type)
+{
+    const ColumnPtr data_column = removeNullable(column->convertToFullColumnIfConst());
+    const DataTypePtr data_type = removeLowCardinalityAndNullable(type);
+    const DataTypePtr data_target_type = removeLowCardinalityAndNullable(target_type);
+    const auto * tuple_column = typeid_cast<const ColumnTuple *>(data_column.get());
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get());
+    const auto * target_tuple_type = typeid_cast<const DataTypeTuple *>(data_target_type.get());
+    if (!tuple_column || !tuple_type || !target_tuple_type || tuple_type->getElements().size() != target_tuple_type->getElements().size())
+        return false;
+
+    for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+    {
+        const ColumnPtr & element_column = tuple_column->getColumnPtr(i);
+        const Field element = (*element_column)[0];
+        const bool is_fixed_string = isFixedStringConstant(element, *element_column, tuple_type->getElement(i));
+        if (fixedStringConstantLosesPadding(element, is_fixed_string, target_tuple_type->getElement(i))
+            || tupleConstantLosesFixedStringPadding(element_column, tuple_type->getElement(i), target_tuple_type->getElement(i)))
+            return true;
+    }
+    return false;
+}
+
 static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & column, const DataTypePtr & target_type);
 
 /// The values one step below and one step above each value of a `Decimal32` or `Decimal64` column, or nothing if a value is
@@ -2592,6 +2618,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
+                || tupleConstantLosesFixedStringPadding(constant.column, constant.type, transform_input_type)
                 || floatValuesMissKeyValues(constant.column, constant.type, transform_input_type, std::make_shared<DataTypeFloat64>())
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
@@ -2614,6 +2641,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
                 .key_column_type = chain.key_column_type,
                 .value = std::move(transformed_value),
                 .type = transformed_const_type,
+                .column = transformed_const_column,
                 .is_fixed_string = transformed_is_fixed_string,
                 .requires_relaxed_atom = true,
                 .reverse_comparison = !chain.chain_is_positive});
@@ -2849,10 +2877,7 @@ static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & colum
 /// not round-trip or does not exist.
 static Field castCompositeConstant(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & target_type)
 {
-    /// A `FixedString` element is compared zero-padded, so it matches several `String` values, not the one
-    /// its cast to `String` (which drops trailing zero bytes) names.
-    if (anyInTypeTree(*type, [](const IDataType & node) { return isFixedString(node); })
-        && anyInTypeTree(*target_type, [](const IDataType & node) { return isString(node); }))
+    if (tupleConstantLosesFixedStringPadding(column, type, target_type))
         return {};
 
     try
@@ -3373,6 +3398,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     {
         /// The DAG casts the constant to its input type.
         if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type)
+            || tupleConstantLosesFixedStringPadding(constant.column, constant.type, candidate.dag.input_type)
             || floatValuesMissKeyValues(constant.column, constant.type, candidate.dag.input_type, std::make_shared<DataTypeFloat64>()))
             continue;
 
@@ -3441,6 +3467,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             .key_column_type = std::move(candidate.key_column_type),
             .value = std::move(transformed_value),
             .type = transformed_const_type,
+            .column = transformed_const_column,
             .is_fixed_string = transformed_is_fixed_string,
             .requires_relaxed_atom = requires_relaxed_atom});
     }
@@ -5858,7 +5885,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             .argument_num_of_space_filling_curve = std::nullopt,
             .const_value = transformed.value,
             .const_type = transformed.type,
-            .const_column = {},
+            .const_column = transformed.column,
             .const_is_fixed_string = transformed.is_fixed_string,
             .is_relaxed = is_relaxed,
             .reverse_comparison = transformed.reverse_comparison});
@@ -6202,7 +6229,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 {
                     /// An unrepresentable constant cannot supply a comparison bound.
                     const bool is_composite = isTuple(const_type) || isArray(const_type) || isMap(const_type);
-                    Field converted = candidate.const_column && is_composite
+                    Field converted = is_composite
                         ? castCompositeConstant(candidate.const_column, const_type, common_type)
                         : tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
                     if (converted.isNull())
