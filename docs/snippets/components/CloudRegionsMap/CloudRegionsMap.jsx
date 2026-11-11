@@ -1,6 +1,10 @@
 // Port of ClickHouse/marketing-website PresenceBubbleMap and ScaleToContainer.
 // Region availability follows the tables on the containing documentation page.
 export const CloudRegionsMap = () => {
+  // Images rendered from JavaScript do not receive Mintlify's asset URL rewriting.
+  const assetBase = typeof window !== 'undefined' && /^\/docs(?:\/|$)/.test(window.location.pathname)
+    ? '/docs'
+    : '';
   const regions = [
   {
     "code": "af-south-1",
@@ -591,7 +595,7 @@ export const CloudRegionsMap = () => {
       `}</style>
       <div ref={container} style={{position: 'relative', height: 543 * scale}}>
         <div style={{position: 'relative', width: 1139, height: 543, transform: `scale(${scale})`, transformOrigin: 'top left'}}>
-          <img src="/images/cloud/regions-map.png" width="1139" height="543" alt="World map of supported cloud regions" style={{width: 1139, maxWidth: 'none', height: 543, margin: 0, pointerEvents: 'none'}} />
+          <img src={`${assetBase}/images/cloud/regions-map.png`} width="1139" height="543" alt="World map of supported cloud regions" style={{width: 1139, maxWidth: 'none', height: 543, margin: 0, pointerEvents: 'none'}} />
           {regions.map(region => {
             const isActive = matchesSearch(region) && matches(region, activeFilter);
             const color = colors[region.provider];
