@@ -389,6 +389,98 @@ def test_reclaims_persistent_claims_after_process_restart(started_cluster):
             node.start_clickhouse()
 
 
+def test_detach_after_stop_releases_bucket_lock(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_detach_after_stop_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    # Both TTLs are long: nothing here may be reclaimed by the cleanup,
+    # the table itself has to release its claims when it is detached.
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "buckets": 2,
+            "processing_threads_num": 1,
+            "persistent_processing_node_ttl_seconds": 21600,
+            "persistent_processing_node_abandoned_reclaim_ttl_seconds": 3600,
+            "max_processed_files_before_commit": 1,
+            "polling_min_timeout_ms": 100,
+        },
+    )
+
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name}
+        (column1 UInt32, column2 UInt32, column3 UInt32, _path String)
+        ENGINE = MergeTree ORDER BY column1
+        """
+    )
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS
+        SELECT column1, column2, column3, _path
+        FROM {table_name}
+        WHERE ignore(sleepEachRow(2)) = 0
+        """
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    def get_held_lock():
+        for bucket in range(2):
+            lock_path = f"{keeper_path}/buckets/{bucket}/lock"
+            try:
+                data, _ = zk.get(lock_path)
+                registry_id = json.loads(data).get("active_registry_id")
+                if registry_id and zk.exists(f"{keeper_path}/registry/{registry_id}"):
+                    return lock_path, data
+            except NoNodeError:
+                pass
+        return None
+
+    held_lock = wait_until(get_held_lock, timeout=60)
+    assert held_lock is not None
+    lock_path, lock_data = held_lock
+
+    # A paused table removes its active registry entry on the next poll,
+    # but keeps the file iterator and the bucket lock it holds.
+    node.query(f"SYSTEM STOP {table_name}")
+    assert wait_until(
+        lambda: not zk.get_children(f"{keeper_path}/registry"), timeout=30
+    )
+    assert zk.get(lock_path)[0] == lock_data
+
+    # Detaching the paused table must release the lock it still owns although
+    # the registry entry is gone. Otherwise the lock would be stranded: attaching
+    # again in the same process re-registers the same registry id, so the cleanup
+    # would treat the lock as owned by a live table until the long TTL expires.
+    node.query(f"DETACH TABLE {table_name}")
+    assert wait_until(lambda: zk.exists(lock_path) is None, timeout=30)
+
+    node.query(f"ATTACH TABLE {table_name}")
+    node.query(f"SYSTEM START {table_name}")
+
+    def get_processed_count():
+        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+
+    assert wait_until(
+        lambda: get_processed_count() == files_to_generate, timeout=120, interval=1
+    )
+
+
 def test_inflight_claim_survives_keeper_session_reconnect(started_cluster):
     node = started_cluster.instances["instance"]
 

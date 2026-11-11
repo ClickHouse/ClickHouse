@@ -195,8 +195,6 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     void release();
 
 private:
-    std::string getActiveRegistryPath() const;
-
     BucketInfoPtr bucket_info;
     Stopwatch age_watch;
     int32_t bucket_lock_version = 0;

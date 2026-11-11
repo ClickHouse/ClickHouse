@@ -126,8 +126,10 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , storage_id(storage_id_)
     , use_buckets_for_processing(metadata->useBucketsForProcessing())
     , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
+    /// Claims are tracked in the active registry only when Keeper can fence their removal
+    /// by node incarnation; otherwise they keep the long-TTL-only cleanup.
     , active_registry_id(
-        track_active_registry_ && metadata->usePersistentProcessingNode()
+        track_active_registry_ && metadata->usePersistentProcessingNode() && metadata->supportsNodeIncarnationCheck()
             ? ObjectStorageQueueMetadata::getActiveRegistryID(storage_id_)
             : "")
     , shutdown_called(shutdown_called_)

@@ -556,6 +556,8 @@ A replica that stays inactive for longer than this TTL while holding claims — 
 
 Direct `SELECT` claims do not participate in the active registry and are cleaned up only by `persistent_processing_node_ttl_seconds`. This setting is fixed when the table is created and cannot be changed with `ALTER TABLE ... MODIFY SETTING`.
 
+Early cleanup requires ClickHouse Keeper with the `CheckStat` operation (the `CHECK_STAT` feature flag). A claim is removed only together with a check of the exact Keeper node it was found in, so a lock or a claim which was released and re-acquired by another server in the meantime is never removed by mistake. With an older Keeper or with ZooKeeper, claims are not tracked in the active registry and only `persistent_processing_node_ttl_seconds` applies.
+
 Default value: `600` (10 minutes).
 ### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
 

@@ -13,7 +13,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <base/scope_guard.h>
-#include <filesystem>
 
 
 namespace ProfileEvents
@@ -241,6 +240,7 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
                 }
 
                 processing_node_version = stat.version;
+                processing_node_czxid = stat.czxid;
                 Coordination::Requests requests;
                 addProcessingNodeRemovalRequest(requests);
                 Coordination::Responses responses;
@@ -356,12 +356,6 @@ bool ObjectStorageQueueIFileMetadata::hasNonProcessableState() const
     return false;
 }
 
-std::string ObjectStorageQueueIFileMetadata::getActiveRegistryPath() const
-{
-    const auto queue_path = std::filesystem::path(processing_node_path).parent_path().parent_path();
-    return (queue_path / "registry" / active_registry_id).string();
-}
-
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     /// An optimization for local parallel processing.
@@ -412,6 +406,7 @@ void ObjectStorageQueueIFileMetadata::refreshProcessingNode(size_t refresh_inter
             ownership_lost = true;
             return;
         }
+        processing_node_czxid = stat.czxid;
 
         Coordination::Stat set_stat;
         const auto code = zk_client->trySet(processing_node_path, data, stat.version, &set_stat);
@@ -433,6 +428,7 @@ void ObjectStorageQueueIFileMetadata::refreshProcessingNode(size_t refresh_inter
             {
                 /// Still our claim. Use the current version for the commit fence.
                 processing_node_version = current_stat.version;
+                processing_node_czxid = current_stat.czxid;
                 return;
             }
             ownership_lost = true;
@@ -469,11 +465,16 @@ void ObjectStorageQueueIFileMetadata::refreshProcessingNode(size_t refresh_inter
 
 void ObjectStorageQueueIFileMetadata::addProcessingNodeRemovalRequest(Coordination::Requests & requests) const
 {
-    /// Keep cleanup from deleting and recreating the claim between the preceding
-    /// exact-owner refresh and this versioned remove. Direct `SELECT` has no registry
-    /// entry and relies on the long TTL plus the version fence.
+    /// The version alone cannot tell our claim from one which cleanup removed and another
+    /// server recreated meanwhile, because the version restarts from zero. Claims tracked in
+    /// the active registry are removed only together with a check of the node incarnation
+    /// observed by the preceding owner read. Direct `SELECT` claims are not tracked and keep
+    /// the long TTL plus the version fence.
     if (!active_registry_id.empty())
-        requests.push_back(zkutil::makeCheckRequest(getActiveRegistryPath(), -1));
+    {
+        chassert(processing_node_czxid != 0);
+        requests.push_back(ObjectStorageQueueMetadata::makeNodeIncarnationCheckRequest(processing_node_path, processing_node_czxid));
+    }
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, processing_node_version));
 }
 
@@ -517,6 +518,7 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
         created_processing_node = true;
         processing_ownership_lost = false;
         processing_node_version = 0;
+        processing_node_czxid = 0;
         processing_node_age_watch.restart();
         file_status->onProcessing();
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
@@ -559,8 +561,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         Coordination::Stat stat;
         std::string data;
         /// Abandoned-claim cleanup can delete and recreate the path with the same version.
-        /// Validate the exact owner on every attempt, then keep cleanup fenced by the active
-        /// registry entry until the versioned remove is executed in the same multi-operation.
+        /// Validate the exact owner on every attempt and remove that node incarnation only.
         if (!zk_client->tryGet(processing_node_path, data, &stat) || data != processor_info)
         {
             LOG_TEST(log, "Will not remove processing node, ownership changed");
@@ -569,6 +570,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         }
 
         processing_node_version = stat.version;
+        processing_node_czxid = stat.czxid;
         requests.clear();
         responses.clear();
         addProcessingNodeRemovalRequest(requests);
@@ -587,7 +589,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 
     if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
     {
-        /// The claim or its active-registry fence disappeared. Do not risk touching a
+        /// The claim disappeared or was recreated meanwhile. Do not risk touching a
         /// replacement claim; automatic cleanup will remove an abandoned original claim.
         LOG_TEST(log, "Will not remove processing node {}, ownership fence failed", processing_node_path);
         return;

@@ -254,12 +254,6 @@ std::optional<std::string> ObjectStorageQueueOrderedFileMetadata::BucketHolder::
     return std::nullopt;
 }
 
-std::string ObjectStorageQueueOrderedFileMetadata::BucketHolder::getActiveRegistryPath() const
-{
-    const auto queue_path = std::filesystem::path(bucket_info->bucket_lock_path).parent_path().parent_path().parent_path();
-    return (queue_path / "registry" / active_registry_id).string();
-}
-
 void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
 {
     /// Released holders are removed from the iterator's bucket_holders,
@@ -378,10 +372,12 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
             code = zk_client->tryRemove(bucket_info->bucket_lock_path, bucket_lock_version);
         else
         {
+            /// Remove only the node incarnation read above: abandoned-lock cleanup could
+            /// delete the lock and another server recreate it at the same version in between.
+            /// The check does not depend on the registry entry, so the lock is released
+            /// even after the table was unregistered (paused, idle or being detached).
             Coordination::Requests requests;
-            /// Keep abandoned-lock cleanup from deleting and recreating the lock
-            /// between the exact-owner read above and the versioned remove.
-            requests.push_back(zkutil::makeCheckRequest(getActiveRegistryPath(), -1));
+            requests.push_back(ObjectStorageQueueMetadata::makeNodeIncarnationCheckRequest(bucket_info->bucket_lock_path, stat.czxid));
             requests.push_back(zkutil::makeRemoveRequest(bucket_info->bucket_lock_path, bucket_lock_version));
             Coordination::Responses responses;
             code = zk_client->tryMulti(requests, responses);

@@ -278,8 +278,12 @@ protected:
     std::string processor_info;
     Stopwatch processing_node_age_watch;
     int32_t processing_node_version = 0;
+    /// Creation zxid of the processing node, learned by the last read of it. Identifies the node
+    /// incarnation: a removed and recreated node gets a new one, while the version restarts from zero.
+    int64_t processing_node_czxid = 0;
 
-    std::string getActiveRegistryPath() const;
+    /// Add the removal of the processing node, fenced by its incarnation for claims tracked in
+    /// the active registry. Must follow a read of the node which proved it still belongs to us.
     void addProcessingNodeRemovalRequest(Coordination::Requests & requests) const;
 
     static NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = {}, size_t retries = 0);

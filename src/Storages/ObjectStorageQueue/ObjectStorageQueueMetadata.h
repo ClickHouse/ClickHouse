@@ -222,6 +222,14 @@ public:
             : std::max(ttl_seconds, reclaim_ttl_seconds);
         return lease_seconds ? std::max<size_t>(1, lease_seconds / 4) : 0;
     }
+    /// Whether Keeper supports `CheckStat`, which is needed to fence the removal of a claim or
+    /// a bucket lock by its node incarnation (`czxid`). Without it claims are not tracked in the
+    /// active registry and are cleaned up by `persistent_processing_node_ttl_seconds` only.
+    bool supportsNodeIncarnationCheck() const;
+    /// A `CheckStat` request which passes only for the node incarnation identified by `czxid`.
+    /// A removed and recreated node gets a new `czxid`, while its version restarts from zero,
+    /// so a version alone cannot tell a recreated node from the original one.
+    static Coordination::RequestPtr makeNodeIncarnationCheckRequest(const std::string & path, int64_t czxid);
     size_t getProcessingStateCacheTTLSeconds() const { return processing_state_cache_ttl_seconds; }
 
     size_t getKeeperMultireadBatchSize() const { return keeper_multiread_batch_size; }
@@ -268,6 +276,7 @@ private:
     std::atomic<size_t> persistent_processing_node_ttl_seconds;
     const size_t persistent_processing_node_abandoned_reclaim_ttl_seconds;
     std::atomic<size_t> processing_state_cache_ttl_seconds;
+    mutable std::atomic<bool> missing_node_incarnation_check_logged{false};
 
     /// Watermarks for the pipeline-lag metrics, see updateNewestSeenTimestamp().
     /// Keyed by `StorageID::getFullTableName()`, because this metadata object can be

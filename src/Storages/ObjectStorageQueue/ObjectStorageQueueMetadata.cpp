@@ -21,6 +21,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DDLTask.h>
@@ -1585,6 +1586,40 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
     }
 }
 
+bool ObjectStorageQueueMetadata::supportsNodeIncarnationCheck() const
+{
+    if (getZooKeeper()->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
+        return true;
+
+    if (!missing_node_incarnation_check_logged.exchange(true))
+    {
+        LOG_WARNING(
+            log,
+            "Keeper does not support the CheckStat operation: claims are not tracked in the active registry "
+            "and abandoned claims are cleaned up only after persistent_processing_node_ttl_seconds");
+    }
+    return false;
+}
+
+Coordination::RequestPtr ObjectStorageQueueMetadata::makeNodeIncarnationCheckRequest(const std::string & path, int64_t czxid)
+{
+    /// Keeper compares only the fields which are not -1.
+    Coordination::Stat stat_to_check{
+        .czxid = czxid,
+        .mzxid = -1,
+        .ctime = -1,
+        .mtime = -1,
+        .version = -1,
+        .cversion = -1,
+        .aversion = -1,
+        .ephemeralOwner = -1,
+        .dataLength = -1,
+        .numChildren = -1,
+        .pzxid = -1,
+    };
+    return zkutil::makeCheckRequest(path, /* version */ -1, /* not_exists */ false, stat_to_check);
+}
+
 void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 {
     auto zk_retries = getKeeperRetriesControl(log);
@@ -1618,11 +1653,16 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
         }
     }
 
+    /// Without `CheckStat` a removed and recreated node cannot be told from the original one,
+    /// so only the long-TTL cleanup runs. Claims are not tracked in the registry in that case either.
+    const bool check_node_incarnation = supportsNodeIncarnationCheck();
+
     const auto current_time = getCurrentTime();
     struct NodeToRemove
     {
         String path;
         int32_t version;
+        int64_t czxid;
         String absent_registry_id;
     };
     std::vector<NodeToRemove> nodes_to_remove;
@@ -1662,11 +1702,11 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
             {
                 /// Preserve the pre-existing long-TTL safety valve. It also covers legacy,
                 /// malformed, and direct-`SELECT` claims which have no active registry ID.
-                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, {}});
+                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, response[i].stat.czxid, {}});
                 continue;
             }
 
-            if (!reclaim_ttl_seconds || node_mtime + reclaim_ttl_seconds >= current_time)
+            if (!check_node_incarnation || !reclaim_ttl_seconds || node_mtime + reclaim_ttl_seconds >= current_time)
                 continue;
 
             try
@@ -1675,7 +1715,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
                 const auto json = parser.parse(response[i].data).extract<Poco::JSON::Object::Ptr>();
                 const auto active_registry_id = json->optValue<String>("active_registry_id", "");
                 if (!active_registry_id.empty())
-                    nodes_to_remove.push_back({get_batch[i], response[i].stat.version, active_registry_id});
+                    nodes_to_remove.push_back({get_batch[i], response[i].stat.version, response[i].stat.czxid, active_registry_id});
             }
             catch (...)
             {
@@ -1719,28 +1759,26 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     {
         LOG_TRACE(log, "Removing stale processing node: {}", node_to_remove.path);
         zk_retries.resetFailures();
-        if (node_to_remove.absent_registry_id.empty())
+        zk_retries.retryLoop([&]
         {
-            zk_retries.retryLoop([&]
+            auto zk_client = getZooKeeper();
+            Coordination::Requests requests;
+            /// The owner must still be absent, and the node must be the very one which was found
+            /// abandoned: the version alone cannot tell it from a claim or a lock which was
+            /// released meanwhile and recreated by another server at the same version.
+            if (!node_to_remove.absent_registry_id.empty())
             {
-                code = getZooKeeper()->tryRemove(node_to_remove.path, node_to_remove.version);
-            });
-        }
-        else
-        {
-            zk_retries.retryLoop([&]
-            {
-                auto zk_client = getZooKeeper();
-                Coordination::Requests requests;
                 zkutil::addCheckNotExistsRequest(
                     requests,
                     *zk_client,
                     zookeeper_path / "registry" / node_to_remove.absent_registry_id);
-                requests.push_back(zkutil::makeRemoveRequest(node_to_remove.path, node_to_remove.version));
-                Coordination::Responses responses;
-                code = zk_client->tryMulti(requests, responses);
-            });
-        }
+            }
+            if (check_node_incarnation)
+                requests.push_back(makeNodeIncarnationCheckRequest(node_to_remove.path, node_to_remove.czxid));
+            requests.push_back(zkutil::makeRemoveRequest(node_to_remove.path, node_to_remove.version));
+            Coordination::Responses responses;
+            code = zk_client->tryMulti(requests, responses);
+        });
         if (code == Coordination::Error::ZOK)
         {
             ++removed;
