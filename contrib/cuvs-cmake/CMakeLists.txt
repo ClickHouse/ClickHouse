@@ -2,8 +2,9 @@
 # like cuDF (see gpu_island_target in cmake/cuda.cmake). Tests, benchmarks, the C API and the Python pieces are not built.
 #
 # Only what CAGRA needs is compiled: CAGRA build, search and serialization, IVF-PQ and NN-descent, which build its graph,
-# IVF-Flat's scan and refine, which IVF-PQ uses, balanced k-means, select-k and the pairwise distances. Upstream generates
-# most of its translation units and all its JIT-LTO kernel fragments from JSON matrices. Those calls of its
+# IVF-Flat's scan and refine, which IVF-PQ uses, the VPQ compression of CAGRA-Q, balanced k-means, select-k and the
+# pairwise distances. Upstream generates most of its translation units and all its JIT-LTO kernel fragments from JSON
+# matrices. Those calls of its
 # cpp/CMakeLists.txt are evaluated here as they are (see cuvs_evaluate_upstream below), so the instantiations stay exactly
 # upstream's when the submodule moves; the list of sources of the library is written out here. cuTile kernels and the
 # multi-GPU algorithms are off.
@@ -116,6 +117,8 @@ set (CUVS_SOURCES
 list (TRANSFORM CUVS_SOURCES PREPEND "${CUVS_CPP_DIR}/")
 
 list (APPEND CUVS_SOURCES
+    # The VPQ compression of CAGRA-Q, instead of src/preprocessing/quantize/pq.cu: see the comment in it.
+    "${CMAKE_CURRENT_SOURCE_DIR}/vpq_train_from_rows.cu"
     ${cagra_build_inst_files}
     ${cagra_serialize_inst_files}
     ${cuvs_cagra_search_cuda_inst_files}
