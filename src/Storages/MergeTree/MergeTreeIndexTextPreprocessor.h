@@ -33,7 +33,6 @@ public:
     ActionsDAG getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const;
 
     /// The preprocessor of one element of an `Array` index column, e.g. a map value of `mapValues(m)`, reading from `col_name`.
-    /// For a non-array index it equals the column form.
     ASTPtr getElementExpressionAST(const String & col_name) const;
     ActionsDAG getActionsDAGForElement(const String & col_name, const DataTypePtr & col_type) const;
 

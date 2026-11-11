@@ -763,7 +763,6 @@ private:
 
             /// Check that preprocessor contains current expression as its argument.
             const bool is_index_expression = hasSubexpression(preprocessor_output, haystack_name);
-            /// A map element of a `mapValues` index takes the preprocessor of one value.
             const bool is_map_element = !is_index_expression && condition_text.isMapElementValue(*haystack);
             if (is_index_expression || is_map_element)
             {
@@ -890,7 +889,7 @@ private:
                 /// If the postprocessed token contains separator characters it would be ill-formed as a
                 /// hasToken* needle (BAD_ARGUMENTS / NULL on non-indexed parts in Exact mode), so keep
                 /// the original needle in that case.
-                /// An empty needle has no token for the postprocessor, as in the index condition.
+                /// An empty needle has no token to postprocess.
                 const String needle = needles_field.safeGet<String>();
                 if (!needle.empty())
                 {

@@ -256,8 +256,6 @@ static std::optional<size_t> tryGetIndexedFixedStringSize(const Block & header)
     return std::nullopt;
 }
 
-/// The preprocessor applied to the default of the element type of an `Array(String)` or `Array(FixedString)` index, as a
-/// String or Null. Unset when the preprocessor raises on it.
 static std::optional<Field> tryPreprocessArrayElementDefault(const Block & header, const MergeTreeIndexTextPreprocessorPtr & preprocessor)
 {
     if (header.columns() != 1)
@@ -1330,7 +1328,6 @@ bool MergeTreeIndexConditionText::absentMapValueMatches(const String & function_
             && !isNullableOrLowCardinalityNullable(array_type->getNestedType()))
             return true;
 
-        /// A default the guard cannot preprocess leaves such rows to the predicate.
         if (!preprocessed_absent_map_value)
             return true;
         if (preprocessed_absent_map_value->isNull())
