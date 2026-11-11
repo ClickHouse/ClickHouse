@@ -682,6 +682,45 @@ String tableLocationFromMetadataPath(const String & metadata_path)
     return fs::path(metadata_path).parent_path().parent_path().string();
 }
 
+/// Glue limits `Column.Comment` to 255 characters (counted in UTF-16 code units) and allows no control characters
+/// except tab, so a multiline or long Iceberg field `doc` would make `CreateTable` and `UpdateTable` fail.
+/// The full `doc` stays in the Iceberg metadata; Glue only gets a display copy.
+String glueColumnComment(const String & doc)
+{
+    static constexpr size_t max_comment_length = 255;
+
+    String result;
+    result.reserve(std::min(doc.size(), max_comment_length * 4));
+    size_t length = 0;
+    size_t pos = 0;
+    while (pos < doc.size())
+    {
+        const auto lead = static_cast<unsigned char>(doc[pos]);
+        size_t sequence_size = 1;
+        if (lead >= 0xF0)
+            sequence_size = 4;
+        else if (lead >= 0xE0)
+            sequence_size = 3;
+        else if (lead >= 0xC0)
+            sequence_size = 2;
+        sequence_size = std::min(sequence_size, doc.size() - pos);
+
+        /// Characters outside the Basic Multilingual Plane take two UTF-16 code units.
+        const size_t units = sequence_size == 4 ? 2 : 1;
+        if (length + units > max_comment_length)
+            break;
+
+        if (lead < 0x20 && lead != '\t')
+            result += ' ';
+        else
+            result.append(doc, pos, sequence_size);
+
+        length += units;
+        pos += sequence_size;
+    }
+    return result;
+}
+
 /// `s3a://bucket/table/` -> `bucket/table`, because the scheme of a table location is not normalized.
 std::string_view locationWithoutSchemeAndTrailingSlash(std::string_view location)
 {
@@ -735,7 +774,7 @@ Aws::Vector<Aws::Glue::Model::Column> GlueCatalog::glueColumnsFromIcebergSchema(
         column.SetName(field->getValue<String>(DB::Iceberg::f_name));
         column.SetType(icebergTypeToGlueType(field->get(DB::Iceberg::f_type)));
         if (field->has("doc") && !field->isNull("doc"))
-            column.SetComment(field->getValue<String>("doc"));
+            column.SetComment(glueColumnComment(field->getValue<String>("doc")));
 
         const bool required = field->has(DB::Iceberg::f_required) && field->getValue<bool>(DB::Iceberg::f_required);
 

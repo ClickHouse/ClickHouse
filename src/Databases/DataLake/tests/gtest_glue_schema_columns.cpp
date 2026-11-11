@@ -98,6 +98,40 @@ TEST(GlueSchemaColumns, ColumnsFromSchema)
     EXPECT_EQ(columns[2].GetParameters().at("iceberg.field.id"), "3");
 }
 
+TEST(GlueSchemaColumns, ColumnCommentWithinGlueConstraints)
+{
+    /// Glue allows at most 255 characters and no newlines in `Column.Comment`.
+    const String long_doc(300, 'a');
+    /// 254 ASCII characters followed by a character outside the BMP, which takes two UTF-16 code units.
+    const String doc_with_supplementary = String(254, 'b') + "\xF0\x9F\x98\x80";
+
+    auto schema = Poco::JSON::Object::Ptr(new Poco::JSON::Object);
+    auto fields = Poco::JSON::Array::Ptr(new Poco::JSON::Array);
+    auto add_field = [&](Int64 id, const String & name, const String & doc)
+    {
+        auto field = Poco::JSON::Object::Ptr(new Poco::JSON::Object);
+        field->set("id", id);
+        field->set("name", name);
+        field->set("required", false);
+        field->set("type", "string");
+        field->set("doc", doc);
+        fields->add(field);
+    };
+    add_field(1, "multiline", "first line\r\nsecond\tline\n");
+    add_field(2, "long", long_doc);
+    add_field(3, "supplementary", doc_with_supplementary);
+    add_field(4, "unicode", "\xD0\xBF\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82");
+    schema->set("fields", fields);
+
+    auto columns = GlueCatalog::glueColumnsFromIcebergSchema(schema);
+    ASSERT_EQ(columns.size(), 4u);
+
+    EXPECT_EQ(columns[0].GetComment(), "first line  second\tline ");
+    EXPECT_EQ(columns[1].GetComment(), String(255, 'a'));
+    EXPECT_EQ(columns[2].GetComment(), String(254, 'b'));
+    EXPECT_EQ(columns[3].GetComment(), "\xD0\xBF\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82");
+}
+
 TEST(GlueSchemaColumns, CurrentSchemaSelection)
 {
     auto metadata = parseObject(R"json({
