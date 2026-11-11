@@ -587,6 +587,13 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
             /// "input_format_parquet_filter_push_down=0" would not even disable this path.
             if (column_info.is_spatial_bbox_column && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                 continue;
+            /// Only the JOIN runtime filter reads this column: reset its range, which the failed parse may have half-set,
+            /// and skip pruning by it instead of failing the query.
+            if (!column_info.used_by_key_condition && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            {
+                hyperrectangle[column_info.idx_in_output_block] = Range::createWholeUniverse();
+                continue;
+            }
             e.addMessage("in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore", column_info.name);
             throw;
         }
