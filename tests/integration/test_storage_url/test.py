@@ -971,6 +971,15 @@ def test_partitioned_write_filtered_grant():
         assert "refers to another bucket" in insert_s3_error(qualified_template, other_bucket_partition)
         assert s3_keys(f"owned_{suffix}_", bucket=cluster.minio_bucket_2) == []
 
+        # Reject: the same fully qualified key typed in an unpartitioned write, also percent-encoded. The typed URI
+        # matches the grant `^<bucket>/allowed_<suffix>-.*$` as a string, but the key would go to the bucket `root2`.
+        # Such a key always contains `//`, which the parser of S3 URIs refuses after decoding, whatever the grants,
+        # so only a partition id can make a key fully qualified.
+        for separator in ("://", "%3A%2F%2F"):
+            qualified_key = f"{allowed}-s3{separator}{cluster.minio_bucket_2}/owned_{suffix}_direct.tsv"
+            assert "Invalid S3 key" in insert_s3_error(qualified_key)
+            assert s3_keys(f"owned_{suffix}_", bucket=cluster.minio_bucket_2) == []
+
         # A partitioned table with the `S3` engine is not checked against the source grants of the user who
         # inserts into it, so it keeps working with a destination outside the prefix the user could write to.
         # (The `URL` engine does not support `PARTITION BY`.)
