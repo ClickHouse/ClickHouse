@@ -898,6 +898,20 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
     }
 #endif
 
+    /// Whether a declared column is read from the file or filled from the Hive partition in the path (and with
+    /// which type) is captured by the table when it is loaded (`use_hive_partitioning`), so a `DETACH` / `ATTACH`,
+    /// which keeps the UUID and can restart the metadata version, may change it while nothing else hashed here moves.
+    const auto hive_columns = hive_partitioning_columns.get();
+    hash.update(hive_columns->hive_partition_columns_to_read_from_file_path.size());
+    for (const auto & column : hive_columns->hive_partition_columns_to_read_from_file_path)
+    {
+        hash.update(column.name.size());
+        hash.update(column.name);
+        const String type_name = column.type->getName();
+        hash.update(type_name.size());
+        hash.update(type_name);
+    }
+
     for (const auto & object : objects)
     {
         /// Require a strong provider version (ETag). Size and modification time are weak validators

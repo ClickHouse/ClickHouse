@@ -2478,6 +2478,18 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
     }
     else
         hash.update(getFormatSettingsHash(settings));
+    /// Whether a declared column is read from the file or filled from the Hive partition in the path (and with
+    /// which type) is captured by the table when it is loaded (`use_hive_partitioning`), so a `DETACH` / `ATTACH`,
+    /// which keeps the UUID and can restart the metadata version, may change it while nothing else hashed here moves.
+    hash.update(hive_partition_columns_to_read_from_file_path.size());
+    for (const auto & column : hive_partition_columns_to_read_from_file_path)
+    {
+        hash.update(column.name.size());
+        hash.update(column.name);
+        const String type_name = column.type->getName();
+        hash.update(type_name.size());
+        hash.update(type_name);
+    }
     /// A strong `ETag` identifies a representation of one resource only: different resources may share
     /// it (RFC 9110, section 8.8.1). When `uri` redirects, switching the redirect target to another
     /// resource with the same validators must still change the hash, so fold the final resource too.
