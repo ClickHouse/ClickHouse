@@ -141,19 +141,22 @@ static NamesAndTypesList getHeaderForPCAP()
     return NamesAndTypesList(cols.begin(), cols.end());
 }
 
-static const std::unordered_map<std::string, size_t> & getColumnNameToIdx()
+/// A process-wide immutable lookup table, so memory tracking is not needed for it.
+using ColumnNameToIdx = std::unordered_map<std::string, size_t>; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+static const ColumnNameToIdx & getColumnNameToIdx()
 {
-    static std::once_flag once;
-    static std::unordered_map<std::string, size_t> name_to_idx;
-    std::call_once(once, [&]
+    static const ColumnNameToIdx name_to_idx = []
     {
+        ColumnNameToIdx result;
         size_t i = 0;
         for (const auto & c : getHeaderForPCAP())
         {
-            name_to_idx.emplace(c.name, i);
+            result.emplace(c.name, i);
             ++i;
         }
-    });
+        return result;
+    }();
     return name_to_idx;
 }
 
