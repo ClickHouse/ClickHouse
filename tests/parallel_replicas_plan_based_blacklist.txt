@@ -50,6 +50,10 @@
 05332_obfuscate_profile_seed_query_cache
 05488_shuffle_query_cache
 
+    A replica throws `UNKNOWN_FUNCTION` for a WASM UDF in the plan fragment
+    https://github.com/ClickHouse/ClickHouse/issues/130859
+05062_wasm_udf_deduplicated_rows_determinism
+
     A query that is not distributed keeps a split aggregation and a `ParallelReplicasSplit` step
     https://github.com/ClickHouse/ClickHouse/issues/128539
 02377_optimize_sorting_by_input_stream_properties_2
