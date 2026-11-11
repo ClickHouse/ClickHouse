@@ -2,6 +2,11 @@
 OK
 -- the upper bound stays valid UTF-8 when the last character is the largest code point
 0	3
+-- the upper bound does not increment U+FFFF, which UTF-16 readers order after U+10000
+0	3
+-- without an upper bound, the exact maximum is kept, as readers need a maximum
+4
+1
 -- the pushdown uses the bounds written instead of long minimums and maximums
 s = repeat('b', 2000): [2], read 2 rows
 s = repeat('b', 1024): [1], read 3 rows

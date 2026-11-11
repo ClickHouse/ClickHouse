@@ -23,6 +23,19 @@ ${CLICKHOUSE_LOCAL} -q "
         countSubstrings(raw, concat(repeat('b', 1019), 'c')) AS carried_bounds
     FROM file('$WORK_DIR/max_code_point.orc', RawBLOB, 'raw String')"
 
+echo "-- the upper bound does not increment U+FFFF, which UTF-16 readers order after U+10000"
+${CLICKHOUSE_LOCAL} -q "SELECT concat(repeat('b', 1021), unhex('EFBFBF'), 'tail') AS s INTO OUTFILE '$WORK_DIR/bmp_max.orc' TRUNCATE FORMAT ORC SETTINGS output_format_orc_compression_method = 'none'"
+${CLICKHOUSE_LOCAL} -q "
+    SELECT countSubstrings(raw, concat(repeat('b', 1021), unhex('F0908080'))) AS supplementary_bounds,
+        countSubstrings(raw, concat(repeat('b', 1020), 'c')) AS carried_bounds
+    FROM file('$WORK_DIR/bmp_max.orc', RawBLOB, 'raw String')"
+
+echo "-- without an upper bound, the exact maximum is kept, as readers need a maximum"
+${CLICKHOUSE_LOCAL} -q "SELECT repeat(unhex('EFBFBF'), 400) AS s INTO OUTFILE '$WORK_DIR/no_upper_bound.orc' TRUNCATE FORMAT ORC SETTINGS output_format_orc_compression_method = 'none'"
+# The value itself and the maximums of the row index, the stripe and the file.
+${CLICKHOUSE_LOCAL} -q "SELECT countSubstrings(raw, repeat(unhex('EFBFBF'), 400)) AS values FROM file('$WORK_DIR/no_upper_bound.orc', RawBLOB, 'raw String')"
+${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('$WORK_DIR/no_upper_bound.orc') WHERE s = repeat(unhex('EFBFBF'), 400) SETTINGS input_format_orc_filter_push_down = 1"
+
 # Each value is a row group of its own, so the pushdown can skip each of them.
 ${CLICKHOUSE_LOCAL} -q "
     SELECT n, s FROM values('n UInt32, s String',

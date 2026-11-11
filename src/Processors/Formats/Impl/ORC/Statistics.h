@@ -63,13 +63,11 @@ private:
     void setStringMinimum(std::string_view value);
     void setStringMaximum(std::string_view value);
 
-    /// Long values are kept as a truncated lower bound and upper bound.
+    /// Long values are kept as a truncated lower bound and upper bound (or the exact maximum if it has no upper bound).
     std::string string_minimum;
     std::string string_maximum;
     bool string_minimum_is_bound = false;
     bool string_maximum_is_bound = false;
-    /// No upper bound of a long value is representable, so the maximum is unknown.
-    bool string_maximum_is_unknown = false;
     UInt64 total_length = 0;
 
     UInt64 true_count = 0;
