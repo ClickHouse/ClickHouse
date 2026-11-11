@@ -78,11 +78,11 @@ std::unordered_set<const ActionsDAG::Node *> findReachableNodes(
 
 /// Calls `visit(node)` once for every node reachable from `roots`, after it has been called for all the
 /// node's children: a topological order, children first. A node for which `skip(node)` is true is neither
-/// visited nor entered.
-template <typename Visit, typename Skip>
-void visitNodesPostOrder(const ActionsDAG::NodeRawConstPtrs & roots, Visit && visit, Skip && skip)
+/// visited nor entered. `visited` belongs to the caller: a node already in it is not entered, and on return it
+/// holds every node visited.
+template <typename Visited, typename Visit, typename Skip>
+void visitNodesPostOrder(const ActionsDAG::NodeRawConstPtrs & roots, Visited & visited, Visit && visit, Skip && skip)
 {
-    std::unordered_set<const ActionsDAG::Node *> visited;
     std::vector<std::pair<const ActionsDAG::Node *, size_t>> stack;
     for (const auto * root : roots)
     {
@@ -105,6 +105,13 @@ void visitNodesPostOrder(const ActionsDAG::NodeRawConstPtrs & roots, Visit && vi
             stack.pop_back();
         }
     }
+}
+
+template <typename Visit, typename Skip>
+void visitNodesPostOrder(const ActionsDAG::NodeRawConstPtrs & roots, Visit && visit, Skip && skip)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    visitNodesPostOrder(roots, visited, std::forward<Visit>(visit), std::forward<Skip>(skip));
 }
 
 template <typename Visit>
