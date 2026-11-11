@@ -1957,27 +1957,14 @@ String getInsertDataSchemaMismatchDescription(
 namespace
 {
 
-/// A row marker found in an exception message: its offset and the number that follows the marker.
-struct RowNumberMarker
+/// Calls `callback` with the decimal number that follows every occurrence of `prefix` in `message`.
+/// When `terminator` is not empty, the number is required to be followed by it. Occurrences that are
+/// not followed by a well-formed number are skipped.
+template <typename Callback>
+void forEachRowNumberAfter(std::string_view message, std::string_view prefix, std::string_view terminator, Callback && callback)
 {
-    size_t pos;
-    size_t rows;
-};
-
-/// Reads a decimal number that follows the LAST occurrence of `prefix` in `message`. When `terminator`
-/// is not empty, the number is required to be followed by it.
-/// The marker is appended by the format to the end of the message, while the excerpts of the data are
-/// part of the original message, so the last occurrence is the one produced by the parser. Matching the
-/// first occurrence instead would let the inserted data spoof the row bound.
-std::optional<RowNumberMarker> parseRowNumberAfter(std::string_view message, std::string_view prefix, std::string_view terminator)
-{
-    size_t search_from = message.size();
-    while (true)
+    for (size_t marker_pos = message.find(prefix); marker_pos != std::string_view::npos; marker_pos = message.find(prefix, marker_pos + 1))
     {
-        size_t marker_pos = message.rfind(prefix, search_from);
-        if (marker_pos == std::string_view::npos)
-            return {};
-
         size_t pos = marker_pos + prefix.size();
         size_t rows = 0;
         size_t digits = 0;
@@ -1992,82 +1979,41 @@ std::optional<RowNumberMarker> parseRowNumberAfter(std::string_view message, std
             rows = rows * 10 + (message[pos] - '0');
         }
 
-        bool matched = !overflow && digits != 0 && (terminator.empty() || message.substr(pos).starts_with(terminator));
-        if (matched)
-            return RowNumberMarker{marker_pos, rows};
-
-        /// This occurrence is not a well-formed marker; keep looking for an earlier one.
-        if (marker_pos == 0)
-            return {};
-        search_from = marker_pos - 1;
+        if (!overflow && digits != 0 && (terminator.empty() || message.substr(pos).starts_with(terminator)))
+            callback(rows);
     }
-}
-
-/// Finds the row markers a parser appends to its error message and returns the row bound they carry,
-/// taking the rightmost marker. See getRowsReachedFromParseErrorMessage below for how untrusted
-/// lookalikes of a marker in the message are dealt with.
-std::optional<size_t> getRowsReachedFromRowMarkers(std::string_view message)
-{
-    /// `IRowInputFormat` appends "(at row N)" where the counter already includes the failing row.
-    auto row_input_format_marker = parseRowNumberAfter(message, "(at row ", ")");
-
-    /// `ValuesBlockInputFormat` appends " at row N" where the counter is the number of rows that were
-    /// parsed completely, so the parser has reached one row more than that.
-    auto values_marker = parseRowNumberAfter(message, " at row ", "");
-
-    /// `ValuesBlockInputFormat` also appends " in one of the first N rows" when the batched evaluation
-    /// of templated expressions fails: the failing row is unknown there, but all N rows were read.
-    auto values_batch_marker = parseRowNumberAfter(message, " in one of the first ", " rows");
-
-    /// Several forms can be present when the data itself contains something that looks like another
-    /// marker - prefer the one that the parser appended, which is the rightmost one.
-    std::optional<size_t> rows_reached;
-    size_t rightmost_pos = 0;
-    auto consider = [&](const std::optional<RowNumberMarker> & marker, size_t bound)
-    {
-        if (marker && (!rows_reached || marker->pos > rightmost_pos))
-        {
-            rightmost_pos = marker->pos;
-            rows_reached = bound;
-        }
-    };
-
-    if (row_input_format_marker)
-        consider(row_input_format_marker, std::max<size_t>(row_input_format_marker->rows, 1)); /// Be defensive about a zero.
-    if (values_marker)
-        consider(values_marker, values_marker->rows + 1);
-    if (values_batch_marker)
-        consider(values_batch_marker, values_batch_marker->rows);
-
-    return rows_reached;
 }
 
 }
 
 std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view message)
 {
-    /// `IInputFormat::generate` appends "(in file/uri <path>)" after the parser's row marker. Both the
-    /// excerpt of the data quoted in the parser's message and the user-chosen file name may contain a
-    /// lookalike of that suffix or of a row marker, and a lookalike cannot be told apart from the genuine
-    /// thing. So consider every occurrence of the suffix as its potential start (plus the whole message,
-    /// for when every occurrence is a lookalike inside the data) and take the smallest row bound the
-    /// interpretations produce. The genuine interpretation is among them, so the result can never exceed
-    /// the true bound: a smaller bound only shrinks the sample (an explanation is lost at worst), while a
-    /// larger one would sample rows the parser never reached and could turn a value-level error into a
-    /// bogus structure mismatch.
-    static constexpr std::string_view file_name_suffix = ": (in file/uri ";
-
+    /// The message contains untrusted text next to the row marker appended by the parser: the excerpt of
+    /// the data quoted in the parser's message, the verbose diagnostic that `IRowInputFormat` appends after
+    /// the marker (it prints the fields of the failing row that were parsed successfully), and the
+    /// user-chosen file name in the "(in file/uri <path>)" suffix. Any of them may contain a lookalike of
+    /// a row marker, and a lookalike cannot be told apart from the genuine marker by its position. So take
+    /// the smallest row bound over all occurrences of all marker forms. The genuine marker is among them,
+    /// so the result can never exceed the true bound: a smaller bound only shrinks the sample (an
+    /// explanation is lost at worst), while a larger one would sample rows the parser never reached and
+    /// could turn a value-level error into a bogus structure mismatch.
     std::optional<size_t> rows_reached;
-    auto consider_interpretation = [&](std::string_view candidate)
+    auto consider = [&](size_t bound)
     {
-        auto bound = getRowsReachedFromRowMarkers(candidate);
-        if (bound && (!rows_reached || *bound < *rows_reached))
+        if (!rows_reached || bound < *rows_reached)
             rows_reached = bound;
     };
 
-    consider_interpretation(message);
-    for (size_t pos = message.find(file_name_suffix); pos != std::string_view::npos; pos = message.find(file_name_suffix, pos + 1))
-        consider_interpretation(message.substr(0, pos));
+    /// `IRowInputFormat` appends "(at row N)" where the counter already includes the failing row.
+    forEachRowNumberAfter(message, "(at row ", ")", [&](size_t rows) { consider(std::max<size_t>(rows, 1)); }); /// Be defensive about a zero.
+
+    /// `ValuesBlockInputFormat` appends " at row N" where the counter is the number of rows that were
+    /// parsed completely, so the parser has reached one row more than that.
+    forEachRowNumberAfter(message, " at row ", "", [&](size_t rows) { consider(rows + 1); });
+
+    /// `ValuesBlockInputFormat` also appends " in one of the first N rows" when the batched evaluation
+    /// of templated expressions fails: the failing row is unknown there, but all N rows were read.
+    forEachRowNumberAfter(message, " in one of the first ", " rows", [&](size_t rows) { consider(rows); });
 
     return rows_reached;
 }

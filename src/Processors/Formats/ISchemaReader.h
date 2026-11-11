@@ -1,7 +1,6 @@
 #pragma once
 
 #include <span>
-
 #include <Core/NamesAndTypes.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
