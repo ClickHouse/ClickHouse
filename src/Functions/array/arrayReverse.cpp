@@ -45,7 +45,7 @@ private:
 
     static bool executeFixedString(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
     static bool executeString(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
-    static bool executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
+    static ColumnPtr executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets);
 };
 
 
@@ -71,7 +71,7 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
     const IColumn * src_inner_col = src_nullable_col ? &src_nullable_col->getNestedColumn() : &src_data;
     IColumn * res_inner_col = res_nullable_col ? &res_nullable_col->getNestedColumn() : &res_data;
 
-    false // NOLINT
+    const bool specialized = false // NOLINT
         || executeNumber<UInt8>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt16>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt32>(*src_inner_col, offsets, *res_inner_col)
@@ -91,8 +91,14 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
         || executeNumber<Decimal128>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Decimal256>(*src_inner_col, offsets, *res_inner_col)
         || executeString(*src_inner_col, offsets, *res_inner_col)
-        || executeFixedString(*src_inner_col, offsets, *res_inner_col)
-        || executeGeneric(*src_inner_col, offsets, *res_inner_col);
+        || executeFixedString(*src_inner_col, offsets, *res_inner_col);
+
+    if (!specialized)
+    {
+        /// The whole elements column, including the null map of `Nullable`.
+        res.getDataPtr() = executeGeneric(src_data, offsets);
+        return res_ptr;
+    }
 
     chassert(bool(src_nullable_col) == bool(res_nullable_col));
 
@@ -105,7 +111,7 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
 }
 
 
-bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data)
+ColumnPtr FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets)
 {
     /// One `index` call instead of a virtual `insertFrom` call per element.
     auto indexes_column = ColumnUInt64::create(src_data.size());
@@ -119,8 +125,7 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
         src_prev_offset = src_offset;
     }
 
-    res_data.insertRangeFrom(*src_data.index(*indexes_column, 0), 0, src_data.size());
-    return true;
+    return src_data.index(*indexes_column, 0);
 }
 
 template <typename T>
