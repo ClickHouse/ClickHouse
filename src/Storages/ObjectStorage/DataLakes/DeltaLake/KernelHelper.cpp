@@ -130,10 +130,8 @@ public:
 
     const std::string & getDataPath() const override { return url.key; }
 
-    /// The S3 object storage resolves a fully-qualified path to its own bucket and key. A `gs://` path names GCS,
-    /// so only a GCS client takes it. Another bucket is refused: `remote_url_allow_hosts` and the credentials
-    /// were checked for the table's bucket only. The source grant was checked for the table's location only,
-    /// so a fully-qualified path needs it on the whole source.
+    /// The S3 object storage resolves a fully-qualified path to its own bucket and key. The table's checks
+    /// (`remote_url_allow_hosts`, the credentials, the source grant) cover the table's location only.
     std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const override
     {
         auto qualified = DB::trySplitFullyQualifiedObjectPath(path);
