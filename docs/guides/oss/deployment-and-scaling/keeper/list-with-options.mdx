@@ -19,7 +19,7 @@ An unset `start_after` keeps `OpNum::ListWithOptions` (508): `max_results` is st
 - `shuffle` or `recursive` together with `start_after` is rejected.
 - On a V2 page, `with_data` and `with_stat` are filled only for the names on that page.
 - The listing is not a snapshot: creates at or below the cursor, and deletes between pages, can be missed.
-- Pagination requires the `LIST_WITH_OPTIONS_V2` Keeper feature flag, which gates opcode 509. Servers that only advertise `LIST_WITH_OPTIONS` reject the cursor on the client. Keep `list_with_options_v2` disabled until every replica is upgraded: with the flag off the server rejects `ListWithOptionsV2` at ingress (including inside `MultiRead`) so the request is never written to the Raft log. A V2 request that is applied locally still returns `ZUNIMPLEMENTED`.
+- Pagination requires the `LIST_WITH_OPTIONS_V2` Keeper feature flag, which gates opcode 509. Clients require that flag before sending `ListWithOptionsV2`. Servers that only advertise `LIST_WITH_OPTIONS` reject the cursor on the client. An unsupported opcode on TCP closes the connection rather than returning `ZUNIMPLEMENTED`. During a rolling upgrade, do not send listings with `start_after` until every replica can parse opcode 509. A V2 request that is applied locally with the flag off still returns `ZUNIMPLEMENTED`.
 
 ## Example {#example}
 
