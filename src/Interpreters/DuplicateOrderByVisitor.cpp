@@ -40,7 +40,7 @@ public:
             return;
         }
 
-        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, context);
+        const auto & function = FunctionFactory::instance().tryGetWithoutAccessCheck(ast_function.name, context);
 
         if (function && function->isStateful())
         {

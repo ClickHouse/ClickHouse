@@ -136,13 +136,19 @@ def test_listed_sql_udf_requires_grant():
 
 
 def test_lambda_alias_shadowing_listed_function():
-    """The analyzer looks up `hex` to turn the name into a lambda, but the alias has priority, so
-    the built-in function is not called and its grant is not needed."""
+    """A lambda alias and a lambda parameter have priority over the function `hex`. The analyzer
+    only looks at it to find out what the name means, so no grant is needed."""
     instance.query("CREATE USER A")
 
     assert (
         instance.query("WITH x -> x + 1 AS hex SELECT arrayMap(hex, [1])", user="A")
         == "[2]\n"
+    )
+    assert (
+        instance.query(
+            "WITH hex > 0 AS p SELECT arrayFilter(hex -> p, [1, 2])", user="A"
+        )
+        == "[1,2]\n"
     )
 
 

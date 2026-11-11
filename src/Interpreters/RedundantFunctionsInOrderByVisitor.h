@@ -67,7 +67,7 @@ public:
             return;
         }
 
-        const auto function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
+        const auto function = FunctionFactory::instance().tryGetWithoutAccessCheck(ast_function.name, data.context);
         if (!function || !function->isDeterministicInScopeOfQuery())
         {
             data.preventErase();

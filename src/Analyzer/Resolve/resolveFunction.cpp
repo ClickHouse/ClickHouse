@@ -295,7 +295,7 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
         if (function->getFunctionName() == "throwIf")
             return true;
 
-        auto resolver = FunctionFactory::instance().tryGet(function->getFunctionName(), context);
+        auto resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(function->getFunctionName(), context);
         if (!resolver)
         {
             /// An aggregate count is only safe inside a scalar subquery that has already passed

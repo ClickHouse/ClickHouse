@@ -15,10 +15,13 @@ namespace DB
 /// The grant is required to create a listed function for a query, so `FunctionFactory` calls this for every
 /// function it returns, like the functions which check a privilege of their own when they are created
 /// (`demangle`, `getMacro`, ...). That covers every code path which obtains a function, with no call of its own.
+/// The exception is `FunctionFactory::tryGetWithoutAccessCheck`, for the code which only looks at the properties
+/// of a function: there the grant is not required until the function is going to be executed.
 ///
-/// What `FunctionFactory` does not create is checked by name where a call is resolved, in
-/// `QueryAnalyzer::resolveFunction`, `ActionsVisitor` and `UserDefinedSQLFunctionVisitor`: user defined functions,
-/// and calls which are handled without creating their function.
+/// What `FunctionFactory` does not check is checked by name where a call is resolved: user defined functions
+/// and calls which are handled without creating their function, in `QueryAnalyzer::resolveFunction`,
+/// `ActionsVisitor` and `UserDefinedSQLFunctionVisitor`, and an identifier which turns out to be a call of
+/// a function without parentheses (`SELECT currentUser`), in `QueryAnalyzer`.
 void checkFunctionAccess(const ContextPtr & context, const String & function_name);
 
 }
