@@ -213,7 +213,7 @@ namespace
                     const auto bucket = static_cast<Int32>(next_bucket);
                     next_bucket += step;
 
-                    size_t full_group_count = 0;
+                    size_t merged_group_count = 0;
                     auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
                         *destination,
                         *session,
@@ -222,10 +222,10 @@ namespace
                         bucket,
                         is_cancelled,
                         /*updater=*/nullptr,
-                        &full_group_count);
+                        &merged_group_count);
                     if (is_cancelled.load(std::memory_order_seq_cst))
                         return {};
-                    params->aggregator.checkMergedGroupLimit(*merged_groups, full_group_count);
+                    params->aggregator.checkMergedGroupLimit(*merged_groups, merged_group_count);
 
                     chunks.splice(chunks.end(), agg_chunks);
                 }
@@ -322,13 +322,14 @@ public:
         /// the remaining ones take the ordinary merge (see `Aggregator::Params::threshold_top_k`).
         std::atomic<int> threshold_top_k_verdict{0};
 
-        /// Groups the two-level bucket merge has converted so far; a throw-mode group limit is
-        /// checked against this running total, taken from the bucket tables rather than from
-        /// the converted chunks, which the bucket-local Top-K conversion truncates. For the
-        /// adaptive aggregator this is the only enforcement the staged keys get unless the merge
-        /// goes external (see `AdaptiveStagedRecordsSource`): the frozen tables are bounded and
-        /// the staged cardinality is unknown until the merge. The buckets partition the key
-        /// space, so the sum counts every group exactly once.
+        /// Groups the two-level bucket merge has built so far; a throw-mode group limit is
+        /// checked against this running total. The merge reports the groups it built rather
+        /// than the rows of the converted chunks, which the bucket-local Top-K conversion
+        /// truncates. For the adaptive aggregator this is the only enforcement the staged keys
+        /// get unless the merge goes external (see `AdaptiveStagedRecordsSource`): the frozen
+        /// tables are bounded and the staged cardinality is unknown until the merge. The buckets
+        /// partition the key space, so the sum counts every built group exactly once. The groups
+        /// that the top-K threshold merge and the adaptive top-K pruning skip go uncounted.
         std::atomic<size_t> two_level_merged_groups = 0;
 
         SharedData()
@@ -378,10 +379,10 @@ protected:
             return {};
         }
 
-        /// The bucket's group count is taken from the table rather than from the chunk: the
-        /// bucket-local Top-K conversion truncates the chunk to its n best groups, and the
-        /// group-by limit must be enforced against the true cardinality.
-        size_t full_group_count = 0;
+        /// The bucket's group count comes from the merge rather than from the chunk: the
+        /// bucket-local Top-K conversion truncates the chunk to its n best groups, while the
+        /// group limit counts every group that the merge built (see `checkMergedGroupLimit`).
+        size_t merged_group_count = 0;
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
             *data,
             arena,
@@ -389,12 +390,12 @@ protected:
             bucket_num,
             shared_data->is_cancelled,
             updater,
-            &full_group_count,
+            &merged_group_count,
             &shared_data->threshold_top_k_verdict);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
 
         if (!shared_data->is_cancelled.load(std::memory_order_seq_cst))
-            params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, full_group_count);
+            params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, merged_group_count);
         shared_data->is_bucket_processed[bucket_num] = true;
 
         return chunk;
@@ -458,13 +459,13 @@ protected:
             }
             const UInt32 bucket_num = session->bucketToMerge(claim);
 
-            size_t full_group_count = 0;
+            size_t merged_group_count = 0;
             auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
-                *data, *session, task, params->final, bucket_num, shared_data->is_cancelled, updater, &full_group_count);
+                *data, *session, task, params->final, bucket_num, shared_data->is_cancelled, updater, &merged_group_count);
             if (shared_data->is_cancelled.load(std::memory_order_seq_cst))
                 return {};
 
-            params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, full_group_count);
+            params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, merged_group_count);
             shared_data->is_bucket_processed[bucket_num] = true;
 
             for (auto & agg_chunk : agg_chunks)
