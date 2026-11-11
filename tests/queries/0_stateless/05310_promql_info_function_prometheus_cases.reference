@@ -1,0 +1,28 @@
+-- info metrics joined on instance and job, data label matchers, custom __name__ (promql/info_test.go)
+info(metric, {data=~".+", non_existent=~".*"}) from 0 to 600 step 300
+[('__name__','metric'),('data','info'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+info(metric, {__name__="target_info"}) from 0 to 600 step 300
+[('__name__','metric'),('another_data','another info'),('data','info'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+info(nolabels) from 0 to 600 step 300
+[('__name__','nolabels'),('x','y')]	[(0,0),(300000,1),(600000,2)]
+info(nolabels, {__name__="build_info"}) from 0 to 600 step 300
+info(metric_withdata) from 0 to 600 step 300
+info(metric_withdata, {data=~".+"}) from 0 to 600 step 300
+[('__name__','metric_withdata'),('data','info'),('instance','a'),('job','1')]	[(0,5),(300000,5),(600000,5)]
+info(metric, {data=~".*"} offset 5m) from 0 to 600 step 300
+[('__name__','metric'),('data','info'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+info(metric, {"build_info"}) from 0 to 600 step 300
+[('__name__','metric'),('build_data','build'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+info(metric_with_overlapping_label, {data=~".+"}) from 0 to 600 step 300
+info({__name__=~"metric|metric_not_matching_target_info"}) from 0 to 600 step 300
+[('__name__','metric'),('another_data','another info'),('data','info'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+[('__name__','metric_not_matching_target_info'),('instance','a'),('job','2'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+info(target_info) from 0 to 600 step 300
+[('__name__','target_info'),('another_data','another info'),('data','info'),('instance','a'),('job','1')]	[(0,1),(300000,1),(600000,1)]
+info(target_info, {data=~".+"}) from 0 to 600 step 300
+info(metric * 2) from 0 to 600 step 300
+[('another_data','another info'),('data','info'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,2),(600000,4)]
+info(metric) at 300
+[('__name__','metric'),('another_data','another info'),('data','info'),('instance','a'),('job','1'),('label','value')]	1
+info(metric, {data=~".+"}) at 300
+[('__name__','metric'),('data','info'),('instance','a'),('job','1'),('label','value')]	1

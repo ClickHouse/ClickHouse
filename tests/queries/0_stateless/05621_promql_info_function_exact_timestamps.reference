@@ -1,0 +1,3 @@
+-- the newest info series is chosen by the exact timestamp of a DateTime64(9) table
+[('__name__','metric'),('data','second'),('instance','a'),('job','1')]	1
+-- two info series with the same nanosecond timestamp are still a conflict

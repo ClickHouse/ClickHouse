@@ -266,9 +266,7 @@ SQLQueryPiece applyFunctionInfo(
         info_selector.matchers.push_back(Matcher{kMetricName, ".+", MatcherType::RE});
 
     auto base = toVectorGrid(std::move(arguments[0]), context);
-    auto info = fromSelectorSampleTimestamps(
-        function_node, info_selector.toString(*context.promql_tree), getInfoTimeBounds(function_node, context), context);
-    if (base.store_method == StoreMethod::EMPTY || info.store_method == StoreMethod::EMPTY)
+    if (base.store_method == StoreMethod::EMPTY || context.node_range_getter.get(function_node).empty())
         return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
     /// Step 1: one row for each sample of `v`, with its identifying labels and its step number.
@@ -311,7 +309,41 @@ SQLQueryPiece applyFunctionInfo(
         num_identifying_labels = addSubquery(builder.getSelectQuery(), SQLSubqueryType::SCALAR, context);
     }
 
-    /// Step 3: one row for each sample of the info series, its value is the sample's timestamp.
+    /// The series of `v` which can be enriched: those having all the identifying labels found on `v`, Prometheus enriches only them.
+    auto enrichable = [&]
+    {
+        return makeASTFunction(
+            "and",
+            makeASTFunction("not", col("ignored")),
+            makeASTFunction("notEquals", col("join_group"), lit(0u)),
+            makeASTFunction(
+                "equals",
+                makeASTFunction("length", makeASTFunction("timeSeriesGroupToTags", col("join_group"))),
+                col(num_identifying_labels)));
+    };
+
+    /// Step 3: the identifying labels of the series which can be enriched. Only the info series with these labels are read.
+    String base_groups;
+    {
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(col("join_group"));
+        builder.from_table = samples;
+        builder.where = enrichable();
+        builder.group_by = {col("join_group")};
+        base_groups = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
+    }
+
+    auto info = fromSelectorSampleTimestamps(
+        function_node,
+        info_selector.toString(*context.promql_tree),
+        getInfoTimeBounds(function_node, context),
+        makeASTFunction("in", makeASTFunction("timeSeriesRemoveAllTagsExcept", col(ColumnNames::Group), identifyingLabels()), col(base_groups)),
+        /* exact_ticks = */ true,
+        context);
+    if (info.store_method == StoreMethod::EMPTY)
+        return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+
+    /// Step 4: one row for each sample of the info series, its value is the sample's timestamp in ticks.
     String info_samples;
     {
         SelectQueryBuilder builder;
@@ -329,7 +361,7 @@ SQLQueryPiece applyFunctionInfo(
         builder.from_table = addSubquery(std::move(info.select_query), SQLSubqueryType::TABLE, context);
 
         /// SELECT group, arrayResize([], <count_of_time_steps>, values[1]) AS values FROM <info>
-        if (arguments.size() == 1 && isStepInvariant(function_node->getArguments().at(0)))
+        if (std::ranges::all_of(function_node->getArguments(), isStepInvariant))
         {
             SelectQueryBuilder first_step_builder;
             first_step_builder.select_list.push_back(col(ColumnNames::Group));
@@ -346,7 +378,7 @@ SQLQueryPiece applyFunctionInfo(
         info_samples = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
     }
 
-    /// Step 4: the identifying labels and steps of the samples which can be enriched.
+    /// Step 5: the identifying labels and steps of the samples which can be enriched.
     String base_steps;
     {
         SelectQueryBuilder builder;
@@ -355,19 +387,12 @@ SQLQueryPiece applyFunctionInfo(
         builder.select_list.push_back(col("idx"));
         builder.select_list.back()->setAlias("base_idx");
         builder.from_table = samples;
-        builder.where = makeASTFunction(
-            "and",
-            makeASTFunction("not", col("ignored")),
-            makeASTFunction("notEquals", col("join_group"), lit(0u)),
-            makeASTFunction(
-                "equals",
-                makeASTFunction("length", makeASTFunction("timeSeriesGroupToTags", col("join_group"))),
-                col(num_identifying_labels)));
+        builder.where = enrichable();
         builder.group_by = {col("join_group"), col("idx")};
         base_steps = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
     }
 
-    /// Step 5: the newest series of each info metric at each step, a tie is an error.
+    /// Step 6: the newest series of each info metric at each step, a tie is an error.
     String newest_info;
     {
         SelectQueryBuilder builder;
@@ -400,7 +425,7 @@ SQLQueryPiece applyFunctionInfo(
         newest_info = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
     }
 
-    /// Step 6: the info series used at each step.
+    /// Step 7: the info series used at each step.
     String chosen_info;
     {
         SelectQueryBuilder builder;
@@ -415,7 +440,7 @@ SQLQueryPiece applyFunctionInfo(
         chosen_info = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
     }
 
-    /// Step 7: splits each series of `v` into parts enriched by the same info series.
+    /// Step 8: splits each series of `v` into parts enriched by the same info series.
     String series_parts;
     {
         SelectQueryBuilder builder;
@@ -440,7 +465,7 @@ SQLQueryPiece applyFunctionInfo(
         series_parts = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
     }
 
-    /// Step 8: adds the data labels, two info metrics giving a label different values is an error.
+    /// Step 9: adds the data labels, two info metrics giving a label different values is an error.
     String enriched_parts;
     {
         SelectQueryBuilder builder;
@@ -508,7 +533,7 @@ SQLQueryPiece applyFunctionInfo(
         enriched_parts = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
     }
 
-    /// Step 9: collects the parts of each new series back into one grid.
+    /// Step 10: collects the parts of each new series back into one grid.
     const UInt64 num_steps = stepsInTimeSeriesRange(base.start_time, base.end_time, base.step);
     SelectQueryBuilder builder;
     builder.select_list.push_back(col(ColumnNames::NewGroup));
