@@ -848,6 +848,8 @@ def test_partitioned_write_filtered_grant():
     suffix = uuid.uuid4().hex  # suffix used for all random names
     user = f"partition_writer_{suffix}"
     table = f"partitioned_s3_table_{suffix}"
+    function_table = f"s3_function_table_{suffix}"
+    user_function_table = f"s3_function_table_by_user_{suffix}"
     allowed = f"allowed_{suffix}"
     protected = f"protected_{suffix}"
     minio_url = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}"
@@ -978,8 +980,29 @@ def test_partitioned_write_filtered_grant():
         node1.query(f"GRANT INSERT ON {table} TO {user}")
         node1.query(f"INSERT INTO {table} VALUES (1, 2, 3)", user=user)
         assert s3_keys(f"{protected}/") == [f"{protected}/1.tsv"]
+
+        # The same for a table created by an administrator as `s3(...)`: the user needs only `INSERT` on the table.
+        node1.query(
+            f"CREATE TABLE {function_table} ({columns}) "
+            f"AS s3('{minio_url}/{protected}/function_table.tsv', 'minio', '{cluster.minio_secret_key}', 'TSV')"
+        )
+        node1.query(f"GRANT INSERT ON {function_table} TO {user}")
+        node1.query(f"INSERT INTO {function_table} VALUES (1, 2, 3)", user=user)
+        assert s3_keys(f"{protected}/function_table") == [f"{protected}/function_table.tsv"]
+
+        # Reject: creating a table as `s3(...)` needs the `TABLE ENGINE` grant of `S3`, like `ENGINE = S3`, which
+        # a filtered grant does not imply, even for a URI inside it: the table could then write outside the grant.
+        node1.query(f"GRANT CREATE TABLE ON default.* TO {user}")
+        _, error = node1.query_and_get_answer_with_error(
+            f"CREATE TABLE {user_function_table} ({columns}) "
+            f"AS s3('{minio_url}/{allowed}/function_table.tsv', 'minio', '{cluster.minio_secret_key}', 'TSV')",
+            user=user,
+        )
+        assert "Not enough privileges" in error and "TABLE ENGINE" in error
     finally:
         node1.query(f"DROP TABLE IF EXISTS {table}")
+        node1.query(f"DROP TABLE IF EXISTS {function_table}")
+        node1.query(f"DROP TABLE IF EXISTS {user_function_table}")
         node1.query(f"DROP USER IF EXISTS {user}")
 
 

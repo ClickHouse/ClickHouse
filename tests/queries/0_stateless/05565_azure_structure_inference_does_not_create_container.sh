@@ -21,6 +21,9 @@ ${CLICKHOUSE_CLIENT} --query "CREATE USER $user"
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE TEMPORARY TABLE ON *.* TO $user"
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE TABLE ON ${db}.* TO $user"
 ${CLICKHOUSE_CLIENT} --query "GRANT READ ON AZURE TO $user"
+# `CREATE TABLE ... AS azureBlobStorage(...)` needs the grant of the engine, as `ENGINE = AzureBlobStorage` does.
+# It does not imply `WRITE ON AZURE`, so the structure inference below is still done with read access only.
+${CLICKHOUSE_CLIENT} --query "GRANT TABLE ENGINE ON AzureBlobStorage TO $user"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${db}.secret (marker String) ENGINE = Memory"
 
 container_state()

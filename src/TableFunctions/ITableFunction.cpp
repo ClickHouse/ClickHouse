@@ -76,9 +76,15 @@ void ITableFunction::checkEngineAccess(ContextPtr context) const
     if (!requiresTableEngineGrant())
         return;
 
-    const char * engine = isClusterFunction() ? getNonClusteredStorageEngineName() : getStorageEngineName();
-    if (engine && *engine)
+    if (const String engine = getEngineNameForAccessCheck(); !engine.empty())
         context->checkAccess(AccessType::TABLE_ENGINE, engine);
+}
+
+String ITableFunction::getEngineNameForAccessCheck() const
+{
+    /// A cluster function is checked as its non-clustered engine. It is empty when the function has no engine.
+    const char * engine = isClusterFunction() ? getNonClusteredStorageEngineName() : getStorageEngineName();
+    return engine ? engine : "";
 }
 
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
@@ -139,7 +145,11 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     /// Without `check_source_access`, the caller does the checks, e.g. `url('s3://...')` for its delegate.
     /// `INSERT` passes no cached columns, so the check is never set on a lazy `StorageTableFunctionProxy`, which would not pass it on.
     /// Without a URI, only an unfiltered grant passed the source access check, and it allows every destination.
-    if (is_insert_query && check_source_access)
+    ///
+    /// A table created with `CREATE TABLE ... AS s3(...)` stays after the query and survives restarts (it uses the global context),
+    /// and is the same as one created with `ENGINE = S3`: users insert into it with `INSERT` on the table, not with source grants.
+    /// Its creator needed `TABLE ENGINE ON S3` instead, so the check is not set on it.
+    if (is_insert_query && check_source_access && !use_global_context)
     {
         const auto access_object = getSourceAccessObject();
         if (access_object && !getFunctionURI().empty())
