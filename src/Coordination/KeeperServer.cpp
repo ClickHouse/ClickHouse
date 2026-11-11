@@ -966,6 +966,7 @@ void KeeperServer::putLocalReadRequests(const KeeperRequestsForSessions & reques
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
     }
 
+    if (raft_instance)
     {
         std::lock_guard lock(session_touches_mutex);
         if (!isLeader())
