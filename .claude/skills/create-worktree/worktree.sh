@@ -7,16 +7,18 @@
 #   worktree.sh create [--no-submodules] <main-repo> <worktree-path> <branch> [<start-point>]
 #       Create <worktree-path> on <branch>. An existing local branch is checked out as it is. A new branch needs
 #       <start-point>, for example `origin/master` or `origin/<branch>`; fetch it before.
-#   worktree.sh add-submodules <worktree-path>
-#       Set up the submodules of a worktree that was created with --no-submodules.
 #   worktree.sh update-submodules <worktree-path>
-#       After a merge or a checkout moved submodule pins in the worktree, check out the recorded commits.
+#       Set up or update the submodules of a worktree: after `create --no-submodules`, after a merge or a checkout that
+#       moved pins, or after an interrupted setup. Existing submodule git data of the worktree is kept, with its local
+#       branches, stashes and commits; missing git data is copied from the main checkout.
 #
-# Every mode first refreshes the main checkout:
-#   - Its files and submodules are fast-forwarded to the upstream of `master`, but only when it is on a clean `master`.
-#     Otherwise they stay as they are and the script says why: other sessions can use the main checkout.
-#   - Its git data (`.git/modules/*`) gets every submodule commit that the worktree needs. The network is used only for
-#     missing commits. A commit fetched by SHA is kept under `refs/pins/<sha>`, so that `git gc` does not remove it.
+# Both modes first refresh the main checkout:
+#   - When it is on a clean `master`, it is fast-forwarded to the upstream. A submodule of the main checkout moves to
+#     its new pin only when nobody works on it: detached at the previous pin, without changes in tracked files.
+#     Otherwise the files stay as they are and the script says why: other sessions can use the main checkout.
+#   - Its git data (`.git/modules/*`) gets every submodule commit that the worktree needs and does not have yet. The
+#     network is used only for missing commits, from the URL in `.gitmodules` of the worktree. A commit fetched by SHA
+#     is kept under `refs/pins/<sha>`, so that `git gc` does not remove it.
 #
 # Storage sharing:
 #   - macOS (APFS): the submodule git data and the submodule files are clones (`cp -c`) of the main checkout. A clone
@@ -63,6 +65,11 @@ locate_main()
     [ "$(basename "$common")" = .git ] || die "unexpected git dir: $common"
     GD=$common
     MAIN=$(dirname "$common")
+}
+
+# The submodule setup copies the submodule git data of the main checkout, so the main checkout must have it.
+require_main_stores()
+{
     [ -d "$GD/modules" ] || die "the main checkout $MAIN has no submodules; run \`git submodule update --init\` there once"
 }
 
@@ -125,6 +132,18 @@ git_store()
     git --git-dir="$store" --work-tree="$store" "$@"
 }
 
+# Fetches commit $3 from $2 (a URL, or the path of other git data) into submodule git data $1, keeps it under
+# refs/pins/<sha>, and checks the result. The source can be shallow (`contrib/update-submodules.sh` uses --depth=1):
+# --update-shallow moves the shallow boundary with the commit. Without it, git refuses the ref but still exits with 0,
+# and the history of the commit is broken.
+fetch_pin()
+{
+    git_store "$1" fetch -q --update-shallow "$2" "$3:refs/pins/$3" || die "fetch of $3 from $2 into $1"
+    [ "$(git_store "$1" rev-parse -q --verify "refs/pins/$3^{commit}" || true)" = "$3" ] ||
+        die "fetch of $3 from $2 into $1: the commit did not arrive"
+    git_store "$1" rev-list --max-count=2 "$3" > /dev/null || die "fetch of $3 from $2 into $1: the history is broken"
+}
+
 # Points submodule git data $1 at the submodule files in $2. A few modules keep core.worktree in config.worktree.
 set_module_worktree()
 {
@@ -140,12 +159,21 @@ set_module_worktree()
     [ "$found" = 1 ] || git config --file "$1/config" core.worktree "$2"
 }
 
-# Makes the main git data contain every commit of the gitlink list $1.
+# Makes every commit of the gitlink list $1 available in the main git data. With $2 (the git dir of a worktree), commits
+# that the git data of that worktree already has are skipped, for example a local commit in one of its submodules.
 refresh_main_stores()
 {
-    local sha path name url store tmp up
+    local wgd=${2:-} sha path name url store tmp up
     while IFS="$TAB" read -r sha path name url
     do
+        if [ -n "$wgd" ] && [ -d "$wgd/modules/$name" ] &&
+            git_store "$wgd/modules/$name" cat-file -e "$sha^{commit}" 2> /dev/null
+        then
+            continue
+        fi
+        case $url in
+            ./* | ../*) die "$path: relative submodule URLs are not supported: $url" ;;
+        esac
         store=$GD/modules/$name
         if [ ! -d "$store" ]
         then
@@ -160,8 +188,8 @@ refresh_main_stores()
         fi
         if ! git_store "$store" cat-file -e "$sha^{commit}" 2> /dev/null
         then
-            note "main git data: fetching $path $sha"
-            git_store "$store" fetch -q origin "$sha:refs/pins/$sha"
+            note "main git data: fetching $path $sha from $url"
+            fetch_pin "$store" "$url" "$sha"
         fi
     done <<< "$1"
 }
@@ -169,7 +197,7 @@ refresh_main_stores()
 # Fast-forwards the main checkout and its submodules to the upstream of master, when it is on a clean master.
 refresh_main_worktree()
 {
-    local branch f upstream old list sha path name url cur moved=0
+    local branch f upstream old_head old_list list sha path name url cur old_sha moved=0 left=""
     branch=$(git -C "$MAIN" symbolic-ref -q --short HEAD || true)
     if [ "$branch" != master ]
     then
@@ -184,7 +212,10 @@ refresh_main_worktree()
             return 0
         fi
     done
-    if [ -n "$(git -C "$MAIN" status --porcelain --untracked-files=no --ignore-submodules=all)" ]
+    # Changes in submodules are checked per submodule below: on macOS, contrib/liburing and contrib/sysroot always
+    # show changes. A staged gitlink is a change of the main checkout itself.
+    if [ -n "$(git -C "$MAIN" status --porcelain --untracked-files=no --ignore-submodules=all)" ] ||
+        ! git -C "$MAIN" diff --cached --quiet --ignore-submodules=none
     then
         note "main checkout: master has local changes; its files stay as they are"
         return 0
@@ -201,30 +232,45 @@ refresh_main_worktree()
         note "main checkout: master has commits that $upstream does not have; its files stay as they are"
         return 0
     fi
-    old=$(git -C "$MAIN" rev-parse --short HEAD)
-    if [ "$(git -C "$MAIN" rev-parse HEAD)" = "$(git -C "$MAIN" rev-parse "$upstream")" ]
+    old_head=$(git -C "$MAIN" rev-parse HEAD)
+    if [ "$old_head" = "$(git -C "$MAIN" rev-parse "$upstream")" ]
     then
-        note "main checkout: master is up to date with $upstream at $old"
-    else
-        git -C "$MAIN" merge -q --no-progress --ff-only "$upstream"
-        note "main checkout: master $old -> $(git -C "$MAIN" rev-parse --short HEAD) ($upstream)"
+        note "main checkout: master is up to date with $upstream at ${old_head:0:12}"
+        return 0
     fi
+    old_list=$(gitlinks "$MAIN")
+    git -C "$MAIN" merge -q --no-progress --ff-only "$upstream"
+    note "main checkout: master ${old_head:0:12} -> $(git -C "$MAIN" rev-parse --short=12 HEAD) ($upstream)"
 
     list=$(gitlinks "$MAIN")
-    refresh_main_stores "$list"
     while IFS="$TAB" read -r sha path name url
     do
         [ -f "$MAIN/$path/.git" ] || continue  # not initialized in the main checkout
+        old_sha=$(awk -F '\t' -v p="$path" '$2 == p { print $1 }' <<< "$old_list")
+        [ "$old_sha" != "$sha" ] || continue  # the pin did not move
         cur=$(git -C "$MAIN/$path" rev-parse HEAD)
         [ "$cur" != "$sha" ] || continue
+        # Move only a submodule that nobody works on: detached at the previous pin, without changes in tracked files.
+        if git -C "$MAIN/$path" symbolic-ref -q HEAD > /dev/null || [ "$cur" != "$old_sha" ] ||
+            ! git -C "$MAIN/$path" diff --quiet HEAD --
+        then
+            left="$left $path"
+            continue
+        fi
+        refresh_main_stores "$(printf '%s\t%s\t%s\t%s' "$sha" "$path" "$name" "$url")"
         if git -C "$MAIN/$path" -c advice.detachedHead=false checkout -q --detach "$sha"
         then
             moved=$((moved + 1))
         else
-            note "WARNING: main checkout: $path stays at $cur, because the checkout of $sha failed (see above)"
+            left="$left $path"
         fi
     done <<< "$list"
     note "main checkout: $moved submodules moved to new pins"
+    if [ -n "$left" ]
+    then
+        note "WARNING: main checkout: these submodules stay as they are (on a branch, not at the previous pin, or with" \
+            "local changes):$left"
+    fi
 }
 
 # Runs for one submodule in parallel with the others.
@@ -312,24 +358,36 @@ verify()
     fi
 }
 
-# Sets up all submodules of WT, which has none yet.
-setup_submodules()
+# Sets up or updates every submodule of WT. Existing submodule git data of the worktree is kept: it can have local
+# branches, stashes and commits that exist nowhere else. Missing git data is copied from the main checkout; only for
+# the submodules of this worktree, because git data of other submodules would keep a core.worktree that points at the
+# main checkout.
+sync_submodules()
 {
-    local list sha path name url
-    locate_worktree_git_dir
-    [ ! -e "$WGD/modules" ] || die "$WGD/modules exists: a partial setup. Remove that directory, then run add-submodules"
+    local list sha path name url store copied=0 kept=0
+    require_main_stores
     list=$(gitlinks "$WT")
     [ -n "$list" ] || die "no submodules recorded in $WT"
-    refresh_main_stores "$list"
-    # Only the submodules of this worktree: git data of other submodules would keep a core.worktree that points at
-    # the main checkout.
+    refresh_main_stores "$list" "$WGD"
     while IFS="$TAB" read -r sha path name url
     do
-        mkdir -p "$(dirname "$WGD/modules/$name")"
-        copy_store "$GD/modules/$name" "$WGD/modules/$name"
-        set_module_worktree "$WGD/modules/$name" "$WT/$path"
+        store=$WGD/modules/$name
+        if [ -d "$store" ]
+        then
+            kept=$((kept + 1))
+        else
+            mkdir -p "$(dirname "$store")"
+            copy_store "$GD/modules/$name" "$store"
+            copied=$((copied + 1))
+        fi
+        # The git data under this worktree belongs to it. This also repairs git data that points at another checkout.
+        set_module_worktree "$store" "$WT/$path"
+        if ! git_store "$store" cat-file -e "$sha^{commit}" 2> /dev/null
+        then
+            fetch_pin "$store" "$GD/modules/$name" "$sha"
+        fi
     done <<< "$list"
-    note "submodule git data: copied from the main checkout"
+    note "submodule git data: $copied copied from the main checkout, $kept kept"
     git -C "$WT" submodule --quiet init
     materialize "$list"
     note "submodule files: done"
@@ -359,60 +417,26 @@ cmd_create()
     note "worktree: $WT on $branch at $(git -C "$WT" rev-parse --short HEAD)"
     if [ "$submodules" = 0 ]
     then
-        note "submodules: skipped; run \`$0 add-submodules $WT\` before a build"
+        note "submodules: skipped; run \`$0 update-submodules $WT\` before a build"
         return 0
     fi
-    setup_submodules
-}
-
-cmd_add_submodules()
-{
-    [ $# -eq 1 ] || usage
-    locate_main "$1"
-    WT=$(cd "$1" && pwd -P)
-    [ "$(git -C "$WT" rev-parse --show-toplevel)" = "$WT" ] || die "give the top directory of the worktree"
-    refresh_main_worktree
-    setup_submodules
+    locate_worktree_git_dir
+    sync_submodules
 }
 
 cmd_update_submodules()
 {
-    local list sha path name url store
     [ $# -eq 1 ] || usage
     locate_main "$1"
     WT=$(cd "$1" && pwd -P)
     [ "$(git -C "$WT" rev-parse --show-toplevel)" = "$WT" ] || die "give the top directory of the worktree"
     locate_worktree_git_dir
-    [ -d "$WGD/modules" ] || die "$WT has no submodules yet; run add-submodules"
     refresh_main_worktree
-    list=$(gitlinks "$WT")
-    [ -n "$list" ] || die "no submodules recorded in $WT"
-    refresh_main_stores "$list"
-    git -C "$WT" submodule --quiet init
-    while IFS="$TAB" read -r sha path name url
-    do
-        store=$WGD/modules/$name
-        if [ ! -d "$store" ]
-        then
-            note "new submodule $path: copying its git data from the main checkout"
-            mkdir -p "$(dirname "$store")"
-            copy_store "$GD/modules/$name" "$store"
-        fi
-        # The git data under this worktree belongs to it. This also repairs git data that points at another checkout.
-        set_module_worktree "$store" "$WT/$path"
-        if ! git_store "$store" cat-file -e "$sha^{commit}" 2> /dev/null
-        then
-            git_store "$store" fetch -q "$GD/modules/$name" "$sha:refs/pins/$sha"
-        fi
-    done <<< "$list"
-    materialize "$list"
-    note "submodule files: done"
-    verify "$list"
+    sync_submodules
 }
 
 case ${1:-} in
     create) shift; cmd_create "$@" ;;
-    add-submodules) shift; cmd_add_submodules "$@" ;;
     update-submodules) shift; cmd_update_submodules "$@" ;;
     *) usage ;;
 esac

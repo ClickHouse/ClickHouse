@@ -17,7 +17,7 @@ The script never clones a submodule from the network when the main checkout has 
 
 ## Rules
 
-- **Never run `git submodule update --init`, or any `git submodule update`, in a worktree.** In a worktree, it clones each submodule from GitHub into a private copy of the git data (15-17 GiB in total) and checks out the files again. Use `worktree.sh add-submodules` or `worktree.sh update-submodules` instead.
+- **Never run `git submodule update --init`, or any `git submodule update`, in a worktree.** In a worktree, it clones each submodule from GitHub into a private copy of the git data (15-17 GiB in total) and checks out the files again. Use `worktree.sh update-submodules` instead.
 - **Remove a worktree with `git -C <MAIN_REPO> worktree remove --force <WORKTREE_PATH>`.** It also deletes `<MAIN_REPO>/.git/worktrees/<name>`, which holds the submodule git data. If the directory is already gone, run `git -C <MAIN_REPO> worktree prune`, which deletes that data. Deleting only the worktree directory leaves the data on disk.
 - Remove a worktree when its PR is merged. Each worktree has its own submodule files.
 
@@ -61,7 +61,7 @@ Submodules are needed only to build or to run tests in the worktree.
 - **Skip them** (`--no-submodules`) when the work is text only: docs, comments, changelog entries, `.md` files, typo fixes that need no compile.
 - **Set them up** when the work involves `ninja` or tests in this worktree.
 
-If you are not sure, use `AskUserQuestion`: "Will you build or run tests in this worktree? (No: skip the submodule setup, much faster)". Submodules can be added later with `add-submodules`.
+If you are not sure, use `AskUserQuestion`: "Will you build or run tests in this worktree? (No: skip the submodule setup, much faster)". Submodules can be added later with `update-submodules`.
 
 ### 5. Run the script
 
@@ -86,23 +86,22 @@ Report to the user:
 
 ## Later: update or add submodules
 
-- **After a merge or a checkout that moved submodule pins** in the worktree (for example a merge of master):
-  ```bash
-  ${CLAUDE_SKILL_DIR}/worktree.sh update-submodules <WORKTREE_PATH>
-  ```
-  It reads the pins from the index, so it also works during a merge, after the conflicts in the submodules are resolved. It does not use `-f`: when local changes in a submodule are in the way, it fails for that submodule, and the user decides.
-- **A worktree was created with `--no-submodules`, and now it needs a build:**
-  ```bash
-  ${CLAUDE_SKILL_DIR}/worktree.sh add-submodules <WORKTREE_PATH>
-  ```
-  If it reports that `<MAIN_REPO>/.git/worktrees/<name>/modules` exists, that directory is a partial setup, for example from an earlier `git submodule update --init`. Remove that directory, then run `add-submodules` again.
+Run this when a merge or a checkout moved submodule pins in the worktree (for example a merge of master), when a worktree created with `--no-submodules` now needs a build, or when an earlier setup was interrupted:
+
+```bash
+${CLAUDE_SKILL_DIR}/worktree.sh update-submodules <WORKTREE_PATH>
+```
+
+- It keeps the existing submodule git data of the worktree (`<MAIN_REPO>/.git/worktrees/<name>/modules`), with its local branches, stashes and commits, and copies only the missing git data from the main checkout. Never delete that directory to "repair" a worktree: it can hold the only copy of local submodule work.
+- It reads the pins from the index, so it also works during a merge, after the conflicts in the submodules are resolved.
+- It does not use `-f` for submodules that are already checked out: when local changes are in the way, it fails for that submodule, and the user decides.
 
 ## What the script does
 
 1. **Refreshes the main checkout.**
-   - If the main checkout is on a clean `master`, it fast-forwards `master` and its submodules to the upstream branch. Otherwise it leaves the files as they are and says why: other sessions can use the main checkout.
-   - It makes the main git data (`<MAIN_REPO>/.git/modules/*`) contain every submodule commit that the worktree needs. It uses the network only for missing commits, and keeps each commit fetched by SHA under `refs/pins/<sha>`, so that `git gc` does not remove it. A submodule that is new in the worktree is cloned into the main git data, so that the next worktree can share it.
-2. **Copies the submodule git data** from `<MAIN_REPO>/.git/modules` to `<MAIN_REPO>/.git/worktrees/<name>/modules`: clones on macOS; on Linux, hardlinks for the object files and real copies for all other files, so that a fetch in one worktree (`FETCH_HEAD`, reflogs, index) does not change the others.
+   - If the main checkout is on a clean `master`, it fast-forwards `master` to the upstream branch. A submodule of the main checkout moves to its new pin only when nobody works on it: it is detached at the previous pin and has no changes in tracked files. Otherwise the files stay as they are, and the script says why: other sessions can use the main checkout.
+   - It makes the main git data (`<MAIN_REPO>/.git/modules/*`) contain every submodule commit that the worktree needs and does not have yet. It uses the network only for missing commits, from the URL in the `.gitmodules` of the worktree (a branch can move a submodule to a fork). It keeps each commit fetched by SHA under `refs/pins/<sha>`, so that `git gc` does not remove it, and checks that the commit and its history arrived; a shallow source (`contrib/update-submodules.sh` uses `--depth=1`) is supported. A submodule that is new in the worktree is cloned into the main git data, so that the next worktree can share it.
+2. **Copies the missing submodule git data** from `<MAIN_REPO>/.git/modules` to `<MAIN_REPO>/.git/worktrees/<name>/modules`, only for the submodules of the worktree: clones on macOS; on Linux, hardlinks for the object files and real copies for all other files, so that a fetch in one worktree (`FETCH_HEAD`, reflogs, index) does not change the others.
 3. **Sets up the submodule files.** On macOS, it clones the files of each submodule from the main checkout, and then checks out only the files that differ from the recorded commit. On Linux, it checks out the recorded commit. The heaviest submodules start first.
 4. **Checks the result:** every submodule must be at the commit that the superproject records. It also lists the submodules that have modified files. On macOS, `contrib/liburing` and `contrib/sysroot` always show modified files, because they have file names that differ only in case.
 
