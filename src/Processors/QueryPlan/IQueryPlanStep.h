@@ -4,7 +4,7 @@
 #include <Common/ListWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/ActionsDAG.h>
+#include <base/types.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <span>
@@ -14,6 +14,8 @@
 
 namespace DB
 {
+
+class ActionsDAG;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
@@ -37,6 +39,10 @@ struct ExplainPlanOptions;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+
+/// Defined in Processors/QueryPlan/Serialization.h.
+struct QueryPlanStepSerialization;
+struct QueryPlanStepDeserialization;
 
 struct ExplainFormatSettings;
 
@@ -77,8 +83,8 @@ public:
     template <size_t size>
     ALWAYS_INLINE void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description, size - 1); }
 
-    struct Serialization;
-    struct Deserialization;
+    using Serialization = QueryPlanStepSerialization;
+    using Deserialization = QueryPlanStepDeserialization;
 
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
