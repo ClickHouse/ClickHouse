@@ -1,34 +1,44 @@
-# The members share one target directory, so their cargo runs take its lock in turn. One run of the root package, which
-# depends on every enabled member, compiles them in parallel first; the run of each member then compiles only its crate.
-set(_crates _ch_rust_skim_rust _ch_rust_prql _ch_rust_polyglot _ch_rust_vortex _ch_rust_pco _ch_rust_wasmtime _ch_rust_delta_kernel _ch_rust_chdig)
-set(_features skim prql polyglot vortex pco wasmtime delta_kernel chdig)
-
-set(_enabled_crates "")
-set(_enabled_features "")
-foreach (_crate _feature IN ZIP_LISTS _crates _features)
-    if (TARGET cargo-build_${_crate})
-        list(APPEND _enabled_crates ${_crate})
-        list(APPEND _enabled_features ${_feature})
-    endif()
-endforeach()
-
-# With LTO (the `release-thinlto` profile) the run of each member does the code generation of its whole dependency graph
-# itself and recompiles a large part of what the root run built, so the root run would only add work.
-if (NOT _enabled_crates OR (ENABLE_THINLTO AND NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
+# The one static library of the Rust workspace: the root package re-exports every enabled member (see `src/lib.rs`), so
+# one cargo run compiles them all in parallel and one archive holds them, with the standard library and the crates they
+# share linked once. The members only add the interface targets that link it (`clickhouse_add_rust_member`).
+get_property(_features GLOBAL PROPERTY CLICKHOUSE_RUST_FEATURES)
+if (NOT _features)
     return()
 endif()
 
-# The only package of the workspace that is static in its manifest; `CRATES` would only add a redundant `OVERRIDE_CRATE_TYPE`.
-clickhouse_import_crate(MANIFEST_PATH "${RUST_CONTRIB_WORKSPACE_MANIFEST}" FEATURES ${_enabled_features})
-clickhouse_config_crate_env(_ch_rust_workspace)
+clickhouse_import_crate(MANIFEST_PATH "${RUST_CONTRIB_WORKSPACE_MANIFEST}" FEATURES ${_features})
+clickhouse_config_crate_flags(_ch_rust_workspace)
 
-# The root run builds the build scripts of the members as well, so it needs what their runs need (OpenSSL).
-foreach (_crate IN LISTS _enabled_crates)
-    add_dependencies(cargo-prebuild_${_crate} cargo-build__ch_rust_workspace)
-    get_target_property(_deps _cargo-build_${_crate} MANUALLY_ADDED_DEPENDENCIES)
-    foreach (_dep IN LISTS _deps)
-        if (_dep AND NOT _dep MATCHES "^cargo-prebuild_")
-            add_dependencies(_cargo-build__ch_rust_workspace ${_dep})
-        endif()
-    endforeach()
-endforeach()
+get_property(_build_depends GLOBAL PROPERTY CLICKHOUSE_RUST_BUILD_DEPENDS)
+if (_build_depends)
+    list(REMOVE_DUPLICATES _build_depends)
+    add_dependencies(_cargo-build__ch_rust_workspace ${_build_depends})
+endif()
+
+# Strip the internal symbols of the library after it is built.
+#
+# The crates define hundreds of thousands of global Rust symbols (268K for Vortex alone, 19 MiB of names; the parser
+# combinator of PRQL produces enormous ones). None of them is callable from C++: the entry points are C functions and
+# the C++ code of `cxx`, so the script localizes and drops the Rust symbols and keeps everything else.
+#
+# Note: `clickhouse-stripped` drops the debug info but keeps `.symtab` and `.strtab`.
+#
+# Skip in tidy builds where CMAKE_AR is a dummy script that doesn't extract archives.
+# Skip in sanitizer builds where instrumentation adds special symbols (e.g.,
+# ___asan_globals_registered) that the partial link + strip process breaks.
+# Skip on Darwin where objects are Mach-O (ld.lld -r only handles ELF).
+# Skip on ppc64le where ld.lld -r produces broken .eh_frame relocations.
+if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN
+    AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
+    # Use ld.lld for partial linking — it's a cross-linker that handles all ELF architectures,
+    # unlike the host ld which may not support the target architecture.
+    ch_find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+    if (_LLD_FOR_STRIP)
+        clickhouse_postprocess_rust_lib(_ch_rust_workspace
+            STEP strip_rust_symbols
+            SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
+            ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
+            COMMENT "Stripping internal symbols from the Rust library"
+        )
+    endif ()
+endif ()

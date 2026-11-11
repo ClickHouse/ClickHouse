@@ -12,13 +12,13 @@ members = [
 ]
 resolver = "2"
 
-# Depends on every enabled member, so that one cargo run compiles them all (see CMakeLists.txt). Nothing links it.
+# Re-exports every enabled member: the one static library of the workspace (see CMakeLists.txt).
 [package]
 name = "_ch_rust_workspace"
 version = "0.1.0"
 edition = "2021"
 
-# Static in the manifest, unlike the members: nothing depends on it, so cargo writes no other archive.
+# The members stay plain libraries: cargo writes every crate type of a manifest for a dependency too.
 [lib]
 crate-type = ["staticlib"]
 

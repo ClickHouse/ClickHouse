@@ -54,8 +54,8 @@ Discover the actual target names before building — do not guess:
 ninja -C "$BUILD_DIR" -t targets | grep -i "$LIB"
 ```
 
-The cargo target may be `_cargo-build__ch_rust_<lib>` rather than `_ch_rust_<lib>`; the final binary target is
-`clickhouse`. If a failure mentions a copied upstream header, check whether a new API addition lacks its feature
+All members are built by one cargo target, `_cargo-build__ch_rust_workspace` (`_ch_rust_<lib>` is only an interface
+target); the final binary target is `clickhouse`. If a failure mentions a copied upstream header, check whether a new API addition lacks its feature
 guard in the C++ wrapper header, whether the C and C++ headers disagree on which features gate a declaration, or
 whether the build directory still holds stale copied headers.
 

@@ -314,17 +314,8 @@ function(clickhouse_import_crate)
         endif()
     endif()
 
-    # The crates are plain libraries, made static only by their own run: cargo writes every crate type of a manifest for
-    # a dependency too, and the root package of the workspace depends on all of them.
-    cmake_parse_arguments(_arg "" "" "CRATES" ${ARGN})
-    set(override_crate_types "")
-    foreach (crate IN LISTS _arg_CRATES)
-        list(APPEND override_crate_types "${crate}=staticlib")
-    endforeach()
-
     disable_dummy_launchers_if_needed()
     corrosion_import_crate(${ARGN}
-            OVERRIDE_CRATE_TYPE ${override_crate_types}
             # We set manually the cargo config flags via command line `--config` option
             # We have to do it this way because workspaces are built from source folder and we can't place the `config.toml`
             # there, as it would conflict if you have multiple build folders
@@ -605,4 +596,19 @@ function(clickhouse_config_crate_flags target_name)
                 "platform; skipping symbol localization for ${target_name}")
         endif()
     endif()
+endfunction()
+
+# Add a member of the Rust workspace: the interface target `<crate>`, which links the one static library of the
+# workspace, `_ch_rust_workspace` (imported by `contrib/rust-contrib-workspace` after every member), and enables the
+# feature of the root package that re-exports the member.
+#
+#     clickhouse_add_rust_member(<crate> FEATURE <feature> [BUILD_DEPENDS <target> ...])
+#
+# BUILD_DEPENDS are targets the cargo run needs to be built first, such as libraries a build script looks for.
+function(clickhouse_add_rust_member crate)
+    cmake_parse_arguments(ARG "" "FEATURE" "BUILD_DEPENDS" ${ARGN})
+    add_library(${crate} INTERFACE)
+    target_link_libraries(${crate} INTERFACE _ch_rust_workspace)
+    set_property(GLOBAL APPEND PROPERTY CLICKHOUSE_RUST_FEATURES ${ARG_FEATURE})
+    set_property(GLOBAL APPEND PROPERTY CLICKHOUSE_RUST_BUILD_DEPENDS ${ARG_BUILD_DEPENDS})
 endfunction()
