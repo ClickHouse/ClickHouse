@@ -2836,6 +2836,10 @@ Total time spent reading Iceberg `metadata.json` files from storage, including d
 
 Number of Iceberg `metadata.json` files read from storage (not served from the Iceberg metadata cache).
 
+### IcebergMetadataJSONValidations {#icebergmetadatajsonvalidations}
+
+Number of times an Iceberg `metadata.json` was checked for the fields the Iceberg specification requires. A file served from the Iceberg metadata cache is checked once.
+
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
 Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.
