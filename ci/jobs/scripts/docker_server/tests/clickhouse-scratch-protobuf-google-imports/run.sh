@@ -1,6 +1,7 @@
 #!/bin/bash
 # Verify that the image contains the standard Protobuf schemas (`google_protos_path`), so a format schema can
-# import e.g. `google/protobuf/wrappers.proto`.
+# import e.g. `google/protobuf/wrappers.proto`. Only the `FROM scratch` image guarantees them (`clickhouse-scratch-*`):
+# an image installed from a single binary with `clickhouse install` has no such directory.
 set -eo pipefail
 
 dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
