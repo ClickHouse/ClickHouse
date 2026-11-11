@@ -43,6 +43,12 @@ void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & no
 /// already meant to be off must not surface a parallel-replicas-only exception.
 void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context);
 
+/// Whether a correlated subquery cannot be evaluated once per distinct value of its correlated columns
+/// instead of once per outer row (used for `LATERAL` and for the analyzer's rewrite of a correlated `IN`).
+bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node);
+bool lateralSubqueryHasVolatileHiddenFilter(const QueryTreeNodePtr & node, const ContextPtr & query_context);
+bool lateralSubqueryReadsOpaqueView(const QueryTreeNodePtr & node);
+
 /// Build JOIN TREE query plan for query node
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const SelectQueryInfo & select_query_info,

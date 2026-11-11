@@ -193,6 +193,16 @@ private:
         const ProjectionNames & parameters_projection_names,
         IdentifierResolveScope & scope);
 
+    /// Rewrites `x [NOT] IN (correlated subquery)` into `[NOT] EXISTS (SELECT 1 FROM (subquery) WHERE x = <column>)`.
+    ProjectionNames resolveInWithCorrelatedSubquery(
+        QueryTreeNodePtr & node,
+        const String & function_name,
+        const QueryTreeNodePtr & in_first_argument,
+        QueryTreeNodePtr in_second_argument,
+        const QueryTreeNodePtr & unresolved_in_arguments,
+        ProjectionNames in_projection_names,
+        IdentifierResolveScope & scope);
+
     QueryTreeNodePtr convertTupleToArray(
         const QueryTreeNodes & tuple_args,
         const QueryTreeNodePtr & in_first_argument,
@@ -377,6 +387,12 @@ private:
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_type_only;
 
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
+
+    /// Unresolved arguments of a rewritten correlated IN, for a function node resolved again (as a condition of `if` is).
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> correlated_in_function_to_unresolved_arguments;
+
+    /// Functions built by the correlated IN rewrite, never resolved as a lambda of the scope with the same name.
+    std::unordered_set<QueryTreeNodePtr> builtin_only_function_nodes;
 
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)
     /// by tree hash, so syntactically-identical calls fold to the same constant. See `resolveFunction`.

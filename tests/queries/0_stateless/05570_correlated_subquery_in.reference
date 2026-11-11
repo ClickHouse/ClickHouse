@@ -1,0 +1,39 @@
+issue
+1
+2
+1
+2
+1
+2
+1
+2
+3
+4
+parity
+Int32 / Int32	1	1	1	0	1	1	1
+Int32 / Int32	1	2	0	1	1	1	1
+Int32 / Int32	2	2	1	0	1	1	1
+Int32 / Int32	2	3	1	0	1	1	1
+Int32 / Int32	3	1	0	1	1	1	1
+Nullable(Int32) / Int64	1	1	1	0	1	1	1
+Nullable(Int32) / Int64	1	\N	\N	\N	1	1	1
+Nullable(Int32) / Int64	2	2	0	1	1	1	1
+Nullable(Int32) / Int64	3	\N	\N	\N	1	1	1
+Int16 / Nullable(Int32)	1	1	1	0	1	1	1
+Int16 / Nullable(Int32)	1	3	0	1	1	1	1
+Int16 / Nullable(Int32)	2	3	0	1	1	1	1
+Int16 / Nullable(Int32)	3	1	0	1	1	1	1
+Decimal32(2) / Int32	1	1.5	1	0	1	1	1
+Decimal32(2) / Int32	1	2	0	1	1	1	1
+Decimal32(2) / Int32	2	1	1	0	1	1	1
+Decimal32(2) / Int32	3	1	0	1	1	1	1
+UInt8 / Bool	1	0	0	1	1	1	1
+UInt8 / Bool	1	1	1	0	1	1	1
+UInt8 / Bool	1	2	1	0	1	1	1
+UInt8 / Bool	2	0	1	0	1	1	1
+UInt8 / Bool	3	1	0	1	1	1	1
+LowCardinality(Nullable(String)) / String	1	a	1	0	1	1	1
+LowCardinality(Nullable(String)) / String	1	b	0	1	1	1	1
+LowCardinality(Nullable(String)) / String	1	\N	\N	\N	1	1	1
+LowCardinality(Nullable(String)) / String	2	b	1	0	1	1	1
+LowCardinality(Nullable(String)) / String	3	a	0	1	1	1	1
