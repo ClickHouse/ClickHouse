@@ -65,11 +65,16 @@ void DatabaseMemory::createTable(
 }
 
 void DatabaseMemory::dropTable(
-    ContextPtr /*context*/,
+    ContextPtr local_context,
     const String & table_name,
-    bool /*sync*/)
+    bool sync)
 {
     ensurePopulated();
+
+    /// Drop the inner tables while the table is still attached, as `DatabaseAtomic::dropTable` does.
+    if (auto table_to_drop = tryGetTable(table_name, local_context))
+        table_to_drop->dropInnerTableIfAny(sync, local_context);
+
     StoragePtr table;
     {
         std::lock_guard lock{mutex};

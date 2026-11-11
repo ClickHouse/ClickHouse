@@ -1,4 +1,5 @@
 #include <Parsers/ASTRenameQuery.h>
+#include <Backups/BackupUtils.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -26,6 +27,13 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+bool UniqueTableName::operator<(const UniqueTableName & rhs) const
+{
+    bool is_inner = BackupUtils::isInnerTable(database_name, table_name);
+    bool rhs_is_inner = BackupUtils::isInnerTable(rhs.database_name, rhs.table_name);
+    return std::tie(is_inner, database_name, table_name) < std::tie(rhs_is_inner, rhs.database_name, rhs.table_name);
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)

@@ -347,17 +347,10 @@ StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, c
     chassert(target.table_id.empty());
 
     /// For inner targets in non-Atomic databases, `target.table_id` is empty and we look up the inner table by its constructed name.
-    StorageID time_series_table_id = getStorageID();
-    StorageID inner_table_id{time_series_table_id.getDatabaseName(), getTimeSeriesInnerTableName(target_kind, time_series_table_id, getVersion())};
-
-    if (auto res = lookup(inner_table_id))
-        return res;
-
-    /// Fallback for legacy tables created before the samples inner table was renamed
-    /// from `.inner.data.*` to `.inner.samples.*`
-    if (target_kind == ViewTarget::Samples)
+    StorageID inner_table_id = StorageID::createEmpty();
+    for (const auto & name : getInnerTableNames(target_kind))
     {
-        inner_table_id.table_name = getTimeSeriesInnerTableName("data", time_series_table_id);
+        inner_table_id = StorageID{getStorageID().getDatabaseName(), name};
         if (auto res = lookup(inner_table_id))
             return res;
     }
@@ -369,6 +362,20 @@ StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, c
     }
 
     return nullptr;
+}
+
+
+Strings StorageTimeSeries::getInnerTableNames(ViewTarget::Kind target_kind) const
+{
+    auto table_id = getStorageID();
+    Strings names{getTimeSeriesInnerTableName(target_kind, table_id, getVersion())};
+
+    /// Fallback for legacy tables created before the samples inner table was renamed
+    /// from `.inner.data.*` to `.inner.samples.*`
+    if (target_kind == ViewTarget::Samples)
+        names.push_back(getTimeSeriesInnerTableName("data", table_id));
+
+    return names;
 }
 
 
@@ -485,26 +492,40 @@ void StorageTimeSeries::drop()
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
     /// Running synchronous DROP from that task leads to deadlock.
-    dropInnerTableIfAny(/* sync= */ false, getContext());
+    /// No DDL guard is taken here, so the drop task does not wait for DDL queries.
+    dropInnerTables(/* sync= */ false, getContext(), /* need_ddl_guard= */ false);
 }
 
 void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
+    dropInnerTables(sync, local_context, /* need_ddl_guard= */ true);
+}
+
+void StorageTimeSeries::dropInnerTables(bool sync, ContextPtr local_context, bool need_ddl_guard)
+{
     if (!hasInnerTables())
         return;
 
+    auto table_id = getStorageID();
     for (auto target_kind : getTargetKinds())
     {
         if (isInnerTable(target_kind))
         {
+            std::vector<StorageID> inner_table_ids;
             if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
             {
-                /// DDLGuards must be locked in order of increasing table name, so the inner guard
-                /// may be requested only when this table's name sorts first.
-                bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
-                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
-                                                    sync, /* ignore_sync_setting= */ true, may_lock_ddl_guard);
+                inner_table_ids.push_back(std::move(inner_table_id));
             }
+            /// A table that is not attached, e.g. during `SYSTEM RESTART REPLICA`, is guarded by every name it may have.
+            else if (need_ddl_guard)
+            {
+                for (const auto & name : getInnerTableNames(target_kind))
+                    inner_table_ids.emplace_back(table_id.database_name, name);
+            }
+
+            for (const auto & inner_table_id : inner_table_ids)
+                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
+                                                       sync, /* ignore_sync_setting= */ true, need_ddl_guard);
         }
     }
 }
@@ -534,22 +555,26 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
                         getStorageID().getNameForLogs());
     }
 
-    /// The caches are cleared before the truncation: if it fails in the middle, the next insert writes its rows again instead of skipping them.
-    clearCaches();
-
+    /// All inner tables are resolved first, so a missing one fails the query before any of them is truncated.
+    std::vector<StorageID> inner_table_ids;
     for (auto target_kind : getTargetKinds())
     {
         /// We truncate only inner tables here.
         if (isInnerTable(target_kind))
-        {
-            auto inner_table_id = getTargetTableID(target_kind, local_context);
-            /// `propagate_metadata_transaction` is false because the transaction can only be consumed once, so the DDL worker
-            /// commits it after all the inner tables are truncated. If the server dies in between, the entry is executed
-            /// again, which is safe: TRUNCATE is idempotent.
-            InterpreterDropQuery::executeDropQuery(
-                ASTDropQuery::Kind::Truncate, getContext(), local_context, inner_table_id, /* sync= */ true,
-                /* ignore_sync_setting= */ false, /* need_ddl_guard= */ false, /* propagate_metadata_transaction= */ false);
-        }
+            inner_table_ids.push_back(getTargetTableID(target_kind, local_context));
+    }
+
+    /// The caches are cleared before the truncation: if it fails in the middle, the next insert writes its rows again instead of skipping them.
+    clearCaches();
+
+    for (const auto & inner_table_id : inner_table_ids)
+    {
+        /// `propagate_metadata_transaction` is false because the transaction can only be consumed once, so the DDL worker
+        /// commits it after all the inner tables are truncated. If the server dies in between, the entry is executed
+        /// again, which is safe: TRUNCATE is idempotent.
+        InterpreterDropQuery::executeDropQuery(
+            ASTDropQuery::Kind::Truncate, getContext(), local_context, inner_table_id, /* sync= */ true,
+            /* ignore_sync_setting= */ false, /* need_ddl_guard= */ true, /* propagate_metadata_transaction= */ false);
     }
 }
 
