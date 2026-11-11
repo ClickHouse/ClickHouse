@@ -43,6 +43,8 @@ public:
     void setStructureHint(const ColumnsDescription & structure_hint_) override;
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
+
+    std::optional<bool> mayHaveColumnOutsideStructure(const String & column_name, const ContextPtr & context) const override;
     bool hasStaticStructure() const override;
     bool hasUnreplicatedTableDataOnDisk() const override;
     void setPartitionBy(const ASTPtr & partition_by_) override;

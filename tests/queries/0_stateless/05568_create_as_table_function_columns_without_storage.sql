@@ -1,0 +1,44 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: needs `s3` and `icebergLocal`
+
+-- `CREATE` checks the columns of a table `AS` a file-like table function (05567) without building the storage of the
+-- function, which would list the files for the hive partition columns, or read the metadata of a data lake.
+-- https://github.com/ClickHouse/ClickHouse/issues/129062
+
+SELECT '--- the files of a path with globs are not listed';
+-- The host is not reachable, so listing the files would retry for a long time.
+CREATE TABLE t_s3_glob (a UInt8, _path String, k String) AS s3('http://127.0.0.1:1/bucket/*.csv', 'CSV', 'a UInt8');
+SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't_s3_glob' ORDER BY position;
+
+SELECT '--- without globs, the hive partition columns are those of the path';
+CREATE TABLE t_s3_path (a UInt8, k String) AS s3('http://127.0.0.1:1/bucket/k=v/f.csv', 'CSV', 'a UInt8');
+CREATE TABLE t_s3_missing (a UInt8, x String) AS s3('http://127.0.0.1:1/bucket/k=v/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+
+SELECT '--- the hive partition columns of a pattern of alternatives are those of its first address, which needs no request';
+CREATE TABLE t_s3_pattern (a UInt8, k String) AS s3('http://127.0.0.1:1/bucket/{k=v1,k=v2}/f.csv', 'CSV', 'a UInt8');
+CREATE TABLE t_s3_pattern_missing (a UInt8, j String) AS s3('http://127.0.0.1:1/bucket/{k=v1,k=v2}/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+
+SELECT '--- a placeholder is not a glob, and a partition strategy has no hive partition columns';
+CREATE TABLE t_s3_placeholder (a UInt8, k String) AS s3('http://127.0.0.1:1/bucket/{_partition_id}.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+CREATE TABLE t_s3_strategy (a UInt8, k String) AS s3('http://127.0.0.1:1/bucket/k=v/f.csv', 'CSV', 'a UInt8', partition_strategy = 'hive'); -- { serverError THERE_IS_NO_COLUMN }
+
+SELECT '--- the response headers of url';
+CREATE TABLE t_url (a UInt8, _headers Map(LowCardinality(String), LowCardinality(String))) AS url('http://127.0.0.1:1/f.csv', 'CSV', 'a UInt8');
+SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't_url' ORDER BY position;
+CREATE TABLE t_url_missing (a UInt8, x String) AS url('http://127.0.0.1:1/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+-- A query string is not a glob.
+CREATE TABLE t_url_query (a UInt8, x String) AS url('http://127.0.0.1:1/f.csv?x=1', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+CREATE TABLE t_url_pattern (a UInt8, k String) AS url('http://127.0.0.1:1/{k=v1,k=v2}/f.csv', 'CSV', 'a UInt8');
+CREATE TABLE t_url_pattern_missing (a UInt8, j String) AS url('http://127.0.0.1:1/{k=v1,k=v2}/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+
+SELECT '--- a data lake that has no metadata yet';
+CREATE TABLE t_iceberg (a UInt8, _path String) AS icebergLocal(currentDatabase() || '_05568_ice', 'Parquet', 'a UInt8');
+-- A data lake has no hive partition columns.
+CREATE TABLE t_iceberg_missing (a UInt8, k String) AS icebergLocal(currentDatabase() || '_05568_ice', 'Parquet', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+
+DROP TABLE t_s3_glob;
+DROP TABLE t_s3_path;
+DROP TABLE t_s3_pattern;
+DROP TABLE t_url;
+DROP TABLE t_url_pattern;
+DROP TABLE t_iceberg;

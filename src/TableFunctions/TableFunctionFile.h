@@ -26,6 +26,8 @@ public:
     /// A table over an explicit path keeps its data in a local unreplicated file, see `StorageFile::hasUnreplicatedTableDataOnDisk`.
     bool hasUnreplicatedTableDataOnDisk() const override { return fd < 0; }
 
+    std::optional<bool> mayHaveColumnOutsideStructure(const String & column_name, const ContextPtr & context) const override;
+
 protected:
     int fd = -1;
     std::optional<StorageFile::FileSource> file_source;

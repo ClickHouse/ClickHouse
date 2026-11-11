@@ -18,6 +18,8 @@ x
 1	v1
 2	v1
 3	v2
+1	v1
+2	v1
 --- a function whose storage takes the columns of the table
 payload	JSON
 --- a function that takes the columns of the table as its structure is not checked

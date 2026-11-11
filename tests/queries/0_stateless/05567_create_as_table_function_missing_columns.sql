@@ -42,12 +42,20 @@ INSERT INTO TABLE FUNCTION file(currentDatabase() || '_05567_hive/k=v2/f.csv', '
 SETTINGS engine_file_truncate_on_insert = 1;
 CREATE TABLE t_virtual (a UInt8, _path String, _file String) AS file(currentDatabase() || '_05567_hive/*/f.csv', 'CSV', 'a UInt8');
 SELECT a, _file, endsWith(_path, '/f.csv') FROM t_virtual ORDER BY a;
--- `use_hive_partitioning` is enabled by default.
+-- `use_hive_partitioning` is enabled by default. A path with globs may match a hive partition column of any name, so the
+-- name is accepted without depending on the files that exist now, also if no file matches the path yet.
 CREATE TABLE t_hive (a UInt8, k String) AS file(currentDatabase() || '_05567_hive/*/f.csv', 'CSV', 'a UInt8');
 SELECT a, k FROM t_hive ORDER BY a;
-CREATE TABLE t_not_virtual (a UInt8, _nothing String) AS file(currentDatabase() || '_05567_hive/*/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
--- The hive partition columns come from the files that match the path at `CREATE`, so without such files `k` is rejected.
-CREATE TABLE t_hive_no_files (a UInt8, k String) AS file(currentDatabase() || '_05567_no_files/*/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+CREATE TABLE t_hive_no_files (a UInt8, k String) AS file(currentDatabase() || '_05567_no_files/*/f.csv', 'CSV', 'a UInt8');
+-- Without globs, the hive partition columns are those of the path.
+CREATE TABLE t_hive_path (a UInt8, k String) AS file(currentDatabase() || '_05567_hive/k=v1/f.csv', 'CSV', 'a UInt8');
+SELECT a, k FROM t_hive_path ORDER BY a;
+CREATE TABLE t_not_hive (a UInt8, j String) AS file(currentDatabase() || '_05567_hive/k=v1/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+CREATE TABLE t_not_virtual (a UInt8, _nothing String) AS file(currentDatabase() || '_05567_hive/k=v1/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+-- A file in an archive has no hive partition columns.
+CREATE TABLE t_archive (a UInt8, k String) AS file(currentDatabase() || '_05567_hive/k=v1/a.zip :: f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+-- A path with `{_partition_id}` is not listed, so it is not a glob: its hive partition columns are those of the path.
+CREATE TABLE t_partition_id (a UInt8, j String) AS file(currentDatabase() || '_05567_hive/k=v1/{_partition_id}.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
 
 SELECT '--- a function whose storage takes the columns of the table';
 SET enable_elasticsearch = 1;
@@ -65,4 +73,6 @@ DROP TABLE t_hint;
 DROP TABLE t_subcolumn;
 DROP TABLE t_virtual;
 DROP TABLE t_hive;
+DROP TABLE t_hive_no_files;
+DROP TABLE t_hive_path;
 DROP TABLE t_elasticsearch;

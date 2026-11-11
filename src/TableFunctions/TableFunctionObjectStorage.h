@@ -53,6 +53,18 @@ public:
         return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
     }
 
+    std::optional<bool> mayHaveColumnOutsideStructure(const String & column_name, const ContextPtr & context) const override
+    {
+        /// A data lake has no hive partition columns.
+        if constexpr (is_data_lake)
+            return VirtualColumnUtils::getVirtualNamesForFileLikeStorage().contains(column_name);
+        return VirtualColumnUtils::mayHaveVirtualColumnOfFileLikeStorage(
+            column_name,
+            StorageObjectStorage::tryGetPathSampleWithoutListing(*configuration, /*distributed_processing=*/ false),
+            configuration->partition_strategy_type,
+            context);
+    }
+
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
         StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true);

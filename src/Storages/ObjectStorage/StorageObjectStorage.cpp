@@ -106,15 +106,10 @@ bool isPathRefusedByReader(int code)
 
 }
 
-String StorageObjectStorage::getPathSample(ContextPtr context)
+std::optional<String> StorageObjectStorage::tryGetPathSampleWithoutListing(
+    const StorageObjectStorageConfiguration & configuration, bool distributed_processing)
 {
-    const auto path = configuration->getRawPath();
-
-    /// When use_hive_partitioning is enabled, we need a real file path even in distributed mode
-    /// (not a path from the distributed task queue), so force distributed_processing to false.
-    bool local_distributed_processing = distributed_processing;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        local_distributed_processing = false;
+    const auto path = configuration.getRawPath();
 
     /// An archive entry is exposed as `<archive path>::<path in archive>` (see `ObjectInfoInArchive::getPath`),
     /// so the sample path can be synthesized the same way as for a plain object as long as the member name is
@@ -122,15 +117,15 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// path is needed only to infer hive partitioning, and `parseHivePartitioningKeysAndValues` looks only at
     /// the directory part of the path - which is fully contained in the outer archive path. So a globbed member
     /// name is simply omitted from the sample instead of disabling the fast path.
-    const bool is_archive = configuration->isArchive();
-    const bool member_name_is_known = !is_archive || !configuration->isPathInArchiveWithGlobs();
-    const String archive_suffix = member_name_is_known && is_archive ? "::" + configuration->getPathInArchive() : "";
+    const bool is_archive = configuration.isArchive();
+    const bool member_name_is_known = !is_archive || !configuration.isPathInArchiveWithGlobs();
+    const String archive_suffix = member_name_is_known && is_archive ? "::" + configuration.getPathInArchive() : "";
 
     /// For non-glob paths, return directly without any S3 API calls.
     /// Besides saving a request, this keeps hive partition inference working for an explicitly
     /// specified key that does not exist (or is filtered out before reading): the path string
     /// itself carries the partition columns, so it must not depend on the object being present.
-    if (!path.hasGlobs() && !local_distributed_processing)
+    if (!path.hasGlobs() && !distributed_processing)
         return path.path + archive_suffix;
 
     /// For pure brace-expansion globs like {a,b,c}.tsv (no wildcards * or ? involved),
@@ -145,7 +140,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         /// and, for a table definition, persist it - from a path that the reader always refuses to
         /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
         /// never built, so taking each group's first alternative is enough.
-        if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
+        if (configuration.getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
         {
             auto expanded = expandSelectionGlob(path.path);
             if (!expanded.empty())
@@ -159,6 +154,20 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         else if (auto first = tryExpandSelectionGlobFirstMatchedByRegexp(path.path))
             return *first + archive_suffix;
     }
+
+    return std::nullopt;
+}
+
+String StorageObjectStorage::getPathSample(ContextPtr context)
+{
+    /// When use_hive_partitioning is enabled, we need a real file path even in distributed mode
+    /// (not a path from the distributed task queue), so force distributed_processing to false.
+    bool local_distributed_processing = distributed_processing;
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+        local_distributed_processing = false;
+
+    if (auto sample = tryGetPathSampleWithoutListing(*configuration, local_distributed_processing))
+        return *sample;
 
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.

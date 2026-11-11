@@ -12,6 +12,9 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/PartitionedSink.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -136,6 +139,20 @@ std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
 
     chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
     return file_source->format_from_filenames;
+}
+
+std::optional<bool> TableFunctionFile::mayHaveColumnOutsideStructure(const String & column_name, const ContextPtr & context) const
+{
+    /// `StorageFile` takes the hive partition columns from the first of its files, and has none for an archive or a file
+    /// descriptor. The files of a glob are those that exist now, so any name is accepted for them. A path with `{_partition_id}`
+    /// is not listed.
+    std::optional<String> sample_path;
+    if (fd >= 0 || !file_source || file_source->archive_info)
+        sample_path = "";
+    else if (!containsGlobs(filename) || filename.contains(PartitionedSink::PARTITION_ID_WILDCARD))
+        sample_path = file_source->paths.empty() ? "" : file_source->paths.front();
+    return VirtualColumnUtils::mayHaveVirtualColumnOfFileLikeStorage(
+        column_name, sample_path, PartitionStrategyFactory::StrategyType::NONE, context);
 }
 
 StoragePtr TableFunctionFile::getStorage(

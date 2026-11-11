@@ -11,6 +11,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 
@@ -100,6 +101,14 @@ public:
     /// one of these columns, the structure from insertion table won't be used as a structure hint,
     /// because we cannot determine which column from table correspond to this virtual column.
     virtual NameSet getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
+
+    /// Whether a table `AS` the function can read the column `column_name`, which the structure does not have, from the storage of
+    /// the function, such as a virtual column, or std::nullopt if only the storage knows. A function whose storage reads its
+    /// source when it is built decides it without the storage.
+    virtual std::optional<bool> mayHaveColumnOutsideStructure(const String & /*column_name*/, const ContextPtr & /*context*/) const
+    {
+        return std::nullopt;
+    }
 
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
