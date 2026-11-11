@@ -120,6 +120,8 @@ DROP TABLE hits_web_1;
 
 SET cloud_mode=1;
 SET cloud_mode_engine=3;
+-- CREATE TABLE with a UUID needs this in a Replicated database
+SET database_replicated_allow_explicit_uuid=1;
 
 CREATE TABLE hits_web_2 UUID 'c449dfbf-ba06-4d13-abec-8396559eb955'
 (
