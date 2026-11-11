@@ -53,7 +53,7 @@ struct LazyMaterializingRows : public ILazyMaterializingRows
     /// Adds the parts a read of the main branch reads, when it builds its pipeline: the parts the rows are read from are
     /// the ones it finally reads, whatever the optimizations after the plan was split did to it, such as serving some of
     /// its parts from a projection. A projection part is read itself, by its own offsets, unless the read takes the
-    /// offsets of the parent part from it (`_parent_part_offset`): then the whole parent part is. A projection part is read
+    /// offsets of the parent part from it for the row index (`_parent_part_offset`): then the whole parent part is. A projection part is read
     /// with `storage_snapshot`, the snapshot of the main read, which has the metadata of the projection.
     void addPartsOfMainRead(const RangesInDataParts & parts, bool reads_parent_part_offsets, const StorageSnapshotPtr & storage_snapshot);
 

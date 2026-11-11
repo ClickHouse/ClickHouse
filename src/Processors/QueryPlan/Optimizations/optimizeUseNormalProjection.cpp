@@ -1006,8 +1006,9 @@ UseProjectionsResult optimizeUseNormalProjections(
         {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
             projection_reading_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading);
-            /// The projection parts keep the numbering of their parent parts, so the lazy read of the read reads their rows.
-            projection_reading_step->shareLazyReadOf(*reading);
+            /// The projection parts keep the numbering of their parent parts, so the lazy read of the read reads their rows:
+            /// by the offsets of the parent part where the projection reads them for `_part_offset`, see above.
+            projection_reading_step->shareLazyReadOf(*reading, need_parent_part_offset && best_candidate->projection->with_parent_part_offset);
         }
     }
 

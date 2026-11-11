@@ -714,9 +714,10 @@ public:
     bool hasLazilyReadColumns() const { return !columns_read_lazily.empty(); }
     /// The columns the lazy read reads for the rows of this one.
     const Names & getColumnsReadLazily() const { return columns_read_lazily; }
-    /// Makes this read, of a projection that serves some of the parts of `other`, put its parts where the lazy read of
-    /// `other` reads them from.
-    void shareLazyReadOf(const ReadFromMergeTree & other);
+    /// Makes this read, which replaces `other` or serves some of its parts, put its parts where the lazy read of `other`
+    /// reads them from. `by_parent_part_offsets` is for a read of a projection that gives the row index from the offsets
+    /// of the parent part it stores, `_parent_part_offset`, read under the name `_part_offset`.
+    void shareLazyReadOf(const ReadFromMergeTree & other, bool by_parent_part_offsets = false);
 
     /// The columns `addStartingPartOffsetAndPartOffset` reads, where they are in the output header, and whether it added
     /// them. The columns the output header had keep their order.
@@ -986,6 +987,9 @@ private:
     /// The rows the lazy read of the columns this read leaves out reads, and those columns. See `hasLazilyReadColumns`.
     LazyMaterializingRowsPtr lazy_read_rows;
     Names columns_read_lazily;
+    /// Whether the row index of the lazy read comes from the offsets of the parent parts, see `shareLazyReadOf`. Otherwise
+    /// it comes from the offsets of the parts this read reads, even if it reads `_parent_part_offset` for the query.
+    bool lazy_read_by_parent_part_offsets = false;
 
     ExpressionActionsPtr virtual_row_conversion;
 
