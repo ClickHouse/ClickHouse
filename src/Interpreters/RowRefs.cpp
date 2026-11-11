@@ -411,7 +411,7 @@ void StoredColumnsIndex::resolveEmitColumns(
                             ErrorCodes::LOGICAL_ERROR,
                             "Join emit column {} is a row store field, but stored block {} has no row store", pos, b);
                     resolveRowStoreGatherNode(
-                        emit_column->gather_root, request.type, *row_store, request.access, b, num_blocks);
+                        emit_column->gather_root, request.type, *row_store, row_store->getFieldLayout(request.access.index), b, num_blocks);
                     emit_column->in_row_store = true;
                     continue;
                 }

@@ -758,13 +758,13 @@ void Aggregator::executeStagedArgumentRecords(
     if (const auto & field = argument_layout.key_field)
     {
         auto column = field->type->createColumn();
-        column->fillFromRowStorePtrs(field->type, records, format.key_offset, column->sizeOfValueIfFixed(), 0, rows);
+        column->fillFromRowStorePtrs(records, RowStoreFieldLayout{.offset = format.key_offset, .size = column->sizeOfValueIfFixed()}, 0, rows);
         arguments[field->position] = std::move(column);
     }
     for (const auto & field : argument_layout.fixed_fields)
     {
         auto column = field.type->createColumn();
-        column->fillFromRowStorePtrs(field.type, records, Record::fixed_arguments_offset + field.offset, field.size, 0, rows);
+        column->fillFromRowStorePtrs(records, RowStoreFieldLayout{.offset = Record::fixed_arguments_offset + field.offset, .size = field.size}, 0, rows);
         arguments[field.position] = std::move(column);
     }
 
