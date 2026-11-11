@@ -1435,8 +1435,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 for (auto & column_name : column_names_to_read)
                 {
                     auto name_to_read = getChildColumnToRead(column_name, child_columns, merge_columns);
-                    /// A child that cannot read subcolumns reads the whole column; the subcolumn is extracted with the child's
-                    /// type in `convertAndFilterSourceStream`. The access check still authorizes the subcolumn itself.
+                    /// The subcolumn is extracted from the whole column in `convertAndFilterSourceStream`.
                     if (name_to_read && !child_supports_subcolumns && !child_columns.has(*name_to_read))
                         if (auto child_column = child_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, *name_to_read);
                             child_column && child_column->isSubcolumn())
@@ -2717,8 +2716,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
                     required_column.name);
                 if (child_column && child_column->isSubcolumn() && child_header.has(child_column->getNameInStorage()))
                 {
-                    /// getSubcolumn(<parent as the child returned it>, '<subcolumn name>') - NO cast here; the converting
-                    /// actions below cast the extracted column to the `Merge` type, as for a subcolumn read by a capable child.
+                    /// Extracted with the child's type; the converting actions below cast it to the `Merge` type.
                     const String parent_name = child_column->getNameInStorage();
                     const String subcolumn_name = child_column->getSubcolumnName();
                     auto subcolumn_name_type = std::make_shared<DataTypeString>();
