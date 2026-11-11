@@ -138,7 +138,7 @@ SELECT hex(bitmapBuild([-128, -1]::Array(Int8))) AS res, toTypeName(bitmapBuild(
     /// Documentation for bitmapTransform
     FunctionDocumentation::Description description_bitmapTransform = R"(
 Replaces elements in a bitmap according to a mapping from `from_array` to `to_array`.
-Values are interpreted as unsigned integers of the bitmap element type (same domain as [`bitmapContains`](/sql-reference/functions/bitmap-functions#bitmapContains)).
+Values are interpreted as unsigned integers of the bitmap element type (same domain as [`bitmapContains`](/reference/functions/regular-functions/bitmap-functions#bitmapContains)).
 For signed bitmaps, a negative element matches its unsigned counterpart (for example, `Int8` value `-1` matches `255`).
 A value in `to_array` that does not fit into the bitmap element type raises `BAD_ARGUMENTS`. A value in `from_array`
 that does not fit is simply not found, so the corresponding replacement does not apply.

@@ -174,8 +174,6 @@ SELECT * FROM geo;
 └───────┘
 ```
 
-<!-- -->
-
 ```sql title="Query"
 CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
 

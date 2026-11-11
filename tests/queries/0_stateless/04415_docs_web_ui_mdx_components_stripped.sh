@@ -39,5 +39,5 @@ $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0
     FROM system.documentation
     WHERE type = 'Table Engine' AND name = 'TimeSeries'
-      AND match(description, 'import\\s+PrivatePreviewBadge')
+      AND match(description, 'import\\s+\\{\\s*PrivatePreviewBadge\\s*\\}')
       AND match(description, '<PrivatePreviewBadge\\s*/>')"

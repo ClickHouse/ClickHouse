@@ -253,7 +253,7 @@ If events from different data blocks overlap then they can not be processed corr
 </Tip>
 
 <Warning title="Deprecated">
-It is advised to use [window functions](/reference/functions/window-functions) instead.
+It is advised to use [window functions](/reference/functions/window-functions/index) instead.
 </Warning>
 )";
         FunctionDocumentation::Syntax syntax = "runningConcurrency(start, end)";

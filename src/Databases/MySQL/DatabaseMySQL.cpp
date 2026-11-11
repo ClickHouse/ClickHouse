@@ -896,7 +896,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 # MySQL database engine
 

@@ -453,7 +453,7 @@ void registerDataTypeAggregateFunction(DataTypeFactory & factory)
             .description = R"DOCS_MD(
 ## Description {#description}
 
-All [Aggregate functions](/reference/functions/aggregate-functions) in ClickHouse have
+All [Aggregate functions](/reference/functions/aggregate-functions/index) in ClickHouse have
 an implementation-specific intermediate state that can be serialized to an
 `AggregateFunction` data type and stored in a table. This is usually done by
 means of a [materialized view](/reference/statements/create/view).

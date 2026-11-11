@@ -100,7 +100,7 @@ REGISTER_FUNCTION(IsNull)
     FunctionDocumentation::Description description = R"(
 Checks if the argument is `NULL`.
 
-Also see: operator [`IS NULL`](/reference/operators#is_null).
+Also see: operator [`IS NULL`](/reference/operators/index#is_null).
     )";
     FunctionDocumentation::Syntax syntax = "isNull(x)";
     FunctionDocumentation::Arguments arguments = {

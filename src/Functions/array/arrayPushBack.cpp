@@ -27,7 +27,7 @@ REGISTER_FUNCTION(ArrayPushBack)
 - When adding numbers, ClickHouse automatically sets the type of `x` for the data type of the array.
 - Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
-For more information about the types of data in ClickHouse, see [Data types](/reference/data-types).
+For more information about the types of data in ClickHouse, see [Data types](/reference/data-types/index).
 </Note>
     )"},
     };

@@ -321,17 +321,17 @@ The setting is applied on the fly: it is re-read on every update of the asynchro
 )", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
     DECLARE(String, default_session_user, "default", R"(
-The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, a gRPC query without `user_name`, an Arrow Flight call without an `authorization` header (or with Basic credentials with an empty user name), or a [web terminal](/interfaces/web-terminal) WebSocket `auth` message with an omitted or empty `user` field.
+The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, a gRPC query without `user_name`, an Arrow Flight call without an `authorization` header (or with Basic credentials with an empty user name), or a [web terminal](/concepts/features/interfaces/web-terminal) WebSocket `auth` message with an omitted or empty `user` field.
 
 The empty user name is resolved to this value before authentication, so the connection is still subject to the substituted user's authentication: the password, network, and other access checks apply as usual. An empty user name is merely an alias for the configured user name, and accepting it grants no access beyond what specifying the same user name explicitly already gives. In versions before this setting was introduced, the fallback of an empty user name to `default` existed only for the plain HTTP query-parameter path, gRPC queries, Arrow Flight calls, and the web terminal, while the native, MySQL, and PostgreSQL protocols rejected an empty user name; now all of them accept it. HTTP Basic authentication with an empty user name and requests with `X-ClickHouse-Key` but without `X-ClickHouse-User` also rejected an empty user name before this setting was introduced.
 
 If set to an empty string, connections without a user name are rejected. HTTP handlers with a fixed user (the `user` key inside `handler` of an `http_handlers` rule, or the `user` key inside `handler` of a `prometheus.handlers` rule) authenticate as their configured user and are not affected.
 
-When the `session_log` section is enabled in the server configuration, every such reject is recorded in [`system.session_log`](/operations/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
+When the `session_log` section is enabled in the server configuration, every such reject is recorded in [`system.session_log`](/reference/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
 
 The default session user is never applied to interserver connections: they identify themselves with a special marker instead of a user name and are authenticated by the cluster secret and the initial user.
 
-The value can be overridden for a specific endpoint of a composable protocol with the `default_session_user` key in the `protocols` section, see [Composable protocols](/operations/settings/composable-protocols).
+The value can be overridden for a specific endpoint of a composable protocol with the `default_session_user` key in the `protocols` section, see [Composable protocols](/concepts/features/configuration/server-config/composable-protocols).
 )", 0) \
     DECLARE(String, tmp_policy, "", R"(
 Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
@@ -355,7 +355,7 @@ For more information see the [MergeTree Table Engine](/reference/engines/table-e
 
 When `/disk1` is full, temporary data will be stored on `/disk2`.
 
-```xml
+```xml highlight={13-20,24}
 <clickhouse>
 <storage_configuration>
     <disks>
@@ -368,7 +368,6 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
     </disks>
 
     <policies>
-        <!-- highlight-start -->
         <tmp_two_disks>
             <volumes>
                 <main>
@@ -377,13 +376,10 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
                 </main>
             </volumes>
         </tmp_two_disks>
-        <!-- highlight-end -->
     </policies>
 </storage_configuration>
 
-<!-- highlight-start -->
 <tmp_policy>tmp_two_disks</tmp_policy>
-<!-- highlight-end -->
 </clickhouse>
 ```
 )", 0) \
@@ -412,7 +408,7 @@ Only one option can be used to configure temporary data storage: `tmp_path` ,`tm
 
 Both the cache for `local_disk`, and temporary data will be stored in `/tiny_local_cache` on the filesystem, managed by `tiny_local_cache`.
 
-```xml
+```xml highlight={9-16,20}
 <clickhouse>
 <storage_configuration>
     <disks>
@@ -421,7 +417,6 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
             <path>/local_disk/</path>
         </local_disk>
 
-        <!-- highlight-start -->
         <tiny_local_cache>
             <type>cache</type>
             <disk>local_disk</disk>
@@ -430,13 +425,10 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
             <max_file_segment_size>1M</max_file_segment_size>
             <cache_on_write_operations>1</cache_on_write_operations>
         </tiny_local_cache>
-        <!-- highlight-end -->
     </disks>
 </storage_configuration>
 
-<!-- highlight-start -->
 <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
-<!-- highlight-end -->
 </clickhouse>
 ```
 )", 0) \
@@ -468,7 +460,7 @@ A value of `0` (default) preserves the legacy behaviour: implicit `operator new`
 Note, to avoid side effects it is recommended to set value greater then `max_untracked_memory`.
 )", 0) \
     DECLARE(UInt64, min_allocation_size_to_log_stack_trace, 0, R"(
-Minimum size, in bytes, of a single charge to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/operations/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
+Minimum size, in bytes, of a single charge to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/reference/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
 
 The size compared against the threshold, and reported, is what one tracker call charges, which is not necessarily one allocation: a thread defers its small allocations and flushes them as a single charge, so the reported size can exceed the allocation at the top of the reported stack by up to `max_untracked_memory`. Keeping the threshold well above `max_untracked_memory` keeps that difference immaterial.
 
@@ -476,7 +468,7 @@ This is a diagnostic for a global tracked total that has grown far beyond the pr
 
 At most 10 traces are captured per server run, because capturing and symbolizing a stack is expensive and the trigger tends to repeat. Changing this setting at runtime, in either direction, does not raise that bound.
 
-Requires `trace_log` to be configured. Without a running trace collector the value is ignored and reported as `0` in [`system.server_settings`](/operations/system-tables/server_settings), since the trace could only be captured and discarded. A trace the collector processes before that table is attached, which happens late in startup, reaches the server log only.
+Requires `trace_log` to be configured. Without a running trace collector the value is ignored and reported as `0` in [`system.server_settings`](/reference/system-tables/server_settings), since the trace could only be captured and discarded. A trace the collector processes before that table is attached, which happens late in startup, reaches the server log only.
 
 A value of `0` (default) disables the diagnostic. Set it well above the largest allocation the server legitimately makes, otherwise ordinary large allocations are logged too and startup can spend the whole budget.
 )", 0) \
@@ -666,7 +658,7 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Cache eviction policy for the mark cache (index of MergeTree family tables). Possible values: `LRU`, `SLRU`, `SIEVE`. See [`mark_cache_size`](#mark_cache_size) for cache capacity and [`mark_cache_size_ratio`](#mark_cache_size_ratio) for the protected queue size in SLRU policy.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
-Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family) family of tables).
+Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family/index) family of tables).
 
 <Note>
 This setting can be modified at runtime and will take effect immediately.
@@ -757,11 +749,11 @@ reports the same quantity per entry, and `CurrentMetrics.ColumnsCacheBytes` its 
 rest of the server is short of memory, see `columns_cache_free_memory_ratio`; that value is published separately
 as `CurrentMetrics.ColumnsCacheSizeLimit`.
 
-:::note
+<Note>
 A value of `0` means disabled.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(Double, columns_cache_size_to_ram_ratio, 0.1, R"(
 The size of the columns cache as a fraction of the memory available to the server. It is used when `columns_cache_size`
@@ -1160,8 +1152,8 @@ Possible values:
 - `shortest_task_first` — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by `INSERT`s.
 )", 0) \
     DECLARE(UInt64, background_move_pool_size, 8, R"(The maximum number of threads that will be used for moving data parts to another disk or volume for *MergeTree-engine tables in a background.)", 0) \
-    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family) tables in the background.)", 0) \
+    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family/index) tables in the background.)", 0) \
+    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family/index) tables in the background.)", 0) \
     DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/reference/engines/table-engines/special/buffer) in the background.)", 0) \
     DECLARE(UInt64, background_schedule_pool_size, 512, R"(The cap on the number of threads used to execute lightweight periodic operations for replicated tables, Kafka streaming, DNS cache updates, and similar tasks. Threads are spawned lazily on demand up to this cap, so a server with light background load uses far fewer threads than this number.)", 0) \
     DECLARE(UInt64, background_schedule_pool_initial_size, 16, R"(Initial number of worker threads allocated for each background schedule pool. Each pool grows lazily up to its configured cap (`background_schedule_pool_size` and friends) when demand exceeds the current set of workers. Lower values reduce startup overhead and idle thread counts; higher values eliminate first-task scheduling latency on busy servers.)", 0) \
@@ -1238,7 +1230,7 @@ Default: `10485760` (10 MiB).
     DECLARE(Bool, http_allow_path_requests, true, R"(
 Allow the HTTP interface to route path-style requests (such as `/my_db/my_table.csv`) to the query handler.
 
-This flag gates the routing decision only, which is made before the request is authenticated, so it cannot depend on a per-user setting. After routing, the per-user settings [`http_allow_database_as_path`](/operations/settings/settings#http_allow_database_as_path), [`http_allow_table_as_file`](/operations/settings/settings#http_allow_table_as_file), and [`http_allow_filters_as_path`](/operations/settings/settings#http_allow_filters_as_path) control whether the routed path is actually interpreted for the authenticated user. When this flag is off, unknown paths return a plain `404`.
+This flag gates the routing decision only, which is made before the request is authenticated, so it cannot depend on a per-user setting. After routing, the per-user settings [`http_allow_database_as_path`](/reference/settings/session-settings#http_allow_database_as_path), [`http_allow_table_as_file`](/reference/settings/session-settings#http_allow_table_as_file), and [`http_allow_filters_as_path`](/reference/settings/session-settings#http_allow_filters_as_path) control whether the routed path is actually interpreted for the authenticated user. When this flag is off, unknown paths return a plain `404`.
 
 Enabled by default. Set it to `0` to restore the previous behavior, in which every path that is not a configured handler returns `404`.
 

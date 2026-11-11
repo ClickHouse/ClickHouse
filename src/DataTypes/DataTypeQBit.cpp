@@ -329,7 +329,7 @@ To run a reduced-dimension search, pass the number of dimensions to read as the 
 
 ## Element access and slicing {#qbit-element-access}
 
-[`arrayElement`](../functions/array-functions.md#arrayElement) (and the `vec[n]` operator) returns the `n`-th vector element, reconstructed at the full precision of the element type. Only the bit planes of the stride group containing the element are read. [`arraySlice`](../functions/array-functions.md#arraySlice) returns a `QBit` over the selected dimensions (a projection to a subset of dimensions); the offset and length must be constants, because the dimension of a `QBit` is part of its type. A slice aligned to stride-group boundaries keeps the stride and reuses the stored bit-plane streams without copying:
+[`arrayElement`](/reference/functions/regular-functions/array-functions#arrayElement) (and the `vec[n]` operator) returns the `n`-th vector element, reconstructed at the full precision of the element type. Only the bit planes of the stride group containing the element are read. [`arraySlice`](/reference/functions/regular-functions/array-functions#arraySlice) returns a `QBit` over the selected dimensions (a projection to a subset of dimensions); the offset and length must be constants, because the dimension of a `QBit` is part of its type. A slice aligned to stride-group boundaries keeps the stride and reuses the stored bit-plane streams without copying:
 
 ```sql
 CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
