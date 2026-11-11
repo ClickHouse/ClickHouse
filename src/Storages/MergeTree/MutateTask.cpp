@@ -4697,17 +4697,16 @@ bool MutateTask::execute()
             //
             // Fetching a byte-identical part (in case of checksum mismatches) will fail with
             // `Part ... should be deleted after previous attempt before fetch`.
-            handOffPart(std::exchange(ctx->new_data_part, nullptr));
+            setResultPart(std::exchange(ctx->new_data_part, nullptr));
             return false;
         }
     }
     return false;
 }
 
-void MutateTask::handOffPart(MergeTreeData::MutableDataPartPtr part)
+void MutateTask::setResultPart(MergeTreeData::MutableDataPartPtr part)
 {
-    handed_off_part = part;
-    promise.set_value(std::move(part));
+    result_part = std::move(part);
     FailPointInjection::pauseFailPoint(FailPoints::merge_mutate_task_pause_after_part_handoff);
 }
 
@@ -4718,12 +4717,9 @@ void MutateTask::cancel() noexcept
     if (task)
         task->cancel();
 
-    auto part = ctx->new_data_part;
-    if (!part && !future_retrieved)
-        part = handed_off_part.lock();
-
-    if (part)
+    if (auto part = ctx->new_data_part ? ctx->new_data_part : result_part)
     {
+        LOG_DEBUG(ctx->log, "Rolling back uncommitted part {} of a cancelled mutation", part->getDataPartStorage().getPartDirectory());
         /// The transaction is uncommitted, and on object storage its blobs are staged only there.
         tryUndoTransaction(part->getDataPartStorage());
         part->removeIfNeeded();
@@ -5265,7 +5261,7 @@ bool MutateTask::prepare()
         }
 
         ProfileEvents::increment(ProfileEvents::MutationUntouchedParts);
-        handOffPart(std::move(part));
+        setResultPart(std::move(part));
         return false;
     }
 
@@ -5296,7 +5292,7 @@ bool MutateTask::prepare()
             ctx->temporary_directory_lock = std::move(tmp_dir_holder);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
-            handOffPart(std::move(empty_part));
+            setResultPart(std::move(empty_part));
             return false;
         }
     }

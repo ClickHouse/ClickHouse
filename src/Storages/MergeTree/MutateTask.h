@@ -44,18 +44,14 @@ public:
 
     void updateProfileEvents() const;
 
-    std::future<MergeTreeData::MutableDataPartPtr> getFuture()
-    {
-        future_retrieved = true;
-        return promise.get_future();
-    }
+    MergeTreeData::MutableDataPartPtr takeResultPart() { return std::exchange(result_part, nullptr); }
 
     const HardlinkedFiles & getHardlinkedFiles() const;
 
 private:
 
     bool prepare();
-    void handOffPart(MergeTreeData::MutableDataPartPtr part);
+    void setResultPart(MergeTreeData::MutableDataPartPtr part);
 
     enum class State : uint8_t
     {
@@ -65,10 +61,8 @@ private:
 
     State state{State::NEED_PREPARE};
 
-    std::promise<MergeTreeData::MutableDataPartPtr> promise;
-    /// The part moved into `promise`. Until the owner retrieves the future, `cancel` rolls it back.
-    std::weak_ptr<IMergeTreeDataPart> handed_off_part;
-    bool future_retrieved{false};
+    /// The finished part until the owner takes it. `cancel` rolls back a part that is still here.
+    MergeTreeData::MutableDataPartPtr result_part;
 
     std::shared_ptr<MutationContext> ctx;
     ExecutableTaskPtr task;
@@ -86,7 +80,7 @@ private:
         task->cancel();
         throw;
     }
-    return task->getFuture().get();
+    return task->takeResultPart();
 }
 
 }

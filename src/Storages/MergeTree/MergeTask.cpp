@@ -2626,7 +2626,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 {
     for (const auto & task : ctx->tasks_for_projections)
     {
-        auto part = task->getFuture().get();
+        auto part = task->takeResultPart();
         part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
@@ -2648,8 +2648,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->new_data_part->getPreferredFileOrder());
 
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
-    global_ctx->handed_off_part = global_ctx->new_data_part;
-    global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
+    global_ctx->result_part = std::exchange(global_ctx->new_data_part, nullptr);
     if (!global_ctx->parent_part)
         FailPointInjection::pauseFailPoint(FailPoints::merge_mutate_task_pause_after_part_handoff);
 
@@ -2989,12 +2988,10 @@ void MergeTask::cancel() noexcept
     if (global_ctx->temporary_text_index_storage)
         tryUndoTransaction(*global_ctx->temporary_text_index_storage);
 
-    auto part = global_ctx->new_data_part;
-    if (!part && !global_ctx->future_retrieved)
-        part = global_ctx->handed_off_part.lock();
-
-    if (part)
+    if (auto part = global_ctx->new_data_part ? global_ctx->new_data_part : global_ctx->result_part)
     {
+        LOG_DEBUG(global_ctx->data->log, "Rolling back uncommitted part {} of a cancelled merge",
+            part->getDataPartStorage().getPartDirectory());
         /// The transaction is uncommitted, and on object storage its blobs are staged only there.
         tryUndoTransaction(part->getDataPartStorage());
         part->removeIfNeeded();

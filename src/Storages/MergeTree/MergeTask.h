@@ -152,11 +152,7 @@ public:
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
         }
 
-    std::future<MergeTreeData::MutableDataPartPtr> getFuture()
-    {
-        global_ctx->future_retrieved = true;
-        return global_ctx->promise.get_future();
-    }
+    MergeTreeData::MutableDataPartPtr takeResultPart() { return std::exchange(global_ctx->result_part, nullptr); }
 
     MergeTreeData::MutableDataPartPtr getUnfinishedPart()
     {
@@ -292,10 +288,8 @@ private:
 
         std::map<String, UInt64> projections_merge_time;
 
-        std::promise<MergeTreeData::MutableDataPartPtr> promise{};
-        /// The part moved into `promise`. Until the owner retrieves the future, `cancel` rolls it back.
-        std::weak_ptr<IMergeTreeDataPart> handed_off_part;
-        bool future_retrieved{false};
+        /// The finished part until the owner takes it. `cancel` rolls back a part that is still here.
+        MergeTreeData::MutableDataPartPtr result_part;
 
         WrittenOffsetSubstreams written_offset_substreams{};
         /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
@@ -649,7 +643,7 @@ void tryUndoTransaction(IDataPartStorage & storage) noexcept;
         task->cancel();
         throw;
     }
-    return task->getFuture().get();
+    return task->takeResultPart();
 }
 
 }
