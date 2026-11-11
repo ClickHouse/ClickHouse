@@ -1291,6 +1291,9 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     /// `relative_data_path.empty()` rather than `owned_cluster` makes `distributed_foreground_insert`
     /// and the related queue settings effective for it.
     bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || relative_data_path.empty();
+    /// A queued batch that a shard refuses for an insert expectation would block the queue, so the client gets the refusal.
+    if (!settings[Setting::insert_expected_table_engine].value.empty() || !settings[Setting::insert_expected_column_types].value.empty())
+        insert_sync = true;
     auto timeout = settings[Setting::distributed_background_insert_timeout];
 
     Names columns_to_send;

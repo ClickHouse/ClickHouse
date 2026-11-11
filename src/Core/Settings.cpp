@@ -7470,7 +7470,7 @@ Result:
 ```
 )", 0) \
     DECLARE(String, insert_expected_table_engine, "", R"(
-If not empty, an `INSERT` is refused unless the table it names has this engine, checked on the table the `INSERT` resolves when it is executed (for an asynchronous insert, when the queue flushes it). Once the table passes, the requirement is consumed: the writes that table makes on its own, into its inner tables or through materialized views, are not checked. A `Distributed` table is not checked itself but forwards the setting to its shards, as any query setting, where each shard's insert checks the table it resolves; its materialized views are not checked.
+If not empty, an `INSERT` is refused unless the table it names has this engine, checked on the table the `INSERT` resolves when it is executed (for an asynchronous insert, when the queue flushes it). Once the table passes, the requirement is consumed: the writes that table makes on its own, into its inner tables or through materialized views, are not checked. A `Distributed` table is not checked itself but forwards the setting to its shards, as any query setting, where each shard's insert checks the table it resolves; its materialized views are not checked. Such an insert is delivered to the shards synchronously, as with `distributed_foreground_insert`, so that a shard's refusal reaches the client instead of blocking the table's background queue.
 
 The setting is mandatory on the wire: a shard of a version that does not know it refuses the `INSERT` instead of ignoring the requirement. Reads never send it on, including the source reads of an `INSERT SELECT`.
 
@@ -7482,7 +7482,7 @@ Possible values:
 )", IMPORTANT, \
         {"26.11", "", "", "New setting: when not empty, an INSERT is refused unless the target table has exactly this engine."}) \
     DECLARE(Map, insert_expected_column_types, "", R"(
-If not empty, an `INSERT` is refused unless the table it names declares these columns with exactly these types, checked with `insert_expected_table_engine` and consumed with it. A `Distributed` table forwards the setting to its shards instead of checking itself.
+If not empty, an `INSERT` is refused unless the table it names declares these columns with exactly these types, checked with `insert_expected_table_engine` and consumed with it. A `Distributed` table forwards the setting to its shards instead of checking itself, and delivers the insert synchronously. The columns it names need the `SHOW COLUMNS` privilege on the table the `INSERT` names, a `Distributed` one included, so a hidden column is neither confirmed nor typed.
 
 Remote write over a `Distributed` table sets it to the type of the samples column the table declares (`samples`, or `time_series` in tables of versions before 3), so that a shard-local table swapped for a `TimeSeries` table of another type refuses the batch instead of having the sink convert the samples into it.
 
