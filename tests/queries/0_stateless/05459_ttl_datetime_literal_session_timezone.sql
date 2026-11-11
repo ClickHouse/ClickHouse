@@ -30,6 +30,8 @@ DROP TABLE IF EXISTS t_lambda_tuple_mutation;
 DROP TABLE IF EXISTS t_alias_mutation;
 DROP TABLE IF EXISTS t_alias_temporal;
 DROP TABLE IF EXISTS t_alias_temporal_changed;
+DROP TABLE IF EXISTS t_alias_lower_precision;
+DROP TABLE IF EXISTS t_alias_nullable_tuple;
 DROP TABLE IF EXISTS t_alias_prefer_column;
 DROP TABLE IF EXISTS t_alias_prefer_column_memory;
 DROP TABLE IF EXISTS t_alias_scoped_lambda;
@@ -217,6 +219,26 @@ ALTER TABLE t_alias_temporal_changed DELETE WHERE isNotNull(toDateTime64(event, 
 SELECT 'DELETE changed temporal alias', groupArray(id) FROM (SELECT id FROM t_alias_temporal_changed ORDER BY id);
 SELECT extract(command, '(?:event|n) = .*') FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias_temporal_changed' ORDER BY mutation_id;
 
+-- A literal compared with an alias with a lower precision than the column with its name, or than its element, is converted
+-- with the precision of the column: the mutation may run with `prefer_column_name_to_alias` in the profile of the server, where
+-- the identifier names the column, and a conversion with the type of the alias would drop the fraction of a second that the
+-- column compares. With the default settings, it names the alias and deletes the right rows.
+CREATE TABLE t_alias_lower_precision (id UInt8, event DateTime64(3), n Tuple(ts DateTime64(3))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias_lower_precision SELECT number + 1, toDateTime64('2020-01-01 00:00:00', 3) + number * 32400 AS event, tuple(event) FROM numbers(3);
+ALTER TABLE t_alias_lower_precision DELETE WHERE isNotNull(toDateTime(event) AS event) AND event = '2020-01-01 00:00:00' SETTINGS mutations_sync = 2;
+ALTER TABLE t_alias_lower_precision DELETE WHERE isNotNull(CAST(n, 'Tuple(ts DateTime)') AS n) AND n.ts = '2020-01-01 09:00:00' SETTINGS mutations_sync = 2;
+SELECT 'DELETE lower precision alias', groupArray(id) FROM (SELECT id FROM t_alias_lower_precision ORDER BY id);
+SELECT extract(command, '(?:event|n\\.ts) = .*') FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias_lower_precision' ORDER BY mutation_id;
+
+-- An element of a `Nullable` tuple, of an alias or of a lambda parameter over an array of them, is a `Nullable` `DateTime`, so
+-- its comparison gets the time zone.
+CREATE TABLE t_alias_nullable_tuple (id UInt8, n Tuple(ts DateTime)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias_nullable_tuple VALUES (1, tuple('2020-01-01 00:00:00')), (2, tuple('2020-01-01 09:00:00')), (3, tuple('2020-01-01 18:00:00'));
+ALTER TABLE t_alias_nullable_tuple DELETE WHERE isNotNull(toNullable(n) AS n) AND n.ts = '2020-01-01 00:00:00' SETTINGS mutations_sync = 2;
+ALTER TABLE t_alias_nullable_tuple DELETE WHERE notEmpty([toNullable(n)] AS arr) AND arrayExists(x -> x.ts = '2020-01-01 09:00:00', arr) SETTINGS mutations_sync = 2;
+SELECT 'DELETE Nullable tuple', groupArray(id) FROM (SELECT id FROM t_alias_nullable_tuple ORDER BY id);
+SELECT extract(command, '[nx]\\.ts = .*') FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias_nullable_tuple' ORDER BY mutation_id;
+
 -- With `prefer_column_name_to_alias`, the identifier names the `DateTime` column rather than the `String` alias with its name,
 -- but the mutation runs with the settings of the server, where it names the alias, so the comparison keeps its string and the
 -- mutation does not fail (05485 checks an alias that is a `DateTime` too).
@@ -276,6 +298,8 @@ DROP TABLE t_lambda_tuple_mutation;
 DROP TABLE t_alias_mutation;
 DROP TABLE t_alias_temporal;
 DROP TABLE t_alias_temporal_changed;
+DROP TABLE t_alias_lower_precision;
+DROP TABLE t_alias_nullable_tuple;
 DROP TABLE t_alias_prefer_column;
 DROP TABLE t_alias_prefer_column_memory;
 DROP TABLE t_alias_scoped_lambda;

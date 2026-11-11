@@ -31,6 +31,12 @@ DELETE changed temporal alias	[2,4,6]
 event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')))
 n = toDateTime(\'2020-01-02 00:00:00\', \'Asia/Tokyo\')))
 event = toDateTime64(\'2020-01-03 00:00:00\', 3, \'Asia/Tokyo\')))
+DELETE lower precision alias	[3]
+event = toDateTime64(\'2020-01-01 00:00:00\', 3, \'Asia/Tokyo\')))
+n.ts = toDateTime64(\'2020-01-01 09:00:00\', 3, \'Asia/Tokyo\')))
+DELETE Nullable tuple	[3]
+n.ts = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')))
+x.ts = toDateTime(\'2020-01-01 09:00:00\', \'Asia/Tokyo\')), arr))
 event = \'2020-01-01 00:00:00\')
 DELETE prefer column Memory	[2]
 DELETE lambda-scoped alias	[2]

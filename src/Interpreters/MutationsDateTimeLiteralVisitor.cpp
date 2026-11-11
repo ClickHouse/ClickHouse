@@ -81,20 +81,32 @@ struct LambdaParameter
 /// The parameters of the enclosing lambdas, by name.
 using LambdaParameters = std::unordered_map<String, LambdaParameter>;
 
-/// The type of the element `element_names` of a tuple of type `type`, such as `n.event` of the parameter `n`, or nullptr.
+/// The type of the element `element_names` of a tuple of type `type`, such as `n.event` of the parameter `n`, or nullptr. An
+/// element of a `Nullable` tuple is `Nullable` too, if it can be, as the analyzer types it.
 DataTypePtr getTupleElementType(DataTypePtr type, std::span<const String> element_names)
 {
     for (const auto & element_name : element_names)
     {
-        const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
+        const bool is_nullable = type->isNullable();
+        const auto * tuple = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
         if (!tuple)
             return nullptr;
         const auto position = tuple->tryGetPositionByName(element_name);
         if (!position)
             return nullptr;
         type = tuple->getElement(*position);
+        if (is_nullable)
+            type = makeNullableSafe(type);
     }
     return type;
+}
+
+/// The precision of a `DateTime` or `DateTime64` type: 0 for a `DateTime`.
+UInt32 getDateTimeScale(const IDataType & type)
+{
+    if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(&type))
+        return dt64->getScale();
+    return 0;
 }
 
 /// The type of the lambda parameter that `identifier` names, or of its element, such as `n.event` in `n -> n.event = '...'`.
@@ -146,12 +158,22 @@ DataTypePtr getDateTimeColumnType(
         if (!*alias_type)
             return nullptr;
         auto datetime_type = getZonelessDateTimeType(*alias_type);
-        /// If the identifier can name a column instead, the literal converted in the time zone of the session is right for both
-        /// only if the column is a `DateTime` or `DateTime64` without a time zone too, such as `event` in `toNullable(event) AS
-        /// event` or `toDateTime64(event, 3) AS event`: it is compared with either of them as the session would compare the string.
+        /// If the identifier can name a column or a subcolumn instead, the literal converted in the time zone of the session is
+        /// right for both only if the column is a `DateTime` or `DateTime64` without a time zone too, such as `event` in
+        /// `toNullable(event) AS event` or `toDateTime64(event, 3) AS event`. It is converted with the higher precision of the
+        /// two, so that neither drops what it compares, such as the fraction of a second of a `DateTime64(3)` column in
+        /// `toDateTime(event) AS event`, or of its element `n.ts` in `CAST(n, 'Tuple(ts DateTime)') AS n`: then it is compared
+        /// with either of them as the session would compare the string, except for a fraction of a second that the one with the
+        /// lower precision would ignore.
         const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier.name());
-        if (datetime_type && column && !getZonelessDateTimeType(column->type))
-            return nullptr;
+        if (datetime_type && column)
+        {
+            const auto column_datetime_type = getZonelessDateTimeType(column->type);
+            if (!column_datetime_type)
+                return nullptr;
+            if (getDateTimeScale(*column_datetime_type) > getDateTimeScale(*datetime_type))
+                return column_datetime_type;
+        }
         return datetime_type;
     }
     /// A subcolumn too, such as `n.ts` of `n Tuple(ts DateTime)`.
@@ -420,11 +442,8 @@ AliasTypes getUnknownAliasTypes(const NameSet & names)
 /// those of the server), where it names the alias. The type of such an alias is then analyzed from its expression rather than
 /// from an identifier. The expression has that type with either setting if it does not refer to another alias with the name of
 /// a column, which the two settings bind differently (an identifier with the name of its own alias names the column with both,
-/// as in `identity(event) AS event`); otherwise the types of the aliases are not known. A literal compared with the identifier
-/// is converted with the type of the alias, so if the alias and the column are a `DateTime` or a `DateTime64` with different
-/// precisions, such as `toDateTime(event) AS event` of a `DateTime64(3)` column, the type of the alias is not known either:
-/// a conversion with it would not read the literal as the comparison with the column does, such as dropping the fraction of a
-/// second of a `DateTime64(3)` column.
+/// as in `identity(event) AS event`); otherwise the types of the aliases are not known. The callers check that what they derive
+/// from the type of such an alias holds for the column too (see `getDateTimeColumnType` and `getArgumentType`).
 AliasTypes getAliasTypes(
     const ASTs & expressions,
     const NameSet & aliases,
@@ -489,16 +508,6 @@ AliasTypes getAliasTypes(
     const auto & nodes = query_tree->as<const ListNode &>().getNodes();
     for (size_t i = 0; i < names.size(); ++i)
         alias_types[names[i]] = nodes[i]->getResultType();
-
-    const auto & columns = storage_snapshot->metadata->getColumns();
-    for (const auto & name : aliases_of_columns)
-    {
-        const auto alias_datetime_type = getZonelessDateTimeType(alias_types[name]);
-        const auto column_datetime_type
-            = getZonelessDateTimeType(columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name)->type);
-        if (alias_datetime_type && column_datetime_type && !alias_datetime_type->equals(*column_datetime_type))
-            alias_types[name] = nullptr;
-    }
     return alias_types;
 }
 
