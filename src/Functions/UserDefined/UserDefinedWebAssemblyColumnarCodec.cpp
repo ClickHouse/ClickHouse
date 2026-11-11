@@ -298,7 +298,7 @@ public:
         chassert(keys->size() == num_special);
         /// The key references `default_bytes`, not `keys`, whose buffer moves as it grows.
         bool inserted = false;
-        HashMap<std::string_view, UInt64, StringViewHash>::LookupResult it;
+        HashMap<std::string_view, UInt64, StringViewHash>::LookupResult it = nullptr;
         positions_by_bytes.emplace(std::string_view(default_bytes), it, inserted);
         it->getMapped() = num_special - 1;
     }
@@ -311,7 +311,7 @@ public:
             /// The key references the bytes of `src`, which must outlive the builder.
             std::string_view bytes = src.getDataAt(from + i);
             bool inserted = false;
-            HashMap<std::string_view, UInt64, StringViewHash>::LookupResult it;
+            HashMap<std::string_view, UInt64, StringViewHash>::LookupResult it = nullptr;
             positions_by_bytes.emplace(bytes, it, inserted);
             if (inserted)
             {
