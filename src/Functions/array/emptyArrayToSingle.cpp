@@ -9,6 +9,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -338,11 +340,16 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
             arguments[0].column->getName(), getName());
 
+    const ColumnArray::Offsets & src_offsets = array->getOffsets();
+
+    /// No array is empty: the result is the argument itself.
+    if (src_offsets.empty() || (src_offsets[0] != 0 && std::adjacent_find(src_offsets.begin(), src_offsets.end()) == src_offsets.end()))
+        return arguments[0].column;
+
     MutableColumnPtr res_ptr = array->cloneEmpty();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
-    const ColumnArray::Offsets & src_offsets = array->getOffsets();
     IColumn & res_data = res.getData();
     ColumnArray::Offsets & res_offsets = res.getOffsets();
 
