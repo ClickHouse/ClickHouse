@@ -11,6 +11,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
@@ -88,6 +89,10 @@ public:
     virtual ~Impl() = default;
     virtual void beforeHandlingRequest(HTTPServerRequest & /* request */) {}
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
+
+    /// Whether a URI parameter carries a PromQL expression. Such parameters are hidden in the request URI recorded in spans,
+    /// because `query_masking_rules` are not applied to it.
+    virtual bool isQueryTextParameter(const String & /* name */) const { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
     virtual bool sendsJSONErrors() const { return false; }
@@ -495,6 +500,12 @@ public:
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
         static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
         return !reserved_param_names.contains(name);
+    }
+
+    bool isQueryTextParameter(const String & name) const override
+    {
+        /// Case-insensitive, like the `params->get` lookups above.
+        return Poco::icompare(name, "query") == 0 || Poco::icompare(name, "match[]") == 0;
     }
 
     /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
@@ -941,7 +952,8 @@ OpenTelemetry::TracingContextHolderPtr PrometheusRequestHandler::startTracing(co
         global_context->getOpenTelemetrySpanLog());
     thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
     thread_trace_context->root_span.addAttribute(
-        "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
+        "clickhouse.uri",
+        [&] { return maskSensitiveQueryParametersInURI(request.getURI(), [this](const String & name) { return impl->isQueryTextParameter(name); }); });
     thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
     thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
     thread_trace_context->root_span.addAttribute("http.method", request.getMethod());

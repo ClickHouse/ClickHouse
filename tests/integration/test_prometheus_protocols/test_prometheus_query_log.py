@@ -83,6 +83,16 @@ def span_log_query_span_under_handler_sql(trace_id):
     )
 
 
+def span_log_handler_span_uri_sql(trace_id, secret):
+    return (
+        "SYSTEM FLUSH LOGS opentelemetry_span_log; "
+        f"SELECT count(), any(position(attribute['clickhouse.uri'], '{secret}') > 0), "
+        "any(position(attribute['clickhouse.uri'], '[HIDDEN]') > 0), any(attribute['clickhouse.http_status'] = '200') "
+        f"FROM system.opentelemetry_span_log WHERE {span_log_trace_filter_sql(trace_id)} "
+        "AND operation_name = 'PrometheusRequestHandler'"
+    )
+
+
 def assert_query_log_has_finish_for_query_id(query_id, retry_count=30, sleep_time=1):
     """Assert the Prometheus request produced at least one correlated QueryFinish row."""
     node.query("SYSTEM FLUSH LOGS query_log")
@@ -195,6 +205,40 @@ def test_query_api_traced_request_appears_in_span_log():
         node,
         span_log_query_span_under_handler_sql(trace_id),
         f"1\t{tracestate}\t1\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+
+
+@pytest.mark.parametrize(
+    "query_param_name, promql, expect_ok",
+    [
+        ("query", 'up{job="prometheus_masking_secret"}', True),
+        # A percent-encoded parameter name is decoded to `query` by the server, so it must be hidden too.
+        ("%71uery", 'up{job="prometheus_masking_secret"}', True),
+        # The URI is recorded before the query is parsed, so an error response must hide it as well.
+        ("query", 'up{job="prometheus_masking_secret"', False),
+    ],
+)
+def test_query_api_traced_request_hides_promql_in_span_log(query_param_name, promql, expect_ok):
+    """
+    The PromQL text is a query parameter of the request URI, which `query_masking_rules` do not cover,
+    so the handler span must record the URI with the PromQL parameters hidden.
+    """
+    secret = "prometheus_masking_secret"
+    trace_id = uuid.uuid4().hex
+
+    escaped_query = urllib.parse.quote_plus(promql, safe="")
+    url = f"http://{node.ip_address}:9093/api/v1/query?{query_param_name}={escaped_query}&time=1753176757.89"
+    response = get_response_to_http_api(
+        url, headers={"traceparent": f"00-{trace_id}-5150000000000515-01"}
+    )
+    assert (response.status_code == requests.codes.ok) == expect_ok, response.text
+
+    assert_eq_with_retry(
+        node,
+        span_log_handler_span_uri_sql(trace_id, secret),
+        f"1\t0\t1\t{int(expect_ok)}\n",
         retry_count=30,
         sleep_time=1,
     )
