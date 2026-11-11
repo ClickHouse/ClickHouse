@@ -17,6 +17,11 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <IO/CompressionMethod.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Common/logger_useful.h>
+#include <mutex>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -50,6 +55,14 @@ namespace CurrentMetrics
 }
 
 
+namespace ProfileEvents
+{
+    extern const Event QueryConditionCacheHits;
+    extern const Event QueryConditionCacheMisses;
+    extern const Event ObjectStorageQueryConditionCacheSkippedRowGroups;
+    extern const Event ParquetPrunedRowGroups;
+}
+
 namespace DB
 {
 
@@ -72,6 +85,94 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsBool paimon_incremental_read;
 }
 
+
+namespace
+{
+
+/// Returns `objects`, then the objects of `iterator`, if any.
+class ObjectIteratorWithPendingObjects : public IObjectIterator
+{
+public:
+    ObjectIteratorWithPendingObjects(ObjectInfos objects_, ObjectIterator iterator_)
+        : objects(std::move(objects_)), iterator(std::move(iterator_))
+    {
+    }
+
+    ObjectInfoPtr next(size_t id) override
+    {
+        size_t index = next_index.fetch_add(1, std::memory_order_relaxed);
+        if (index < objects.size())
+            return objects[index];
+        return iterator ? iterator->next(id) : nullptr;
+    }
+
+    size_t estimatedKeysCount() override { return iterator ? iterator->estimatedKeysCount() : objects.size(); }
+
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator ? iterator->getSnapshotVersion() : std::nullopt; }
+
+private:
+    const ObjectInfos objects;
+    const ObjectIterator iterator;
+    std::atomic<size_t> next_index{0};
+};
+
+}
+
+/// Splits a single object into parts (buckets), which the sources take one at a time. The object is split when the first
+/// source asks for its object rather than while the pipeline is built: building the pipeline (e.g. for `EXPLAIN PIPELINE`)
+/// must not read the object, and an error reading it must happen while reading, as without the split.
+struct DeferredObjectSplit : public IObjectIterator
+{
+    ObjectIterator iterator;
+    ObjectStoragePtr object_storage;
+    StorageObjectStorageConfigurationPtr configuration;
+    StorageSnapshotPtr storage_snapshot;
+    std::optional<FormatSettings> format_settings;
+    FormatFilterInfoPtr format_filter_info;
+    StorageID storage_id = StorageID::createEmpty();
+    ContextPtr context;
+    /// The number of sources.
+    size_t num_sources = 0;
+
+    /// The next bucket to read, or the next object to read if the object is not split.
+    ObjectInfoPtr next(size_t id) override
+    {
+        std::call_once(split_flag, [this] { split(); });
+        if (exception)
+        {
+            /// One source reports the error of the iterator, the query fails as without the split.
+            if (!exception_reported.exchange(true))
+                std::rethrow_exception(exception);
+            return nullptr;
+        }
+        if (!buckets.empty())
+        {
+            /// The buckets are ordered from the largest, so the last ones to be taken are the smallest.
+            size_t index = next_bucket.fetch_add(1, std::memory_order_relaxed);
+            return index < buckets.size() ? buckets[index] : nullptr;
+        }
+        return fallback->next(id);
+    }
+
+    size_t estimatedKeysCount() override { return 1; }
+
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+private:
+    std::once_flag split_flag;
+    /// The buckets of the object if it is split.
+    ObjectInfos buckets;
+    /// Otherwise the objects to read, shared by the sources.
+    ObjectIterator fallback;
+    /// The error of the iterator, if it failed.
+    std::exception_ptr exception;
+    std::atomic<bool> exception_reported{false};
+    /// The next bucket to be taken by a source.
+    std::atomic<size_t> next_bucket{0};
+
+    void split();
+    ObjectInfos splitObject(const ObjectInfoPtr & object_info);
+};
 
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     const StorageID & storage_id_,
@@ -321,9 +422,6 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         num_streams = 1;
     }
 
-    // here create for node -> query -> level thread pool
-    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
-
     auto format_filter_actions_dag = info.getFormatFilter(filter_actions_dag);
     auto make_format_filter_info = [&]
     {
@@ -343,6 +441,24 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     };
     auto format_filter_info = make_format_filter_info();
     format_filter_info->top_k_filter = top_k_filter;
+
+    /// `max_num_streams` is a read-parallelism request, not a thread budget.
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
+
+    /// A single object can be read by several sources, each reading its own part (bucket) of the object.
+    std::shared_ptr<DeferredObjectSplit> deferred_object_split;
+    if (estimated_keys_count <= 1)
+    {
+        deferred_object_split = tryDeferSplitSingleObject(format_filter_info, resize_to);
+        if (deferred_object_split)
+            num_streams = deferred_object_split->num_sources;
+    }
+
+    // here create for node -> query -> level thread pool
+    /// Unlike `ReadFromFile` for a split local file, the sources of a split object keep parsing in the shared
+    /// pool even with one parsing thread each: a remote read waits for each response, and parsing in the
+    /// threads of the pipeline would leave them idle during the wait.
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
@@ -384,6 +500,9 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     for (size_t i = 0; i < num_streams; ++i)
     {
+        /// The sources of a split object take its buckets one at a time.
+        ObjectIterator source_file_iterator = deferred_object_split ? deferred_object_split : file_iterator;
+
         auto source = std::make_shared<StorageObjectStorageSource>(
             storage_id,
             getName(),
@@ -394,7 +513,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             format_settings,
             context,
             max_block_size,
-            file_iterator,
+            std::move(source_file_iterator),
             parser_shared_resources,
             format_filter_info,
             need_only_count,
@@ -409,15 +528,18 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
-    /// `max_num_streams` is a read-parallelism request, not a thread budget.
-    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
     /// The format of a data lake configuration is only the format new files are written in, while
     /// the files of the snapshot that is read can have any format, and resizing after a reader
     /// that keeps the file order would scramble it again.
     const bool format_allows_parallelize = configuration->isDataLakeConfiguration()
         ? FormatFactory::instance().checkParallelizeOutputAfterReadingForAnyFormat(context)
         : FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
-    if (parallelize_output && format_allows_parallelize && output_ports > 0 && output_ports < resize_to)
+    /// One bucket of a split object can have much more rows to process than the others, e.g. when most rows passing
+    /// the filter are in one row group. Resize even if there are as many sources as threads, so that the rows of any
+    /// bucket can be processed by any thread.
+    const bool is_split_object = deferred_object_split != nullptr;
+    if (parallelize_output && format_allows_parallelize && output_ports > 0
+        && (output_ports < resize_to || (is_split_object && output_ports > 1)))
         pipe.resize(resize_to);
 
     for (const auto & processor : pipe.getProcessors())
@@ -430,6 +552,207 @@ void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
     const String & filter_id, const String & column_name, const DataTypePtr & column_type)
 {
     join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+}
+
+std::shared_ptr<DeferredObjectSplit> ReadFromObjectStorageStep::tryDeferSplitSingleObject(
+    const FormatFilterInfoPtr & format_filter_info, size_t num_sources)
+{
+    const auto context = getContext();
+    const auto & settings = context->getSettingsRef();
+
+    /// The same conditions as for a single local file, see `ReadFromFile::trySplitSingleFile`, as far as they are known
+    /// without reading the object.
+    if (num_sources < 2 || need_only_count || format_filter_info->min_max_from_statistics || top_k_filter
+        || lazy_row_index_registry || distributed_processing
+        || !settings[Setting::parallelize_output_from_storages]
+        || configuration->isDataLakeConfiguration() || configuration->isArchive()
+        || !FormatFactory::instance().checkIfFormatHasSplitter(configuration->format)
+        || !FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context))
+        return nullptr;
+#if CLICKHOUSE_CLOUD
+    if (distributed_read_bucket_count)
+        return nullptr;
+#endif
+
+    /// The footer read when the object is split is used by the readers of all buckets, which read the rest of the
+    /// object with their own requests. They must read the generation of the object that the footer describes, while
+    /// the object can be overwritten in place in between. Only a read pinned to the listed `ETag` guarantees that (see
+    /// `isReadPinnedToListedGeneration`), as for the second read of lazy materialization. For a split local file,
+    /// every source checks the version of the file instead (see `ReadFromFile::trySplitSingleFile`).
+    if (!isReadPinnedToListedGeneration())
+        return nullptr;
+
+    /// The buckets deliver rows in no particular order and are read by seeking.
+    const auto object_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+    if (object_format_settings.parquet.preserve_order || !object_format_settings.seekable_read)
+        return nullptr;
+
+    auto split = std::make_shared<DeferredObjectSplit>();
+    split->iterator = iterator_wrapper;
+    split->object_storage = object_storage;
+    split->configuration = configuration;
+    split->storage_snapshot = storage_snapshot;
+    split->format_settings = format_settings;
+    split->format_filter_info = format_filter_info;
+    split->storage_id = storage_id;
+    split->context = context;
+    split->num_sources = num_sources;
+    return split;
+}
+
+void DeferredObjectSplit::split()
+{
+    ObjectInfoPtr object_info;
+    ObjectInfoPtr another_object_info;
+    try
+    {
+        object_info = iterator->next(0);
+        /// The number of objects could be underestimated.
+        if (object_info)
+            another_object_info = iterator->next(0);
+    }
+    catch (...)
+    {
+        exception = std::current_exception();
+        return;
+    }
+
+    if (!object_info)
+    {
+        fallback = iterator;
+        return;
+    }
+
+    /// More than one object: the sources read them as without the split, the ones taken already first.
+    if (another_object_info)
+    {
+        fallback = std::make_shared<ObjectIteratorWithPendingObjects>(ObjectInfos{object_info, another_object_info}, iterator);
+        return;
+    }
+
+    try
+    {
+        buckets = splitObject(object_info);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while splitting object {}", object_info->getPath());
+        exception = std::current_exception();
+        return;
+    }
+    catch (...)
+    {
+        exception = std::current_exception();
+        return;
+    }
+
+    if (buckets.empty())
+        fallback = std::make_shared<ObjectIteratorWithPendingObjects>(ObjectInfos{object_info}, nullptr);
+}
+
+ObjectInfos DeferredObjectSplit::splitObject(const ObjectInfoPtr & object_info)
+{
+    if (object_info->getPath().empty() || object_info->isArchive() || object_info->file_bucket_info || object_info->rows_to_read
+        || object_info->data_lake_metadata || object_info->getFileFormat().has_value())
+        return {};
+
+    /// The buckets are read by seeking, which is not possible in a compressed object.
+    if (chooseCompressionMethod(object_info->getFileName(), configuration->compression_method) != CompressionMethod::None)
+        return {};
+
+    /// A small object is decoded quickly by one reader, and its footer is read together with its data. Reading the
+    /// footer here to split the object would take an additional request.
+    static constexpr size_t min_object_size_to_split = 8 << 20;
+    if (const auto & metadata = object_info->getObjectMetadata(); metadata && metadata->size_bytes < min_object_size_to_split)
+        return {};
+
+    ReadSettings read_settings = context->getReadSettings();
+    /// Only the footer at the tail is read here.
+    read_settings.remote_fs_settings.random_access = true;
+    auto & object = object_info->relative_path_with_metadata;
+    auto read_buf = createReadBuffer(object, object_storage, context, getLogger("ReadFromObjectStorageStep"), read_settings, /*allow_page_cache=*/ true);
+    /// The size of an object that was not listed is known only now.
+    if (!object.metadata || object.metadata->size_bytes < min_object_size_to_split)
+        return {};
+
+    /// A read is pinned only to a non-empty `ETag` (see `createReadBuffer`).
+    if (object.metadata->etag.empty())
+        return {};
+
+    /// The same key for the Parquet metadata cache as `StorageObjectStorageSource::createReader` uses, if the
+    /// object has a version token. Otherwise, the footer parsed here is still shared by the readers of all buckets.
+    std::optional<RelativePathWithMetadata> object_with_metadata;
+    if (object.metadata->getContentCacheToken().has_value())
+        object_with_metadata.emplace(object);
+
+    /// Several buckets per source, taken one at a time, so that a source that finishes its buckets early takes more of
+    /// them. A source takes its next bucket while it is still reading the current one, so with one bucket per source one
+    /// of them could take two and another none.
+    static constexpr size_t buckets_per_source = 4;
+    auto object_buckets = FormatFactory::instance().getSplitter(configuration->format)->splitForParallelReading(
+        num_sources * buckets_per_source, *read_buf, format_settings ? *format_settings : getFormatSettings(context),
+        object_with_metadata, context);
+    if (object_buckets.size() < 2)
+        return {};
+
+    /// Consult the query condition cache once for the whole object, rather than in every source, and drop
+    /// the row groups it knows to have no matching rows, as `ReadFromFile::trySplitSingleFile` does.
+    if (format_filter_info->condition_hash)
+    {
+        const auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+        const auto query_condition_cache_key = StorageObjectStorageSource::makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
+        if (query_condition_cache && query_condition_cache_key)
+        {
+            const auto query_condition_cache_table_id = StorageObjectStorageSource::getQueryConditionCacheTableId(
+                storage_id, *configuration, storage_snapshot, *format_filter_info, format_settings);
+            auto matching_marks = query_condition_cache->read(
+                query_condition_cache_table_id, *query_condition_cache_key, *format_filter_info->condition_hash, /*increment_profile_events=*/ false);
+            ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+            if (matching_marks)
+            {
+                RowGroupIndices matching_row_groups;
+                for (size_t i = 0; i < matching_marks->size(); ++i)
+                    if ((*matching_marks)[i])
+                        matching_row_groups.push_back(i);
+
+                VectorWithMemoryTracking<FileBucketInfoPtr> matching_buckets;
+                for (const auto & bucket : object_buckets)
+                    if (auto matching_bucket = bucket->filterByMatchingRowGroups(matching_row_groups))
+                        matching_buckets.push_back(std::move(matching_bucket));
+
+                /// No row group of the object can match: do not split it, its only source skips it by the same entry.
+                if (matching_buckets.empty())
+                    return {};
+
+                ProfileEvents::increment(
+                    ProfileEvents::ObjectStorageQueryConditionCacheSkippedRowGroups, matching_marks->size() - matching_row_groups.size());
+                /// The readers of the buckets count as pruned only the row groups of their own buckets, while the only
+                /// reader of an object that is not split counts the row groups dropped here too. Only Parquet has a splitter.
+                ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, matching_marks->size() - matching_row_groups.size());
+                LOG_DEBUG(getLogger("ReadFromObjectStorageStep"), "Query condition cache has dropped {}/{} row groups for condition {} in object {}.",
+                    matching_marks->size() - matching_row_groups.size(), matching_marks->size(),
+                    format_filter_info->filter_actions_dag->dumpNames(), object_info->getPath());
+
+                /// Fewer buckets may be left, they are still read as parts of a split object.
+                object_buckets = std::move(matching_buckets);
+            }
+        }
+    }
+
+    LOG_DEBUG(getLogger("ReadFromObjectStorageStep"), "Object {} is split into {} parts read by {} sources",
+        object_info->getPath(), object_buckets.size(), num_sources);
+
+    auto split_object_read_state = std::make_shared<SplitObjectReadState>(object_buckets.size());
+    ObjectInfos objects;
+    objects.reserve(object_buckets.size());
+    for (auto & bucket : object_buckets)
+    {
+        auto bucket_object_info = object_info->clone();
+        bucket_object_info->file_bucket_info = std::move(bucket);
+        bucket_object_info->split_object_read_state = split_object_read_state;
+        objects.push_back(std::move(bucket_object_info));
+    }
+    return objects;
 }
 
 void ReadFromObjectStorageStep::createIterator()

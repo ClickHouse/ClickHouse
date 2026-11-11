@@ -1,0 +1,27 @@
+<!--
+    A single Parquet object in the job-local S3 (`perf_s3`), 10 M rows of four `hits_10m_single` columns in about 40 row
+    groups, read by several sources, each reading a part of its row groups. Text filters and aggregations over the wide
+    `URL` column, and a narrow column.
+-->
+<test requires_s3="1">
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>src</name>
+        <values><value>s3(perf_s3, filename = 'parquet_s3_single_object/hits.parquet', format = Parquet)</value></values>
+    </substitution>
+</substitutions>
+
+<fill_query>INSERT INTO FUNCTION {src} SELECT CounterID, AdvEngineID, URL, SearchPhrase FROM hits_10m_single SETTINGS s3_truncate_on_insert = 1, max_threads = 1, max_insert_threads = 1, output_format_parquet_parallel_encoding = 0, output_format_parquet_row_group_size = 250000</fill_query>
+<fill_query>SELECT throwIf(num_rows != 10000000 OR num_row_groups NOT BETWEEN 30 AND 50) FROM s3(perf_s3, filename = 'parquet_s3_single_object/hits.parquet', format = ParquetMetadata)</fill_query>
+
+<query>SELECT count() FROM {src} WHERE URL LIKE '%google%' FORMAT Null</query>
+<query>SELECT SearchPhrase, min(URL), count() AS c FROM {src} WHERE URL LIKE '%google%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+<query>SELECT CounterID, avg(length(URL)) AS l FROM {src} WHERE URL != '' GROUP BY CounterID ORDER BY l DESC LIMIT 25 FORMAT Null</query>
+<query>SELECT count() FROM {src} WHERE AdvEngineID != 0 FORMAT Null</query>
+
+</test>

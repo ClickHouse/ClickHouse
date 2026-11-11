@@ -1,0 +1,60 @@
+-- the object is large enough to be split
+1
+-- split, one source per stream
+ReadFromObjectStorage × 4 0 → 1
+-- not split: order preserved, output not parallelized, no seeks, one thread
+ReadFromObjectStorage 0 → 1
+ReadFromObjectStorage 0 → 1
+Resize 1 → 4
+ReadFromObjectStorage 0 → 1
+ReadFromObjectStorage 0 → 1
+-- not split: reads are not pinned to the listed ETag
+Resize 1 → 4
+ReadFromObjectStorage 0 → 1
+-- an object of two row groups: a source per stream, the split is decided while reading
+ReadFromObjectStorage × 4 0 → 1
+2000000	1999999000000	12888890
+2000000	1999999000000	12888890
+-- max_threads = 8
+2000000	1999999000000	5780000	2000001000000	1999999000000	999999
+2000	1999246000
+31715	31704171240
+48822	2436730431
+2000000	1999999000000
+1999999	999
+1999998	998
+1999997	997
+05621.parquet	1	2000000
+-- max_threads = 1
+2000000	1999999000000	5780000	2000001000000	1999999000000	999999
+2000	1999246000
+31715	31704171240
+48822	2436730431
+2000000	1999999000000
+1999999	999
+1999998	998
+1999997	997
+05621.parquet	1	2000000
+-- hive partitioning columns
+7	2000000
+-- a filter on _path that needs a set built before reading
+2000000
+-- a glob is not split
+2000000	1999999000000	5780000
+2000000	1999999000000	5780000
+-- a missing object: building the pipeline does not read it, reading fails as without the split
+ReadFromObjectStorage × 4 0 → 1
+S3_ERROR
+0
+-- query condition cache: written once for the whole object, then used by a split read
+1	1234567
+1	1234567
+0	1	1
+1	1	1
+-- Azure
+1
+ReadFromObjectStorage × 4 0 → 1
+Resize 1 → 4
+ReadFromObjectStorage 0 → 1
+2000000	1999999000000	2000001000000
+2000000	1999999000000	2000001000000

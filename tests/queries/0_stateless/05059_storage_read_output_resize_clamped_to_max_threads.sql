@@ -65,7 +65,8 @@ FROM (
 );
 
 -- Carrier: ReadFromObjectStorageStep::initializePipeline. EXPLAIN only, so no endpoint is
--- contacted; a single key keeps num_streams at 1 so the resize guard is reached.
+-- contacted; a single key that is not split (the read is not pinned to the ETag) keeps
+-- num_streams at 1 so the resize guard is reached.
 CREATE TABLE t_resize_object_storage (x UInt64, y String)
 ENGINE = S3('http://localhost:19999/dummy.parquet', NOSIGN, Parquet);
 
@@ -73,7 +74,15 @@ SELECT match(arrayStringConcat(groupArray(explain), ''), '.*Resize 1 → 2 *Read
 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_resize_object_storage
     SETTINGS max_threads = 2, max_streams_to_max_threads_ratio = 1000000,
-             max_threads_min_free_memory_per_thread = 0
+             max_threads_min_free_memory_per_thread = 0, s3_validate_etag_on_read = 0
+);
+
+-- A single key that can be split is read by at most max_threads sources.
+SELECT match(arrayStringConcat(groupArray(explain), ''), '.*Resize 2 → 2 *ReadFromObjectStorage × 2 0 → 1 *$')
+FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_resize_object_storage
+    SETTINGS max_threads = 2, max_streams_to_max_threads_ratio = 1000000,
+             max_threads_min_free_memory_per_thread = 0, enable_parallel_replicas = 0
 );
 
 DROP TABLE t_resize_file;

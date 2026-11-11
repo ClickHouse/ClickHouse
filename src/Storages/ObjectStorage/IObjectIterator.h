@@ -21,6 +21,7 @@ extern const int LOGICAL_ERROR;
 
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+struct SplitObjectReadState;
 class RuntimeFilterPruningPredicate;
 
 struct ObjectInfo
@@ -75,6 +76,9 @@ struct ObjectInfo
     /// match, rather than splitting the file between readers: only then does reading the buckets tell
     /// which row groups of the whole file match.
     bool file_bucket_info_from_query_condition_cache = false;
+    /// Set if `file_bucket_info` is one of the buckets of an object read by several sources of one query
+    /// (see `DeferredObjectSplit`), and shared by the buckets of the object.
+    std::shared_ptr<SplitObjectReadState> split_object_read_state;
 
     /// Lazy materialization: if set, read only these rows of the file.
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.

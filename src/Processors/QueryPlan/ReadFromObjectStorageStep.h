@@ -13,6 +13,7 @@ class LazilyReadFromObjectStorage;
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
 struct ObjectStorageTopKQueryConditionCacheKey;
+struct DeferredObjectSplit;
 
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
@@ -149,6 +150,9 @@ private:
 #endif
 
     void createIterator();
+    /// If the query may read a single object that can be split into parts (buckets) to be read by `num_sources` sources,
+    /// returns the state that splits it when the first source starts reading. Otherwise returns nullptr.
+    std::shared_ptr<DeferredObjectSplit> tryDeferSplitSingleObject(const FormatFilterInfoPtr & format_filter_info, size_t num_sources);
 
     std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> makeTopKQueryConditionCacheKey() const;
 

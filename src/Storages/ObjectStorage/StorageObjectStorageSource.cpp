@@ -271,6 +271,21 @@ namespace
 
         return fmt::format("web:{}:{}", toString(hash.get128()), object_info.getPath());
     }
+
+    MarkRanges unmatchedRowGroupRanges(const std::unordered_set<size_t> & matched_row_groups, size_t total_row_groups)
+    {
+        MarkRanges unmatched_ranges;
+        for (size_t i = 0; i < total_row_groups; ++i)
+        {
+            if (matched_row_groups.contains(i))
+                continue;
+            if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
+                ++unmatched_ranges.back().end;
+            else
+                unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
+        }
+        return unmatched_ranges;
+    }
 }
 
 namespace Setting
@@ -438,13 +453,24 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , lazy_row_index_registry(std::move(lazy_row_index_registry_))
 {
     if (format_filter_info && format_filter_info->condition_hash)
-        query_condition_cache_table_id = QueryConditionCache::getTableIdForFileEntries(
-            storage_id.uuid,
-            configuration->format,
-            configuration->compression_method,
-            storage_snapshot->metadata->getColumns(),
-            format_filter_info->column_mapper.get(),
-            format_settings ? &*format_settings : nullptr);
+        query_condition_cache_table_id = getQueryConditionCacheTableId(
+            storage_id, *configuration, storage_snapshot, *format_filter_info, format_settings);
+}
+
+UUID StorageObjectStorageSource::getQueryConditionCacheTableId(
+    const StorageID & storage_id,
+    const StorageObjectStorageConfiguration & configuration,
+    const StorageSnapshotPtr & storage_snapshot,
+    const FormatFilterInfo & format_filter_info,
+    const std::optional<FormatSettings> & format_settings)
+{
+    return QueryConditionCache::getTableIdForFileEntries(
+        storage_id.uuid,
+        configuration.format,
+        configuration.compression_method,
+        storage_snapshot->metadata->getColumns(),
+        format_filter_info.column_mapper.get(),
+        format_settings ? &*format_settings : nullptr);
 }
 
 StorageObjectStorageSource::~StorageObjectStorageSource()
@@ -488,18 +514,7 @@ void StorageObjectStorageSource::writePendingTopKQueryConditionCacheEntries()
                 if (!tracker.isValueInsideThreshold(best_value))
                     matched_row_groups.erase(row_group);
 
-        MarkRanges unmatched_ranges;
-        for (size_t i = 0; i < entry.total_row_groups; ++i)
-        {
-            if (!matched_row_groups.contains(i))
-            {
-                if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
-                    unmatched_ranges.back().end++;
-                else
-                    unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
-            }
-        }
-
+        const MarkRanges unmatched_ranges = unmatchedRowGroupRanges(matched_row_groups, entry.total_row_groups);
         if (unmatched_ranges.empty())
             continue;
 
@@ -1259,62 +1274,59 @@ Chunk StorageObjectStorageSource::generate()
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
-            try
+            if (reader.getInputFormat() && object_info->split_object_read_state)
             {
-                const auto * input_format = reader.getInputFormat();
-                if (input_format)
+                finishReadingSplitObjectBucket(*object_info, *reader.getInputFormat(), query_condition_cache_key);
+            }
+            else
+            {
+                try
                 {
-                    auto buckets_opt = input_format->getMatchedBuckets();
-
-                    if (buckets_opt.has_value())
+                    const auto * input_format = reader.getInputFormat();
+                    if (input_format)
                     {
-                        const auto & matched_groups = buckets_opt->first;
-                        size_t total_groups = buckets_opt->second;
+                        auto buckets_opt = input_format->getMatchedBuckets();
 
-                        std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
-                        MarkRanges unmatched_ranges;
-                        for (size_t i = 0; i < total_groups; ++i)
+                        if (buckets_opt.has_value())
                         {
-                            if (!matched_set.contains(i))
-                            {
-                                if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
-                                    unmatched_ranges.back().end++;
-                                else
-                                    unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
-                            }
-                        }
+                            const auto & matched_groups = buckets_opt->first;
+                            size_t total_groups = buckets_opt->second;
 
-                        size_t unmatched_count = total_groups - matched_groups.size();
-                        LOG_DEBUG(log,
-                            "Query condition cache: storing {}/{} unmatched row groups for condition {} in file {}.",
-                            unmatched_count,
-                            total_groups,
-                            format_filter_info->filter_actions_dag->dumpNames(),
-                            object_info->getFileName());
+                            std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
+                            const MarkRanges unmatched_ranges = unmatchedRowGroupRanges(matched_set, total_groups);
 
-                        /// A reader of one bucket of a split file reports the row groups of the other
-                        /// buckets as not matching, although it never read them.
-                        const bool read_whole_file
-                            = !object_info->file_bucket_info || object_info->file_bucket_info_from_query_condition_cache;
-                        if (!unmatched_ranges.empty() && query_condition_cache_key && read_whole_file)
-                        {
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            query_condition_cache->write(
-                                query_condition_cache_table_id,
-                                *query_condition_cache_key,
-                                *format_filter_info->condition_hash,
-                                format_filter_info->filter_actions_dag->dumpNames(),
-                                unmatched_ranges,
+                            size_t unmatched_count = total_groups - matched_groups.size();
+                            LOG_DEBUG(log,
+                                "Query condition cache: storing {}/{} unmatched row groups for condition {} in file {}.",
+                                unmatched_count,
                                 total_groups,
-                                false
-                            );
+                                format_filter_info->filter_actions_dag->dumpNames(),
+                                object_info->getFileName());
+
+                            /// A reader of one bucket of a split file reports the row groups of the other
+                            /// buckets as not matching, although it never read them.
+                            const bool read_whole_file
+                                = !object_info->file_bucket_info || object_info->file_bucket_info_from_query_condition_cache;
+                            if (!unmatched_ranges.empty() && query_condition_cache_key && read_whole_file)
+                            {
+                                auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                                query_condition_cache->write(
+                                    query_condition_cache_table_id,
+                                    *query_condition_cache_key,
+                                    *format_filter_info->condition_hash,
+                                    format_filter_info->filter_actions_dag->dumpNames(),
+                                    unmatched_ranges,
+                                    total_groups,
+                                    false
+                                );
+                            }
                         }
                     }
                 }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(getLogger("StorageObjectStorageSource"), "Failed to write to query condition cache");
+                catch (...)
+                {
+                    tryLogCurrentException(getLogger("StorageObjectStorageSource"), "Failed to write to query condition cache");
+                }
             }
         }
 
@@ -1374,6 +1386,62 @@ Chunk StorageObjectStorageSource::generate()
     }
 
     return {};
+}
+
+void StorageObjectStorageSource::finishReadingSplitObjectBucket(
+    const ObjectInfo & object_info,
+    const IInputFormat & input_format,
+    const std::optional<String> & query_condition_cache_key)
+{
+    /// The reader of one bucket reports the row groups of the other buckets as not matching, although it has
+    /// not read them, and a row group that is in no bucket was dropped by the query condition cache entry
+    /// for the same condition.
+    std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> matched_buckets;
+    if (query_condition_cache_key && !isCancelled())
+        matched_buckets = input_format.getMatchedBuckets();
+
+    auto & state = *object_info.split_object_read_state;
+    size_t total_row_groups = 0;
+    std::unordered_set<size_t> matched_row_groups;
+    {
+        std::lock_guard lock(state.mutex);
+        if (matched_buckets && state.can_write_query_condition_cache)
+        {
+            state.total_row_groups = matched_buckets->second;
+            state.matched_row_groups.insert(matched_buckets->first.begin(), matched_buckets->first.end());
+        }
+        else
+        {
+            state.can_write_query_condition_cache = false;
+        }
+
+        ++state.buckets_read;
+        if (state.buckets_read < state.num_buckets || !state.can_write_query_condition_cache)
+            return;
+
+        total_row_groups = state.total_row_groups;
+        matched_row_groups = std::move(state.matched_row_groups);
+    }
+
+    const MarkRanges unmatched_ranges = unmatchedRowGroupRanges(matched_row_groups, total_row_groups);
+    if (unmatched_ranges.empty())
+        return;
+
+    LOG_DEBUG(log,
+        "Query condition cache: storing {}/{} unmatched row groups for condition {} in file {}.",
+        total_row_groups - matched_row_groups.size(),
+        total_row_groups,
+        format_filter_info->filter_actions_dag->dumpNames(),
+        object_info.getFileName());
+
+    Context::getGlobalContextInstance()->getQueryConditionCache()->write(
+        query_condition_cache_table_id,
+        *query_condition_cache_key,
+        *format_filter_info->condition_hash,
+        format_filter_info->filter_actions_dag->dumpNames(),
+        unmatched_ranges,
+        total_row_groups,
+        false);
 }
 
 void StorageObjectStorageSource::addTotalRowsApproxFromMetadata(const ObjectInfo & object_info)
