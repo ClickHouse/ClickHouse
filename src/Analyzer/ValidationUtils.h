@@ -48,6 +48,12 @@ void assertNoArrayJoinOutside(const QueryTreeNodePtr & node,
     int exception_code,
     std::string_view exception_place_message);
 
+/** Calculate tree size: the number of nodes, counting the source expression of a constant as its subtree.
+  * This is the size that `max_expanded_ast_elements` limits.
+  * Additionally for each node in tree, update node to tree size map.
+  */
+size_t calculateTreeSize(const QueryTreeNodePtr & node, std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size);
+
 /** Validate tree size. If size of tree is greater than max size throws exception.
   * Additionally for each node in tree, update node to tree size map.
   */

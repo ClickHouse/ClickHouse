@@ -27,7 +27,8 @@ struct IsStorageTouched
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
-/// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
+/// Evaluate the size of mutation commands without constructing a full MutationsInterpreter: the size of the resolved
+/// predicate tree that `isStorageTouchedByMutations` checks against `max_expanded_ast_elements`.
 size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
 /// Transitive closure of `getColumnDependencies` over @updated_columns: a dependency that is not
@@ -36,6 +37,10 @@ ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
     const StorageInMemoryMetadata::HasDependencyCallback & has_dependency);
+
+/// The size that the commands of one mutation add to the predicate of a batch of mutations. The sum of these sizes
+/// for the mutations of a batch is not less than `evaluateMutationCommandsSize` of all their commands.
+size_t evaluateMutationCommandsSizeInBatch(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
 /// Return false if the data isn't going to be changed by mutations.
 /// `on_exception` runs when reading the part fails, before the reads still in flight are waited for.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+#include <optional>
 #include <base/types.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -57,6 +59,13 @@ struct MergeTreeMutationEntry
     /// CSN of transaction which has created mutation
     /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or NonTransactionalCSN if there is no transaction.
     CSN csn = Tx::UnknownCSN;
+
+    /// Sizes for selecting the mutations of one mutate task, for the metadata version they were evaluated with
+    /// (see `StorageMergeTree::selectPartsToMutate`). In memory only, guarded by `currently_processing_in_background_mutex`.
+    /// What the commands of this mutation add to the predicate of a batch, see `evaluateMutationCommandsSizeInBatch`.
+    std::optional<std::pair<Int32, size_t>> commands_size;
+    /// Whether the batch of mutations from this one to the one with the given block number passes the size check of the mutate task.
+    std::map<std::pair<UInt64, Int32>, bool> batch_fits;
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,

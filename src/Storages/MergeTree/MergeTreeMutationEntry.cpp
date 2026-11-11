@@ -220,6 +220,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) 
     , latest_fail_error_code_name(std::move(other.latest_fail_error_code_name))
     , tid(other.tid)
     , csn(other.csn)
+    , commands_size(std::move(other.commands_size))
+    , batch_fits(std::move(other.batch_fits))
 {
 }
 
