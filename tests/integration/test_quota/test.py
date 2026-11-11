@@ -221,7 +221,7 @@ def test_quota_from_users_xml():
         ]
     )
 
-    instance.query("SELECT SUM(x) from test_table")
+    instance.query("SELECT SUM(x) from test_table SETTINGS use_statistics_for_sum_avg_aggregation = 0")
     system_quota_usage(
         [
             [
@@ -421,7 +421,7 @@ def test_tracking_quota():
         ]
     )
 
-    instance.query("SELECT SUM(x) from test_table")
+    instance.query("SELECT SUM(x) from test_table SETTINGS use_statistics_for_sum_avg_aggregation = 0")
     system_quota_usage(
         [
             [
