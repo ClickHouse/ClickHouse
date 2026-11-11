@@ -149,9 +149,9 @@ void TabSeparatedFormatReader::skipHeaderRow()
 }
 
 template <bool is_header_row>
-std::vector<String> TabSeparatedFormatReader::readRowImpl()
+VectorWithMemoryTracking<String> TabSeparatedFormatReader::readRowImpl()
 {
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     do
     {
         fields.push_back(readFieldIntoString<is_header_row>());
@@ -387,7 +387,7 @@ TabSeparatedSchemaReader::TabSeparatedSchemaReader(
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};

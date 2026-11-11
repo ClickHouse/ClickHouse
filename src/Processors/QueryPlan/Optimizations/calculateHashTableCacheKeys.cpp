@@ -130,11 +130,10 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
     return true;
 }
 
-/// A step is transparent for the cache key - it contributes nothing - when it changes neither the row
-/// count nor the byte layout. This is the loose, header-only test, and it stays that way: it decides
-/// only whether a step adds anything of its own to a key, where being wrong costs a slightly-off
-/// estimate. Deciding that a step can be *skipped over* is a stricter question, answered by
-/// `isPassthroughExpressionWithRenames` below.
+/// A step that changes neither the row count nor the byte layout adds to the key at most what an `ExpressionStep`
+/// computes or permutes, never its serialized form. This is the loose, header-only test, and it stays that way:
+/// being wrong costs a slightly-off estimate. Deciding that a step can be *skipped over* is a stricter question,
+/// answered by `isPassthroughExpressionWithRenames` below.
 bool isByteTransparentTransform(const ITransformingStep & transform)
 {
     return transform.getTransformTraits().preserves_number_of_rows
@@ -206,14 +205,22 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
                     return permutation_hash.get64();
                 }
             }
+            else
+            {
+                /// A computing step: hash what it computes, which is the same whether or not a rename was merged into it.
+                SipHash computed_hash;
+                computed_hash.update("computed columns");
+                computed_hash.update(expression->getExpression().getComputedOutputsHash(*transform.getInputHeaders().front()));
+                return computed_hash.get64();
+            }
         }
         return 0;
     }
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
     /// hashed as it is produced rather than accumulated. With `for_cache_key` the actions DAGs are
-    /// written without their variable-size constant values, which can be arbitrarily large (a folded
-    /// scalar subquery); see `ActionsDAG::updateHash` for what that lets collide. The DAGs of a read
+    /// written without the values of constants that can be arbitrarily large (a folded scalar
+    /// subquery); see `ActionsDAG::updateHash` for what that lets collide. The DAGs of a read
     /// step and of a join are hashed with `updateHash` under the same contract.
     SipHash hash;
     SipHashingWriteBuffer wbuf(hash);
@@ -375,7 +382,7 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
 /// (e.g. the column-blind read hash on the input side, the join output column names - see the
 /// `JoinStep` case below for why hashing them would be strictly worse - or the values of
-/// variable-size constants, see `ActionsDAG::updateHash`). A resulting key
+/// large constants, see `ActionsDAG::updateHash`). A resulting key
 /// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
 /// replicas sub-optimally - it never changes query results. We trade that small estimation
 /// imprecision for a simpler, cheaper key.
@@ -719,6 +726,24 @@ static UInt64 mixGroupByCapsIntoKey(const QueryPlan::Node & aggregating_node, UI
     return hash.get64();
 }
 
+/// Mixes the limit of the top-K pruning into the key of a step whose adaptive aggregation prunes its merge by
+/// it. The pruning changes when the frozen tables thaw (see `Aggregator::adaptiveTopKPruningFreesStaging`),
+/// and with it the verdict that a run stores in the statistics (see `Aggregator::adaptiveStagingVerdict`).
+/// The limit sets the count that the pruning compares with, so both depend on it. Such a step then keeps
+/// statistics of its own: the same aggregation without the pruning, or with another limit, neither follows
+/// its verdict nor overwrites it.
+static UInt64 mixAdaptiveTopKPruningIntoKey(const AggregatingStep & aggregating, UInt64 key)
+{
+    const auto & params = aggregating.getParams();
+    if (!params.adaptiveTopKPrunes())
+        return key;
+
+    SipHash hash;
+    hash.update(key);
+    hash.update(params.bucket_top_k);
+    return hash.get64();
+}
+
 void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
 {
     if (!optimization_settings.collect_hash_table_stats_during_aggregation)
@@ -764,13 +789,17 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
     {
         /// Hash only the aggregation's own input subtree (this node as the root). This excludes the
         /// steps ABOVE the aggregation (LIMIT, `ORDER BY ... WITH FILL`, ...): they may not be
-        /// serializable, and a LIMIT affects the number of groups only through the step's own cap.
+        /// serializable, and a LIMIT affects the statistics only through what it sets in the step: the
+        /// step's own cap, and the top-K pruning of the adaptive aggregation.
         try
         {
             const auto cache_keys = calculateHashTableCacheKeys(*aggregating_node);
             if (auto it = cache_keys.find(aggregating_node); it != cache_keys.end())
-                keys_to_set.emplace_back(
-                    typeid_cast<AggregatingStep *>(aggregating_node->step.get()), mixGroupByCapsIntoKey(*aggregating_node, it->second));
+            {
+                auto * aggregating = typeid_cast<AggregatingStep *>(aggregating_node->step.get());
+                const UInt64 key = mixGroupByCapsIntoKey(*aggregating_node, it->second);
+                keys_to_set.emplace_back(aggregating, mixAdaptiveTopKPruningIntoKey(*aggregating, key));
+            }
         }
         catch (...)
         {
