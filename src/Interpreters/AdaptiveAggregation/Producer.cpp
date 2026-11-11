@@ -1,10 +1,14 @@
-/// The producer kernels of the adaptive aggregation: the frozen consume path and the staging of missed rows as
-/// partition records. They are member templates of `Aggregator` (defined here rather than in `Aggregator.cpp`,
-/// following `ClientBaseOptimizedParts.cpp`), dispatched over the aggregation-method variants.
+/// The producer kernels of the adaptive aggregation: the frozen consume path, the staging of missed rows as
+/// partition records, and the scan of a frozen table for the local top of the top-K pruning. They are member
+/// templates of `Aggregator` (defined here rather than in `Aggregator.cpp`, following
+/// `ClientBaseOptimizedParts.cpp`), dispatched over the aggregation-method variants.
 
 #include <algorithm>
+#include <functional>
 #include <limits>
+#include <optional>
 #include <type_traits>
+#include <vector>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
@@ -17,6 +21,7 @@
 #include <Common/memcpySmall.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
+#include <base/sort.h>
 
 namespace ProfileEvents
 {
@@ -144,6 +149,32 @@ void Aggregator::executeFrozen(
 #undef M
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive frozen path.");
+}
+
+std::optional<UInt64> Aggregator::adaptiveLocalTopKCount(AggregatedDataVariants & table, const AdaptiveTopKCountBins & bins) const
+{
+    chassert(is_simple_count);
+    std::vector<UInt64> counts;
+    const auto append_table_counts = [&](auto & method)
+    {
+        if constexpr (MapAggregationMethod<std::decay_t<decltype(method)>>)
+            method.data.forEachMapped([&](AggregateDataPtr & mapped) { counts.push_back(getInlineCountState(mapped)); });
+    };
+#define M(NAME) \
+    else if (table.type == AggregatedDataVariants::Type::NAME) \
+        append_table_counts(*table.NAME);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+#undef M
+    else
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive frozen path.");
+
+    bins.appendNonEmpty(counts);
+    if (counts.size() < params.bucket_top_k)
+        return std::nullopt;
+    ::nth_element(counts.begin(), counts.begin() + (params.bucket_top_k - 1), counts.end(), std::greater<>());
+    return counts[params.bucket_top_k - 1];
 }
 
 /// The set counterpart of the frozen kernel. A `GROUP BY` without aggregate functions has no places to

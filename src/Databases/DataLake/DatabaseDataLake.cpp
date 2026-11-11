@@ -110,6 +110,8 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
+    extern const DatabaseDataLakeSettingsString google_service_account_key;
+    extern const DatabaseDataLakeSettingsString disk;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
     extern const DatabaseDataLakeSettingsBool flat_namespaces;
     extern const DatabaseDataLakeSettingsDatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode;
@@ -206,7 +208,7 @@ DatabaseDataLake::DatabaseDataLake(
     UUID uuid,
     bool allow_server_credentials_in_user_queries_,
     bool is_loading_from_existing_metadata_,
-    bool lazy_init)
+    bool is_existing_definition)
     : IDatabase(database_name_)
     , url(url_)
     , database_settings(std::make_unique<const DatabaseDataLakeSettings>(settings_))
@@ -217,19 +219,19 @@ DatabaseDataLake::DatabaseDataLake(
     , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
     , db_uuid(uuid)
 {
-    validateSettings();
-    /// On ATTACH (server startup / user `ATTACH DATABASE`) or `RESTORE DATABASE`,
+    validateSettings(is_existing_definition);
+    /// On ATTACH (server startup / user `ATTACH DATABASE`) or `RESTORE DATABASE`, i.e. for an existing definition,
     ///  defer catalog construction to first use: building it can perform network I/O or credential validation
     ///  that must not block startup. On CREATE build eagerly so misconfiguration (including a restricted
     ///  server-credential catalog) is reported immediately.
-    if (!lazy_init)
+    if (!is_existing_definition)
     {
         std::lock_guard lock(catalog_mutex);
         initializeOrLeaveUnavailable();
     }
 }
 
-void DatabaseDataLake::validateSettings()
+void DatabaseDataLake::validateSettings(bool is_existing_definition)
 {
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
@@ -258,6 +260,34 @@ void DatabaseDataLake::validateSettings()
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty. "
             "Please specify 'SETTINGS warehouse=<warehouse_name>' in the CREATE DATABASE query");
+    }
+
+    if (settings[DatabaseDataLakeSetting::catalog_type].value == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+        && settings[DatabaseDataLakeSetting::disk].changed)
+    {
+        /// The Google credentials of a BigLake catalog are also the credentials of its tables' data files, and they
+        /// reach the tables through `StorageS3Configuration::fromAST` only (see `applyCatalogSpecificConfiguration`).
+        /// A table built on a disk takes the disk's own credentials instead (`fromDisk`), so the user-supplied
+        /// credentials would silently apply to the catalog but not to the data. Refuse the combination.
+        const bool has_google_credentials = !settings[DatabaseDataLakeSetting::google_service_account_key].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_client_id].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_client_secret].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_refresh_token].value.empty();
+        /// Only new definitions are refused: a database that already exists (replayed at server startup, re-attached
+        /// with `ATTACH DATABASE` after `DETACH`, or restored from a backup) must still load, so it keeps the previous
+        /// behavior (the data files are read with the credentials of the disk). This is a usability check, not a
+        /// credential check, so a user `ATTACH` is not fail-closed here: the credentials of the catalog are still
+        /// checked independently when it is built.
+        if (has_google_credentials && is_existing_definition)
+            LOG_WARNING(log, "The `disk` setting of a BigLake catalog is combined with Google credentials: the data files "
+                "are read with the credentials of the disk, not with the credentials of the catalog");
+        else if (has_google_credentials)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The `disk` setting cannot be combined with `google_service_account_key` or the Google ADC credentials "
+                "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token) of a BigLake catalog: "
+                "the data files of a table on a disk are read with the credentials of the disk, not with the "
+                "credentials of the catalog");
     }
 }
 
@@ -367,6 +397,7 @@ void DatabaseDataLake::initialize() const
             std::string google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
             std::string google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
             std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
+            std::string google_service_account_key = settings[DatabaseDataLakeSetting::google_service_account_key].value;
 
             if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
             {
@@ -385,6 +416,7 @@ void DatabaseDataLake::initialize() const
                 google_adc_client_secret,
                 google_adc_refresh_token,
                 google_adc_quota_project_id,
+                google_service_account_key,
                 Context::getGlobalContextInstance(),
                 allow_server_credentials_in_user_queries,
                 snapshot_loading_mode);
@@ -907,7 +939,8 @@ void DatabaseDataLake::applyCatalogSpecificConfiguration(StorageObjectStorageCon
         s3_configuration->setInitializationAsBigLake(
             biglake_catalog.getGoogleADCClientId(),
             biglake_catalog.getGoogleADCClientSecret(),
-            biglake_catalog.getGoogleADCRefreshToken()
+            biglake_catalog.getGoogleADCRefreshToken(),
+            biglake_catalog.getGoogleServiceAccountKey()
         );
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type S3 for Iceberg BigLake catalog");
@@ -2237,10 +2270,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             args.uuid,
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
-            /// `RESTORE DATABASE` shouldn't do network I/O: an unreachable or unauthorized catalog must not block it.
-            /// Keyed on the restore flag, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
+            /// `ATTACH DATABASE` (server startup or a user re-attach) and `RESTORE DATABASE` replay an existing
+            /// definition. They shouldn't do network I/O: an unreachable or unauthorized catalog must not block them.
+            /// Keyed on the attach and restore flags, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
             /// `EXECUTE AS` runs as an internal query and must still build the catalog eagerly.
-            /*lazy_init=*/args.create_query.attach || args.is_restore_from_backup);
+            /*is_existing_definition=*/args.create_query.attach || args.is_restore_from_backup);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
