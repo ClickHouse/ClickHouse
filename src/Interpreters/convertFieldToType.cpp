@@ -1543,7 +1543,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         /// A composite or `Variant` type cannot be promoted, so its integer leaves are parsed at their own width.
-        const bool parse_composite = which_type.isArray() || which_type.isTuple() || which_type.isMap() || which_type.isVariant();
+        const bool parse_composite = which_type.isArray() || which_type.isFixedArray() || which_type.isTuple() || which_type.isMap() || which_type.isVariant();
         std::optional<FormatSettings> composite_settings;
         if (parse_composite)
         {
@@ -1640,7 +1640,7 @@ Field convertFieldToTypeWithWiderIntegers(const Field & src, DataTypePtr & type,
         return {};
 
     const WhichDataType which(removeNullable(type));
-    if (!which.isArray() && !which.isTuple() && !which.isMap())
+    if (!which.isArray() && !which.isFixedArray() && !which.isTuple() && !which.isMap())
         return {};
 
     for (auto carrier : {WideIntegerCarrier::SameSignedness, WideIntegerCarrier::SignedExceptUInt256, WideIntegerCarrier::Signed,
