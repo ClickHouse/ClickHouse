@@ -64,13 +64,13 @@ public:
         const String & comment;
         bool is_restore_from_backup = false;
 
-        ContextMutablePtr getContext() const;
-        ContextMutablePtr getLocalContext() const;
+        [[nodiscard]] ContextMutablePtr getContext() const;
+        [[nodiscard]] ContextMutablePtr getLocalContext() const;
 
         /// A disk or a storage policy the table definition names. Refused, unless loading from existing metadata, when the
         /// query may not use it (see `DiskFromAST::ensureDiskIsAllowed`).
-        DiskPtr getDisk(const String & name) const;
-        StoragePolicyPtr getStoragePolicy(const String & name) const;
+        [[nodiscard]] DiskPtr getDisk(const String & name) const;
+        [[nodiscard]] StoragePolicyPtr getStoragePolicy(const String & name) const;
     };
 
     /// Analog of the IStorage::supports*() helpers

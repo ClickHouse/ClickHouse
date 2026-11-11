@@ -73,14 +73,14 @@ struct ISerializationSubcolumnCreator
 {
     using ISubcolumnCreator = ISerializationSubcolumnCreator;
 
-    virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
-    virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
-    virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
+    [[nodiscard]] virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
+    [[nodiscard]] virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
+    [[nodiscard]] virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
 
     /// A creator wraps whichever subcolumn was selected beneath it, but `create` receives only that
     /// subcolumn's type, column and serialization, which cannot tell a null map from any other `UInt8`.
     /// Returns the creator to use instead of this one, or `nullptr` to keep this one.
-    virtual std::shared_ptr<const ISerializationSubcolumnCreator> specializeForSelectedSubcolumn(const SerializationSubstream &) const
+    [[nodiscard]] virtual std::shared_ptr<const ISerializationSubcolumnCreator> specializeForSelectedSubcolumn(const SerializationSubstream &) const
     {
         return nullptr;
     }

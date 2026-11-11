@@ -356,7 +356,7 @@ class IExtendedPool : public IHTTPConnectionPoolForEndpoint
 public:
     using Ptr = std::shared_ptr<IExtendedPool>;
 
-    virtual HTTPConnectionGroupType getGroupType() const = 0;
+    [[nodiscard]] virtual HTTPConnectionGroupType getGroupType() const = 0;
     /// Appends expired connections to `expired_connections` for the caller to destroy after releasing its locks:
     /// closing a TLS connection may do socket I/O. Returns the number of connections left.
     virtual size_t wipeExpired(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) = 0;

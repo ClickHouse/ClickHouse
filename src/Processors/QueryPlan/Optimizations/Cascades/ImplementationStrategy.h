@@ -31,7 +31,7 @@ struct IReadStrategy : IImplementationStrategy
 };
 struct IWindowStrategy : IImplementationStrategy
 {
-    virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
+    [[nodiscard]] virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
 };
 struct IDistinctStrategy : IImplementationStrategy
 {
@@ -84,8 +84,8 @@ struct PartialAggregationStrategy final : IAggregationStrategy
 /// divides the work by the node count, which is what tells them apart.
 struct WindowStrategy final : IWindowStrategy
 {
-    String getName() const override { return "Window"; }
-    Cost estimateOperatorCost(const CostInputs & inputs) const override;
+    [[nodiscard]] String getName() const override { return "Window"; }
+    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 /// --- Final DISTINCT strategies ---

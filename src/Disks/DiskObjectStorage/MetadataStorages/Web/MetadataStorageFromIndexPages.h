@@ -25,9 +25,9 @@ private:
         std::string final_url;
     };
 
-    std::vector<std::string> makeListingURLs(const std::string & path, size_t shard_index) const;
-    IndexPage readIndexPage(const Poco::URI & uri, const Poco::Net::HTTPBasicCredentials & credentials) const;
-    std::vector<std::string> extractURLs(
+    [[nodiscard]] std::vector<std::string> makeListingURLs(const std::string & path, size_t shard_index) const;
+    [[nodiscard]] IndexPage readIndexPage(const Poco::URI & uri, const Poco::Net::HTTPBasicCredentials & credentials) const;
+    [[nodiscard]] std::vector<std::string> extractURLs(
         const std::string & page_body,
         const std::string & listing_url,
         const std::string & listing_prefix_url,

@@ -41,13 +41,13 @@ public:
     [[nodiscard]] std::vector<IcebergNamespaceName> listNamespaces(const IcebergNamespaceName & parent) const;
 
     using CreateTableResult = KeeperIcebergRESTCatalogStore::CreateTableResult;
-    CreateTableResult createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer) const;
-    std::optional<IcebergTablePointer> getTable(const IcebergNamespaceName & ns, const String & table) const;
-    bool tableExists(const IcebergNamespaceName & ns, const String & table) const;
-    std::optional<Strings> listTables(const IcebergNamespaceName & ns) const;
-    bool dropTable(const IcebergNamespaceName & ns, const String & table) const;
+    [[nodiscard]] CreateTableResult createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer) const;
+    [[nodiscard]] std::optional<IcebergTablePointer> getTable(const IcebergNamespaceName & ns, const String & table) const;
+    [[nodiscard]] bool tableExists(const IcebergNamespaceName & ns, const String & table) const;
+    [[nodiscard]] std::optional<Strings> listTables(const IcebergNamespaceName & ns) const;
+    [[nodiscard]] bool dropTable(const IcebergNamespaceName & ns, const String & table) const;
     using RenameTableResult = KeeperIcebergRESTCatalogStore::RenameTableResult;
-    RenameTableResult renameTable(
+    [[nodiscard]] RenameTableResult renameTable(
         const IcebergNamespaceName & source_ns, const String & source, const IcebergNamespaceName & dest_ns, const String & dest) const;
     using UpdateTableResult = KeeperIcebergRESTCatalogStore::UpdateTableResult;
     [[nodiscard]] UpdateTableResult updateTable(

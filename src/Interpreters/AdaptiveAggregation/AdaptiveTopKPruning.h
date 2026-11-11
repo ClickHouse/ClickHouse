@@ -52,7 +52,7 @@ public:
 
     /// The rows in the bins that hold fewer than `bound` rows each. A saturated bin holds an unknown number
     /// of rows, so it is never among them.
-    UInt64 rowsInBinsBelow(UInt64 bound) const
+    [[nodiscard]] UInt64 rowsInBinsBelow(UInt64 bound) const
     {
         UInt64 rows = 0;
         for (size_t bin = 0; bin < adaptive_count_bins; ++bin)
