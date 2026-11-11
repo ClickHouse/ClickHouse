@@ -869,9 +869,11 @@ void BackupsWorker::doBackup(
                 entries_with_names = backup_entries_collector.run();
             }
 
-            backup_entries = buildFileInfosForBackupEntries(
+            auto built = buildFileInfosForBackupEntries(
                 backup, std::move(entries_with_names), read_settings, backup_coordination, backup_thread_pool_id,
                 context->getProcessListElement());
+            backup_coordination->addFileInfos(std::move(built.file_infos));
+            backup_entries = std::move(built.entries);
         }
 
         /// Write the backup entries to the backup.
@@ -913,13 +915,11 @@ void BackupsWorker::doBackup(
 }
 
 
-std::vector<BackupEntryPtr> BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, BackupEntries && backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
+BackupFileInfosAndEntries BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, BackupEntries && backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
 {
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "", /* sync = */ true);
-    auto built = ::DB::buildFileInfosForBackupEntries(
+    return ::DB::buildFileInfosForBackupEntries(
         std::move(backup_entries), backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element);
-    backup_coordination->addFileInfos(std::move(built.file_infos));
-    return std::move(built.entries);
 }
 
 
