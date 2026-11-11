@@ -64,6 +64,8 @@ run_case nullable "x Nullable(Int64)" "ORDER BY x" \
     "SELECT if(number % 7 = 0, NULL, ${RANDOM_X}) FROM numbers(10000)" "(isNotNull(x), ifNull(x, 0))" "arraySort"
 run_case nullable_desc "x Nullable(Int64)" "ORDER BY x DESC" \
     "SELECT if(number % 7 = 0, NULL, ${RANDOM_X}) FROM numbers(10000)" "(isNull(x), ifNull(x, 0))" "arrayReverseSort"
+# A floating-point key is sorted but not tagged: Iceberg orders NaN and signed zeros differently from ClickHouse.
+run_case float "x Float64" "ORDER BY x" "SELECT ${RANDOM_X} / 7 FROM numbers(10000)" "x" "arraySort"
 
 for table in "${TABLES[@]}"; do
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"

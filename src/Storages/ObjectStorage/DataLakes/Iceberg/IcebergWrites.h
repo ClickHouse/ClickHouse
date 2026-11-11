@@ -213,7 +213,7 @@ private:
     SortDescription sort_order_description;
     /// The sample block with the key columns `sortBlockByKeyDescription` appends.
     SharedHeader header_with_sort_columns;
-    /// Set iff the data files are written sorted; recorded in their manifest entries.
+    /// Recorded in the manifest entries of the sorted data files; unset for a key ClickHouse orders differently from Iceberg.
     std::optional<Int32> data_file_sort_order_id;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;

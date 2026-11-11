@@ -1310,7 +1310,11 @@ IcebergStorageSink::IcebergStorageSink(
     }
 
     sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context, &sort_order_description);
-    if (!sort_description.column_names.empty())
+    /// ClickHouse places NaN by the null order and treats -0.0 and +0.0 as equal, while Iceberg sorts
+    /// NaN after +Infinity and -0.0 before +0.0. Files with a floating-point key are sorted but not tagged.
+    if (!sort_description.column_names.empty()
+        && std::none_of(sort_description.data_types.begin(), sort_description.data_types.end(),
+            [](const DataTypePtr & type) { return isFloat(removeNullable(type)); }))
         data_file_sort_order_id = metadata->getValue<Int32>(Iceberg::f_default_sort_order_id);
 
     Block extended_block_for_sorting = *sample_block_;
@@ -1371,7 +1375,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
     const UInt64 max_bytes_in_data_file = context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file];
     for (auto & [partition_key, part_chunk] : partition_result)
     {
-        if (data_file_sort_order_id)
+        if (!sort_order_description.empty())
         {
             if (!part_chunk.hasRows())
                 continue;
