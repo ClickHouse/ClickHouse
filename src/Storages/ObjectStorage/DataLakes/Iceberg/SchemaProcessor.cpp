@@ -662,7 +662,6 @@ void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
 {
     iceberg_table_schemas_by_ids.erase(schema_id);
     clickhouse_table_schemas_by_ids.erase(schema_id);
-    std::erase_if(timezone_table_schemas_by_ids, [schema_id](const auto & item) { return item.first.first == schema_id; });
     std::erase_if(
         transform_dags_by_ids,
         [schema_id](const auto & item) { return std::get<0>(item.first) == schema_id || std::get<1>(item.first) == schema_id; });
@@ -1292,16 +1291,12 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSch
                 ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED,
                 "Iceberg schema with schema-id {} has no fields, which is not supported: a table must have at least one column",
                 id);
-        if (timezone == "UTC")
-            return it->second;
-        if (auto timezone_it = timezone_table_schemas_by_ids.find({id, timezone}); timezone_it != timezone_table_schemas_by_ids.end())
-            return timezone_it->second;
         schema = it->second;
     }
 
-    auto result = std::make_shared<NamesAndTypesList>(setTimezoneForTimestamptz(*schema, timezone));
-    std::lock_guard lock(mutex);
-    return timezone_table_schemas_by_ids.try_emplace({id, timezone}, std::move(result)).first->second;
+    if (timezone == "UTC")
+        return schema;
+    return std::make_shared<NamesAndTypesList>(setTimezoneForTimestamptz(*schema, timezone));
 }
 
 DataTypePtr IcebergSchemaProcessor::setTimezoneForTimestamptz(const DataTypePtr & type, const String & timezone)
