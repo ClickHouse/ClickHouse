@@ -2,6 +2,7 @@
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/StringUtils.h>
+#include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -24,7 +25,6 @@
 
 #include <TableFunctions/TableFunctionURLCluster.h>
 
-#include <Common/parseRemoteDescription.h>
 #include <memory>
 
 
@@ -38,6 +38,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_url_encoding;
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsBool use_hive_partitioning;
 }
@@ -180,11 +181,20 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     /// about the other tasks. The limit is on the addresses of both stages together, as for `url`, so the
     /// iterator counts the options of every task as it generates it, before the `_path` / `_file` filter:
     /// `{1,2}{1|2}` is four addresses, not two tasks of two addresses each.
-    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    auto next_callback = [iter = std::move(iterator), context](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto url = iter->next();
         if (url.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
+
+        /// The workers check the credentials under their own configuration, which can differ from this one.
+        const auto & settings = context->getSettingsRef();
+        for (const auto & option : parseRemoteDescription(url, 0, url.size(), '|', settings[Setting::glob_expansion_max_elements]))
+        {
+            Poco::Net::HTTPBasicCredentials credentials;
+            setCredentialsFromURL(credentials, Poco::URI(option, settings[Setting::enable_url_encoding]), context->getHTTPHeaderFilter());
+        }
+
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
     };
     auto callback = std::make_shared<TaskIterator>(std::move(next_callback));

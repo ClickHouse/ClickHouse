@@ -3,3 +3,4 @@
 #
 # One URL prefix per line: a link that starts with any of them is not checked.
 https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-
+https://oauth2.googleapis.com/token

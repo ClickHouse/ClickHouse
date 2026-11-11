@@ -627,11 +627,6 @@ size_t StorageURLSource::DisclosedGlobIterator::sizeForStreams(size_t requested)
     return pimpl->sizeForStreams(requested);
 }
 
-void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
-{
-    setCredentialsFromURL(credentials, request_uri);
-}
-
 StorageURLSource::StorageURLSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<IteratorWrapper> uri_iterator_,
@@ -780,7 +775,7 @@ StorageURLSource::StorageURLSource(
             if (!matching_marks)
                 break;
 
-            std::vector<size_t> matching_row_groups;
+            RowGroupIndices matching_row_groups;
             for (size_t i = 0; i < matching_marks->size(); ++i)
                 if ((*matching_marks)[i])
                     matching_row_groups.push_back(i);
@@ -1303,7 +1298,8 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
 
-        setCredentials(credentials, request_uri);
+        /// Not inside the `try` below: a forbidden option must fail the read, not fall through to the next one.
+        setCredentialsFromURL(credentials, request_uri, context_->getHTTPHeaderFilter());
 
         const auto & settings = context_->getSettingsRef();
 
