@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/79022
 -- Inserting a Parquet file with a Date column into an Enum column should fail,
 -- not silently produce invalid enum values.

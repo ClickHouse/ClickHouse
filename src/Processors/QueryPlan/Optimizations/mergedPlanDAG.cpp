@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/mergedPlanDAG.h>
 
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -183,10 +184,9 @@ struct Built
     /// visited once over the whole build rather than once per join it sits under.
     ActionsDAG::NodeRawConstPtrs ungated_nodes;
 
-    /// The last value created below the outermost join seen so far. Everything before it in the node
-    /// list is what that join sits above - and an inner join sits above a subset of the same values, so
-    /// filling `nodes_with_join_above` once from here at the end says the same thing as filling it at
-    /// every join would.
+    /// The last value created below the outermost join seen so far, an `ARRAY JOIN` included. Everything before it in the
+    /// node list is what that join sits above - and an inner join sits above a subset of the same values, so filling
+    /// `nodes_with_join_above` once from here at the end says the same thing as filling it at every join would.
     std::optional<NodeIterator> last_node_below_top_join;
 
     /// Values a join's own DAG computes before the join: its keys, and what it passes through, such as
@@ -208,12 +208,16 @@ bool canEnterStep(const QueryPlan::Node & node)
     if (!step->canRemoveUnusedColumns())
         return false;
 
-    /// An `arrayJoin` changes the number of rows, so what it produces cannot be had above the `LIMIT`, which
-    /// counted them. Stopping here defers the columns above it all the same.
-    ///
-    /// Reading columns lazily from below an `arrayJoin` is not out of the question - the row index would be
-    /// replicated along with every other column, which is what the transform already sorts out for the
-    /// replication a join does - but nothing downstream of this is ready to be asked that yet.
+    /// An `ARRAY JOIN` repeats every row once per element of its arrays, as a join repeats the rows that match several
+    /// times: the row index of a lazily read table is repeated with the rest, which the lazy read sorts out as it does for
+    /// a join. Its elements are computed below the `LIMIT`, which counted them, see `canBeRecomputed`. The step is
+    /// represented by `ArrayJoinStep::toActionsDAG`, which an unaligned `ARRAY JOIN` has not, and which leaves out a
+    /// filter of the elements.
+    if (const auto * array_join_step = typeid_cast<const ArrayJoinStep *>(step))
+        return node.children.size() == 1 && !array_join_step->hasElementFilter() && array_join_step->toActionsDAG().has_value();
+
+    /// An `arrayJoin` function in an expression repeats the rows as well, but is left out for now: the analyzer plans
+    /// `ARRAY JOIN` as the step above.
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
         return node.children.size() == 1 && !expression_step->getExpression().hasArrayJoin();
 
@@ -408,6 +412,25 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
 
         ActionsDAG::NodeMapping clone_mapping;
         if (!mergeAndTrack(built, step_dag, clone_mapping))
+            return {};
+
+        return finish(built, built.dag.getOutputs());
+    }
+
+    if (auto * array_join_step = typeid_cast<ArrayJoinStep *>(step))
+    {
+        auto step_dag = array_join_step->toActionsDAG();
+        if (!step_dag)
+            return {};
+
+        auto built = std::move(children.front());
+
+        /// Everything below is repeated by this step, as by a join.
+        auto & dag = *built.dag.expression_actions.getActionsDAG();
+        built.last_node_below_top_join = lastNodeBefore(dag);
+
+        ActionsDAG::NodeMapping clone_mapping;
+        if (!mergeAndTrack(built, *step_dag, clone_mapping))
             return {};
 
         return finish(built, built.dag.getOutputs());

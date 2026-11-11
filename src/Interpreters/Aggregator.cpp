@@ -1,5 +1,7 @@
+#include <numeric>
 #include <optional>
 #include <unordered_map>
+#include <Common/ListWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>
@@ -13,9 +15,11 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <Common/memcpySmall.h>
 #include <bit>
 #include <unordered_set>
@@ -570,12 +574,23 @@ Block Aggregator::Params::getHeader(
     return materializeBlock(res);
 }
 
-/// Extract raw key column pointers from columns with fixed layout (keys at positions 0..keys_size-1).
-static ColumnRawPtrs makeRawKeyColumns(const Columns & columns, size_t keys_size)
+/// Extract raw key column pointers from partially aggregated columns, materializing `ColumnConst` keys.
+static ColumnRawPtrs makeRawKeyColumnsForMerging(const Columns & columns, size_t keys_size, Columns & materialized_key_columns)
 {
     ColumnRawPtrs key_columns(keys_size);
     for (size_t i = 0; i < keys_size; ++i)
-        key_columns[i] = columns[i].get();
+    {
+        const auto & column = columns[i];
+        if (isColumnConst(*column))
+        {
+            materialized_key_columns.push_back(column->convertToFullColumnIfConst());
+            key_columns[i] = materialized_key_columns.back().get();
+        }
+        else
+        {
+            key_columns[i] = column.get();
+        }
+    }
     return key_columns;
 }
 
@@ -909,6 +924,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
     cache_settings.simple_count = is_simple_count;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
+
+    if (params.enable_adaptive_aggregator)
+        adaptive_packed_key_bytes = std::accumulate(key_sizes.begin(), key_sizes.end(), size_t{0});
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
@@ -1275,7 +1293,7 @@ void Aggregator::executeImpl(
             /// smaller threshold.
             const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
             const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes);
+                && (bytesForPrefetch(method.data) > min_bytes);
 
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -2204,6 +2222,9 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     }
 #endif
 
+    /// Functions of the same `LowCardinality` argument share its used values.
+    std::vector<std::pair<const IColumn *, ColumnPtr>> low_cardinality_values;
+
     /// Adding values
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
     {
@@ -2212,7 +2233,23 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         if (use_compiled_functions && is_aggregate_function_compiled[i])
             continue;
 #endif
-        addBatchSinglePlace(row_begin, row_end, inst, res + inst->state_offset, arena);
+        if (inst->has_low_cardinality_argument)
+        {
+            const IColumn * argument = inst->batch_arguments[0];
+            auto it = std::find_if(
+                low_cardinality_values.begin(), low_cardinality_values.end(), [&](const auto & entry) { return entry.first == argument; });
+            if (it == low_cardinality_values.end())
+                it = low_cardinality_values.emplace(
+                    low_cardinality_values.end(),
+                    argument,
+                    assert_cast<const ColumnLowCardinality &>(*argument).getMinimalDictionary(row_begin, row_end - row_begin));
+
+            /// The used values in the order of their first occurrence: the state is the same as after adding every row.
+            const IColumn * values = it->second.get();
+            inst->batch_that->addBatchSinglePlace(0, values->size(), res + inst->state_offset, &values, arena);
+        }
+        else
+            addBatchSinglePlace(row_begin, row_end, inst, res + inst->state_offset, arena);
     }
 }
 
@@ -2340,6 +2377,9 @@ void Aggregator::prepareAggregateInstructions(
     {
         bool allow_sparse_arguments = aggregate_columns[i].size() == 1;
         bool has_sparse_arguments = false;
+        const bool allow_low_cardinality_argument
+            = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
+        bool has_low_cardinality_argument = false;
 
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
@@ -2368,7 +2408,16 @@ void Aggregator::prepareAggregateInstructions(
                 ? aggregate_columns[i][j]->getPtr()
                 : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
 
-            full_column = recursiveRemoveLowCardinality(full_column);
+            /// Mapping the indexes pays off only for strings and for blocks that repeat their values.
+            const auto * low_cardinality
+                = allow_low_cardinality_argument ? typeid_cast<const ColumnLowCardinality *>(full_column.get()) : nullptr;
+            const IColumn * dictionary_values = low_cardinality ? low_cardinality->getDictionary().getNestedNotNullableColumn().get() : nullptr;
+            if (dictionary_values && (typeid_cast<const ColumnString *>(dictionary_values) || typeid_cast<const ColumnFixedString *>(dictionary_values))
+                && low_cardinality->getDictionary().size() * 2 <= low_cardinality->size())
+                has_low_cardinality_argument = true;
+            else
+                full_column = recursiveRemoveLowCardinality(full_column);
+
             if (full_column.get() != aggregate_columns[i][j])
             {
                 materialized_columns.emplace_back(std::move(full_column));
@@ -2380,6 +2429,7 @@ void Aggregator::prepareAggregateInstructions(
         }
 
         buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
+        aggregate_functions_instructions[i].has_low_cardinality_argument = has_low_cardinality_argument;
     }
 }
 
@@ -2633,7 +2683,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// external-aggregation threshold the table is written to disk once the write frees enough memory, whether it
         /// is learning or frozen, and its producer learns again.
         if (over_external_threshold && adaptiveTableWorthSpilling(result, *adaptive))
-            spillAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
+            spillAdaptiveTable(result, *adaptive, result.memoryUsage() + params.min_free_disk_space);
         return true;
     }
 
@@ -2669,8 +2719,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space);
         reseedKeptKeysAfterSpill(result);
     }
 
@@ -3004,11 +3053,11 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     bool final,
     Int32 bucket,
     UntruncatedAggregationKeys * untruncated_keys,
-    size_t * full_group_count,
+    size_t * merged_group_count,
     bool keep_table_buffer) const
 {
-    if (full_group_count)
-        *full_group_count = method.data.impls[bucket].size();
+    if (merged_group_count)
+        *merged_group_count = method.data.impls[bucket].size();
 
     // Used in ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform (expects single chunk for each bucket_id).
     constexpr bool return_single_block = true;
@@ -3120,8 +3169,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
     /// per-group key materialization below dead work. Account for the full output using the same
     /// conversion as the final result: a serialized multi-key table stores a length-prefixed arena
     /// blob, whose size is not the size of the materialized key columns (in particular, every String
-    /// key has an offset column). This conversion always emits its Top-K rows, so the statistics keep
-    /// sampling the chunk as they did before the meter existed, and it keeps no sample of its own.
+    /// key has an offset column). The kept rows are too few to carry the keys' compression ratio, so
+    /// the meter keeps a sample of the bucket's keys.
     std::optional<MaterializedKeyBytesMeter<Method>> key_bytes_meter;
     if (untruncated_keys)
         key_bytes_meter.emplace(
@@ -3130,7 +3179,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
                 params, aggregate_functions, key_types, aggregate_state_types, pools_for_output, /*final=*/true, /*rows=*/1),
             key_sizes,
             params.serialize_string_with_zero_byte,
-            /*keep_sample=*/false);
+            /*keep_sample=*/true);
     const auto account_key_bytes = [&](const auto & key)
     {
         if (key_bytes_meter)
@@ -3223,7 +3272,10 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
     }
 
     if (untruncated_keys)
+    {
         untruncated_keys->bytes = key_bytes_meter->getBytes();
+        untruncated_keys->sample_columns = key_bytes_meter->detachSample();
+    }
 
     const size_t keep = top.size();
     auto out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, pools_for_output, /*final=*/true, keep);
@@ -3295,7 +3347,7 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count,
+    size_t * merged_group_count,
     std::atomic<int> * threshold_top_k_verdict) const
 {
     auto & merged_data = *variants[0];
@@ -3303,22 +3355,20 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     AggregatedChunk agg_chunk;
 
     /// The top-K threshold merge produces the bucket's k best groups directly, merging only the
-    /// groups that can rank among them. It is not used when:
+    /// groups that can rank among them, and counts only those for the group limit. It is not used when:
     /// - dataflow statistics are collected (`updater`): they must describe the merge of every group;
     /// - the only aggregate is `count` (`bucket_top_k`): the ordinary conversion selects it cheaper;
-    /// - a throw-mode group limit is enforced: it needs the bucket's full group count;
     /// - the HAVING pre-filter is enabled: only the ordinary conversion applies it.
-    const bool group_limit_needs_full_count = params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::THROW;
     if (final && params.threshold_top_k && (!params.bucket_top_k || params.aggregates_size > 1)
-        && params.having_prefilter_op == Params::HavingPrefilterOp::Disabled && !updater && !group_limit_needs_full_count)
-        if (auto threshold_chunk
-            = tryMergeAndConvertOneBucketToChunkThresholdTopK(variants, arena, bucket, is_cancelled, threshold_top_k_verdict))
+        && params.having_prefilter_op == Params::HavingPrefilterOp::Disabled && !updater)
+        if (auto threshold_chunk = tryMergeAndConvertOneBucketToChunkThresholdTopK(
+                variants, arena, bucket, is_cancelled, threshold_top_k_verdict, merged_group_count))
             return std::move(*threshold_chunk);
 
     /// Filled by a conversion that materializes only some of the bucket's groups - the Top-K one or
     /// the HAVING pre-filter - when the statistics ask for it (left zero otherwise): the untruncated
     /// key bytes to account in the dataflow statistics, because the chunk carries only the kept
-    /// groups, and a bounded sample of those keys for when it carries none at all.
+    /// groups, and a bounded sample of those keys, because the kept groups' keys compress differently.
     UntruncatedAggregationKeys untruncated_keys;
 
     if (false) {} // NOLINT
@@ -3330,7 +3380,7 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
             updater->recordAggregationStateSizes(merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
-        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, updater ? &untruncated_keys : nullptr, full_group_count); \
+        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, updater ? &untruncated_keys : nullptr, merged_group_count); \
         if (updater) \
         { \
             if (untruncated_keys.bytes) \
@@ -3414,7 +3464,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
-        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, untruncated_keys, /*full_group_count=*/nullptr, keep_table_buffer); \
+        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, untruncated_keys, /*merged_group_count=*/nullptr, keep_table_buffer); \
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
@@ -3422,7 +3472,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     return agg_chunk;
 }
 
-std::list<TemporaryBlockStreamHolder> Aggregator::detachTemporaryData()
+ListWithMemoryTracking<TemporaryBlockStreamHolder> Aggregator::detachTemporaryData()
 {
     std::lock_guard lk(tmp_files_mutex);
     return std::move(tmp_files);
@@ -3470,7 +3520,7 @@ void Aggregator::writeToTemporaryFileImpl(
 
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
-        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*untruncated_keys=*/nullptr, /*full_group_count=*/nullptr);
+        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr);
         auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
@@ -4775,7 +4825,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*untruncated_keys=*/nullptr, /*full_group_count=*/nullptr));
+            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr));
         }
     };
 
@@ -5877,7 +5927,12 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     DeferredMerges * deferred) const
 {
     const AggregateColumnsConstData & aggregate_columns_data = makeAggregateColumnsData(columns, params.keys_size, params.aggregates_size);
-    ColumnRawPtrs key_columns = makeRawKeyColumns(columns, params.keys_size);
+
+    /// Partially aggregated blocks can pass through transforms before `MergingAggregated`.
+    /// Some transforms can introduce `ColumnConst` keys, while numeric merge methods read key columns through raw data.
+    /// Materialize keys at this boundary so the merging code does not depend on which upstream transform produced them.
+    Columns materialized_key_columns;
+    ColumnRawPtrs key_columns = makeRawKeyColumnsForMerging(columns, params.keys_size, materialized_key_columns);
 
     mergeStreamsImpl</*for_sub_range=*/false, Method, Table>(
         aggregates_pool,
@@ -6145,8 +6200,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space);
         reseedKeptKeysAfterSpill(result);
     }
 
@@ -6592,7 +6646,8 @@ std::vector<Aggregator::AggregatedChunk> Aggregator::convertBlockToTwoLevel(cons
 
     AggregatedDataVariants data;
 
-    ColumnRawPtrs key_columns = makeRawKeyColumns(columns, params.keys_size);
+    Columns materialized_key_columns;
+    ColumnRawPtrs key_columns = makeRawKeyColumnsForMerging(columns, params.keys_size, materialized_key_columns);
 
     AggregatedDataVariants::Type type = method_chosen;
     data.keys_size = params.keys_size;
