@@ -268,10 +268,13 @@ IndexDescription IndexDescription::getIndexFromAST(
 
     if (index_type && index_type->arguments)
     {
-        result.arguments = index_type->arguments->clone();
-
+        auto arguments = result.definition_ast->as<ASTIndexDeclaration>()->getType()->arguments;
         if (result.type == TEXT_INDEX_NAME)
-            expandTextIndexTransformAliases(result.arguments, columns);
+        {
+            /// Persist the bound transform so later changes to `ALIAS` columns cannot reinterpret existing index files.
+            expandTextIndexTransformAliases(arguments, columns);
+        }
+        result.arguments = arguments->clone();
     }
 
     return result;
