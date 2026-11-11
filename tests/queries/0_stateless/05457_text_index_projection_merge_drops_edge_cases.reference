@@ -12,6 +12,10 @@ one source part is fully dropped
 0
 one source part is fully dropped: merged index equals rebuilt index
 1
+text indexes merged, rebuilt; projections merged, rebuilt
+t_drops_all	1	0	1	0
+t_drops_part	1	0	1	0
+t_drops_part_rebuilt	0	1	0	1
 incorrect sign values are detected during the merge
 2
 shadowing columns

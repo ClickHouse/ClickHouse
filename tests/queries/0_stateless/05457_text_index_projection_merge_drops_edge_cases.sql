@@ -84,6 +84,14 @@ SELECT
     =
     (SELECT groupArray((token, row_id)) FROM (SELECT token, row_id FROM mergeTreeTextIndex(currentDatabase(), t_drops_part_rebuilt, idx_text) ORDER BY token, row_id));
 
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'text indexes merged, rebuilt; projections merged, rebuilt';
+SELECT table, ProfileEvents['MergedTextIndexes'], ProfileEvents['RebuiltTextIndexes'], ProfileEvents['MergedProjections'], ProfileEvents['RebuiltProjections']
+FROM system.part_log
+WHERE database = currentDatabase() AND table IN ('t_drops_all', 't_drops_part', 't_drops_part_rebuilt') AND event_type = 'MergeParts' AND error = 0 AND part_name NOT LIKE '%.proj'
+ORDER BY table, event_time_microseconds DESC LIMIT 1 BY table;
+
 DROP TABLE t_drops_part;
 DROP TABLE t_drops_part_rebuilt;
 
