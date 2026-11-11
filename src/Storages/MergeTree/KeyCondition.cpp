@@ -3047,8 +3047,18 @@ static bool convertColumnForDeterministicDag(
     /// all (`Array`, `Tuple`), decline - this helper also transforms whole set columns, where one such
     /// element would drag the representable ones along. The caller then reads more instead of pruning by
     /// a value the key space does not hold.
-    if (!input_type->equals(*dag.input_type) && !castColumnWithoutNulls(input_column, input_type, dag.input_type, out_cast_is_exact))
-        return false;
+    ///
+    /// The elements of tuples are compared positionally, regardless of element names (as in `equals` and
+    /// `Set::execute`), so the cast must not reorder them by name: casting a `Tuple(b, a)` set element to
+    /// a key input of type `Tuple(a, b)` by name would transform a value the predicate never compares
+    /// against, and prune the rows that match. Cast to the name-less input type and then relabel the
+    /// result with the input type the DAG was built against; the column layout is the same.
+    if (!input_type->equals(*dag.input_type))
+    {
+        if (!castColumnWithoutNulls(input_column, input_type, recursiveRemoveTupleElementNames(dag.input_type), out_cast_is_exact))
+            return false;
+        input_type = dag.input_type;
+    }
 
     out_column = input_column;
     out_type = input_type;
