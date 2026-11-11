@@ -16,6 +16,41 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// If plan looks like Limit -> Sorting, update limit for Sorting
+/// Whether `columns` reach the output of the expression unchanged and no row is added or removed.
+static bool expressionKeepsColumns(const ExpressionStep & expression, const Names & columns)
+{
+    const auto & dag = expression.getExpression();
+    if (dag.hasArrayJoin())
+        return false;
+
+    for (const auto & column : columns)
+    {
+        const auto * output = dag.tryFindInOutputs(column);
+        if (!output || output->type != ActionsDAG::ActionType::INPUT || output->result_name != column)
+            return false;
+    }
+    return true;
+}
+
+/// The final DISTINCT needs only `hint` distinct rows, so a preliminary DISTINCT below it on the same columns
+/// can stop each of its streams at the same bound, if nothing between them removes rows or changes the columns.
+static void updateLimitHintOfPreliminaryDistincts(QueryPlan::Node * node, const Names & columns, UInt64 hint)
+{
+    for (auto * child : node->children)
+    {
+        auto * step = child->step.get();
+        if (auto * distinct = typeid_cast<DistinctStep *>(step))
+        {
+            if (distinct->isPreliminary() && distinct->getColumnNames() == columns)
+                distinct->updateLimitHint(hint);
+        }
+        else if (typeid_cast<const UnionStep *>(step))
+            updateLimitHintOfPreliminaryDistincts(child, columns, hint);
+        else if (const auto * expression = typeid_cast<const ExpressionStep *>(step); expression && expressionKeepsColumns(*expression, columns))
+            updateLimitHintOfPreliminaryDistincts(child, columns, hint);
+    }
+}
+
 static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
 {
     if (limit == 0)
@@ -119,6 +154,8 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
             return 0;
 
         distinct->updateLimitHint(limit->getLimitForSorting());
+        if (!distinct->isPreliminary())
+            updateLimitHintOfPreliminaryDistincts(child_node, distinct->getColumnNames(), limit->getLimitForSorting());
         return 0;
     }
 

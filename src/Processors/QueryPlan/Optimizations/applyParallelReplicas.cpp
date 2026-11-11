@@ -494,6 +494,25 @@ public:
         {
             std::swap(current_node->step, parent_node->step);
             parent_node->step->updateInputHeader(current_node->step->getOutputHeader());
+
+            /// The hint comes from a LIMIT: ship it after a final DISTINCT, as on shards, so duplicates from different streams cannot fill it.
+            if (const UInt64 limit_hint = distinct_step->getLimitHint())
+            {
+                const auto & header = current_node->step->getOutputHeader();
+
+                auto & final_distinct_node = nodes.emplace_back();
+                final_distinct_node.step = std::make_unique<DistinctStep>(
+                    header, distinct_step->getSettings(), limit_hint, distinct_step->getColumnNames(), /*pre_distinct_=*/ false);
+                final_distinct_node.step->setStepDescription("local DISTINCT");
+                final_distinct_node.children = {current_node};
+
+                auto & local_limit_node = nodes.emplace_back();
+                local_limit_node.step = std::make_unique<LimitStep>(header, limit_hint, 0);
+                local_limit_node.step->setStepDescription("local LIMIT");
+                local_limit_node.children = {&final_distinct_node};
+
+                parent_node->children = {&local_limit_node};
+            }
             return;
         }
 

@@ -4,8 +4,8 @@
 
 DROP TABLE IF EXISTS t_pr_preliminary_distinct;
 
-CREATE TABLE t_pr_preliminary_distinct (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b);
-INSERT INTO t_pr_preliminary_distinct SELECT number % 100, number % 10 FROM numbers(200000);
+CREATE TABLE t_pr_preliminary_distinct (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY (a, b);
+INSERT INTO t_pr_preliminary_distinct SELECT number % 100, number % 10, number FROM numbers(200000);
 
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
@@ -13,6 +13,8 @@ SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_plan_based = 1;
 SET automatic_parallel_replicas_mode = 0;
+-- Otherwise the local replica can read everything before a remote one gets any work.
+SET parallel_replicas_local_plan = 0;
 
 SELECT count() FROM (SELECT DISTINCT a, b FROM t_pr_preliminary_distinct) SETTINGS log_comment = '05569_distinct';
 
@@ -29,6 +31,12 @@ WHERE event_date >= yesterday() AND NOT is_initial_query AND type = 'QueryFinish
         WHERE current_database = currentDatabase() AND event_date >= yesterday() AND is_initial_query AND type = 'QueryFinish'
             AND log_comment = '05569_distinct'
     );
+
+-- With a LIMIT, a final DISTINCT and the LIMIT are shipped too, so a replica sends at most 3 rows.
+SELECT arrayJoin(extractAll(explain, 'Limit \\([^)]+\\)|Distinct \\([^)]+\\)|ReadFromParallelReplicas|ReadFromMergeTree'))
+FROM (EXPLAIN SELECT DISTINCT c FROM t_pr_preliminary_distinct LIMIT 3);
+
+SELECT count() FROM (SELECT DISTINCT c FROM t_pr_preliminary_distinct LIMIT 3);
 
 -- The local replica reads in order for the `DISTINCT`.
 SELECT count() > 0
