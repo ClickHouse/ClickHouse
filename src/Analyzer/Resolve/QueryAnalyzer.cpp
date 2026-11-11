@@ -413,12 +413,23 @@ QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_alrea
 
 QueryAnalyzer::~QueryAnalyzer() = default;
 
+void QueryAnalyzer::initFoldedConstantsCache(const Context & context)
+{
+    if (folded_constants_cache)
+        return;
+    folded_constants_cache = context.getQueryFoldedConstantsCache();
+    if (!folded_constants_cache)
+        folded_constants_cache = std::make_shared<QueryFoldedConstantsCache>();
+}
+
 void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
 
     if (!scope.context)
         scope.context = context;
+
+    initFoldedConstantsCache(*context);
 
     if (!scope.context->getSettingsRef()[Setting::enable_identifier_resolve_cache])
         scope.disableIdentifierCachePermanently();
@@ -508,6 +519,8 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
     if (!scope.context)
         scope.context = context;
+
+    initFoldedConstantsCache(*context);
 
     if (!scope.context->getSettingsRef()[Setting::enable_identifier_resolve_cache])
         scope.disableIdentifierCachePermanently();

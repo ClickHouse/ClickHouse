@@ -134,6 +134,7 @@ class TextIndexTokensCache;
 class TextIndexHeaderCache;
 class TextIndexPostingsCache;
 class ProcessList;
+class QueryFoldedConstantsCache;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class Macros;
@@ -626,6 +627,8 @@ protected:
     mutable QueryFactoriesInfo query_factories_info;
     /// Created by `makeQueryContext` and shared by every context copied from the query context.
     DistributedPlanLocalObjectPtr distributed_plan_local_object;
+    /// Created by `makeQueryContext` and shared by every context copied from the query context.
+    std::shared_ptr<QueryFoldedConstantsCache> query_folded_constants_cache;
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
@@ -1237,6 +1240,10 @@ public:
     /// the resolvers, read by the `make_distributed_plan` fallback decision. No-op outside a query.
     void addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const;
     std::shared_ptr<const DistributedPlanLocalObject> getDistributedPlanLocalObject() const;
+
+    /// The values the analyses of this query folded its query-constant calls to (see `QueryFoldedConstantsCache`);
+    /// null outside a query.
+    const std::shared_ptr<QueryFoldedConstantsCache> & getQueryFoldedConstantsCache() const { return query_folded_constants_cache; }
 
     /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
     /// Use it in introspection paths (e.g. reading system.functions) where instantiating

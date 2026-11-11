@@ -23,8 +23,10 @@ using ConstantNodePtr = std::shared_ptr<ConstantNode>;
 class ConstantNode final : public IQueryTreeNode
 {
 public:
-    /// Construct constant query tree node from constant value, source expression and deterministic flag
-    explicit ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression, bool is_deterministic = true);
+    /// Construct constant query tree node from constant value, source expression and deterministic flag.
+    /// `is_fixed_for_query` is ignored for a deterministic constant, which always is.
+    explicit ConstantNode(
+        ConstantValue constant_value_, QueryTreeNodePtr source_expression, bool is_deterministic = true, bool is_fixed_for_query = true);
 
     /// Construct constant query tree node from constant value
     explicit ConstantNode(ConstantValue constant_value_);
@@ -138,8 +140,15 @@ public:
 
     bool isDeterministic() const { return is_deterministic; }
 
-    /// For a non-deterministic constant folded from an expression, the hash of that expression, which unlike the
-    /// value is the same every time the query is analyzed: `now() - INTERVAL 1 DAY` hashes as written. 0 otherwise.
+    /// Whether every analysis of the query evaluates this constant to the same value: true for a deterministic
+    /// one, and for one whose non-deterministic parts were all folded to values the analyses share (see
+    /// `QueryFoldedConstantsCache`), such as `now`. False for `getSetting`, which a `SETTINGS` clause can change
+    /// between two analyses.
+    bool isFixedForQuery() const { return is_fixed_for_query; }
+
+    /// For a non-deterministic constant that is fixed for the query and folded from an expression, the hash of that
+    /// expression, which unlike the value is the same every time the query is analyzed: `now() - INTERVAL 1 DAY`
+    /// hashes as written. 0 otherwise.
     UInt64 getNonDeterministicSourceHash() const;
 
 protected:
@@ -159,6 +168,7 @@ private:
     ConstantValue constant_value;
     QueryTreeNodePtr source_expression;
     bool is_deterministic = true;
+    bool is_fixed_for_query = true;
     size_t mask_id = 0;
 
     static constexpr size_t children_size = 0;

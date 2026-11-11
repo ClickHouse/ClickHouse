@@ -22,6 +22,21 @@ FORMAT Null SETTINGS log_comment = 'now_1_day_2';
 SELECT k % 10, count() FROM t_autopr_now WHERE ts >= now64(3) - INTERVAL 1 HOUR GROUP BY k % 10
 FORMAT Null SETTINGS log_comment = 'now_1_hour';
 
+-- The constant keeps its identity when it reaches the filter through an alias, a lambda or a scalar subquery.
+-- Each uses its own window, so that it collects its own statistics.
+SELECT k % 10, count() FROM t_autopr_now WHERE ts >= (now64(3) - INTERVAL 2 DAY AS cutoff) GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_alias_1';
+SELECT k % 10, count() FROM t_autopr_now WHERE ts >= (now64(3) - INTERVAL 2 DAY AS cutoff) GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_alias_2';
+SELECT k % 10, count() FROM t_autopr_now WHERE arrayExists(x -> x >= now64(3) - INTERVAL 3 DAY, [ts]) GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_lambda_1';
+SELECT k % 10, count() FROM t_autopr_now WHERE arrayExists(x -> x >= now64(3) - INTERVAL 3 DAY, [ts]) GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_lambda_2';
+SELECT k % 10, count() FROM t_autopr_now WHERE ts >= (SELECT now64(3) - INTERVAL 4 DAY) GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_scalar_1';
+SELECT k % 10, count() FROM t_autopr_now WHERE ts >= (SELECT now64(3) - INTERVAL 4 DAY) GROUP BY k % 10
+FORMAT Null SETTINGS log_comment = 'now_scalar_2';
+
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;

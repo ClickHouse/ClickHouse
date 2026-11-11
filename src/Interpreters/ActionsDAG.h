@@ -204,7 +204,8 @@ public:
     static Node createAlias(const Node & child, std::string alias);
 
     const Node & addInput(std::string name, DataTypePtr type);
-    const Node & addInput(ColumnWithTypeAndName column);
+    /// `source_expression_hash` is that of a constant `column` (see `Node::source_expression_hash`).
+    const Node & addInput(ColumnWithTypeAndName column, UInt64 source_expression_hash = 0);
     const Node & addColumn(
         ColumnConstPtr column,
         DataTypePtr type,

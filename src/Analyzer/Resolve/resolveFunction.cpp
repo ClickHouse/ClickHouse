@@ -42,6 +42,8 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
+#include <Columns/ColumnFunction.h>
+#include <Columns/ColumnSet.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -104,6 +106,22 @@ namespace Setting
 
 namespace
 {
+
+/// Whether `column` holds nothing but values: no function to evaluate later, and no set, either of which can keep
+/// a context alive.
+bool holdsOnlyValues(const IColumn & column)
+{
+    bool only_values = true;
+    auto check = [&](const IColumn & subcolumn)
+    {
+        if (typeid_cast<const ColumnFunction *>(&subcolumn) || typeid_cast<const ColumnSet *>(&subcolumn))
+            only_values = false;
+    };
+    check(column);
+    column.forEachSubcolumnRecursively(check);
+    return only_values;
+}
+
 void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
 {
     if (node.getNullsAction() != NullsAction::EMPTY)
@@ -2971,6 +2989,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     DataTypes argument_types;
     bool all_arguments_constants = true;
     bool all_arguments_are_deterministic = true;
+    bool all_arguments_are_fixed_for_query = true;
     std::vector<size_t> function_lambda_arguments_indexes;
 
     auto & function_arguments = function_node.getArguments().getNodes();
@@ -3010,12 +3029,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         bool argument_is_constant = false;
         bool argument_is_deterministic = true;
+        bool argument_is_fixed_for_query = true;
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
             argument_column.column = constant_node->getColumn();
             argument_column.type = constant_node->getResultType();
             argument_is_deterministic = constant_node->isDeterministic();
+            argument_is_fixed_for_query = constant_node->isFixedForQuery();
             argument_is_constant = true;
         }
         else if (auto scalar_column = tryGetScalarConstantColumn(function_argument, scope.context))
@@ -3024,10 +3045,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             argument_column.column = std::move(scalar_column);
             argument_column.type = function_argument->getResultType();
             argument_is_constant = true;
+            /// Not known to be the value the other analyses of the query read.
+            argument_is_fixed_for_query = false;
         }
 
         all_arguments_constants &= argument_is_constant;
         all_arguments_are_deterministic &= argument_is_deterministic;
+        all_arguments_are_fixed_for_query &= argument_is_fixed_for_query;
 
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));
@@ -3245,6 +3269,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     FunctionBasePtr * function_base_cache = nullptr;
+    std::optional<IQueryTreeNode::Hash> function_cache_key;
 
     if (!function)
     {
@@ -3275,8 +3300,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (function && !function->isDeterministic() && !function->isStateful()
             && function->isDeterministicInScopeOfQuery())
         {
-            auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
-            function_base_cache = &functions_cache[hash];
+            function_cache_key = function_node_ptr->getTreeHash({ .compare_aliases = false });
+            function_base_cache = &functions_cache[*function_cache_key];
         }
     }
 
@@ -3550,7 +3575,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           * so the same AST structure with different resolved lambda types
           * would incorrectly share the cached function base.
           */
-        if (function_base_cache && !has_lambda_arguments)
+        const bool is_shared_by_query = function_base_cache && !has_lambda_arguments;
+        if (is_shared_by_query)
         {
             auto & cached_function = *function_base_cache;
             if (!cached_function)
@@ -3584,11 +3610,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (allow_constant_folding && function_base->isSuitableForConstantFolding())
         {
             auto result_type = function_base->getResultType();
+
             auto executable_function = function_base->prepare(argument_columns);
 
-            ColumnPtr column;
+            /// A shared call folds to the value another analysis of the query folded it to, if there is one: every
+            /// analysis builds its own function, and `joinGet` reads its table whenever it is executed.
+            ColumnConstPtr shared_value = is_shared_by_query ? folded_constants_cache->tryGet(*function_cache_key) : nullptr;
+            ColumnPtr column = shared_value;
 
-            if (all_arguments_constants)
+            if (!column && all_arguments_constants)
             {
                 size_t num_rows = 1;
                 if (!argument_columns.empty())
@@ -3601,7 +3631,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (column && column->empty() && isColumnConst(*column))
                     column = column->cloneResized(1);
             }
-            else
+            else if (!column)
             {
                 column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
             }
@@ -3625,8 +3655,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Sanity check: do not convert large columns to constants
                 column->byteSize() < 1_MiB)
             {
+                ColumnConstPtr value = column_const->getPtr();
+                /// Only a materialized value is shared: a lazy function or a set would keep a context alive, and the
+                /// query context owns the cache.
+                if (is_shared_by_query && !shared_value && holdsOnlyValues(column_const->getDataColumn()))
+                    shared_value = folded_constants_cache->insert(*function_cache_key, std::move(value));
+                if (shared_value)
+                    value = shared_value;
+
+                /// The value is the one every analysis of the query reads only when it is shared or deterministic.
+                const bool is_fixed_for_query = all_arguments_are_fixed_for_query && (function->isDeterministic() || shared_value);
+
                 /// Replace function node with result constant node
-                constant_node = std::make_shared<ConstantNode>(ConstantValue{ column_const->getPtr(), std::move(result_type) }, node, is_deterministic);
+                constant_node = std::make_shared<ConstantNode>(
+                    ConstantValue{std::move(value), std::move(result_type)}, node, is_deterministic, is_fixed_for_query);
             }
         }
 

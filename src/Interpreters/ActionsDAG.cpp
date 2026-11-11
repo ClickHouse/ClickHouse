@@ -294,6 +294,33 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Compiled", is_function_compiled);
 }
 
+namespace
+{
+
+/// A lambda refers to a constant of the enclosing DAG by name: it is an input of the lambda's DAG, and the
+/// capture names it. That name spells the constant's value, so a build-independent key replaces it by the
+/// constant's source expression when it has one (see `Node::source_expression_hash`).
+UInt64 getCapturedConstantSourceHash(const ActionsDAG & lambda_dag, const String & name)
+{
+    for (const auto * input : lambda_dag.getInputs())
+        if (input->result_name == name)
+            return input->source_expression_hash;
+    return 0;
+}
+
+/// The capture's result name spells the constants of the lambda's body, so a build-independent key identifies
+/// the result by where it is among the outputs of the lambda's DAG, which that DAG's own hash describes.
+std::optional<size_t> getLambdaResultPosition(const ActionsDAG & lambda_dag, const String & return_name)
+{
+    const auto & outputs = lambda_dag.getOutputs();
+    for (size_t i = 0; i < outputs.size(); ++i)
+        if (outputs[i]->result_name == return_name)
+            return i;
+    return {};
+}
+
+}
+
 UInt64 ActionsDAG::Node::getHash() const
 {
     SipHash hash_state;
@@ -329,7 +356,9 @@ void ActionsDAG::Node::updateHash(
     /// already the same in every build. Normalizing there would be all cost and no benefit: a column
     /// genuinely named `__table1.id` would be merged with one named `__table2.id`, and two different
     /// PREWHERE predicates would share a statistics entry.
-    if (!result_name.empty() && (!build_independent || type == ActionType::INPUT))
+    /// An input carrying a constant identified by its source expression is identified by it (in the column
+    /// below) rather than by its name, which spells the value.
+    if (!result_name.empty() && (!build_independent || (type == ActionType::INPUT && !source_expression_hash)))
     {
         const bool normalize = build_independent && !(type == ActionType::INPUT && !input_header);
         hash_state.update(normalize ? normalizeGeneratedTableQualifiers(result_name) : result_name);
@@ -363,10 +392,18 @@ void ActionsDAG::Node::updateHash(
     {
         const auto hash_capture = [&](const LambdaCapture & capture, const ActionsDAG & lambda_dag)
         {
-            hash_state.update(normalizeGeneratedTableQualifiers(capture.return_name));
+            if (auto position = getLambdaResultPosition(lambda_dag, capture.return_name))
+                hash_state.update(*position);
+            else
+                hash_state.update(normalizeGeneratedTableQualifiers(capture.return_name));
             hash_state.update(capture.return_type->getName());
             for (const auto & captured_name : capture.captured_names)
-                hash_state.update(normalizeGeneratedTableQualifiers(captured_name));
+            {
+                if (auto source_hash = getCapturedConstantSourceHash(lambda_dag, captured_name))
+                    hash_state.update(source_hash);
+                else
+                    hash_state.update(normalizeGeneratedTableQualifiers(captured_name));
+            }
             for (const auto & captured_type : capture.captured_types)
                 hash_state.update(captured_type->getName());
             /// The lambda's own argument names are written by the user, so they are the same in every build.
@@ -547,6 +584,8 @@ ActionsDAG::Node ActionsDAG::createAlias(const Node & child, std::string alias)
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
+    /// The alias carries the child's constant, so it is identified the same way (see `Node::updateHash`).
+    node.source_expression_hash = child.source_expression_hash;
     node.children.emplace_back(&child);
 
     return node;
@@ -571,7 +610,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
+const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, UInt64 source_expression_hash)
 {
     Node node;
     node.type = ActionType::INPUT;
@@ -581,7 +620,10 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     /// Only keep the column if it is a propagated constant.
     /// Non-const columns from block headers must not be stored in DAG nodes.
     if (const auto * column_const = column.column ? typeid_cast<const ColumnConst *>(column.column.get()) : nullptr)
+    {
         node.column = column_const->getPtr();
+        node.source_expression_hash = source_expression_hash;
+    }
 
     return addNode(std::move(node));
 }
@@ -5092,7 +5134,8 @@ const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & outp
 }
 
 
-static void serializeCapture(const LambdaCapture & capture, WriteBuffer & out, bool for_cache_key, const Block * input_header)
+static void serializeCapture(
+    const LambdaCapture & capture, const ActionsDAG & lambda_dag, WriteBuffer & out, bool for_cache_key, const Block * input_header)
 {
     /// `return_name` and the captured names are composed by `calculateActionNodeName`, so they carry the
     /// analyzer's table qualifiers: a lambda capturing `__table1.a` in one plan build captures
@@ -5106,12 +5149,22 @@ static void serializeCapture(const LambdaCapture & capture, WriteBuffer & out, b
             writeStringBinary(name, out);
     };
 
-    write_name(capture.return_name);
+    /// As in `Node::updateHash`, a cache key does not take names that spell the value of a constant identified
+    /// by its source expression.
+    if (auto position = for_cache_key ? getLambdaResultPosition(lambda_dag, capture.return_name) : std::nullopt)
+        writeVarUInt(*position, out);
+    else
+        write_name(capture.return_name);
     encodeDataType(capture.return_type, out);
 
     writeVarUInt(capture.captured_names.size(), out);
     for (const auto & name : capture.captured_names)
-        write_name(name);
+    {
+        if (auto source_hash = for_cache_key ? getCapturedConstantSourceHash(lambda_dag, name) : 0)
+            writeBinaryLittleEndian(source_hash, out);
+        else
+            write_name(name);
+    }
 
     writeVarUInt(capture.captured_types.size(), out);
     for (const auto & type : capture.captured_types)
@@ -5223,7 +5276,7 @@ static void serializeConstant(
         /// the same header as the step whose payload this constant belongs to, so it is identified the same
         /// way too. Without the header a capture of `__table1.id` and one of `__table2.id` normalize onto
         /// one name and two different higher-order filters share a statistics entry.
-        serializeCapture(function_expression->getCapture(), out, registry.for_cache_key, input_header);
+        serializeCapture(function_expression->getCapture(), function_expression->getAcionsDAG(), out, registry.for_cache_key, input_header);
         function_expression->getAcionsDAG().serialize(out, registry, input_header);
 
         const auto & captured_columns = column_function->getCapturedColumns();
@@ -5389,7 +5442,9 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         /// inputs apart - see `Node::updateHash`, which this mirrors.
         if (registry.for_cache_key)
         {
-            if (node.type == ActionType::INPUT)
+            if (node.type == ActionType::INPUT && node.source_expression_hash)
+                writeStringBinary(String{}, out); /// The constant is identified by its source expression below.
+            else if (node.type == ActionType::INPUT)
                 writeCacheKeyColumnName(node.result_name, input_header, out);
             else
                 writeStringBinary(String{}, out);
@@ -5466,7 +5521,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
             }
             if (function_capture)
             {
-                serializeCapture(function_capture->getCapture(), out, registry.for_cache_key, input_header);
+                serializeCapture(function_capture->getCapture(), function_capture->getAcionsDAG(), out, registry.for_cache_key, input_header);
                 function_capture->getAcionsDAG().serialize(out, registry, input_header);
             }
         }

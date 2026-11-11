@@ -4,6 +4,7 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/UnionNode.h>
@@ -61,6 +62,36 @@ namespace Setting
 
 namespace
 {
+
+/// Whether executing the subquery again can give another value: it calls a non-deterministic function, or one was
+/// folded into a constant inside it (`now64`). The scalar it evaluates to is non-deterministic then.
+bool subtreeIsNonDeterministic(const IQueryTreeNode & node)
+{
+    std::vector<const IQueryTreeNode *> stack{&node};
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+
+        if (const auto * constant = current->as<ConstantNode>())
+        {
+            if (!constant->isDeterministic())
+                return true;
+            continue;
+        }
+
+        if (const auto * function = current->as<FunctionNode>(); function && function->isOrdinaryFunction())
+        {
+            if (auto function_base = function->getFunction(); function_base && !function_base->isDeterministic())
+                return true;
+        }
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                stack.push_back(child.get());
+    }
+    return false;
+}
 
 bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
 {
@@ -418,12 +449,16 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)
     {
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
-        auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
+        /// The value is evaluated once for the query when it is kept in the query context: every analysis of the
+        /// query then reads that one (see `QueryFoldedConstantsCache` for why they must agree).
+        const bool is_deterministic = !subtreeIsNonDeterministic(*node);
+        const bool is_fixed_for_query = can_use_global_scalars && context->hasQueryContext();
+        auto constant_node = std::make_shared<ConstantNode>(constant_value, node, is_deterministic, is_fixed_for_query);
 
         if (scalar_column_with_type.column->isNullAt(0))
         {
             node = buildCastFunction(constant_node, constant_node->getResultType(), context);
-            node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+            node = std::make_shared<ConstantNode>(std::move(constant_value), node, is_deterministic, is_fixed_for_query);
         }
         else
             node = std::move(constant_node);

@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/QueryFoldedConstantsCache.h>
 #include <Analyzer/Resolve/IdentifierLookup.h>
 #include <Analyzer/Resolve/IdentifierResolver.h>
 
@@ -126,6 +127,9 @@ public:
     void resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
 
 private:
+    /// Takes the query's cache from `context`, or creates this analyzer's own outside a query.
+    void initFoldedConstantsCache(const Context & context);
+
     /// Utility functions
 
     IdentifierResolveScope & createIdentifierResolveScope(const QueryTreeNodePtr & scope_node, IdentifierResolveScope * parent_scope);
@@ -365,6 +369,9 @@ private:
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)
     /// by tree hash, so syntactically-identical calls fold to the same constant. See `resolveFunction`.
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
+
+    /// What those calls were folded to, shared by every analysis of the query (see `QueryFoldedConstantsCache`).
+    QueryFoldedConstantsCachePtr folded_constants_cache;
 
     const bool only_analyze;
 

@@ -647,13 +647,14 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addInputConstantColumnIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column)
+    const ActionsDAG::Node * addInputConstantColumnIfNecessary(
+        const std::string & node_name, const ColumnWithTypeAndName & column, UInt64 source_expression_hash = 0)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
             return it->second;
 
-        const auto * node = &actions_dag.addInput(column);
+        const auto * node = &actions_dag.addInput(column, source_expression_hash);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -1063,7 +1064,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     {
         ColumnWithTypeAndName column{constant_node.getColumn(), constant_type, constant_node_name};
         for (size_t i = 1; i < actions_stack_size; ++i)
-            actions_stack[i].addInputConstantColumnIfNecessary(constant_node_name, column);
+            actions_stack[i].addInputConstantColumnIfNecessary(constant_node_name, column, constant_node.getNonDeterministicSourceHash());
     }
 
     return {constant_node_name, Levels(0)};
