@@ -75,6 +75,9 @@ struct QueryPlanOptimizationSettings
     /// --- Zero-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool remove_redundant_sorting;
 
+    /// Execute `ORDER BY rand()` by `ShuffleStep` instead of `SortingStep` (at the end of the second pass).
+    bool use_shuffle_for_order_by_rand;
+
     /// --- First-pass optimizations
     bool lift_up_array_join;
     bool push_down_limit;
