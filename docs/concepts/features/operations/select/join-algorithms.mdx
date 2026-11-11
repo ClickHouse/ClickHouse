@@ -1,6 +1,6 @@
 ---
 title: 'JOIN algorithms'
-sidebar_label: 'Algorithms'
+sidebarTitle: 'Algorithms'
 description: 'How ClickHouse JOIN algorithms work, which JOIN types they support, and how to select one.'
 keywords: ['JOIN algorithms', 'join_algorithm', 'hash join', 'parallel hash join', 'grace hash join', 'full sorting merge join', 'partial merge join', 'direct join', 'IEJoin']
 doc_type: 'guide'
@@ -40,25 +40,23 @@ If any condition is not met, ClickHouse tries the next algorithm in `join_algori
 
 <Image img="/images/guides/join-algorithms/hash-join.png" size="lg" alt="Hash JOIN pipeline: two streams read the right table into a single in-memory hash table, then two parallel streams read the left table and join each row by a lookup in that hash table"/>
 
-The `hash` algorithm reads the complete right-hand side into memory and builds one in-memory hash table from it. It then streams the left-hand side in parallel and joins each row by looking up its key in the hash table. ClickHouse chooses the hash table implementation from the types of the JOIN key columns and the JOIN strictness. The hash table is filled by a single thread.
+The `hash` algorithm reads the complete right-hand side into memory and builds an in-memory hash table from it. It then streams the left-hand side in parallel and joins each row by looking up its key in the hash table. ClickHouse chooses the hash table implementation from the types of the JOIN key columns and the JOIN strictness.
 
-**When it is used.** The `hash` algorithm is the most general implementation. It supports every combination of JOIN type and strictness that ClickHouse implements, with `ASOF` limited to `INNER` and `LEFT` JOINs. It is the only algorithm that supports multiple JOIN keys combined with `OR` in the `ON` clause. The `auto` value supports such JOINs because it executes them with `hash`. Together with `parallel_hash` and `grace_hash`, it also supports conditions that compare columns of both tables in addition to an equality key. With the default `join_algorithm`, `hash` is used when `parallel_hash` does not apply, or when the right-hand side is estimated to have fewer rows than [`parallel_hash_join_threshold`](/reference/settings/session-settings/parallel#parallel_hash_join_threshold).
+For `INNER`, `LEFT`, `RIGHT`, and `FULL` JOINs, [`parallel_hash_join_threshold`](/reference/settings/session-settings/parallel#parallel_hash_join_threshold) decides how the hash table is built. If the right-hand side is estimated to have fewer rows than the threshold, a single thread fills one hash table, as in the diagram above. At or above the threshold, ClickHouse splits the hash table into parts that up to [`max_threads`](/reference/settings/session-settings/max-threads#max_threads) threads fill concurrently, as shown for [`parallel_hash`](#parallel-hash). Without an estimate, the hash table is split too. A right-hand side with a special storage, such as a dictionary, always gets one hash table filled by a single thread.
+
+**When it is used.** The `hash` algorithm is the most general implementation. It supports every combination of JOIN type and strictness that ClickHouse implements, with `ASOF` limited to `INNER` and `LEFT` JOINs. It is the only algorithm that supports multiple JOIN keys combined with `OR` in the `ON` clause. The `auto` value supports such JOINs because it executes them with `hash`. Together with `parallel_hash` and `grace_hash`, it also supports conditions that compare columns of both tables in addition to an equality key.
 
 **Memory and spilling.** The hash table and the rows of the right-hand side must fit into memory. Memory use can exceed the uncompressed size of the right-hand side, because the hash table is resized in steps and is not always full. When a spill threshold is set, the JOIN starts in memory and switches to the `grace_hash` algorithm once the right-hand side exceeds the threshold. See [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management).
 
-**Limitations.** Because the build phase runs in a single thread, it can dominate the query time when the right-hand side is large.
+**Limitations.** When the hash table is not split, the build phase runs in a single thread. It can dominate the query time when the right-hand side is much larger than its estimate.
 
 ## `parallel_hash` {#parallel-hash}
 
 <Image img="/images/guides/join-algorithms/parallel-hash-join.png" size="lg" alt="Parallel hash JOIN pipeline: rows of the right table are split into two buckets by a hash of the JOIN key, and two hash tables are filled concurrently; rows of the left table are routed to the matching hash table by the same hash function"/>
 
-The `parallel_hash` algorithm is a variant of `hash` that builds several hash tables concurrently. It splits the rows of the right-hand side into buckets by applying a hash function to the JOIN key, and fills one hash table per bucket in parallel. The number of hash tables is determined by [`max_threads`](/reference/settings/session-settings/max-threads#max_threads). During the probe phase, the same hash function routes each row of the left-hand side to the hash table that can contain its matches.
+`parallel_hash` is an obsolete alias of `hash`, kept for compatibility. Listing it in `join_algorithm` does not change how the hash table is built: [`parallel_hash_join_threshold`](/reference/settings/session-settings/parallel#parallel_hash_join_threshold) decides that for both values. To split the hash table whenever the JOIN type allows it, set the threshold to `0`. To always keep one hash table, set `hash_join_layout` to `serial`.
 
-**When it is used.** When `hash` is also listed and an estimate of the right-hand side is available, ClickHouse uses `parallel_hash` only if the estimate is at least [`parallel_hash_join_threshold`](/reference/settings/session-settings/parallel#parallel_hash_join_threshold) rows. It supports `INNER`, `LEFT`, `RIGHT`, and `FULL` JOINs with `ALL`, `ANY`, `SEMI`, and `ANTI` strictness. Since 26.6, it also supports `ASOF` JOINs. If `parallel_hash` cannot execute a JOIN, for example because the right-hand side is a dictionary that does not qualify for `direct`, ClickHouse executes the JOIN with the `hash` implementation. A JOIN with `OR` in the `ON` clause requires `hash` or `auto` to be listed in `join_algorithm`.
-
-**Memory and spilling.** It usually uses more memory than `hash`, because it allocates several hash tables. It spills to disk in the same way as `hash`.
-
-**Limitations.** It does not support multiple JOIN keys combined with `OR` or a right-hand side with a special storage.
+The diagram shows how `hash` builds a split hash table. ClickHouse assigns the rows of the right-hand side to parts by a hash of the JOIN key, and up to [`max_threads`](/reference/settings/session-settings/max-threads#max_threads) threads fill the parts concurrently. During the probe phase, the same hash function routes each row of the left-hand side to the part that can contain its matches.
 
 ## `grace_hash` {#grace-hash}
 
@@ -115,7 +113,7 @@ The `ie_join` algorithm implements the sort-based [IEJoin](https://vldb.org/pvld
 **When it is used.** Its position in `join_algorithm` sets its priority:
 
 - Listed after other algorithms, it is used only when the `ON` clause contains no equality condition between the tables.
-- Listed first, it is used whenever the `ON` clause contains two inequality conditions. Other conditions, including equality conditions, are applied as a filter over the JOIN result or as a residual condition inside the operator.
+- Listed first, it is used whenever the `ON` clause contains two inequality conditions. Other conditions, including equality conditions, are applied as a filter over the JOIN result or as a residual condition inside the operator. An equality applied this way is evaluated with `equals`, not as a JOIN key. See [Comparison of JOIN keys](#comparison-of-join-keys).
 
 When the `ON` clause contains more than two eligible inequality conditions, ClickHouse chooses the two key conditions by their estimated selectivity from column statistics. Without statistics, it uses the first two in syntax order. The algorithm supports `INNER`, `LEFT`, `RIGHT`, and `FULL` JOINs with `ALL` strictness, and `LEFT` and `RIGHT` JOINs with `SEMI` and `ANTI` strictness.
 
@@ -125,7 +123,7 @@ When the `ON` clause contains more than two eligible inequality conditions, Clic
 
 ## Block nested loop fallback {#block-nested-loop-fallback}
 
-The block nested loop JOIN executes a JOIN whose `ON` clause contains no equality condition between the tables and that no other algorithm can execute. ClickHouse materializes the right-hand side and evaluates the `ON` condition on every pair of a left-hand row and a right-hand row. It is not a value of `join_algorithm`. It is the last resort of JOIN planning.
+The block nested loop JOIN executes a JOIN whose `ON` clause contains no equality condition between the tables and that no other algorithm can execute. ClickHouse materializes the right-hand side and evaluates the `ON` condition on every pair of a left-hand row and a right-hand row. An equality inside the condition, such as `t1.a = t2.a` in `t1.a = t2.a OR t1.b < 0`, is evaluated with `equals`, not as a JOIN key. See [Comparison of JOIN keys](#comparison-of-join-keys). It is not a value of `join_algorithm`. It is the last resort of JOIN planning.
 
 **When it is used.** It applies to an `ON` clause that is an arbitrary boolean expression over columns of both tables, such as a range check or a function call, when `ie_join` does not apply. When `hash` is listed in `join_algorithm`, an `INNER` JOIN with `ALL` strictness is executed as a `CROSS JOIN` with the condition as a filter instead. The fallback is available since 26.10. The [`allow_block_nested_loop_join`](/reference/settings/session-settings/allow#allow_block_nested_loop_join) setting controls whether it can be used. When the fallback is not allowed, such a query is rejected with `INVALID_JOIN_ON_EXPRESSION`. It supports every JOIN type and strictness except `ASOF`, `PASTE`, and `ANY FULL`.
 
@@ -140,8 +138,7 @@ The following table lists the JOIN types that each algorithm supports for each s
 | Algorithm | `ALL` | `ANY` | `SEMI` | `ANTI` | `ASOF` |
 |---|---|---|---|---|---|
 | `direct` | `INNER`, `LEFT` | `LEFT` | `LEFT` | `LEFT` | |
-| `hash` | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `INNER`, `LEFT` |
-| `parallel_hash` | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `INNER`, `LEFT` since 26.6 |
+| `hash`, `parallel_hash` | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `INNER`, `LEFT` |
 | `grace_hash` | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | |
 | `full_sorting_merge`, `parallel_full_sorting_merge` | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | | | `INNER`, `LEFT` |
 | `partial_merge` | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT` | `LEFT` | | |
@@ -151,19 +148,38 @@ The following table lists the JOIN types that each algorithm supports for each s
 The following rules also apply:
 
 - `ANY FULL` JOINs are rejected before an algorithm is selected, for every algorithm.
-- `ASOF` JOINs are supported only by `hash`, `parallel_hash` since 26.6, and `full_sorting_merge`. `parallel_full_sorting_merge` executes an `ASOF` JOIN as a single `full_sorting_merge` JOIN.
+- `ASOF` JOINs are supported only by `hash` and `full_sorting_merge`. `parallel_full_sorting_merge` executes an `ASOF` JOIN as a single `full_sorting_merge` JOIN.
 - `partial_merge` supports `RIGHT` and `FULL` JOINs only with `ALL` strictness.
 - The block nested loop fallback does not support `ASOF`, `PASTE`, or `ANY FULL` JOINs.
-- Only `hash` supports multiple JOIN keys combined with `OR` in the `ON` clause. The `auto` value executes such JOINs with `hash`.
+- Only `hash`, and its alias `parallel_hash`, support multiple JOIN keys combined with `OR` in the `ON` clause. The `auto` value executes such JOINs with `hash`.
 - Only `hash`, `parallel_hash`, and `grace_hash` support an equality key combined with a condition that compares columns of both tables.
 - The `direct` algorithm applies only to the right-hand sides listed in [`direct`](#direct). For `MergeTree` tables, it does not support `ANY` strictness.
 - `CROSS JOIN`, JOINs with a constant `ON` condition, and `PASTE JOIN` have dedicated implementations that do not depend on `join_algorithm`.
+
+## Comparison of JOIN keys {#comparison-of-join-keys}
+
+Every algorithm except `ie_join` and the block nested loop fallback uses an equality between columns of both tables in the `ON` clause as a JOIN key. The algorithm compares the keys itself rather than with the [`equals`](/reference/functions/regular-functions/comparison-functions#equals) function, and a key matches some pairs of values for which `equals` does not return `1`. `ie_join` evaluates such an equality with `equals` on the pairs that its two inequality conditions matched, and the block nested loop fallback evaluates it with `equals` as part of the `ON` condition.
+
+| Algorithm | Equality between the tables | Two `NaN` values | Two `Tuple` values `(1, NULL)` |
+|---|---|---|---|
+| `direct`, `hash`, `parallel_hash`, `grace_hash` | JOIN key | Match if both have the same bit pattern | Match |
+| `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge` | JOIN key | Match | Match |
+| `ie_join` | `equals` | Do not match | Do not match |
+| Block nested loop fallback | `equals` | Do not match | Do not match |
+
+A `NULL` value of a `Variant` key behaves like the `Tuple` with a `NULL` element. A key that is `NULL` itself does not match with any algorithm, as with `equals`. See [NULL and NaN values in JOIN keys](/reference/statements/select/join#null-values-in-join-keys).
+
+The equality conditions of an `ASOF` JOIN follow the row of `hash` or `full_sorting_merge`, whichever executes it, and a right-hand side with the `Join` table engine follows the `hash` row.
+
+A `direct` JOIN with a dictionary that has the `complex_key_direct`, `complex_key_cache`, or `complex_key_ssd_cache` layout and a `CLICKHOUSE` source sends the keys to the source as text, which writes every `NaN` as `nan`, so two `NaN` keys match only if both have the bit pattern of `nan`. With a non-zero [`max_rows_in_set_to_optimize_join`](/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join), `full_sorting_merge` and `parallel_full_sorting_merge` can first filter the inputs by a set of JOIN keys that compares `NaN` values by their bit pattern, so whether two `NaN` values with different bit patterns match can vary from run to run.
+
+A JOIN that compares such values can therefore return different rows depending on the algorithm that executes it. For example, listing `ie_join` first in `join_algorithm` can make it execute a JOIN that has an equality next to two inequality conditions, and the equality is then evaluated with `equals` instead of as a JOIN key.
 
 ## Choosing a JOIN algorithm {#choosing-a-join-algorithm}
 
 <Image img="/images/guides/joins-2.png" size="lg" alt="Relative memory usage and execution time of the direct, parallel hash, hash, grace hash, full sorting merge, and partial merge JOIN algorithms"/>
 
-The chart above shows the relative memory use and execution time of six JOIN algorithms. The positions are qualitative, and the actual values depend on the data size, the key types, and the distribution of key values. The chart does not include `ie_join`, `parallel_full_sorting_merge`, or the block nested loop fallback.
+The chart above shows the relative memory use and execution time of six JOIN algorithms. Its parallel hash JOIN is `hash` with a split hash table. The positions are qualitative, and the actual values depend on the data size, the key types, and the distribution of key values. The chart does not include `ie_join`, `parallel_full_sorting_merge`, or the block nested loop fallback.
 
 ### Optimizing JOIN performance {#optimizing-join-performance}
 
@@ -196,4 +212,6 @@ In `EXPLAIN` output, the second case appears as `Algorithm: JoinSwitcher`.
 - [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)
 - [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution)
 - [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management)
+- [JOIN settings](/concepts/features/operations/select/join-settings)
+- [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins)
 

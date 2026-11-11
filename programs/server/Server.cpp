@@ -70,6 +70,7 @@
 #include <Common/FailPoint.h>
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Server/ConnectionRegistry.h>
@@ -165,6 +166,9 @@
 #include <Common/JemallocMergeTreeArena.h>
 
 #include "config.h"
+#if USE_SILK
+#    include <glibc-rseq/rseq.h>
+#endif
 #include <Common/config_version.h>
 
 #if defined(OS_LINUX)
@@ -263,14 +267,19 @@ namespace ServerSetting
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsUInt64 stream_kafka_locks_refresh_polls;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
     extern const ServerSettingsBool enable_write_through_distributed_cache;
+    extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
+    extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsUInt64 disk_connections_rcvbuf;
     extern const ServerSettingsUInt64 disk_connections_sndbuf;
+    extern const ServerSettingsUInt64 streaming_exchange_rcvbuf;
+    extern const ServerSettingsUInt64 streaming_exchange_sndbuf;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -1449,6 +1458,18 @@ try
 #if USE_SILK
     if (server_settings[ServerSetting::enable_silk_runtime])
     {
+        /// Silk reads the current CPU from the rseq area that the C library registers for every thread, and its
+        /// per-CPU structures use rseq critical sections. Without a registered area it reads a CPU number that is
+        /// out of range and aborts in its worker threads. `rseq_init` in librseq does not detect this: it only
+        /// checks that the C library exports the rseq symbols, not that the registration succeeded.
+        if (rseq_cpu_id() < 0)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The server setting `enable_silk_runtime` is set, but the Linux 'restartable sequences' (rseq) feature, "
+                "which the silk fiber runtime requires, is not enabled for this process. The kernel may not support it "
+                "(it was introduced in Linux 4.18), a seccomp profile may block the rseq system call, or the C library "
+                "did not register the rseq area");
+
         Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
     }
 #endif
@@ -1502,6 +1523,8 @@ try
         if (server_settings[ServerSetting::enable_silk_runtime])
         {
             LOG_INFO(log, "Stopping silk fiber scheduler");
+            /// Closing a cooperative connection needs the scheduler, so stored connections go first.
+            HTTPConnectionPools::instance().dropCache();
             Silk::destroyFiberScheduler();
         }
 #endif
@@ -2252,7 +2275,8 @@ try
             {
                 try
                 {
-                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(listen_host, streaming_exchange_port, exchange_connections_ptr));
+                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(
+                        listen_host, streaming_exchange_port, server_settings[ServerSetting::listen_backlog], exchange_connections_ptr));
                     exchange_servers.back()->start();
                 }
                 catch (Poco::Exception & e)
@@ -2678,6 +2702,15 @@ try
             validatePrometheusConstantLabels(
                 *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
 
+            /// `setsockopt` takes `int`. Reject before `config().replace`: `ConfigReloader` does not roll back.
+            {
+                ServerSettings reload_server_settings;
+                reload_server_settings.loadSettingsFromConfig(*reload_config);
+                StreamingExchangeProtocol::validateSocketBufferSizes(
+                    reload_server_settings[ServerSetting::streaming_exchange_sndbuf],
+                    reload_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
+            }
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;
@@ -2834,8 +2867,13 @@ try
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setKafkaLocksRefreshPolls(new_server_settings[ServerSetting::stream_kafka_locks_refresh_polls]);
             global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
             global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::enable_write_through_distributed_cache]);
+            global_context->setDistributedCacheTemporaryDataPoolBehaviourOnLimit(
+                new_server_settings[ServerSetting::distributed_cache_temporary_data_pool_behaviour_on_limit]);
+            global_context->setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(
+                new_server_settings[ServerSetting::distributed_cache_temporary_data_max_connections_bypassing_pool]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
@@ -3050,6 +3088,9 @@ try
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
+#if USE_GPU
+                global_context->updateGPUKernelCacheConfiguration(new_server_settings);
+#endif
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
@@ -3102,6 +3143,10 @@ try
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
                 });
+
+            StreamingExchangeProtocol::setSocketBufferSizes(
+                new_server_settings[ServerSetting::streaming_exchange_sndbuf],
+                new_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 
