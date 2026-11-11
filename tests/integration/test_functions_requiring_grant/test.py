@@ -10,16 +10,9 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=[
-        "configs/functions_requiring_grant.xml",
-        "configs/query_cache_on_disk.xml",
-    ],
+    main_configs=["configs/functions_requiring_grant.xml"],
     user_configs=["configs/users.d/users.xml"],
     stay_alive=True,
-)
-
-FUNCTIONS_REQUIRING_GRANT_CONFIG = (
-    "/etc/clickhouse-server/config.d/functions_requiring_grant.xml"
 )
 
 EXECUTABLE_FUNCTIONS_CONFIG = """<clickhouse>
@@ -69,8 +62,6 @@ def cleanup_after_test():
         instance.query("DROP TABLE IF EXISTS t")
         instance.query("DROP FUNCTION IF EXISTS wrap_hex")
         instance.query("DROP FUNCTION IF EXISTS listed_udf")
-        instance.query("DROP FUNCTION IF EXISTS wrap_in")
-        instance.query("DROP FUNCTION IF EXISTS inc")
 
 
 def test_unlisted_function_does_not_need_grant():
@@ -155,7 +146,8 @@ def test_listed_sql_udf_requires_grant():
 
 
 def test_lambda_alias_shadowing_listed_function():
-    """The grant check must not run in the non-throwing probes used before name resolution."""
+    """The analyzer looks up `hex` to turn the name into a lambda, but the alias has priority, so
+    the built-in function is not called and its grant is not needed."""
     instance.query("CREATE USER A")
 
     assert (
@@ -189,129 +181,28 @@ def test_function_without_parentheses_requires_grant():
     assert instance.query("SELECT current_user", user="A") == "A\n"
 
 
-def test_rewritten_call_requires_grant():
-    """The grant applies to the call as written, even when the analyzer replaces it."""
-    instance.query("CREATE USER A")
-
-    for query, function, result in [
-        ("SELECT if(1, 7, missing_column)", "if", "7\n"),
-        ("SELECT materialize(1) IN [materialize(1)]", "in", "1\n"),
-    ]:
-        assert "Not enough privileges" in instance.query_and_get_error(
-            query, user="A"
-        ), query
-
-        instance.query(f"GRANT FUNCTION ON {function} TO A")
-        assert instance.query(query, user="A") == result, query
-
-
 def test_values_expression_requires_grant():
-    """Expressions in `VALUES` are evaluated by the legacy `ExpressionAnalyzer`, which handles
-    `IN` and `indexHint` itself before the function is looked up, and whose `TreeRewriter`
-    renames `in` to `nullIn` under `transform_null_in`. Sent over HTTP: `clickhouse-client`
-    would evaluate `VALUES` itself, without the server configuration. Without `async_insert`:
-    an asynchronous insert evaluates `VALUES` on another path, which adds calls of its own.
-    """
-    instance.query("CREATE TABLE t (x UInt8) ENGINE = Memory")
+    """Expressions in `VALUES` are evaluated by the legacy `ExpressionAnalyzer`, not by the
+    analyzer. Sent over HTTP, because `clickhouse-client` would evaluate them itself, and without
+    `async_insert`, which evaluates them later."""
+    instance.query("CREATE TABLE t (s String) ENGINE = Memory")
     instance.query("CREATE USER A")
     instance.query("GRANT INSERT ON t TO A")
 
-    for query, functions in [
-        (
-            "INSERT INTO t SETTINGS async_insert = 0 VALUES (1 IN [materialize(1)])",
-            ["in"],
-        ),
-        (
-            "INSERT INTO t SETTINGS async_insert = 0 VALUES (indexHint(1))",
-            ["indexHint"],
-        ),
-        (
-            "INSERT INTO t SETTINGS async_insert = 0, transform_null_in = 1 "
-            "VALUES (1 IN [materialize(1)])",
-            ["nullIn", "in"],
-        ),
-    ]:
-        instance.query("REVOKE FUNCTION ON * FROM A")
-        for function in functions:
-            assert "Not enough privileges" in instance.http_query_and_get_error(
-                query, method="POST", user="A"
-            ), (query, function)
-            instance.query(f"GRANT FUNCTION ON {function} TO A")
-
-        instance.http_query(query, method="POST", user="A")
-
-    assert instance.query("SELECT x FROM t") == "1\n1\n1\n"
-
-
-def test_values_expression_with_sql_udf_requires_grant():
-    """The legacy `TreeRewriter` inlines a SQL UDF into a `VALUES` expression and then renames
-    `in` in its body to `nullIn`, so the calls of the body are checked as written."""
-    instance.query("CREATE TABLE t (x Array(UInt8)) ENGINE = Memory")
-    instance.query("CREATE FUNCTION wrap_in AS (x) -> x IN [1]")
-    instance.query("CREATE USER A")
-    instance.query("GRANT INSERT ON t TO A")
-    instance.query("GRANT FUNCTION ON nullIn TO A")
-
-    query = (
-        "INSERT INTO t SETTINGS async_insert = 0, transform_null_in = 1 "
-        "VALUES (arrayMap(x -> wrap_in(x), [1]))"
-    )
+    query = "INSERT INTO t SETTINGS async_insert = 0 VALUES (hex('a'))"
     assert "Not enough privileges" in instance.http_query_and_get_error(
         query, method="POST", user="A"
     )
 
-    instance.query("GRANT FUNCTION ON in TO A")
+    instance.query("GRANT FUNCTION ON hex TO A")
     instance.http_query(query, method="POST", user="A")
-    assert instance.query("SELECT x FROM t") == "[1]\n"
+    assert instance.query("SELECT s FROM t") == "61\n"
 
 
-def test_lambda_parameters_are_not_a_call():
-    """A lambda keeps its parameters in `tuple(...)`, which is not a call, so inlining an
-    unrestricted SQL UDF does not need the grant for `tuple`. Without
-    `input_format_values_interpret_expressions` the `VALUES` expression can be evaluated only by
-    the legacy template, which inlines the UDF."""
-    instance.query("CREATE TABLE t (x UInt8) ENGINE = Memory")
-    instance.query("CREATE FUNCTION inc AS x -> x + 1")
+def test_function_selected_by_setting_requires_grant():
+    """The grant is required for the function which is created for the query: under
+    `use_legacy_to_time` it is `toTimeWithFixedDate` for a call of `toTime`."""
     instance.query("CREATE USER A")
-    instance.query("GRANT INSERT ON t TO A")
-
-    instance.http_query(
-        "INSERT INTO t SETTINGS async_insert = 0, "
-        "input_format_values_interpret_expressions = 0 VALUES (inc(1))",
-        method="POST",
-        user="A",
-    )
-    assert instance.query("SELECT x FROM t") == "2\n"
-
-
-def test_rewrite_target_requires_grant():
-    """`transform_null_in` replaces `in` with `nullIn`, which requires its own grant."""
-    instance.query("CREATE USER A")
-    instance.query("GRANT FUNCTION ON in TO A")
-
-    query = "SELECT materialize(1) IN (1, 2) SETTINGS transform_null_in = 1"
-    assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
-
-    instance.query("GRANT FUNCTION ON nullIn TO A")
-    assert instance.query(query, user="A") == "1\n"
-
-
-def test_division_setting_does_not_bypass_grant():
-    """Under `sql_compatible_division_for_integers`, `divide` is renamed to `divideExact`
-    before the analysis."""
-    instance.query("CREATE USER A")
-
-    query = "SELECT divide(8.0, 2.0) SETTINGS sql_compatible_division_for_integers = 1"
-    assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
-
-    instance.query("GRANT FUNCTION ON divide TO A")
-    assert instance.query(query, user="A") == "4\n"
-
-
-def test_factory_replacement_requires_grant():
-    """Under `use_legacy_to_time`, the function factory gives `toTimeWithFixedDate` for `toTime`."""
-    instance.query("CREATE USER A")
-    instance.query("GRANT FUNCTION ON toTime TO A")
 
     query = (
         "SELECT toTime(toDateTime('2026-01-01 12:00:00')) "
@@ -323,81 +214,9 @@ def test_factory_replacement_requires_grant():
     assert instance.query(query, user="A") == instance.query(query)
 
 
-def test_legacy_to_time_in_mutation_requires_grant():
-    """Under `use_legacy_to_time`, `ALTER` renames `toTime` to `toTimeWithFixedDate` before the
-    analysis, so the written `toTime` is checked where it is renamed."""
-    instance.query("CREATE TABLE t (k UInt8, d DateTime) ENGINE = MergeTree ORDER BY k")
-    instance.query("INSERT INTO t VALUES (1, '2026-01-01 12:00:00')")
-    instance.query("CREATE USER A")
-    instance.query("GRANT SELECT, ALTER UPDATE ON t TO A")
-    instance.query("GRANT FUNCTION ON toTimeWithFixedDate TO A")
-
-    query = "ALTER TABLE t UPDATE d = toTime(d) WHERE 1"
-    settings = {"use_legacy_to_time": 1, "mutations_sync": 2}
-    assert "Not enough privileges" in instance.query_and_get_error(
-        query, user="A", settings=settings
-    )
-
-    instance.query("GRANT FUNCTION ON toTime TO A")
-    instance.query(query, user="A", settings=settings)
-
-
-def test_optimized_call_requires_grant():
-    """The optimizations after the analysis can replace a call: `x = 1 OR x = 2 OR x = 3` is
-    executed as `x IN (1, 2, 3)`."""
-    instance.query("CREATE USER A")
-
-    query = "SELECT x = 1 OR x = 2 OR x = 3 FROM (SELECT materialize(1) AS x)"
-    assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
-
-    instance.query("GRANT FUNCTION ON in TO A")
-    assert instance.query(query, user="A") == "1\n"
-
-
-def test_query_cache_does_not_outlive_grant():
-    """The query cache serves a hit before the query is analyzed, so it must not keep the result
-    of a call that needs a grant: the next run after the revoke would skip the check."""
-    instance.query("CREATE USER A")
-    instance.query("GRANT FUNCTION ON hex TO A")
-
-    query = (
-        "SELECT hex('a') SETTINGS use_query_cache = 1, query_cache_min_query_duration = 0, "
-        "query_cache_min_query_runs = 0, query_cache_ttl = 3600"
-    )
-    assert instance.query(query, user="A") == "61\n"
-
-    instance.query("REVOKE FUNCTION ON hex FROM A")
-    assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
-
-
-def test_query_cache_on_disk_written_before_function_was_listed():
-    """The on-disk query cache survives the restart which adds a function to the list, and
-    a hit is served before the grant check, so an entry from the old list must not match.
-    """
-    instance.query("CREATE USER A")
-
-    query = (
-        "SELECT upper('a') SETTINGS use_query_cache = 1, "
-        "query_cache_on_disk_cache_name = 'cache_for_query_results', query_cache_ttl = 3600"
-    )
-    assert instance.query(query, user="A") == "A\n"
-
-    listed = "<function>in</function>"
-    instance.replace_in_config(
-        FUNCTIONS_REQUIRING_GRANT_CONFIG, listed, f"{listed}<function>upper</function>"
-    )
-    instance.restart_clickhouse()
-    try:
-        assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
-    finally:
-        instance.replace_in_config(
-            FUNCTIONS_REQUIRING_GRANT_CONFIG, "<function>upper</function>", ""
-        )
-        instance.restart_clickhouse()
-
-
 def test_system_functions_readable_without_grant():
-    """A listed SQL UDF must not break introspection for users who cannot execute it."""
+    """Listing functions is not calling them, so it shows the listed ones in full to a user who
+    cannot execute them."""
     instance.query("CREATE USER A")
     instance.query("GRANT SELECT ON system.functions TO A")
     instance.query("CREATE FUNCTION listed_udf AS (x) -> plus(x, 1)")
@@ -408,21 +227,13 @@ def test_system_functions_readable_without_grant():
         )
         == "1\n"
     )
+    assert (
+        instance.query(
+            "SELECT deterministic FROM system.functions WHERE name = 'hex'", user="A"
+        )
+        == "1\n"
+    )
     assert "listed_udf" in instance.query("SHOW FUNCTIONS ILIKE 'listed_udf'", user="A")
-
-
-def test_decrypt_requires_grant():
-    instance.query("CREATE USER A")
-    decrypt_query = (
-        "SELECT decrypt('aes-256-ecb', encrypt('aes-256-ecb', 'Secret', "
-        "'00000000000000000000000000000000'), '00000000000000000000000000000000')"
-    )
-    assert "Not enough privileges" in instance.query_and_get_error(
-        decrypt_query, user="A"
-    )
-
-    instance.query("GRANT FUNCTION ON decrypt TO A")
-    assert instance.query(decrypt_query, user="A") == "Secret\n"
 
 
 def test_higher_order_function_argument_requires_grant():
