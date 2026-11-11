@@ -34,19 +34,36 @@ to_relative_path() {
     fi
 }
 
+# Print "<depth>\t<path>" of the files that can hold the license of a library (extra arguments go to find)
+find_license_candidates() {
+    local LIB="$1"
+    shift
+    LC_ALL=C ${FIND_CMD} "$LIB" "$@" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' -or -iname 'NOTICE' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n"
+}
+
+# Print the license file chosen among the "<depth>\t<path>" candidates on stdin
+choose_license_file() {
+    LC_ALL=C sort | LC_ALL=C awk '
+        BEGIN { min_depth = 0 }
+        { name = toupper($2); sub(/.*\//, "", name) }
+        name ~ /LICENSE/ { if (!min_depth || $1 <= min_depth) { min_depth = $1; license = $2 } }
+        name ~ /COPY/    { if (!min_depth || $1 <= min_depth) { min_depth = $1; copying = $2 } }
+        name ~ /NOTICE/  { if (!min_depth || $1 <= min_depth) { min_depth = $1; notice = $2 } }
+        END { if (license) { print license } else if (copying) { print copying } else { print notice } }'
+}
+
 # Function to process a single C/C++ library
 process_library() {
     local LIB="$1"
     local LIB_NAME=$(basename "$LIB")
 
-    LIB_LICENSE=$(
-        LC_ALL=C ${FIND_CMD} "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' -or -iname 'NOTICE' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
-            LC_ALL=C sort | LC_ALL=C awk '
-                BEGIN { IGNORECASE=1; min_depth = 0 }
-                /LICENSE/ { if (!min_depth || $1 <= min_depth) { min_depth = $1; license = $2 } }
-                /COPY/    { if (!min_depth || $1 <= min_depth) { min_depth = $1; copying = $2 } }
-                /NOTICE/  { if (!min_depth || $1 <= min_depth) { min_depth = $1; notice = $2 } }
-                END { if (license) { print license } else if (copying) { print copying } else { print notice } }')
+    # A file chosen among the top-level candidates is also chosen among all of them, so the whole tree
+    # (some libraries are huge) is walked only if there is none.
+    LIB_LICENSE=$(find_license_candidates "$LIB" -maxdepth 1 | choose_license_file)
+    if [ -z "$LIB_LICENSE" ]
+    then
+        LIB_LICENSE=$(find_license_candidates "$LIB" | choose_license_file)
+    fi
 
     if [ -n "$LIB_LICENSE" ]
     then
@@ -125,16 +142,37 @@ process_library() {
 }
 
 # Function to process a single Rust crate
+# It runs for every vendored crate on every CMake run, so it uses only shell builtins (no forks).
 process_rust_crate() {
     local dependency="$1"
-    local FOLDER=$(dirname "$dependency")
+    local FOLDER="${dependency%/*}"
 
     # Crate names follow `some-crate-name-1.0.0` pattern.
-    CRATE=$(basename "$FOLDER")
-    NAME=$(echo "$CRATE" | rev | cut -f2- -d- | rev)
+    CRATE="${FOLDER##*/}"
+    NAME="${CRATE%-*}"
 
-    LICENSE_TYPE=$(${GREP_CMD} 'license = "' "$dependency"  | cut -d '"' -f2)
-    if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive|BSL-1.0';
+    # The values of all `license = "..."` lines, one per line (as `grep 'license = "' | cut -d '"' -f2`).
+    local line value
+    LICENSE_TYPE=""
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == *'license = "'* ]]; then
+            value="${line#*\"}"
+            LICENSE_TYPE+="${value%%\"*}"$'\n'
+        fi
+    done < "$dependency"
+    while [[ "$LICENSE_TYPE" == *$'\n' ]]; do
+        LICENSE_TYPE="${LICENSE_TYPE%$'\n'}"
+    done
+
+    local known_licenses='MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive|BSL-1.0'
+    local unrecognized=0
+    while IFS= read -r line; do
+        if ! [[ "$line" =~ $known_licenses ]]; then
+            echo "$line"
+            unrecognized=1
+        fi
+    done <<< "${LICENSE_TYPE}"
+    if [ "$unrecognized" == 1 ];
     then
         echo "Fatal error: unrecognized licenses ($LICENSE_TYPE) in the Rust code" >&2
         exit 1
@@ -178,6 +216,7 @@ process_rust_crate() {
            [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
            [ "$LICENSE_TYPE" == "Zlib OR Apache-2.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Zlib OR MIT OR Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception" ] ||
@@ -208,12 +247,17 @@ process_rust_crate() {
         fi
     fi
 
-    RELATIVE_PATH=$(to_relative_path "$LICENSE_PATH")
+    # As to_relative_path, without a subshell.
+    if [[ "${LICENSE_PATH}" == "${ROOT_PATH}/"* ]]; then
+        RELATIVE_PATH="${LICENSE_PATH#${ROOT_PATH}}"
+    else
+        RELATIVE_PATH="${LICENSE_PATH}"
+    fi
     echo -e "$NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
 }
 
 # Export functions and variables for parallel execution
-export -f to_relative_path process_library process_rust_crate
+export -f to_relative_path find_license_candidates choose_license_file process_library process_rust_crate
 export GREP_CMD FIND_CMD ROOT_PATH LIBS_PATH
 
 # Process C/C++ libraries in parallel
@@ -234,7 +278,7 @@ then
     printf '%s\n' "${c_cpp_output}" | LC_ALL=C sort
 fi
 
-rust_output=$(${FIND_CMD} "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs -P "${JOBS}" -I {} bash -c 'process_rust_crate "$@"' _ {})
+rust_output=$(${FIND_CMD} "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' -print0 | xargs -0 -P "${JOBS}" -n 64 bash -c 'for dependency in "$@"; do process_rust_crate "$dependency"; done' _)
 rust_status=$?
 if [ "${rust_status}" -ne 0 ]
 then

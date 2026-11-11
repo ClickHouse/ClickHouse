@@ -5,7 +5,7 @@
 -- TimeSeries: the `version` setting is pinned at CREATE and cannot be dropped
 1
 -- an altered setting a reset does not touch still takes effect
-false
+600
 -- MergeTree: a column setting is reset too
 0
 -- ALTER DATABASE has no reset

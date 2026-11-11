@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذه الإعدادات متوفّرة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_trivial_approximate_count_query">
-  ## optimize_trivial_approximate_count_query
-</div>
+## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 * 0 — التحسين معطّل.
   * 1 — التحسين مفعّل.
 
-<div id="optimize_trivial_count_query">
-  ## optimize_trivial_count_query
-</div>
+## optimize_trivial_count_query {#optimize_trivial_count_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -44,9 +40,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 * [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)
 
-<div id="optimize_trivial_count_with_sparsity_filter">
-  ## optimize_trivial_count_with_sparsity_filter
-</div>
+## optimize_trivial_count_with_sparsity_filter {#optimize_trivial_count_with_sparsity_filter}
 
 <BetaBadge />
 
@@ -94,26 +88,26 @@ merge. مع القيمة الافتراضية `basic`، لا تحصل أعمدة
 
 * [optimize&#95;trivial&#95;count&#95;query](/ar/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query)
 
-<div id="optimize_trivial_group_by_limit_query">
-  ## optimize_trivial_group_by_limit_query
-</div>
+## optimize_trivial_group_by_limit_query {#optimize_trivial_group_by_limit_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "إعداد جديد يحدّ من التجميع إلى حدّ أقصى يبلغ `LIMIT` من المفاتيح المميزة لاستعلامات `SELECT key_expr FROM t GROUP BY key_expr LIMIT n`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "إعداد جديد يقصر التجميع على ما لا يتجاوز LIMIT من المفاتيح المميزة في استعلامات `SELECT key_expr FROM t GROUP BY key_expr LIMIT n`."}]}]} />
 
-يؤدي هذا الإعداد إلى تمكين تحسين الاستعلام البسيط `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` أو تعطيله (من دون دوال تجميع أو دوال نوافذ أو `arrayJoin` في الإسقاط، ومن دون بنود `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window، ومن دون معدِّلات `GROUP BY`) وذلك عبر تعيين `max_rows_to_group_by = n + offset` و`group_by_overflow_mode = 'any'`. ويتوقف التجميع بمجرد إنتاج `n + offset` من المفاتيح المميزة.
+يُفعِّل أو يُعطِّل تحسين الاستعلام البسيط `SELECT ... FROM table GROUP BY key_expr LIMIT n` (الخالي من عبارات `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/النوافذ ومن معدِّلات `GROUP BY`)، وذلك بقصر التجميع على ما لا يتجاوز `n + offset` من المفاتيح المميزة.
 
-يُلغى هذا التحسين عندما يكون المستخدم قد عيّن `group_by_overflow_mode` صراحةً إلى قيمة غير `any` (للحفاظ على سلوك `throw`/`break` الذي حدّده صراحةً)، وكذلك عندما يكون قد عيّن مسبقًا قيمة أكثر تقييدًا لـ `max_rows_to_group_by` (إذ يصبح التحسين عندئذٍ بلا تأثير).
+إذا لم يتضمن الإسقاط دوالًا تجميعية، يُطبَّق الحد بضبط `max_rows_to_group_by = n + offset` مع `group_by_overflow_mode = 'any'` (ويسري هذا الشكل أيضًا على مقاطع الاستعلامات الموزعة). أما إذا تضمّن الإسقاط دوالًا تجميعية، فلا يُطبَّق الحد إلا إذا أجرى الخادم التجميع الكامل محليًا: فما إن يتجاوز أي خيط تنفيذ للتجميع الحد، حتى تُقصَر جميع خيوط التنفيذ على مجموعة مشتركة واحدة تضم `n + offset` من المفاتيح المحتفظ بها، فتبقى القيم التجميعية للمفاتيح المُعادة دقيقة.
+
+لا يُطبَّق هذا التحسين إذا ضبط المستخدم `group_by_overflow_mode` صراحةً على قيمة غير `any` (احترامًا للسلوك `throw`/`break` الذي اختاره صراحةً)، أو إذا كان قد ضبط مسبقًا قيمة أصغر لـ `max_rows_to_group_by`، أو عند استخدام [exact&#95;rows&#95;before&#95;limit](/ar/reference/settings/session-settings/other#exact_rows_before_limit) (إذ سيؤدي الحد إلى أن يُبلغ `rows_before_limit_at_least` عن `n + offset` كحد أقصى).
+
+يستبعد الشكل الخاص بالدوال التجميعية استخدامَ كومة top-K الخاصة بـ `GROUP BY` التي يوفرها [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ar/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) في الاستعلام نفسه. ولأن الكومة أسرع، لا يُطبَّق القطع إلا حين يتعذر استخدام الكومة: أي عندما تكون معطَّلة، أو عندما يتجاوز `n + offset` قيمة [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/ar/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization)، أو عند ضبط `max_rows_to_group_by`، أو عند تسلسل خطة الاستعلام.
 
 القيم الممكنة:
 
-* 0 — التحسين معطّل.
-* 1 — التحسين مفعّل.
+* 0 — التحسين معطَّل.
+* 1 — التحسين مفعَّل.
 
-<div id="optimize_trivial_insert_select">
-  ## optimize_trivial_insert_select
-</div>
+## optimize_trivial_insert_select {#optimize_trivial_insert_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -121,9 +115,10 @@ merge. مع القيمة الافتراضية `basic`، لا تحصل أعمدة
 
 تحسين استعلام &#39;INSERT INTO table SELECT ... FROM TABLES&#39; البسيط
 
-<div id="optimize_trivial_view_pushdown_to_distributed">
-  ## optimize_trivial_view_pushdown_to_distributed
-</div>
+استخدم هذا الإعداد مع تعيين قيمة صريحة للإعداد `max_insert_threads`، إذ يقصر هذا التحسين عدد خيوط القراءة في `SELECT` على
+`max_insert_threads`، مما يغيّر عدد الكتل التي ينتجها `SELECT`.
+
+## optimize_trivial_view_pushdown_to_distributed {#optimize_trivial_view_pushdown_to_distributed}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

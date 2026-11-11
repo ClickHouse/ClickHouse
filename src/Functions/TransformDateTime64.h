@@ -65,6 +65,10 @@ public:
         else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
         {
             auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            /// The transforms taking the components use only the whole part: round it towards negative infinity,
+            /// same as below, so that a value before the epoch with a fractional part is not moved to the next second.
+            if (t.value < 0 && components.fractional)
+                --components.whole;
 
             const auto result = wrapped_transform.execute(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;
@@ -109,6 +113,9 @@ public:
         else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
         {
             auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            /// See `execute`.
+            if (t.value < 0 && components.fractional)
+                --components.whole;
 
             const auto result = wrapped_transform.executeExtendedResult(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;

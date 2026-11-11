@@ -93,6 +93,7 @@ public:
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
+    /// The non-const `SettingsChanges &` overload also drops a change equal to the current value from `changes` (unless `compatibility` is present).
     void check(const Settings & current_settings, const SettingChange & change, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
@@ -102,12 +103,21 @@ public:
     /// from one that was escalated via SQL before constraints were enforced, so we tolerate both
     /// rather than break the former. It is NOT a trust guarantee. Defaults to false (full enforcement).
     ///
-    /// `actor_is_config_defined` is set when the identity managing settings/profiles (DDL, `SET profile`)
-    /// is defined in the server config and is therefore a trusted admin: its own min/max/const/disallowed/
-    /// writability constraints are not enforced against the change (it may create looser configurations).
+    /// `actor_is_config_defined` is set when the identity managing settings/profiles (access entity DDL) is defined
+    /// in the server config, or when there is no user (an internal context): such an actor is trusted, so its own
+    /// min/max/const/disallowed/writability constraints are not enforced against the change (looser configs allowed).
     /// Structural rules still apply to everyone: the readonly mode, source restrictions (e.g.
     /// `max_sessions_for_user` is profile-only) and the server-wide `allow_feature_tier` policy.
-    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source, bool skip_config_defined_profiles = false, bool actor_is_config_defined = false) const;
+    ///
+    /// `resolved_constraints` are the constraints the elements resolve to, known at login. A constraint that
+    /// leaves out a bound keeps it if an earlier profile in the chain declares it, so it is checked there.
+    void check(
+        const Settings & current_settings,
+        const SettingsProfileElements & profile_elements,
+        SettingSource source,
+        bool skip_config_defined_profiles = false,
+        bool actor_is_config_defined = false,
+        const SettingsConstraints * resolved_constraints = nullptr) const;
 
     void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source, bool actor_is_config_defined = false) const;
 
@@ -120,12 +130,27 @@ public:
     /// `after_reset` holds the values the resets land on, which `compatibility` may have derived.
     void checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const;
 
+    /// Clamping counterpart of `checkResetToDefault`, for a reset crossing an execution context (a nested
+    /// `SETTINGS name = DEFAULT`), where a violation must not throw. `names` is reduced to the resets that
+    /// may be performed as written; a reset clamped by a `MIN` / `MAX` constraint is moved to
+    /// `clamped_changes` as an assignment of the clamped value; a forbidden one is dropped altogether.
+    void clampResetToDefault(
+        const Settings & current_settings,
+        std::vector<String> & names,
+        SettingsChanges & clamped_changes,
+        SettingSource source) const;
+
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
     /// Checks whether `change` violates these and clamps the `change` if so.
+    /// A change equal to the current value is dropped from `changes` (unless `compatibility` is present).
     void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
+
+    /// Same as `clamp`, but an unknown or disallowed setting name and an uncastable value throw, as in `check`,
+    /// and a change equal to the current value is kept in `changes`.
+    void clampRejectingInvalidChanges(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
 
     /// `compatibility` gives a setting only a value that these constraints and `allow_feature_tier` accept,
     /// and leaves any other setting as it is. `restrictsCompatibility` tells whether any value can be refused.
@@ -138,8 +163,12 @@ public:
 private:
     enum ReactionOnViolation
     {
+        /// Any violation, an unknown name or an uncastable value throws.
         THROW_ON_VIOLATION,
+        /// Violations are clamped or dropped; an unknown name or an uncastable value is dropped.
         CLAMP_ON_VIOLATION,
+        /// Violations are clamped or dropped; an unknown name or an uncastable value throws.
+        CLAMP_ON_VIOLATION_THROW_ON_INVALID,
     };
 
     struct Constraint
@@ -201,8 +230,8 @@ private:
         }
     };
 
-    /// Common logic for `check(Settings, SettingsChanges&)` and `clamp`. Both filter out unchanged settings
-    /// (unless `compatibility` is present) and differ only in whether violations throw or get clamped to the nearest bound.
+    /// Common logic for `check`, `clamp` and `clampRejectingInvalidChanges`. The modes differ in whether violations throw or get clamped
+    /// to the nearest bound and whether an invalid change throws or is dropped.
     void
     checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const;
 
@@ -219,12 +248,14 @@ private:
                               SettingSource source,
                               boost::container::flat_set<UUID> & visited_profiles,
                               bool skip_config_defined_profiles,
-                              bool actor_is_config_defined) const;
+                              bool actor_is_config_defined,
+                              const SettingsConstraints * resolved_constraints) const;
 
     void checkProfileElementValues(const Settings & current_settings,
                                    const SettingsProfileElement & element,
                                    SettingSource source,
-                                   bool actor_is_config_defined) const;
+                                   bool actor_is_config_defined,
+                                   const SettingsConstraints * resolved_constraints) const;
 
     void checkProfileElementWritability(const SettingsProfileElement & element,
                                         const std::unordered_map<String, SettingConstraintWritability> & writability_map) const;
